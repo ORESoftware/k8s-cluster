@@ -51,7 +51,7 @@ secrets. Replace `SERVER_AUTH_SECRET`, `ANTHROPIC_API_KEY`, `GH_PAT`, and `GH_DE
 expecting a real Claude run to fetch, commit, push, and open a PR. The local image uses
 `imagePullPolicy: Never`, so `pnpm run minikube:build` must run after changing this package. The
 build script passes `GH_DEPLOY_KEY_PATH` to BuildKit as `github_deploy_key`; point it at a readable
-deploy key with access to `dancing-dragons/dd-next-1`.
+deploy key with access to `ORESoftware/k8s-cluster`.
 
 The local manifest mirrors the EC2 Kubernetes security boundaries that are useful during laptop
 iteration: a dedicated `ServiceAccount`, namespace pod-security labels, a `ResourceQuota`, container
@@ -113,7 +113,7 @@ remote/dev-server-local/
 
 ## Local Docker Build
 
-The build needs a GitHub deploy key with read access to `dancing-dragons/dd-next-1` so the image
+The build needs a GitHub deploy key with read access to `ORESoftware/k8s-cluster` so the image
 can pre-clone the repo and run `pnpm install`. Use BuildKit's `--secret` flag — never `--build-arg`
 — so the key never lands in any image layer. For local minikube iteration, build from this folder
 and tag the image as `dd-dev-server-local:latest` so the minikube manifest can use
@@ -121,7 +121,7 @@ and tag the image as `dd-dev-server-local:latest` so the minikube manifest can u
 
 ```bash
 DOCKER_BUILDKIT=1 docker build \
-  --build-arg DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git \
+  --build-arg DD_REPO_URL=git@github.com:ORESoftware/k8s-cluster.git \
   --build-arg DD_REPO_REF=dev \
   --secret id=github_deploy_key,src=$HOME/.ssh/dd_deploy \
   -t dd-dev-server-local:latest \
@@ -161,7 +161,7 @@ docker run --rm -p 8080:8080 \
 | `ANTHROPIC_API_KEY`  | Auth for the `claude` CLI the server spawns.                                                                                 |
 | `SERVER_AUTH_SECRET` | Shared secret presented by Vercel in `X-Server-Auth`. Random, ≥ 32 chars.                                                    |
 | `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against `dd-next-1`. The server writes this to `~/.ssh/id_ed25519` at boot. |
-| `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope: Contents + Pull Requests, `dancing-dragons/dd-next-1` only.         |
+| `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope: Contents + Pull Requests, `ORESoftware/k8s-cluster` only.         |
 
 ### Required — Vercel ingestion
 

@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:dancing-dragons/dd-next-1.git
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/gleamlang-server/k8s/minikube
   destination:

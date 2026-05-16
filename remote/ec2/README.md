@@ -31,7 +31,7 @@ From your workstation:
 ssh -i /path/to/main-key-pair.pem ec2-user@<public-ip>
 mkdir -p ~/codes/dd
 cd ~/codes/dd
-git clone --branch dev git@github.com:dancing-dragons/dd-next-1.git dd-next-1
+git clone --branch dev git@github.com:ORESoftware/k8s-cluster.git dd-next-1
 cd dd-next-1
 ```
 

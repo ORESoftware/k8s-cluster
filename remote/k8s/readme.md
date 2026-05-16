@@ -77,7 +77,7 @@ real secret values:
 
 ```bash
 sudo dnf install -y git
-git clone https://github.com/<your-org>/dd-next-1.git ~/dd-next-1
+git clone https://github.com/ORESoftware/k8s-cluster.git ~/dd-next-1
 cd ~/dd-next-1/remote/k8s
 
 # Real values for ANTHROPIC_API_KEY, GH_PAT, SUPABASE_*, REMOTE_DEV_REAPER_SECRET, etc.

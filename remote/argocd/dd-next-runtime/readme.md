@@ -173,8 +173,8 @@ The same deployment also runs an adaptive NATS watchdog. It listens to copies of
 fanout endpoint. When a window has activity it checks again after 5 seconds; quiet windows back off
 to 15 seconds.
 
-The reaper is also the cron supervisor for the local worker image. Every day at 4am
-America/New_York it fetches/fast-forwards the EC2 checkout, runs `nerdctl -n k8s.io build` for
+The reaper is also the cron supervisor for the local worker image. Every day at 4am America/New_York
+it fetches/fast-forwards the EC2 checkout, runs `nerdctl -n k8s.io build` for
 `remote/dev-server`, and overwrites the local image tag `docker.io/library/dd-dev-server:dev`. New
 thread workers use that tag via `imagePullPolicy: IfNotPresent`, so the next created pod picks up
 the newest local image on the EC2 Kubernetes node. This is intentionally a Rust scheduler inside

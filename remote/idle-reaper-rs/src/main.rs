@@ -9,7 +9,7 @@ use serde_json::json;
 use tokio::{fs, process::Command, time::sleep};
 
 const CLUSTER_DOCTOR_PROMPT: &str = r#"
-You are the scheduled cluster doctor for dancing-dragons/dd-next-1.
+You are the scheduled cluster doctor for ORESoftware/k8s-cluster.
 
 Goal: every run should inspect the EC2 Kubernetes runtime, find concrete
 reliability/observability/deployment problems, make a small safe fix in this
@@ -253,7 +253,7 @@ fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
         repo_dir: env_string("WORKER_IMAGE_BUILD_REPO_DIR")
             .unwrap_or_else(|| "/opt/dd-next-1".to_string()),
         repo_url: env_string("WORKER_IMAGE_BUILD_REPO_URL")
-            .unwrap_or_else(|| "git@github.com:dancing-dragons/dd-next-1.git".to_string()),
+            .unwrap_or_else(|| "git@github.com:ORESoftware/k8s-cluster.git".to_string()),
         repo_ref: env_string("WORKER_IMAGE_BUILD_REF").unwrap_or_else(|| "dev".to_string()),
         image: env_string("WORKER_IMAGE_BUILD_IMAGE")
             .unwrap_or_else(|| "docker.io/library/dd-dev-server:dev".to_string()),

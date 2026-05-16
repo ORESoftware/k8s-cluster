@@ -10,7 +10,7 @@
 #
 # Build (BuildKit required for --secret):
 #   DOCKER_BUILDKIT=1 docker build \
-#     --build-arg DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git \
+#     --build-arg DD_REPO_URL=git@github.com:ORESoftware/k8s-cluster.git \
 #     --build-arg DD_REPO_REF=dev \
 #     --secret id=github_deploy_key,src=/path/to/dd_deploy \
 #     -t dd-dev-server-local:latest \
@@ -101,7 +101,7 @@ USER agent
 # workspace and just `git fetch` the recent delta.
 # ============================================================
 WORKDIR /home/agent
-ARG DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git
+ARG DD_REPO_URL=git@github.com:ORESoftware/k8s-cluster.git
 ARG DD_REPO_REF=dev
 # node:22-bookworm-slim omits build-essential, but dd-next-1's deps include
 # native modules (bufferutil, utf-8-validate) that need python3/make/g++ via

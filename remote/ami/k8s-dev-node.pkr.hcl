@@ -104,7 +104,7 @@ variable "minikube_version" {
 variable "tags" {
   type = map(string)
   default = {
-    Project     = "dancing-dragons"
+    Project     = "k8s-cluster"
     Component   = "dev-server"
     ManagedBy   = "packer"
   }

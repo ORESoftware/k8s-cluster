@@ -229,7 +229,7 @@ async fn publish_task_to_nats(
         thread_id: thread_id.to_string(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
-        repo: "git@github.com:dancing-dragons/dd-next-1.git",
+        repo: "git@github.com:ORESoftware/k8s-cluster.git",
         base_branch: "dev",
         feature_branch: None,
         prompt: request.prompt.clone(),

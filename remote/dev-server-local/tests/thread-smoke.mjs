@@ -62,7 +62,7 @@ if [[ "$1" == "pr" && "$2" == "view" ]]; then
   exit 1
 fi
 if [[ "$1" == "pr" && "$2" == "create" ]]; then
-  echo "https://github.com/dancing-dragons/dd-next-1/pull/1"
+  echo "https://github.com/ORESoftware/k8s-cluster/pull/1"
   exit 0
 fi
 echo "[fake-gh] $*"

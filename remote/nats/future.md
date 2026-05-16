@@ -82,7 +82,7 @@ UUIDs contain hyphens but no dots, so each UUID remains one NATS subject token.
   "taskId": "89141d07-45fe-476f-bf4d-c518b48df964",
   "taskKind": "agent.prompt",
   "provider": "claude-sdk",
-  "repo": "git@github.com:dancing-dragons/dd-next-1.git",
+  "repo": "git@github.com:ORESoftware/k8s-cluster.git",
   "baseBranch": "dev",
   "featureBranch": "dev/b82e5724-0273-4cd9-a198-ed6caac99a33/example-title",
   "prompt": "User-visible prompt text",

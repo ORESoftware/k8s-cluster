@@ -41,7 +41,7 @@ Tiny Rust worker that runs cluster maintenance loops:
 | `WORKER_IMAGE_BUILD_HOUR` | no | `4` |
 | `WORKER_IMAGE_BUILD_MINUTE` | no | `0` |
 | `WORKER_IMAGE_BUILD_REPO_DIR` | no | `/opt/dd-next-1` |
-| `WORKER_IMAGE_BUILD_REPO_URL` | no | `git@github.com:dancing-dragons/dd-next-1.git` |
+| `WORKER_IMAGE_BUILD_REPO_URL` | no | `git@github.com:ORESoftware/k8s-cluster.git` |
 | `WORKER_IMAGE_BUILD_REF` | no | `dev` |
 | `WORKER_IMAGE_BUILD_IMAGE` | no | `docker.io/library/dd-dev-server:dev` |
 | `WORKER_IMAGE_BUILD_NERDCTL` | no | `/usr/local/bin/nerdctl` |
