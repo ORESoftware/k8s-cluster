@@ -15,6 +15,11 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-remote-gateway` (public k8s path splitter on host ports 80 and 443)
 - `dd-idle-reaper` (Rust scheduler for idle sweeps and the 90-minute cluster doctor task)
 
+The ArgoCD application for this bundle is
+`remote/argocd/apps/dd-next-runtime.application.yaml`. Keep Kubernetes object changes in Git and
+let Argo sync them; the manual GitHub Actions workflow only refreshes the current node-local
+`dd-remote-web-home:dev` image while that image still lives in EC2 containerd instead of a registry.
+
 Gateway path map:
 
 - `/`, `/home` -> `dd-remote-web-home:8080`

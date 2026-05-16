@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
-const repoRoot = resolve(process.cwd(), "..", "..");
+function findRepoRoot(): string {
+  for (const candidate of [process.cwd(), resolve(process.cwd(), "..", "..")]) {
+    if (existsSync(resolve(candidate, "remote/argocd/dd-next-runtime/kustomization.yaml"))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Unable to locate repo root from ${process.cwd()}`);
+}
+
+const repoRoot = findRepoRoot();
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), "utf8");
@@ -18,6 +29,16 @@ test("runtime kustomization includes split web/api/gateway resources", async () 
   assert.match(kustomization, /dd-remote-web-home\.service\.yaml/);
   assert.match(kustomization, /dd-remote-gateway\.configmap\.yaml/);
   assert.match(kustomization, /dd-remote-gateway\.deployment\.yaml/);
+});
+
+test("runtime is owned by an automated argocd application", async () => {
+  const app = await readRepoFile("remote/argocd/apps/dd-next-runtime.application.yaml");
+
+  assert.match(app, /name:\s*dd-next-runtime/);
+  assert.match(app, /targetRevision:\s*dev/);
+  assert.match(app, /path:\s*remote\/argocd\/dd-next-runtime/);
+  assert.match(app, /namespace:\s*default/);
+  assert.match(app, /automated:[\s\S]*prune:\s*true[\s\S]*selfHeal:\s*true/);
 });
 
 test("node deployment is api-only and no longer binds hostPort 80", async () => {

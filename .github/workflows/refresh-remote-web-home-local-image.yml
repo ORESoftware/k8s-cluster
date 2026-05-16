@@ -1,10 +1,18 @@
-name: Deploy remote web-home image runtime
+name: Refresh remote web-home local image
 
 on:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/refresh-remote-web-home-local-image.yml"
+      - "remote/argocd/apps/dd-next-runtime.application.yaml"
+      - "remote/argocd/dd-next-runtime/**"
+      - "remote/web-home-rs/**"
   workflow_dispatch:
 
 concurrency:
-  group: deploy-remote-web-home-ssm
+  group: refresh-remote-web-home-local-image
   cancel-in-progress: false
 
 permissions:
@@ -12,7 +20,7 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
+  refresh:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,24 +32,27 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Build and deploy on EC2 through SSM
+      - name: Build local image on EC2 through SSM
         run: |
           set -euo pipefail
           command_id="$(
             aws ssm send-command \
               --instance-ids "${{ secrets.AWS_SSM_INSTANCE_ID }}" \
               --document-name "AWS-RunShellScript" \
-              --comment "Deploy remote web-home image runtime" \
+              --comment "Refresh remote web-home local image" \
               --parameters 'commands=[
                 "set -euo pipefail",
                 "cd /home/ec2-user/codes/dd/dd-next-1",
                 "git fetch origin dev",
                 "git merge --ff-only origin/dev",
                 "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/web-home-rs",
-                "kubectl apply -f remote/argocd/dd-next-runtime/dd-idle-reaper.configmap.yaml",
-                "kubectl apply -f remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml",
-                "kubectl rollout restart deployment/dd-remote-web-home -n default",
-                "kubectl rollout status deployment/dd-remote-web-home -n default --timeout=300s"
+                "kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml",
+                "kubectl -n argocd get application/dd-next-runtime",
+                "kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite",
+                "kubectl delete pod -n default -l app=dd-remote-web-home --wait=true --timeout=120s",
+                "kubectl wait --for=condition=Available deployment/dd-remote-web-home -n default --timeout=300s",
+                "kubectl get deployment dd-remote-web-home -n default -o wide",
+                "kubectl get pods -n default -l app=dd-remote-web-home -o wide"
               ]' \
               --query "Command.CommandId" \
               --output text

@@ -23,6 +23,13 @@ There are also runtime siblings for queueing, scheduling, and optimization:
 - [`mdp-optimizer-rs/`](./mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
 
+The baseline Kubernetes runtime bundle lives in
+[`argocd/dd-next-runtime/`](./argocd/dd-next-runtime/) and is managed by the
+`dd-next-runtime` ArgoCD Application. Apply
+[`argocd/apps/dd-next-runtime.application.yaml`](./argocd/apps/dd-next-runtime.application.yaml)
+when bootstrapping Argo, then let Git + Argo own runtime Deployment, Service, ConfigMap, and gateway
+changes.
+
 There are also two Gleam/OTP services with their own ArgoCD Application manifests for both Minikube
 and EC2 k8s paths:
 

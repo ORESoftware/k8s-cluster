@@ -459,7 +459,9 @@ test('rust agent tasks page fetches the REST API directly', async () => {
     'remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml',
   );
   const dockerfile = await readRepoFile('remote/web-home-rs/Dockerfile');
-  const deployWorkflow = await readRepoFile('.github/workflows/deploy-remote-web-home-ssm.yml');
+  const refreshWorkflow = await readRepoFile(
+    '.github/workflows/refresh-remote-web-home-local-image.yml',
+  );
   const restDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-rest-api.deployment.yaml',
   );
@@ -506,29 +508,40 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(dockerfile, /COPY --from=build \/app\/target\/release\/dd-remote-web-home/);
   assert.match(dockerfile, /USER 10001:10001/);
   assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/dd-remote-web-home"\]/);
-  assert.match(deployWorkflow, /name: Deploy remote web-home image runtime/);
-  assert.match(deployWorkflow, /workflow_dispatch:/);
-  assert.match(deployWorkflow, /group: deploy-remote-web-home-ssm/);
-  assert.match(deployWorkflow, /ref: dev/);
-  assert.match(deployWorkflow, /role-to-assume: \$\{\{ secrets\.AWS_ROLE_TO_ASSUME \}\}/);
+  assert.match(refreshWorkflow, /name: Refresh remote web-home local image/);
+  assert.match(refreshWorkflow, /push:[\s\S]*branches:[\s\S]*-\s*dev/);
+  assert.match(refreshWorkflow, /remote\/web-home-rs\/\*\*/);
+  assert.match(refreshWorkflow, /workflow_dispatch:/);
+  assert.match(refreshWorkflow, /group: refresh-remote-web-home-local-image/);
+  assert.match(refreshWorkflow, /ref: dev/);
+  assert.match(refreshWorkflow, /role-to-assume: \$\{\{ secrets\.AWS_ROLE_TO_ASSUME \}\}/);
   assert.match(
-    deployWorkflow,
+    refreshWorkflow,
     /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/web-home-rs/,
   );
   assert.match(
-    deployWorkflow,
-    /kubectl apply -f remote\/argocd\/dd-next-runtime\/dd-idle-reaper\.configmap\.yaml/,
+    refreshWorkflow,
+    /kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
   );
   assert.match(
-    deployWorkflow,
-    /kubectl apply -f remote\/argocd\/dd-next-runtime\/dd-remote-web-home\.deployment\.yaml/,
+    refreshWorkflow,
+    /kubectl -n argocd get application\/dd-next-runtime/,
   );
   assert.match(
-    deployWorkflow,
-    /kubectl rollout status deployment\/dd-remote-web-home -n default --timeout=300s/,
+    refreshWorkflow,
+    /kubectl -n argocd annotate application\/dd-next-runtime argocd\.argoproj\.io\/refresh=hard --overwrite/,
   );
-  assert.match(deployWorkflow, /aws ssm send-command/);
-  assert.match(deployWorkflow, /aws ssm get-command-invocation/);
+  assert.match(
+    refreshWorkflow,
+    /kubectl delete pod -n default -l app=dd-remote-web-home --wait=true --timeout=120s/,
+  );
+  assert.match(
+    refreshWorkflow,
+    /kubectl wait --for=condition=Available deployment\/dd-remote-web-home -n default --timeout=300s/,
+  );
+  assert.doesNotMatch(refreshWorkflow, /kubectl apply -f remote\/argocd\/dd-next-runtime/);
+  assert.match(refreshWorkflow, /aws ssm send-command/);
+  assert.match(refreshWorkflow, /aws ssm get-command-invocation/);
   assert.doesNotMatch(deployment, /REMOTE_REST_API_URL/);
   assert.doesNotMatch(deployment, /dd-remote-web-home-secrets/);
   assert.match(restDeployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
