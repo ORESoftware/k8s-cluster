@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - dd-remote-auth.deployment.yaml
+  - dd-remote-auth.service.yaml
+  - dd-dev-server-home.deployment.yaml
+  - dd-dev-server-api.service.yaml
+  - dd-remote-rest-api-rbac.yaml
+  - dd-remote-rest-api.deployment.yaml
+  - dd-remote-rest-api.service.yaml
+  - dd-agent-worker-broker-rbac.yaml
+  - dd-agent-worker-broker.deployment.yaml
+  - dd-agent-worker-broker.service.yaml
+  - dd-remote-queue-consumer.deployment.yaml
+  - dd-remote-queue-consumer.scaledobject.yaml
+  - dd-mdp-optimizer.deployment.yaml
+  - dd-mdp-optimizer.service.yaml
+  - dd-web-scraper.deployment.yaml
+  - dd-web-scraper.service.yaml
+  - dd-remote-web-home.deployment.yaml
+  - dd-remote-web-home.service.yaml
+  - dd-webrtc-signaling.deployment.yaml
+  - dd-webrtc-signaling.service.yaml
+  - dd-remote-gateway.configmap.yaml
+  - dd-remote-gateway.deployment.yaml
+  - dd-idle-reaper.configmap.yaml
+  - dd-idle-reaper.deployment.yaml

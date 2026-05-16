@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-gateway
+  namespace: default
+  labels:
+    app: dd-remote-gateway
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-remote-gateway
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-16-scrape-proxy'
+      labels:
+        app: dd-remote-gateway
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gateway
+          image: docker.io/library/nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DD_REMOTE_GATEWAY_AUTH_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-auth-secrets
+                  key: DD_AUTH_COOKIE_VALUE
+            - name: DD_REMOTE_DEV_SERVER_AUTH_VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+          ports:
+            - name: http
+              containerPort: 80
+              hostPort: 80
+            - name: https
+              containerPort: 443
+              hostPort: 443
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: default.conf.template
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+            - name: acme-webroot
+              mountPath: /var/www/acme
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: dd-remote-gateway-config
+        - name: tls
+          secret:
+            secretName: dd-remote-gateway-tls
+        - name: acme-webroot
+          hostPath:
+            path: /home/ec2-user/dd-acme-webroot
+            type: DirectoryOrCreate

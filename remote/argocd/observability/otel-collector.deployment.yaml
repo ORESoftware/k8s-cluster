@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-otel-collector
+  namespace: observability
+  labels:
+    app: dd-otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-otel-collector
+  template:
+    metadata:
+      annotations:
+        dd.dev/config-revision: "2026-05-15-nats"
+      labels:
+        app: dd-otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.111.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/otelcol/collector.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: prom-export
+              containerPort: 8889
+          readinessProbe:
+            tcpSocket:
+              port: 4318
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+      volumes:
+        - name: config
+          configMap:
+            name: dd-otel-collector-config

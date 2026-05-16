@@ -1,0 +1,71 @@
+# Per-thread Ingress. Created by the control plane (Vercel `createK8sPod`)
+# alongside the per-thread PVC, Deployment, and Service for a brand-new
+# threadId. Deleted when the thread is ended.
+#
+# Routing model: shared host, path-based per-thread.
+#   https://{INGRESS_HOST}/dd-thread/{THREAD_ID_SHORT}/<path>
+#     -> Service dd-thread-{THREAD_ID_SHORT}:8080/<path>
+#
+# nginx-ingress merges multiple Ingresses on the same host into a single
+# server block with one location per Ingress. Per-thread Ingress is
+# cheap at our scale (~5-6 concurrent threads → ~5-6 location entries
+# in nginx config; reload is millisecond-scale). The single-Ingress
+# dynamic-upstream pattern was rejected because it requires
+# `--allow-snippet-annotations=true` on the nginx-ingress controller,
+# which is disabled by default since v1.0 for SSRF safety.
+#
+# Substitution variables (replaced by the orchestrator):
+#   {THREAD_ID}        — full UUID, used as a label for selection
+#   {THREAD_ID_SHORT}  — first 8 chars + last 4 chars, used in resource names
+#   {INGRESS_HOST}     — public hostname, e.g. agents.example.com
+#
+# TLS: per-thread Ingresses just reference the shared `dd-threads-tls`
+# secret — they do NOT carry a `cert-manager.io/cluster-issuer`
+# annotation. Reasons:
+#   - One Certificate per Ingress all targeting the same secretName
+#     races at issue time and confuses garbage collection on delete.
+#   - When the last per-thread Ingress is deleted (no active threads),
+#     cert-manager's ingress-shim would clean up the secret; the next
+#     thread cold-starts without TLS until cert-manager re-issues.
+#
+# Operator provisions the cert ONCE at cluster setup, decoupled from
+# per-thread lifecycle. Either:
+#   (a) a standalone `Certificate` resource managed by cert-manager
+#       (renewed automatically), or
+#   (b) a hand-imported wildcard cert in a Secret named `dd-threads-tls`.
+# See "DNS + TLS" in remote/k8s/readme.md.
+#
+# SSE specifics: proxy-buffering off + 900s read/send timeouts so the
+# /stream/:taskId SSE channel survives long-running (10+ min) agent
+# runs without the controller silently truncating the stream.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dd-thread-{THREAD_ID_SHORT}
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: thread-pod
+    dd/threadId: "{THREAD_ID}"
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["{INGRESS_HOST}"]
+      secretName: dd-threads-tls
+  rules:
+    - host: "{INGRESS_HOST}"
+      http:
+        paths:
+          - path: /dd-thread/{THREAD_ID_SHORT}(/.*)?
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: dd-thread-{THREAD_ID_SHORT}
+                port:
+                  number: 8080

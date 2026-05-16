@@ -1,0 +1,34 @@
+{
+  "name": "dd-web-scraper-service",
+  "version": "0.1.0",
+  "description": "Long-running Fastify web scraping service for the remote Kubernetes runtime.",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "start:src": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "fastify": "^5.0.0",
+    "jsdom": "^29.0.2",
+    "linkedom": "^0.18.12",
+    "playwright": "1.56.0",
+    "puppeteer": "^24.22.3",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^28.0.1",
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

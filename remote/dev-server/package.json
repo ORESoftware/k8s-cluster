@@ -1,0 +1,33 @@
+{
+  "name": "dd-dev-server",
+  "version": "0.1.0",
+  "description": "Long-lived HTTP server that spawns Claude Code child processes against a warm dd-next-1 checkout and streams events.",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.128",
+    "@aws-sdk/client-s3": "^3.658.0",
+    "@google/genai": "^2.3.0",
+    "@openai/agents": "^0.9.1",
+    "@supabase/supabase-js": "^2.86.2",
+    "fastify": "^5.0.0",
+    "rxjs": "^7.8.2",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

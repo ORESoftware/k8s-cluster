@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-rest-api
+  namespace: default
+  labels:
+    app: dd-remote-rest-api
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-remote-rest-api
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-15-rest-api-split'
+      labels:
+        app: dd-remote-rest-api
+    spec:
+      serviceAccountName: dd-remote-rest-api
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: remote-rest-api
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/rest-api-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8082'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_TASK_SUBJECT
+              value: dd.remote.thread.*.tasks
+            - name: NATS_TASK_STREAM
+              value: DD_REMOTE_TASKS
+            - name: THREAD_RUNTIME_NAMESPACE
+              value: default
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+            - secretRef:
+                name: dd-remote-rest-api-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8082
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

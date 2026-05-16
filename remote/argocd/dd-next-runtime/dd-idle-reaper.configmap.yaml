@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-idle-reaper-config
+  namespace: default
+  labels:
+    app: dd-idle-reaper
+data:
+  # Set this to your public Next.js host endpoint that serves:
+  #   POST /api/admin/remote-dev/reaper/sweep
+  REAPER_SWEEP_URL: ''
+  REAPER_INTERVAL_SECONDS: '60'
+  REAPER_TIMEOUT_SECONDS: '30'
+  NATS_WATCH_ENABLED: 'true'
+  NATS_URL: 'nats://dd-nats.messaging.svc.cluster.local:4222'
+  NATS_WATCH_TASK_SUBJECT: 'dd.remote.thread.*.tasks'
+  NATS_WATCH_EVENT_SUBJECT: 'dd.remote.events'
+  NATS_WATCH_REST_API_URL: 'http://dd-remote-rest-api.default.svc.cluster.local:8082'
+  NATS_WATCH_GLEAM_BROADCAST_URL: 'http://dd-gleamlang-server.default.svc.cluster.local:8081/broadcast'
+  NATS_WATCH_ACTIVE_INTERVAL_SECONDS: '5'
+  NATS_WATCH_IDLE_INTERVAL_SECONDS: '15'
+  CLUSTER_DOCTOR_ENABLED: 'true'
+  CLUSTER_DOCTOR_INTERVAL_SECONDS: '5400'
+  CLUSTER_DOCTOR_RUN_ON_START: 'false'
+  CLUSTER_DOCTOR_TASK_URL: 'http://dd-dev-server-api.default.svc.cluster.local:8080/tasks'
+  CLUSTER_DOCTOR_THREAD_ID: '00000000-0000-4000-8000-000000000001'
+  CLUSTER_DOCTOR_THREAD_TITLE: 'cluster telemetry doctor'
+  CLUSTER_DOCTOR_PROVIDER: 'claude-sdk'
+  # CLUSTER_DOCTOR_SERVER_AUTH_SECRET is injected by dd-idle-reaper-secret.
+  WORKER_IMAGE_BUILD_ENABLED: 'true'
+  WORKER_IMAGE_BUILD_TIMEZONE: 'America/New_York'
+  WORKER_IMAGE_BUILD_HOUR: '4'
+  WORKER_IMAGE_BUILD_MINUTE: '0'
+  WORKER_IMAGE_BUILD_RUN_ON_START: 'false'
+  WORKER_IMAGE_BUILD_REPO_DIR: '/opt/dd-next-1'
+  WORKER_IMAGE_BUILD_REPO_URL: 'git@github.com:dancing-dragons/dd-next-1.git'
+  WORKER_IMAGE_BUILD_REF: 'dev'
+  WORKER_IMAGE_BUILD_IMAGE: 'docker.io/library/dd-dev-server:dev'
+  WORKER_IMAGE_BUILD_NERDCTL: '/usr/local/bin/nerdctl'
+  WORKER_IMAGE_BUILD_EVENT_SUBJECT: 'dd.remote.events'
+  # WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY is read from dd-agent-secrets as GH_DEPLOY_KEY.

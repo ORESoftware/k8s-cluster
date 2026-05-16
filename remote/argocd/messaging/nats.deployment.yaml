@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-nats
+  namespace: messaging
+  labels:
+    app: dd-nats
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-nats
+  template:
+    metadata:
+      labels:
+        app: dd-nats
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: nats
+          image: nats:2.11.17-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - nats-server
+          args:
+            - -c
+            - /etc/nats/nats.conf
+          ports:
+            - name: client
+              containerPort: 4222
+            - name: monitor
+              containerPort: 8222
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nats
+            - name: data
+              mountPath: /data
+        - name: prometheus-exporter
+          image: natsio/prometheus-nats-exporter:0.19.2
+          imagePullPolicy: IfNotPresent
+          args:
+            - -varz
+            - -connz
+            - -routez
+            - -subz
+            - -jsz=all
+            - http://127.0.0.1:8222
+          ports:
+            - name: metrics
+              containerPort: 7777
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 7777
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: dd-nats-config
+        - name: data
+          hostPath:
+            path: /var/lib/dd/nats
+            type: DirectoryOrCreate

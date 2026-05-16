@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-mcp-server
+  namespace: dd-dev-local
+  labels:
+    app: dd-gleam-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleam-mcp-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-05-15-mcp-v1"
+      labels:
+        app: dd-gleam-mcp-server
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gleam-mcp-server
+          image: dd-gleam-mcp-server:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

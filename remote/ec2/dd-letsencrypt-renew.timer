@@ -1,0 +1,12 @@
+[Unit]
+Description=Run DD remote gateway Let's Encrypt renewal periodically
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+RandomizedDelaySec=30min
+Persistent=true
+Unit=dd-letsencrypt-renew.service
+
+[Install]
+WantedBy=timers.target

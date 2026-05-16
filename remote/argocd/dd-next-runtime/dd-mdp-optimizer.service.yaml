@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-mdp-optimizer
+  namespace: default
+  labels:
+    app: dd-mdp-optimizer
+spec:
+  selector:
+    app: dd-mdp-optimizer
+  ports:
+    - name: http
+      port: 8096
+      targetPort: http

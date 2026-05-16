@@ -1,0 +1,240 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-dev-server-local
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-dev-server-local-config
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+data:
+  NODE_ENV: "production"
+  PORT: "8080"
+  HOST: "0.0.0.0"
+  BASE_BRANCH: "dev"
+  WORKSPACE_REPO: "/home/agent/workspace/repo"
+  THREAD_LOG_RELATIVE_PATH: "tmp/convos/thread.log"
+  DEFAULT_STORAGE_PROVIDER: "local"
+  LOCAL_STORAGE_PUBLIC_BASE_URL: "http://127.0.0.1:8080/artifacts"
+  AGENT_PROVIDER: "claude-cli"
+  REMOTE_DEV_THREAD_ID: "00000000-0000-4000-8000-000000000001"
+  USER_ID: "00000000-0000-4000-8000-000000000002"
+  IDLE_TIMEOUT_MS: "3600000"
+  SKIP_BOOT_GIT_SYNC: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dd-dev-server-local-secrets
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+type: Opaque
+stringData:
+  SERVER_AUTH_SECRET: "local-dev-server-secret-change-me-32chars"
+  ANTHROPIC_API_KEY: "replace-with-local-anthropic-key"
+  GH_PAT: "replace-with-local-github-token"
+  GH_DEPLOY_KEY: |
+    replace-with-private-deploy-key
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dd-dev-server-local-workspace
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: local-thread-pod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dd-dev-server-local-quota
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  hard:
+    pods: "4"
+    requests.cpu: "3"
+    limits.cpu: "6"
+    requests.memory: "6Gi"
+    limits.memory: "10Gi"
+    requests.ephemeral-storage: "20Gi"
+    limits.ephemeral-storage: "40Gi"
+    persistentvolumeclaims: "2"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-dev-server-local
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: local-thread-pod
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dd-dev-server-local
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dd-dev-server-local
+        app.kubernetes.io/part-of: dd-remote-dev
+        app.kubernetes.io/component: local-thread-pod
+        dd/threadId: "00000000-0000-4000-8000-000000000001"
+    spec:
+      serviceAccountName: dd-dev-server-local
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dev-server
+          image: dd-dev-server-local:latest
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: dd-dev-server-local-config
+            - secretRef:
+                name: dd-dev-server-local-secrets
+          volumeMounts:
+            - name: workspace
+              mountPath: /home/agent/workspace
+            - name: tmp-convos
+              mountPath: /tmp/convos
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+              ephemeral-storage: "4Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+              ephemeral-storage: "8Gi"
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: dd-dev-server-local-workspace
+        - name: tmp-convos
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-dev-server-local
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: local-thread-pod
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: dd-dev-server-local
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-dev-server-local-policy
+  namespace: dd-dev-local
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dd-dev-server-local
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 22
+          protocol: TCP

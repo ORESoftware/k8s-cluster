@@ -1,0 +1,64 @@
+# Non-secret config shared by every thread pod. Edit + reapply to roll
+# out new defaults without rebuilding the image. Changes take effect on
+# pod restart (not in-place).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-agent-config
+  namespace: dd-dev
+data:
+  # ---- Server core ----
+  PORT: '8080'
+  HOST: '0.0.0.0'
+  CI: 'true'
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  BASE_BRANCH: 'dev'
+  GIT_AUTHOR_NAME: 'DD Agent'
+  GIT_AUTHOR_EMAIL: 'agent@dancingdragons.dev'
+
+  # ---- Per-thread runtime knobs ----
+  # The container is always pinned to one threadId (no shared mode).
+  # REMOTE_DEV_THREAD_ID is injected by 07-thread-deployment.template.yaml.
+  IDLE_TIMEOUT_MS: '1800000' # 30 min
+  AGENT_RUN_TIMEOUT_MS: '7200000' # 2h hard cap per agent run
+
+  # ---- Provider selection ----
+  # SDK runners take priority when available (see agents/index.ts);
+  # explicit choice wins. Pin models with ANTHROPIC_MODEL/GEMINI_MODEL/
+  # OPENAI_MODEL in the secret.
+  AGENT_PROVIDER: 'claude-sdk'
+  THREAD_CONTEXT_BASE_URL: 'http://dd-remote-rest-api.default.svc.cluster.local:8082'
+  THREAD_CONTEXT_LIMIT: '20'
+  THREAD_CONTEXT_MAX_CHARS: '48000'
+
+  # ---- Storage ----
+  # R2 is the default — Cloudflare R2 is S3-compatible (same SDK as S3,
+  # different endpoint + region). Switch to "s3" / "gcs" / "drive" /
+  # "local" by editing this value; bucket / credentials / public URL
+  # for each provider live in `02-secrets.yaml`.
+  DEFAULT_STORAGE_PROVIDER: 'r2'
+
+  # Cloudflare R2 (active default).
+  R2_REGION: 'auto'
+  # Endpoint follows the `https://<account-id>.r2.cloudflarestorage.com`
+  # pattern — semi-public (account ID appears in every URL) so it lives
+  # here, not in the secret.
+  R2_ENDPOINT: 'https://REPLACE_ME.r2.cloudflarestorage.com'
+
+  # AWS S3 (alternative — set DEFAULT_STORAGE_PROVIDER=s3 to activate).
+  S3_REGION: 'us-east-1'
+
+  # ---- Realtime / Vercel touchpoints ----
+  # Public hostname Vercel hits to ingest events. The pod self-registers
+  # in Redis using this URL pattern + its threadId.
+  EVENT_INGEST_URL: 'https://your-vercel-app.vercel.app/api/admin/remote-dev/events'
+  HEARTBEAT_URL: 'https://your-vercel-app.vercel.app/api/admin/remote-dev/heartbeat'
+  HEARTBEAT_INTERVAL_MS: '20000'
+
+  # ---- Workspace paths inside the pod ----
+  WORKSPACE_REPO: '/home/node/workspace/repo'
+  OUTPUTS_DIR: '/home/node/workspace/outputs'
+  LOG_DIR: '/tmp/convos'
+  THREAD_LOG_RELATIVE_PATH: 'tmp/convos/thread.log'
+  # prettier-ignore
+  GIT_SSH_COMMAND: "ssh -F /dev/null -i /home/node/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/node/.ssh/known_hosts"

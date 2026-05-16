@@ -1,0 +1,30 @@
+# Per-thread persistent volume claim. Created by the control plane
+# (Vercel-side `createK8sPod`) substituting THREAD_ID and the chosen
+# storage class. Mounted at /home/node/workspace inside the thread pod
+# so the workspace (git checkout, node_modules, .next/, agent's WIP)
+# survives pod restarts ("sleep" via `replicas=0` then "wake" via
+# `replicas=1` remounts the same volume).
+#
+# 5 GiB is enough for dd-next-1 + warm node_modules + a thread's agent
+# scratch. Bump the request if you store generated artifacts before
+# uploading them.
+#
+# AccessMode RWO — only one pod ever mounts a given thread's PVC, so
+# RWO is correct + cheaper than RWX (no NFS-class storage required).
+#
+# storageClassName: leave unset to use the cluster default (which on
+# kubeadm-on-EC2 will be the EBS CSI driver). Override per-environment.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dd-thread-{THREAD_ID_SHORT}
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    dd/threadId: "{THREAD_ID}"
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: gp3

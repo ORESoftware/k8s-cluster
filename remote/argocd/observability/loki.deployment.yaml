@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-loki
+  namespace: observability
+  labels:
+    app: dd-loki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-loki
+  template:
+    metadata:
+      labels:
+        app: dd-loki
+    spec:
+      containers:
+        - name: loki
+          image: grafana/loki:3.2.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - -config.file=/etc/loki/loki.yaml
+          ports:
+            - name: http
+              containerPort: 3100
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3100
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+            - name: data
+              mountPath: /loki
+      volumes:
+        - name: config
+          configMap:
+            name: dd-loki-config
+        - name: data
+          emptyDir: {}

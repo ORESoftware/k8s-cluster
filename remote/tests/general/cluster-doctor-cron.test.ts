@@ -1,0 +1,182 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import test from 'node:test';
+
+const repoRoot = resolve(process.cwd(), '..', '..');
+
+async function readRepoFile(relativePath: string): Promise<string> {
+  return readFile(resolve(repoRoot, relativePath), 'utf8');
+}
+
+test('rust reaper includes the inline cluster doctor prompt', async () => {
+  const reaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/idle-reaper-rs/Cargo.toml');
+
+  assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
+  assert.match(cargo, /chrono-tz/);
+  assert.match(cargo, /futures-util/);
+  assert.match(cargo, /serde_json/);
+  assert.match(reaper, /const CLUSTER_DOCTOR_PROMPT/);
+  assert.match(reaper, /scheduled cluster doctor/);
+  assert.match(reaper, /dd-prometheus\.observability\.svc\.cluster\.local:9090/);
+  assert.match(reaper, /dd-loki\.observability\.svc\.cluster\.local:3100/);
+  assert.match(reaper, /dd-grafana\.observability\.svc\.cluster\.local:3000/);
+  assert.match(reaper, /dd-nats\.messaging\.svc\.cluster\.local:8222/);
+  assert.match(reaper, /dd-otel-collector\.observability\.svc\.cluster\.local:8889/);
+  assert.match(
+    reaper,
+    /remote-dev server will commit changed files, push the branch, and open or/,
+  );
+  assert.match(reaper, /CLUSTER_DOCTOR_INTERVAL_SECONDS", 90 \* 60/);
+  assert.match(reaper, /post\(&job\.task_url\)/);
+  assert.match(reaper, /header\("x-server-auth", &job\.server_auth_secret\)/);
+  assert.match(reaper, /struct WorkerImageBuildJob/);
+  assert.match(reaper, /WORKER_IMAGE_BUILD_TIMEZONE/);
+  assert.match(reaper, /America\/New_York/);
+  assert.match(reaper, /next_worker_image_build_delay/);
+  assert.match(reaper, /nerdctl/);
+  assert.match(reaper, /DD_REPO_CACHE_BUST/);
+  assert.match(reaper, /docker\.io\/library\/dd-dev-server:dev/);
+});
+
+test('argocd reaper deployment runs the rust scheduler with a 90-minute doctor loop', async () => {
+  const config = await readRepoFile('remote/argocd/dd-next-runtime/dd-idle-reaper.configmap.yaml');
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-idle-reaper.deployment.yaml',
+  );
+  const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
+
+  assert.match(config, /CLUSTER_DOCTOR_ENABLED:\s*['"]true['"]/);
+  assert.match(config, /CLUSTER_DOCTOR_INTERVAL_SECONDS:\s*['"]5400['"]/);
+  assert.match(
+    config,
+    /CLUSTER_DOCTOR_TASK_URL:\s*['"]http:\/\/dd-dev-server-api\.default\.svc\.cluster\.local:8080\/tasks['"]/,
+  );
+  assert.match(config, /CLUSTER_DOCTOR_THREAD_ID:\s*['"]00000000-0000-4000-8000-000000000001['"]/);
+  assert.match(config, /CLUSTER_DOCTOR_PROVIDER:\s*['"]claude-sdk['"]/);
+  assert.match(config, /WORKER_IMAGE_BUILD_ENABLED:\s*['"]true['"]/);
+  assert.match(config, /WORKER_IMAGE_BUILD_TIMEZONE:\s*['"]America\/New_York['"]/);
+  assert.match(config, /WORKER_IMAGE_BUILD_HOUR:\s*['"]4['"]/);
+  assert.match(config, /WORKER_IMAGE_BUILD_IMAGE:\s*['"]docker\.io\/library\/dd-dev-server:dev['"]/);
+  assert.match(config, /NATS_WATCH_ENABLED:\s*['"]true['"]/);
+  assert.match(config, /NATS_WATCH_ACTIVE_INTERVAL_SECONDS:\s*['"]5['"]/);
+  assert.match(config, /NATS_WATCH_IDLE_INTERVAL_SECONDS:\s*['"]15['"]/);
+  assert.match(config, /NATS_WATCH_TASK_SUBJECT:\s*['"]dd\.remote\.thread\.\*\.tasks['"]/);
+  assert.match(config, /NATS_WATCH_EVENT_SUBJECT:\s*['"]dd\.remote\.events['"]/);
+  assert.match(
+    config,
+    /NATS_WATCH_GLEAM_BROADCAST_URL:\s*['"]http:\/\/dd-gleamlang-server\.default\.svc\.cluster\.local:8081\/broadcast['"]/,
+  );
+  assert.doesNotMatch(config, /NATS_WATCH_GLEAM_BROADCAST_SECRET:/);
+  assert.doesNotMatch(config, /CLUSTER_DOCTOR_SERVER_AUTH_SECRET:/);
+  assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/idle-reaper-rs/);
+  assert.match(deployment, /cargo run --release/);
+  assert.match(deployment, /name:\s*dd-idle-reaper-config/);
+  assert.match(deployment, /name:\s*CLUSTER_DOCTOR_SERVER_AUTH_SECRET/);
+  assert.match(deployment, /name:\s*NATS_WATCH_GLEAM_BROADCAST_SECRET/);
+  assert.match(deployment, /name:\s*dd-idle-reaper-secret/);
+  assert.match(deployment, /key:\s*CLUSTER_DOCTOR_SERVER_AUTH_SECRET/);
+  assert.match(deployment, /key:\s*NATS_WATCH_GLEAM_BROADCAST_SECRET/);
+  assert.match(deployment, /name:\s*WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY/);
+  assert.match(deployment, /key:\s*GH_DEPLOY_KEY/);
+  assert.match(deployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
+  assert.match(deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
+  assert.match(deployment, /mountPath:\s*\/opt\/dd-next-1/);
+  assert.match(deployment, /dd\.dev\/telemetry-revision:\s*['"]2026-05-15-nats-watchdog['"]/);
+  assert.match(runtimeReadme, /dd-idle-reaper-secret` key `CLUSTER_DOCTOR_SERVER_AUTH_SECRET/);
+  assert.match(runtimeReadme, /dd-idle-reaper-secret` key `NATS_WATCH_GLEAM_BROADCAST_SECRET/);
+  assert.match(runtimeReadme, /adaptive NATS watchdog/);
+  assert.match(runtimeReadme, /Every day at\s+4am America\/New_York/);
+  assert.match(runtimeReadme, /docker\.io\/library\/dd-dev-server:dev/);
+});
+
+test('reaper nats watchdog backstops worker prepare and websocket fanout', async () => {
+  const reaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
+  const readme = await readRepoFile('remote/idle-reaper-rs/README.md');
+
+  assert.match(reaper, /struct NatsWatchJob/);
+  assert.match(reaper, /NATS_WATCH_ACTIVE_INTERVAL_SECONDS", 5/);
+  assert.match(reaper, /NATS_WATCH_IDLE_INTERVAL_SECONDS", 15/);
+  assert.match(reaper, /dd\.remote\.thread\.\*\.tasks/);
+  assert.match(reaper, /dd\.remote\.events/);
+  assert.match(reaper, /prepare_thread_from_nats/);
+  assert.match(reaper, /broadcast_event_from_nats/);
+  assert.match(reaper, /broadcaster|GLEAM_BROADCAST_URL|gleam_broadcast_url/);
+  assert.match(reaper, /NATS_WATCH_GLEAM_BROADCAST_SECRET/);
+  assert.match(reaper, /nats watchdog disabled: NATS_WATCH_GLEAM_BROADCAST_SECRET missing/);
+  assert.doesNotMatch(reaper, /dd-k8s-home/);
+  assert.match(readme, /NATS watchdog/);
+  assert.match(readme, /backstop worker/);
+  assert.match(readme, /`NATS_WATCH_GLEAM_BROADCAST_SECRET` \| yes, when enabled \| — \|/);
+});
+
+test('dev-server can receive provider and github secrets for scheduled PR work', async () => {
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
+  );
+  const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
+  const restApi = await readRepoFile('remote/rest-api-rs/src/main.rs');
+
+  assert.match(deployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
+  assert.match(deployment, /envFrom:[\s\S]*secretRef:[\s\S]*name:\s*dd-agent-secrets/);
+  assert.match(deployment, /name:\s*NATS_URL[\s\S]*value:\s*nats:\/\/dd-nats\.messaging\.svc\.cluster\.local:4222/);
+  assert.match(deployment, /name:\s*NATS_EVENT_SUBJECT[\s\S]*value:\s*dd\.remote\.events/);
+  assert.doesNotMatch(deployment, /dd-k8s-home/);
+  assert.doesNotMatch(restApi, /dd-k8s-home/);
+  assert.match(restApi, /REMOTE_DEV_SERVER_SECRET or SERVER_AUTH_SECRET is not set/);
+  assert.match(
+    deployment,
+    /name:\s*REMOTE_DEV_THREAD_ID[\s\S]*value:\s*"00000000-0000-4000-8000-000000000001"/,
+  );
+  assert.match(runtimeReadme, /Use `dd-agent-secrets` for shared remote runtime values:/);
+  assert.match(runtimeReadme, /- `SERVER_AUTH_SECRET`/);
+  assert.match(
+    runtimeReadme,
+    /- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and `OPENAI_API_KEY`/,
+  );
+  assert.match(
+    runtimeReadme,
+    /- GitHub credentials used by the remote dev worker entrypoint and PR creation path/,
+  );
+});
+
+test('external secrets rollout stays aligned with runtime secret consumers', async () => {
+  const secretsApp = await readRepoFile('remote/argocd/apps/dd-secrets.application.yaml');
+  const operatorApp = await readRepoFile(
+    'remote/argocd/apps/external-secrets-operator.application.yaml',
+  );
+  const secretStore = await readRepoFile('remote/argocd/secrets/aws-secret-store.yaml');
+  const secrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  const kustomization = await readRepoFile('remote/argocd/secrets/kustomization.yaml');
+  const secretsReadme = await readRepoFile('remote/argocd/secrets/readme.md');
+  const restDeployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-remote-rest-api.deployment.yaml',
+  );
+
+  assert.match(secretsApp, /name:\s*dd-secrets/);
+  assert.match(secretsApp, /path:\s*remote\/argocd\/secrets/);
+  assert.match(operatorApp, /name:\s*external-secrets-operator/);
+  assert.match(operatorApp, /repoURL:\s*https:\/\/charts\.external-secrets\.io/);
+  assert.match(operatorApp, /chart:\s*external-secrets/);
+  assert.match(operatorApp, /installCRDs:\s*true/);
+  assert.match(secretStore, /kind:\s*ClusterSecretStore/);
+  assert.match(secretStore, /name:\s*dd-aws-secrets-manager/);
+  assert.match(secretStore, /service:\s*SecretsManager/);
+  assert.match(secretStore, /name:\s*dd-aws-secrets-manager-auth/);
+  assert.match(kustomization, /- aws-secret-store\.yaml/);
+  assert.match(kustomization, /- external-secrets\.yaml/);
+  assert.match(secrets, /name:\s*dd-agent-secrets/);
+  assert.match(secrets, /key:\s*dd\/remote-dev\/agent-secrets/);
+  assert.match(secrets, /name:\s*dd-remote-rest-api-secrets/);
+  assert.match(secrets, /key:\s*dd\/remote-dev\/rest-api-secrets/);
+  assert.match(secrets, /name:\s*dd-idle-reaper-secret/);
+  assert.match(secrets, /key:\s*dd\/remote-dev\/idle-reaper-secret/);
+  assert.match(restDeployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
+  assert.match(restDeployment, /name:\s*dd-remote-rest-api-secrets[\s\S]*optional:\s*true/);
+  assert.match(secretsReadme, /dd\/remote-dev\/agent-secrets/);
+  assert.match(secretsReadme, /dd\/remote-dev\/rest-api-secrets/);
+  assert.match(secretsReadme, /dd\/remote-dev\/idle-reaper-secret/);
+  assert.match(secretsReadme, /dd-aws-secrets-manager-auth/);
+});

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-remote-web-home
+  namespace: default
+  labels:
+    app: dd-remote-web-home
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-remote-web-home
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

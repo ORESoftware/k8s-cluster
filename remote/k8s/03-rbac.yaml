@@ -1,0 +1,85 @@
+# RBAC for the two service accounts in this stack:
+#
+#   1. dd-control-plane — used by the Vercel-side dispatch route to
+#      create / scale / delete thread Deployments + Services + PVCs.
+#      This is the most privileged identity in the namespace.
+#
+#   2. dd-thread-pod — mounted (or NOT — see automountServiceAccountToken)
+#      into every thread pod. We grant it nothing for now; the thread
+#      pod's only writes back to the cluster go through Vercel HTTP, not
+#      direct k8s API calls. If you ever want pods to scale themselves
+#      down (for IDLE_TIMEOUT_MS), grant `patch` on its own Deployment
+#      via a self-narrowed Role.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-control-plane
+  namespace: dd-dev
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-thread-pod
+  namespace: dd-dev
+---
+# Token for the control-plane SA — used by Vercel `K8S_SA_TOKEN`. The
+# `kubernetes.io/service-account-token` Secret stays valid as long as
+# the SA exists. Rotate by deleting + recreating this Secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dd-control-plane-token
+  namespace: dd-dev
+  annotations:
+    kubernetes.io/service-account.name: dd-control-plane
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-control-plane
+  namespace: dd-dev
+rules:
+  # Read pods + services for routing lookups.
+  - apiGroups: ['']
+    resources: [pods, services, persistentvolumeclaims]
+    verbs: [get, list, watch, create, delete, patch]
+  # Manage thread Deployments (scale, update, restart).
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, delete, patch, update]
+  # Manage per-thread Ingresses for browser direct-stream routes.
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, delete, patch, update]
+  # Surface `kubectl scale` style updates without granting full update.
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    verbs: [get, patch, update]
+  # Manage the per-thread shared-host ingress routes created on dispatch.
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, delete, patch, update]
+  # Read configmap + secret refs (needed for envFrom resolution checks).
+  - apiGroups: ['']
+    resources: [configmaps, secrets]
+    verbs: [get, list, watch]
+  # Read events for control-plane debugging via /api/admin/remote-dev/k8s-events.
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-control-plane
+  namespace: dd-dev
+subjects:
+  - kind: ServiceAccount
+    name: dd-control-plane
+    namespace: dd-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-control-plane

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleamlang-server
+  namespace: default
+  labels:
+    app: dd-gleamlang-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleamlang-server
+  template:
+    metadata:
+      labels:
+        app: dd-gleamlang-server
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gleamlang-server
+          image: dd-gleamlang-server:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi

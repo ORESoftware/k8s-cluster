@@ -1,0 +1,64 @@
+# Generic Linux cron service pod.
+# Runs busybox crond in foreground and executes scripts from the
+# dd-cron-service ConfigMap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-cron-service
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: cron-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: cron-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dd-remote-dev
+        app.kubernetes.io/component: cron-service
+    spec:
+      serviceAccountName: dd-control-plane
+      automountServiceAccountToken: false
+      containers:
+        - name: cron-service
+          image: alpine:3.20
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              apk add --no-cache curl >/dev/null
+              cp /opt/cron/crontab /etc/crontabs/root
+              chmod +x /opt/cron/jobs/reaper.sh
+              crond -f -l 8
+          env:
+            - name: REAPER_SWEEP_URL
+              value: https://REPLACE_ME_VERCEL_HOST/api/admin/remote-dev/reaper/sweep
+            - name: REAPER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: REMOTE_DEV_REAPER_SECRET
+          volumeMounts:
+            - name: cron-config
+              mountPath: /opt/cron
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+      volumes:
+        - name: cron-config
+          configMap:
+            name: dd-cron-service
+            defaultMode: 0755
+            items:
+              - key: crontab
+                path: crontab
+              - key: reaper.sh
+                path: jobs/reaper.sh

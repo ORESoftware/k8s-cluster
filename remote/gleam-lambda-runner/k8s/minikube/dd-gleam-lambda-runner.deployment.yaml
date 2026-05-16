@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-lambda-runner
+  namespace: default
+  labels:
+    app: dd-gleam-lambda-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleam-lambda-runner
+  template:
+    metadata:
+      labels:
+        app: dd-gleam-lambda-runner
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gleam-lambda-runner
+          image: dd-gleam-lambda-runner:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: LAMBDA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleam-lambda-runner-secrets
+                  key: LAMBDA_DATABASE_URL
+                  optional: true
+            - name: LAMBDA_FUNCTION_CACHE_MAX
+              value: '128'
+            - name: LAMBDA_FUNCTION_BODY_MAX_BYTES
+              value: '262144'
+            - name: LAMBDA_CHILD_INPUT_MAX_BYTES
+              value: '6291456'
+            - name: LAMBDA_RESULT_MAX_BYTES
+              value: '1048576'
+          ports:
+            - name: http
+              containerPort: 8083
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          envFrom:
+            - secretRef:
+                name: dd-gleam-lambda-runner-secrets
+                optional: true

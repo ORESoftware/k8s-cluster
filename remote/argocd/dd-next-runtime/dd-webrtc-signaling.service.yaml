@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-webrtc-signaling
+  namespace: default
+  labels:
+    app: dd-webrtc-signaling
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-webrtc-signaling
+  ports:
+    - name: http
+      port: 8095
+      targetPort: 8095

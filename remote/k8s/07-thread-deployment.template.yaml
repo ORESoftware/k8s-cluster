@@ -1,0 +1,111 @@
+# Per-thread Deployment. The control plane (Vercel `createK8sPod`)
+# instantiates this template, substituting THREAD_ID / THREAD_ID_SHORT /
+# USER_ID. Scaling replicas between 0 and 1 implements
+# sleep / wake without losing workspace state (PVC remount).
+#
+# Why a Deployment instead of a bare Pod:
+#   * `kubectl scale deployment ... --replicas=0` is the cleanest sleep
+#     primitive (no kubelet-specific `crictl pause`).
+#   * Deployment owns the ReplicaSet → ReplicaSet owns the Pod, so
+#     `kubectl rollout restart` + image-digest pinning land here for
+#     free.
+#   * If a Pod crashes mid-conversation, the Deployment's controller
+#     restarts it; the PVC reattaches and the thread continues.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-thread-{THREAD_ID_SHORT}
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: thread-pod
+    dd/threadId: "{THREAD_ID}"
+    dd/userId: "{USER_ID}"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # one pod at a time — RWO PVC can't be double-mounted
+  selector:
+    matchLabels:
+      dd/threadId: "{THREAD_ID}"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dd-remote-dev
+        app.kubernetes.io/component: thread-pod
+        dd/threadId: "{THREAD_ID}"
+        dd/userId: "{USER_ID}"
+    spec:
+      serviceAccountName: dd-thread-pod
+      automountServiceAccountToken: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: dev-server
+          image: REPLACE_ME_ECR_URI/dd-dev-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: dd-agent-config
+            - secretRef:
+                name: dd-agent-secrets
+          env:
+            - name: REMOTE_DEV_THREAD_ID
+              value: "{THREAD_ID}"
+            - name: USER_ID
+              value: "{USER_ID}"
+            - name: IDLE_TIMEOUT_MS
+              value: "0"
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          volumeMounts:
+            - name: workspace
+              mountPath: /home/node/workspace
+            - name: tmp-convos
+              mountPath: /tmp/convos
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          # `claude --output-format stream-json` keeps stdout open the
+          # entire run; rely on /healthz instead of a stdin probe.
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 24 # 2 min — covers cold pnpm install
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+      # The deploy key is sourced from GH_DEPLOY_KEY in the
+      # dd-agent-secrets Secret (envFrom above) and written to
+      # /home/node/.ssh/id_ed25519 by entrypoint.sh on boot. We do NOT
+      # mount /home/node/.ssh from a Secret — that would readOnly mask
+      # the directory entrypoint.sh writes to.
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: dd-thread-{THREAD_ID_SHORT}
+        - name: tmp-convos
+          emptyDir: { sizeLimit: 256Mi }

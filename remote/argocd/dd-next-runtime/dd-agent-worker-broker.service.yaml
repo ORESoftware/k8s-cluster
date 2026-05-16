@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-agent-worker-broker
+  namespace: default
+  labels:
+    app: dd-agent-worker-broker
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-agent-worker-broker
+  ports:
+    - name: http
+      port: 8098
+      targetPort: 8098

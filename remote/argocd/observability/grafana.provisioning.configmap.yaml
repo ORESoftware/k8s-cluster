@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-grafana-provisioning
+  namespace: observability
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://dd-prometheus.observability.svc.cluster.local:9090
+        isDefault: true
+      - name: Loki
+        uid: Loki
+        type: loki
+        access: proxy
+        url: http://dd-loki.observability.svc.cluster.local:3100
+      - name: Tempo
+        uid: Tempo
+        type: tempo
+        access: proxy
+        url: http://dd-tempo.observability.svc.cluster.local:3200
+      - name: Jaeger
+        uid: Jaeger
+        type: jaeger
+        access: proxy
+        url: http://dd-jaeger.observability.svc.cluster.local:16686
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: dd-runtime
+        orgId: 1
+        folder: Remote Dev
+        type: file
+        disableDeletion: false
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards

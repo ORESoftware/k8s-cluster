@@ -1,0 +1,23 @@
+# Per-thread ClusterIP Service. Selects the single pod owned by the
+# matching thread Deployment so the Ingress can route to it by host or
+# path.
+#
+# Created at the same time as the Deployment by the control plane.
+# Deleted when the thread is ended.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-thread-{THREAD_ID_SHORT}
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: thread-pod
+    dd/threadId: "{THREAD_ID}"
+spec:
+  type: ClusterIP
+  selector:
+    dd/threadId: "{THREAD_ID}"
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

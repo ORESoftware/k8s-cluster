@@ -1,0 +1,85 @@
+# NetworkPolicy — restrict thread-pod traffic to the minimum the agent needs.
+#
+# Single-node v4 cluster: thread pods, kube-system, and ingress-nginx all
+# live on the same EC2 box. Cilium enforces this policy via eBPF.
+#
+# Ingress: any source on :8080 only. With Cilium enforcing standard NP,
+#          a namespace-scoped ingress rule would block kubelet's
+#          readiness/liveness probes (which originate from the node's
+#          host IP, not from any namespace) — pods would enter
+#          CrashLoopBackOff. Application auth is the real boundary:
+#          - X-Server-Auth shared secret on /tasks
+#          - X-Agent-Auth on event ingest
+#          - HMAC-signed tokens on /stream
+#          - X-Heartbeat-Auth on /docker-health
+#          So the network layer narrows the surface to one port; the
+#          application layer authenticates what hits it.
+# Egress:  DNS to kube-dns, plus :443 / :22 to the public internet for the
+#          named external dependencies (GitHub, ECR, Anthropic, OpenAI,
+#          Vercel, Supabase, S3 / R2 / GCS). Private CIDRs are denied so
+#          a compromised agent can't pivot to the EC2 IMDS or VPC peers.
+#          IMDS is also blocked at the host via http_tokens=required —
+#          defence in depth.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-thread-pod-policy
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: dd-remote-dev
+      app.kubernetes.io/component: thread-pod
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow :8080 from anywhere — covers kubelet probes (host IP),
+    # ingress-nginx (its own pod), and same-namespace orchestrator
+    # checks. Auth happens at the application layer.
+    - ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # DNS to kube-dns (UDP + TCP 53).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS to the public internet (GitHub, ECR, Anthropic, OpenAI,
+    # Vercel, Supabase, S3/R2/GCS). Plain HTTP is intentionally denied.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Block private ranges so an agent can't pivot to AWS IMDS
+              # (169.254.169.254) or internal VPC services.
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    # SSH egress for `git push` to GitHub (port 22).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 22
+          protocol: TCP

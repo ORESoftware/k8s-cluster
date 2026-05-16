@@ -1,0 +1,11 @@
+# All dev-server resources live in this namespace. The control-plane
+# ServiceAccount in 03-rbac.yaml is scoped here so a compromised
+# control-plane token can't touch other namespaces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline

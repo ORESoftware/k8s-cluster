@@ -1,0 +1,25 @@
+import gleam/erlang/process
+import gleam/io
+import gleam/otp/static_supervisor as supervisor
+import gleam/otp/supervision
+import gleamlang_server/broadcaster
+import gleamlang_server/http_server
+
+const tick_interval_ms = 2000
+
+pub fn main() -> Nil {
+  let broker_name = process.new_name(prefix: "dd_gleamlang_broker")
+
+  let assert Ok(_started) =
+    supervisor.new(supervisor.OneForOne)
+    |> supervisor.add(
+      supervision.worker(fn() {
+        broadcaster.start(named_as: broker_name, interval_ms: tick_interval_ms)
+      }),
+    )
+    |> supervisor.add(http_server.supervised(broker_name))
+    |> supervisor.start
+
+  io.println("dd gleamlang-server listening on :8081")
+  process.sleep_forever()
+}

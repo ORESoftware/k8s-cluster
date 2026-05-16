@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-mdp-optimizer
+  namespace: default
+  labels:
+    app: dd-mdp-optimizer
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-mdp-optimizer
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-16-mdp-optimizer'
+      labels:
+        app: dd-mdp-optimizer
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: mdp-optimizer
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/mdp-optimizer-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8096'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: MDP_OPTIMIZE_SUBJECT
+              value: dd.remote.mdp.optimize
+            - name: MDP_TELEMETRY_SUBJECT
+              value: dd.remote.telemetry.mdp
+            - name: MDP_TELEMETRY_QUEUE_GROUP
+              value: dd-mdp-telemetry-learner
+            - name: MDP_RESULT_SUBJECT
+              value: dd.remote.mdp.results
+            - name: MDP_EVENT_SUBJECT
+              value: dd.remote.events
+          ports:
+            - name: http
+              containerPort: 8096
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

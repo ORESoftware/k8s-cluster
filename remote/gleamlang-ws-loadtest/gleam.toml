@@ -1,0 +1,9 @@
+name = "gleamlang_ws_loadtest"
+version = "0.1.0"
+target = "javascript"
+
+[dependencies]
+gleam_stdlib = ">= 0.68.0 and < 2.0.0"
+
+[javascript]
+runtime = "node"

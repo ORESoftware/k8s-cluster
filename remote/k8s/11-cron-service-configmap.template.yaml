@@ -1,0 +1,23 @@
+# Linux cron service jobs.
+# Copy to 11-cron-service-configmap.yaml and customize command scripts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-cron-service
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: cron-service
+data:
+  crontab: |
+    SHELL=/bin/sh
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    */1 * * * * /opt/cron/jobs/reaper.sh >> /proc/1/fd/1 2>> /proc/1/fd/2
+  reaper.sh: |
+    #!/bin/sh
+    set -eu
+    : "${REAPER_SWEEP_URL:?missing REAPER_SWEEP_URL}"
+    : "${REAPER_SECRET:?missing REAPER_SECRET}"
+    curl -sS -X POST "${REAPER_SWEEP_URL}" \
+      -H "x-reaper-auth: ${REAPER_SECRET}" \
+      -H "content-type: application/json"

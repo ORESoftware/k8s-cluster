@@ -1,0 +1,8 @@
+[package]
+name = "dd-pg-defs-sea-orm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sea-orm = { version = "1", features = ["macros", "with-uuid", "with-json", "with-chrono"] }
+serde = { version = "1", features = ["derive"] }

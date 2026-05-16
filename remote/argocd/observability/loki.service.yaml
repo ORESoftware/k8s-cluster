@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-loki
+  namespace: observability
+  labels:
+    app: dd-loki
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-loki
+  ports:
+    - name: http
+      port: 3100
+      targetPort: 3100

@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleamlang-server
+  namespace: default
+  labels:
+    app: dd-gleamlang-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleamlang-server
+  template:
+    metadata:
+      labels:
+        app: dd-gleamlang-server
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gleamlang-server
+          image: docker.io/gleamlang/gleam:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              cd /opt/dd-next-1/remote/gleamlang-server
+              exec gleam run
+          ports:
+            - name: http
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+        - name: nats-bridge
+          image: docker.io/library/node:22-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              exec node /opt/dd-next-1/remote/gleamlang-server/nats-bridge.mjs
+          env:
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: GLEAM_BROADCAST_URL
+              value: http://127.0.0.1:8081/broadcast
+            - name: GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

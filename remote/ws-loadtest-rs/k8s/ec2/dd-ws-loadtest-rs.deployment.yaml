@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ws-loadtest-rs
+  namespace: default
+  labels:
+    app: dd-ws-loadtest-rs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-ws-loadtest-rs
+  template:
+    metadata:
+      labels:
+        app: dd-ws-loadtest-rs
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/rust:1.82-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH="/usr/local/cargo/bin:${PATH}"
+              cd /opt/dd-next-1/remote/ws-loadtest-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws
+            - name: CLIENT_COUNT
+              value: "5000"
+            - name: HOLD_SECONDS
+              value: "300"
+            - name: CONNECT_TIMEOUT_SECONDS
+              value: "20"
+            - name: RECEIVE_TIMEOUT_SECONDS
+              value: "5"
+            - name: RECONNECT_DELAY_MS
+              value: "1000"
+            - name: RAMP_DELAY_MS
+              value: "1"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "6"
+              memory: 12Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

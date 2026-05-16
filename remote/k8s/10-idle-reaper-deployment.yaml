@@ -1,0 +1,50 @@
+# Dedicated idle reaper worker (Rust binary).
+# This pod repeatedly calls:
+#   POST /api/admin/remote-dev/reaper/sweep
+# and scales idle thread Deployments to replicas=0 while keeping PVC state.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-idle-reaper
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: idle-reaper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: idle-reaper
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: dd-remote-dev
+        app.kubernetes.io/component: idle-reaper
+    spec:
+      serviceAccountName: dd-control-plane
+      automountServiceAccountToken: false
+      containers:
+        - name: idle-reaper
+          image: REPLACE_ME_ECR_URI/dd-idle-reaper:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: REAPER_SWEEP_URL
+              value: https://REPLACE_ME_VERCEL_HOST/api/admin/remote-dev/reaper/sweep
+            - name: REAPER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: REMOTE_DEV_REAPER_SECRET
+            - name: REAPER_INTERVAL_SECONDS
+              value: "60"
+            - name: REAPER_TIMEOUT_SECONDS
+              value: "25"
+            - name: REAPER_DRY_RUN
+              value: "false"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

@@ -1,0 +1,33 @@
+# ResourceQuota — cap total namespace resource consumption.
+# Prevents runaway thread-pods from starving kube-system / ingress-nginx
+# on the same single-node box.
+#
+# These values are sized for a t3.2xlarge (8 vCPU / 32 GiB) single-node
+# cluster running ~5-6 concurrent thread pods @ 1 vCPU / 2 GiB requests.
+# Adjust pods / cpu / memory / ephemeral-storage proportionally if you
+# scale the EC2 box up or down.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dd-dev-quota
+  namespace: dd-dev
+  labels:
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  hard:
+    # Pod budget: ~6 thread pods + ingress-nginx + kube-system + headroom
+    # for rolling upgrades. Stays well under kubelet's default 110/node.
+    pods: "15"
+    # Total CPU across all pods in namespace.
+    requests.cpu: "6"
+    limits.cpu: "12"
+    # Total memory across all pods. Leave ~8 GiB for kube-system + OS on
+    # a 32 GiB box.
+    requests.memory: "20Gi"
+    limits.memory: "24Gi"
+    # Total ephemeral storage (per-pod /tmp + emptyDir volumes).
+    requests.ephemeral-storage: "60Gi"
+    limits.ephemeral-storage: "120Gi"
+    # Cap concurrent task PVCs so a stuck orchestrator can't fill the EBS
+    # disk before GC runs (each thread pod gets one 20 GiB PVC).
+    persistentvolumeclaims: "8"

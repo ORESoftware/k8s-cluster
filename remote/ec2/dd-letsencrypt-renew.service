@@ -1,0 +1,13 @@
+[Unit]
+Description=Renew DD remote gateway Let's Encrypt certificate
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/home/ec2-user/codes/dd/dd-next-1
+Environment=HOME=/home/ec2-user
+Environment=KUBECONFIG=/home/ec2-user/.kube/config
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/ec2-user/.local/bin
+ExecStart=/home/ec2-user/codes/dd/dd-next-1/remote/ec2/renew-letsencrypt-gateway-cert.sh renew

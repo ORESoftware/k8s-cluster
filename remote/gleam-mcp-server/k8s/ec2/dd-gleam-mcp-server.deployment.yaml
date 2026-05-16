@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-mcp-server
+  namespace: default
+  labels:
+    app: dd-gleam-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleam-mcp-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-05-15-mcp-v1"
+      labels:
+        app: dd-gleam-mcp-server
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gleam-mcp-server
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              cd /opt/dd-next-1/remote/gleam-mcp-server
+              gleam clean || true
+              gleam deps download
+              exec gleam run
+          ports:
+            - name: http
+              containerPort: 8090
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-queue-consumer
+  namespace: default
+  labels:
+    app: dd-remote-queue-consumer
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: dd-remote-queue-consumer
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-15-nats-shadow-preparer'
+      labels:
+        app: dd-remote-queue-consumer
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: queue-consumer
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/queue-consumer-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_TASK_SUBJECT
+              value: dd.remote.thread.*.tasks
+            - name: NATS_QUEUE_GROUP
+              value: dd-remote-thread-preparer
+            - name: NATS_TASK_STREAM
+              value: DD_REMOTE_TASKS
+            - name: NATS_TASK_CONSUMER
+              value: dd-remote-thread-preparer
+            - name: NATS_TASK_MAX_ACK_PENDING
+              value: '256'
+            - name: NATS_TASK_ACK_WAIT_SECONDS
+              value: '120'
+            - name: NATS_TASK_MAX_DELIVER
+              value: '5'
+            - name: NATS_TASK_NAK_DELAY_SECONDS
+              value: '15'
+            - name: REMOTE_REST_API_URL
+              value: http://dd-remote-rest-api.default.svc.cluster.local:8082
+            - name: QUEUE_CONSUMER_RECEIPTS_DIR
+              value: /tmp/dd-remote-queue-consumer/tasks
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
