@@ -668,6 +668,10 @@ test('rust agent threads page renders stored response events and feedback contro
   const server = await readRepoFile('remote/web-home-rs/src/main.rs');
   const readme = await readRepoFile('remote/web-home-rs/readme.md');
   const restReadme = await readRepoFile('remote/rest-api-rs/readme.md');
+  const threadsJs = server.slice(
+    server.indexOf('const AGENTS_THREADS_JS'),
+    server.indexOf('const AGENTS_TASKS_CSS'),
+  );
 
   assert.match(server, /async fn agents_threads_page\(\) -> impl IntoResponse/);
   assert.match(server, /use maud::\{html, Markup, DOCTYPE\}/);
@@ -686,14 +690,27 @@ test('rust agent threads page renders stored response events and feedback contro
   );
   assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
   assert.match(server, /\.thread-meta > span \{[\s\S]*text-overflow: ellipsis;/);
-  assert.match(server, /section class="panel prompt-panel" aria-label="Thread prompt"/);
+  assert.match(
+    server,
+    /section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel"/,
+  );
+  assert.match(server, /h2 \{ "Thread Control" \}/);
+  assert.match(server, /span id="thread-mode" class="pill warn" \{ "select thread" \}/);
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
+  assert.match(
+    server,
+    /\.prompt-panel \{[\s\S]*flex: var\(--control-share\) 1 0;[\s\S]*overflow: hidden auto;/,
+  );
+  assert.match(server, /\.main\.control-wide \{[\s\S]*--control-share: 1\.2;[\s\S]*--lower-share: 0\.8;/);
+  assert.match(server, /\.main\.lower-wide \{[\s\S]*--control-share: 0\.8;[\s\S]*--lower-share: 1\.2;/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
   assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
   assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
   assert.match(server, /\.task-stream-grid\.tasks-wide \{[\s\S]*grid-template-columns: minmax\(0, 1\.02fr\) minmax\(0, 0\.98fr\);/);
   assert.match(server, /\.task-stream-grid\.stream-wide \{[\s\S]*grid-template-columns: minmax\(0, 0\.62fr\) minmax\(0, 1\.38fr\);/);
+  assert.match(server, /function setWorkspaceLayout\(mode\) \{/);
+  assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", \(\) => setWorkspaceLayout\("control"\)\)/);
   assert.match(server, /function setTaskStreamLayout\(mode\) \{/);
   assert.match(server, /\$\("previous-tasks-panel"\)\.addEventListener\("click", \(\) => setTaskStreamLayout\("tasks"\)\)/);
   assert.match(server, /\$\("response-stream-panel"\)\.addEventListener\("click", \(\) => setTaskStreamLayout\("stream"\)\)/);
@@ -750,6 +767,13 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /button id="terminal-thread" type="button" title="Open a shell in the thread's Node\.js worker container" \{ "Terminal" \}/,
   );
+  assert.match(server, /div id="terminal-inline" class="terminal-inline" hidden="hidden"/);
+  assert.match(server, /iframe id="terminal-frame" title="Thread worker terminal"/);
+  assert.match(server, /function openInlineTerminal\(targetUrl\) \{/);
+  assert.match(server, /\$\("terminal-frame"\)\.src = targetUrl;/);
+  assert.match(server, /if \(terminalTargetUrl\) openInlineTerminal\(terminalTargetUrl\);/);
+  assert.doesNotMatch(threadsJs, /window\.open\(/);
+  assert.doesNotMatch(threadsJs, /terminalWindow/);
   assert.match(server, /sendFeedback\(seq, vote, button\)/);
   assert.match(server, /collectText\(raw\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
@@ -775,17 +799,26 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/);
   assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
   assert.match(server, /\.thread-meta span \{[\s\S]*text-overflow: ellipsis;/);
-  assert.match(server, /section class="panel prompt-panel" aria-label="Thread prompt"/);
+  assert.match(
+    server,
+    /section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel"/,
+  );
+  assert.match(server, /Thread Control/);
+  assert.match(server, /viewing existing/);
+  assert.match(server, /creating new/);
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
-  assert.match(server, /\.prompt-panel \{[\s\S]*overflow: visible;[\s\S]*z-index: 1;/);
+  assert.match(
+    server,
+    /\.prompt-panel \{[\s\S]*flex: var\(--control-share\) 1 0;[\s\S]*overflow: hidden auto;[\s\S]*z-index: 1;/,
+  );
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
   assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
   assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
-  assert.match(server, /\.main > \.grid \{[\s\S]*flex: 1 1 auto;/);
+  assert.match(server, /\.main > \.grid \{[\s\S]*flex: var\(--lower-share\) 1 0;/);
   assert.match(
     server,
-    /\.grid > \.panel > \.task-list,[\s\S]*\.grid > \.panel > \.stream \{[\s\S]*flex: 1 1 auto;/,
+    /\.grid > \.panel > \.task-list,[\s\S]*\.grid > \.panel > \.stream,[\s\S]*\.grid > \.panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/,
   );
   assert.match(
     server,

@@ -526,7 +526,7 @@ fn agents_threads_body() -> Markup {
                 button id="new-thread" class="primary" type="button" { "New thread" }
                 div id="thread-list" class="thread-list" aria-live="polite" {}
             }
-            main class="main" {
+            main id="thread-workspace" class="main" {
                 div class="topbar" {
                     div {
                         h1 id="selected-title" { "Select a thread" }
@@ -538,7 +538,14 @@ fn agents_threads_body() -> Markup {
                     }
                 }
 
-                section class="panel prompt-panel" aria-label="Thread prompt" {
+                section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel" {
+                    div class="topbar thread-control-heading" {
+                        div {
+                            h2 { "Thread Control" }
+                            p id="thread-control-subtitle" { "Select an existing worker thread or prepare a new one." }
+                        }
+                        span id="thread-mode" class="pill warn" { "select thread" }
+                    }
                     div class="form-grid" {
                         label {
                             span { "Thread UUID" }
@@ -603,6 +610,16 @@ fn agents_threads_body() -> Markup {
                             span id="stream-state" class="pill warn" { "no task selected" }
                         }
                         div id="stream" class="stream" aria-live="polite" {}
+                        div id="terminal-inline" class="terminal-inline" hidden="hidden" {
+                            div class="terminal-head" {
+                                div {
+                                    h3 { "Terminal" }
+                                    p id="terminal-caption" class="muted" { "worker shell" }
+                                }
+                                button id="terminal-close" type="button" title="Close terminal" { "Close" }
+                            }
+                            iframe id="terminal-frame" title="Thread worker terminal" {}
+                        }
                     }
                 }
             }
@@ -839,6 +856,8 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         max-width: 100%;
       }
       .main {
+        --control-share: 1;
+        --lower-share: 1;
         min-width: 0;
         min-height: 0;
         padding: 22px;
@@ -846,6 +865,14 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         flex-direction: column;
         gap: 16px;
         overflow: hidden;
+      }
+      .main.control-wide {
+        --control-share: 1.2;
+        --lower-share: 0.8;
+      }
+      .main.lower-wide {
+        --control-share: 0.8;
+        --lower-share: 1.2;
       }
       .topbar, .row, .actions {
         display: flex;
@@ -935,10 +962,22 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         min-height: 0;
       }
       .prompt-panel {
-        flex: 0 0 auto;
-        overflow: visible;
+        flex: var(--control-share) 1 0;
+        min-height: 170px;
+        overflow: hidden auto;
+        overscroll-behavior: contain;
         position: relative;
         z-index: 1;
+        transition: flex-grow 160ms ease;
+      }
+      .main.control-wide .prompt-panel {
+        min-height: 230px;
+      }
+      .main.lower-wide .prompt-panel {
+        min-height: 140px;
+      }
+      .thread-control-heading {
+        margin-bottom: 12px;
       }
       .prompt-panel label,
       .form-grid > label,
@@ -958,7 +997,7 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       }
       .task-stream-grid {
         margin-top: 6px;
-        transition: grid-template-columns 160ms ease;
+        transition: grid-template-columns 160ms ease, flex-grow 160ms ease;
       }
       .task-stream-grid.tasks-wide {
         grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
@@ -967,7 +1006,8 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr);
       }
       #previous-tasks-panel,
-      #response-stream-panel {
+      #response-stream-panel,
+      #thread-control-panel {
         cursor: pointer;
       }
       .form-grid {
@@ -1013,12 +1053,40 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         overscroll-behavior: contain;
         padding-right: 3px;
       }
-      .main > .topbar,
-      .main > .panel {
+      .terminal-inline {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .terminal-inline[hidden] {
+        display: none;
+      }
+      .terminal-head {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .terminal-inline iframe {
+        flex: 1 1 auto;
+        width: 100%;
+        min-height: 260px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #050806;
+      }
+      #response-stream-panel.terminal-open #stream {
+        display: none;
+      }
+      .main > .topbar {
         flex: 0 0 auto;
       }
       .main > .grid {
-        flex: 1 1 auto;
+        flex: var(--lower-share) 1 0;
+        min-height: 0;
       }
       .grid > .panel {
         min-height: 0;
@@ -1031,7 +1099,8 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         margin-bottom: 12px;
       }
       .grid > .panel > .task-list,
-      .grid > .panel > .stream {
+      .grid > .panel > .stream,
+      .grid > .panel > .terminal-inline {
         flex: 1 1 auto;
       }
       .event {
@@ -1129,17 +1198,45 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return `/dd-thread/${shortId(threadId).toLowerCase()}/terminal?threadId=${encodeURIComponent(threadId)}`;
       }
 
+      function setWorkspaceLayout(mode) {
+        const workspace = $("thread-workspace");
+        workspace.classList.remove("control-wide", "lower-wide");
+        if (mode === "control") workspace.classList.add("control-wide");
+        if (mode === "lower") workspace.classList.add("lower-wide");
+      }
+
       function setTaskStreamLayout(mode) {
         const grid = $("task-stream-grid");
         grid.classList.remove("tasks-wide", "stream-wide");
         if (mode === "tasks") grid.classList.add("tasks-wide");
         if (mode === "stream") grid.classList.add("stream-wide");
+        setWorkspaceLayout("lower");
       }
 
       function handlePanelKey(event, mode) {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         setTaskStreamLayout(mode);
+      }
+
+      function shouldIgnorePanelShortcut(target) {
+        return Boolean(target?.closest?.("button, input, select, textarea, a"));
+      }
+
+      function handleControlPanelKey(event) {
+        if (shouldIgnorePanelShortcut(event.target)) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        setWorkspaceLayout("control");
+      }
+
+      function replaceSelectionUrl(threadId, taskId) {
+        const url = new URL(window.location.href);
+        if (threadId) url.searchParams.set("thread", threadId);
+        else url.searchParams.delete("thread");
+        if (taskId) url.searchParams.set("task", taskId);
+        else url.searchParams.delete("task");
+        window.history.replaceState(null, "", url);
       }
 
       function fmt(value) {
@@ -1262,6 +1359,31 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
       }
 
+      function existingThread(threadId) {
+        return state.threads.find((item) => item.id === threadId) || null;
+      }
+
+      function updateThreadMode() {
+        const threadId = $("thread-id").value.trim() || state.selectedThreadId || "";
+        const mode = $("thread-mode");
+        const subtitle = $("thread-control-subtitle");
+        if (!threadId) {
+          mode.textContent = "select thread";
+          mode.className = "pill warn";
+          subtitle.textContent = "Select an existing worker thread or prepare a new one.";
+          return;
+        }
+        if (existingThread(threadId)) {
+          mode.textContent = "viewing existing";
+          mode.className = "pill";
+          subtitle.textContent = "Controls affect the selected worker thread.";
+          return;
+        }
+        mode.textContent = "creating new";
+        mode.className = "pill warn";
+        subtitle.textContent = "Send will create this thread and start its first task.";
+      }
+
       function renderThreads() {
         const list = $("thread-list");
         list.textContent = "";
@@ -1329,28 +1451,30 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       function updateSelectionHeader() {
-        const thread = state.threads.find((item) => item.id === state.selectedThreadId);
-        $("selected-title").textContent = thread?.title || "Remote thread";
+        const thread = existingThread(state.selectedThreadId);
+        const creating = Boolean(state.selectedThreadId && !thread);
+        $("selected-title").textContent = thread?.title || (creating ? "New thread" : "Select a thread");
         $("selected-subtitle").textContent = state.selectedThreadId
-          ? `${state.selectedThreadId} · ${threadTasks(state.selectedThreadId).length} tasks`
+          ? `${state.selectedThreadId} · ${creating ? "not created yet" : `${threadTasks(state.selectedThreadId).length} tasks`}`
           : "Pick a thread from the sidebar or start a new one.";
         $("thread-id").value = state.selectedThreadId || "";
         if (thread?.repo) setRepoSelection(thread.repo);
         if (thread?.baseBranch) $("base-branch").value = thread.baseBranch;
         if (!state.selectedTaskId) $("task-id").value = makeUuid();
+        updateThreadMode();
       }
 
       function selectThread(threadId) {
         state.selectedThreadId = threadId;
         const tasks = threadTasks(threadId);
         state.selectedTaskId = tasks[0]?.id || null;
-        const url = new URL(window.location.href);
-        url.searchParams.set("thread", threadId);
-        if (state.selectedTaskId) url.searchParams.set("task", state.selectedTaskId);
-        window.history.replaceState(null, "", url);
+        closeInlineTerminal();
+        setTaskStreamLayout("stream");
+        replaceSelectionUrl(threadId, state.selectedTaskId);
         renderThreads();
         updateSelectionHeader();
         renderTaskList();
+        if (state.selectedThreadId && existingThread(state.selectedThreadId)) setWorkspaceLayout("lower");
         if (state.selectedTaskId) {
           $("task-id").value = state.selectedTaskId;
           loadTaskEvents(state.selectedTaskId).catch((error) => renderError(`events load failed: ${String(error)}`));
@@ -1362,11 +1486,32 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function selectTask(taskId) {
         state.selectedTaskId = taskId;
         $("task-id").value = taskId;
-        const url = new URL(window.location.href);
-        url.searchParams.set("task", taskId);
-        window.history.replaceState(null, "", url);
+        closeInlineTerminal();
+        setTaskStreamLayout("stream");
+        replaceSelectionUrl(state.selectedThreadId, taskId);
         renderTaskList();
         loadTaskEvents(taskId).catch((error) => renderError(`events load failed: ${String(error)}`));
+      }
+
+      function terminalIsOpen() {
+        return !$("terminal-inline").hidden;
+      }
+
+      function openInlineTerminal(targetUrl) {
+        $("terminal-caption").textContent = targetUrl;
+        $("terminal-frame").src = targetUrl;
+        $("terminal-inline").hidden = false;
+        $("response-stream-panel").classList.add("terminal-open");
+        setTaskStreamLayout("stream");
+        setStreamState("terminal open", "ok");
+      }
+
+      function closeInlineTerminal() {
+        if (!terminalIsOpen()) return;
+        $("terminal-frame").src = "about:blank";
+        $("terminal-inline").hidden = true;
+        $("response-stream-panel").classList.remove("terminal-open");
+        setStreamState(state.selectedTaskId ? "showing events" : "no task selected", state.selectedTaskId ? "ok" : "warn");
       }
 
       function clearStream(message) {
@@ -1614,6 +1759,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         renderThreads();
         updateSelectionHeader();
         renderTaskList();
+        setWorkspaceLayout(state.selectedThreadId && existingThread(state.selectedThreadId) ? "lower" : "control");
         if (state.selectedTaskId) {
           $("task-id").value = state.selectedTaskId;
           await loadTaskEvents(state.selectedTaskId);
@@ -1637,6 +1783,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
         state.selectedThreadId = threadId;
         state.selectedTaskId = taskId;
+        closeInlineTerminal();
+        setTaskStreamLayout("stream");
+        replaceSelectionUrl(threadId, taskId);
         clearStream("waking worker");
         startRuntimePolling(threadId);
         renderEventRow({
@@ -1722,7 +1871,6 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           "open-pr": "open-pr",
         };
         const routeAction = routeActions[action] || action;
-        const terminalWindow = routeAction === "terminal" ? window.open("about:blank", "_blank") : null;
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/${routeAction}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1747,22 +1895,21 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           createdAt: new Date().toISOString(),
         });
         if (!response.ok) {
-          if (terminalWindow) terminalWindow.close();
           setStatus(`${routeAction} failed`, true);
         } else {
           setStatus(`${routeAction} accepted`);
+          let terminalTargetUrl = null;
           if (routeAction === "terminal") {
-            let targetUrl = terminalUrl(threadId);
+            terminalTargetUrl = terminalUrl(threadId);
             try {
               const parsed = JSON.parse(body);
-              if (parsed.terminalUrl) targetUrl = parsed.terminalUrl;
+              if (parsed.terminalUrl) terminalTargetUrl = parsed.terminalUrl;
             } catch {
               /* fall back to deterministic gateway URL */
             }
-            if (terminalWindow) terminalWindow.location.href = targetUrl;
-            else window.open(targetUrl, "_blank");
           }
           await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${String(error)}`));
+          if (terminalTargetUrl) openInlineTerminal(terminalTargetUrl);
         }
       }
 
@@ -1772,15 +1919,24 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       });
       $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(String(error), true)));
       $("repo-url").addEventListener("change", updateRepoUrlMode);
+      $("thread-control-panel").addEventListener("click", () => setWorkspaceLayout("control"));
+      $("thread-control-panel").addEventListener("keydown", handleControlPanelKey);
       $("previous-tasks-panel").addEventListener("click", () => setTaskStreamLayout("tasks"));
       $("previous-tasks-panel").addEventListener("keydown", (event) => handlePanelKey(event, "tasks"));
       $("response-stream-panel").addEventListener("click", () => setTaskStreamLayout("stream"));
       $("response-stream-panel").addEventListener("keydown", (event) => handlePanelKey(event, "stream"));
+      $("terminal-close").addEventListener("click", (event) => {
+        event.stopPropagation();
+        closeInlineTerminal();
+      });
       $("new-thread").addEventListener("click", () => {
         state.selectedThreadId = makeUuid();
         state.selectedTaskId = null;
+        closeInlineTerminal();
+        setWorkspaceLayout("control");
         $("thread-id").value = state.selectedThreadId;
         $("task-id").value = makeUuid();
+        replaceSelectionUrl(state.selectedThreadId, null);
         $("prompt").focus();
         updateSelectionHeader();
         renderTaskList();
@@ -1788,17 +1944,23 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       });
       $("new-task").addEventListener("click", () => {
         state.selectedTaskId = null;
+        closeInlineTerminal();
+        setWorkspaceLayout("control");
         $("task-id").value = makeUuid();
+        replaceSelectionUrl(state.selectedThreadId, null);
         clearStream("new task ready");
       });
+      $("thread-id").addEventListener("input", updateThreadMode);
       $("thread-id").addEventListener("change", () => {
         state.selectedThreadId = $("thread-id").value.trim();
+        replaceSelectionUrl(state.selectedThreadId, state.selectedThreadId ? state.selectedTaskId : null);
         updateSelectionHeader();
         renderThreads();
         renderTaskList();
       });
       $("task-id").addEventListener("change", () => {
         state.selectedTaskId = $("task-id").value.trim();
+        replaceSelectionUrl(state.selectedThreadId, state.selectedTaskId);
       });
       $("send").addEventListener("click", () => dispatchPrompt().catch((error) => renderError(`dispatch error: ${String(error)}`)));
       $("sleep-thread").addEventListener("click", () => threadControl("sleep").catch((error) => renderError(String(error))));
