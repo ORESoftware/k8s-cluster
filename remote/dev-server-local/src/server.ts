@@ -1,6 +1,6 @@
 /* eslint-disable security/detect-non-literal-fs-filename -- remote-dev manages configured workspace, log, and artifact paths. */
 // dd-dev-server — HTTP server that runs Claude/OpenAI coding agents inside
-// a warm dd-next-1 git workspace, then streams events.
+// a warm configured git workspace, then streams events.
 //
 // Endpoints (all auth'd via X-Server-Auth header except /healthz):
 //   POST /tasks                  — { taskId?, threadId?, prompt } → queues task

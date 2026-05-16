@@ -23,7 +23,7 @@
 #     -e ANTHROPIC_API_KEY=... \
 #     -e GH_PAT=... \
 #     -e GH_DEPLOY_KEY="$(cat /path/to/dd_deploy)" \
-#     -e EVENT_INGEST_URL=https://dd-next-1.vercel.app/api/agent/events \
+#     -e EVENT_INGEST_URL=https://example.internal/api/agent/events \
 #     -e EVENT_INGEST_SECRET=... \
 #     -e SERVER_AUTH_SECRET=... \
 #     dd-dev-server:latest

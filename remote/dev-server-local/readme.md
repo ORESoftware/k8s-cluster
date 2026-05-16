@@ -1,7 +1,7 @@
 # dd-dev-server-local
 
-Node.js + TypeScript HTTP server that lives inside a Docker container, keeps a warm checkout of
-`dd-next-1`, and streams agent events back to our Vercel app and directly to the browser.
+Node.js + TypeScript HTTP server that lives inside a Docker container, keeps a warm checkout of the
+configured git repo, and streams agent events back to the app and directly to the browser.
 
 This folder is the **local minikube** variant. Keep production EC2 Kubernetes work in
 `remote/dev-server` and `remote/k8s`; keep laptop cluster iteration here. The local container is
@@ -160,7 +160,7 @@ docker run --rm -p 8080:8080 \
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY`  | Auth for the `claude` CLI the server spawns.                                                                                 |
 | `SERVER_AUTH_SECRET` | Shared secret presented by Vercel in `X-Server-Auth`. Random, ≥ 32 chars.                                                    |
-| `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against `dd-next-1`. The server writes this to `~/.ssh/id_ed25519` at boot. |
+| `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against the configured repo. The server writes this to `~/.ssh/id_ed25519` at boot. |
 | `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope: Contents + Pull Requests, `ORESoftware/k8s-cluster` only.         |
 
 ### Required — Vercel ingestion

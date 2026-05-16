@@ -21,7 +21,7 @@
 #     -e ANTHROPIC_API_KEY=... \
 #     -e GH_PAT=... \
 #     -e GH_DEPLOY_KEY="$(cat /path/to/dd_deploy)" \
-#     -e EVENT_INGEST_URL=https://dd-next-1.vercel.app/api/agent/events \
+#     -e EVENT_INGEST_URL=https://example.internal/api/agent/events \
 #     -e EVENT_INGEST_SECRET=... \
 #     -e SERVER_AUTH_SECRET=... \
 #     dd-dev-server-local:latest
@@ -103,10 +103,9 @@ USER agent
 WORKDIR /home/agent
 ARG DD_REPO_URL
 ARG DD_REPO_REF=dev
-# node:22-bookworm-slim omits build-essential, but dd-next-1's deps include
-# native modules (bufferutil, utf-8-validate) that need python3/make/g++ via
-# node-gyp at install time. Install briefly as root, run pnpm install as the
-# agent user, then strip build tools so they don't bloat the runtime image.
+# node:22-bookworm-slim omits build-essential. Install python3/make/g++ briefly
+# so configured repos with native Node modules can warm their dependencies, then
+# strip build tools so they don't bloat the runtime image.
 USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ \

@@ -1,7 +1,7 @@
 # dd-dev-server
 
-Node.js + TypeScript HTTP server that lives inside a Docker container, keeps a warm checkout of
-`dd-next-1`, and streams agent events back to our Vercel app and directly to the browser.
+Node.js + TypeScript HTTP server that lives inside a Docker container, keeps a warm checkout of the
+configured git repo, and streams agent events back to the REST API and directly to the browser.
 
 Public homepage rendering moved to `remote/web-home-rs`. This server is worker/API only.
 
@@ -20,7 +20,7 @@ design rationale.
 
 ```
 remote/dev-server/
-├── Dockerfile                 # multi-stage build; bakes a warm dd-next-1 + node_modules
+├── Dockerfile                 # multi-stage build; bakes a warm configured repo + optional node_modules
 ├── .dockerignore
 ├── package.json               # fastify + zod + supabase-js, tsx for dev
 ├── tsconfig.json              # strict, NodeNext, output to dist/
