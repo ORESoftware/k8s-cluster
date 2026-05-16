@@ -35,3 +35,43 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# ──────────────────────────────────────────────
+# K8s Secrets (filled-in templates)
+# ──────────────────────────────────────────────
+**/k8s/02-secrets.yaml
+kubeconfig
+kubeconfig.*
+!kubeconfig.example
+
+# ──────────────────────────────────────────────
+# TLS / SSH / Certificates
+# ──────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.keystore
+*.jks
+id_rsa
+id_ed25519
+*.pub
+
+# ──────────────────────────────────────────────
+# Terraform
+# ──────────────────────────────────────────────
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+
+# ──────────────────────────────────────────────
+# Credentials / Tokens
+# ──────────────────────────────────────────────
+credentials
+credentials.json
+token.json
+service-account*.json
+*-credentials.json
