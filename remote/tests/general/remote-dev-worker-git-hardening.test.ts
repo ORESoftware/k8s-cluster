@@ -138,6 +138,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(dockerfile, /corepack prepare pnpm@9\.15\.4 --activate/);
   assert.doesNotMatch(dockerfile, /corepack prepare pnpm@9 --activate/);
   assert.match(dockerfile, /ARG DD_REPO_CACHE_BUST=manual/);
+  assert.match(dockerfile, /ARG DD_REPO_URL\s*\n/);
+  assert.doesNotMatch(dockerfile, /ARG DD_REPO_URL=git@github\.com/);
+  assert.match(dockerfile, /test -n "\$DD_REPO_URL"/);
   assert.match(dockerfile, /echo "\$DD_REPO_CACHE_BUST" > \/tmp\/dd-repo-cache-bust/);
   assert.match(
     dockerfile,
@@ -152,6 +155,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(dockerfile, /WORKSPACE_REPO=\/home\/node\/workspace\/repo/);
   assert.doesNotMatch(dockerfile, /workspace\/repo-template/);
   assert.match(entrypoint, /TEMPLATE_DIR="\$\{REPO_TEMPLATE_DIR:-\/home\/node\/repo-template\}"/);
+  assert.match(entrypoint, /REPO_URL="\$\{DD_REPO_URL:-\}"/);
+  assert.match(entrypoint, /DD_REPO_URL is required/);
+  assert.match(entrypoint, /git remote set-url origin "\$REPO_URL"/);
   assert.match(entrypoint, /if \[\[ ! -d "\$REPO_DIR\/\.git" && -d "\$TEMPLATE_DIR\/\.git" \]\]; then/);
   assert.match(entrypoint, /cp -a "\$TEMPLATE_DIR\/\." "\$REPO_DIR\/"/);
   assert.match(entrypoint, /==> git fetch \+ switch starting/);
@@ -159,7 +165,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
 
   assert.match(readme, /git fetch origin <BASE_BRANCH>/);
   assert.match(readme, /switch from it;[\s\S]*otherwise create from `origin\/<BASE_BRANCH>`/);
-  assert.match(readme, /brand-new thread start from fresh `origin\/dev`/);
+  assert.match(readme, /brand-new thread start from fresh `origin\/<BASE_BRANCH>`/);
   assert.match(
     readme,
     /pnpm install --ignore-workspace --frozen-lockfile[\s\S]*standalone package instead of the root workspace/,

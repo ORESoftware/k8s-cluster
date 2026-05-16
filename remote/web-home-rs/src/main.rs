@@ -558,11 +558,21 @@ fn agents_threads_body() -> Markup {
                             }
                         }
                         label class="field-wide" {
+                            span { "Git repo URL" }
+                            input id="repo-url" list="known-repo-options" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
+                        }
+                        label {
+                            span { "Base branch" }
+                            input id="base-branch" autocomplete="off" spellcheck="false" value="dev";
+                        }
+                        datalist id="known-repo-options" {}
+                        label class="field-wide" {
                             span { "Prompt" }
                             textarea id="prompt" placeholder="Ask this thread worker to do something" {}
                         }
                     }
                     div class="actions prompt-actions" {
+                        button id="save-repo" type="button" { "Save repo" }
                         button id="new-task" type="button" { "New task" }
                         button id="sleep-thread" type="button" { "Pause/Sleep (Reduce resources to container)" }
                         button id="archive-thread" class="warn" type="button" { "Archive (Deep Sleep - Suspend container?)" }
@@ -651,6 +661,15 @@ fn agents_tasks_body() -> Markup {
                         }
                     }
                     label class="field field-wide" {
+                        span { "Git repo URL" }
+                        input id="chat-repo-url" list="chat-known-repo-options" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
+                    }
+                    label class="field" {
+                        span { "Base branch" }
+                        input id="chat-base-branch" autocomplete="off" spellcheck="false" value="dev";
+                    }
+                    datalist id="chat-known-repo-options" {}
+                    label class="field field-wide" {
                         span { "Prompt" }
                         textarea id="chat-prompt" {}
                     }
@@ -659,6 +678,7 @@ fn agents_tasks_body() -> Markup {
                     span id="chat-route" class="muted" {}
                     button id="new-thread" type="button" { "New thread" }
                     button id="new-task" type="button" { "New task" }
+                    button id="save-chat-repo" type="button" { "Save repo" }
                     button id="thread-sleep" type="button" { "Pause/Sleep (Reduce resources to container)" }
                     button id="thread-archive" class="warn" type="button" { "Archive (Deep Sleep - Suspend container?)" }
                     button id="thread-delete" class="danger" type="button" { "Delete (Delete Container)" }
@@ -1063,6 +1083,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         snapshot: null,
         threads: [],
         tasks: [],
+        knownRepos: [],
         selectedThreadId: null,
         selectedTaskId: null,
         liveSource: null,
@@ -1096,6 +1117,56 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function setStatus(message, bad = false) {
         $("status-line").textContent = message;
         $("status-line").style.color = bad ? "var(--danger)" : "var(--muted)";
+      }
+
+      function currentRepoUrl() {
+        return $("repo-url").value.trim();
+      }
+
+      function currentBaseBranch() {
+        return $("base-branch").value.trim() || "dev";
+      }
+
+      function renderKnownRepos() {
+        const list = $("known-repo-options");
+        list.textContent = "";
+        for (const repo of state.knownRepos) {
+          const option = document.createElement("option");
+          option.value = repo.repoUrl;
+          option.label = `${repo.displayName || repo.repoUrl} (${repo.defaultBranch || "dev"})`;
+          list.appendChild(option);
+        }
+      }
+
+      async function loadKnownRepos() {
+        const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
+        if (!response.ok) throw new Error(`known repos failed ${response.status}`);
+        const data = await response.json();
+        state.knownRepos = data.repos || [];
+        renderKnownRepos();
+      }
+
+      async function saveKnownRepo() {
+        const repoUrl = currentRepoUrl();
+        if (!repoUrl) {
+          setStatus("git repo URL is required", true);
+          return;
+        }
+        const response = await fetch("/api/agents/git-repos", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            repoUrl,
+            defaultBranch: currentBaseBranch(),
+          }),
+        });
+        const body = await response.text();
+        if (!response.ok) {
+          setStatus(`repo save failed ${response.status}: ${body.slice(0, 200)}`, true);
+          return;
+        }
+        setStatus("repo saved");
+        await loadKnownRepos();
       }
 
       function setStreamState(message, kind = "warn") {
@@ -1183,6 +1254,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           ? `${state.selectedThreadId} · ${threadTasks(state.selectedThreadId).length} tasks`
           : "Pick a thread from the sidebar or start a new one.";
         $("thread-id").value = state.selectedThreadId || "";
+        if (thread?.repo) $("repo-url").value = thread.repo;
+        if (thread?.baseBranch) $("base-branch").value = thread.baseBranch;
         if (!state.selectedTaskId) $("task-id").value = makeUuid();
       }
 
@@ -1471,8 +1544,14 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const taskId = $("task-id").value.trim() || makeUuid();
         const prompt = $("prompt").value.trim();
         const provider = $("provider").value;
+        const repo = currentRepoUrl();
+        const baseBranch = currentBaseBranch();
         if (!prompt) {
           setStatus("prompt is required", true);
+          return;
+        }
+        if (!repo) {
+          setStatus("git repo URL is required", true);
           return;
         }
         state.selectedThreadId = threadId;
@@ -1515,6 +1594,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
               taskId,
               prompt,
               provider,
+              repo,
+              baseBranch,
               threadTitle: prompt.slice(0, 80),
             }),
           });
@@ -1581,7 +1662,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
-      $("refresh").addEventListener("click", () => loadSnapshot().catch((error) => setStatus(String(error), true)));
+      $("refresh").addEventListener("click", () => {
+        loadKnownRepos().catch((error) => setStatus(String(error), true));
+        loadSnapshot().catch((error) => setStatus(String(error), true));
+      });
+      $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(String(error), true)));
       $("new-thread").addEventListener("click", () => {
         state.selectedThreadId = makeUuid();
         state.selectedTaskId = null;
@@ -1613,6 +1698,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("merge-thread").addEventListener("click", () => threadControl("merge").catch((error) => renderError(String(error))));
       $("open-pr-thread").addEventListener("click", () => threadControl("open-pr").catch((error) => renderError(String(error))));
 
+      loadKnownRepos().catch((error) => setStatus(String(error), true));
       loadSnapshot().catch((error) => {
         $("snapshot-meta").textContent = "snapshot failed";
         setStatus(String(error), true);
@@ -1834,6 +1920,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       const workerSockets = new Map();
       let activeTaskKey = null;
       let seenStreamEvents = new Set();
+      let knownRepos = [];
       const threadRuntimeStates = new Map();
       const sleepingStatuses = new Set(["sleeping", "archived", "suspended"]);
       const statusClass = (status) => {
@@ -1868,6 +1955,47 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         const threadId = $("chat-thread-id").value.trim();
         $("chat-route").textContent = threadId ? `/api/agents/threads/${threadId}/tasks` : "";
         updateThreadRuntimeControls();
+      };
+      const currentChatRepoUrl = () => $("chat-repo-url").value.trim();
+      const currentChatBaseBranch = () => $("chat-base-branch").value.trim() || "dev";
+      const renderKnownRepos = () => {
+        const list = $("chat-known-repo-options");
+        list.textContent = "";
+        for (const repo of knownRepos) {
+          const option = document.createElement("option");
+          option.value = repo.repoUrl;
+          option.label = `${repo.displayName || repo.repoUrl} (${repo.defaultBranch || "dev"})`;
+          list.appendChild(option);
+        }
+      };
+      const loadKnownRepos = async () => {
+        const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
+        if (!response.ok) throw new Error(`known repos request failed (${response.status})`);
+        const data = await response.json();
+        knownRepos = data.repos || [];
+        renderKnownRepos();
+      };
+      const saveChatRepo = async () => {
+        const repoUrl = currentChatRepoUrl();
+        if (!repoUrl) {
+          appendStreamLine("git repo URL is required");
+          return;
+        }
+        const response = await fetch("/api/agents/git-repos", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            repoUrl,
+            defaultBranch: currentChatBaseBranch()
+          })
+        });
+        const body = await response.text();
+        if (!response.ok) {
+          appendStreamLine(`repo save failed ${response.status}: ${body.slice(0, 500)}`);
+          return;
+        }
+        appendStreamLine(`repo saved ${body.slice(0, 500)}`);
+        await loadKnownRepos();
       };
       const resetTaskId = () => {
         $("chat-task-id").value = newUuid();
@@ -1930,8 +2058,8 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         const isSleeping = state && sleepingStatuses.has(state.status);
         merge.classList.toggle("ok", Boolean(isSleeping));
         merge.title = isSleeping
-          ? "Thread runtime is asleep/suspended. Merge will wake the worker, merge origin/dev, and push."
-          : "Merge latest origin/dev into this thread branch and push.";
+          ? "Thread runtime is asleep/suspended. Merge will wake the worker, merge the configured base branch, and push."
+          : "Merge the configured base branch into this thread branch and push.";
       }
       const resetRealtimeState = (threadId, taskId) => {
         activeTaskKey = `${threadId}:${taskId}`;
@@ -2045,8 +2173,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         const threadId = $("chat-thread-id").value.trim();
         const taskId = $("chat-task-id").value.trim();
         const prompt = $("chat-prompt").value.trim();
-        if (!threadId || !taskId || !prompt) {
-          appendStreamLine("thread UUID, task UUID, and prompt are required");
+        const repo = currentChatRepoUrl();
+        const baseBranch = currentChatBaseBranch();
+        if (!threadId || !taskId || !prompt || !repo) {
+          appendStreamLine("thread UUID, task UUID, git repo URL, and prompt are required");
           return;
         }
         const route = `/api/agents/threads/${encodeURIComponent(threadId)}/tasks`;
@@ -2078,6 +2208,8 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
               threadId,
               prompt,
               provider: $("chat-provider").value,
+              repo,
+              baseBranch,
               threadTitle: prompt.slice(0, 120)
             })
           });
@@ -2125,7 +2257,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
             label: "Merge with upstream",
             action: "merge-upstream",
             route: `/api/agents/threads/${encodeURIComponent(threadId)}/merge-upstream`,
-            confirm: "Merge latest origin/dev into this thread branch and push?"
+            confirm: "Merge the configured base branch into this thread branch and push?"
           },
           openPr: {
             label: "Open draft PR",
@@ -2302,6 +2434,9 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
           $("updated").textContent = `updated ${new Date(Number(data.generatedAtMs)).toLocaleTimeString()}`;
           renderTasks(data.tasks || []);
           renderThreads(data.threads || []);
+          const selectedThread = (data.threads || []).find((thread) => thread.id === $("chat-thread-id").value.trim());
+          if (selectedThread?.repo) $("chat-repo-url").value = selectedThread.repo;
+          if (selectedThread?.baseBranch) $("chat-base-branch").value = selectedThread.baseBranch;
           if (data.errors && data.errors.length) {
             errors.hidden = false;
             errors.textContent = data.errors.join("\n");
@@ -2321,6 +2456,9 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
 
       $("new-thread").addEventListener("click", resetThreadId);
       $("new-task").addEventListener("click", resetTaskId);
+      $("save-chat-repo").addEventListener("click", () => {
+        saveChatRepo().catch((error) => appendStreamLine(`repo save error: ${String(error)}`));
+      });
       $("thread-sleep").addEventListener("click", () => {
         runThreadControl("sleep").catch((error) => appendStreamLine(`sleep error: ${String(error)}`));
       });
@@ -2340,9 +2478,13 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         dispatchChat().catch((error) => appendStreamLine(`dispatch error: ${String(error)}`));
       });
       $("chat-thread-id").addEventListener("input", setChatRoute);
-      $("refresh").addEventListener("click", load);
+      $("refresh").addEventListener("click", () => {
+        loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${String(error)}`));
+        load();
+      });
       $("limit").addEventListener("change", load);
       resetThreadId();
+      loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${String(error)}`));
       load();
       setInterval(load, 10000);
 "#;

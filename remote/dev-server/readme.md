@@ -46,13 +46,14 @@ remote/dev-server/
 
 ## Build
 
-The build needs a GitHub deploy key with read access to `dancing-dragons/dd-next-1` so the image
-can pre-clone the repo and run `pnpm install`. Use BuildKit's `--secret` flag — never `--build-arg`
-— so the key never lands in any image layer.
+The build needs a GitHub deploy key with read access to the configured repo so the image can
+pre-clone that repo and run `pnpm install`. Use BuildKit's `--secret` flag — never `--build-arg`
+— so the key never lands in any image layer. `DD_REPO_URL` is intentionally required; there is no
+default repo baked into this image.
 
 ```bash
 DOCKER_BUILDKIT=1 docker build \
-  --build-arg DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git \
+  --build-arg DD_REPO_URL=git@github.com:org/repo.git \
   --build-arg DD_REPO_REF=dev \
   --secret id=github_deploy_key,src=$HOME/.ssh/dd_deploy \
   -t dd-dev-server:latest \
@@ -98,15 +99,15 @@ Runtime split in the baseline Argo app:
 `/api/admin/remote-dev/sign-token`.
 
 `POST /thread/merge-upstream` is server-authenticated and runs inside the single UUID-pinned
-worker. It fetches `origin/dev`, merges it into the thread branch with
-`git merge --no-edit origin/dev` (no rebase), and pushes the branch so the existing GitHub PR
-updates.
+worker. It fetches `origin/$BASE_BRANCH`, merges it into the thread branch with
+`git merge --no-edit origin/$BASE_BRANCH` (no rebase), and pushes the branch so the existing
+GitHub PR updates.
 
 ## Environment variables
 
 > **All credentials are read from `process.env` at runtime.** No secrets are baked into the image.
 > The image does bake git, OpenSSH, GitHub CLI, provider CLIs, the compiled server, and a warm
-> `dd-next-1` repo template owned by the built-in `node` user. In
+> configured repo template owned by the built-in `node` user. In
 > production, the K8s `dd-agent-secrets` Secret (filled in from
 > [`../k8s/02-secrets.template.yaml`](../k8s/02-secrets.template.yaml)) is consumed by every
 > per-thread pod via `envFrom`. Local dev: pass via `--env-file` or `docker run -e`.
@@ -117,8 +118,9 @@ updates.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY`  | Auth for the `claude` CLI the server spawns.                                                                                 |
 | `SERVER_AUTH_SECRET` | Shared secret presented by Vercel in `X-Server-Auth`. Random, ≥ 32 chars.                                                    |
-| `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against `dd-next-1`. The server writes this to `~/.ssh/id_ed25519` at boot. |
-| `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope: Contents + Pull Requests, `dancing-dragons/dd-next-1` only.         |
+| `DD_REPO_URL`        | Git URL for the repo this image and thread container are pinned to. Required at build and runtime.                          |
+| `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against `DD_REPO_URL`. The server writes this to `~/.ssh/id_ed25519` at boot. |
+| `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope it to the configured repo with Contents + Pull Requests.            |
 
 ### Required — event ingestion
 
@@ -281,10 +283,10 @@ from `src/telemetry.ts` and exposes Prometheus metrics at `/metrics`.
 | `GET`  | `/healthz`              | none                              | Liveness — returns `{ ok, startedAt, inFlightCount, totalTracked }`.                                                                                                            |
 | `GET`  | `/metrics`              | none                              | Prometheus metrics scraped by the OpenTelemetry Collector.                                                                                                                      |
 | `GET`  | `/tasks`                | `X-Server-Auth`                   | Snapshot of every task in memory (used by Vercel to merge with NeonDB on first load).                                                                                           |
-| `POST` | `/tasks`                | `X-Server-Auth`                   | Body `{ taskId, prompt, userId?, threadId?, provider?, branch?, threadTitle? }`. Queues the run into the thread workspace. `userId` enables per-user Supabase Realtime fan-out. |
+| `POST` | `/tasks`                | `X-Server-Auth`                   | Body `{ taskId, prompt, repo?, baseBranch?, userId?, threadId?, provider?, branch?, threadTitle? }`. Queues the run into the thread workspace and rejects a different repo/base branch than the container is pinned to. |
 | `GET`  | `/stream/:taskId`       | `X-Server-Auth` **or** `?token=…` | Server-Sent Events. `Last-Event-ID` resumes.                                                                                                                                    |
 | `GET`  | `/ws`                   | `X-Server-Auth`                   | Worker WebSocket for the pinned thread. Use `/dd-thread/<short>/ws?threadId=<uuid>&taskId=<uuid>` through the gateway; it replays task events and streams new worker events faster than the NATS/Gleam fanout path. |
-| `POST` | `/thread/merge-upstream` | `X-Server-Auth`                  | Merges `origin/dev` into the pinned thread branch and pushes.                                                                                                                   |
+| `POST` | `/thread/merge-upstream` | `X-Server-Auth`                  | Merges `origin/$BASE_BRANCH` into the pinned thread branch and pushes.                                                                                                          |
 | `POST` | `/thread/open-pr`       | `X-Server-Auth`                   | Explicitly opens or reuses a draft WIP PR for the pinned thread branch. Normal tasks do not create PRs.                                                                         |
 | `POST` | `/tasks/:taskId/cancel` | `X-Server-Auth`                   | SIGTERMs the child, emits `done` with `cancelled`.                                                                                                                              |
 
@@ -299,7 +301,7 @@ For each new thread, the container/workspace:
 2. Choose the session branch. If dispatch provides `branch`, reuse it; otherwise derive one as
    `dev-thread/<threadId>/<slugified-thread-title>`. If that remote branch already exists, switch from it;
    otherwise create from `origin/<BASE_BRANCH>` and hard-reset to that base. This keeps a restarted
-   thread container resumable while still making a brand-new thread start from fresh `origin/dev`.
+   thread container resumable while still making a brand-new thread start from fresh `origin/<BASE_BRANCH>`.
 3. `pnpm install --ignore-workspace --frozen-lockfile` from `remote/dev-server` so the worker installs
    this standalone package instead of the root workspace.
 4. Start listening after the thread workspace is ready in `thread` mode.

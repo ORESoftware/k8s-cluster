@@ -42,6 +42,9 @@ node src/diff.mjs --parse-only
 
 - TypeScript: Drizzle table definitions plus Zod row/insert/update schemas, TypeORM entities, and
   Prisma schema output.
+- Python/FastAPI: SQLAlchemy declarative models plus Pydantic row/insert schemas.
+- Go: GORM models and Bun models.
+- Dart: runtime models, validators, JSON helpers, and SQL constants.
 - Rust: `sqlx`-friendly structs, Diesel schema/models, and SeaORM entities.
 - Gleam: `pog`-friendly SQL constants, typed records, enum parsers, and validators.
 - Erlang: `pgo`-style SQL constants and enum validators.

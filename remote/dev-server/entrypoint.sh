@@ -8,13 +8,19 @@ set -euo pipefail
 
 REPO_DIR="${WORKSPACE_REPO:-/home/node/workspace/repo}"
 TEMPLATE_DIR="${REPO_TEMPLATE_DIR:-/home/node/repo-template}"
-BASE_BRANCH="${BASE_BRANCH:-dev}"
+REPO_URL="${DD_REPO_URL:-}"
+BASE_BRANCH="${BASE_BRANCH:-${DD_REPO_REF:-dev}}"
 DEPLOY_KEY_PATH="${GH_DEPLOY_KEY_PATH:-/home/node/.ssh/id_ed25519}"
 SSH_DIR="$(dirname "$DEPLOY_KEY_PATH")"
 THREAD_ID="${REMOTE_DEV_THREAD_ID:-${THREAD_ID:-}}"
 
+if [[ -z "$REPO_URL" ]]; then
+  echo "DD_REPO_URL is required; build and run the worker with an explicit git repo URL" >&2
+  exit 64
+fi
+
 echo "==> dd-dev-server entrypoint starting at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-echo "    repo=$REPO_DIR branch=$BASE_BRANCH thread=${THREAD_ID:-<multi-thread>}"
+echo "    workspace=$REPO_DIR source=$REPO_URL branch=$BASE_BRANCH thread=${THREAD_ID:-<multi-thread>}"
 
 export CI="${CI:-true}"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT="${COREPACK_ENABLE_DOWNLOAD_PROMPT:-0}"
@@ -62,6 +68,7 @@ export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY_PATH -o StrictHostKeyChecking=yes -o 
 if [[ -d "$REPO_DIR/.git" ]]; then
   echo "==> git fetch + switch starting"
   cd "$REPO_DIR"
+  git remote set-url origin "$REPO_URL" 2>&1 || echo "git remote set-url failed (non-fatal)"
   git fetch --quiet origin "$BASE_BRANCH" --depth=50 2>&1 || echo "git fetch failed (non-fatal)"
   git switch --discard-changes --detach "origin/$BASE_BRANCH" 2>&1 || echo "git switch failed (non-fatal)"
   git clean -fdx \

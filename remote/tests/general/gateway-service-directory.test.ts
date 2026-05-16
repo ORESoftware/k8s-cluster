@@ -514,6 +514,10 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   );
   assert.match(restServer, /AGENT_TASKS_RDS_DATABASE_URL/);
   assert.match(restServer, /RDS_DATABASE_URL/);
+  assert.match(restServer, /known_git_repos/);
+  assert.match(restServer, /struct KnownGitRepoRow/);
+  assert.match(restServer, /async fn fetch_known_git_repos_from_postgres/);
+  assert.match(restServer, /async fn upsert_known_git_repo_to_postgres/);
   assert.match(restServer, /agent_remote_dev_threads/);
   assert.match(restServer, /agent_remote_dev_tasks/);
   assert.match(restServer, /agent_remote_dev_events/);
@@ -544,7 +548,7 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   );
   assert.match(
     restServer,
-    /insert into agent_remote_dev_threads[\s\S]*\(id, user_id, title, repo, base_branch, is_soft_deleted, created_at, updated_at, created_by, updated_by\)/,
+    /insert into agent_remote_dev_threads[\s\S]*\(id, user_id, known_git_repo_id, title, repo, base_branch, is_soft_deleted, created_at, updated_at, created_by, updated_by\)/,
   );
   assert.match(
     restServer,
@@ -558,6 +562,10 @@ test('rust agent tasks page fetches the REST API directly', async () => {
     /env::var\("THREAD_RUNTIME_NAMESPACE"\)\.unwrap_or_else\(\|_\| "default"\.to_string\(\)\)/,
   );
   assert.match(restServer, /source unavailable; check remote REST API server logs/);
+  assert.match(
+    restServer,
+    /\.route\(\s*"\/api\/agents\/git-repos",\s*get\(known_git_repos\)\.post\(save_known_git_repo\),\s*\)/,
+  );
   assert.match(
     restServer,
     /agent tasks data source is not configured; showing runtime memory only/,
@@ -652,6 +660,8 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.route\("\/agents\/threads\/", get\(agents_threads_page\)\)/);
   assert.match(server, /Agent threads/);
   assert.match(server, /id="thread-list"/);
+  assert.match(server, /id="repo-url"/);
+  assert.match(server, /id="known-repo-options"/);
   assert.match(server, /id="task-list"/);
   assert.match(server, /id="stream"/);
   assert.match(server, /Response stream/);
@@ -668,6 +678,8 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /fetch\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/tasks`,/,
   );
+  assert.match(server, /fetch\("\/api\/agents\/git-repos\?limit=100"/);
+  assert.match(server, /repo,\s*baseBranch,/);
   assert.match(
     server,
     /new EventSource\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/stream\/\$\{encodeURIComponent\(taskId\)\}`\)/,
@@ -688,6 +700,32 @@ test('rust agent threads page renders stored response events and feedback contro
   );
   assert.match(server, /workerRuntimeSummary/);
   assert.match(server, /worker deployment not created yet/);
+  assert.match(server, /html \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
+  assert.match(server, /body \{[\s\S]*height: 100%;[\s\S]*overflow: hidden;/);
+  assert.match(server, /\.app \{[\s\S]*height: 100dvh;[\s\S]*overflow: hidden;/);
+  assert.match(
+    server,
+    /\.sidebar \{[\s\S]*overflow: hidden auto;[\s\S]*overscroll-behavior: contain;/,
+  );
+  assert.match(
+    server,
+    /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
+  );
+  assert.match(server, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/);
+  assert.match(
+    server,
+    /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
+  );
+  assert.match(server, /\.thread-meta span \{[\s\S]*text-overflow: ellipsis;/);
+  assert.match(server, /section class="panel prompt-panel" aria-label="Thread prompt"/);
+  assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
+  assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
+  assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
+  assert.match(server, /div class="grid task-stream-grid"/);
+  assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
+  assert.doesNotMatch(server, /html, body \{ overflow: auto; \}/);
+  assert.doesNotMatch(server, /height: auto; overflow: visible/);
+  assert.doesNotMatch(server, /div class="grid" style="margin-top: 14px"/);
   assert.match(readme, /serves `GET \/agents\/threads` as the thread-first chat\/task UI/);
   assert.match(restReadme, /GET \/api\/agents\/tasks\/:taskId\/events\?limit=250/);
   assert.match(restReadme, /POST \/api\/agents\/tasks\/:taskId\/feedback/);
@@ -711,8 +749,10 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,
-    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id\)\.await/,
+    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
   );
+  assert.match(restServer, /repo: String,/);
+  assert.match(restServer, /base_branch: Option<String>,/);
   assert.match(restServer, /status: "running"\.to_string\(\),/);
   assert.match(restServer, /last_event_seq: -1,/);
   assert.match(restServer, /event_count: 0,/);

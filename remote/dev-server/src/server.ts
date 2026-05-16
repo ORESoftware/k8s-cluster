@@ -1,13 +1,13 @@
 /* eslint-disable security/detect-non-literal-fs-filename -- remote-dev manages configured workspace, log, and artifact paths. */
 // dd-dev-server — API/worker runtime that runs Claude/OpenAI coding agents
-// inside a warm dd-next-1 git workspace, then streams events.
+// inside a warm configured git workspace, then streams events.
 //
 // Endpoints (all auth'd via X-Server-Auth header except /healthz):
 //   POST /tasks                  — { taskId?, threadId?, prompt } → queues task
 //   GET  /stream/:taskId         — Server-Sent Events of agent activity
 //   GET  /ws                     — WebSocket replay/live stream for pinned thread tasks
 //   POST /tasks/:taskId/cancel   — abort an in-flight task
-//   POST /thread/merge-upstream  — merge origin/dev into the pinned thread branch
+//   POST /thread/merge-upstream  — merge configured base branch into the pinned thread branch
 //   POST /thread/open-pr         — explicitly open/reuse a draft WIP PR
 //   GET  /healthz                — liveness probe
 //
@@ -61,6 +61,7 @@ const config = {
   port: Number(process.env.PORT ?? 8080),
   host: process.env.HOST ?? '0.0.0.0',
   workspaceRepo: process.env.WORKSPACE_REPO ?? '/home/node/workspace/repo',
+  repoUrl: process.env.DD_REPO_URL ?? null,
   // The container is pinned to a single threadId originating from
   // /u/admin/remote-dev. Set via REMOTE_DEV_THREAD_ID (preferred) or
   // THREAD_ID (fallback). The server refuses to start without one — see
@@ -410,6 +411,7 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
         sessionId: session.sessionId,
         branch: session.branch,
         workspacePath: session.workspacePath,
+        repo: config.repoUrl,
         baseBranch: config.baseBranch,
         skippedBootGitSync: true,
       }) + '\n',
@@ -453,6 +455,7 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
       sessionId: session.sessionId,
       branch: session.branch,
       workspacePath: session.workspacePath,
+      repo: config.repoUrl,
       baseBranch: config.baseBranch,
       dependencyInstallOk: installResult.ok,
       dependencyInstallError: installResult.error,
@@ -1190,6 +1193,7 @@ async function ensurePullRequestForSession(input: {
     '',
     `Thread: ${input.session.sessionId}`,
     `Task: ${input.taskId ?? 'manual-open-pr'}`,
+    `Repo: ${config.repoUrl ?? 'unknown'}`,
     `Branch: ${input.session.branch}`,
     '',
     input.prompt ? `Prompt:\n\n${input.prompt}` : 'Opened by dd-dev-server.',
@@ -1852,6 +1856,8 @@ const DispatchSchema = z.object({
   userId: z.string().uuid().optional(),
   /** Vercel-side thread id, included in published events for client routing. */
   threadId: z.string().uuid().optional(),
+  repo: z.string().min(1).max(2048).optional(),
+  baseBranch: z.string().min(1).max(120).optional(),
   /** Stable remote-dev thread branch, if the dispatcher already knows it. */
   branch: z.string().max(200).optional(),
   /** Human-readable thread title / branch slug fallback. */
@@ -1925,6 +1931,20 @@ fastify.post('/tasks', async (req, reply) => {
         return reply.code(403).send({
           error: 'container is bound to a different user',
           boundUserId: config.userId,
+        });
+      }
+      const requestedRepo = parsed.data.repo?.trim();
+      if (requestedRepo && requestedRepo !== config.repoUrl) {
+        return reply.code(409).send({
+          error: 'container is bound to a different repo',
+          boundRepo: config.repoUrl,
+        });
+      }
+      const requestedBaseBranch = parsed.data.baseBranch?.trim();
+      if (requestedBaseBranch && requestedBaseBranch !== config.baseBranch) {
+        return reply.code(409).send({
+          error: 'container is bound to a different baseBranch',
+          boundBaseBranch: config.baseBranch,
         });
       }
       const existingTask = tasks.get(taskId);
@@ -2330,6 +2350,9 @@ async function main(): Promise<void> {
     throw new Error(
       'REMOTE_DEV_THREAD_ID or THREAD_ID is required — the container is pinned to one thread.',
     );
+  }
+  if (!config.repoUrl) {
+    throw new Error('DD_REPO_URL is required — the container must be pinned to one git repo.');
   }
   if (!config.serverAuthSecret) {
     fastify.log.warn('SERVER_AUTH_SECRET is not set — all non-healthz requests will 401');

@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 #
 # dd-dev-server — long-lived Node.js + TypeScript HTTP server that
-# runs Claude/OpenAI coding agents against a baked, warm checkout of
-# dd-next-1 and streams events out (SSE / webhook / Supabase Broadcast).
+# runs Claude/OpenAI coding agents against a baked, warm checkout of the
+# configured Git repo and streams events out (SSE / webhook / Supabase Broadcast).
 #
 # Primary deployment shape: per-thread K8s pod — one container pinned
 # to a chat / threadId, instantiated from the v4 manifests in
@@ -12,7 +12,7 @@
 #
 # Build (BuildKit required for --secret):
 #   DOCKER_BUILDKIT=1 docker build \
-#     --build-arg DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git \
+#     --build-arg DD_REPO_URL=git@github.com:org/repo.git \
 #     --build-arg DD_REPO_REF=dev \
 #     --secret id=github_deploy_key,src=/path/to/dd_deploy \
 #     -t dd-dev-server:latest \
@@ -99,7 +99,7 @@ ENV HOME=/home/node \
     USER=node
 
 # ============================================================
-# Bake the "recent baseline" — dd-next-1 with warm node_modules.
+# Bake the "recent baseline" — configured repo with warm node_modules.
 # Baked at /home/node/repo-template (NOT under workspace/) so the
 # v4 PVC mount at /home/node/workspace doesn't mask it. entrypoint.sh
 # seeds /home/node/workspace/repo from this template on first boot
@@ -107,11 +107,12 @@ ENV HOME=/home/node \
 # workspace and just `git fetch` the recent delta.
 # ============================================================
 WORKDIR /home/node
-ARG DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git
+ARG DD_REPO_URL
 ARG DD_REPO_REF=dev
 ARG DD_REPO_CACHE_BUST=manual
 RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
-    mkdir -p /home/node/.ssh \
+    test -n "$DD_REPO_URL" \
+ && mkdir -p /home/node/.ssh \
  && echo "$DD_REPO_CACHE_BUST" > /tmp/dd-repo-cache-bust \
  && cp /run/secrets/github_deploy_key /home/node/.ssh/id_ed25519 \
  && chmod 700 /home/node/.ssh \
@@ -122,6 +123,9 @@ RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
  && cd repo-template \
  && pnpm install --store-dir /home/node/repo-template/.pnpm-store --frozen-lockfile \
  && rm -f /home/node/.ssh/id_ed25519
+ENV DD_REPO_URL=$DD_REPO_URL \
+    DD_REPO_REF=$DD_REPO_REF \
+    BASE_BRANCH=$DD_REPO_REF
 
 # --- Compiled Node server bundle ---
 WORKDIR /srv/dev-server

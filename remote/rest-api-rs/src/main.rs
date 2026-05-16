@@ -103,6 +103,16 @@ struct ThreadContextResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct KnownGitReposResponse {
+    ok: bool,
+    source: String,
+    generated_at_ms: u128,
+    repos: Vec<KnownGitRepoRow>,
+    errors: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AgentsDataConfig {
     rds_configured: bool,
     postgres_configured: bool,
@@ -136,6 +146,20 @@ struct AgentThreadRow {
     task_count: i64,
     active_task_count: i64,
     latest_task_at: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct KnownGitRepoRow {
+    id: String,
+    repo_url: String,
+    display_name: String,
+    provider: String,
+    default_branch: String,
+    status: String,
+    last_verified_at: Option<String>,
+    created_at: Option<String>,
+    updated_at: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -272,9 +296,20 @@ struct ThreadRuntimeResponse {
 struct DispatchTaskRequest {
     task_id: String,
     thread_id: String,
+    repo: String,
+    base_branch: Option<String>,
     prompt: String,
     provider: Option<String>,
     thread_title: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnownGitRepoRequest {
+    repo_url: String,
+    display_name: Option<String>,
+    provider: Option<String>,
+    default_branch: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -315,11 +350,17 @@ struct NatsTaskMessage {
     thread_id: String,
     task_id: String,
     provider: Option<String>,
-    repo: &'static str,
-    base_branch: &'static str,
+    repo: String,
+    base_branch: String,
     feature_branch: Option<String>,
     prompt: String,
     created_at_ms: u128,
+}
+
+#[derive(Clone)]
+struct ThreadRepoConfig {
+    repo: String,
+    base_branch: String,
 }
 
 #[derive(Serialize)]
@@ -409,6 +450,84 @@ fn public_data_source_error(source: &str) -> String {
 
 fn public_thread_worker_proxy_error(action: &str) -> String {
     format!("thread worker {action} failed; check remote REST API server logs")
+}
+
+fn normalize_repo_url(value: &str) -> Result<String, String> {
+    let repo = value.trim();
+    if repo.is_empty() {
+        return Err("repo is required".to_string());
+    }
+    if repo.len() > 2048 {
+        return Err("repo must be 2048 characters or fewer".to_string());
+    }
+    if !(repo.starts_with("git@") || repo.starts_with("ssh://") || repo.starts_with("https://")) {
+        return Err("repo must start with git@, ssh://, or https://".to_string());
+    }
+    Ok(repo.to_string())
+}
+
+fn normalize_base_branch(value: Option<&str>) -> Result<String, String> {
+    let branch = value.unwrap_or("dev").trim();
+    if branch.is_empty() {
+        return Err("baseBranch must not be empty".to_string());
+    }
+    if branch.len() > 120 {
+        return Err("baseBranch must be 120 characters or fewer".to_string());
+    }
+    if !branch
+        .chars()
+        .all(|item| item.is_ascii_alphanumeric() || matches!(item, '.' | '_' | '/' | '-'))
+    {
+        return Err("baseBranch contains unsupported characters".to_string());
+    }
+    Ok(branch.to_string())
+}
+
+fn infer_repo_display_name(repo_url: &str) -> String {
+    repo_url
+        .trim_end_matches(".git")
+        .rsplit(['/', ':'])
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Git repository")
+        .chars()
+        .take(200)
+        .collect()
+}
+
+fn infer_repo_provider(repo_url: &str) -> String {
+    if repo_url.contains("github.com") {
+        "github".to_string()
+    } else if repo_url.contains("gitlab.com") {
+        "gitlab".to_string()
+    } else if repo_url.contains("bitbucket.org") {
+        "bitbucket".to_string()
+    } else {
+        "generic".to_string()
+    }
+}
+
+fn normalize_repo_provider(value: Option<&str>, repo_url: &str) -> Result<String, String> {
+    let provider = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| infer_repo_provider(repo_url));
+    if matches!(
+        provider.as_str(),
+        "github" | "gitlab" | "bitbucket" | "generic"
+    ) {
+        Ok(provider)
+    } else {
+        Err("provider must be github, gitlab, bitbucket, or generic".to_string())
+    }
+}
+
+fn normalized_repo_config(request: &DispatchTaskRequest) -> Result<ThreadRepoConfig, String> {
+    Ok(ThreadRepoConfig {
+        repo: normalize_repo_url(&request.repo)?,
+        base_branch: normalize_base_branch(request.base_branch.as_deref())?,
+    })
 }
 
 fn unauthorized_response() -> Response {
@@ -509,9 +628,7 @@ async fn publish_thread_runtime_event_to_nats(
     Ok(())
 }
 
-async fn ensure_nats_task_stream(
-    jetstream: &async_nats::jetstream::Context,
-) -> Result<(), String> {
+async fn ensure_nats_task_stream(jetstream: &async_nats::jetstream::Context) -> Result<(), String> {
     jetstream
         .get_or_create_stream(async_nats::jetstream::stream::Config {
             name: nats_task_stream_name(),
@@ -584,8 +701,9 @@ fn remember_runtime_task(request: &DispatchTaskRequest, branch: Option<String>) 
             AgentThreadRow {
                 id: request.thread_id.clone(),
                 title,
-                repo: "dancing-dragons/dd-next-1".to_string(),
-                base_branch: "dev".to_string(),
+                repo: normalize_repo_url(&request.repo).unwrap_or_else(|_| request.repo.clone()),
+                base_branch: normalize_base_branch(request.base_branch.as_deref())
+                    .unwrap_or_else(|_| "dev".to_string()),
                 archived_at: None,
                 created_at: Some(now.clone()),
                 updated_at: Some(now.clone()),
@@ -929,7 +1047,13 @@ fn render_thread_service(namespace: &str, name: &str, thread_id: &str) -> Value 
     })
 }
 
-fn render_thread_deployment(namespace: &str, name: &str, thread_id: &str) -> Value {
+fn render_thread_deployment(
+    namespace: &str,
+    name: &str,
+    thread_id: &str,
+    repo_url: &str,
+    base_branch: &str,
+) -> Value {
     let image = thread_runtime_image();
     json!({
         "apiVersion": "apps/v1",
@@ -980,6 +1104,8 @@ fn render_thread_deployment(namespace: &str, name: &str, thread_id: &str) -> Val
                         "ports": [{ "containerPort": 8080, "name": "http" }],
                         "env": [
                             { "name": "REMOTE_DEV_THREAD_ID", "value": thread_id },
+                            { "name": "DD_REPO_URL", "value": repo_url },
+                            { "name": "BASE_BRANCH", "value": base_branch },
                             { "name": "IDLE_TIMEOUT_MS", "value": "0" },
                             { "name": "OTEL_SERVICE_NAME", "value": name },
                             { "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://dd-otel-collector.observability.svc.cluster.local:4318" },
@@ -1039,11 +1165,13 @@ fn render_thread_deployment(namespace: &str, name: &str, thread_id: &str) -> Val
 
 async fn ensure_thread_worker(
     thread_id: &str,
+    repo_url: &str,
+    base_branch: &str,
 ) -> Result<(String, String, Vec<ThreadActionResult>), String> {
     let namespace = thread_runtime_namespace();
     let name = thread_resource_name(thread_id);
     let mut results = Vec::new();
-    let deployment = render_thread_deployment(&namespace, &name, thread_id);
+    let deployment = render_thread_deployment(&namespace, &name, thread_id, repo_url, base_branch);
 
     results.push(
         k8s_create_request(
@@ -1082,7 +1210,11 @@ async fn ensure_thread_worker(
 }
 
 async fn prepare_thread_worker(thread_id: &str) -> Result<ThreadActionResponse, String> {
-    let (namespace, name, results) = ensure_thread_worker(thread_id).await?;
+    let repo_config = fetch_thread_repo_config_from_postgres(thread_id)
+        .await?
+        .ok_or_else(|| "thread repo config is not configured".to_string())?;
+    let (namespace, name, results) =
+        ensure_thread_worker(thread_id, &repo_config.repo, &repo_config.base_branch).await?;
     let Some(secret) = worker_auth_secret() else {
         return Err(missing_worker_auth_secret_message().to_string());
     };
@@ -1815,6 +1947,135 @@ async fn fetch_agents_from_postgres(
     Ok((threads, tasks))
 }
 
+async fn fetch_known_git_repos_from_postgres(limit: i64) -> Result<Vec<KnownGitRepoRow>, String> {
+    let client = connect_postgres().await?;
+    let rows = client
+        .query(
+            r#"
+            select
+              id::text as id,
+              repo_url,
+              display_name,
+              provider,
+              default_branch,
+              status,
+              to_char(last_verified_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_verified_at,
+              to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+              to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+            from known_git_repos
+            where is_soft_deleted = false
+            order by updated_at desc
+            limit $1
+            "#,
+            &[&limit],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| KnownGitRepoRow {
+            id: row_string(row, "id"),
+            repo_url: row_string(row, "repo_url"),
+            display_name: row_string(row, "display_name"),
+            provider: row_string(row, "provider"),
+            default_branch: row_string(row, "default_branch"),
+            status: row_string(row, "status"),
+            last_verified_at: row_opt_string(row, "last_verified_at"),
+            created_at: row_opt_string(row, "created_at"),
+            updated_at: row_opt_string(row, "updated_at"),
+        })
+        .collect())
+}
+
+async fn upsert_known_git_repo_to_postgres(
+    repo_url: &str,
+    display_name: Option<&str>,
+    provider: Option<&str>,
+    default_branch: Option<&str>,
+) -> Result<KnownGitRepoRow, String> {
+    let client = connect_postgres().await?;
+    let admin_user_id = agent_tasks_admin_user_id();
+    let repo_url = normalize_repo_url(repo_url)?;
+    let display_name = display_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(200).collect::<String>())
+        .unwrap_or_else(|| infer_repo_display_name(&repo_url));
+    let provider = provider.map(str::trim).filter(|value| !value.is_empty());
+    let provider = normalize_repo_provider(provider, &repo_url)?;
+    let default_branch = normalize_base_branch(default_branch)?;
+
+    let row = client
+        .query_one(
+            r#"
+            insert into known_git_repos
+              (repo_url, display_name, provider, default_branch, status, is_soft_deleted, created_at, updated_at, created_by, updated_by)
+            values
+              ($1, $2, $3, $4, 'active', false, now(), now(), $5::text::uuid, $5::text::uuid)
+            on conflict (repo_url) where is_soft_deleted = false do update set
+              display_name = excluded.display_name,
+              provider = excluded.provider,
+              default_branch = excluded.default_branch,
+              status = 'active',
+              updated_by = excluded.updated_by,
+              updated_at = now()
+            returning
+              id::text as id,
+              repo_url,
+              display_name,
+              provider,
+              default_branch,
+              status,
+              to_char(last_verified_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_verified_at,
+              to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+              to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+            "#,
+            &[&repo_url, &display_name, &provider, &default_branch, &admin_user_id],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(KnownGitRepoRow {
+        id: row_string(&row, "id"),
+        repo_url: row_string(&row, "repo_url"),
+        display_name: row_string(&row, "display_name"),
+        provider: row_string(&row, "provider"),
+        default_branch: row_string(&row, "default_branch"),
+        status: row_string(&row, "status"),
+        last_verified_at: row_opt_string(&row, "last_verified_at"),
+        created_at: row_opt_string(&row, "created_at"),
+        updated_at: row_opt_string(&row, "updated_at"),
+    })
+}
+
+async fn fetch_thread_repo_config_from_postgres(
+    thread_id: &str,
+) -> Result<Option<ThreadRepoConfig>, String> {
+    if postgres_database_url().is_none() {
+        return Ok(None);
+    }
+    let client = connect_postgres().await?;
+    let row = client
+        .query_opt(
+            r#"
+            select repo, base_branch
+            from agent_remote_dev_threads
+            where id = $1::text::uuid
+              and is_soft_deleted = false
+            limit 1
+            "#,
+            &[&thread_id],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(row.map(|row| ThreadRepoConfig {
+        repo: row_string(&row, "repo"),
+        base_branch: row_string(&row, "base_branch"),
+    }))
+}
+
 fn lambda_select_sql() -> &'static str {
     r#"
     select
@@ -1856,20 +2117,23 @@ fn validate_lambda_entry_command(value: Option<&str>) -> Result<String, String> 
 
 fn cleaned_lambda_input(
     request: &LambdaFunctionSaveRequest,
-) -> Result<(
+) -> Result<
+    (
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        i32,
+        i32,
+        String,
+        Value,
+        Value,
+    ),
     String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    Option<String>,
-    i32,
-    i32,
-    String,
-    Value,
-    Value,
-), String> {
+> {
     let slug = normalize_lambda_slug(&request.slug);
     if slug.len() < 3 || slug.len() > 120 {
         return Err("slug must normalize to 3-120 characters".to_string());
@@ -2099,31 +2363,52 @@ async fn persist_runtime_task_to_postgres(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
 ) -> Result<(), String> {
-    let client = connect_postgres().await?;
     let admin_user_id = agent_tasks_admin_user_id().ok_or_else(|| {
         "AGENT_TASKS_ADMIN_USER_ID or REMOTE_DEV_ADMIN_USER_ID is not configured".to_string()
     })?;
+    let repo_config = normalized_repo_config(request)?;
+    let known_repo = upsert_known_git_repo_to_postgres(
+        &repo_config.repo,
+        None,
+        None,
+        Some(&repo_config.base_branch),
+    )
+    .await?;
+    let client = connect_postgres().await?;
     let title = request
         .thread_title
         .clone()
         .unwrap_or_else(|| request.prompt.chars().take(80).collect::<String>());
 
-    client
+    let affected_thread_rows = client
         .execute(
             r#"
             insert into agent_remote_dev_threads
-              (id, user_id, title, repo, base_branch, is_soft_deleted, created_at, updated_at, created_by, updated_by)
+              (id, user_id, known_git_repo_id, title, repo, base_branch, is_soft_deleted, created_at, updated_at, created_by, updated_by)
             values
-              ($1::text::uuid, $2::text::uuid, $3, 'dancing-dragons/dd-next-1', 'dev', false, now(), now(), $2::text::uuid, $2::text::uuid)
+              ($1::text::uuid, $2::text::uuid, $3::text::uuid, $4, $5, $6, false, now(), now(), $2::text::uuid, $2::text::uuid)
             on conflict (id) do update set
               title = coalesce(agent_remote_dev_threads.title, excluded.title),
+              known_git_repo_id = coalesce(agent_remote_dev_threads.known_git_repo_id, excluded.known_git_repo_id),
               updated_by = excluded.updated_by,
               updated_at = now()
+            where agent_remote_dev_threads.repo = excluded.repo
+              and agent_remote_dev_threads.base_branch = excluded.base_branch
             "#,
-            &[&request.thread_id, &admin_user_id, &title],
+            &[
+                &request.thread_id,
+                &admin_user_id,
+                &known_repo.id,
+                &title,
+                &repo_config.repo,
+                &repo_config.base_branch,
+            ],
         )
         .await
         .map_err(|error| error.to_string())?;
+    if affected_thread_rows == 0 {
+        return Err("thread already exists with a different repo or baseBranch".to_string());
+    }
 
     client
         .execute(
@@ -2366,6 +2651,7 @@ async fn publish_task_shadow_to_nats(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
 ) -> Result<(), String> {
+    let repo_config = normalized_repo_config(request)?;
     let message = NatsTaskMessage {
         version: 1,
         message_kind: "task.shadow",
@@ -2375,8 +2661,8 @@ async fn publish_task_shadow_to_nats(
         thread_id: request.thread_id.clone(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
-        repo: "git@github.com:dancing-dragons/dd-next-1.git",
-        base_branch: "dev",
+        repo: repo_config.repo,
+        base_branch: repo_config.base_branch,
         feature_branch: branch.map(str::to_string),
         prompt: request.prompt.clone(),
         created_at_ms: now_ms(),
@@ -2604,6 +2890,82 @@ async fn healthz() -> impl IntoResponse {
 async fn agents_tasks(Query(query): Query<AgentsQuery>) -> impl IntoResponse {
     record_request("GET", "/api/agents/tasks", StatusCode::OK);
     Json(fetch_agents_snapshot(limit_from_query(&query)).await)
+}
+
+async fn known_git_repos(Query(query): Query<AgentsQuery>) -> impl IntoResponse {
+    record_request("GET", "/api/agents/git-repos", StatusCode::OK);
+    if postgres_database_url().is_none() {
+        return Json(KnownGitReposResponse {
+            ok: false,
+            source: "postgres".to_string(),
+            generated_at_ms: now_ms(),
+            repos: Vec::new(),
+            errors: vec!["postgres database URL is not configured".to_string()],
+        });
+    }
+
+    match fetch_known_git_repos_from_postgres(limit_from_query(&query)).await {
+        Ok(repos) => Json(KnownGitReposResponse {
+            ok: true,
+            source: "postgres".to_string(),
+            generated_at_ms: now_ms(),
+            repos,
+            errors: Vec::new(),
+        }),
+        Err(error) => Json(KnownGitReposResponse {
+            ok: false,
+            source: "postgres".to_string(),
+            generated_at_ms: now_ms(),
+            repos: Vec::new(),
+            errors: vec![public_data_source_error("postgres"), error],
+        }),
+    }
+}
+
+async fn save_known_git_repo(Json(request): Json<KnownGitRepoRequest>) -> Response {
+    record_request("POST", "/api/agents/git-repos", StatusCode::OK);
+    if postgres_database_url().is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(KnownGitReposResponse {
+                ok: false,
+                source: "postgres".to_string(),
+                generated_at_ms: now_ms(),
+                repos: Vec::new(),
+                errors: vec!["postgres database URL is not configured".to_string()],
+            }),
+        )
+            .into_response();
+    }
+
+    match upsert_known_git_repo_to_postgres(
+        &request.repo_url,
+        request.display_name.as_deref(),
+        request.provider.as_deref(),
+        request.default_branch.as_deref(),
+    )
+    .await
+    {
+        Ok(repo) => Json(KnownGitReposResponse {
+            ok: true,
+            source: "postgres".to_string(),
+            generated_at_ms: now_ms(),
+            repos: vec![repo],
+            errors: Vec::new(),
+        })
+        .into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(KnownGitReposResponse {
+                ok: false,
+                source: "postgres".to_string(),
+                generated_at_ms: now_ms(),
+                repos: Vec::new(),
+                errors: vec![error],
+            }),
+        )
+            .into_response(),
+    }
 }
 
 async fn lambda_functions(Query(query): Query<LambdasQuery>) -> impl IntoResponse {
@@ -2843,13 +3205,41 @@ async fn dispatch_thread_task(
         )
             .into_response();
     }
+    let mut repo_config = match normalized_repo_config(&request) {
+        Ok(repo_config) => repo_config,
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    };
+    if postgres_database_url().is_some() {
+        match fetch_thread_repo_config_from_postgres(&thread_id).await {
+            Ok(Some(stored_config)) => {
+                if stored_config.repo != repo_config.repo
+                    || stored_config.base_branch != repo_config.base_branch
+                {
+                    return (
+                        StatusCode::CONFLICT,
+                        Json(json!({
+                            "error": "thread already exists with a different repo or baseBranch"
+                        })),
+                    )
+                        .into_response();
+                }
+                repo_config = stored_config;
+            }
+            Ok(None) => {}
+            Err(error) => eprintln!("failed to fetch thread repo config before dispatch: {error}"),
+        }
+    }
 
     remember_runtime_task(&request, None);
     if let Err(error) = persist_runtime_task_to_postgres(&request, None).await {
         eprintln!("failed to persist remote task before worker wake: {error}");
     }
 
-    let Ok((namespace, name, _results)) = ensure_thread_worker(&thread_id).await else {
+    let Ok((namespace, name, _results)) =
+        ensure_thread_worker(&thread_id, &repo_config.repo, &repo_config.base_branch).await
+    else {
         return (
             StatusCode::BAD_GATEWAY,
             Json(json!({ "error": "failed to create or wake thread worker" })),
@@ -2873,6 +3263,8 @@ async fn dispatch_thread_task(
         "prompt": &request.prompt,
         "provider": &request.provider,
         "threadTitle": &request.thread_title,
+        "repo": &repo_config.repo,
+        "baseBranch": &repo_config.base_branch,
     });
     let client = reqwest::Client::new();
     let response = client
@@ -3170,13 +3562,14 @@ async fn main() {
         .route("/healthz", get(healthz))
         .route("/api/agents/tasks", get(agents_tasks))
         .route(
+            "/api/agents/git-repos",
+            get(known_git_repos).post(save_known_git_repo),
+        )
+        .route(
             "/api/lambdas/functions",
             get(lambda_functions).post(create_lambda_function),
         )
-        .route(
-            "/api/lambdas/functions/:id",
-            patch(update_lambda_function),
-        )
+        .route("/api/lambdas/functions/:id", patch(update_lambda_function))
         .route("/api/agents/tasks/:task_id/events", get(agent_task_events))
         .route(
             "/api/agents/tasks/:task_id/feedback",

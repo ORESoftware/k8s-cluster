@@ -28,6 +28,9 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   const childProcess = await readRepoFile(
     'remote/gleam-lambda-runner/src/gleam_lambda_runner/child_process.gleam',
   );
+  const pgContract = await readRepoFile(
+    'remote/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam',
+  );
   const erlPort = await readRepoFile('remote/gleam-lambda-runner/src/lambda_child_runner.erl');
   const jsRunner = await readRepoFile(
     'remote/gleam-lambda-runner/child-runtimes/js-function-runner.mjs',
@@ -38,8 +41,18 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   );
   const tableSql = await readRepoFile('remote/databases/pg/tables/lambda-functions-table.sql');
   const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  const manifest = await readRepoFile('remote/gleam-lambda-runner/manifest.toml');
+  const dockerfile = await readRepoFile('remote/gleam-lambda-runner/Dockerfile');
 
   assert.match(gleamToml, /name = "gleam_lambda_runner"/);
+  assert.match(gleamToml, /dd_pg_defs = \{ path = "\.\.\/libs\/pg-defs\/generated\/gleam" \}/);
+  assert.match(manifest, /name = "dd_pg_defs"[\s\S]*source = "local"[\s\S]*path = "\.\.\/libs\/pg-defs\/generated\/gleam"/);
+  assert.match(dockerfile, /COPY remote\/libs\/pg-defs\/generated\/gleam \.\/remote\/libs\/pg-defs\/generated\/gleam/);
+  assert.match(dockerfile, /COPY remote\/gleam-lambda-runner\/src \.\/remote\/gleam-lambda-runner\/src/);
+  assert.doesNotMatch(dockerfile, /COPY remote\/gleam-lambda-runner \.\/remote\/gleam-lambda-runner/);
+  assert.match(dockerfile, /WORKDIR \/app\/remote\/gleam-lambda-runner/);
+  assert.match(pgContract, /import pg_defs/);
+  assert.match(pgContract, /pg_defs\.lambda_functions_select_sql/);
   assert.match(gleamToml, /mist = ">= 6\.0\.0 and < 7\.0\.0"/);
   assert.match(
     httpServer,
@@ -62,7 +75,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /lambda_child_runner_manager/);
   assert.match(erlPort, /manager_bootstrap/);
   assert.match(erlPort, /lambda_definition_sql/);
-  assert.match(erlPort, /id = '", Identifier, "'::uuid/);
+  assert.match(erlPort, /'gleam_lambda_runner@pg_contract':lambda_functions_select_sql\(\)/);
+  assert.match(erlPort, /id = '", Identifier, "'/);
   assert.match(erlPort, /os:getenv\("LAMBDA_DATABASE_URL"\)/);
   assert.doesNotMatch(erlPort, /AGENT_TASKS_RDS_DATABASE_URL|AGENT_TASKS_DATABASE_URL|RDS_DATABASE_URL/);
   assert.match(erlPort, /identifier_kind/);

@@ -140,9 +140,10 @@ load_function_definition(Kind, Identifier, DatabaseUrl) ->
     end.
 
 lambda_definition_sql(Kind, Identifier) ->
+    SelectSql = 'gleam_lambda_runner@pg_contract':lambda_functions_select_sql(),
     iolist_to_binary([
         "select jsonb_build_object(",
-        "'id', id::text,",
+        "'id', id,",
         "'slug', slug,",
         "'functionBody', function_body,",
         "'runtime', runtime,",
@@ -151,10 +152,12 @@ lambda_definition_sql(Kind, Identifier) ->
         "'idleTimeoutSeconds', idle_timeout_seconds,",
         "'maxRunMs', max_run_ms,",
         "'status', status,",
-        "'labels', labels,",
-        "'metaData', meta_data",
+        "'labels', labels_json::jsonb,",
+        "'metaData', meta_data_json::jsonb",
         ")::text ",
-        "from lambda_functions ",
+        "from (",
+        SelectSql,
+        ") as lambda_function_row ",
         "where ",
         identifier_where_clause(Kind, Identifier),
         " ",
@@ -163,7 +166,7 @@ lambda_definition_sql(Kind, Identifier) ->
     ]).
 
 identifier_where_clause(uuid, Identifier) ->
-    ["id = '", Identifier, "'::uuid"];
+    ["id = '", Identifier, "'"];
 identifier_where_clause(slug, Identifier) ->
     ["slug = '", Identifier, "'"].
 

@@ -73,7 +73,7 @@ The same page now exposes per-thread controls:
   DB archival metadata.
 - `Delete (Delete Container)` removes the matching Kubernetes runtime resources, but does not touch
   GitHub PRs.
-- `Merge with upstream` wakes the thread worker, then asks the Node.js task manager to run
-  `git fetch origin dev && git merge --no-edit origin/dev` and push the feature branch.
+- `Merge with upstream` wakes the thread worker, then asks the Node.js task manager to fetch and
+  merge the configured base branch and push the feature branch.
 - `Open draft PR` wakes the worker and opens or reuses a GitHub PR only on demand. New PRs are
   created as drafts with `WIP - ...` titles and a body beginning with `WIP`.

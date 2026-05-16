@@ -8,6 +8,144 @@ import path from "node:path";
 
 const CODEGEN_METADATA = {
   tables: {
+    known_git_repos: {
+      description: "Git repositories that the remote agent runtime is allowed to clone, run tasks against, and open PRs for.",
+      names: {
+        typescript: "knownGitRepos",
+        rust: "KnownGitRepo",
+        gleam: "KnownGitRepo",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        repo_url: {
+          validation: {
+            minLength: 1,
+            maxLength: 2048,
+          },
+        },
+        display_name: {
+          validation: {
+            minLength: 1,
+            maxLength: 200,
+          },
+        },
+        default_branch: {
+          validation: {
+            minLength: 1,
+            maxLength: 120,
+          },
+        },
+      },
+    },
+    agent_remote_dev_threads: {
+      description: "Remote coding-agent chat threads pinned to one git repository and one Kubernetes worker runtime.",
+      names: {
+        typescript: "agentRemoteDevThreads",
+        rust: "AgentRemoteDevThread",
+        gleam: "AgentRemoteDevThread",
+      },
+      columns: {
+        title: {
+          validation: {
+            minLength: 1,
+            maxLength: 500,
+          },
+        },
+        repo: {
+          validation: {
+            minLength: 1,
+            maxLength: 2048,
+          },
+        },
+        base_branch: {
+          validation: {
+            minLength: 1,
+            maxLength: 120,
+          },
+        },
+      },
+    },
+    agent_remote_dev_tasks: {
+      description: "Prompt/control tasks dispatched to thread-scoped remote development workers.",
+      names: {
+        typescript: "agentRemoteDevTasks",
+        rust: "AgentRemoteDevTask",
+        gleam: "AgentRemoteDevTask",
+      },
+      columns: {
+        prompt: {
+          validation: {
+            minLength: 1,
+            maxBytes: 1048576,
+          },
+        },
+      },
+    },
+    agent_remote_dev_events: {
+      description: "Append-only ordered event stream emitted by remote agent workers.",
+      names: {
+        typescript: "agentRemoteDevEvents",
+        rust: "AgentRemoteDevEvent",
+        gleam: "AgentRemoteDevEvent",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        event_kind: {
+          validation: {
+            minLength: 1,
+            maxLength: 80,
+          },
+        },
+      },
+    },
+    agent_remote_dev_artifacts: {
+      description: "Artifacts published by remote agent tasks, such as logs, reports, patches, and output files.",
+      names: {
+        typescript: "agentRemoteDevArtifacts",
+        rust: "AgentRemoteDevArtifact",
+        gleam: "AgentRemoteDevArtifact",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        file_name: {
+          validation: {
+            minLength: 1,
+            maxLength: 1024,
+          },
+        },
+        url: {
+          validation: {
+            minLength: 1,
+            maxLength: 4096,
+          },
+        },
+      },
+    },
+    agent_remote_dev_runtime_locks: {
+      description: "Short-lived leases for queue consumers and reapers that coordinate exactly-one worker ownership per thread.",
+      names: {
+        typescript: "agentRemoteDevRuntimeLocks",
+        rust: "AgentRemoteDevRuntimeLock",
+        gleam: "AgentRemoteDevRuntimeLock",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        owner: {
+          validation: {
+            minLength: 1,
+            maxLength: 200,
+          },
+        },
+      },
+    },
     lambda_functions: {
       description: "User-defined remote lambda functions executed by the remote runtime.",
       names: {

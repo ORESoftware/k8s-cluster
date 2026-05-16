@@ -20,6 +20,8 @@ The public webserver in `remote/web-home-rs` serves HTML and calls this service 
 | `GET /healthz`                                       | liveness/readiness check                                                                                            |
 | `GET /metrics`                                       | Prometheus metrics                                                                                                  |
 | `GET /api/agents/tasks?limit=50`                     | agent threads/tasks/PR snapshot                                                                                     |
+| `GET /api/agents/git-repos?limit=100`                | known git repos registered for remote-dev threads                                                                   |
+| `POST /api/agents/git-repos`                         | upsert a known git repo URL/default branch before launching a thread                                                |
 | `GET /api/agents/tasks/:taskId/events?limit=250`     | stored task event stream for the thread UI response pane                                                            |
 | `POST /api/agents/tasks/:taskId/feedback`            | append an upvote/downvote feedback event for a specific response blurb                                              |
 | `GET /api/agents/threads/:threadId/context?limit=20` | thread task context for worker prompt continuation; reads Postgres when configured and falls back to runtime memory |
@@ -29,7 +31,7 @@ The public webserver in `remote/web-home-rs` serves HTML and calls this service 
 | `POST /api/agents/threads/:threadId/sleep`           | scale the UUID-matched thread Deployment to `0` while keeping PVC state                                             |
 | `POST /api/agents/threads/:threadId/archive`         | deep-sleep the UUID-matched runtime; DB archival can be layered on here later                                       |
 | `POST /api/agents/threads/:threadId/hard-delete`     | delete the UUID-matched Ingress, Service, Deployment, and PVC; GitHub PRs are not deleted                           |
-| `POST /api/agents/threads/:threadId/merge-upstream`  | scale the thread worker up if needed, wait for readiness, then ask it to merge `origin/dev` into its feature branch |
+| `POST /api/agents/threads/:threadId/merge-upstream`  | scale the thread worker up if needed, wait for readiness, then ask it to merge its configured base branch           |
 | `POST /api/agents/threads/:threadId/open-pr`         | scale the worker up if needed, wait for readiness, then ask it to open or reuse a draft WIP PR                      |
 
 ## Data sources

@@ -13,6 +13,11 @@ function definition from Postgres by immutable function UUID, then maps that UUI
 worker actor and Node child process. The Node child receives the definition over stdio, so it does
 not need database credentials or `psql`.
 
+The runner depends on the generated Gleam schema package at
+`remote/libs/pg-defs/generated/gleam` (`dd_pg_defs`). That package is generated from the shared
+Postgres contract in `remote/libs/pg-defs`, so lambda-definition reads should use those exported SQL
+constants instead of private table SQL.
+
 The deployment reads its own `dd-gleam-lambda-runner-secrets` Kubernetes secret, which is
 reconciled from AWS Secrets Manager by External Secrets Operator. It does not inherit the REST API
 database secret. Set `LAMBDA_DATABASE_URL` there for function-definition reads, plus any NATS or
@@ -39,3 +44,10 @@ nix shell nixpkgs#gleam nixpkgs#erlang nixpkgs#rebar3 nixpkgs#nodejs_25 nixpkgs#
 
 `rebar3` is required because one of the resolved dependencies builds with Rebar. `manifest.toml` is
 committed so local builds and cluster builds resolve the same package versions.
+
+Build the standalone image from the repository root so Docker can include the sibling `pg-defs`
+package:
+
+```sh
+docker build -f remote/gleam-lambda-runner/Dockerfile -t dd-gleam-lambda-runner:dev .
+```
