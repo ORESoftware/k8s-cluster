@@ -70,6 +70,7 @@ const AgentRemoteDevThreadSelectSQL = `select
       title,
       repo,
       base_branch,
+      meta,
       to_char(archived_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as archived_at,
       is_soft_deleted,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
@@ -81,11 +82,12 @@ const AgentRemoteDevThreadSelectSQL = `select
 type AgentRemoteDevThreadBun struct {
 	bun.BaseModel `bun:"table:agent_remote_dev_threads"`
 	Id uuid.UUID `bun:"id,type:uuid,pk" json:"id"`
-	UserId *uuid.UUID `bun:"user_id,type:uuid,nullzero" json:"userId,omitempty"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
 	KnownGitRepoId *uuid.UUID `bun:"known_git_repo_id,type:uuid,nullzero" json:"knownGitRepoId,omitempty"`
-	Title string `bun:"title,type:text" json:"title"`
+	Title string `bun:"title,type:text,default:'New thread'" json:"title"`
 	Repo string `bun:"repo,type:text" json:"repo"`
 	BaseBranch string `bun:"base_branch,type:varchar(120),default:'dev'" json:"baseBranch"`
+	Meta json.RawMessage `bun:"meta,type:jsonb,default:'{}'::jsonb" json:"meta"`
 	ArchivedAt *time.Time `bun:"archived_at,type:timestamptz,nullzero" json:"archivedAt,omitempty"`
 	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
@@ -97,6 +99,7 @@ type AgentRemoteDevThreadBun struct {
 func (value AgentRemoteDevThreadBun) Validate() error {
 	if len([]byte(value.Title)) > 500 { return errors.New("agent_remote_dev_threads.title exceeds 500 bytes") }
 	if len([]byte(value.Repo)) > 2048 { return errors.New("agent_remote_dev_threads.repo exceeds 2048 bytes") }
+	if !validateRawJSON(value.Meta) { return errors.New("agent_remote_dev_threads.meta must be valid JSON") }
 	return nil
 }
 
@@ -114,6 +117,7 @@ const AgentRemoteDevTaskSelectSQL = `select
       exit_reason,
       error_message,
       last_event_seq,
+      meta,
       is_soft_deleted,
       to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
       to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
@@ -123,22 +127,23 @@ const AgentRemoteDevTaskSelectSQL = `select
       updated_by::text as updated_by
     from agent_remote_dev_tasks`
 
-var AgentRemoteDevTaskStatusValues = []string{"queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"}
+var AgentRemoteDevTaskStatusValues = []string{"queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"}
 
 type AgentRemoteDevTaskBun struct {
 	bun.BaseModel `bun:"table:agent_remote_dev_tasks"`
 	Id uuid.UUID `bun:"id,type:uuid,pk" json:"id"`
 	ThreadId uuid.UUID `bun:"thread_id,type:uuid" json:"threadId"`
-	UserId *uuid.UUID `bun:"user_id,type:uuid,nullzero" json:"userId,omitempty"`
-	DockerTaskId *uuid.UUID `bun:"docker_task_id,type:uuid,nullzero" json:"dockerTaskId,omitempty"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	DockerTaskId uuid.UUID `bun:"docker_task_id,type:uuid" json:"dockerTaskId"`
 	Prompt string `bun:"prompt,type:text" json:"prompt"`
 	Status string `bun:"status,type:varchar(32),default:'queued'" json:"status"`
-	Branch *string `bun:"branch,type:text,nullzero" json:"branch,omitempty"`
+	Branch *string `bun:"branch,type:varchar(200),nullzero" json:"branch,omitempty"`
 	PrUrl *string `bun:"pr_url,type:text,nullzero" json:"prUrl,omitempty"`
 	PrState *string `bun:"pr_state,type:varchar(32),nullzero" json:"prState,omitempty"`
 	ExitReason *string `bun:"exit_reason,type:varchar(32),nullzero" json:"exitReason,omitempty"`
 	ErrorMessage *string `bun:"error_message,type:text,nullzero" json:"errorMessage,omitempty"`
 	LastEventSeq int32 `bun:"last_event_seq,type:integer,default:-1" json:"lastEventSeq"`
+	Meta json.RawMessage `bun:"meta,type:jsonb,default:'{}'::jsonb" json:"meta"`
 	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
 	StartedAt *time.Time `bun:"started_at,type:timestamptz,nullzero" json:"startedAt,omitempty"`
 	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
@@ -151,12 +156,13 @@ type AgentRemoteDevTaskBun struct {
 func (value AgentRemoteDevTaskBun) Validate() error {
 	if len([]byte(value.Prompt)) > 1048576 { return errors.New("agent_remote_dev_tasks.prompt exceeds 1048576 bytes") }
 	if !containsString(AgentRemoteDevTaskStatusValues, value.Status) { return errors.New("unsupported agent_remote_dev_tasks.status") }
+	if !validateRawJSON(value.Meta) { return errors.New("agent_remote_dev_tasks.meta must be valid JSON") }
 	return nil
 }
 
 const AgentRemoteDevEventTable = "agent_remote_dev_events"
 const AgentRemoteDevEventSelectSQL = `select
-      id::text as id,
+      id,
       task_id::text as task_id,
       seq,
       event_kind,
@@ -166,7 +172,7 @@ const AgentRemoteDevEventSelectSQL = `select
 
 type AgentRemoteDevEventBun struct {
 	bun.BaseModel `bun:"table:agent_remote_dev_events"`
-	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
 	TaskId uuid.UUID `bun:"task_id,type:uuid" json:"taskId"`
 	Seq int32 `bun:"seq,type:integer" json:"seq"`
 	EventKind string `bun:"event_kind,type:varchar(80)" json:"eventKind"`
@@ -183,39 +189,45 @@ const AgentRemoteDevArtifactTable = "agent_remote_dev_artifacts"
 const AgentRemoteDevArtifactSelectSQL = `select
       id::text as id,
       task_id::text as task_id,
-      storage_provider,
-      artifact_kind,
-      file_name,
+      thread_id::text as thread_id,
+      filename,
       content_type,
-      url,
       size_bytes,
-      meta_data,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      url,
+      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as signed_url_expires_at,
+      sha256,
+      meta,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
     from agent_remote_dev_artifacts`
 
-var AgentRemoteDevArtifactStorageProviderValues = []string{"local", "s3-r2", "gcs", "drive"}
-var AgentRemoteDevArtifactArtifactKindValues = []string{"file", "log", "patch", "report"}
+var AgentRemoteDevArtifactStorageProviderValues = []string{"s3", "r2", "gcs", "drive", "local"}
 
 type AgentRemoteDevArtifactBun struct {
 	bun.BaseModel `bun:"table:agent_remote_dev_artifacts"`
 	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
 	TaskId uuid.UUID `bun:"task_id,type:uuid" json:"taskId"`
-	StorageProvider string `bun:"storage_provider,type:varchar(40),default:'local'" json:"storageProvider"`
-	ArtifactKind string `bun:"artifact_kind,type:varchar(40),default:'file'" json:"artifactKind"`
-	FileName string `bun:"file_name,type:text" json:"fileName"`
-	ContentType *string `bun:"content_type,type:text,nullzero" json:"contentType,omitempty"`
+	ThreadId uuid.UUID `bun:"thread_id,type:uuid" json:"threadId"`
+	Filename string `bun:"filename,type:text" json:"filename"`
+	ContentType *string `bun:"content_type,type:varchar(200),nullzero" json:"contentType,omitempty"`
+	SizeBytes *int64 `bun:"size_bytes,type:bigint,nullzero" json:"sizeBytes,omitempty"`
+	StorageProvider string `bun:"storage_provider,type:varchar(32)" json:"storageProvider"`
+	StorageBucket *string `bun:"storage_bucket,type:varchar(200),nullzero" json:"storageBucket,omitempty"`
+	StorageKey *string `bun:"storage_key,type:text,nullzero" json:"storageKey,omitempty"`
 	Url string `bun:"url,type:text" json:"url"`
-	SizeBytes *int32 `bun:"size_bytes,type:integer,nullzero" json:"sizeBytes,omitempty"`
-	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	SignedUrlExpiresAt *time.Time `bun:"signed_url_expires_at,type:timestamptz,nullzero" json:"signedUrlExpiresAt,omitempty"`
+	Sha256 *string `bun:"sha256,type:varchar(64),nullzero" json:"sha256,omitempty"`
+	Meta json.RawMessage `bun:"meta,type:jsonb,default:'{}'::jsonb" json:"meta"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 }
 
 func (value AgentRemoteDevArtifactBun) Validate() error {
+	if len([]byte(value.Filename)) > 1024 { return errors.New("agent_remote_dev_artifacts.filename exceeds 1024 bytes") }
 	if !containsString(AgentRemoteDevArtifactStorageProviderValues, value.StorageProvider) { return errors.New("unsupported agent_remote_dev_artifacts.storage_provider") }
-	if !containsString(AgentRemoteDevArtifactArtifactKindValues, value.ArtifactKind) { return errors.New("unsupported agent_remote_dev_artifacts.artifact_kind") }
-	if len([]byte(value.FileName)) > 1024 { return errors.New("agent_remote_dev_artifacts.file_name exceeds 1024 bytes") }
 	if len([]byte(value.Url)) > 4096 { return errors.New("agent_remote_dev_artifacts.url exceeds 4096 bytes") }
-	if !validateRawJSON(value.MetaData) { return errors.New("agent_remote_dev_artifacts.meta_data must be valid JSON") }
+	if !validateRawJSON(value.Meta) { return errors.New("agent_remote_dev_artifacts.meta must be valid JSON") }
 	return nil
 }
 

@@ -45,13 +45,14 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     #[sea_orm(column_name = "user_id")]
-    pub user_id: Option<Uuid>,
+    pub user_id: Uuid,
     #[sea_orm(column_name = "known_git_repo_id")]
     pub known_git_repo_id: Option<Uuid>,
     pub title: String,
     pub repo: String,
     #[sea_orm(column_name = "base_branch")]
     pub base_branch: String,
+    pub meta: Json,
     #[sea_orm(column_name = "archived_at")]
     pub archived_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_name = "is_soft_deleted")]
@@ -79,9 +80,9 @@ pub struct Model {
     #[sea_orm(column_name = "thread_id")]
     pub thread_id: Uuid,
     #[sea_orm(column_name = "user_id")]
-    pub user_id: Option<Uuid>,
+    pub user_id: Uuid,
     #[sea_orm(column_name = "docker_task_id")]
-    pub docker_task_id: Option<Uuid>,
+    pub docker_task_id: Uuid,
     pub prompt: String,
     pub status: String,
     pub branch: Option<String>,
@@ -95,6 +96,7 @@ pub struct Model {
     pub error_message: Option<String>,
     #[sea_orm(column_name = "last_event_seq")]
     pub last_event_seq: i32,
+    pub meta: Json,
     #[sea_orm(column_name = "is_soft_deleted")]
     pub is_soft_deleted: bool,
     #[sea_orm(column_name = "started_at")]
@@ -119,8 +121,8 @@ impl ActiveModelBehavior for ActiveModel {}
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_events")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
+    #[sea_orm(primary_key)]
+    pub id: i64,
     #[sea_orm(column_name = "task_id")]
     pub task_id: Uuid,
     pub seq: i32,
@@ -143,19 +145,24 @@ pub struct Model {
     pub id: Uuid,
     #[sea_orm(column_name = "task_id")]
     pub task_id: Uuid,
-    #[sea_orm(column_name = "storage_provider")]
-    pub storage_provider: String,
-    #[sea_orm(column_name = "artifact_kind")]
-    pub artifact_kind: String,
-    #[sea_orm(column_name = "file_name")]
-    pub file_name: String,
+    #[sea_orm(column_name = "thread_id")]
+    pub thread_id: Uuid,
+    pub filename: String,
     #[sea_orm(column_name = "content_type")]
     pub content_type: Option<String>,
-    pub url: String,
     #[sea_orm(column_name = "size_bytes")]
-    pub size_bytes: Option<i32>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
+    pub size_bytes: Option<i64>,
+    #[sea_orm(column_name = "storage_provider")]
+    pub storage_provider: String,
+    #[sea_orm(column_name = "storage_bucket")]
+    pub storage_bucket: Option<String>,
+    #[sea_orm(column_name = "storage_key")]
+    pub storage_key: Option<String>,
+    pub url: String,
+    #[sea_orm(column_name = "signed_url_expires_at")]
+    pub signed_url_expires_at: Option<DateTimeWithTimeZone>,
+    pub sha256: Option<String>,
+    pub meta: Json,
     #[sea_orm(column_name = "created_at")]
     pub created_at: DateTimeWithTimeZone,
 }

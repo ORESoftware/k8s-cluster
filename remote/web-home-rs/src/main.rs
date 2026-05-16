@@ -477,6 +477,7 @@ fn ui_document(
                     meta name="theme-color" content=(theme_color);
                     title { (title) }
                     link rel="stylesheet" href=(stylesheet_path);
+                    script defer="defer" src="https://cdn.jsdelivr.net/npm/rxjs@7.8.1/dist/bundles/rxjs.umd.min.js" crossorigin="anonymous" {}
                     script defer="defer" src=(script_path) {}
                 }
                 body {
@@ -570,7 +571,7 @@ fn agents_threads_body() -> Markup {
                         }
                         label id="repo-url-new-row" class="field-wide" hidden="hidden" {
                             span { "New repo URL" }
-                            input id="repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
+                            input id="repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git or org/repo";
                         }
                         label {
                             span { "Base branch" }
@@ -688,7 +689,7 @@ fn agents_tasks_body() -> Markup {
                     }
                     label id="chat-repo-url-new-row" class="field field-wide" hidden="hidden" {
                         span { "New repo URL" }
-                        input id="chat-repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
+                        input id="chat-repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git or org/repo";
                     }
                     label class="field" {
                         span { "Base branch" }
@@ -824,6 +825,10 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         place-items: center;
       }
       input, select { min-height: 34px; padding: 7px 9px; width: 100%; }
+      input:invalid, select:invalid {
+        border-color: rgba(251, 113, 133, 0.7);
+        box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.18);
+      }
       textarea {
         min-height: 112px;
         padding: 10px;
@@ -1255,10 +1260,117 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       const NEW_REPO_VALUE = "__new__";
+      const REPO_URL_HELP = "repo must start with git@, ssh://, or https://; GitHub owner/repo shorthand is also accepted";
+      const REPO_URL_PREFIX_PATTERN = /^(git@|ssh:\/\/|https:\/\/)/;
+      const GITHUB_REPO_SHORTHAND_PATTERN = /^([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*?)(?:\.git)?$/;
 
-      function currentRepoUrl() {
+      function normalizeRepoUrlInput(value) {
+        const repo = value.trim();
+        const shorthand = repo.match(GITHUB_REPO_SHORTHAND_PATTERN);
+        if (!shorthand) return repo;
+        return `https://github.com/${shorthand[1]}/${shorthand[2]}.git`;
+      }
+
+      function validateRepoUrlInput(value) {
+        const repo = normalizeRepoUrlInput(value);
+        if (!repo) return { repo: "", error: "git repo URL is required" };
+        if (!REPO_URL_PREFIX_PATTERN.test(repo)) return { repo, error: REPO_URL_HELP };
+        return { repo, error: "" };
+      }
+
+      const BUILTIN_GIT_REPOS = [
+        { repoUrl: "https://github.com/ORESoftware/live-mutex.git", displayName: "ORESoftware/live-mutex", provider: "github", defaultBranch: "dev", status: "active" },
+        { repoUrl: "https://github.com/benefactor-cc/benefactor-cc.github.io.git", displayName: "benefactor-cc/benefactor-cc.github.io", provider: "github", defaultBranch: "main", status: "active" },
+        { repoUrl: "https://github.com/ORESoftware/k8s-cluster.git", displayName: "ORESoftware/k8s-cluster", provider: "github", defaultBranch: "main", status: "active" },
+        { repoUrl: "https://github.com/ORESoftware/us-anti-corruption-court-project.git", displayName: "ORESoftware/us-anti-corruption-court-project", provider: "github", defaultBranch: "main", status: "active" },
+        { repoUrl: "https://github.com/dancing-dragons/dd-next-1.git", displayName: "dancing-dragons/dd-next-1", provider: "github", defaultBranch: "dev", status: "active" },
+      ];
+
+      function repoMergeKey(repoUrl) {
+        const normalized = normalizeRepoUrlInput(repoUrl || "").replace(/\.git$/i, "");
+        const githubSsh = normalized.match(/^git@github\.com:([^/]+\/[^/]+)$/i);
+        if (githubSsh) return `github:${githubSsh[1].toLowerCase()}`;
+        const githubHttps = normalized.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)$/i);
+        if (githubHttps) return `github:${githubHttps[1].toLowerCase()}`;
+        return normalized.toLowerCase();
+      }
+
+      function mergeKnownRepos(builtinRepos, storedRepos) {
+        const merged = new Map();
+        for (const repo of [...builtinRepos, ...(storedRepos || [])]) {
+          const repoUrl = normalizeRepoUrlInput(repo.repoUrl || "");
+          if (!repoUrl) continue;
+          const key = repoMergeKey(repoUrl);
+          const existing = merged.get(key) || {};
+          merged.set(key, {
+            ...existing,
+            ...repo,
+            repoUrl,
+            displayName: repo.displayName || existing.displayName || repoUrl,
+            defaultBranch: repo.defaultBranch || existing.defaultBranch || "dev",
+            provider: repo.provider || existing.provider || "github",
+            status: repo.status || existing.status || "active",
+          });
+        }
+        return [...merged.values()];
+      }
+
+      async function fetchPgKnownRepos() {
+        const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
+        if (!response.ok) throw new Error(`known repos failed ${response.status}`);
+        const data = await response.json();
+        return data.repos || [];
+      }
+
+      function loadMergedKnownRepos() {
+        if (!window.rxjs) {
+          return fetchPgKnownRepos()
+            .catch(() => [])
+            .then((storedRepos) => mergeKnownRepos(BUILTIN_GIT_REPOS, storedRepos));
+        }
+        const { combineLatest, from, of } = window.rxjs;
+        const { catchError, map } = window.rxjs.operators || window.rxjs;
+        return new Promise((resolve) => {
+          combineLatest([
+            of(BUILTIN_GIT_REPOS),
+            from(fetchPgKnownRepos()).pipe(catchError(() => of([]))),
+          ])
+            .pipe(map(([builtinRepos, storedRepos]) => mergeKnownRepos(builtinRepos, storedRepos)))
+            .subscribe(resolve);
+        });
+      }
+
+      function currentRepoRawValue() {
         const selected = $("repo-url").value.trim();
         return selected === NEW_REPO_VALUE ? $("repo-url-new").value.trim() : selected;
+      }
+
+      function currentRepoUrl() {
+        return validateRepoUrlInput(currentRepoRawValue()).repo;
+      }
+
+      function validateCurrentRepoUrl() {
+        const selected = $("repo-url").value;
+        const input = selected === NEW_REPO_VALUE ? $("repo-url-new") : $("repo-url");
+        const rawRepo = currentRepoRawValue();
+        const validation = validateRepoUrlInput(rawRepo);
+        input.setCustomValidity(validation.error || "");
+        if (!validation.error && selected === NEW_REPO_VALUE && rawRepo && rawRepo !== validation.repo) {
+          $("repo-url-new").value = validation.repo;
+        }
+        return validation;
+      }
+
+      function validateRepoUrlField() {
+        if ($("repo-url").value !== NEW_REPO_VALUE) return true;
+        const input = $("repo-url-new");
+        if (!input.value.trim()) {
+          input.setCustomValidity("");
+          return true;
+        }
+        const validation = validateCurrentRepoUrl();
+        if (validation.error) setStatus(validation.error, true);
+        return !validation.error;
       }
 
       function currentBaseBranch() {
@@ -1272,7 +1384,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function updateRepoUrlMode() {
         const selected = $("repo-url").value;
         const isNew = selected === NEW_REPO_VALUE;
+        $("repo-url").setCustomValidity("");
         $("repo-url-new-row").hidden = !isNew;
+        if (!isNew) $("repo-url-new").setCustomValidity("");
         if (!isNew) {
           const repo = state.knownRepos.find((item) => item.repoUrl === selected);
           if (repo?.defaultBranch) $("base-branch").value = repo.defaultBranch;
@@ -1317,19 +1431,17 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       async function loadKnownRepos() {
-        const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
-        if (!response.ok) throw new Error(`known repos failed ${response.status}`);
-        const data = await response.json();
-        state.knownRepos = data.repos || [];
+        state.knownRepos = await loadMergedKnownRepos();
         renderKnownRepos();
       }
 
       async function saveKnownRepo() {
-        const repoUrl = currentRepoUrl();
-        if (!repoUrl) {
-          setStatus("git repo URL is required", true);
+        const repoValidation = validateCurrentRepoUrl();
+        if (repoValidation.error) {
+          setStatus(repoValidation.error, true);
           return;
         }
+        const repoUrl = repoValidation.repo;
         const response = await fetch("/api/agents/git-repos", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1771,14 +1883,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const taskId = $("task-id").value.trim() || makeUuid();
         const prompt = $("prompt").value.trim();
         const provider = $("provider").value;
-        const repo = currentRepoUrl();
+        const repoValidation = validateCurrentRepoUrl();
+        const repo = repoValidation.repo;
         const baseBranch = currentBaseBranch();
         if (!prompt) {
           setStatus("prompt is required", true);
           return;
         }
-        if (!repo) {
-          setStatus("git repo URL is required", true);
+        if (repoValidation.error) {
+          setStatus(repoValidation.error, true);
           return;
         }
         state.selectedThreadId = threadId;
@@ -1919,6 +2032,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       });
       $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(String(error), true)));
       $("repo-url").addEventListener("change", updateRepoUrlMode);
+      $("repo-url-new").addEventListener("blur", validateRepoUrlField);
+      $("repo-url-new").addEventListener("input", () => $("repo-url-new").setCustomValidity(""));
       $("thread-control-panel").addEventListener("click", () => setWorkspaceLayout("control"));
       $("thread-control-panel").addEventListener("keydown", handleControlPanelKey);
       $("previous-tasks-panel").addEventListener("click", () => setTaskStreamLayout("tasks"));
@@ -2034,6 +2149,10 @@ const AGENTS_TASKS_CSS: &str = r#"      :root {
         border-color: rgba(134, 239, 172, 0.65);
         color: #dcfce7;
         background: rgba(22, 101, 52, 0.28);
+      }
+      input:invalid, select:invalid {
+        border-color: rgba(248, 113, 113, 0.7);
+        box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.18);
       }
       .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
       .chat-grid {
@@ -2231,16 +2350,113 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         updateThreadRuntimeControls();
       };
       const NEW_REPO_VALUE = "__new__";
-      const currentChatRepoUrl = () => {
+      const REPO_URL_HELP = "repo must start with git@, ssh://, or https://; GitHub owner/repo shorthand is also accepted";
+      const REPO_URL_PREFIX_PATTERN = /^(git@|ssh:\/\/|https:\/\/)/;
+      const GITHUB_REPO_SHORTHAND_PATTERN = /^([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*?)(?:\.git)?$/;
+      const normalizeRepoUrlInput = (value) => {
+        const repo = value.trim();
+        const shorthand = repo.match(GITHUB_REPO_SHORTHAND_PATTERN);
+        if (!shorthand) return repo;
+        return `https://github.com/${shorthand[1]}/${shorthand[2]}.git`;
+      };
+      const validateRepoUrlInput = (value) => {
+        const repo = normalizeRepoUrlInput(value);
+        if (!repo) return { repo: "", error: "git repo URL is required" };
+        if (!REPO_URL_PREFIX_PATTERN.test(repo)) return { repo, error: REPO_URL_HELP };
+        return { repo, error: "" };
+      };
+      const BUILTIN_GIT_REPOS = [
+        { repoUrl: "https://github.com/ORESoftware/live-mutex.git", displayName: "ORESoftware/live-mutex", provider: "github", defaultBranch: "dev", status: "active" },
+        { repoUrl: "https://github.com/benefactor-cc/benefactor-cc.github.io.git", displayName: "benefactor-cc/benefactor-cc.github.io", provider: "github", defaultBranch: "main", status: "active" },
+        { repoUrl: "https://github.com/ORESoftware/k8s-cluster.git", displayName: "ORESoftware/k8s-cluster", provider: "github", defaultBranch: "main", status: "active" },
+        { repoUrl: "https://github.com/ORESoftware/us-anti-corruption-court-project.git", displayName: "ORESoftware/us-anti-corruption-court-project", provider: "github", defaultBranch: "main", status: "active" },
+        { repoUrl: "https://github.com/dancing-dragons/dd-next-1.git", displayName: "dancing-dragons/dd-next-1", provider: "github", defaultBranch: "dev", status: "active" },
+      ];
+      const repoMergeKey = (repoUrl) => {
+        const normalized = normalizeRepoUrlInput(repoUrl || "").replace(/\.git$/i, "");
+        const githubSsh = normalized.match(/^git@github\.com:([^/]+\/[^/]+)$/i);
+        if (githubSsh) return `github:${githubSsh[1].toLowerCase()}`;
+        const githubHttps = normalized.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)$/i);
+        if (githubHttps) return `github:${githubHttps[1].toLowerCase()}`;
+        return normalized.toLowerCase();
+      };
+      const mergeKnownRepos = (builtinRepos, storedRepos) => {
+        const merged = new Map();
+        for (const repo of [...builtinRepos, ...(storedRepos || [])]) {
+          const repoUrl = normalizeRepoUrlInput(repo.repoUrl || "");
+          if (!repoUrl) continue;
+          const key = repoMergeKey(repoUrl);
+          const existing = merged.get(key) || {};
+          merged.set(key, {
+            ...existing,
+            ...repo,
+            repoUrl,
+            displayName: repo.displayName || existing.displayName || repoUrl,
+            defaultBranch: repo.defaultBranch || existing.defaultBranch || "dev",
+            provider: repo.provider || existing.provider || "github",
+            status: repo.status || existing.status || "active",
+          });
+        }
+        return [...merged.values()];
+      };
+      const fetchPgKnownRepos = async () => {
+        const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
+        if (!response.ok) throw new Error(`known repos request failed (${response.status})`);
+        const data = await response.json();
+        return data.repos || [];
+      };
+      const loadMergedKnownRepos = () => {
+        if (!window.rxjs) {
+          return fetchPgKnownRepos()
+            .catch(() => [])
+            .then((storedRepos) => mergeKnownRepos(BUILTIN_GIT_REPOS, storedRepos));
+        }
+        const { combineLatest, from, of } = window.rxjs;
+        const { catchError, map } = window.rxjs.operators || window.rxjs;
+        return new Promise((resolve) => {
+          combineLatest([
+            of(BUILTIN_GIT_REPOS),
+            from(fetchPgKnownRepos()).pipe(catchError(() => of([]))),
+          ])
+            .pipe(map(([builtinRepos, storedRepos]) => mergeKnownRepos(builtinRepos, storedRepos)))
+            .subscribe(resolve);
+        });
+      };
+      const currentChatRepoRawValue = () => {
         const selected = $("chat-repo-url").value.trim();
         return selected === NEW_REPO_VALUE ? $("chat-repo-url-new").value.trim() : selected;
+      };
+      const currentChatRepoUrl = () => {
+        return validateRepoUrlInput(currentChatRepoRawValue()).repo;
+      };
+      const validateCurrentChatRepoUrl = () => {
+        const selected = $("chat-repo-url").value;
+        const input = selected === NEW_REPO_VALUE ? $("chat-repo-url-new") : $("chat-repo-url");
+        const rawRepo = currentChatRepoRawValue();
+        const validation = validateRepoUrlInput(rawRepo);
+        input.setCustomValidity(validation.error || "");
+        if (!validation.error && selected === NEW_REPO_VALUE && rawRepo && rawRepo !== validation.repo) {
+          $("chat-repo-url-new").value = validation.repo;
+        }
+        return validation;
+      };
+      const validateChatRepoUrlField = () => {
+        if ($("chat-repo-url").value !== NEW_REPO_VALUE) return true;
+        const input = $("chat-repo-url-new");
+        if (!input.value.trim()) {
+          input.setCustomValidity("");
+          return true;
+        }
+        return !validateCurrentChatRepoUrl().error;
       };
       const currentChatBaseBranch = () => $("chat-base-branch").value.trim() || "dev";
       const repoOptionLabel = (repo) => `${repo.displayName || repo.repoUrl} (${repo.defaultBranch || "dev"})`;
       const updateChatRepoUrlMode = () => {
         const selected = $("chat-repo-url").value;
         const isNew = selected === NEW_REPO_VALUE;
+        $("chat-repo-url").setCustomValidity("");
         $("chat-repo-url-new-row").hidden = !isNew;
+        if (!isNew) $("chat-repo-url-new").setCustomValidity("");
         if (!isNew) {
           const repo = knownRepos.find((item) => item.repoUrl === selected);
           if (repo?.defaultBranch) $("chat-base-branch").value = repo.defaultBranch;
@@ -2282,18 +2498,16 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         setChatRepoSelection(selected);
       };
       const loadKnownRepos = async () => {
-        const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
-        if (!response.ok) throw new Error(`known repos request failed (${response.status})`);
-        const data = await response.json();
-        knownRepos = data.repos || [];
+        knownRepos = await loadMergedKnownRepos();
         renderKnownRepos();
       };
       const saveChatRepo = async () => {
-        const repoUrl = currentChatRepoUrl();
-        if (!repoUrl) {
-          appendStreamLine("git repo URL is required");
+        const repoValidation = validateCurrentChatRepoUrl();
+        if (repoValidation.error) {
+          appendStreamLine(repoValidation.error);
           return;
         }
+        const repoUrl = repoValidation.repo;
         const response = await fetch("/api/agents/git-repos", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -2486,10 +2700,15 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         const threadId = $("chat-thread-id").value.trim();
         const taskId = $("chat-task-id").value.trim();
         const prompt = $("chat-prompt").value.trim();
-        const repo = currentChatRepoUrl();
+        const repoValidation = validateCurrentChatRepoUrl();
+        const repo = repoValidation.repo;
         const baseBranch = currentChatBaseBranch();
-        if (!threadId || !taskId || !prompt || !repo) {
-          appendStreamLine("thread UUID, task UUID, git repo URL, and prompt are required");
+        if (!threadId || !taskId || !prompt) {
+          appendStreamLine("thread UUID, task UUID, and prompt are required");
+          return;
+        }
+        if (repoValidation.error) {
+          appendStreamLine(repoValidation.error);
           return;
         }
         const route = `/api/agents/threads/${encodeURIComponent(threadId)}/tasks`;
@@ -2799,6 +3018,8 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         saveChatRepo().catch((error) => appendStreamLine(`repo URL save error: ${String(error)}`));
       });
       $("chat-repo-url").addEventListener("change", updateChatRepoUrlMode);
+      $("chat-repo-url-new").addEventListener("blur", validateChatRepoUrlField);
+      $("chat-repo-url-new").addEventListener("input", () => $("chat-repo-url-new").setCustomValidity(""));
       $("thread-sleep").addEventListener("click", () => {
         runThreadControl("sleep").catch((error) => appendStreamLine(`sleep error: ${String(error)}`));
       });

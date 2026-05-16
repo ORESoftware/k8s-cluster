@@ -50,21 +50,23 @@ export class KnownGitRepoEntity {
 
 }
 
+@Index("agent_remote_dev_threads_user_id_idx", ["userId"], { where: "is_soft_deleted = false" })
 @Index("agent_remote_dev_threads_known_git_repo_id_idx", ["knownGitRepoId"], { where: "is_soft_deleted = false" })
 @Index("agent_remote_dev_threads_repo_idx", ["repo"], { where: "is_soft_deleted = false" })
 // agent_remote_dev_threads_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_threads_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "agent_remote_dev_threads" })
 export class AgentRemoteDevThreadEntity {
   @PrimaryColumn({ name: "id", type: "uuid" })
   id!: string;
 
-  @Column({ name: "user_id", type: "uuid", nullable: true })
-  userId!: string | null;
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
 
   @Column({ name: "known_git_repo_id", type: "uuid", nullable: true })
   knownGitRepoId!: string | null;
 
-  @Column({ name: "title", type: "text" })
+  @Column({ name: "title", type: "text", default: () => "'New thread'" })
   title!: string;
 
   @Column({ name: "repo", type: "text" })
@@ -72,6 +74,9 @@ export class AgentRemoteDevThreadEntity {
 
   @Column({ name: "base_branch", type: "varchar", length: 120, default: () => "'dev'" })
   baseBranch!: string;
+
+  @Column({ name: "meta", type: "jsonb", default: () => "'{}'::jsonb" })
+  meta!: Record<string, unknown>;
 
   @Column({ name: "archived_at", type: "timestamptz", nullable: true })
   archivedAt!: Date | null;
@@ -93,9 +98,12 @@ export class AgentRemoteDevThreadEntity {
 
 }
 
+@Index("agent_remote_dev_tasks_docker_task_id_uq", ["dockerTaskId"], { unique: true })
 // agent_remote_dev_tasks_thread_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("agent_remote_dev_tasks_user_id_idx", ["userId"], { where: "is_soft_deleted = false" })
 @Index("agent_remote_dev_tasks_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // agent_remote_dev_tasks_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_tasks_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "agent_remote_dev_tasks" })
 export class AgentRemoteDevTaskEntity {
   @PrimaryColumn({ name: "id", type: "uuid" })
@@ -104,11 +112,11 @@ export class AgentRemoteDevTaskEntity {
   @Column({ name: "thread_id", type: "uuid" })
   threadId!: string;
 
-  @Column({ name: "user_id", type: "uuid", nullable: true })
-  userId!: string | null;
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
 
-  @Column({ name: "docker_task_id", type: "uuid", nullable: true })
-  dockerTaskId!: string | null;
+  @Column({ name: "docker_task_id", type: "uuid" })
+  dockerTaskId!: string;
 
   @Column({ name: "prompt", type: "text" })
   prompt!: string;
@@ -116,7 +124,7 @@ export class AgentRemoteDevTaskEntity {
   @Column({ name: "status", type: "varchar", length: 32, default: () => "'queued'" })
   status!: string;
 
-  @Column({ name: "branch", type: "text", nullable: true })
+  @Column({ name: "branch", type: "varchar", length: 200, nullable: true })
   branch!: string | null;
 
   @Column({ name: "pr_url", type: "text", nullable: true })
@@ -133,6 +141,9 @@ export class AgentRemoteDevTaskEntity {
 
   @Column({ name: "last_event_seq", type: "integer", default: () => "-1" })
   lastEventSeq!: number;
+
+  @Column({ name: "meta", type: "jsonb", default: () => "'{}'::jsonb" })
+  meta!: Record<string, unknown>;
 
   @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
   isSoftDeleted!: boolean;
@@ -159,10 +170,11 @@ export class AgentRemoteDevTaskEntity {
 
 @Index("agent_remote_dev_events_task_seq_uq", ["taskId", "seq"], { unique: true })
 // agent_remote_dev_events_task_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_events_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "agent_remote_dev_events" })
 export class AgentRemoteDevEventEntity {
-  @PrimaryGeneratedColumn("uuid", { name: "id" })
-  id!: string;
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
 
   @Column({ name: "task_id", type: "uuid" })
   taskId!: string;
@@ -182,6 +194,8 @@ export class AgentRemoteDevEventEntity {
 }
 
 // agent_remote_dev_artifacts_task_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_artifacts_thread_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_artifacts_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "agent_remote_dev_artifacts" })
 export class AgentRemoteDevArtifactEntity {
   @PrimaryGeneratedColumn("uuid", { name: "id" })
@@ -190,26 +204,38 @@ export class AgentRemoteDevArtifactEntity {
   @Column({ name: "task_id", type: "uuid" })
   taskId!: string;
 
-  @Column({ name: "storage_provider", type: "varchar", length: 40, default: () => "'local'" })
+  @Column({ name: "thread_id", type: "uuid" })
+  threadId!: string;
+
+  @Column({ name: "filename", type: "text" })
+  filename!: string;
+
+  @Column({ name: "content_type", type: "varchar", length: 200, nullable: true })
+  contentType!: string | null;
+
+  @Column({ name: "size_bytes", type: "bigint", nullable: true })
+  sizeBytes!: number | null;
+
+  @Column({ name: "storage_provider", type: "varchar", length: 32 })
   storageProvider!: string;
 
-  @Column({ name: "artifact_kind", type: "varchar", length: 40, default: () => "'file'" })
-  artifactKind!: string;
+  @Column({ name: "storage_bucket", type: "varchar", length: 200, nullable: true })
+  storageBucket!: string | null;
 
-  @Column({ name: "file_name", type: "text" })
-  fileName!: string;
-
-  @Column({ name: "content_type", type: "text", nullable: true })
-  contentType!: string | null;
+  @Column({ name: "storage_key", type: "text", nullable: true })
+  storageKey!: string | null;
 
   @Column({ name: "url", type: "text" })
   url!: string;
 
-  @Column({ name: "size_bytes", type: "integer", nullable: true })
-  sizeBytes!: number | null;
+  @Column({ name: "signed_url_expires_at", type: "timestamptz", nullable: true })
+  signedUrlExpiresAt!: Date | null;
 
-  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
-  metaData!: Record<string, unknown>;
+  @Column({ name: "sha256", type: "varchar", length: 64, nullable: true })
+  sha256!: string | null;
+
+  @Column({ name: "meta", type: "jsonb", default: () => "'{}'::jsonb" })
+  meta!: Record<string, unknown>;
 
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;
