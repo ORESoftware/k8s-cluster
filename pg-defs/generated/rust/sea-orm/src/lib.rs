@@ -216,6 +216,15 @@ pub struct Model {
     pub idle_timeout_seconds: i32,
     #[sea_orm(column_name = "max_run_ms")]
     pub max_run_ms: i32,
+    pub containerized: bool,
+    #[sea_orm(column_name = "container_image")]
+    pub container_image: Option<String>,
+    #[sea_orm(column_name = "container_build_status")]
+    pub container_build_status: String,
+    #[sea_orm(column_name = "container_build_error")]
+    pub container_build_error: Option<String>,
+    #[sea_orm(column_name = "container_built_at")]
+    pub container_built_at: Option<DateTimeWithTimeZone>,
     pub status: String,
     pub env: Json,
     pub labels: Json,

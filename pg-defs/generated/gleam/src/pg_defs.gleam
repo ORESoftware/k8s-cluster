@@ -357,34 +357,75 @@ pub fn validate_agent_remote_dev_runtime_locks_status(value: String) -> Result(S
 }
 
 pub const lambda_functions_table = "lambda_functions"
-pub const lambda_functions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions"
+pub const lambda_functions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions"
 
 pub type LambdaFunctionRuntime {
+  Nodejs
   Javascript
   Typescript
+  Python3
   Python
+  Ruby
+  Bash
   Shell
-  Gleam
 }
 
 pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> String {
   case value {
+    Nodejs -> "nodejs"
     Javascript -> "javascript"
     Typescript -> "typescript"
+    Python3 -> "python3"
     Python -> "python"
+    Ruby -> "ruby"
+    Bash -> "bash"
     Shell -> "shell"
-    Gleam -> "gleam"
   }
 }
 
 pub fn parse_lambda_functions_runtime(value: String) -> Result(LambdaFunctionRuntime, String) {
   case value {
+    "nodejs" -> Ok(Nodejs)
     "javascript" -> Ok(Javascript)
     "typescript" -> Ok(Typescript)
+    "python3" -> Ok(Python3)
     "python" -> Ok(Python)
+    "ruby" -> Ok(Ruby)
+    "bash" -> Ok(Bash)
     "shell" -> Ok(Shell)
-    "gleam" -> Ok(Gleam)
     _ -> Error("unsupported lambda_functions.runtime: " <> value)
+  }
+}
+
+pub type LambdaFunctionContainerBuildStatus {
+  NotRequested
+  Pending
+  Building
+  Built
+  Failed
+  Skipped
+}
+
+pub fn lambda_functions_container_build_status_to_string(value: LambdaFunctionContainerBuildStatus) -> String {
+  case value {
+    NotRequested -> "not_requested"
+    Pending -> "pending"
+    Building -> "building"
+    Built -> "built"
+    Failed -> "failed"
+    Skipped -> "skipped"
+  }
+}
+
+pub fn parse_lambda_functions_container_build_status(value: String) -> Result(LambdaFunctionContainerBuildStatus, String) {
+  case value {
+    "not_requested" -> Ok(NotRequested)
+    "pending" -> Ok(Pending)
+    "building" -> Ok(Building)
+    "built" -> Ok(Built)
+    "failed" -> Ok(Failed)
+    "skipped" -> Ok(Skipped)
+    _ -> Error("unsupported lambda_functions.container_build_status: " <> value)
   }
 }
 
@@ -426,6 +467,11 @@ pub type LambdaFunctionRow {
     reuse_key: Option(String),
     idle_timeout_seconds: Int,
     max_run_ms: Int,
+    containerized: Bool,
+    container_image: Option(String),
+    container_build_status: String,
+    container_build_error: Option(String),
+    container_built_at: Option(String),
     status: String,
     env_json: String,
     labels_json: String,
@@ -448,9 +494,16 @@ pub fn validate_lambda_functions_slug(value: String) -> Result(String, String) {
 }
 
 pub fn validate_lambda_functions_runtime(value: String) -> Result(String, String) {
-  case list.contains(["javascript", "typescript", "python", "shell", "gleam"], value) {
+  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"], value) {
     True -> Ok(value)
     False -> Error("unsupported lambda_functions.runtime: " <> value)
+  }
+}
+
+pub fn validate_lambda_functions_container_build_status(value: String) -> Result(String, String) {
+  case list.contains(["not_requested", "pending", "building", "built", "failed", "skipped"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported lambda_functions.container_build_status: " <> value)
   }
 }
 

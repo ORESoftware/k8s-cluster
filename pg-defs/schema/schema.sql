@@ -255,12 +255,7 @@ create table if not exists lambda_functions (
   constraint lambda_functions_body_size_chk
     check (octet_length(function_body) <= 262144),
   constraint lambda_functions_entry_command_chk
-    check (entry_command in (
-      'env -i PATH="$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs',
-      'env -i PATH="$PATH" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py',
-      'env -i PATH="$PATH" ruby child-runtimes/ruby-function-runner.rb',
-      'env -i PATH="$PATH" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs'
-    )),
+    check (octet_length(entry_command) between 1 and 512),
   constraint lambda_functions_container_image_size_chk
     check (container_image is null or octet_length(container_image) <= 512),
   constraint lambda_functions_container_build_error_size_chk

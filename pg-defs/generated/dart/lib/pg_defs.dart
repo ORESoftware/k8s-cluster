@@ -482,9 +482,10 @@ class AgentRemoteDevRuntimeLockRow {
 }
 
 const lambdaFunctionTable = "lambda_functions";
-const lambdaFunctionSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions";
+const lambdaFunctionSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions";
 
-const lambdaFunctionRuntimeValues = <String>["javascript", "typescript", "python", "shell", "gleam"];
+const lambdaFunctionRuntimeValues = <String>["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"];
+const lambdaFunctionContainerBuildStatusValues = <String>["not_requested", "pending", "building", "built", "failed", "skipped"];
 const lambdaFunctionStatusValues = <String>["draft", "active", "paused", "archived"];
 
 class LambdaFunctionRow {
@@ -499,6 +500,11 @@ class LambdaFunctionRow {
     this.reuseKey,
     required this.idleTimeoutSeconds,
     required this.maxRunMs,
+    required this.containerized,
+    this.containerImage,
+    required this.containerBuildStatus,
+    this.containerBuildError,
+    this.containerBuiltAt,
     required this.status,
     required this.env,
     required this.labels,
@@ -521,6 +527,11 @@ class LambdaFunctionRow {
   final String? reuseKey;
   final int idleTimeoutSeconds;
   final int maxRunMs;
+  final bool containerized;
+  final String? containerImage;
+  final String containerBuildStatus;
+  final String? containerBuildError;
+  final String? containerBuiltAt;
   final String status;
   final Map<String, Object?> env;
   final List<Object?> labels;
@@ -544,6 +555,11 @@ class LambdaFunctionRow {
       reuseKey: _readOptionalString(json, "reuseKey"),
       idleTimeoutSeconds: _readRequiredInt(json, "idleTimeoutSeconds"),
       maxRunMs: _readRequiredInt(json, "maxRunMs"),
+      containerized: _readRequiredBool(json, "containerized"),
+      containerImage: _readOptionalString(json, "containerImage"),
+      containerBuildStatus: _readRequiredString(json, "containerBuildStatus"),
+      containerBuildError: _readOptionalString(json, "containerBuildError"),
+      containerBuiltAt: _readOptionalString(json, "containerBuiltAt"),
       status: _readRequiredString(json, "status"),
       env: _readRequiredObject(json, "env"),
       labels: _readRequiredArray(json, "labels"),
@@ -568,6 +584,11 @@ class LambdaFunctionRow {
     "reuseKey": reuseKey,
     "idleTimeoutSeconds": idleTimeoutSeconds,
     "maxRunMs": maxRunMs,
+    "containerized": containerized,
+    "containerImage": containerImage,
+    "containerBuildStatus": containerBuildStatus,
+    "containerBuildError": containerBuildError,
+    "containerBuiltAt": containerBuiltAt,
     "status": status,
     "env": env,
     "labels": labels,
@@ -588,9 +609,6 @@ class LambdaFunctionRow {
     if (!lambdaFunctionRuntimeValues.contains(runtime)) {
       errors.add("unsupported lambda_functions.runtime");
     }
-    if (entryCommand != "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs") {
-      errors.add("lambda_functions.entry_command must use the managed value");
-    }
     if (utf8.encode(functionBody).length > 262144) {
       errors.add("lambda_functions.function_body exceeds 262144 bytes");
     }
@@ -605,6 +623,9 @@ class LambdaFunctionRow {
     }
     if (maxRunMs > 300000) {
       errors.add("lambda_functions.max_run_ms is above the maximum");
+    }
+    if (!lambdaFunctionContainerBuildStatusValues.contains(containerBuildStatus)) {
+      errors.add("unsupported lambda_functions.container_build_status");
     }
     if (!lambdaFunctionStatusValues.contains(status)) {
       errors.add("unsupported lambda_functions.status");

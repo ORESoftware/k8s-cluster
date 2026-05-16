@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_status_values/0, validate_lambda_functions_status/1]).
+-export([known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1]).
 
 known_git_repos_table() -> <<"known_git_repos">>.
 
@@ -173,7 +173,7 @@ validate_agent_remote_dev_runtime_locks_status(Value) when is_list(Value) ->
 
 lambda_functions_table() -> <<"lambda_functions">>.
 
-lambda_functions_columns() -> [<<"id">>, <<"slug">>, <<"display_name">>, <<"description">>, <<"runtime">>, <<"entry_command">>, <<"function_body">>, <<"reuse_key">>, <<"idle_timeout_seconds">>, <<"max_run_ms">>, <<"status">>, <<"env">>, <<"labels">>, <<"meta_data">>, <<"last_invoked_at">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+lambda_functions_columns() -> [<<"id">>, <<"slug">>, <<"display_name">>, <<"description">>, <<"runtime">>, <<"entry_command">>, <<"function_body">>, <<"reuse_key">>, <<"idle_timeout_seconds">>, <<"max_run_ms">>, <<"containerized">>, <<"container_image">>, <<"container_build_status">>, <<"container_build_error">>, <<"container_built_at">>, <<"status">>, <<"env">>, <<"labels">>, <<"meta_data">>, <<"last_invoked_at">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
 
 lambda_functions_select_sql() -> <<"select
       id::text as id,
@@ -186,6 +186,11 @@ lambda_functions_select_sql() -> <<"select
       reuse_key,
       idle_timeout_seconds,
       max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,
       status,
       env::text as env_json,
       labels::text as labels_json,
@@ -198,7 +203,7 @@ lambda_functions_select_sql() -> <<"select
       updated_by::text as updated_by
     from lambda_functions">>.
 
-lambda_functions_runtime_values() -> [<<"javascript">>, <<"typescript">>, <<"python">>, <<"shell">>, <<"gleam">>].
+lambda_functions_runtime_values() -> [<<"nodejs">>, <<"javascript">>, <<"typescript">>, <<"python3">>, <<"python">>, <<"ruby">>, <<"bash">>, <<"shell">>].
 
 validate_lambda_functions_runtime(Value) when is_binary(Value) ->
     case lists:member(Value, lambda_functions_runtime_values()) of
@@ -207,6 +212,16 @@ validate_lambda_functions_runtime(Value) when is_binary(Value) ->
     end;
 validate_lambda_functions_runtime(Value) when is_list(Value) ->
     validate_lambda_functions_runtime(unicode:characters_to_binary(Value)).
+
+lambda_functions_container_build_status_values() -> [<<"not_requested">>, <<"pending">>, <<"building">>, <<"built">>, <<"failed">>, <<"skipped">>].
+
+validate_lambda_functions_container_build_status(Value) when is_binary(Value) ->
+    case lists:member(Value, lambda_functions_container_build_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported lambda_functions.container_build_status: "/binary, Value/binary>>}
+    end;
+validate_lambda_functions_container_build_status(Value) when is_list(Value) ->
+    validate_lambda_functions_container_build_status(unicode:characters_to_binary(Value)).
 
 lambda_functions_status_values() -> [<<"draft">>, <<"active">>, <<"paused">>, <<"archived">>].
 

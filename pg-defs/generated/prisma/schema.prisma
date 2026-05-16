@@ -143,12 +143,17 @@ model LambdaFunction {
   slug String @db.VarChar(120)
   displayName String @map("display_name") @db.VarChar(200)
   description String @default("") @db.Text
-  runtime String @default("javascript") @db.VarChar(40)
+  runtime String @default("nodejs") @db.VarChar(40)
   entryCommand String @map("entry_command") @default("env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs") @db.Text
   functionBody String @map("function_body") @db.Text
   reuseKey String? @map("reuse_key") @db.VarChar(200)
   idleTimeoutSeconds Int @map("idle_timeout_seconds") @default(300)
   maxRunMs Int @map("max_run_ms") @default(30000)
+  containerized Boolean @default(false)
+  containerImage String? @map("container_image") @db.Text
+  containerBuildStatus String @map("container_build_status") @default("not_requested") @db.VarChar(32)
+  containerBuildError String? @map("container_build_error") @db.Text
+  containerBuiltAt DateTime? @map("container_built_at") @db.Timestamptz(6)
   status String @default("draft") @db.VarChar(32)
   env Json @default("{}")
   labels Json @default("[]")
