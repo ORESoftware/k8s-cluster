@@ -1,0 +1,33 @@
+{
+  "name": "@dd/pg-defs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Canonical remote Postgres schema definitions and generated language adapters.",
+  "scripts": {
+    "generate": "node src/generate.mjs",
+    "check": "node src/generate.mjs --check",
+    "print:sql": "node src/generate.mjs --print-sql",
+    "parse:sql": "node src/diff.mjs --parse-only",
+    "diff": "node src/diff.mjs",
+    "diff:prod": "node src/diff.mjs --env=prod"
+  },
+  "exports": {
+    "./schema": "./schema/schema.sql",
+    "./typescript": "./generated/typescript/index.ts",
+    "./drizzle": "./generated/typescript/drizzle.ts",
+    "./typeorm": "./generated/typescript/typeorm.ts",
+    "./prisma": "./generated/prisma/schema.prisma",
+    "./rust": "./generated/rust/src/lib.rs",
+    "./rust-diesel": "./generated/rust/diesel/src/lib.rs",
+    "./rust-sea-orm": "./generated/rust/sea-orm/src/lib.rs",
+    "./gleam": "./generated/gleam/src/pg_defs.gleam",
+    "./erlang": "./generated/erlang/src/pg_defs.erl"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "^0.45.1",
+    "typeorm": "^0.3.0",
+    "zod": "^4.1.13"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
