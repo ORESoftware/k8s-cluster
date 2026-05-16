@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_artifacts_artifact_kind_values/0, validate_agent_remote_dev_artifacts_artifact_kind/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_status_values/0, validate_lambda_functions_status/1]).
+-export([known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_status_values/0, validate_lambda_functions_status/1]).
 
 known_git_repos_table() -> <<"known_git_repos">>.
 
@@ -47,7 +47,7 @@ validate_known_git_repos_status(Value) when is_list(Value) ->
 
 agent_remote_dev_threads_table() -> <<"agent_remote_dev_threads">>.
 
-agent_remote_dev_threads_columns() -> [<<"id">>, <<"user_id">>, <<"known_git_repo_id">>, <<"title">>, <<"repo">>, <<"base_branch">>, <<"archived_at">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+agent_remote_dev_threads_columns() -> [<<"id">>, <<"user_id">>, <<"known_git_repo_id">>, <<"title">>, <<"repo">>, <<"base_branch">>, <<"meta">>, <<"archived_at">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
 
 agent_remote_dev_threads_select_sql() -> <<"select
       id::text as id,
@@ -56,6 +56,7 @@ agent_remote_dev_threads_select_sql() -> <<"select
       title,
       repo,
       base_branch,
+      meta::text as meta_json,
       to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,
       is_soft_deleted,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
@@ -66,7 +67,7 @@ agent_remote_dev_threads_select_sql() -> <<"select
 
 agent_remote_dev_tasks_table() -> <<"agent_remote_dev_tasks">>.
 
-agent_remote_dev_tasks_columns() -> [<<"id">>, <<"thread_id">>, <<"user_id">>, <<"docker_task_id">>, <<"prompt">>, <<"status">>, <<"branch">>, <<"pr_url">>, <<"pr_state">>, <<"exit_reason">>, <<"error_message">>, <<"last_event_seq">>, <<"is_soft_deleted">>, <<"started_at">>, <<"finished_at">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+agent_remote_dev_tasks_columns() -> [<<"id">>, <<"thread_id">>, <<"user_id">>, <<"docker_task_id">>, <<"prompt">>, <<"status">>, <<"branch">>, <<"pr_url">>, <<"pr_state">>, <<"exit_reason">>, <<"error_message">>, <<"last_event_seq">>, <<"meta">>, <<"is_soft_deleted">>, <<"started_at">>, <<"finished_at">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
 
 agent_remote_dev_tasks_select_sql() -> <<"select
       id::text as id,
@@ -81,6 +82,7 @@ agent_remote_dev_tasks_select_sql() -> <<"select
       exit_reason,
       error_message,
       last_event_seq,
+      meta::text as meta_json,
       is_soft_deleted,
       to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,
       to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,
@@ -90,7 +92,7 @@ agent_remote_dev_tasks_select_sql() -> <<"select
       updated_by::text as updated_by
     from agent_remote_dev_tasks">>.
 
-agent_remote_dev_tasks_status_values() -> [<<"queued">>, <<"running">>, <<"streaming">>, <<"done">>, <<"failed">>, <<"cancelled">>, <<"pr_open">>].
+agent_remote_dev_tasks_status_values() -> [<<"queued">>, <<"running">>, <<"streaming">>, <<"pushed">>, <<"pr_open">>, <<"pr_merged">>, <<"pr_closed">>, <<"done">>, <<"failed">>, <<"cancelled">>].
 
 validate_agent_remote_dev_tasks_status(Value) when is_binary(Value) ->
     case lists:member(Value, agent_remote_dev_tasks_status_values()) of
@@ -105,7 +107,7 @@ agent_remote_dev_events_table() -> <<"agent_remote_dev_events">>.
 agent_remote_dev_events_columns() -> [<<"id">>, <<"task_id">>, <<"seq">>, <<"event_kind">>, <<"payload">>, <<"created_at">>].
 
 agent_remote_dev_events_select_sql() -> <<"select
-      id::text as id,
+      id,
       task_id::text as task_id,
       seq,
       event_kind,
@@ -115,22 +117,26 @@ agent_remote_dev_events_select_sql() -> <<"select
 
 agent_remote_dev_artifacts_table() -> <<"agent_remote_dev_artifacts">>.
 
-agent_remote_dev_artifacts_columns() -> [<<"id">>, <<"task_id">>, <<"storage_provider">>, <<"artifact_kind">>, <<"file_name">>, <<"content_type">>, <<"url">>, <<"size_bytes">>, <<"meta_data">>, <<"created_at">>].
+agent_remote_dev_artifacts_columns() -> [<<"id">>, <<"task_id">>, <<"thread_id">>, <<"filename">>, <<"content_type">>, <<"size_bytes">>, <<"storage_provider">>, <<"storage_bucket">>, <<"storage_key">>, <<"url">>, <<"signed_url_expires_at">>, <<"sha256">>, <<"meta">>, <<"created_at">>].
 
 agent_remote_dev_artifacts_select_sql() -> <<"select
       id::text as id,
       task_id::text as task_id,
-      storage_provider,
-      artifact_kind,
-      file_name,
+      thread_id::text as thread_id,
+      filename,
       content_type,
-      url,
       size_bytes,
-      meta_data::text as meta_data_json,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      url,
+      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as signed_url_expires_at,
+      sha256,
+      meta::text as meta_json,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
     from agent_remote_dev_artifacts">>.
 
-agent_remote_dev_artifacts_storage_provider_values() -> [<<"local">>, <<"s3-r2">>, <<"gcs">>, <<"drive">>].
+agent_remote_dev_artifacts_storage_provider_values() -> [<<"s3">>, <<"r2">>, <<"gcs">>, <<"drive">>, <<"local">>].
 
 validate_agent_remote_dev_artifacts_storage_provider(Value) when is_binary(Value) ->
     case lists:member(Value, agent_remote_dev_artifacts_storage_provider_values()) of
@@ -139,16 +145,6 @@ validate_agent_remote_dev_artifacts_storage_provider(Value) when is_binary(Value
     end;
 validate_agent_remote_dev_artifacts_storage_provider(Value) when is_list(Value) ->
     validate_agent_remote_dev_artifacts_storage_provider(unicode:characters_to_binary(Value)).
-
-agent_remote_dev_artifacts_artifact_kind_values() -> [<<"file">>, <<"log">>, <<"patch">>, <<"report">>].
-
-validate_agent_remote_dev_artifacts_artifact_kind(Value) when is_binary(Value) ->
-    case lists:member(Value, agent_remote_dev_artifacts_artifact_kind_values()) of
-        true -> ok;
-        false -> {error, <<"unsupported agent_remote_dev_artifacts.artifact_kind: "/binary, Value/binary>>}
-    end;
-validate_agent_remote_dev_artifacts_artifact_kind(Value) when is_list(Value) ->
-    validate_agent_remote_dev_artifacts_artifact_kind(unicode:characters_to_binary(Value)).
 
 agent_remote_dev_runtime_locks_table() -> <<"agent_remote_dev_runtime_locks">>.
 

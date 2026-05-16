@@ -3,7 +3,7 @@
 // Generated ORM/client code is an adapter only; do not infer migrations from it.
 // MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 const textEncoder = new TextEncoder();
@@ -91,11 +91,12 @@ export const agentRemoteDevThreads = pgTable(
   "agent_remote_dev_threads",
   {
     id: uuid("id").primaryKey(),
-    userId: uuid("user_id"),
+    userId: uuid("user_id").notNull(),
     knownGitRepoId: uuid("known_git_repo_id"),
-    title: text("title").notNull(),
+    title: text("title").default(sql`'New thread'`).notNull(),
     repo: text("repo").notNull(),
     baseBranch: varchar("base_branch", { length: 120 }).default(sql`'dev'`).notNull(),
+    meta: jsonb("meta").default(sql`'{}'::jsonb`).notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true, mode: "string" }),
     isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
@@ -108,19 +109,23 @@ export const agentRemoteDevThreads = pgTable(
     agentRemoteDevThreadsRepoSizeChk: check("agent_remote_dev_threads_repo_size_chk", sql.raw("octet_length(repo) <= 2048")),
     agentRemoteDevThreadsTitleSizeChk: check("agent_remote_dev_threads_title_size_chk", sql.raw("octet_length(title) <= 500")),
     agentRemoteDevThreadsBaseBranchFormatChk: check("agent_remote_dev_threads_base_branch_format_chk", sql.raw("base_branch ~ '^[A-Za-z0-9._/-]{1,120}$'")),
+    agentRemoteDevThreadsMetaObjectChk: check("agent_remote_dev_threads_meta_object_chk", sql.raw("jsonb_typeof(meta) = 'object'")),
+    agentRemoteDevThreadsUserIdIdx: index("agent_remote_dev_threads_user_id_idx").on(table.userId).where(sql.raw("is_soft_deleted = false")),
     agentRemoteDevThreadsKnownGitRepoIdIdx: index("agent_remote_dev_threads_known_git_repo_id_idx").on(table.knownGitRepoId).where(sql.raw("is_soft_deleted = false")),
     agentRemoteDevThreadsRepoIdx: index("agent_remote_dev_threads_repo_idx").on(table.repo).where(sql.raw("is_soft_deleted = false")),
     agentRemoteDevThreadsUpdatedAtIdx: index("agent_remote_dev_threads_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    agentRemoteDevThreadsCreatedAtIdx: index("agent_remote_dev_threads_created_at_idx").on(table.createdAt.desc()).where(sql.raw("is_soft_deleted = false")),
   }),
 );
 
 export const agentRemoteDevThreadRowSchema = z.object({
   id: z.string().uuid(),
-  userId: z.string().uuid().nullable(),
+  userId: z.string().uuid(),
   knownGitRepoId: z.string().uuid().nullable(),
   title: z.string().min(1).max(500).refine((value) => byteLength(value) <= 500, "Must be at most 500 bytes"),
   repo: z.string().min(1).max(2048).regex(new RegExp("^(git@|ssh://|https://).+")).refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
   baseBranch: z.string().min(1).max(120).regex(new RegExp("^[A-Za-z0-9._/-]{1,120}$")),
+  meta: jsonObjectSchema,
   archivedAt: z.string().datetime().nullable(),
   isSoftDeleted: z.boolean(),
   createdAt: z.string().datetime(),
@@ -131,11 +136,12 @@ export const agentRemoteDevThreadRowSchema = z.object({
 
 export const agentRemoteDevThreadInsertSchema = z.object({
   id: z.string().uuid(),
-  userId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid(),
   knownGitRepoId: z.string().uuid().nullable().optional(),
-  title: z.string().min(1).max(500).refine((value) => byteLength(value) <= 500, "Must be at most 500 bytes"),
+  title: z.string().min(1).max(500).refine((value) => byteLength(value) <= 500, "Must be at most 500 bytes").optional().default("New thread"),
   repo: z.string().min(1).max(2048).regex(new RegExp("^(git@|ssh://|https://).+")).refine((value) => byteLength(value) <= 2048, "Must be at most 2048 bytes"),
   baseBranch: z.string().min(1).max(120).regex(new RegExp("^[A-Za-z0-9._/-]{1,120}$")).optional().default("dev"),
+  meta: jsonObjectSchema.optional().default({}),
   archivedAt: z.string().datetime().nullable().optional(),
   isSoftDeleted: z.boolean().optional().default(false),
   createdAt: z.string().datetime().optional(),
@@ -149,7 +155,7 @@ export type AgentRemoteDevThreadRow = z.infer<typeof agentRemoteDevThreadRowSche
 export type AgentRemoteDevThreadInsert = z.infer<typeof agentRemoteDevThreadInsertSchema>;
 export type AgentRemoteDevThreadUpdate = z.infer<typeof agentRemoteDevThreadUpdateSchema>;
 
-export const agentRemoteDevTaskStatusValues = ["queued","running","streaming","done","failed","cancelled","pr_open"] as const;
+export const agentRemoteDevTaskStatusValues = ["queued","running","streaming","pushed","pr_open","pr_merged","pr_closed","done","failed","cancelled"] as const;
 export const agentRemoteDevTaskStatusSchema = z.enum(agentRemoteDevTaskStatusValues);
 export type AgentRemoteDevTaskStatus = z.infer<typeof agentRemoteDevTaskStatusSchema>;
 
@@ -158,16 +164,17 @@ export const agentRemoteDevTasks = pgTable(
   {
     id: uuid("id").primaryKey(),
     threadId: uuid("thread_id").notNull(),
-    userId: uuid("user_id"),
-    dockerTaskId: uuid("docker_task_id"),
+    userId: uuid("user_id").notNull(),
+    dockerTaskId: uuid("docker_task_id").notNull(),
     prompt: text("prompt").notNull(),
     status: varchar("status", { length: 32 }).default(sql`'queued'`).notNull(),
-    branch: text("branch"),
+    branch: varchar("branch", { length: 200 }),
     prUrl: text("pr_url"),
     prState: varchar("pr_state", { length: 32 }),
     exitReason: varchar("exit_reason", { length: 32 }),
     errorMessage: text("error_message"),
     lastEventSeq: integer("last_event_seq").default(sql`-1`).notNull(),
+    meta: jsonb("meta").default(sql`'{}'::jsonb`).notNull(),
     isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
     startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
     finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
@@ -178,28 +185,33 @@ export const agentRemoteDevTasks = pgTable(
   },
   (table) => ({
     agentRemoteDevTasksPromptSizeChk: check("agent_remote_dev_tasks_prompt_size_chk", sql.raw("octet_length(prompt) <= 1048576")),
-    agentRemoteDevTasksStatusChk: check("agent_remote_dev_tasks_status_chk", sql.raw("status in ('queued', 'running', 'streaming', 'done', 'failed', 'cancelled', 'pr_open')")),
+    agentRemoteDevTasksStatusChk: check("agent_remote_dev_tasks_status_chk", sql.raw("status in ('queued', 'running', 'streaming', 'pushed', 'pr_open', 'pr_merged', 'pr_closed', 'done', 'failed', 'cancelled')")),
     agentRemoteDevTasksPrStateChk: check("agent_remote_dev_tasks_pr_state_chk", sql.raw("pr_state is null or pr_state in ('draft', 'open', 'closed', 'merged')")),
     agentRemoteDevTasksExitReasonChk: check("agent_remote_dev_tasks_exit_reason_chk", sql.raw("exit_reason is null or exit_reason in ('completed', 'cancelled', 'failed')")),
+    agentRemoteDevTasksMetaObjectChk: check("agent_remote_dev_tasks_meta_object_chk", sql.raw("jsonb_typeof(meta) = 'object'")),
+    agentRemoteDevTasksDockerTaskIdUq: uniqueIndex("agent_remote_dev_tasks_docker_task_id_uq").on(table.dockerTaskId),
     agentRemoteDevTasksThreadIdCreatedAtIdx: index("agent_remote_dev_tasks_thread_id_created_at_idx").on(table.threadId, table.createdAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    agentRemoteDevTasksUserIdIdx: index("agent_remote_dev_tasks_user_id_idx").on(table.userId).where(sql.raw("is_soft_deleted = false")),
     agentRemoteDevTasksStatusIdx: index("agent_remote_dev_tasks_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
     agentRemoteDevTasksUpdatedAtIdx: index("agent_remote_dev_tasks_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    agentRemoteDevTasksCreatedAtIdx: index("agent_remote_dev_tasks_created_at_idx").on(table.createdAt.desc()).where(sql.raw("is_soft_deleted = false")),
   }),
 );
 
 export const agentRemoteDevTaskRowSchema = z.object({
   id: z.string().uuid(),
   threadId: z.string().uuid(),
-  userId: z.string().uuid().nullable(),
-  dockerTaskId: z.string().uuid().nullable(),
+  userId: z.string().uuid(),
+  dockerTaskId: z.string().uuid(),
   prompt: z.string().min(1).refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
   status: agentRemoteDevTaskStatusSchema,
-  branch: z.string().nullable(),
+  branch: z.string().max(200).nullable(),
   prUrl: z.string().nullable(),
   prState: z.string().max(32).nullable(),
   exitReason: z.string().max(32).nullable(),
   errorMessage: z.string().nullable(),
   lastEventSeq: z.number().int(),
+  meta: jsonObjectSchema,
   isSoftDeleted: z.boolean(),
   startedAt: z.string().datetime().nullable(),
   finishedAt: z.string().datetime().nullable(),
@@ -212,16 +224,17 @@ export const agentRemoteDevTaskRowSchema = z.object({
 export const agentRemoteDevTaskInsertSchema = z.object({
   id: z.string().uuid(),
   threadId: z.string().uuid(),
-  userId: z.string().uuid().nullable().optional(),
-  dockerTaskId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid(),
+  dockerTaskId: z.string().uuid(),
   prompt: z.string().min(1).refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
   status: agentRemoteDevTaskStatusSchema.optional().default("queued"),
-  branch: z.string().nullable().optional(),
+  branch: z.string().max(200).nullable().optional(),
   prUrl: z.string().nullable().optional(),
   prState: z.string().max(32).nullable().optional(),
   exitReason: z.string().max(32).nullable().optional(),
   errorMessage: z.string().nullable().optional(),
-  lastEventSeq: z.number().int().optional(),
+  lastEventSeq: z.number().int().optional().default(-1),
+  meta: jsonObjectSchema.optional().default({}),
   isSoftDeleted: z.boolean().optional().default(false),
   startedAt: z.string().datetime().nullable().optional(),
   finishedAt: z.string().datetime().nullable().optional(),
@@ -239,7 +252,7 @@ export type AgentRemoteDevTaskUpdate = z.infer<typeof agentRemoteDevTaskUpdateSc
 export const agentRemoteDevEvents = pgTable(
   "agent_remote_dev_events",
   {
-    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
     taskId: uuid("task_id").notNull(),
     seq: integer("seq").notNull(),
     eventKind: varchar("event_kind", { length: 80 }).notNull(),
@@ -251,11 +264,12 @@ export const agentRemoteDevEvents = pgTable(
     agentRemoteDevEventsPayloadObjectChk: check("agent_remote_dev_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
     agentRemoteDevEventsTaskSeqUq: uniqueIndex("agent_remote_dev_events_task_seq_uq").on(table.taskId, table.seq),
     agentRemoteDevEventsTaskIdCreatedAtIdx: index("agent_remote_dev_events_task_id_created_at_idx").on(table.taskId, table.createdAt.desc()),
+    agentRemoteDevEventsCreatedAtIdx: index("agent_remote_dev_events_created_at_idx").on(table.createdAt.desc()),
   }),
 );
 
 export const agentRemoteDevEventRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.number().int(),
   taskId: z.string().uuid(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
@@ -264,7 +278,7 @@ export const agentRemoteDevEventRowSchema = z.object({
 });
 
 export const agentRemoteDevEventInsertSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.number().int().optional(),
   taskId: z.string().uuid(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
@@ -277,61 +291,70 @@ export type AgentRemoteDevEventRow = z.infer<typeof agentRemoteDevEventRowSchema
 export type AgentRemoteDevEventInsert = z.infer<typeof agentRemoteDevEventInsertSchema>;
 export type AgentRemoteDevEventUpdate = z.infer<typeof agentRemoteDevEventUpdateSchema>;
 
-export const agentRemoteDevArtifactStorageProviderValues = ["local","s3-r2","gcs","drive"] as const;
+export const agentRemoteDevArtifactStorageProviderValues = ["s3","r2","gcs","drive","local"] as const;
 export const agentRemoteDevArtifactStorageProviderSchema = z.enum(agentRemoteDevArtifactStorageProviderValues);
 export type AgentRemoteDevArtifactStorageProvider = z.infer<typeof agentRemoteDevArtifactStorageProviderSchema>;
-
-export const agentRemoteDevArtifactArtifactKindValues = ["file","log","patch","report"] as const;
-export const agentRemoteDevArtifactArtifactKindSchema = z.enum(agentRemoteDevArtifactArtifactKindValues);
-export type AgentRemoteDevArtifactArtifactKind = z.infer<typeof agentRemoteDevArtifactArtifactKindSchema>;
 
 export const agentRemoteDevArtifacts = pgTable(
   "agent_remote_dev_artifacts",
   {
     id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
     taskId: uuid("task_id").notNull(),
-    storageProvider: varchar("storage_provider", { length: 40 }).default(sql`'local'`).notNull(),
-    artifactKind: varchar("artifact_kind", { length: 40 }).default(sql`'file'`).notNull(),
-    fileName: text("file_name").notNull(),
-    contentType: text("content_type"),
+    threadId: uuid("thread_id").notNull(),
+    filename: text("filename").notNull(),
+    contentType: varchar("content_type", { length: 200 }),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    storageProvider: varchar("storage_provider", { length: 32 }).notNull(),
+    storageBucket: varchar("storage_bucket", { length: 200 }),
+    storageKey: text("storage_key"),
     url: text("url").notNull(),
-    sizeBytes: integer("size_bytes"),
-    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    signedUrlExpiresAt: timestamp("signed_url_expires_at", { withTimezone: true, mode: "string" }),
+    sha256: varchar("sha256", { length: 64 }),
+    meta: jsonb("meta").default(sql`'{}'::jsonb`).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
   },
   (table) => ({
-    agentRemoteDevArtifactsFileNameSizeChk: check("agent_remote_dev_artifacts_file_name_size_chk", sql.raw("octet_length(file_name) <= 1024")),
+    agentRemoteDevArtifactsFilenameSizeChk: check("agent_remote_dev_artifacts_filename_size_chk", sql.raw("octet_length(filename) <= 1024")),
     agentRemoteDevArtifactsUrlSizeChk: check("agent_remote_dev_artifacts_url_size_chk", sql.raw("octet_length(url) <= 4096")),
-    agentRemoteDevArtifactsMetaObjectChk: check("agent_remote_dev_artifacts_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
-    agentRemoteDevArtifactsStorageProviderChk: check("agent_remote_dev_artifacts_storage_provider_chk", sql.raw("storage_provider in ('local', 's3-r2', 'gcs', 'drive')")),
-    agentRemoteDevArtifactsArtifactKindChk: check("agent_remote_dev_artifacts_artifact_kind_chk", sql.raw("artifact_kind in ('file', 'log', 'patch', 'report')")),
+    agentRemoteDevArtifactsMetaObjectChk: check("agent_remote_dev_artifacts_meta_object_chk", sql.raw("jsonb_typeof(meta) = 'object'")),
+    agentRemoteDevArtifactsStorageProviderChk: check("agent_remote_dev_artifacts_storage_provider_chk", sql.raw("storage_provider in ('s3', 'r2', 'gcs', 'drive', 'local')")),
     agentRemoteDevArtifactsTaskIdCreatedAtIdx: index("agent_remote_dev_artifacts_task_id_created_at_idx").on(table.taskId, table.createdAt.desc()),
+    agentRemoteDevArtifactsThreadIdCreatedAtIdx: index("agent_remote_dev_artifacts_thread_id_created_at_idx").on(table.threadId, table.createdAt.desc()),
+    agentRemoteDevArtifactsCreatedAtIdx: index("agent_remote_dev_artifacts_created_at_idx").on(table.createdAt.desc()),
   }),
 );
 
 export const agentRemoteDevArtifactRowSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
-  storageProvider: agentRemoteDevArtifactStorageProviderSchema,
-  artifactKind: agentRemoteDevArtifactArtifactKindSchema,
-  fileName: z.string().min(1).max(1024).refine((value) => byteLength(value) <= 1024, "Must be at most 1024 bytes"),
-  contentType: z.string().nullable(),
-  url: z.string().min(1).max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  threadId: z.string().uuid(),
+  filename: z.string().min(1).max(1024).refine((value) => byteLength(value) <= 1024, "Must be at most 1024 bytes"),
+  contentType: z.string().max(200).nullable(),
   sizeBytes: z.number().int().nullable(),
-  metaData: jsonObjectSchema,
+  storageProvider: agentRemoteDevArtifactStorageProviderSchema,
+  storageBucket: z.string().max(200).nullable(),
+  storageKey: z.string().nullable(),
+  url: z.string().min(1).max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  signedUrlExpiresAt: z.string().datetime().nullable(),
+  sha256: z.string().max(64).nullable(),
+  meta: jsonObjectSchema,
   createdAt: z.string().datetime(),
 });
 
 export const agentRemoteDevArtifactInsertSchema = z.object({
   id: z.string().uuid().optional(),
   taskId: z.string().uuid(),
-  storageProvider: agentRemoteDevArtifactStorageProviderSchema.optional().default("local"),
-  artifactKind: agentRemoteDevArtifactArtifactKindSchema.optional().default("file"),
-  fileName: z.string().min(1).max(1024).refine((value) => byteLength(value) <= 1024, "Must be at most 1024 bytes"),
-  contentType: z.string().nullable().optional(),
-  url: z.string().min(1).max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  threadId: z.string().uuid(),
+  filename: z.string().min(1).max(1024).refine((value) => byteLength(value) <= 1024, "Must be at most 1024 bytes"),
+  contentType: z.string().max(200).nullable().optional(),
   sizeBytes: z.number().int().nullable().optional(),
-  metaData: jsonObjectSchema.optional().default({}),
+  storageProvider: agentRemoteDevArtifactStorageProviderSchema,
+  storageBucket: z.string().max(200).nullable().optional(),
+  storageKey: z.string().nullable().optional(),
+  url: z.string().min(1).max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  signedUrlExpiresAt: z.string().datetime().nullable().optional(),
+  sha256: z.string().max(64).nullable().optional(),
+  meta: jsonObjectSchema.optional().default({}),
   createdAt: z.string().datetime().optional(),
 });
 

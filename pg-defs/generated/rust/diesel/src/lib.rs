@@ -66,11 +66,12 @@ diesel::table! {
     use diesel::sql_types::*;
     agent_remote_dev_threads (id) {
         id -> Uuid,
-        user_id -> Nullable<Uuid>,
+        user_id -> Uuid,
         known_git_repo_id -> Nullable<Uuid>,
         title -> Text,
         repo -> Text,
         base_branch -> Varchar,
+        meta -> Jsonb,
         archived_at -> Nullable<Timestamptz>,
         is_soft_deleted -> Bool,
         created_at -> Timestamptz,
@@ -84,11 +85,12 @@ diesel::table! {
 #[diesel(table_name = agent_remote_dev_threads)]
 pub struct AgentRemoteDevThreadDieselRow {
     pub id: Uuid,
-    pub user_id: Option<Uuid>,
+    pub user_id: Uuid,
     pub known_git_repo_id: Option<Uuid>,
     pub title: String,
     pub repo: String,
     pub base_branch: String,
+    pub meta: Value,
     pub archived_at: Option<DateTime<Utc>>,
     pub is_soft_deleted: bool,
     pub created_at: DateTime<Utc>,
@@ -106,6 +108,7 @@ pub struct AgentRemoteDevThreadDieselInsert {
     pub title: Option<String>,
     pub repo: Option<String>,
     pub base_branch: Option<String>,
+    pub meta: Option<Value>,
     pub archived_at: Option<DateTime<Utc>>,
     pub is_soft_deleted: Option<bool>,
     pub created_at: Option<DateTime<Utc>>,
@@ -119,16 +122,17 @@ diesel::table! {
     agent_remote_dev_tasks (id) {
         id -> Uuid,
         thread_id -> Uuid,
-        user_id -> Nullable<Uuid>,
-        docker_task_id -> Nullable<Uuid>,
+        user_id -> Uuid,
+        docker_task_id -> Uuid,
         prompt -> Text,
         status -> Varchar,
-        branch -> Nullable<Text>,
+        branch -> Nullable<Varchar>,
         pr_url -> Nullable<Text>,
         pr_state -> Nullable<Varchar>,
         exit_reason -> Nullable<Varchar>,
         error_message -> Nullable<Text>,
         last_event_seq -> Int4,
+        meta -> Jsonb,
         is_soft_deleted -> Bool,
         started_at -> Nullable<Timestamptz>,
         finished_at -> Nullable<Timestamptz>,
@@ -144,8 +148,8 @@ diesel::table! {
 pub struct AgentRemoteDevTaskDieselRow {
     pub id: Uuid,
     pub thread_id: Uuid,
-    pub user_id: Option<Uuid>,
-    pub docker_task_id: Option<Uuid>,
+    pub user_id: Uuid,
+    pub docker_task_id: Uuid,
     pub prompt: String,
     pub status: String,
     pub branch: Option<String>,
@@ -154,6 +158,7 @@ pub struct AgentRemoteDevTaskDieselRow {
     pub exit_reason: Option<String>,
     pub error_message: Option<String>,
     pub last_event_seq: i32,
+    pub meta: Value,
     pub is_soft_deleted: bool,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -178,6 +183,7 @@ pub struct AgentRemoteDevTaskDieselInsert {
     pub exit_reason: Option<String>,
     pub error_message: Option<String>,
     pub last_event_seq: Option<i32>,
+    pub meta: Option<Value>,
     pub is_soft_deleted: Option<bool>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -190,7 +196,7 @@ pub struct AgentRemoteDevTaskDieselInsert {
 diesel::table! {
     use diesel::sql_types::*;
     agent_remote_dev_events (id) {
-        id -> Uuid,
+        id -> Int8,
         task_id -> Uuid,
         seq -> Int4,
         event_kind -> Varchar,
@@ -202,7 +208,7 @@ diesel::table! {
 #[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
 #[diesel(table_name = agent_remote_dev_events)]
 pub struct AgentRemoteDevEventDieselRow {
-    pub id: Uuid,
+    pub id: i64,
     pub task_id: Uuid,
     pub seq: i32,
     pub event_kind: String,
@@ -225,13 +231,17 @@ diesel::table! {
     agent_remote_dev_artifacts (id) {
         id -> Uuid,
         task_id -> Uuid,
+        thread_id -> Uuid,
+        filename -> Text,
+        content_type -> Nullable<Varchar>,
+        size_bytes -> Nullable<Int8>,
         storage_provider -> Varchar,
-        artifact_kind -> Varchar,
-        file_name -> Text,
-        content_type -> Nullable<Text>,
+        storage_bucket -> Nullable<Varchar>,
+        storage_key -> Nullable<Text>,
         url -> Text,
-        size_bytes -> Nullable<Int4>,
-        meta_data -> Jsonb,
+        signed_url_expires_at -> Nullable<Timestamptz>,
+        sha256 -> Nullable<Varchar>,
+        meta -> Jsonb,
         created_at -> Timestamptz,
     }
 }
@@ -241,13 +251,17 @@ diesel::table! {
 pub struct AgentRemoteDevArtifactDieselRow {
     pub id: Uuid,
     pub task_id: Uuid,
-    pub storage_provider: String,
-    pub artifact_kind: String,
-    pub file_name: String,
+    pub thread_id: Uuid,
+    pub filename: String,
     pub content_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub storage_provider: String,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
     pub url: String,
-    pub size_bytes: Option<i32>,
-    pub meta_data: Value,
+    pub signed_url_expires_at: Option<DateTime<Utc>>,
+    pub sha256: Option<String>,
+    pub meta: Value,
     pub created_at: DateTime<Utc>,
 }
 
@@ -255,13 +269,17 @@ pub struct AgentRemoteDevArtifactDieselRow {
 #[diesel(table_name = agent_remote_dev_artifacts)]
 pub struct AgentRemoteDevArtifactDieselInsert {
     pub task_id: Option<Uuid>,
-    pub storage_provider: Option<String>,
-    pub artifact_kind: Option<String>,
-    pub file_name: Option<String>,
+    pub thread_id: Option<Uuid>,
+    pub filename: Option<String>,
     pub content_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
     pub url: Option<String>,
-    pub size_bytes: Option<i32>,
-    pub meta_data: Option<Value>,
+    pub signed_url_expires_at: Option<DateTime<Utc>>,
+    pub sha256: Option<String>,
+    pub meta: Option<Value>,
     pub created_at: Option<DateTime<Utc>>,
 }
 
