@@ -59,6 +59,24 @@ ephemeral-storage limits, and a `NetworkPolicy` that only exposes the HTTP port 
 HTTPS, and SSH egress. NetworkPolicy enforcement depends on the active minikube CNI; the manifest
 still declares the boundary so clusters with enforcement enabled behave like the EC2 path.
 
+For a fuller local copy of the EC2 service topology, use
+[`../minikube/ec2-mirror`](../minikube/ec2-mirror). That overlay imports the EC2 ArgoCD runtime,
+messaging, observability, Gleam lambda, Gleam WebSocket, and Gleam MCP manifests as its base, then
+patches only laptop-specific pieces such as source `hostPath`s, gateway TLS, and EC2
+containerd/nerdctl mounts. It is not a byte-for-byte EC2 clone, because stock Minikube does not have
+the EC2 host filesystem, AWS External Secrets, the public IP certificate-renewal path, or the same
+containerd tooling.
+
+```bash
+pnpm run minikube:render-ec2-mirror
+pnpm run minikube:build-ec2-mirror-images
+kubectl apply -k ../minikube/ec2-mirror
+pnpm run minikube:port-forward-ec2-mirror
+```
+
+Keep `minikube mount "$REPO_ROOT:/workspace/k8s-cluster"` running while the EC2 mirror is up so the
+runtime pods can read the local checkout at the same mount path declared by the overlay.
+
 Smoke-test the minikube manifest and local thread lifecycle without real external services:
 
 ```bash

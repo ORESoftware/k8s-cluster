@@ -414,15 +414,17 @@ export type AgentRemoteDevRuntimeLockRow = z.infer<typeof agentRemoteDevRuntimeL
 export type AgentRemoteDevRuntimeLockInsert = z.infer<typeof agentRemoteDevRuntimeLockInsertSchema>;
 export type AgentRemoteDevRuntimeLockUpdate = z.infer<typeof agentRemoteDevRuntimeLockUpdateSchema>;
 
-export const lambdaFunctionRuntimeValues = ["javascript","typescript","python","shell","gleam"] as const;
+export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell"] as const;
 export const lambdaFunctionRuntimeSchema = z.enum(lambdaFunctionRuntimeValues);
 export type LambdaFunctionRuntime = z.infer<typeof lambdaFunctionRuntimeSchema>;
+
+export const lambdaFunctionContainerBuildStatusValues = ["not_requested","pending","building","built","failed","skipped"] as const;
+export const lambdaFunctionContainerBuildStatusSchema = z.enum(lambdaFunctionContainerBuildStatusValues);
+export type LambdaFunctionContainerBuildStatus = z.infer<typeof lambdaFunctionContainerBuildStatusSchema>;
 
 export const lambdaFunctionStatusValues = ["draft","active","paused","archived"] as const;
 export const lambdaFunctionStatusSchema = z.enum(lambdaFunctionStatusValues);
 export type LambdaFunctionStatus = z.infer<typeof lambdaFunctionStatusSchema>;
-
-export const LAMBDA_FUNCTIONS_ENTRY_COMMAND_DEFAULT = "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs";
 
 export const lambdaFunctions = pgTable(
   "lambda_functions",
@@ -431,12 +433,17 @@ export const lambdaFunctions = pgTable(
     slug: varchar("slug", { length: 120 }).notNull(),
     displayName: varchar("display_name", { length: 200 }).notNull(),
     description: text("description").default(sql`''`).notNull(),
-    runtime: varchar("runtime", { length: 40 }).default(sql`'javascript'`).notNull(),
+    runtime: varchar("runtime", { length: 40 }).default(sql`'nodejs'`).notNull(),
     entryCommand: text("entry_command").default(sql`'env -i PATH="$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'`).notNull(),
     functionBody: text("function_body").notNull(),
     reuseKey: varchar("reuse_key", { length: 200 }),
     idleTimeoutSeconds: integer("idle_timeout_seconds").default(sql`300`).notNull(),
     maxRunMs: integer("max_run_ms").default(sql`30000`).notNull(),
+    containerized: boolean("containerized").default(sql`false`).notNull(),
+    containerImage: text("container_image"),
+    containerBuildStatus: varchar("container_build_status", { length: 32 }).default(sql`'not_requested'`).notNull(),
+    containerBuildError: text("container_build_error"),
+    containerBuiltAt: timestamp("container_built_at", { withTimezone: true, mode: "string" }),
     status: varchar("status", { length: 32 }).default(sql`'draft'`).notNull(),
     env: jsonb("env").default(sql`'{}'::jsonb`).notNull(),
     labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
@@ -451,12 +458,15 @@ export const lambdaFunctions = pgTable(
   (table) => ({
     lambdaFunctionsSlugFormatChk: check("lambda_functions_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'")),
     lambdaFunctionsBodySizeChk: check("lambda_functions_body_size_chk", sql.raw("octet_length(function_body) <= 262144")),
-    lambdaFunctionsEntryCommandChk: check("lambda_functions_entry_command_chk", sql.raw("entry_command = 'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'")),
+    lambdaFunctionsEntryCommandChk: check("lambda_functions_entry_command_chk", sql.raw("octet_length(entry_command) between 1 and 512")),
+    lambdaFunctionsContainerImageSizeChk: check("lambda_functions_container_image_size_chk", sql.raw("container_image is null or octet_length(container_image) <= 512")),
+    lambdaFunctionsContainerBuildErrorSizeChk: check("lambda_functions_container_build_error_size_chk", sql.raw("container_build_error is null or octet_length(container_build_error) <= 8192")),
     lambdaFunctionsLabelsArrayChk: check("lambda_functions_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
     lambdaFunctionsMetaObjectChk: check("lambda_functions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
     lambdaFunctionsEnvObjectChk: check("lambda_functions_env_object_chk", sql.raw("jsonb_typeof(env) = 'object'")),
     lambdaFunctionsStatusChk: check("lambda_functions_status_chk", sql.raw("status in ('draft', 'active', 'paused', 'archived')")),
-    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('javascript', 'typescript', 'python', 'shell', 'gleam')")),
+    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell')")),
+    lambdaFunctionsContainerBuildStatusChk: check("lambda_functions_container_build_status_chk", sql.raw("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')")),
     lambdaFunctionsSlugActiveUq: uniqueIndex("lambda_functions_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
     lambdaFunctionsStatusIdx: index("lambda_functions_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
     lambdaFunctionsUpdatedAtIdx: index("lambda_functions_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
@@ -470,11 +480,16 @@ export const lambdaFunctionRowSchema = z.object({
   displayName: z.string().min(1).max(200),
   description: z.string(),
   runtime: lambdaFunctionRuntimeSchema,
-  entryCommand: z.literal(LAMBDA_FUNCTIONS_ENTRY_COMMAND_DEFAULT),
+  entryCommand: z.string(),
   functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
   reuseKey: z.string().max(200).nullable(),
   idleTimeoutSeconds: z.number().int().min(1).max(3600),
   maxRunMs: z.number().int().min(1000).max(300000),
+  containerized: z.boolean(),
+  containerImage: z.string().nullable(),
+  containerBuildStatus: lambdaFunctionContainerBuildStatusSchema,
+  containerBuildError: z.string().nullable(),
+  containerBuiltAt: z.string().datetime().nullable(),
   status: lambdaFunctionStatusSchema,
   env: jsonObjectSchema,
   labels: jsonArraySchema,
@@ -492,12 +507,17 @@ export const lambdaFunctionInsertSchema = z.object({
   slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")),
   displayName: z.string().min(1).max(200),
   description: z.string().optional().default(""),
-  runtime: lambdaFunctionRuntimeSchema.optional().default("javascript"),
-  entryCommand: z.literal(LAMBDA_FUNCTIONS_ENTRY_COMMAND_DEFAULT).optional().default("env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"),
+  runtime: lambdaFunctionRuntimeSchema.optional().default("nodejs"),
+  entryCommand: z.string().optional().default("env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"),
   functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
   reuseKey: z.string().max(200).nullable().optional(),
   idleTimeoutSeconds: z.number().int().min(1).max(3600).optional().default(300),
   maxRunMs: z.number().int().min(1000).max(300000).optional().default(30000),
+  containerized: z.boolean().optional().default(false),
+  containerImage: z.string().nullable().optional(),
+  containerBuildStatus: lambdaFunctionContainerBuildStatusSchema.optional().default("not_requested"),
+  containerBuildError: z.string().nullable().optional(),
+  containerBuiltAt: z.string().datetime().nullable().optional(),
   status: lambdaFunctionStatusSchema.optional().default("draft"),
   env: jsonObjectSchema.optional().default({}),
   labels: jsonArraySchema.optional().default([]),

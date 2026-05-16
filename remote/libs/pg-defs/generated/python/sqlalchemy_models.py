@@ -491,7 +491,8 @@ class AgentRemoteDevRuntimeLockInsert(BaseModel):
             raise ValueError("agent_remote_dev_runtime_locks.owner exceeds 200 bytes")
         return value
 
-LambdaFunctionRuntime = Literal["javascript", "typescript", "python", "shell", "gleam"]
+LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"]
+LambdaFunctionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
 LambdaFunctionStatus = Literal["draft", "active", "paused", "archived"]
 
 class LambdaFunction(Base):
@@ -499,12 +500,15 @@ class LambdaFunction(Base):
     __table_args__ = (
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'", name="lambda_functions_slug_format_chk"),
         CheckConstraint("octet_length(function_body) <= 262144", name="lambda_functions_body_size_chk"),
-        CheckConstraint("entry_command = 'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'", name="lambda_functions_entry_command_chk"),
+        CheckConstraint("octet_length(entry_command) between 1 and 512", name="lambda_functions_entry_command_chk"),
+        CheckConstraint("container_image is null or octet_length(container_image) <= 512", name="lambda_functions_container_image_size_chk"),
+        CheckConstraint("container_build_error is null or octet_length(container_build_error) <= 8192", name="lambda_functions_container_build_error_size_chk"),
         CheckConstraint("jsonb_typeof(labels) = 'array'", name="lambda_functions_labels_array_chk"),
         CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="lambda_functions_meta_object_chk"),
         CheckConstraint("jsonb_typeof(env) = 'object'", name="lambda_functions_env_object_chk"),
         CheckConstraint("status in ('draft', 'active', 'paused', 'archived')", name="lambda_functions_status_chk"),
-        CheckConstraint("runtime in ('javascript', 'typescript', 'python', 'shell', 'gleam')", name="lambda_functions_runtime_chk"),
+        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell')", name="lambda_functions_runtime_chk"),
+        CheckConstraint("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')", name="lambda_functions_container_build_status_chk"),
         Index("lambda_functions_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
         Index("lambda_functions_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
         Index("lambda_functions_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
@@ -515,12 +519,17 @@ class LambdaFunction(Base):
     slug: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
-    runtime: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'javascript'"))
+    runtime: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'nodejs'"))
     entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'"))
     function_body: Mapped[str] = mapped_column(Text(), nullable=False)
     reuse_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     idle_timeout_seconds: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("300"))
     max_run_ms: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("30000"))
+    containerized: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    container_image: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    container_build_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'not_requested'"))
+    container_build_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    container_built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'draft'"))
     env: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
     labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
@@ -545,6 +554,11 @@ class LambdaFunctionRow(BaseModel):
     reuseKey: str | None = Field(None, max_length=200)
     idleTimeoutSeconds: int = Field(..., ge=1, le=3600)
     maxRunMs: int = Field(..., ge=1000, le=300000)
+    containerized: bool
+    containerImage: str | None = None
+    containerBuildStatus: LambdaFunctionContainerBuildStatus
+    containerBuildError: str | None = None
+    containerBuiltAt: datetime | None = None
     status: LambdaFunctionStatus
     env: dict[str, Any]
     labels: list[Any]
@@ -555,13 +569,6 @@ class LambdaFunctionRow(BaseModel):
     updatedAt: datetime
     createdBy: UUID | None = None
     updatedBy: UUID | None = None
-
-    @field_validator("entryCommand")
-    @classmethod
-    def validate_entry_command(cls, value):
-        if value is not None and value != "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs":
-            raise ValueError("lambda_functions.entry_command must use the managed value")
-        return value
 
     @field_validator("functionBody")
     @classmethod
@@ -577,12 +584,17 @@ class LambdaFunctionInsert(BaseModel):
     slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")
     displayName: str = Field(..., min_length=1, max_length=200)
     description: str | None = ""
-    runtime: LambdaFunctionRuntime | None = "javascript"
+    runtime: LambdaFunctionRuntime | None = "nodejs"
     entryCommand: str | None = "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
     functionBody: str = Field(..., min_length=1)
     reuseKey: str | None = Field(None, max_length=200)
     idleTimeoutSeconds: int | None = Field(300, ge=1, le=3600)
     maxRunMs: int | None = Field(30000, ge=1000, le=300000)
+    containerized: bool | None = False
+    containerImage: str | None = None
+    containerBuildStatus: LambdaFunctionContainerBuildStatus | None = "not_requested"
+    containerBuildError: str | None = None
+    containerBuiltAt: datetime | None = None
     status: LambdaFunctionStatus | None = "draft"
     env: dict[str, Any] | None = Field(default_factory=dict)
     labels: list[Any] | None = Field(default_factory=list)
@@ -593,13 +605,6 @@ class LambdaFunctionInsert(BaseModel):
     updatedAt: datetime | None = None
     createdBy: UUID | None = None
     updatedBy: UUID | None = None
-
-    @field_validator("entryCommand")
-    @classmethod
-    def validate_entry_command(cls, value):
-        if value is not None and value != "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs":
-            raise ValueError("lambda_functions.entry_command must use the managed value")
-        return value
 
     @field_validator("functionBody")
     @classmethod

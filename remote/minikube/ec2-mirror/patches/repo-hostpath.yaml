@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-dev-server-api
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: workspace
+          hostPath:
+            path: /var/lib/dd/minikube/bootstrap-workspaces/dd-dev-server-api
+            type: DirectoryOrCreate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-auth
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-rest-api
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-agent-worker-broker
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-queue-consumer
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-mdp-optimizer
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-web-scraper
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-webrtc-signaling
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-idle-reaper
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-lambda-runner
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleamlang-server
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-mcp-server
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory

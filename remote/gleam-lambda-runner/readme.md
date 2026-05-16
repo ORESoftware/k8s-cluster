@@ -1,6 +1,7 @@
 # `remote/gleam-lambda-runner`
 
-Gleam HTTP service for running user-defined lambda functions in reusable child processes.
+Gleam HTTP service for running user-defined lambda functions in reusable child processes and
+optional non-root containers.
 
 - `GET /healthz` returns service health.
 - `GET /metrics` exposes Prometheus counters and gauges.
@@ -9,9 +10,10 @@ Gleam HTTP service for running user-defined lambda functions in reusable child p
 
 The Rust REST API is responsible for CRUD/read models over Postgres. Invocation traffic goes
 directly through the load balancer/gateway to this Gleam service. The BEAM runner loads the active
-function definition from Postgres by immutable function UUID, then maps that UUID to a reusable
-worker actor and Node child process. The Node child receives the definition over stdio, so it does
-not need database credentials or `psql`.
+function definition from Postgres by immutable function UUID, then maps the function runtime to a
+reusable worker actor. The managed runtimes are `nodejs`, `python3`, `ruby`, and `bash`; legacy
+`javascript`, `typescript`, `python`, and `shell` values normalize to those runtime pools. Each
+child receives the definition over stdio, so it does not need database credentials or `psql`.
 
 The runner depends on the generated Gleam schema package at
 `remote/libs/pg-defs/generated/gleam` (`dd_pg_defs`). That package is generated from the shared
@@ -32,6 +34,31 @@ node --permission --allow-net child-runtimes/js-function-runner.mjs
 The child is started through `env -i`, so it receives no database secrets, and no filesystem write,
 child-process, worker, addon, or inspector permission is granted. The deployment installs Alpine
 `nodejs-current` because network permissions require Node 25 or newer.
+
+Python children run with a small builtins set and an explicit `fetch(...)` helper. Ruby and Bash do
+not have a reliable in-process filesystem sandbox, so use `containerized: true` for untrusted Ruby
+or Bash functions. The container path uses `nerdctl run --read-only --tmpfs /tmp --user
+10001:10001 --cap-drop ALL --security-opt no-new-privileges`, with network left enabled and no
+host code mounted into packaged function images.
+
+The manager prewarms one host worker per runtime by default via `LAMBDA_PREWARM_RUNTIMES`.
+`LAMBDA_PREWARM_CONTAINER_RUNTIMES` can also warm container workers when the runtime images below
+exist in the EC2 node's local containerd image store.
+
+## Runtime images
+
+Build the reusable container pool images from the repository root:
+
+```sh
+nerdctl -n k8s.io build -f remote/gleam-lambda-runner/runtime-images/nodejs.Dockerfile -t docker.io/library/dd-lambda-nodejs-runtime:dev remote/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/gleam-lambda-runner/runtime-images/python3.Dockerfile -t docker.io/library/dd-lambda-python3-runtime:dev remote/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/gleam-lambda-runner/runtime-images/ruby.Dockerfile -t docker.io/library/dd-lambda-ruby-runtime:dev remote/gleam-lambda-runner
+nerdctl -n k8s.io build -f remote/gleam-lambda-runner/runtime-images/bash.Dockerfile -t docker.io/library/dd-lambda-bash-runtime:dev remote/gleam-lambda-runner
+```
+
+When the REST API has `LAMBDA_IMAGE_BUILD_ENABLED=true`, saving a containerized function also writes
+a per-function build context under `LAMBDA_IMAGE_BUILD_ROOT` and builds
+`docker.io/library/dd-lambda-function:<slug>-<id>` into the same local `k8s.io` image store.
 
 ## Local toolchain
 

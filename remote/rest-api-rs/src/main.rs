@@ -2,6 +2,8 @@ use std::{
     collections::HashMap,
     env, fs,
     net::SocketAddr,
+    path::{Path as FsPath, PathBuf},
+    process::Command,
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -219,6 +221,11 @@ struct LambdaFunctionRow {
     reuse_key: Option<String>,
     idle_timeout_seconds: i32,
     max_run_ms: i32,
+    containerized: bool,
+    container_image: Option<String>,
+    container_build_status: String,
+    container_build_error: Option<String>,
+    container_built_at: Option<String>,
     status: String,
     labels: Value,
     meta_data: Value,
@@ -249,6 +256,7 @@ struct LambdaFunctionSaveRequest {
     reuse_key: Option<String>,
     idle_timeout_seconds: Option<i32>,
     max_run_ms: Option<i32>,
+    containerized: Option<bool>,
     status: Option<String>,
     labels: Option<Value>,
     meta_data: Option<Value>,
@@ -397,6 +405,18 @@ fn first_env(keys: &[&str]) -> Option<String> {
         .find_map(|key| env::var(key).ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(default)
 }
 
 fn postgres_database_url() -> Option<String> {
@@ -1843,6 +1863,10 @@ fn row_i64(row: &tokio_postgres::Row, column: &str) -> i64 {
     row.try_get::<_, i64>(column).unwrap_or_default()
 }
 
+fn row_bool(row: &tokio_postgres::Row, column: &str) -> bool {
+    row.try_get::<_, bool>(column).unwrap_or_default()
+}
+
 fn row_value(row: &tokio_postgres::Row, column: &str, fallback: Value) -> Value {
     row.try_get::<_, Value>(column).unwrap_or(fallback)
 }
@@ -1859,6 +1883,11 @@ fn row_to_lambda_function(row: &tokio_postgres::Row) -> LambdaFunctionRow {
         reuse_key: row_opt_string(row, "reuse_key"),
         idle_timeout_seconds: row_i32(row, "idle_timeout_seconds"),
         max_run_ms: row_i32(row, "max_run_ms"),
+        containerized: row_bool(row, "containerized"),
+        container_image: row_opt_string(row, "container_image"),
+        container_build_status: row_string(row, "container_build_status"),
+        container_build_error: row_opt_string(row, "container_build_error"),
+        container_built_at: row_opt_string(row, "container_built_at"),
         status: row_string(row, "status"),
         labels: row_value(row, "labels", json!([])),
         meta_data: row_value(row, "meta_data", json!({})),
@@ -1912,12 +1941,11 @@ fn validate_lambda_status(input: Option<&str>) -> String {
 
 fn validate_lambda_runtime(input: Option<&str>) -> String {
     match input.unwrap_or("javascript").trim() {
-        "javascript" => "javascript".to_string(),
-        "typescript" => "typescript".to_string(),
-        "python" => "python".to_string(),
-        "shell" => "shell".to_string(),
-        "gleam" => "gleam".to_string(),
-        _ => "javascript".to_string(),
+        "node" | "nodejs" | "javascript" | "typescript" => "nodejs".to_string(),
+        "python" | "python3" => "python3".to_string(),
+        "ruby" => "ruby".to_string(),
+        "bash" | "shell" => "bash".to_string(),
+        _ => "nodejs".to_string(),
     }
 }
 
@@ -2283,6 +2311,11 @@ fn lambda_select_sql() -> &'static str {
       reuse_key,
       idle_timeout_seconds,
       max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
       status,
       labels,
       meta_data,
@@ -2293,20 +2326,38 @@ fn lambda_select_sql() -> &'static str {
     "#
 }
 
-fn lambda_default_entry_command() -> String {
-    "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs".to_string()
+fn lambda_entry_command_for_runtime(runtime: &str) -> String {
+    match runtime {
+        "python3" => {
+            "env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py"
+        }
+        "ruby" => "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
+        "bash" => {
+            "env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs"
+        }
+        _ => {
+            "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
+        }
+    }
+    .to_string()
 }
 
-fn validate_lambda_entry_command(value: Option<&str>) -> Result<String, String> {
-    let default_command = lambda_default_entry_command();
-    let command = value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(&default_command);
-    if command != default_command.as_str() {
+fn managed_lambda_entry_command(value: &str) -> bool {
+    ["nodejs", "python3", "ruby", "bash"]
+        .iter()
+        .map(|runtime| lambda_entry_command_for_runtime(runtime))
+        .any(|command| command == value)
+}
+
+fn validate_lambda_entry_command(value: Option<&str>, runtime: &str) -> Result<String, String> {
+    let entry_command = lambda_entry_command_for_runtime(runtime);
+    let Some(command) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(entry_command);
+    };
+    if !managed_lambda_entry_command(command) {
         return Err("entryCommand must use the managed lambda child runtime".to_string());
     }
-    Ok(default_command)
+    Ok(entry_command)
 }
 
 fn cleaned_lambda_input(
@@ -2322,6 +2373,7 @@ fn cleaned_lambda_input(
         Option<String>,
         i32,
         i32,
+        bool,
         String,
         Value,
         Value,
@@ -2353,7 +2405,7 @@ fn cleaned_lambda_input(
         .unwrap_or_default()
         .to_string();
     let runtime = validate_lambda_runtime(request.runtime.as_deref());
-    let entry_command = validate_lambda_entry_command(request.entry_command.as_deref())?;
+    let entry_command = validate_lambda_entry_command(request.entry_command.as_deref(), &runtime)?;
     let reuse_key = request
         .reuse_key
         .as_deref()
@@ -2362,6 +2414,7 @@ fn cleaned_lambda_input(
         .map(ToString::to_string);
     let idle_timeout_seconds = request.idle_timeout_seconds.unwrap_or(300).clamp(1, 3600);
     let max_run_ms = request.max_run_ms.unwrap_or(30_000).clamp(1_000, 300_000);
+    let containerized = request.containerized.unwrap_or(false);
     let status = validate_lambda_status(request.status.as_deref());
     let labels = request.labels.clone().unwrap_or_else(|| json!([]));
     if !labels.is_array() {
@@ -2382,6 +2435,7 @@ fn cleaned_lambda_input(
         reuse_key,
         idle_timeout_seconds,
         max_run_ms,
+        containerized,
         status,
         labels,
         meta_data,
@@ -2438,6 +2492,26 @@ async fn fetch_lambda_function_by_slug(slug: &str) -> Result<LambdaFunctionRow, 
     Ok(row_to_lambda_function(&row))
 }
 
+async fn fetch_lambda_function_by_id(id: &str) -> Result<LambdaFunctionRow, String> {
+    let client = connect_postgres().await?;
+    let row = client
+        .query_one(
+            &format!(
+                r#"
+                {}
+                where is_soft_deleted = false
+                  and id = $1::text::uuid
+                limit 1
+                "#,
+                lambda_select_sql()
+            ),
+            &[&id],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(row_to_lambda_function(&row))
+}
+
 async fn insert_lambda_function_to_postgres(
     request: &LambdaFunctionSaveRequest,
 ) -> Result<LambdaFunctionRow, String> {
@@ -2451,6 +2525,7 @@ async fn insert_lambda_function_to_postgres(
         reuse_key,
         idle_timeout_seconds,
         max_run_ms,
+        containerized,
         status,
         labels,
         meta_data,
@@ -2461,10 +2536,13 @@ async fn insert_lambda_function_to_postgres(
             r#"
                 insert into lambda_functions
                   (slug, display_name, description, runtime, entry_command, function_body, reuse_key,
-                   idle_timeout_seconds, max_run_ms, status, labels, meta_data, is_soft_deleted,
+                   idle_timeout_seconds, max_run_ms, containerized, container_build_status,
+                   status, labels, meta_data, is_soft_deleted,
                    created_at, updated_at)
                 values
-                  ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, now(), now())
+                  ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                   case when $10 then 'pending' else 'not_requested' end,
+                   $11, $12, $13, false, now(), now())
                 returning slug
                 "#,
             &[
@@ -2477,6 +2555,7 @@ async fn insert_lambda_function_to_postgres(
                 &reuse_key,
                 &idle_timeout_seconds,
                 &max_run_ms,
+                &containerized,
                 &status,
                 &labels,
                 &meta_data,
@@ -2486,7 +2565,8 @@ async fn insert_lambda_function_to_postgres(
         .map_err(|error| error.to_string())?;
 
     let returned_slug = row.try_get::<_, String>("slug").unwrap_or(slug);
-    fetch_lambda_function_by_slug(&returned_slug).await
+    let function = fetch_lambda_function_by_slug(&returned_slug).await?;
+    maybe_package_lambda_image(function).await
 }
 
 async fn update_lambda_function_in_postgres(
@@ -2503,6 +2583,7 @@ async fn update_lambda_function_in_postgres(
         reuse_key,
         idle_timeout_seconds,
         max_run_ms,
+        containerized,
         status,
         labels,
         meta_data,
@@ -2522,9 +2603,14 @@ async fn update_lambda_function_in_postgres(
                   reuse_key = $8,
                   idle_timeout_seconds = $9,
                   max_run_ms = $10,
-                  status = $11,
-                  labels = $12,
-                  meta_data = $13,
+                  containerized = $11,
+                  container_image = case when $11 then container_image else null end,
+                  container_build_status = case when $11 then 'pending' else 'not_requested' end,
+                  container_build_error = null,
+                  container_built_at = case when $11 then container_built_at else null end,
+                  status = $12,
+                  labels = $13,
+                  meta_data = $14,
                   updated_at = now()
                 where id = $1::text::uuid
                   and is_soft_deleted = false
@@ -2541,6 +2627,7 @@ async fn update_lambda_function_in_postgres(
                 &reuse_key,
                 &idle_timeout_seconds,
                 &max_run_ms,
+                &containerized,
                 &status,
                 &labels,
                 &meta_data,
@@ -2550,7 +2637,242 @@ async fn update_lambda_function_in_postgres(
         .map_err(|error| error.to_string())?;
 
     let returned_slug = row.try_get::<_, String>("slug").unwrap_or(slug);
-    fetch_lambda_function_by_slug(&returned_slug).await
+    let function = fetch_lambda_function_by_slug(&returned_slug).await?;
+    maybe_package_lambda_image(function).await
+}
+
+fn lambda_image_repository() -> String {
+    env::var("LAMBDA_IMAGE_REPOSITORY")
+        .unwrap_or_else(|_| "docker.io/library/dd-lambda-function".to_string())
+}
+
+fn lambda_image_tag(function: &LambdaFunctionRow) -> String {
+    let short_id = function.id.chars().take(8).collect::<String>();
+    format!(
+        "{}:{}-{}",
+        lambda_image_repository(),
+        function.slug,
+        short_id
+    )
+}
+
+fn lambda_image_build_root() -> PathBuf {
+    PathBuf::from(
+        env::var("LAMBDA_IMAGE_BUILD_ROOT").unwrap_or_else(|_| "/var/lib/dd-lambdas".to_string()),
+    )
+}
+
+fn lambda_image_repo_root() -> PathBuf {
+    PathBuf::from(
+        env::var("LAMBDA_IMAGE_REPO_ROOT").unwrap_or_else(|_| "/opt/dd-next-1".to_string()),
+    )
+}
+
+fn lambda_image_build_namespace() -> String {
+    env::var("LAMBDA_IMAGE_BUILD_NAMESPACE").unwrap_or_else(|_| "k8s.io".to_string())
+}
+
+fn lambda_image_build_nerdctl() -> String {
+    env::var("LAMBDA_IMAGE_BUILD_NERDCTL").unwrap_or_else(|_| "/usr/local/bin/nerdctl".to_string())
+}
+
+fn lambda_runner_source(runtime: &str) -> (&'static str, &'static str) {
+    match runtime {
+        "python3" => ("python-function-runner.py", "runner.py"),
+        "ruby" => ("ruby-function-runner.rb", "runner.rb"),
+        "bash" => ("bash-function-runner.mjs", "runner.mjs"),
+        _ => ("js-function-runner.mjs", "runner.mjs"),
+    }
+}
+
+fn lambda_container_dockerfile(runtime: &str, function: &LambdaFunctionRow) -> String {
+    let label = format!(
+        "LABEL dd.lambda.id=\"{}\" dd.lambda.slug=\"{}\" dd.lambda.runtime=\"{}\"",
+        function.id, function.slug, runtime
+    );
+    match runtime {
+        "python3" => format!(
+            r#"FROM docker.io/library/python:3.12-alpine
+RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda
+WORKDIR /opt/dd-lambda
+COPY runner.py ./runner.py
+COPY definition.json ./definition.json
+{label}
+USER 10001:10001
+ENTRYPOINT ["python3", "/opt/dd-lambda/runner.py"]
+"#
+        ),
+        "ruby" => format!(
+            r#"FROM docker.io/library/ruby:3.3-alpine
+RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda
+WORKDIR /opt/dd-lambda
+COPY runner.rb ./runner.rb
+COPY definition.json ./definition.json
+{label}
+USER 10001:10001
+ENTRYPOINT ["ruby", "/opt/dd-lambda/runner.rb"]
+"#
+        ),
+        "bash" => format!(
+            r#"FROM docker.io/library/node:22-alpine
+RUN apk add --no-cache bash \
+  && addgroup -S lambda \
+  && adduser -S -G lambda -u 10001 lambda
+WORKDIR /opt/dd-lambda
+COPY runner.mjs ./runner.mjs
+COPY definition.json ./definition.json
+{label}
+USER 10001:10001
+ENTRYPOINT ["node", "--permission", "--allow-net", "--allow-child-process", "/opt/dd-lambda/runner.mjs"]
+"#
+        ),
+        _ => format!(
+            r#"FROM docker.io/library/node:22-alpine
+RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda
+WORKDIR /opt/dd-lambda
+COPY runner.mjs ./runner.mjs
+COPY definition.json ./definition.json
+{label}
+USER 10001:10001
+ENTRYPOINT ["node", "--permission", "--allow-net", "/opt/dd-lambda/runner.mjs"]
+"#
+        ),
+    }
+}
+
+fn copy_lambda_runner(
+    repo_root: &FsPath,
+    context_dir: &FsPath,
+    runtime: &str,
+) -> Result<(), String> {
+    let (source_name, target_name) = lambda_runner_source(runtime);
+    let source = repo_root
+        .join("remote")
+        .join("gleam-lambda-runner")
+        .join("child-runtimes")
+        .join(source_name);
+    let target = context_dir.join(target_name);
+    fs::copy(&source, &target)
+        .map(|_| ())
+        .map_err(|error| format!("failed to copy lambda runner {}: {error}", source.display()))
+}
+
+fn package_lambda_image_sync(function: &LambdaFunctionRow, image: &str) -> Result<(), String> {
+    let runtime = validate_lambda_runtime(Some(&function.runtime));
+    let build_root = lambda_image_build_root();
+    let context_dir = build_root.join(format!("{}-{}", function.slug, function.id));
+    fs::create_dir_all(&context_dir)
+        .map_err(|error| format!("failed to create lambda image context: {error}"))?;
+    copy_lambda_runner(&lambda_image_repo_root(), &context_dir, &runtime)?;
+    fs::write(
+        context_dir.join("definition.json"),
+        serde_json::to_vec_pretty(function).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("failed to write lambda definition: {error}"))?;
+    fs::write(
+        context_dir.join("Dockerfile"),
+        lambda_container_dockerfile(&runtime, function),
+    )
+    .map_err(|error| format!("failed to write lambda Dockerfile: {error}"))?;
+
+    let namespace = lambda_image_build_namespace();
+    let mut command = Command::new(lambda_image_build_nerdctl());
+    if !namespace.trim().is_empty() {
+        command.arg("-n").arg(namespace);
+    }
+    command.arg("build").arg("-t").arg(image).arg(&context_dir);
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to run lambda image build: {error}"))?;
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined = format!("{stdout}\n{stderr}");
+        return Err(format!(
+            "lambda image build failed: {}",
+            combined.chars().take(8192).collect::<String>()
+        ));
+    }
+    Ok(())
+}
+
+async fn update_lambda_container_build(
+    id: &str,
+    image: Option<&str>,
+    status: &str,
+    error: Option<&str>,
+    built: bool,
+) -> Result<LambdaFunctionRow, String> {
+    let client = connect_postgres().await?;
+    client
+        .execute(
+            r#"
+            update lambda_functions
+            set
+              container_image = $2,
+              container_build_status = $3,
+              container_build_error = $4,
+              container_built_at = case when $5 then now() else container_built_at end,
+              updated_at = now()
+            where id = $1::text::uuid
+              and is_soft_deleted = false
+            "#,
+            &[&id, &image, &status, &error, &built],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    fetch_lambda_function_by_id(id).await
+}
+
+async fn maybe_package_lambda_image(
+    function: LambdaFunctionRow,
+) -> Result<LambdaFunctionRow, String> {
+    if !function.containerized {
+        return Ok(function);
+    }
+
+    let image = lambda_image_tag(&function);
+    if !env_bool("LAMBDA_IMAGE_BUILD_ENABLED", false) {
+        return update_lambda_container_build(
+            &function.id,
+            Some(&image),
+            "skipped",
+            Some("LAMBDA_IMAGE_BUILD_ENABLED is not true; image build deferred"),
+            false,
+        )
+        .await
+        .or(Ok(function));
+    }
+
+    let building =
+        update_lambda_container_build(&function.id, Some(&image), "building", None, false)
+            .await
+            .unwrap_or(function);
+    let build_input = building.clone();
+    let image_for_build = image.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        package_lambda_image_sync(&build_input, &image_for_build)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+
+    match result {
+        Ok(()) => update_lambda_container_build(&building.id, Some(&image), "built", None, true)
+            .await
+            .or(Ok(building)),
+        Err(error) => {
+            let public_error = error.chars().take(8192).collect::<String>();
+            update_lambda_container_build(
+                &building.id,
+                Some(&image),
+                "failed",
+                Some(&public_error),
+                false,
+            )
+            .await
+            .or(Ok(building))
+        }
+    }
 }
 
 async fn persist_runtime_task_to_postgres(

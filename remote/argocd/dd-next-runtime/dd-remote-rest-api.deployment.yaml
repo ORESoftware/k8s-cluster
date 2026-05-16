@@ -46,6 +46,18 @@ spec:
               value: DD_REMOTE_TASKS
             - name: THREAD_RUNTIME_NAMESPACE
               value: default
+            - name: LAMBDA_IMAGE_BUILD_ENABLED
+              value: 'true'
+            - name: LAMBDA_IMAGE_BUILD_ROOT
+              value: /var/lib/dd-lambdas
+            - name: LAMBDA_IMAGE_REPO_ROOT
+              value: /opt/dd-next-1
+            - name: LAMBDA_IMAGE_REPOSITORY
+              value: docker.io/library/dd-lambda-function
+            - name: LAMBDA_IMAGE_BUILD_NERDCTL
+              value: /usr/local/bin/nerdctl
+            - name: LAMBDA_IMAGE_BUILD_NAMESPACE
+              value: k8s.io
           envFrom:
             - secretRef:
                 name: dd-agent-secrets
@@ -86,8 +98,27 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+            - name: lambda-image-builds
+              mountPath: /var/lib/dd-lambdas
+            - name: containerd-sock
+              mountPath: /run/containerd/containerd.sock
+            - name: nerdctl-bin
+              mountPath: /usr/local/bin/nerdctl
+              readOnly: true
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: lambda-image-builds
+          hostPath:
+            path: /var/lib/dd-lambdas
+            type: DirectoryOrCreate
+        - name: containerd-sock
+          hostPath:
+            path: /run/containerd/containerd.sock
+            type: Socket
+        - name: nerdctl-bin
+          hostPath:
+            path: /usr/local/bin/nerdctl
+            type: File

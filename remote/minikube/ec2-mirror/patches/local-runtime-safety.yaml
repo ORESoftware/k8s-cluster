@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-idle-reaper-config
+  namespace: default
+data:
+  CLUSTER_DOCTOR_ENABLED: "false"
+  WORKER_IMAGE_BUILD_ENABLED: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-idle-reaper
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: reaper
+          volumeMounts:
+            - mountPath: /run/containerd/containerd.sock
+              $patch: delete
+            - mountPath: /usr/local/bin/nerdctl
+              $patch: delete
+      volumes:
+        - name: containerd-sock
+          $patch: delete
+        - name: nerdctl-bin
+          $patch: delete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-remote-rest-api
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: remote-rest-api
+          env:
+            - name: LAMBDA_IMAGE_BUILD_ENABLED
+              value: "false"
+          volumeMounts:
+            - mountPath: /run/containerd/containerd.sock
+              $patch: delete
+            - mountPath: /usr/local/bin/nerdctl
+              $patch: delete
+      volumes:
+        - name: containerd-sock
+          $patch: delete
+        - name: nerdctl-bin
+          $patch: delete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-lambda-runner
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: gleam-lambda-runner
+          env:
+            - name: LAMBDA_PREWARM_CONTAINER_RUNTIMES
+              value: ""
+            - name: LAMBDA_CONTAINER_NERDCTL
+              $patch: delete
+            - name: LAMBDA_CONTAINER_NAMESPACE
+              $patch: delete
+            - name: LAMBDA_NODEJS_CONTAINER_IMAGE
+              $patch: delete
+            - name: LAMBDA_PYTHON3_CONTAINER_IMAGE
+              $patch: delete
+            - name: LAMBDA_RUBY_CONTAINER_IMAGE
+              $patch: delete
+            - name: LAMBDA_BASH_CONTAINER_IMAGE
+              $patch: delete
+          volumeMounts:
+            - mountPath: /run/containerd/containerd.sock
+              $patch: delete
+            - mountPath: /usr/local/bin/nerdctl
+              $patch: delete
+      volumes:
+        - name: containerd-sock
+          $patch: delete
+        - name: nerdctl-bin
+          $patch: delete

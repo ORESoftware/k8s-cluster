@@ -39,7 +39,7 @@ class LambdaContext < BasicObject
   end
 
   def fetch(url, method: 'GET', headers: {}, body: nil, timeout: 10)
-    uri = ::URI(url)
+    uri = ::URI.parse(url)
     http = ::Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = uri.scheme == 'https'
     http.open_timeout = timeout

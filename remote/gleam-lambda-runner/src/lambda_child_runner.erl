@@ -183,6 +183,114 @@ identifier_where_clause(uuid, Identifier) ->
 identifier_where_clause(slug, Identifier) ->
     ["slug = '", Identifier, "'"].
 
+command_for_definition(FallbackCommand, DefinitionJson) ->
+    Runtime = runtime_from_definition(DefinitionJson),
+    case json_bool_field(DefinitionJson, <<"containerized">>, false) of
+        true ->
+            container_command(Runtime, DefinitionJson);
+        false ->
+            case host_command(Runtime) of
+                {ok, Command} -> {ok, Command};
+                {error, _Reason} -> {ok, FallbackCommand}
+            end
+    end.
+
+host_command(<<"nodejs">>) ->
+    {ok, <<"env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs">>};
+host_command(<<"python3">>) ->
+    {ok, <<"env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py">>};
+host_command(<<"ruby">>) ->
+    {ok, <<"env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb">>};
+host_command(<<"bash">>) ->
+    {ok, <<"env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs">>};
+host_command(Runtime) ->
+    {error, iolist_to_binary(["unsupported lambda runtime: ", Runtime])}.
+
+container_command(Runtime, DefinitionJson) ->
+    BuildStatus = json_string_field(DefinitionJson, <<"containerBuildStatus">>),
+    Image0 = case BuildStatus of
+        <<"built">> -> json_string_field(DefinitionJson, <<"containerImage">>);
+        _ -> <<>>
+    end,
+    Image = case Image0 of
+        <<>> -> default_container_image(Runtime);
+        _ -> Image0
+    end,
+    case safe_container_image(Image) of
+        true ->
+            Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
+            Namespace = env_binary("LAMBDA_CONTAINER_NAMESPACE", <<"k8s.io">>),
+            Network = env_binary("LAMBDA_CONTAINER_NETWORK", <<"bridge">>),
+            Memory = env_binary("LAMBDA_CONTAINER_MEMORY", <<"256m">>),
+            Cpus = env_binary("LAMBDA_CONTAINER_CPUS", <<"0.50">>),
+            {ok, iolist_to_binary([
+                shell_word(Nerdctl),
+                " -n ", shell_word(Namespace),
+                " run --rm -i --pull=never --read-only",
+                " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
+                " --network ", shell_word(Network),
+                " --user 10001:10001",
+                " --cap-drop ALL",
+                " --security-opt no-new-privileges",
+                " --pids-limit 64",
+                " --memory ", shell_word(Memory),
+                " --cpus ", shell_word(Cpus),
+                " ", shell_word(Image)
+            ])};
+        false ->
+            {error, <<"containerImage contains unsupported characters">>}
+    end.
+
+default_container_image(<<"nodejs">>) ->
+    env_binary("LAMBDA_NODEJS_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-nodejs-runtime:dev">>);
+default_container_image(<<"python3">>) ->
+    env_binary("LAMBDA_PYTHON3_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-python3-runtime:dev">>);
+default_container_image(<<"ruby">>) ->
+    env_binary("LAMBDA_RUBY_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-ruby-runtime:dev">>);
+default_container_image(<<"bash">>) ->
+    env_binary("LAMBDA_BASH_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-bash-runtime:dev">>);
+default_container_image(_Runtime) ->
+    env_binary("LAMBDA_NODEJS_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-nodejs-runtime:dev">>).
+
+worker_key(Identifier, DefinitionJson, Runtime, Containerized) ->
+    case json_string_field(DefinitionJson, <<"reuseKey">>) of
+        <<>> ->
+            case Containerized of
+                true -> iolist_to_binary(["pool:container:", Runtime]);
+                false -> iolist_to_binary(["pool:host:", Runtime])
+            end;
+        ReuseKey ->
+            iolist_to_binary(["function:", Identifier, ":", ReuseKey])
+    end.
+
+idle_ms_from_definition(DefinitionJson, Fallback) ->
+    Seconds = json_int_field(DefinitionJson, <<"idleTimeoutSeconds">>, 0),
+    case Seconds > 0 of
+        true -> max_int(Seconds * 1000, 1000);
+        false -> max_int(Fallback, 1000)
+    end.
+
+timeout_ms_from_definition(DefinitionJson, Fallback) ->
+    Timeout = json_int_field(DefinitionJson, <<"maxRunMs">>, 0),
+    case Timeout > 0 of
+        true -> max_int(Timeout, 1000);
+        false -> max_int(Fallback, 1000)
+    end.
+
+runtime_from_definition(DefinitionJson) ->
+    canonical_runtime(json_string_field(DefinitionJson, <<"runtime">>)).
+
+canonical_runtime(<<"javascript">>) -> <<"nodejs">>;
+canonical_runtime(<<"typescript">>) -> <<"nodejs">>;
+canonical_runtime(<<"node">>) -> <<"nodejs">>;
+canonical_runtime(<<"nodejs">>) -> <<"nodejs">>;
+canonical_runtime(<<"python">>) -> <<"python3">>;
+canonical_runtime(<<"python3">>) -> <<"python3">>;
+canonical_runtime(<<"shell">>) -> <<"bash">>;
+canonical_runtime(<<"bash">>) -> <<"bash">>;
+canonical_runtime(<<"ruby">>) -> <<"ruby">>;
+canonical_runtime(_Runtime) -> <<"nodejs">>.
+
 run_psql(Psql, DatabaseUrl, Sql) ->
     Port = open_port({spawn_executable, Psql}, [
         binary,
@@ -290,6 +398,9 @@ manager_loop() ->
         {call, From, Ref, {ensure_worker, Command, ReuseKey, IdleMs}} ->
             From ! {Ref, ensure_worker_in_manager(Command, ReuseKey, IdleMs)},
             manager_loop();
+        {'DOWN', Monitor, process, _Pid, _Reason} ->
+            delete_worker_by_monitor(Monitor),
+            manager_loop();
         stop -> ok;
         _Other -> manager_loop()
     end.
@@ -331,6 +442,57 @@ ensure_table(Name) ->
             ok
     end.
 
+prewarm_workers() ->
+    HostRuntimes = csv_env("LAMBDA_PREWARM_RUNTIMES", <<"nodejs,python3,ruby,bash">>),
+    lists:foreach(
+        fun(Runtime) ->
+            case host_command(Runtime) of
+                {ok, Command} ->
+                    case ensure_worker_in_manager(Command, iolist_to_binary(["pool:host:", Runtime]), 300000) of
+                        {ok, _Pid} -> ok;
+                        {error, Reason} ->
+                            io:format(
+                                "lambda prewarm host runtime=~s failed: ~s~n",
+                                [safe_label(Runtime), safe_label(Reason)]
+                            )
+                    end;
+                {error, Reason} ->
+                    io:format(
+                        "lambda prewarm host runtime=~s unsupported: ~s~n",
+                        [safe_label(Runtime), safe_label(Reason)]
+                    )
+            end
+        end,
+        HostRuntimes
+    ),
+    ContainerRuntimes = csv_env("LAMBDA_PREWARM_CONTAINER_RUNTIMES", <<>>),
+    lists:foreach(
+        fun(Runtime) ->
+            DefinitionJson = iolist_to_binary([
+                "{\"runtime\":\"", Runtime, "\",\"containerized\":true,\"containerImage\":\"",
+                default_container_image(Runtime),
+                "\"}"
+            ]),
+            case container_command(Runtime, DefinitionJson) of
+                {ok, Command} ->
+                    case ensure_worker_in_manager(Command, iolist_to_binary(["pool:container:", Runtime]), 300000) of
+                        {ok, _Pid} -> ok;
+                        {error, Reason} ->
+                            io:format(
+                                "lambda prewarm container runtime=~s failed: ~s~n",
+                                [safe_label(Runtime), safe_label(Reason)]
+                            )
+                    end;
+                {error, Reason} ->
+                    io:format(
+                        "lambda prewarm container runtime=~s unsupported: ~s~n",
+                        [safe_label(Runtime), safe_label(Reason)]
+                    )
+            end
+        end,
+        ContainerRuntimes
+    ).
+
 ensure_worker(Command, ReuseKey, IdleMs) ->
     manager_call({ensure_worker, Command, ReuseKey, IdleMs}).
 
@@ -357,11 +519,13 @@ spawn_worker(Command, ReuseKey, IdleMs) ->
     Pid = spawn(fun() -> worker_start(Parent, Command) end),
     receive
         {Pid, started} ->
+            Monitor = erlang:monitor(process, Pid),
             ets:insert(?WORKERS, {
                 ReuseKey,
                 #{
                     command => Command,
                     pid => Pid,
+                    monitor => Monitor,
                     idle_ms => IdleMs,
                     last_used_ms => now_ms()
                 }
@@ -393,18 +557,30 @@ worker_loop(Port) ->
     receive
         {invoke, From, Ref, Payload} ->
             port_command(Port, [Payload, <<"\n">>]),
-            worker_receive_result(Port, From, Ref);
+            worker_receive_result(Port, From, Ref, <<>>);
         {Port, {exit_status, _Status}} ->
             ok;
         stop ->
             close_port(Port)
     end.
 
-worker_receive_result(Port, From, Ref) ->
+worker_receive_result(Port, From, Ref, Buffer) ->
     receive
         {Port, {data, Data}} ->
-            From ! {Ref, {ok, Data}},
-            worker_loop(Port);
+            NewBuffer = <<Buffer/binary, Data/binary>>,
+            case byte_size(NewBuffer) > 1048576 of
+                true ->
+                    From ! {Ref, {error, <<"lambda child result exceeded byte limit">>}};
+                false ->
+                    case binary:match(NewBuffer, <<"\n">>) of
+                        {Index, _Length} ->
+                            Result = binary:part(NewBuffer, 0, Index),
+                            From ! {Ref, {ok, Result}},
+                            worker_loop(Port);
+                        nomatch ->
+                            worker_receive_result(Port, From, Ref, NewBuffer)
+                    end
+            end;
         {Port, {exit_status, Status}} ->
             From ! {Ref, {exit_status, Status}};
         stop ->
@@ -438,7 +614,30 @@ reap_idle(NowMs) ->
     ).
 
 delete_worker(ReuseKey) ->
-    ets:delete(?WORKERS, ReuseKey).
+    case ets:lookup(?WORKERS, ReuseKey) of
+        [{ReuseKey, Worker}] ->
+            demonitor_worker(Worker),
+            ets:delete(?WORKERS, ReuseKey);
+        [] ->
+            ok
+    end.
+
+delete_worker_by_monitor(Monitor) ->
+    lists:foreach(
+        fun({ReuseKey, Worker}) ->
+            case maps:get(monitor, Worker, undefined) of
+                Monitor -> ets:delete(?WORKERS, ReuseKey);
+                _Other -> ok
+            end
+        end,
+        ets:tab2list(?WORKERS)
+    ).
+
+demonitor_worker(Worker) ->
+    case maps:get(monitor, Worker, undefined) of
+        undefined -> ok;
+        Monitor -> erlang:demonitor(Monitor, [flush])
+    end.
 
 close_port(Port) ->
     case port_alive(Port) of
@@ -495,6 +694,73 @@ json_escape(Value0) ->
     Value = to_binary(Value0),
     EscapedSlash = binary:replace(Value, <<"\\">>, <<"\\\\">>, [global]),
     binary:replace(EscapedSlash, <<"\"">>, <<"\\\"">>, [global]).
+
+json_string_field(Json0, Field0) ->
+    Json = to_binary(Json0),
+    Field = to_binary(Field0),
+    Pattern = iolist_to_binary(["\"", Field, "\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\""]),
+    case re:run(Json, Pattern, [{capture, [1], binary}]) of
+        {match, [Value]} -> json_unescape_string(Value);
+        nomatch -> <<>>
+    end.
+
+json_bool_field(Json0, Field0, Default) ->
+    Json = to_binary(Json0),
+    Field = to_binary(Field0),
+    Pattern = iolist_to_binary(["\"", Field, "\"\\s*:\\s*(true|false)"]),
+    case re:run(Json, Pattern, [{capture, [1], binary}]) of
+        {match, [<<"true">>]} -> true;
+        {match, [<<"false">>]} -> false;
+        nomatch -> Default
+    end.
+
+json_int_field(Json0, Field0, Default) ->
+    Json = to_binary(Json0),
+    Field = to_binary(Field0),
+    Pattern = iolist_to_binary(["\"", Field, "\"\\s*:\\s*([0-9]+)"]),
+    case re:run(Json, Pattern, [{capture, [1], binary}]) of
+        {match, [Value]} ->
+            case string:to_integer(binary_to_list(Value)) of
+                {Int, _Rest} -> Int;
+                _ -> Default
+            end;
+        nomatch ->
+            Default
+    end.
+
+json_unescape_string(Value0) ->
+    Value1 = binary:replace(Value0, <<"\\\"">>, <<"\"">>, [global]),
+    Value2 = binary:replace(Value1, <<"\\\\">>, <<"\\">>, [global]),
+    Value2.
+
+env_binary(Name, Default) ->
+    case os:getenv(Name) of
+        false -> Default;
+        "" -> Default;
+        Value -> to_binary(Value)
+    end.
+
+csv_env(Name, Default) ->
+    Raw = env_binary(Name, Default),
+    Tokens = string:tokens(binary_to_list(Raw), ","),
+    lists:filtermap(
+        fun(Token0) ->
+            Trimmed = to_binary(string:trim(Token0)),
+            case Trimmed of
+                <<>> -> false;
+                _ -> {true, canonical_runtime(Trimmed)}
+            end
+        end,
+        Tokens
+    ).
+
+safe_container_image(Image) ->
+    re:run(Image, "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,511}$", [{capture, none}]) =:= match.
+
+shell_word(Value0) ->
+    Value = to_binary(Value0),
+    Escaped = binary:replace(Value, <<"\'">>, <<"\'\"'\"\'">>, [global]),
+    iolist_to_binary(["'", Escaped, "'"]).
 
 safe_label(Value) ->
     binary_to_list(binary:replace(Value, <<"\"">>, <<"">>, [global])).

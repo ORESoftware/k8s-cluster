@@ -79,6 +79,20 @@ The lambda function API is CRUD-only:
 Invocation is deliberately outside this REST service. The gateway sends
 `POST /lambdas/invoke/<slug>` directly to the Gleam lambda runner.
 
+Lambda saves accept managed runtimes `nodejs`, `python3`, `ruby`, and `bash`. Setting
+`containerized: true` records container packaging metadata and, when `LAMBDA_IMAGE_BUILD_ENABLED`
+is true, builds a local image with `nerdctl -n k8s.io build` into the EC2 node's containerd store.
+The default image tag is `docker.io/library/dd-lambda-function:<slug>-<id>`.
+
+Container build environment:
+
+- `LAMBDA_IMAGE_BUILD_ENABLED` defaults to `false`
+- `LAMBDA_IMAGE_BUILD_ROOT` defaults to `/var/lib/dd-lambdas`
+- `LAMBDA_IMAGE_REPO_ROOT` defaults to `/opt/dd-next-1`
+- `LAMBDA_IMAGE_REPOSITORY` defaults to `docker.io/library/dd-lambda-function`
+- `LAMBDA_IMAGE_BUILD_NERDCTL` defaults to `/usr/local/bin/nerdctl`
+- `LAMBDA_IMAGE_BUILD_NAMESPACE` defaults to `k8s.io`
+
 Dispatch writes the task row before the worker is fully ready. That marks the thread active during
 cold start so idle sweepers do not scale a newly-created worker to zero before `/tasks` is
 accepted.

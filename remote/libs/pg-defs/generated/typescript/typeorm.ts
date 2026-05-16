@@ -290,7 +290,7 @@ export class LambdaFunctionEntity {
   @Column({ name: "description", type: "text", default: () => "''" })
   description!: string;
 
-  @Column({ name: "runtime", type: "varchar", length: 40, default: () => "'javascript'" })
+  @Column({ name: "runtime", type: "varchar", length: 40, default: () => "'nodejs'" })
   runtime!: string;
 
   @Column({ name: "entry_command", type: "text", default: () => "'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'" })
@@ -307,6 +307,21 @@ export class LambdaFunctionEntity {
 
   @Column({ name: "max_run_ms", type: "integer", default: () => "30000" })
   maxRunMs!: number;
+
+  @Column({ name: "containerized", type: "boolean", default: () => "false" })
+  containerized!: boolean;
+
+  @Column({ name: "container_image", type: "text", nullable: true })
+  containerImage!: string | null;
+
+  @Column({ name: "container_build_status", type: "varchar", length: 32, default: () => "'not_requested'" })
+  containerBuildStatus!: string;
+
+  @Column({ name: "container_build_error", type: "text", nullable: true })
+  containerBuildError!: string | null;
+
+  @Column({ name: "container_built_at", type: "timestamptz", nullable: true })
+  containerBuiltAt!: Date | null;
 
   @Column({ name: "status", type: "varchar", length: 32, default: () => "'draft'" })
   status!: string;

@@ -3164,6 +3164,15 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
         font-size: 12px;
         margin-bottom: 5px;
       }
+      .check-row {
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-top: 19px;
+      }
+      .check-row input { width: auto; min-height: auto; }
+      .check-row span { margin: 0; }
       .pill {
         display: inline-flex;
         align-items: center;
@@ -3291,12 +3300,15 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
             <label>
               <span>Runtime</span>
               <select id="runtime">
-                <option value="javascript">javascript</option>
-                <option value="typescript">typescript</option>
-                <option value="python">python</option>
-                <option value="shell">shell</option>
-                <option value="gleam">gleam</option>
+                <option value="nodejs">nodejs</option>
+                <option value="python3">python3</option>
+                <option value="ruby">ruby</option>
+                <option value="bash">bash</option>
               </select>
+            </label>
+            <label class="check-row">
+              <input id="containerized" type="checkbox" />
+              <span>Containerize</span>
             </label>
             <label>
               <span>Reuse key</span>
@@ -3313,6 +3325,14 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
             <label>
               <span>Entry command</span>
               <input id="entry-command" autocomplete="off" readonly spellcheck="false" />
+            </label>
+            <label>
+              <span>Container image</span>
+              <input id="container-image" autocomplete="off" readonly spellcheck="false" />
+            </label>
+            <label>
+              <span>Build status</span>
+              <input id="container-build-status" autocomplete="off" readonly spellcheck="false" />
             </label>
             <label class="wide">
               <span>Description</span>
@@ -3358,11 +3378,41 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const defaultCommand = "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs";
+      const entryCommands = {
+        nodejs: "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs",
+        python3: "env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py",
+        ruby: "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
+        bash: "env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs",
+      };
+      const defaultCommand = entryCommands.nodejs;
       const state = {
         functions: [],
         selectedId: null,
       };
+
+      function normalizeRuntime(value) {
+        if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
+        if (value === "python") return "python3";
+        if (value === "shell") return "bash";
+        return entryCommands[value] ? value : "nodejs";
+      }
+
+      function defaultFunctionBody(runtime) {
+        switch (normalizeRuntime(runtime)) {
+          case "python3":
+            return "result = { \"status\": 200, \"body\": { \"ok\": True, \"echo\": request.get(\"body\") } }";
+          case "ruby":
+            return "{ status: 200, body: { ok: true, echo: request[\"body\"] } }";
+          case "bash":
+            return "printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'";
+          default:
+            return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
+        }
+      }
+
+      function syncEntryCommand() {
+        $("entry-command").value = entryCommands[normalizeRuntime($("runtime").value)] || defaultCommand;
+      }
 
       function normalizeSlug(value) {
         return String(value || "")
@@ -3394,12 +3444,13 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
           slug: normalizeSlug($("slug").value),
           displayName: $("display-name").value.trim(),
           description: $("description").value.trim(),
-          runtime: $("runtime").value,
-          entryCommand: defaultCommand,
+          runtime: normalizeRuntime($("runtime").value),
+          entryCommand: entryCommands[normalizeRuntime($("runtime").value)] || defaultCommand,
           functionBody: $("function-body").value,
           reuseKey: $("reuse-key").value.trim() || null,
           idleTimeoutSeconds: Number($("idle-timeout").value || 300),
           maxRunMs: Number($("max-run").value || 30000),
+          containerized: $("containerized").checked,
           status: $("status").value,
           labels: parseJsonField("labels-json", []),
           metaData: parseJsonField("meta-json", {}),
@@ -3425,13 +3476,16 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
         $("slug").value = fn?.slug || "";
         $("display-name").value = fn?.displayName || "";
         $("status").value = fn?.status || "draft";
-        $("runtime").value = fn?.runtime || "javascript";
+        $("runtime").value = normalizeRuntime(fn?.runtime || "nodejs");
         $("reuse-key").value = fn?.reuseKey || "";
         $("idle-timeout").value = fn?.idleTimeoutSeconds || 300;
         $("max-run").value = fn?.maxRunMs || 30000;
-        $("entry-command").value = fn?.entryCommand || defaultCommand;
+        syncEntryCommand();
+        $("containerized").checked = Boolean(fn?.containerized);
+        $("container-image").value = fn?.containerImage || "";
+        $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
         $("description").value = fn?.description || "";
-        $("function-body").value = fn?.functionBody || "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
+        $("function-body").value = fn?.functionBody || defaultFunctionBody($("runtime").value);
         $("labels-json").value = JSON.stringify(fn?.labels ?? [], null, 2);
         $("meta-json").value = JSON.stringify(fn?.metaData ?? {}, null, 2);
         $("request-json").value = JSON.stringify({ body: { ping: "pong" } }, null, 2);
@@ -3468,7 +3522,8 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
           title.textContent = fn.displayName || fn.slug;
           const meta = document.createElement("span");
           meta.className = "summary-meta";
-          meta.textContent = `${fn.slug} - ${fn.id.slice(0, 8)} - ${fn.runtime} - updated ${fmt(fn.updatedAt)}`;
+          const mode = fn.containerized ? `container ${fn.containerBuildStatus || "pending"}` : "host";
+          meta.textContent = `${fn.slug} - ${fn.id.slice(0, 8)} - ${normalizeRuntime(fn.runtime)} - ${mode} - updated ${fmt(fn.updatedAt)}`;
           left.append(title, meta);
           const status = document.createElement("span");
           status.className = fn.status === "active" ? "pill" : fn.status === "paused" ? "pill warn" : "pill bad";
@@ -3574,6 +3629,12 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
       $("slug").addEventListener("input", () => {
         $("slug").value = normalizeSlug($("slug").value);
         $("invoke-route").textContent = `/lambdas/invoke/${selectedFunction()?.id || ":function-id"}`;
+      });
+      $("runtime").addEventListener("change", () => {
+        syncEntryCommand();
+        if (!selectedFunction() && !$("function-body").value.trim()) {
+          $("function-body").value = defaultFunctionBody($("runtime").value);
+        }
       });
       $("reset").addEventListener("click", () => fillEditor(selectedFunction()));
       $("save").addEventListener("click", () => save().catch((error) => {

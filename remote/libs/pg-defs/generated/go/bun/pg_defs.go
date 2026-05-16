@@ -275,6 +275,11 @@ const LambdaFunctionSelectSQL = `select
       reuse_key,
       idle_timeout_seconds,
       max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
       status,
       env,
       labels,
@@ -287,7 +292,8 @@ const LambdaFunctionSelectSQL = `select
       updated_by::text as updated_by
     from lambda_functions`
 
-var LambdaFunctionRuntimeValues = []string{"javascript", "typescript", "python", "shell", "gleam"}
+var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"}
+var LambdaFunctionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
 var LambdaFunctionStatusValues = []string{"draft", "active", "paused", "archived"}
 
 type LambdaFunctionBun struct {
@@ -296,12 +302,17 @@ type LambdaFunctionBun struct {
 	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
 	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
 	Description string `bun:"description,type:text,default:''" json:"description"`
-	Runtime string `bun:"runtime,type:varchar(40),default:'javascript'" json:"runtime"`
+	Runtime string `bun:"runtime,type:varchar(40),default:'nodejs'" json:"runtime"`
 	EntryCommand string `bun:"entry_command,type:text,default:'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'" json:"entryCommand"`
 	FunctionBody string `bun:"function_body,type:text" json:"functionBody"`
 	ReuseKey *string `bun:"reuse_key,type:varchar(200),nullzero" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `bun:"idle_timeout_seconds,type:integer,default:300" json:"idleTimeoutSeconds"`
 	MaxRunMs int32 `bun:"max_run_ms,type:integer,default:30000" json:"maxRunMs"`
+	Containerized bool `bun:"containerized,type:boolean,default:false" json:"containerized"`
+	ContainerImage *string `bun:"container_image,type:text,nullzero" json:"containerImage,omitempty"`
+	ContainerBuildStatus string `bun:"container_build_status,type:varchar(32),default:'not_requested'" json:"containerBuildStatus"`
+	ContainerBuildError *string `bun:"container_build_error,type:text,nullzero" json:"containerBuildError,omitempty"`
+	ContainerBuiltAt *time.Time `bun:"container_built_at,type:timestamptz,nullzero" json:"containerBuiltAt,omitempty"`
 	Status string `bun:"status,type:varchar(32),default:'draft'" json:"status"`
 	Env json.RawMessage `bun:"env,type:jsonb,default:'{}'::jsonb" json:"env"`
 	Labels json.RawMessage `bun:"labels,type:jsonb,default:'[]'::jsonb" json:"labels"`
@@ -317,12 +328,12 @@ type LambdaFunctionBun struct {
 func (value LambdaFunctionBun) Validate() error {
 	if !slugPattern.MatchString(value.Slug) { return errors.New("lambda_functions.slug must be a lowercase slug") }
 	if !containsString(LambdaFunctionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_functions.runtime") }
-	if value.EntryCommand != "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs" { return errors.New("lambda_functions.entry_command must use the managed value") }
 	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_functions.function_body exceeds 262144 bytes") }
 	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_functions.idle_timeout_seconds is below the minimum") }
 	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_functions.idle_timeout_seconds is above the maximum") }
 	if value.MaxRunMs < 1000 { return errors.New("lambda_functions.max_run_ms is below the minimum") }
 	if value.MaxRunMs > 300000 { return errors.New("lambda_functions.max_run_ms is above the maximum") }
+	if !containsString(LambdaFunctionContainerBuildStatusValues, value.ContainerBuildStatus) { return errors.New("unsupported lambda_functions.container_build_status") }
 	if !containsString(LambdaFunctionStatusValues, value.Status) { return errors.New("unsupported lambda_functions.status") }
 	if !validateRawJSON(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateRawJSON(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }

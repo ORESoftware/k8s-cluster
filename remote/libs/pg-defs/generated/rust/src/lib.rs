@@ -703,7 +703,7 @@ pub fn validate_agent_remote_dev_runtime_locks_insert(value: &AgentRemoteDevRunt
 }
 
 pub const LAMBDA_FUNCTIONS_TABLE: &str = "lambda_functions";
-pub const LAMBDA_FUNCTIONS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "status", "env", "labels", "meta_data", "last_invoked_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const LAMBDA_FUNCTIONS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "status", "env", "labels", "meta_data", "last_invoked_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const LAMBDA_FUNCTIONS_SELECT_SQL: &str = r###"select
       id::text as id,
       slug,
@@ -715,6 +715,11 @@ pub const LAMBDA_FUNCTIONS_SELECT_SQL: &str = r###"select
       reuse_key,
       idle_timeout_seconds,
       max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
       status,
       env,
       labels,
@@ -730,23 +735,29 @@ pub const LAMBDA_FUNCTIONS_SELECT_SQL: &str = r###"select
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LambdaFunctionRuntime {
+    Nodejs,
     Javascript,
     Typescript,
+    Python3,
     Python,
+    Ruby,
+    Bash,
     Shell,
-    Gleam,
 }
 
 impl LambdaFunctionRuntime {
-    pub const VALUES: &'static [&'static str] = &["javascript", "typescript", "python", "shell", "gleam"];
+    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"];
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Nodejs => "nodejs",
             Self::Javascript => "javascript",
             Self::Typescript => "typescript",
+            Self::Python3 => "python3",
             Self::Python => "python",
+            Self::Ruby => "ruby",
+            Self::Bash => "bash",
             Self::Shell => "shell",
-            Self::Gleam => "gleam",
         }
     }
 }
@@ -756,12 +767,57 @@ impl TryFrom<&str> for LambdaFunctionRuntime {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
+            "nodejs" => Ok(Self::Nodejs),
             "javascript" => Ok(Self::Javascript),
             "typescript" => Ok(Self::Typescript),
+            "python3" => Ok(Self::Python3),
             "python" => Ok(Self::Python),
+            "ruby" => Ok(Self::Ruby),
+            "bash" => Ok(Self::Bash),
             "shell" => Ok(Self::Shell),
-            "gleam" => Ok(Self::Gleam),
             _ => Err(format!("unsupported runtime: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LambdaFunctionContainerBuildStatus {
+    NotRequested,
+    Pending,
+    Building,
+    Built,
+    Failed,
+    Skipped,
+}
+
+impl LambdaFunctionContainerBuildStatus {
+    pub const VALUES: &'static [&'static str] = &["not_requested", "pending", "building", "built", "failed", "skipped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotRequested => "not_requested",
+            Self::Pending => "pending",
+            Self::Building => "building",
+            Self::Built => "built",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl TryFrom<&str> for LambdaFunctionContainerBuildStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "not_requested" => Ok(Self::NotRequested),
+            "pending" => Ok(Self::Pending),
+            "building" => Ok(Self::Building),
+            "built" => Ok(Self::Built),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(format!("unsupported container_build_status: {value}")),
         }
     }
 }
@@ -816,6 +872,11 @@ pub struct LambdaFunctionRow {
     pub reuse_key: Option<String>,
     pub idle_timeout_seconds: i32,
     pub max_run_ms: i32,
+    pub containerized: bool,
+    pub container_image: Option<String>,
+    pub container_build_status: String,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<String>,
     pub status: String,
     pub env: Value,
     pub labels: Value,
@@ -841,6 +902,11 @@ pub struct LambdaFunctionInsert {
     pub reuse_key: Option<String>,
     pub idle_timeout_seconds: Option<i32>,
     pub max_run_ms: Option<i32>,
+    pub containerized: Option<bool>,
+    pub container_image: Option<String>,
+    pub container_build_status: Option<String>,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<String>,
     pub status: Option<String>,
     pub env: Option<Value>,
     pub labels: Option<Value>,
@@ -856,8 +922,7 @@ pub struct LambdaFunctionInsert {
 pub fn validate_lambda_functions_row(value: &LambdaFunctionRow) -> Result<(), String> {
     validate_slug("lambda_functions.slug", &value.slug)?;
     validate_string_length("lambda_functions.display_name", &value.display_name, Some(1), Some(200))?;
-    if !["javascript", "typescript", "python", "shell", "gleam"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
-    if (&value.entry_command).as_str() != "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs" { return Err("lambda_functions.entry_command must use the managed value".to_string()); }
+    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
     validate_string_length("lambda_functions.function_body", &value.function_body, Some(1), None)?;
     if (&value.function_body).as_bytes().len() > 262144 { return Err("lambda_functions.function_body exceeds 262144 bytes".to_string()); }
     if let Some(value) = &value.reuse_key {
@@ -867,6 +932,7 @@ pub fn validate_lambda_functions_row(value: &LambdaFunctionRow) -> Result<(), St
     if *(&value.idle_timeout_seconds) > 3600 { return Err("lambda_functions.idle_timeout_seconds is above the maximum".to_string()); }
     if *(&value.max_run_ms) < 1000 { return Err("lambda_functions.max_run_ms is below the minimum".to_string()); }
     if *(&value.max_run_ms) > 300000 { return Err("lambda_functions.max_run_ms is above the maximum".to_string()); }
+    if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(&value.container_build_status).as_str()) { return Err(format!("unsupported lambda_functions.container_build_status: {}", &value.container_build_status)); }
     if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported lambda_functions.status: {}", &value.status)); }
     if !(&value.env).is_object() { return Err("lambda_functions.env must be a JSON object".to_string()); }
     if !(&value.labels).is_array() { return Err("lambda_functions.labels must be a JSON array".to_string()); }
@@ -882,10 +948,7 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
         validate_string_length("lambda_functions.display_name", value, Some(1), Some(200))?;
     }
     if let Some(value) = &value.runtime {
-        if !["javascript", "typescript", "python", "shell", "gleam"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
-    }
-    if let Some(value) = &value.entry_command {
-        if (value).as_str() != "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs" { return Err("lambda_functions.entry_command must use the managed value".to_string()); }
+        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
     }
     if let Some(value) = &value.function_body {
         validate_string_length("lambda_functions.function_body", value, Some(1), None)?;
@@ -901,6 +964,9 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     if let Some(value) = &value.max_run_ms {
         if *(value) < 1000 { return Err("lambda_functions.max_run_ms is below the minimum".to_string()); }
         if *(value) > 300000 { return Err("lambda_functions.max_run_ms is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.container_build_status {
+        if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.container_build_status: {}", value)); }
     }
     if let Some(value) = &value.status {
         if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.status: {}", value)); }

@@ -12,6 +12,7 @@
     "test:cli:gleam-lambda-runner-config": "pnpm exec tsx --test general/gleam-lambda-runner-config.test.ts",
     "test:cli:gleam-websocket-nats-fanout": "pnpm exec tsx --test general/gleam-websocket-nats-fanout.test.ts",
     "test:cli:gleam-mcp-server-config": "pnpm exec tsx --test general/gleam-mcp-server-config.test.ts",
+    "test:cli:minikube-ec2-mirror-config": "pnpm exec tsx --test general/minikube-ec2-mirror-config.test.ts",
     "test:cli:nats-config": "pnpm exec tsx --test general/nats-config.test.ts",
     "test:cli:nats-shadow-handoff": "pnpm exec tsx --test general/nats-shadow-handoff.test.ts",
     "test:cli:observability-config": "pnpm exec tsx --test general/observability-config.test.ts",

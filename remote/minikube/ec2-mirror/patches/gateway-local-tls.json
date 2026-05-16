@@ -1,0 +1,39 @@
+[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/initContainers",
+    "value": [
+      {
+        "name": "local-gateway-tls",
+        "image": "alpine:3.20",
+        "imagePullPolicy": "IfNotPresent",
+        "command": ["/bin/sh", "-c"],
+        "args": [
+          "set -eu\napk add --no-cache openssl >/tmp/dd-openssl-install.log\nopenssl req -x509 -nodes -newkey rsa:2048 -days 30 -keyout /etc/nginx/tls/tls.key -out /etc/nginx/tls/tls.crt -subj \"/CN=localhost\" -addext \"subjectAltName=DNS:localhost,IP:127.0.0.1\"\n"
+        ],
+        "volumeMounts": [
+          {
+            "name": "tls",
+            "mountPath": "/etc/nginx/tls"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "op": "replace",
+    "path": "/spec/template/spec/volumes/1",
+    "value": {
+      "name": "tls",
+      "emptyDir": {}
+    }
+  },
+  {
+    "op": "replace",
+    "path": "/spec/template/spec/volumes/2",
+    "value": {
+      "name": "acme-webroot",
+      "emptyDir": {}
+    }
+  }
+]
