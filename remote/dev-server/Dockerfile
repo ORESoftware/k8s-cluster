@@ -121,7 +121,11 @@ RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
  && GIT_SSH_COMMAND="ssh -F /dev/null -i /home/node/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/node/.ssh/known_hosts" \
     git clone --depth 50 --branch "$DD_REPO_REF" "$DD_REPO_URL" repo-template \
  && cd repo-template \
- && pnpm install --store-dir /home/node/repo-template/.pnpm-store --frozen-lockfile \
+ && if [ -f package.json ]; then \
+      pnpm install --store-dir /home/node/repo-template/.pnpm-store --frozen-lockfile; \
+    else \
+      echo "no root package.json in repo-template; skipping pnpm install"; \
+    fi \
  && rm -f /home/node/.ssh/id_ed25519
 ENV DD_REPO_REF=$DD_REPO_REF \
     BASE_BRANCH=$DD_REPO_REF

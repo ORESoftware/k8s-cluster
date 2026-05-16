@@ -111,6 +111,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(entrypoint, /export npm_config_store_dir="\$\{npm_config_store_dir:-\$PNPM_STORE_DIR\}"/);
   assert.match(entrypoint, /pnpm --version/);
   assert.match(entrypoint, /pnpm store path --store-dir "\$PNPM_STORE_DIR"/);
+  assert.match(entrypoint, /if \[\[ -f package\.json \]\]; then/);
+  assert.match(entrypoint, /no root package\.json in workspace; skipping pnpm install/);
   assert.match(entrypoint, /pnpm install --store-dir "\$PNPM_STORE_DIR" --frozen-lockfile --offline/);
   assert.match(
     entrypoint,
@@ -151,8 +153,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(dockerfile, /echo "\$DD_REPO_CACHE_BUST" > \/tmp\/dd-repo-cache-bust/);
   assert.match(
     dockerfile,
-    /pnpm install --store-dir \/home\/node\/repo-template\/\.pnpm-store --frozen-lockfile/,
+    /if \[ -f package\.json \]; then[\s\S]*pnpm install --store-dir \/home\/node\/repo-template\/\.pnpm-store --frozen-lockfile/,
   );
+  assert.match(dockerfile, /no root package\.json in repo-template; skipping pnpm install/);
+  assert.match(localDockerfile, /if \[ -f package\.json \]; then[\s\S]*pnpm install --frozen-lockfile/);
   assert.doesNotMatch(
     dockerfile,
     /PNPM_STORE_DIR=\/home\/node\/repo-template\/\.pnpm-store pnpm install --frozen-lockfile/,

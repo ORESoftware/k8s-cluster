@@ -77,15 +77,19 @@ if [[ -d "$REPO_DIR/.git" ]]; then
     --exclude=.next \
     --exclude=.turbo 2>&1 || true
 
-  PNPM_VERSION="$(pnpm --version 2>/dev/null || true)"
-  PNPM_STORE_PATH="$(pnpm store path --store-dir "$PNPM_STORE_DIR" 2>/dev/null || true)"
-  echo "==> pnpm install starting (version=${PNPM_VERSION:-unknown} store=${PNPM_STORE_PATH:-unknown})"
-  if ! pnpm install --store-dir "$PNPM_STORE_DIR" --frozen-lockfile --offline 2>&1; then
-    echo "offline frozen pnpm install failed; retrying prefer-offline"
-    if ! pnpm install --store-dir "$PNPM_STORE_DIR" --frozen-lockfile --prefer-offline 2>&1; then
-      echo "frozen prefer-offline pnpm install failed; retrying fallback"
-      pnpm install --store-dir "$PNPM_STORE_DIR" --prefer-offline 2>&1 || echo "fallback pnpm install failed (non-fatal)"
+  if [[ -f package.json ]]; then
+    PNPM_VERSION="$(pnpm --version 2>/dev/null || true)"
+    PNPM_STORE_PATH="$(pnpm store path --store-dir "$PNPM_STORE_DIR" 2>/dev/null || true)"
+    echo "==> pnpm install starting (version=${PNPM_VERSION:-unknown} store=${PNPM_STORE_PATH:-unknown})"
+    if ! pnpm install --store-dir "$PNPM_STORE_DIR" --frozen-lockfile --offline 2>&1; then
+      echo "offline frozen pnpm install failed; retrying prefer-offline"
+      if ! pnpm install --store-dir "$PNPM_STORE_DIR" --frozen-lockfile --prefer-offline 2>&1; then
+        echo "frozen prefer-offline pnpm install failed; retrying fallback"
+        pnpm install --store-dir "$PNPM_STORE_DIR" --prefer-offline 2>&1 || echo "fallback pnpm install failed (non-fatal)"
+      fi
     fi
+  else
+    echo "==> no root package.json in workspace; skipping pnpm install"
   fi
   echo "==> git refresh complete at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi

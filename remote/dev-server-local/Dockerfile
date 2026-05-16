@@ -120,7 +120,11 @@ RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
  && ssh-keyscan github.com >> /home/agent/.ssh/known_hosts 2>/dev/null \
  && git clone --depth 50 --branch "$DD_REPO_REF" "$DD_REPO_URL" repo-template \
  && cd repo-template \
- && pnpm install --frozen-lockfile \
+ && if [ -f package.json ]; then \
+      pnpm install --frozen-lockfile; \
+    else \
+      echo "no root package.json in repo-template; skipping pnpm install"; \
+    fi \
  && rm -f /home/agent/.ssh/id_ed25519
 USER root
 RUN apt-get purge -y python3 make g++ \
