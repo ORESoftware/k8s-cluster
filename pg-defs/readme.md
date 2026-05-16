@@ -32,6 +32,10 @@ The diff script writes to `tmp/migrations/<env>/pg-defs-diff.sql` under this pac
 apply SQL. Never apply migrations automatically; a human must review the generated SQL and provide
 explicit approval before any database write.
 
+By default, diffs only report tables owned by `schema/schema.sql`. Use
+`--include-extra-tables` when you intentionally want an audit of unrelated public tables in a shared
+database.
+
 For a parser-only sanity check that opens no database connection:
 
 ```sh

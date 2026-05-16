@@ -15,6 +15,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const repoRoot = path.resolve(packageRoot, "..", "..", "..");
 const args = process.argv.slice(2);
 const env = argValue("--env") ?? "dev";
+const includeExtraTables = args.includes("--include-extra-tables");
 const outDir = path.resolve(packageRoot, "tmp", "migrations", env);
 const outputPath = path.resolve(outDir, "pg-defs-diff.sql");
 const desiredSqlPath = path.resolve(outDir, "desired-schema.sql");
@@ -36,6 +37,7 @@ const diffSql = generateDiffSql({
   contract,
   actualSchema,
   env,
+  includeExtraTables,
   schemaPath,
 });
 
@@ -48,7 +50,7 @@ console.log(`  desired: ${path.relative(process.cwd(), desiredSqlPath)}`);
 console.log(`  diff:    ${path.relative(process.cwd(), outputPath)}`);
 console.log("Review this SQL manually. This tool does not apply migrations.");
 
-function generateDiffSql({ contract, actualSchema, env, schemaPath }) {
+function generateDiffSql({ contract, actualSchema, env, includeExtraTables, schemaPath }) {
   const lines = [
     "-- Remote pg-defs SQL diff",
     `-- Environment: ${env}`,
@@ -168,12 +170,14 @@ function generateDiffSql({ contract, actualSchema, env, schemaPath }) {
     }
   }
 
-  for (const actualTable of actualSchema.tables.values()) {
-    if (!contract.tables.some((table) => table.name === actualTable.name)) {
-      lines.push(`-- MANUAL REVIEW: database has extra table ${actualTable.name}.`);
-      lines.push("-- No DROP TABLE generated automatically.");
-      lines.push("");
-      changeCount += 1;
+  if (includeExtraTables) {
+    for (const actualTable of actualSchema.tables.values()) {
+      if (!contract.tables.some((table) => table.name === actualTable.name)) {
+        lines.push(`-- MANUAL REVIEW: database has extra table ${actualTable.name}.`);
+        lines.push("-- No DROP TABLE generated automatically.");
+        lines.push("");
+        changeCount += 1;
+      }
     }
   }
 
