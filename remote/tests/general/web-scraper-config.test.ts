@@ -133,9 +133,11 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
 
   assert.match(deployment, /name:\s*dd-web-scraper/);
   assert.match(deployment, /mcr\.microsoft\.com\/playwright:v1\.56\.0-noble/);
-  assert.match(deployment, /pnpm install --frozen-lockfile --ignore-workspace --prod=false/);
-  assert.match(deployment, /pnpm run build/);
-  assert.match(deployment, /pnpm run start/);
+  assert.doesNotMatch(deployment, /corepack enable/);
+  assert.match(deployment, /COREPACK_HOME[\s\S]*value:\s*\/tmp\/corepack/);
+  assert.match(deployment, /corepack pnpm install --frozen-lockfile --ignore-workspace --prod=false/);
+  assert.match(deployment, /corepack pnpm run build/);
+  assert.match(deployment, /corepack pnpm run start/);
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /runAsNonRoot:\s*true/);
   assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);

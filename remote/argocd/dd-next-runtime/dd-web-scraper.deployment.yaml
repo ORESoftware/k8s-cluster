@@ -40,12 +40,14 @@ spec:
           args:
             - |
               set -euo pipefail
+              export COREPACK_HOME=/tmp/corepack
+              export npm_config_cache=/tmp/.npm
+              mkdir -p "$PNPM_HOME" "$COREPACK_HOME" "$XDG_CACHE_HOME" "$npm_config_cache"
               cd /opt/dd-next-1/remote/web-scraper-service
-              corepack enable
               corepack prepare pnpm@9.15.4 --activate
-              pnpm install --frozen-lockfile --ignore-workspace --prod=false
-              pnpm run build
-              exec pnpm run start
+              corepack pnpm install --frozen-lockfile --ignore-workspace --prod=false
+              corepack pnpm run build
+              exec corepack pnpm run start
           env:
             - name: HOME
               value: /tmp
@@ -53,6 +55,8 @@ spec:
               value: /tmp/pnpm
             - name: XDG_CACHE_HOME
               value: /tmp/.cache
+            - name: COREPACK_HOME
+              value: /tmp/corepack
             - name: HOST
               value: 0.0.0.0
             - name: PORT
