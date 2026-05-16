@@ -249,6 +249,12 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
               <td>Long-running Fastify scraper deployment with <code>SCRAPER_PARSER_WORKERS=2</code>, browser strategies, DOM strategies, native fetch, Cheerio, and Browserless support.</td>
             </tr>
             <tr>
+              <td><code>dd-des-simulator</code></td>
+              <td><code>dd-des-simulator:8099</code></td>
+              <td><span class="pill">public</span></td>
+              <td>Rust DES simulator with declared <code>des.v1</code> schema, validation endpoint, async job status, and NATS result publishing.</td>
+            </tr>
+            <tr>
               <td><code>dd-gleam-lambda-runner</code></td>
               <td><code>dd-gleam-lambda-runner:8083</code></td>
               <td><span class="pill warn">server auth</span></td>
@@ -334,6 +340,12 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
                 <td>Rust MDP/POMDP optimizer</td>
                 <td><span class="pill">public</span></td>
                 <td>Async value-iteration, Q-value, policy, belief-state, and telemetry-risk optimizer. It subscribes to NATS optimization and telemetry jobs, then publishes results/events back to the runtime queue.</td>
+              </tr>
+              <tr>
+                <td><span class="path-links"><a href="/des/"><code>/des/</code></a><a href="/des/healthz"><code>/des/healthz</code></a><a href="/des/metrics"><code>/des/metrics</code></a><a href="/des/model/schema"><code>/des/model/schema</code></a><a href="/des/model/example"><code>/des/model/example</code></a><a href="/des/validate"><code>POST /des/validate</code></a><a href="/des/simulate"><code>POST /des/simulate</code></a><code>dd.remote.des.simulate</code></span></td>
+                <td>Rust discrete event simulator</td>
+                <td><span class="pill">public</span></td>
+                <td>Async DES job runner with declared <code>des.v1</code> model schema, strict model validation, in-memory job status, resource-capacity simulation, metrics, and NATS result publishing.</td>
               </tr>
               <tr>
                 <td><span class="path-links"><a href="/scrape"><code>POST /scrape</code></a><a href="/scrape/strategies"><code>/scrape/strategies</code></a><a href="/scrape/healthz"><code>/scrape/healthz</code></a><a href="/scrape/metrics"><code>/scrape/metrics</code></a></span></td>

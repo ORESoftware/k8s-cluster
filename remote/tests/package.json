@@ -7,6 +7,7 @@
     "test:cli:general": "pnpm exec tsx --test general/cli.test.ts",
     "test:cli:deep": "pnpm exec tsx --test general/cli.deep.test.ts",
     "test:cli:cluster-doctor-cron": "pnpm exec tsx --test general/cluster-doctor-cron.test.ts",
+    "test:cli:des-simulator-config": "pnpm exec tsx --test general/des-simulator-config.test.ts",
     "test:cli:echo-runner": "pnpm exec tsx --test general/echo-runner.test.ts",
     "test:cli:gateway-service-directory": "pnpm exec tsx --test general/gateway-service-directory.test.ts",
     "test:cli:gleam-lambda-runner-config": "pnpm exec tsx --test general/gleam-lambda-runner-config.test.ts",

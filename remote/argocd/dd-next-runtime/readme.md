@@ -10,6 +10,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-remote-queue-consumer` (Rust NATS shadow consumer that prepares UUID-bound thread workers)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
+- `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
   `/status`, `/agents`, `/healthz`)
 - `dd-remote-gateway` (public k8s path splitter on host ports 80 and 443)
@@ -32,6 +33,8 @@ Gateway path map:
 - `/api/lambdas/functions` -> `dd-remote-rest-api:8082`
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
 - `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` -> `dd-webrtc-signaling:8095`
+- `/des/`, `/des/model/schema`, `/des/model/example`, `POST /des/validate`,
+  `POST /des/simulate`, `/des/simulations/<jobId>` -> `dd-des-simulator:8099`
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
