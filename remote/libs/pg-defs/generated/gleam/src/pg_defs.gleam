@@ -99,16 +99,17 @@ pub fn validate_known_git_repos_status(value: String) -> Result(String, String) 
 }
 
 pub const agent_remote_dev_threads_table = "agent_remote_dev_threads"
-pub const agent_remote_dev_threads_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads"
+pub const agent_remote_dev_threads_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      meta::text as meta_json,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads"
 
 pub type AgentRemoteDevThreadRow {
   AgentRemoteDevThreadRow(
     id: String,
-    user_id: Option(String),
+    user_id: String,
     known_git_repo_id: Option(String),
     title: String,
     repo: String,
     base_branch: String,
+    meta_json: String,
     archived_at: Option(String),
     is_soft_deleted: Bool,
     created_at: String,
@@ -127,16 +128,19 @@ pub fn validate_agent_remote_dev_threads_slug(value: String) -> Result(String, S
 }
 
 pub const agent_remote_dev_tasks_table = "agent_remote_dev_tasks"
-pub const agent_remote_dev_tasks_select_sql = "select\n      id::text as id,\n      thread_id::text as thread_id,\n      user_id::text as user_id,\n      docker_task_id::text as docker_task_id,\n      prompt,\n      status,\n      branch,\n      pr_url,\n      pr_state,\n      exit_reason,\n      error_message,\n      last_event_seq,\n      is_soft_deleted,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_tasks"
+pub const agent_remote_dev_tasks_select_sql = "select\n      id::text as id,\n      thread_id::text as thread_id,\n      user_id::text as user_id,\n      docker_task_id::text as docker_task_id,\n      prompt,\n      status,\n      branch,\n      pr_url,\n      pr_state,\n      exit_reason,\n      error_message,\n      last_event_seq,\n      meta::text as meta_json,\n      is_soft_deleted,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_tasks"
 
 pub type AgentRemoteDevTaskStatus {
   Queued
   Running
   Streaming
+  Pushed
+  PrOpen
+  PrMerged
+  PrClosed
   Done
   Failed
   Cancelled
-  PrOpen
 }
 
 pub fn agent_remote_dev_tasks_status_to_string(value: AgentRemoteDevTaskStatus) -> String {
@@ -144,10 +148,13 @@ pub fn agent_remote_dev_tasks_status_to_string(value: AgentRemoteDevTaskStatus) 
     Queued -> "queued"
     Running -> "running"
     Streaming -> "streaming"
+    Pushed -> "pushed"
+    PrOpen -> "pr_open"
+    PrMerged -> "pr_merged"
+    PrClosed -> "pr_closed"
     Done -> "done"
     Failed -> "failed"
     Cancelled -> "cancelled"
-    PrOpen -> "pr_open"
   }
 }
 
@@ -156,10 +163,13 @@ pub fn parse_agent_remote_dev_tasks_status(value: String) -> Result(AgentRemoteD
     "queued" -> Ok(Queued)
     "running" -> Ok(Running)
     "streaming" -> Ok(Streaming)
+    "pushed" -> Ok(Pushed)
+    "pr_open" -> Ok(PrOpen)
+    "pr_merged" -> Ok(PrMerged)
+    "pr_closed" -> Ok(PrClosed)
     "done" -> Ok(Done)
     "failed" -> Ok(Failed)
     "cancelled" -> Ok(Cancelled)
-    "pr_open" -> Ok(PrOpen)
     _ -> Error("unsupported agent_remote_dev_tasks.status: " <> value)
   }
 }
@@ -168,8 +178,8 @@ pub type AgentRemoteDevTaskRow {
   AgentRemoteDevTaskRow(
     id: String,
     thread_id: String,
-    user_id: Option(String),
-    docker_task_id: Option(String),
+    user_id: String,
+    docker_task_id: String,
     prompt: String,
     status: String,
     branch: Option(String),
@@ -178,6 +188,7 @@ pub type AgentRemoteDevTaskRow {
     exit_reason: Option(String),
     error_message: Option(String),
     last_event_seq: Int,
+    meta_json: String,
     is_soft_deleted: Bool,
     started_at: Option(String),
     finished_at: Option(String),
@@ -197,18 +208,18 @@ pub fn validate_agent_remote_dev_tasks_slug(value: String) -> Result(String, Str
 }
 
 pub fn validate_agent_remote_dev_tasks_status(value: String) -> Result(String, String) {
-  case list.contains(["queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"], value) {
+  case list.contains(["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"], value) {
     True -> Ok(value)
     False -> Error("unsupported agent_remote_dev_tasks.status: " <> value)
   }
 }
 
 pub const agent_remote_dev_events_table = "agent_remote_dev_events"
-pub const agent_remote_dev_events_select_sql = "select\n      id::text as id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events"
+pub const agent_remote_dev_events_select_sql = "select\n      id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events"
 
 pub type AgentRemoteDevEventRow {
   AgentRemoteDevEventRow(
-    id: String,
+    id: Int,
     task_id: String,
     seq: Int,
     event_kind: String,
@@ -226,57 +237,34 @@ pub fn validate_agent_remote_dev_events_slug(value: String) -> Result(String, St
 }
 
 pub const agent_remote_dev_artifacts_table = "agent_remote_dev_artifacts"
-pub const agent_remote_dev_artifacts_select_sql = "select\n      id::text as id,\n      task_id::text as task_id,\n      storage_provider,\n      artifact_kind,\n      file_name,\n      content_type,\n      url,\n      size_bytes,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_artifacts"
+pub const agent_remote_dev_artifacts_select_sql = "select\n      id::text as id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      filename,\n      content_type,\n      size_bytes,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      url,\n      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as signed_url_expires_at,\n      sha256,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_artifacts"
 
 pub type AgentRemoteDevArtifactStorageProvider {
-  Local
-  S3R2
+  S3
+  R2
   Gcs
   Drive
+  Local
 }
 
 pub fn agent_remote_dev_artifacts_storage_provider_to_string(value: AgentRemoteDevArtifactStorageProvider) -> String {
   case value {
-    Local -> "local"
-    S3R2 -> "s3-r2"
+    S3 -> "s3"
+    R2 -> "r2"
     Gcs -> "gcs"
     Drive -> "drive"
+    Local -> "local"
   }
 }
 
 pub fn parse_agent_remote_dev_artifacts_storage_provider(value: String) -> Result(AgentRemoteDevArtifactStorageProvider, String) {
   case value {
-    "local" -> Ok(Local)
-    "s3-r2" -> Ok(S3R2)
+    "s3" -> Ok(S3)
+    "r2" -> Ok(R2)
     "gcs" -> Ok(Gcs)
     "drive" -> Ok(Drive)
+    "local" -> Ok(Local)
     _ -> Error("unsupported agent_remote_dev_artifacts.storage_provider: " <> value)
-  }
-}
-
-pub type AgentRemoteDevArtifactArtifactKind {
-  File
-  Log
-  Patch
-  Report
-}
-
-pub fn agent_remote_dev_artifacts_artifact_kind_to_string(value: AgentRemoteDevArtifactArtifactKind) -> String {
-  case value {
-    File -> "file"
-    Log -> "log"
-    Patch -> "patch"
-    Report -> "report"
-  }
-}
-
-pub fn parse_agent_remote_dev_artifacts_artifact_kind(value: String) -> Result(AgentRemoteDevArtifactArtifactKind, String) {
-  case value {
-    "file" -> Ok(File)
-    "log" -> Ok(Log)
-    "patch" -> Ok(Patch)
-    "report" -> Ok(Report)
-    _ -> Error("unsupported agent_remote_dev_artifacts.artifact_kind: " <> value)
   }
 }
 
@@ -284,13 +272,17 @@ pub type AgentRemoteDevArtifactRow {
   AgentRemoteDevArtifactRow(
     id: String,
     task_id: String,
-    storage_provider: String,
-    artifact_kind: String,
-    file_name: String,
+    thread_id: String,
+    filename: String,
     content_type: Option(String),
-    url: String,
     size_bytes: Option(Int),
-    meta_data_json: String,
+    storage_provider: String,
+    storage_bucket: Option(String),
+    storage_key: Option(String),
+    url: String,
+    signed_url_expires_at: Option(String),
+    sha256: Option(String),
+    meta_json: String,
     created_at: String,
   )
 }
@@ -304,16 +296,9 @@ pub fn validate_agent_remote_dev_artifacts_slug(value: String) -> Result(String,
 }
 
 pub fn validate_agent_remote_dev_artifacts_storage_provider(value: String) -> Result(String, String) {
-  case list.contains(["local", "s3-r2", "gcs", "drive"], value) {
+  case list.contains(["s3", "r2", "gcs", "drive", "local"], value) {
     True -> Ok(value)
     False -> Error("unsupported agent_remote_dev_artifacts.storage_provider: " <> value)
-  }
-}
-
-pub fn validate_agent_remote_dev_artifacts_artifact_kind(value: String) -> Result(String, String) {
-  case list.contains(["file", "log", "patch", "report"], value) {
-    True -> Ok(value)
-    False -> Error("unsupported agent_remote_dev_artifacts.artifact_kind: " <> value)
   }
 }
 

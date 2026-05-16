@@ -105,7 +105,7 @@ function renderDrizzleTypeScript(contract) {
   const lines = [
     ...generatedNotice('//'),
     'import { sql } from "drizzle-orm";',
-    'import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";',
+    'import { bigint, bigserial, boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";',
     'import { z } from "zod";',
     '',
     'const textEncoder = new TextEncoder();',
@@ -281,6 +281,9 @@ function typeOrmDecorator(column) {
   if (column.primaryKey && column.defaultSql === 'gen_random_uuid()') {
     return `@PrimaryGeneratedColumn("uuid", { name: ${JSON.stringify(column.name)} })`;
   }
+  if (column.primaryKey && column.sqlType === 'bigserial') {
+    return `@PrimaryGeneratedColumn("increment", { name: ${JSON.stringify(column.name)}, type: "bigint" })`;
+  }
   if (column.primaryKey) {
     return `@PrimaryColumn(${typeOrmOptions(column)})`;
   }
@@ -315,6 +318,7 @@ function typeScriptType(column) {
   let baseType;
   switch (column.kind) {
     case 'integer':
+    case 'bigint':
       baseType = 'number';
       break;
     case 'boolean':
@@ -362,6 +366,9 @@ function prismaType(column) {
     case 'integer':
       baseType = 'Int';
       break;
+    case 'bigint':
+      baseType = 'BigInt';
+      break;
     case 'boolean':
       baseType = 'Boolean';
       break;
@@ -389,6 +396,9 @@ function prismaDbAttribute(column) {
   if (column.sqlType === 'text') {
     return '@db.Text';
   }
+  if (column.sqlType === 'bigint' || column.sqlType === 'bigserial') {
+    return '@db.BigInt';
+  }
   if (column.sqlType === 'timestamptz') {
     return '@db.Timestamptz(6)';
   }
@@ -396,6 +406,9 @@ function prismaDbAttribute(column) {
 }
 
 function prismaDefault(column) {
+  if (column.sqlType === 'bigserial') {
+    return '@default(autoincrement())';
+  }
   if (!column.defaultSql) {
     return undefined;
   }
@@ -430,7 +443,7 @@ function renderPythonSqlAlchemy(contract) {
     'from uuid import UUID',
     '',
     'from pydantic import BaseModel, ConfigDict, Field, field_validator',
-    'from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, text',
+    'from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, text',
     'from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID',
     'from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column',
     '',
@@ -736,10 +749,24 @@ function renderDart(contract) {
   lines.push("  throw FormatException('Expected int for $key');");
   lines.push('}');
   lines.push('');
+  lines.push('int? _readOptionalInt(Map<String, Object?> json, String key) {');
+  lines.push('  final value = json[key];');
+  lines.push('  if (value == null) return null;');
+  lines.push('  if (value is int) return value;');
+  lines.push("  throw FormatException('Expected optional int for $key');");
+  lines.push('}');
+  lines.push('');
   lines.push('bool _readRequiredBool(Map<String, Object?> json, String key) {');
   lines.push('  final value = json[key];');
   lines.push('  if (value is bool) return value;');
   lines.push("  throw FormatException('Expected bool for $key');");
+  lines.push('}');
+  lines.push('');
+  lines.push('bool? _readOptionalBool(Map<String, Object?> json, String key) {');
+  lines.push('  final value = json[key];');
+  lines.push('  if (value == null) return null;');
+  lines.push('  if (value is bool) return value;');
+  lines.push("  throw FormatException('Expected optional bool for $key');");
   lines.push('}');
   lines.push('');
   lines.push('Map<String, Object?> _readRequiredObject(Map<String, Object?> json, String key) {');
@@ -779,6 +806,12 @@ function drizzleColumn(column) {
       break;
     case 'integer':
       builder = `integer(${JSON.stringify(column.name)})`;
+      break;
+    case 'bigint':
+      builder = `bigint(${JSON.stringify(column.name)}, { mode: "number" })`;
+      break;
+    case 'bigserial':
+      builder = `bigserial(${JSON.stringify(column.name)}, { mode: "number" })`;
       break;
     case 'boolean':
       builder = `boolean(${JSON.stringify(column.name)})`;
@@ -842,6 +875,7 @@ function zodColumn(table, column, options) {
       schemaExpression = `${camel(table.names?.rust ?? pascal(table.name))}${pascal(column.name)}Schema`;
       break;
     case 'integer':
+    case 'bigint':
       schemaExpression = 'z.number().int()';
       break;
     case 'boolean':
@@ -933,6 +967,7 @@ function pythonBaseType(column) {
     case 'uuid':
       return 'UUID';
     case 'integer':
+    case 'bigint':
       return 'int';
     case 'boolean':
       return 'bool';
@@ -974,6 +1009,9 @@ function pythonSqlAlchemyType(column) {
       return 'Text()';
     case 'integer':
       return 'Integer()';
+    case 'bigint':
+    case 'bigserial':
+      return 'BigInteger()';
     case 'boolean':
       return 'Boolean()';
     case 'jsonb':
@@ -1101,6 +1139,8 @@ function goBaseType(column, flavor) {
       return 'uuid.UUID';
     case 'integer':
       return 'int32';
+    case 'bigint':
+      return 'int64';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -1177,7 +1217,7 @@ function goValidationStatements(table, binding, flavor) {
       const validator = flavor === 'bun' ? 'validateRawJSON' : 'validateJSONString';
       nestedLines.push(`if !${validator}(${derefField}) { return errors.New(${JSON.stringify(`${table.name}.${column.name} must be valid JSON`)}) }`);
     }
-    if (column.kind === 'integer') {
+    if (column.kind === 'integer' || column.kind === 'bigint') {
       if (validation.min !== undefined) {
         nestedLines.push(`if ${derefField} < ${validation.min} { return errors.New(${JSON.stringify(`${table.name}.${column.name} is below the minimum`)}) }`);
       }
@@ -1204,6 +1244,7 @@ function dartType(column) {
   let baseType;
   switch (column.kind) {
     case 'integer':
+    case 'bigint':
       baseType = 'int';
       break;
     case 'boolean':
@@ -1225,10 +1266,17 @@ function dartType(column) {
 function dartReadJson(column, fieldName) {
   const key = JSON.stringify(fieldName);
   if (!column.notNull && column.kind !== 'jsonObject' && column.kind !== 'jsonArray') {
+    if (column.kind === 'integer' || column.kind === 'bigint') {
+      return `_readOptionalInt(json, ${key})`;
+    }
+    if (column.kind === 'boolean') {
+      return `_readOptionalBool(json, ${key})`;
+    }
     return `_readOptionalString(json, ${key})`;
   }
   switch (column.kind) {
     case 'integer':
+    case 'bigint':
       return `_readRequiredInt(json, ${key})`;
     case 'boolean':
       return `_readRequiredBool(json, ${key})`;
@@ -1473,6 +1521,8 @@ function rustBaseType(column) {
   switch (column.kind) {
     case 'integer':
       return 'i32';
+    case 'bigint':
+      return 'i64';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -1551,7 +1601,7 @@ function rustValidationForColumn(column, validation, fieldName, valueExpression)
       `if ![${column.enumValues.map((value) => JSON.stringify(value)).join(', ')}].contains(&(${valueExpression}).as_str()) { return Err(format!("unsupported ${fieldName}: {}", ${valueExpression})); }`,
     );
   }
-  if (column.kind === 'integer') {
+  if (column.kind === 'integer' || column.kind === 'bigint') {
     if (validation.min !== undefined) {
       lines.push(
         `if *(${valueExpression}) < ${validation.min} { return Err(${JSON.stringify(`${fieldName} is below the minimum`)}.to_string()); }`,
@@ -1705,6 +1755,10 @@ function dieselSqlType(column) {
     case 'integer':
       baseType = 'Int4';
       break;
+    case 'bigint':
+    case 'bigserial':
+      baseType = 'Int8';
+      break;
     case 'boolean':
       baseType = 'Bool';
       break;
@@ -1739,6 +1793,9 @@ function seaOrmRustType(column) {
     case 'integer':
       baseType = 'i32';
       break;
+    case 'bigint':
+      baseType = 'i64';
+      break;
     case 'boolean':
       baseType = 'bool';
       break;
@@ -1762,6 +1819,8 @@ function rustDbType(column) {
       return 'Uuid';
     case 'integer':
       return 'i32';
+    case 'bigint':
+      return 'i64';
     case 'boolean':
       return 'bool';
     case 'jsonObject':
@@ -1908,6 +1967,7 @@ function gleamType(column) {
   let baseType;
   switch (column.kind) {
     case 'integer':
+    case 'bigint':
       baseType = 'Int';
       break;
     case 'boolean':

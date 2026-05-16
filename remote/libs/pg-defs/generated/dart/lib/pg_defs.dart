@@ -95,16 +95,17 @@ class KnownGitRepoRow {
 }
 
 const agentRemoteDevThreadTable = "agent_remote_dev_threads";
-const agentRemoteDevThreadSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads";
+const agentRemoteDevThreadSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      meta::text as meta_json,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads";
 
 class AgentRemoteDevThreadRow {
   const AgentRemoteDevThreadRow({
     required this.id,
-    this.userId,
+    required this.userId,
     this.knownGitRepoId,
     required this.title,
     required this.repo,
     required this.baseBranch,
+    required this.meta,
     this.archivedAt,
     required this.isSoftDeleted,
     required this.createdAt,
@@ -114,11 +115,12 @@ class AgentRemoteDevThreadRow {
   });
 
   final String id;
-  final String? userId;
+  final String userId;
   final String? knownGitRepoId;
   final String title;
   final String repo;
   final String baseBranch;
+  final Map<String, Object?> meta;
   final String? archivedAt;
   final bool isSoftDeleted;
   final String createdAt;
@@ -129,11 +131,12 @@ class AgentRemoteDevThreadRow {
   factory AgentRemoteDevThreadRow.fromJson(Map<String, Object?> json) {
     return AgentRemoteDevThreadRow(
       id: _readRequiredString(json, "id"),
-      userId: _readOptionalString(json, "userId"),
+      userId: _readRequiredString(json, "userId"),
       knownGitRepoId: _readOptionalString(json, "knownGitRepoId"),
       title: _readRequiredString(json, "title"),
       repo: _readRequiredString(json, "repo"),
       baseBranch: _readRequiredString(json, "baseBranch"),
+      meta: _readRequiredObject(json, "meta"),
       archivedAt: _readOptionalString(json, "archivedAt"),
       isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
       createdAt: _readRequiredString(json, "createdAt"),
@@ -150,6 +153,7 @@ class AgentRemoteDevThreadRow {
     "title": title,
     "repo": repo,
     "baseBranch": baseBranch,
+    "meta": meta,
     "archivedAt": archivedAt,
     "isSoftDeleted": isSoftDeleted,
     "createdAt": createdAt,
@@ -171,16 +175,16 @@ class AgentRemoteDevThreadRow {
 }
 
 const agentRemoteDevTaskTable = "agent_remote_dev_tasks";
-const agentRemoteDevTaskSelectSql = "select\n      id::text as id,\n      thread_id::text as thread_id,\n      user_id::text as user_id,\n      docker_task_id::text as docker_task_id,\n      prompt,\n      status,\n      branch,\n      pr_url,\n      pr_state,\n      exit_reason,\n      error_message,\n      last_event_seq,\n      is_soft_deleted,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_tasks";
+const agentRemoteDevTaskSelectSql = "select\n      id::text as id,\n      thread_id::text as thread_id,\n      user_id::text as user_id,\n      docker_task_id::text as docker_task_id,\n      prompt,\n      status,\n      branch,\n      pr_url,\n      pr_state,\n      exit_reason,\n      error_message,\n      last_event_seq,\n      meta::text as meta_json,\n      is_soft_deleted,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_tasks";
 
-const agentRemoteDevTaskStatusValues = <String>["queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"];
+const agentRemoteDevTaskStatusValues = <String>["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"];
 
 class AgentRemoteDevTaskRow {
   const AgentRemoteDevTaskRow({
     required this.id,
     required this.threadId,
-    this.userId,
-    this.dockerTaskId,
+    required this.userId,
+    required this.dockerTaskId,
     required this.prompt,
     required this.status,
     this.branch,
@@ -189,6 +193,7 @@ class AgentRemoteDevTaskRow {
     this.exitReason,
     this.errorMessage,
     required this.lastEventSeq,
+    required this.meta,
     required this.isSoftDeleted,
     this.startedAt,
     this.finishedAt,
@@ -200,8 +205,8 @@ class AgentRemoteDevTaskRow {
 
   final String id;
   final String threadId;
-  final String? userId;
-  final String? dockerTaskId;
+  final String userId;
+  final String dockerTaskId;
   final String prompt;
   final String status;
   final String? branch;
@@ -210,6 +215,7 @@ class AgentRemoteDevTaskRow {
   final String? exitReason;
   final String? errorMessage;
   final int lastEventSeq;
+  final Map<String, Object?> meta;
   final bool isSoftDeleted;
   final String? startedAt;
   final String? finishedAt;
@@ -222,8 +228,8 @@ class AgentRemoteDevTaskRow {
     return AgentRemoteDevTaskRow(
       id: _readRequiredString(json, "id"),
       threadId: _readRequiredString(json, "threadId"),
-      userId: _readOptionalString(json, "userId"),
-      dockerTaskId: _readOptionalString(json, "dockerTaskId"),
+      userId: _readRequiredString(json, "userId"),
+      dockerTaskId: _readRequiredString(json, "dockerTaskId"),
       prompt: _readRequiredString(json, "prompt"),
       status: _readRequiredString(json, "status"),
       branch: _readOptionalString(json, "branch"),
@@ -232,6 +238,7 @@ class AgentRemoteDevTaskRow {
       exitReason: _readOptionalString(json, "exitReason"),
       errorMessage: _readOptionalString(json, "errorMessage"),
       lastEventSeq: _readRequiredInt(json, "lastEventSeq"),
+      meta: _readRequiredObject(json, "meta"),
       isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
       startedAt: _readOptionalString(json, "startedAt"),
       finishedAt: _readOptionalString(json, "finishedAt"),
@@ -255,6 +262,7 @@ class AgentRemoteDevTaskRow {
     "exitReason": exitReason,
     "errorMessage": errorMessage,
     "lastEventSeq": lastEventSeq,
+    "meta": meta,
     "isSoftDeleted": isSoftDeleted,
     "startedAt": startedAt,
     "finishedAt": finishedAt,
@@ -277,7 +285,7 @@ class AgentRemoteDevTaskRow {
 }
 
 const agentRemoteDevEventTable = "agent_remote_dev_events";
-const agentRemoteDevEventSelectSql = "select\n      id::text as id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
+const agentRemoteDevEventSelectSql = "select\n      id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
 
 class AgentRemoteDevEventRow {
   const AgentRemoteDevEventRow({
@@ -289,7 +297,7 @@ class AgentRemoteDevEventRow {
     required this.createdAt,
   });
 
-  final String id;
+  final int id;
   final String taskId;
   final int seq;
   final String eventKind;
@@ -298,7 +306,7 @@ class AgentRemoteDevEventRow {
 
   factory AgentRemoteDevEventRow.fromJson(Map<String, Object?> json) {
     return AgentRemoteDevEventRow(
-      id: _readRequiredString(json, "id"),
+      id: _readRequiredInt(json, "id"),
       taskId: _readRequiredString(json, "taskId"),
       seq: _readRequiredInt(json, "seq"),
       eventKind: _readRequiredString(json, "eventKind"),
@@ -323,47 +331,58 @@ class AgentRemoteDevEventRow {
 }
 
 const agentRemoteDevArtifactTable = "agent_remote_dev_artifacts";
-const agentRemoteDevArtifactSelectSql = "select\n      id::text as id,\n      task_id::text as task_id,\n      storage_provider,\n      artifact_kind,\n      file_name,\n      content_type,\n      url,\n      size_bytes,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_artifacts";
+const agentRemoteDevArtifactSelectSql = "select\n      id::text as id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      filename,\n      content_type,\n      size_bytes,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      url,\n      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as signed_url_expires_at,\n      sha256,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_artifacts";
 
-const agentRemoteDevArtifactStorageProviderValues = <String>["local", "s3-r2", "gcs", "drive"];
-const agentRemoteDevArtifactArtifactKindValues = <String>["file", "log", "patch", "report"];
+const agentRemoteDevArtifactStorageProviderValues = <String>["s3", "r2", "gcs", "drive", "local"];
 
 class AgentRemoteDevArtifactRow {
   const AgentRemoteDevArtifactRow({
     required this.id,
     required this.taskId,
-    required this.storageProvider,
-    required this.artifactKind,
-    required this.fileName,
+    required this.threadId,
+    required this.filename,
     this.contentType,
-    required this.url,
     this.sizeBytes,
-    required this.metaData,
+    required this.storageProvider,
+    this.storageBucket,
+    this.storageKey,
+    required this.url,
+    this.signedUrlExpiresAt,
+    this.sha256,
+    required this.meta,
     required this.createdAt,
   });
 
   final String id;
   final String taskId;
-  final String storageProvider;
-  final String artifactKind;
-  final String fileName;
+  final String threadId;
+  final String filename;
   final String? contentType;
-  final String url;
   final int? sizeBytes;
-  final Map<String, Object?> metaData;
+  final String storageProvider;
+  final String? storageBucket;
+  final String? storageKey;
+  final String url;
+  final String? signedUrlExpiresAt;
+  final String? sha256;
+  final Map<String, Object?> meta;
   final String createdAt;
 
   factory AgentRemoteDevArtifactRow.fromJson(Map<String, Object?> json) {
     return AgentRemoteDevArtifactRow(
       id: _readRequiredString(json, "id"),
       taskId: _readRequiredString(json, "taskId"),
-      storageProvider: _readRequiredString(json, "storageProvider"),
-      artifactKind: _readRequiredString(json, "artifactKind"),
-      fileName: _readRequiredString(json, "fileName"),
+      threadId: _readRequiredString(json, "threadId"),
+      filename: _readRequiredString(json, "filename"),
       contentType: _readOptionalString(json, "contentType"),
+      sizeBytes: _readOptionalInt(json, "sizeBytes"),
+      storageProvider: _readRequiredString(json, "storageProvider"),
+      storageBucket: _readOptionalString(json, "storageBucket"),
+      storageKey: _readOptionalString(json, "storageKey"),
       url: _readRequiredString(json, "url"),
-      sizeBytes: _readOptionalString(json, "sizeBytes"),
-      metaData: _readRequiredObject(json, "metaData"),
+      signedUrlExpiresAt: _readOptionalString(json, "signedUrlExpiresAt"),
+      sha256: _readOptionalString(json, "sha256"),
+      meta: _readRequiredObject(json, "meta"),
       createdAt: _readRequiredString(json, "createdAt"),
     );
   }
@@ -371,26 +390,27 @@ class AgentRemoteDevArtifactRow {
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
     "taskId": taskId,
-    "storageProvider": storageProvider,
-    "artifactKind": artifactKind,
-    "fileName": fileName,
+    "threadId": threadId,
+    "filename": filename,
     "contentType": contentType,
-    "url": url,
     "sizeBytes": sizeBytes,
-    "metaData": metaData,
+    "storageProvider": storageProvider,
+    "storageBucket": storageBucket,
+    "storageKey": storageKey,
+    "url": url,
+    "signedUrlExpiresAt": signedUrlExpiresAt,
+    "sha256": sha256,
+    "meta": meta,
     "createdAt": createdAt,
   };
 
   List<String> validate() {
     final errors = <String>[];
+    if (utf8.encode(filename).length > 1024) {
+      errors.add("agent_remote_dev_artifacts.filename exceeds 1024 bytes");
+    }
     if (!agentRemoteDevArtifactStorageProviderValues.contains(storageProvider)) {
       errors.add("unsupported agent_remote_dev_artifacts.storage_provider");
-    }
-    if (!agentRemoteDevArtifactArtifactKindValues.contains(artifactKind)) {
-      errors.add("unsupported agent_remote_dev_artifacts.artifact_kind");
-    }
-    if (utf8.encode(fileName).length > 1024) {
-      errors.add("agent_remote_dev_artifacts.file_name exceeds 1024 bytes");
     }
     if (utf8.encode(url).length > 4096) {
       errors.add("agent_remote_dev_artifacts.url exceeds 4096 bytes");
@@ -612,10 +632,24 @@ int _readRequiredInt(Map<String, Object?> json, String key) {
   throw FormatException('Expected int for $key');
 }
 
+int? _readOptionalInt(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is int) return value;
+  throw FormatException('Expected optional int for $key');
+}
+
 bool _readRequiredBool(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is bool) return value;
   throw FormatException('Expected bool for $key');
+}
+
+bool? _readOptionalBool(Map<String, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is bool) return value;
+  throw FormatException('Expected optional bool for $key');
 }
 
 Map<String, Object?> _readRequiredObject(Map<String, Object?> json, String key) {

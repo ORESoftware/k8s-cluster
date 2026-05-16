@@ -113,7 +113,7 @@ const CODEGEN_METADATA = {
         id: {
           generated: true,
         },
-        file_name: {
+        filename: {
           validation: {
             minLength: 1,
             maxLength: 1024,
@@ -538,7 +538,7 @@ function defaultValueFromSql(defaultSql) {
   if (/^'.*'$/.test(defaultSql)) {
     return defaultSql.slice(1, -1).replace(/''/g, "'");
   }
-  if (/^\d+$/.test(defaultSql)) {
+  if (/^-?\d+$/.test(defaultSql)) {
     return Number(defaultSql);
   }
   if (defaultSql === "false") {
@@ -560,6 +560,9 @@ function kindFromSqlType(sqlType) {
   switch (sqlType) {
     case "integer":
       return "integer";
+    case "bigint":
+    case "bigserial":
+      return "bigint";
     case "boolean":
       return "boolean";
     case "jsonb":

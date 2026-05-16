@@ -35,20 +35,23 @@ model KnownGitRepo {
 
 model AgentRemoteDevThread {
   id String @id @db.Uuid
-  userId String? @map("user_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
   knownGitRepoId String? @map("known_git_repo_id") @db.Uuid
-  title String @db.Text
+  title String @default("New thread") @db.Text
   repo String @db.Text
   baseBranch String @map("base_branch") @default("dev") @db.VarChar(120)
+  meta Json @default("{}")
   archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
   isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
   createdBy String? @map("created_by") @db.Uuid
   updatedBy String? @map("updated_by") @db.Uuid
+  // agent_remote_dev_threads_user_id_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // agent_remote_dev_threads_known_git_repo_id_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // agent_remote_dev_threads_repo_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // agent_remote_dev_threads_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // agent_remote_dev_threads_created_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("agent_remote_dev_threads")
 }
@@ -56,16 +59,17 @@ model AgentRemoteDevThread {
 model AgentRemoteDevTask {
   id String @id @db.Uuid
   threadId String @map("thread_id") @db.Uuid
-  userId String? @map("user_id") @db.Uuid
-  dockerTaskId String? @map("docker_task_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  dockerTaskId String @map("docker_task_id") @db.Uuid
   prompt String @db.Text
   status String @default("queued") @db.VarChar(32)
-  branch String? @db.Text
+  branch String? @db.VarChar(200)
   prUrl String? @map("pr_url") @db.Text
   prState String? @map("pr_state") @db.VarChar(32)
   exitReason String? @map("exit_reason") @db.VarChar(32)
   errorMessage String? @map("error_message") @db.Text
-  lastEventSeq Int @map("last_event_seq") @default(dbgenerated("-1"))
+  lastEventSeq Int @map("last_event_seq") @default(-1)
+  meta Json @default("{}")
   isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
   startedAt DateTime? @map("started_at") @db.Timestamptz(6)
   finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
@@ -73,15 +77,18 @@ model AgentRemoteDevTask {
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
   createdBy String? @map("created_by") @db.Uuid
   updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([dockerTaskId], map: "agent_remote_dev_tasks_docker_task_id_uq")
   // agent_remote_dev_tasks_thread_id_created_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // agent_remote_dev_tasks_user_id_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // agent_remote_dev_tasks_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // agent_remote_dev_tasks_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // agent_remote_dev_tasks_created_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("agent_remote_dev_tasks")
 }
 
 model AgentRemoteDevEvent {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id BigInt @id @default(autoincrement()) @db.BigInt
   taskId String @map("task_id") @db.Uuid
   seq Int
   eventKind String @map("event_kind") @db.VarChar(80)
@@ -89,6 +96,7 @@ model AgentRemoteDevEvent {
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   @@unique([taskId, seq], map: "agent_remote_dev_events_task_seq_uq")
   @@index([taskId, createdAt], map: "agent_remote_dev_events_task_id_created_at_idx")
+  @@index([createdAt], map: "agent_remote_dev_events_created_at_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("agent_remote_dev_events")
 }
@@ -96,15 +104,21 @@ model AgentRemoteDevEvent {
 model AgentRemoteDevArtifact {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   taskId String @map("task_id") @db.Uuid
-  storageProvider String @map("storage_provider") @default("local") @db.VarChar(40)
-  artifactKind String @map("artifact_kind") @default("file") @db.VarChar(40)
-  fileName String @map("file_name") @db.Text
-  contentType String? @map("content_type") @db.Text
+  threadId String @map("thread_id") @db.Uuid
+  filename String @db.Text
+  contentType String? @map("content_type") @db.VarChar(200)
+  sizeBytes BigInt? @map("size_bytes") @db.BigInt
+  storageProvider String @map("storage_provider") @db.VarChar(32)
+  storageBucket String? @map("storage_bucket") @db.VarChar(200)
+  storageKey String? @map("storage_key") @db.Text
   url String @db.Text
-  sizeBytes Int? @map("size_bytes")
-  metaData Json @map("meta_data") @default("{}")
+  signedUrlExpiresAt DateTime? @map("signed_url_expires_at") @db.Timestamptz(6)
+  sha256 String? @db.VarChar(64)
+  meta Json @default("{}")
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   @@index([taskId, createdAt], map: "agent_remote_dev_artifacts_task_id_created_at_idx")
+  @@index([threadId, createdAt], map: "agent_remote_dev_artifacts_thread_id_created_at_idx")
+  @@index([createdAt], map: "agent_remote_dev_artifacts_created_at_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("agent_remote_dev_artifacts")
 }

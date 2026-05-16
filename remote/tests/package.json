@@ -22,5 +22,8 @@
     "test:ui:agent-echo": "node ui-agent-echo-playwright.mjs",
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",
     "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.0"
   }
 }

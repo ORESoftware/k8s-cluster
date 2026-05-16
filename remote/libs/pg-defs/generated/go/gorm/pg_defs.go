@@ -71,6 +71,7 @@ const AgentRemoteDevThreadSelectSQL = `select
       title,
       repo,
       base_branch,
+      meta,
       to_char(archived_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as archived_at,
       is_soft_deleted,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
@@ -81,11 +82,12 @@ const AgentRemoteDevThreadSelectSQL = `select
 
 type AgentRemoteDevThreadGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey" json:"id"`
-	UserId *uuid.UUID `gorm:"column:user_id;type:uuid" json:"userId,omitempty"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
 	KnownGitRepoId *uuid.UUID `gorm:"column:known_git_repo_id;type:uuid" json:"knownGitRepoId,omitempty"`
-	Title string `gorm:"column:title;type:text;not null" json:"title"`
+	Title string `gorm:"column:title;type:text;default:'New thread';not null" json:"title"`
 	Repo string `gorm:"column:repo;type:text;not null" json:"repo"`
 	BaseBranch string `gorm:"column:base_branch;type:varchar(120);default:'dev';not null" json:"baseBranch"`
+	Meta datatypes.JSON `gorm:"column:meta;type:jsonb;default:'{}'::jsonb;not null" json:"meta"`
 	ArchivedAt *time.Time `gorm:"column:archived_at;type:timestamptz" json:"archivedAt,omitempty"`
 	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
@@ -99,6 +101,7 @@ func (AgentRemoteDevThreadGorm) TableName() string { return AgentRemoteDevThread
 func (value AgentRemoteDevThreadGorm) Validate() error {
 	if len([]byte(value.Title)) > 500 { return errors.New("agent_remote_dev_threads.title exceeds 500 bytes") }
 	if len([]byte(value.Repo)) > 2048 { return errors.New("agent_remote_dev_threads.repo exceeds 2048 bytes") }
+	if !validateJSONString(value.Meta) { return errors.New("agent_remote_dev_threads.meta must be valid JSON") }
 	return nil
 }
 
@@ -116,6 +119,7 @@ const AgentRemoteDevTaskSelectSQL = `select
       exit_reason,
       error_message,
       last_event_seq,
+      meta,
       is_soft_deleted,
       to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
       to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
@@ -125,21 +129,22 @@ const AgentRemoteDevTaskSelectSQL = `select
       updated_by::text as updated_by
     from agent_remote_dev_tasks`
 
-var AgentRemoteDevTaskStatusValues = []string{"queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"}
+var AgentRemoteDevTaskStatusValues = []string{"queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"}
 
 type AgentRemoteDevTaskGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey" json:"id"`
 	ThreadId uuid.UUID `gorm:"column:thread_id;type:uuid;not null" json:"threadId"`
-	UserId *uuid.UUID `gorm:"column:user_id;type:uuid" json:"userId,omitempty"`
-	DockerTaskId *uuid.UUID `gorm:"column:docker_task_id;type:uuid" json:"dockerTaskId,omitempty"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	DockerTaskId uuid.UUID `gorm:"column:docker_task_id;type:uuid;not null" json:"dockerTaskId"`
 	Prompt string `gorm:"column:prompt;type:text;not null" json:"prompt"`
 	Status string `gorm:"column:status;type:varchar(32);default:'queued';not null" json:"status"`
-	Branch *string `gorm:"column:branch;type:text" json:"branch,omitempty"`
+	Branch *string `gorm:"column:branch;type:varchar(200)" json:"branch,omitempty"`
 	PrUrl *string `gorm:"column:pr_url;type:text" json:"prUrl,omitempty"`
 	PrState *string `gorm:"column:pr_state;type:varchar(32)" json:"prState,omitempty"`
 	ExitReason *string `gorm:"column:exit_reason;type:varchar(32)" json:"exitReason,omitempty"`
 	ErrorMessage *string `gorm:"column:error_message;type:text" json:"errorMessage,omitempty"`
 	LastEventSeq int32 `gorm:"column:last_event_seq;type:integer;default:-1;not null" json:"lastEventSeq"`
+	Meta datatypes.JSON `gorm:"column:meta;type:jsonb;default:'{}'::jsonb;not null" json:"meta"`
 	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
 	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
 	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
@@ -154,12 +159,13 @@ func (AgentRemoteDevTaskGorm) TableName() string { return AgentRemoteDevTaskTabl
 func (value AgentRemoteDevTaskGorm) Validate() error {
 	if len([]byte(value.Prompt)) > 1048576 { return errors.New("agent_remote_dev_tasks.prompt exceeds 1048576 bytes") }
 	if !containsString(AgentRemoteDevTaskStatusValues, value.Status) { return errors.New("unsupported agent_remote_dev_tasks.status") }
+	if !validateJSONString(value.Meta) { return errors.New("agent_remote_dev_tasks.meta must be valid JSON") }
 	return nil
 }
 
 const AgentRemoteDevEventTable = "agent_remote_dev_events"
 const AgentRemoteDevEventSelectSQL = `select
-      id::text as id,
+      id,
       task_id::text as task_id,
       seq,
       event_kind,
@@ -168,7 +174,7 @@ const AgentRemoteDevEventSelectSQL = `select
     from agent_remote_dev_events`
 
 type AgentRemoteDevEventGorm struct {
-	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
 	TaskId uuid.UUID `gorm:"column:task_id;type:uuid;not null" json:"taskId"`
 	Seq int32 `gorm:"column:seq;type:integer;not null" json:"seq"`
 	EventKind string `gorm:"column:event_kind;type:varchar(80);not null" json:"eventKind"`
@@ -187,40 +193,46 @@ const AgentRemoteDevArtifactTable = "agent_remote_dev_artifacts"
 const AgentRemoteDevArtifactSelectSQL = `select
       id::text as id,
       task_id::text as task_id,
-      storage_provider,
-      artifact_kind,
-      file_name,
+      thread_id::text as thread_id,
+      filename,
       content_type,
-      url,
       size_bytes,
-      meta_data,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      url,
+      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as signed_url_expires_at,
+      sha256,
+      meta,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
     from agent_remote_dev_artifacts`
 
-var AgentRemoteDevArtifactStorageProviderValues = []string{"local", "s3-r2", "gcs", "drive"}
-var AgentRemoteDevArtifactArtifactKindValues = []string{"file", "log", "patch", "report"}
+var AgentRemoteDevArtifactStorageProviderValues = []string{"s3", "r2", "gcs", "drive", "local"}
 
 type AgentRemoteDevArtifactGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	TaskId uuid.UUID `gorm:"column:task_id;type:uuid;not null" json:"taskId"`
-	StorageProvider string `gorm:"column:storage_provider;type:varchar(40);default:'local';not null" json:"storageProvider"`
-	ArtifactKind string `gorm:"column:artifact_kind;type:varchar(40);default:'file';not null" json:"artifactKind"`
-	FileName string `gorm:"column:file_name;type:text;not null" json:"fileName"`
-	ContentType *string `gorm:"column:content_type;type:text" json:"contentType,omitempty"`
+	ThreadId uuid.UUID `gorm:"column:thread_id;type:uuid;not null" json:"threadId"`
+	Filename string `gorm:"column:filename;type:text;not null" json:"filename"`
+	ContentType *string `gorm:"column:content_type;type:varchar(200)" json:"contentType,omitempty"`
+	SizeBytes *int64 `gorm:"column:size_bytes;type:bigint" json:"sizeBytes,omitempty"`
+	StorageProvider string `gorm:"column:storage_provider;type:varchar(32);not null" json:"storageProvider"`
+	StorageBucket *string `gorm:"column:storage_bucket;type:varchar(200)" json:"storageBucket,omitempty"`
+	StorageKey *string `gorm:"column:storage_key;type:text" json:"storageKey,omitempty"`
 	Url string `gorm:"column:url;type:text;not null" json:"url"`
-	SizeBytes *int32 `gorm:"column:size_bytes;type:integer" json:"sizeBytes,omitempty"`
-	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	SignedUrlExpiresAt *time.Time `gorm:"column:signed_url_expires_at;type:timestamptz" json:"signedUrlExpiresAt,omitempty"`
+	Sha256 *string `gorm:"column:sha256;type:varchar(64)" json:"sha256,omitempty"`
+	Meta datatypes.JSON `gorm:"column:meta;type:jsonb;default:'{}'::jsonb;not null" json:"meta"`
 	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
 }
 
 func (AgentRemoteDevArtifactGorm) TableName() string { return AgentRemoteDevArtifactTable }
 
 func (value AgentRemoteDevArtifactGorm) Validate() error {
+	if len([]byte(value.Filename)) > 1024 { return errors.New("agent_remote_dev_artifacts.filename exceeds 1024 bytes") }
 	if !containsString(AgentRemoteDevArtifactStorageProviderValues, value.StorageProvider) { return errors.New("unsupported agent_remote_dev_artifacts.storage_provider") }
-	if !containsString(AgentRemoteDevArtifactArtifactKindValues, value.ArtifactKind) { return errors.New("unsupported agent_remote_dev_artifacts.artifact_kind") }
-	if len([]byte(value.FileName)) > 1024 { return errors.New("agent_remote_dev_artifacts.file_name exceeds 1024 bytes") }
 	if len([]byte(value.Url)) > 4096 { return errors.New("agent_remote_dev_artifacts.url exceeds 4096 bytes") }
-	if !validateJSONString(value.MetaData) { return errors.New("agent_remote_dev_artifacts.meta_data must be valid JSON") }
+	if !validateJSONString(value.Meta) { return errors.New("agent_remote_dev_artifacts.meta must be valid JSON") }
 	return nil
 }
 

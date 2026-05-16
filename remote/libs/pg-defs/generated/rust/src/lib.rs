@@ -166,7 +166,7 @@ pub fn validate_known_git_repos_insert(value: &KnownGitRepoInsert) -> Result<(),
 }
 
 pub const AGENT_REMOTE_DEV_THREADS_TABLE: &str = "agent_remote_dev_threads";
-pub const AGENT_REMOTE_DEV_THREADS_COLUMNS: &[&str] = &["id", "user_id", "known_git_repo_id", "title", "repo", "base_branch", "archived_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const AGENT_REMOTE_DEV_THREADS_COLUMNS: &[&str] = &["id", "user_id", "known_git_repo_id", "title", "repo", "base_branch", "meta", "archived_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const AGENT_REMOTE_DEV_THREADS_SELECT_SQL: &str = r###"select
       id::text as id,
       user_id::text as user_id,
@@ -174,6 +174,7 @@ pub const AGENT_REMOTE_DEV_THREADS_SELECT_SQL: &str = r###"select
       title,
       repo,
       base_branch,
+      meta,
       to_char(archived_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as archived_at,
       is_soft_deleted,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
@@ -187,11 +188,12 @@ pub const AGENT_REMOTE_DEV_THREADS_SELECT_SQL: &str = r###"select
 #[serde(rename_all = "camelCase")]
 pub struct AgentRemoteDevThreadRow {
     pub id: String,
-    pub user_id: Option<String>,
+    pub user_id: String,
     pub known_git_repo_id: Option<String>,
     pub title: String,
     pub repo: String,
     pub base_branch: String,
+    pub meta: Value,
     pub archived_at: Option<String>,
     pub is_soft_deleted: bool,
     pub created_at: String,
@@ -209,6 +211,7 @@ pub struct AgentRemoteDevThreadInsert {
     pub title: Option<String>,
     pub repo: Option<String>,
     pub base_branch: Option<String>,
+    pub meta: Option<Value>,
     pub archived_at: Option<String>,
     pub is_soft_deleted: Option<bool>,
     pub created_at: Option<String>,
@@ -223,6 +226,7 @@ pub fn validate_agent_remote_dev_threads_row(value: &AgentRemoteDevThreadRow) ->
     validate_string_length("agent_remote_dev_threads.repo", &value.repo, Some(1), Some(2048))?;
     if (&value.repo).as_bytes().len() > 2048 { return Err("agent_remote_dev_threads.repo exceeds 2048 bytes".to_string()); }
     validate_string_length("agent_remote_dev_threads.base_branch", &value.base_branch, Some(1), Some(120))?;
+    if !(&value.meta).is_object() { return Err("agent_remote_dev_threads.meta must be a JSON object".to_string()); }
     Ok(())
 }
 
@@ -238,11 +242,14 @@ pub fn validate_agent_remote_dev_threads_insert(value: &AgentRemoteDevThreadInse
     if let Some(value) = &value.base_branch {
         validate_string_length("agent_remote_dev_threads.base_branch", value, Some(1), Some(120))?;
     }
+    if let Some(value) = &value.meta {
+        if !(value).is_object() { return Err("agent_remote_dev_threads.meta must be a JSON object".to_string()); }
+    }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_TASKS_TABLE: &str = "agent_remote_dev_tasks";
-pub const AGENT_REMOTE_DEV_TASKS_COLUMNS: &[&str] = &["id", "thread_id", "user_id", "docker_task_id", "prompt", "status", "branch", "pr_url", "pr_state", "exit_reason", "error_message", "last_event_seq", "is_soft_deleted", "started_at", "finished_at", "created_at", "updated_at", "created_by", "updated_by"];
+pub const AGENT_REMOTE_DEV_TASKS_COLUMNS: &[&str] = &["id", "thread_id", "user_id", "docker_task_id", "prompt", "status", "branch", "pr_url", "pr_state", "exit_reason", "error_message", "last_event_seq", "meta", "is_soft_deleted", "started_at", "finished_at", "created_at", "updated_at", "created_by", "updated_by"];
 pub const AGENT_REMOTE_DEV_TASKS_SELECT_SQL: &str = r###"select
       id::text as id,
       thread_id::text as thread_id,
@@ -256,6 +263,7 @@ pub const AGENT_REMOTE_DEV_TASKS_SELECT_SQL: &str = r###"select
       exit_reason,
       error_message,
       last_event_seq,
+      meta,
       is_soft_deleted,
       to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
       to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
@@ -271,24 +279,30 @@ pub enum AgentRemoteDevTaskStatus {
     Queued,
     Running,
     Streaming,
+    Pushed,
+    PrOpen,
+    PrMerged,
+    PrClosed,
     Done,
     Failed,
     Cancelled,
-    PrOpen,
 }
 
 impl AgentRemoteDevTaskStatus {
-    pub const VALUES: &'static [&'static str] = &["queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"];
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Queued => "queued",
             Self::Running => "running",
             Self::Streaming => "streaming",
+            Self::Pushed => "pushed",
+            Self::PrOpen => "pr_open",
+            Self::PrMerged => "pr_merged",
+            Self::PrClosed => "pr_closed",
             Self::Done => "done",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
-            Self::PrOpen => "pr_open",
         }
     }
 }
@@ -301,10 +315,13 @@ impl TryFrom<&str> for AgentRemoteDevTaskStatus {
             "queued" => Ok(Self::Queued),
             "running" => Ok(Self::Running),
             "streaming" => Ok(Self::Streaming),
+            "pushed" => Ok(Self::Pushed),
+            "pr_open" => Ok(Self::PrOpen),
+            "pr_merged" => Ok(Self::PrMerged),
+            "pr_closed" => Ok(Self::PrClosed),
             "done" => Ok(Self::Done),
             "failed" => Ok(Self::Failed),
             "cancelled" => Ok(Self::Cancelled),
-            "pr_open" => Ok(Self::PrOpen),
             _ => Err(format!("unsupported status: {value}")),
         }
     }
@@ -316,8 +333,8 @@ impl TryFrom<&str> for AgentRemoteDevTaskStatus {
 pub struct AgentRemoteDevTaskRow {
     pub id: String,
     pub thread_id: String,
-    pub user_id: Option<String>,
-    pub docker_task_id: Option<String>,
+    pub user_id: String,
+    pub docker_task_id: String,
     pub prompt: String,
     pub status: String,
     pub branch: Option<String>,
@@ -326,6 +343,7 @@ pub struct AgentRemoteDevTaskRow {
     pub exit_reason: Option<String>,
     pub error_message: Option<String>,
     pub last_event_seq: i32,
+    pub meta: Value,
     pub is_soft_deleted: bool,
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
@@ -350,6 +368,7 @@ pub struct AgentRemoteDevTaskInsert {
     pub exit_reason: Option<String>,
     pub error_message: Option<String>,
     pub last_event_seq: Option<i32>,
+    pub meta: Option<Value>,
     pub is_soft_deleted: Option<bool>,
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
@@ -362,13 +381,17 @@ pub struct AgentRemoteDevTaskInsert {
 pub fn validate_agent_remote_dev_tasks_row(value: &AgentRemoteDevTaskRow) -> Result<(), String> {
     validate_string_length("agent_remote_dev_tasks.prompt", &value.prompt, Some(1), None)?;
     if (&value.prompt).as_bytes().len() > 1048576 { return Err("agent_remote_dev_tasks.prompt exceeds 1048576 bytes".to_string()); }
-    if !["queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"].contains(&(&value.status).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.status: {}", &value.status)); }
+    if !["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.status: {}", &value.status)); }
+    if let Some(value) = &value.branch {
+        validate_string_length("agent_remote_dev_tasks.branch", value, None, Some(200))?;
+    }
     if let Some(value) = &value.pr_state {
         validate_string_length("agent_remote_dev_tasks.pr_state", value, None, Some(32))?;
     }
     if let Some(value) = &value.exit_reason {
         validate_string_length("agent_remote_dev_tasks.exit_reason", value, None, Some(32))?;
     }
+    if !(&value.meta).is_object() { return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string()); }
     Ok(())
 }
 
@@ -378,7 +401,10 @@ pub fn validate_agent_remote_dev_tasks_insert(value: &AgentRemoteDevTaskInsert) 
         if (value).as_bytes().len() > 1048576 { return Err("agent_remote_dev_tasks.prompt exceeds 1048576 bytes".to_string()); }
     }
     if let Some(value) = &value.status {
-        if !["queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.status: {}", value)); }
+        if !["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.status: {}", value)); }
+    }
+    if let Some(value) = &value.branch {
+        validate_string_length("agent_remote_dev_tasks.branch", value, None, Some(200))?;
     }
     if let Some(value) = &value.pr_state {
         validate_string_length("agent_remote_dev_tasks.pr_state", value, None, Some(32))?;
@@ -386,13 +412,16 @@ pub fn validate_agent_remote_dev_tasks_insert(value: &AgentRemoteDevTaskInsert) 
     if let Some(value) = &value.exit_reason {
         validate_string_length("agent_remote_dev_tasks.exit_reason", value, None, Some(32))?;
     }
+    if let Some(value) = &value.meta {
+        if !(value).is_object() { return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string()); }
+    }
     Ok(())
 }
 
 pub const AGENT_REMOTE_DEV_EVENTS_TABLE: &str = "agent_remote_dev_events";
 pub const AGENT_REMOTE_DEV_EVENTS_COLUMNS: &[&str] = &["id", "task_id", "seq", "event_kind", "payload", "created_at"];
 pub const AGENT_REMOTE_DEV_EVENTS_SELECT_SQL: &str = r###"select
-      id::text as id,
+      id,
       task_id::text as task_id,
       seq,
       event_kind,
@@ -404,7 +433,7 @@ pub const AGENT_REMOTE_DEV_EVENTS_SELECT_SQL: &str = r###"select
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRemoteDevEventRow {
-    pub id: String,
+    pub id: i64,
     pub task_id: String,
     pub seq: i32,
     pub event_kind: String,
@@ -415,7 +444,7 @@ pub struct AgentRemoteDevEventRow {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentRemoteDevEventInsert {
-    pub id: Option<String>,
+    pub id: Option<i64>,
     pub task_id: Option<String>,
     pub seq: Option<i32>,
     pub event_kind: Option<String>,
@@ -440,38 +469,44 @@ pub fn validate_agent_remote_dev_events_insert(value: &AgentRemoteDevEventInsert
 }
 
 pub const AGENT_REMOTE_DEV_ARTIFACTS_TABLE: &str = "agent_remote_dev_artifacts";
-pub const AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS: &[&str] = &["id", "task_id", "storage_provider", "artifact_kind", "file_name", "content_type", "url", "size_bytes", "meta_data", "created_at"];
+pub const AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS: &[&str] = &["id", "task_id", "thread_id", "filename", "content_type", "size_bytes", "storage_provider", "storage_bucket", "storage_key", "url", "signed_url_expires_at", "sha256", "meta", "created_at"];
 pub const AGENT_REMOTE_DEV_ARTIFACTS_SELECT_SQL: &str = r###"select
       id::text as id,
       task_id::text as task_id,
-      storage_provider,
-      artifact_kind,
-      file_name,
+      thread_id::text as thread_id,
+      filename,
       content_type,
-      url,
       size_bytes,
-      meta_data,
+      storage_provider,
+      storage_bucket,
+      storage_key,
+      url,
+      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as signed_url_expires_at,
+      sha256,
+      meta,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
     from agent_remote_dev_artifacts"###;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentRemoteDevArtifactStorageProvider {
-    Local,
-    S3R2,
+    S3,
+    R2,
     Gcs,
     Drive,
+    Local,
 }
 
 impl AgentRemoteDevArtifactStorageProvider {
-    pub const VALUES: &'static [&'static str] = &["local", "s3-r2", "gcs", "drive"];
+    pub const VALUES: &'static [&'static str] = &["s3", "r2", "gcs", "drive", "local"];
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Local => "local",
-            Self::S3R2 => "s3-r2",
+            Self::S3 => "s3",
+            Self::R2 => "r2",
             Self::Gcs => "gcs",
             Self::Drive => "drive",
+            Self::Local => "local",
         }
     }
 }
@@ -481,47 +516,12 @@ impl TryFrom<&str> for AgentRemoteDevArtifactStorageProvider {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "local" => Ok(Self::Local),
-            "s3-r2" => Ok(Self::S3R2),
+            "s3" => Ok(Self::S3),
+            "r2" => Ok(Self::R2),
             "gcs" => Ok(Self::Gcs),
             "drive" => Ok(Self::Drive),
+            "local" => Ok(Self::Local),
             _ => Err(format!("unsupported storage_provider: {value}")),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentRemoteDevArtifactArtifactKind {
-    File,
-    Log,
-    Patch,
-    Report,
-}
-
-impl AgentRemoteDevArtifactArtifactKind {
-    pub const VALUES: &'static [&'static str] = &["file", "log", "patch", "report"];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::File => "file",
-            Self::Log => "log",
-            Self::Patch => "patch",
-            Self::Report => "report",
-        }
-    }
-}
-
-impl TryFrom<&str> for AgentRemoteDevArtifactArtifactKind {
-    type Error = String;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "file" => Ok(Self::File),
-            "log" => Ok(Self::Log),
-            "patch" => Ok(Self::Patch),
-            "report" => Ok(Self::Report),
-            _ => Err(format!("unsupported artifact_kind: {value}")),
         }
     }
 }
@@ -532,13 +532,17 @@ impl TryFrom<&str> for AgentRemoteDevArtifactArtifactKind {
 pub struct AgentRemoteDevArtifactRow {
     pub id: String,
     pub task_id: String,
-    pub storage_provider: String,
-    pub artifact_kind: String,
-    pub file_name: String,
+    pub thread_id: String,
+    pub filename: String,
     pub content_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub storage_provider: String,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
     pub url: String,
-    pub size_bytes: Option<i32>,
-    pub meta_data: Value,
+    pub signed_url_expires_at: Option<String>,
+    pub sha256: Option<String>,
+    pub meta: Value,
     pub created_at: String,
 }
 
@@ -547,44 +551,62 @@ pub struct AgentRemoteDevArtifactRow {
 pub struct AgentRemoteDevArtifactInsert {
     pub id: Option<String>,
     pub task_id: Option<String>,
-    pub storage_provider: Option<String>,
-    pub artifact_kind: Option<String>,
-    pub file_name: Option<String>,
+    pub thread_id: Option<String>,
+    pub filename: Option<String>,
     pub content_type: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub storage_provider: Option<String>,
+    pub storage_bucket: Option<String>,
+    pub storage_key: Option<String>,
     pub url: Option<String>,
-    pub size_bytes: Option<i32>,
-    pub meta_data: Option<Value>,
+    pub signed_url_expires_at: Option<String>,
+    pub sha256: Option<String>,
+    pub meta: Option<Value>,
     pub created_at: Option<String>,
 }
 
 pub fn validate_agent_remote_dev_artifacts_row(value: &AgentRemoteDevArtifactRow) -> Result<(), String> {
-    if !["local", "s3-r2", "gcs", "drive"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.storage_provider: {}", &value.storage_provider)); }
-    if !["file", "log", "patch", "report"].contains(&(&value.artifact_kind).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.artifact_kind: {}", &value.artifact_kind)); }
-    validate_string_length("agent_remote_dev_artifacts.file_name", &value.file_name, Some(1), Some(1024))?;
-    if (&value.file_name).as_bytes().len() > 1024 { return Err("agent_remote_dev_artifacts.file_name exceeds 1024 bytes".to_string()); }
+    validate_string_length("agent_remote_dev_artifacts.filename", &value.filename, Some(1), Some(1024))?;
+    if (&value.filename).as_bytes().len() > 1024 { return Err("agent_remote_dev_artifacts.filename exceeds 1024 bytes".to_string()); }
+    if let Some(value) = &value.content_type {
+        validate_string_length("agent_remote_dev_artifacts.content_type", value, None, Some(200))?;
+    }
+    if !["s3", "r2", "gcs", "drive", "local"].contains(&(&value.storage_provider).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.storage_provider: {}", &value.storage_provider)); }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("agent_remote_dev_artifacts.storage_bucket", value, None, Some(200))?;
+    }
     validate_string_length("agent_remote_dev_artifacts.url", &value.url, Some(1), Some(4096))?;
     if (&value.url).as_bytes().len() > 4096 { return Err("agent_remote_dev_artifacts.url exceeds 4096 bytes".to_string()); }
-    if !(&value.meta_data).is_object() { return Err("agent_remote_dev_artifacts.meta_data must be a JSON object".to_string()); }
+    if let Some(value) = &value.sha256 {
+        validate_string_length("agent_remote_dev_artifacts.sha256", value, None, Some(64))?;
+    }
+    if !(&value.meta).is_object() { return Err("agent_remote_dev_artifacts.meta must be a JSON object".to_string()); }
     Ok(())
 }
 
 pub fn validate_agent_remote_dev_artifacts_insert(value: &AgentRemoteDevArtifactInsert) -> Result<(), String> {
+    if let Some(value) = &value.filename {
+        validate_string_length("agent_remote_dev_artifacts.filename", value, Some(1), Some(1024))?;
+        if (value).as_bytes().len() > 1024 { return Err("agent_remote_dev_artifacts.filename exceeds 1024 bytes".to_string()); }
+    }
+    if let Some(value) = &value.content_type {
+        validate_string_length("agent_remote_dev_artifacts.content_type", value, None, Some(200))?;
+    }
     if let Some(value) = &value.storage_provider {
-        if !["local", "s3-r2", "gcs", "drive"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.storage_provider: {}", value)); }
+        if !["s3", "r2", "gcs", "drive", "local"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.storage_provider: {}", value)); }
     }
-    if let Some(value) = &value.artifact_kind {
-        if !["file", "log", "patch", "report"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_artifacts.artifact_kind: {}", value)); }
-    }
-    if let Some(value) = &value.file_name {
-        validate_string_length("agent_remote_dev_artifacts.file_name", value, Some(1), Some(1024))?;
-        if (value).as_bytes().len() > 1024 { return Err("agent_remote_dev_artifacts.file_name exceeds 1024 bytes".to_string()); }
+    if let Some(value) = &value.storage_bucket {
+        validate_string_length("agent_remote_dev_artifacts.storage_bucket", value, None, Some(200))?;
     }
     if let Some(value) = &value.url {
         validate_string_length("agent_remote_dev_artifacts.url", value, Some(1), Some(4096))?;
         if (value).as_bytes().len() > 4096 { return Err("agent_remote_dev_artifacts.url exceeds 4096 bytes".to_string()); }
     }
-    if let Some(value) = &value.meta_data {
-        if !(value).is_object() { return Err("agent_remote_dev_artifacts.meta_data must be a JSON object".to_string()); }
+    if let Some(value) = &value.sha256 {
+        validate_string_length("agent_remote_dev_artifacts.sha256", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.meta {
+        if !(value).is_object() { return Err("agent_remote_dev_artifacts.meta must be a JSON object".to_string()); }
     }
     Ok(())
 }

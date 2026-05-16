@@ -9,7 +9,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PgUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -118,17 +118,21 @@ class AgentRemoteDevThread(Base):
         CheckConstraint("octet_length(repo) <= 2048", name="agent_remote_dev_threads_repo_size_chk"),
         CheckConstraint("octet_length(title) <= 500", name="agent_remote_dev_threads_title_size_chk"),
         CheckConstraint("base_branch ~ '^[A-Za-z0-9._/-]{1,120}$'", name="agent_remote_dev_threads_base_branch_format_chk"),
+        CheckConstraint("jsonb_typeof(meta) = 'object'", name="agent_remote_dev_threads_meta_object_chk"),
+        Index("agent_remote_dev_threads_user_id_idx", "user_id", postgresql_where=text("is_soft_deleted = false")),
         Index("agent_remote_dev_threads_known_git_repo_id_idx", "known_git_repo_id", postgresql_where=text("is_soft_deleted = false")),
         Index("agent_remote_dev_threads_repo_idx", "repo", postgresql_where=text("is_soft_deleted = false")),
         Index("agent_remote_dev_threads_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_remote_dev_threads_created_at_idx", text("created_at desc"), postgresql_where=text("is_soft_deleted = false")),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
-    user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     known_git_repo_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
-    title: Mapped[str] = mapped_column(Text(), nullable=False)
+    title: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'New thread'"))
     repo: Mapped[str] = mapped_column(Text(), nullable=False)
     base_branch: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'dev'"))
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
@@ -140,11 +144,12 @@ class AgentRemoteDevThreadRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    userId: UUID | None = None
+    userId: UUID
     knownGitRepoId: UUID | None = None
     title: str = Field(..., min_length=1, max_length=500)
     repo: str = Field(..., min_length=1, max_length=2048, pattern="^(git@|ssh://|https://).+")
     baseBranch: str = Field(..., min_length=1, max_length=120, pattern="^[A-Za-z0-9._/-]{1,120}$")
+    meta: dict[str, Any]
     archivedAt: datetime | None = None
     isSoftDeleted: bool
     createdAt: datetime
@@ -170,11 +175,12 @@ class AgentRemoteDevThreadInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
-    userId: UUID | None = None
+    userId: UUID
     knownGitRepoId: UUID | None = None
-    title: str = Field(..., min_length=1, max_length=500)
+    title: str | None = Field("New thread", min_length=1, max_length=500)
     repo: str = Field(..., min_length=1, max_length=2048, pattern="^(git@|ssh://|https://).+")
     baseBranch: str | None = Field("dev", min_length=1, max_length=120, pattern="^[A-Za-z0-9._/-]{1,120}$")
+    meta: dict[str, Any] | None = Field(default_factory=dict)
     archivedAt: datetime | None = None
     isSoftDeleted: bool | None = False
     createdAt: datetime | None = None
@@ -196,32 +202,37 @@ class AgentRemoteDevThreadInsert(BaseModel):
             raise ValueError("agent_remote_dev_threads.repo exceeds 2048 bytes")
         return value
 
-AgentRemoteDevTaskStatus = Literal["queued", "running", "streaming", "done", "failed", "cancelled", "pr_open"]
+AgentRemoteDevTaskStatus = Literal["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"]
 
 class AgentRemoteDevTask(Base):
     __tablename__ = "agent_remote_dev_tasks"
     __table_args__ = (
         CheckConstraint("octet_length(prompt) <= 1048576", name="agent_remote_dev_tasks_prompt_size_chk"),
-        CheckConstraint("status in ('queued', 'running', 'streaming', 'done', 'failed', 'cancelled', 'pr_open')", name="agent_remote_dev_tasks_status_chk"),
+        CheckConstraint("status in ('queued', 'running', 'streaming', 'pushed', 'pr_open', 'pr_merged', 'pr_closed', 'done', 'failed', 'cancelled')", name="agent_remote_dev_tasks_status_chk"),
         CheckConstraint("pr_state is null or pr_state in ('draft', 'open', 'closed', 'merged')", name="agent_remote_dev_tasks_pr_state_chk"),
         CheckConstraint("exit_reason is null or exit_reason in ('completed', 'cancelled', 'failed')", name="agent_remote_dev_tasks_exit_reason_chk"),
+        CheckConstraint("jsonb_typeof(meta) = 'object'", name="agent_remote_dev_tasks_meta_object_chk"),
+        Index("agent_remote_dev_tasks_docker_task_id_uq", "docker_task_id", unique=True),
         Index("agent_remote_dev_tasks_thread_id_created_at_idx", "thread_id", text("created_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_remote_dev_tasks_user_id_idx", "user_id", postgresql_where=text("is_soft_deleted = false")),
         Index("agent_remote_dev_tasks_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
         Index("agent_remote_dev_tasks_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_remote_dev_tasks_created_at_idx", text("created_at desc"), postgresql_where=text("is_soft_deleted = false")),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
     thread_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    user_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
-    docker_task_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    docker_task_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     prompt: Mapped[str] = mapped_column(Text(), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
-    branch: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(200), nullable=True)
     pr_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
     pr_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
     exit_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
     last_event_seq: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
     is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -235,16 +246,17 @@ class AgentRemoteDevTaskRow(BaseModel):
 
     id: UUID
     threadId: UUID
-    userId: UUID | None = None
-    dockerTaskId: UUID | None = None
+    userId: UUID
+    dockerTaskId: UUID
     prompt: str = Field(..., min_length=1)
     status: AgentRemoteDevTaskStatus
-    branch: str | None = None
+    branch: str | None = Field(None, max_length=200)
     prUrl: str | None = None
     prState: str | None = Field(None, max_length=32)
     exitReason: str | None = Field(None, max_length=32)
     errorMessage: str | None = None
     lastEventSeq: int
+    meta: dict[str, Any]
     isSoftDeleted: bool
     startedAt: datetime | None = None
     finishedAt: datetime | None = None
@@ -265,16 +277,17 @@ class AgentRemoteDevTaskInsert(BaseModel):
 
     id: UUID
     threadId: UUID
-    userId: UUID | None = None
-    dockerTaskId: UUID | None = None
+    userId: UUID
+    dockerTaskId: UUID
     prompt: str = Field(..., min_length=1)
     status: AgentRemoteDevTaskStatus | None = "queued"
-    branch: str | None = None
+    branch: str | None = Field(None, max_length=200)
     prUrl: str | None = None
     prState: str | None = Field(None, max_length=32)
     exitReason: str | None = Field(None, max_length=32)
     errorMessage: str | None = None
-    lastEventSeq: int | None = None
+    lastEventSeq: int | None = -1
+    meta: dict[str, Any] | None = Field(default_factory=dict)
     isSoftDeleted: bool | None = False
     startedAt: datetime | None = None
     finishedAt: datetime | None = None
@@ -297,9 +310,10 @@ class AgentRemoteDevEvent(Base):
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="agent_remote_dev_events_payload_object_chk"),
         Index("agent_remote_dev_events_task_seq_uq", "task_id", "seq", unique=True),
         Index("agent_remote_dev_events_task_id_created_at_idx", "task_id", text("created_at desc")),
+        Index("agent_remote_dev_events_created_at_idx", text("created_at desc")),
     )
 
-    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
     task_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
     seq: Mapped[int] = mapped_column(Integer(), nullable=False)
     event_kind: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -309,7 +323,7 @@ class AgentRemoteDevEvent(Base):
 class AgentRemoteDevEventRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
+    id: int
     taskId: UUID
     seq: int
     eventKind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
@@ -319,36 +333,40 @@ class AgentRemoteDevEventRow(BaseModel):
 class AgentRemoteDevEventInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: UUID | None = None
+    id: int | None = None
     taskId: UUID
     seq: int
     eventKind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
-AgentRemoteDevArtifactStorageProvider = Literal["local", "s3-r2", "gcs", "drive"]
-AgentRemoteDevArtifactArtifactKind = Literal["file", "log", "patch", "report"]
+AgentRemoteDevArtifactStorageProvider = Literal["s3", "r2", "gcs", "drive", "local"]
 
 class AgentRemoteDevArtifact(Base):
     __tablename__ = "agent_remote_dev_artifacts"
     __table_args__ = (
-        CheckConstraint("octet_length(file_name) <= 1024", name="agent_remote_dev_artifacts_file_name_size_chk"),
+        CheckConstraint("octet_length(filename) <= 1024", name="agent_remote_dev_artifacts_filename_size_chk"),
         CheckConstraint("octet_length(url) <= 4096", name="agent_remote_dev_artifacts_url_size_chk"),
-        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="agent_remote_dev_artifacts_meta_object_chk"),
-        CheckConstraint("storage_provider in ('local', 's3-r2', 'gcs', 'drive')", name="agent_remote_dev_artifacts_storage_provider_chk"),
-        CheckConstraint("artifact_kind in ('file', 'log', 'patch', 'report')", name="agent_remote_dev_artifacts_artifact_kind_chk"),
+        CheckConstraint("jsonb_typeof(meta) = 'object'", name="agent_remote_dev_artifacts_meta_object_chk"),
+        CheckConstraint("storage_provider in ('s3', 'r2', 'gcs', 'drive', 'local')", name="agent_remote_dev_artifacts_storage_provider_chk"),
         Index("agent_remote_dev_artifacts_task_id_created_at_idx", "task_id", text("created_at desc")),
+        Index("agent_remote_dev_artifacts_thread_id_created_at_idx", "thread_id", text("created_at desc")),
+        Index("agent_remote_dev_artifacts_created_at_idx", text("created_at desc")),
     )
 
     id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     task_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
-    storage_provider: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'local'"))
-    artifact_kind: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'file'"))
-    file_name: Mapped[str] = mapped_column(Text(), nullable=False)
-    content_type: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    thread_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    filename: Mapped[str] = mapped_column(Text(), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    storage_provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    storage_bucket: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(Text(), nullable=True)
     url: Mapped[str] = mapped_column(Text(), nullable=False)
-    size_bytes: Mapped[int | None] = mapped_column(Integer(), nullable=True)
-    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    signed_url_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
 
 class AgentRemoteDevArtifactRow(BaseModel):
@@ -356,20 +374,24 @@ class AgentRemoteDevArtifactRow(BaseModel):
 
     id: UUID
     taskId: UUID
-    storageProvider: AgentRemoteDevArtifactStorageProvider
-    artifactKind: AgentRemoteDevArtifactArtifactKind
-    fileName: str = Field(..., min_length=1, max_length=1024)
-    contentType: str | None = None
-    url: str = Field(..., min_length=1, max_length=4096)
+    threadId: UUID
+    filename: str = Field(..., min_length=1, max_length=1024)
+    contentType: str | None = Field(None, max_length=200)
     sizeBytes: int | None = None
-    metaData: dict[str, Any]
+    storageProvider: AgentRemoteDevArtifactStorageProvider
+    storageBucket: str | None = Field(None, max_length=200)
+    storageKey: str | None = None
+    url: str = Field(..., min_length=1, max_length=4096)
+    signedUrlExpiresAt: datetime | None = None
+    sha256: str | None = Field(None, max_length=64)
+    meta: dict[str, Any]
     createdAt: datetime
 
-    @field_validator("fileName")
+    @field_validator("filename")
     @classmethod
-    def validate_file_name(cls, value):
+    def validate_filename(cls, value):
         if value is not None and len(value.encode("utf-8")) > 1024:
-            raise ValueError("agent_remote_dev_artifacts.file_name exceeds 1024 bytes")
+            raise ValueError("agent_remote_dev_artifacts.filename exceeds 1024 bytes")
         return value
 
     @field_validator("url")
@@ -384,20 +406,24 @@ class AgentRemoteDevArtifactInsert(BaseModel):
 
     id: UUID | None = None
     taskId: UUID
-    storageProvider: AgentRemoteDevArtifactStorageProvider | None = "local"
-    artifactKind: AgentRemoteDevArtifactArtifactKind | None = "file"
-    fileName: str = Field(..., min_length=1, max_length=1024)
-    contentType: str | None = None
-    url: str = Field(..., min_length=1, max_length=4096)
+    threadId: UUID
+    filename: str = Field(..., min_length=1, max_length=1024)
+    contentType: str | None = Field(None, max_length=200)
     sizeBytes: int | None = None
-    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    storageProvider: AgentRemoteDevArtifactStorageProvider
+    storageBucket: str | None = Field(None, max_length=200)
+    storageKey: str | None = None
+    url: str = Field(..., min_length=1, max_length=4096)
+    signedUrlExpiresAt: datetime | None = None
+    sha256: str | None = Field(None, max_length=64)
+    meta: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
-    @field_validator("fileName")
+    @field_validator("filename")
     @classmethod
-    def validate_file_name(cls, value):
+    def validate_filename(cls, value):
         if value is not None and len(value.encode("utf-8")) > 1024:
-            raise ValueError("agent_remote_dev_artifacts.file_name exceeds 1024 bytes")
+            raise ValueError("agent_remote_dev_artifacts.filename exceeds 1024 bytes")
         return value
 
     @field_validator("url")

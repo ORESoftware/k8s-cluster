@@ -6,23 +6,31 @@
 -define(WORKERS, lambda_child_runner_workers).
 -define(METRICS, lambda_child_runner_metrics).
 
-invoke(Command0, ReuseKey0, Payload0, IdleMs0, TimeoutMs0) ->
+invoke(Command0, Identifier0, Payload0, IdleMs0, TimeoutMs0) ->
     ensure_tables(),
-    Command = to_binary(Command0),
-    ReuseKey = to_binary(ReuseKey0),
+    FallbackCommand = to_binary(Command0),
+    Identifier = to_binary(Identifier0),
     RequestPayload0 = normalize_json_payload(to_binary(Payload0)),
     RequestPayload = case RequestPayload0 of
         <<>> -> <<"null">>;
         _ -> RequestPayload0
     end,
-    IdleMs = max_int(IdleMs0, 1000),
-    TimeoutMs = max_int(TimeoutMs0, 1000),
     reap_idle(now_ms()),
-    case load_function_definition(ReuseKey) of
+    case load_function_definition(Identifier) of
         {ok, DefinitionJson} ->
-            Payload = invocation_payload(ReuseKey, DefinitionJson, RequestPayload),
-            bump(invocations_total, 1),
-            invoke_worker(Command, ReuseKey, Payload, IdleMs, TimeoutMs);
+            case command_for_definition(FallbackCommand, DefinitionJson) of
+                {ok, Command} ->
+                    Runtime = runtime_from_definition(DefinitionJson),
+                    Containerized = json_bool_field(DefinitionJson, <<"containerized">>, false),
+                    WorkerKey = worker_key(Identifier, DefinitionJson, Runtime, Containerized),
+                    IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
+                    TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
+                    Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
+                    bump(invocations_total, 1),
+                    invoke_worker(Command, WorkerKey, Payload, IdleMs, TimeoutMs);
+                {error, Reason} ->
+                    {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
@@ -151,6 +159,11 @@ lambda_definition_sql(Kind, Identifier) ->
         "'reuseKey', reuse_key,",
         "'idleTimeoutSeconds', idle_timeout_seconds,",
         "'maxRunMs', max_run_ms,",
+        "'containerized', containerized,",
+        "'containerImage', container_image,",
+        "'containerBuildStatus', container_build_status,",
+        "'containerBuildError', container_build_error,",
+        "'containerBuiltAt', container_built_at,",
         "'status', status,",
         "'labels', labels_json::jsonb,",
         "'metaData', meta_data_json::jsonb",
@@ -264,6 +277,7 @@ manager_bootstrap() ->
         start ->
             ensure_table(?WORKERS),
             ensure_table(?METRICS),
+            prewarm_workers(),
             manager_loop();
         stop ->
             ok
