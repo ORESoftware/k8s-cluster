@@ -29,8 +29,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const agentIndex = await readRepoFile('remote/dev-server/src/agents/index.ts');
   const echoRunner = await readRepoFile('remote/dev-server/src/agents/echo.ts');
   const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
+  const localDockerfile = await readRepoFile('remote/dev-server-local/Dockerfile');
   const readme = await readRepoFile('remote/dev-server/readme.md');
   const lockfile = await readRepoFile('remote/dev-server/pnpm-lock.yaml');
+  const brokerServer = await readRepoFile('remote/agent-worker-broker-rs/src/main.rs');
+  const idleReaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
@@ -140,7 +143,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(dockerfile, /ARG DD_REPO_CACHE_BUST=manual/);
   assert.match(dockerfile, /ARG DD_REPO_URL\s*\n/);
   assert.doesNotMatch(dockerfile, /ARG DD_REPO_URL=git@github\.com/);
+  assert.doesNotMatch(dockerfile, /ENV DD_REPO_URL=/);
   assert.match(dockerfile, /test -n "\$DD_REPO_URL"/);
+  assert.match(localDockerfile, /ARG DD_REPO_URL\s*\n/);
+  assert.doesNotMatch(localDockerfile, /ARG DD_REPO_URL=git@github\.com/);
+  assert.match(localDockerfile, /test -n "\$DD_REPO_URL"/);
   assert.match(dockerfile, /echo "\$DD_REPO_CACHE_BUST" > \/tmp\/dd-repo-cache-bust/);
   assert.match(
     dockerfile,
@@ -187,8 +194,16 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(deployment, /runAsNonRoot: true/);
   assert.match(deployment, /runAsUser: 1000/);
   assert.match(deployment, /mountPath: \/home\/node\/workspace/);
+  assert.match(deployment, /name: DD_REPO_URL[\s\S]*secretKeyRef:[\s\S]*name: dd-agent-secrets[\s\S]*key: DD_REPO_URL/);
   assert.doesNotMatch(deployment, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(deployment, /apt-get update/);
+  assert.match(brokerServer, /repo: Option<String>/);
+  assert.match(brokerServer, /fn required_repo\(request: &DispatchTaskRequest\) -> Result<String, String>/);
+  assert.match(brokerServer, /"repo": repo/);
+  assert.match(brokerServer, /"baseBranch": base_branch/);
+  assert.doesNotMatch(brokerServer, /git@github\.com:ORESoftware\/k8s-cluster\.git/);
+  assert.match(idleReaper, /worker image build disabled: WORKER_IMAGE_BUILD_REPO_URL missing/);
+  assert.doesNotMatch(idleReaper, /WORKER_IMAGE_BUILD_REPO_URL"\)[\s\S]*unwrap_or_else\(\|\| "git@github\.com/);
   assert.match(threadTemplate, /envFrom:[\s\S]*configMapRef:[\s\S]*name: dd-agent-config/);
   assert.match(threadTemplate, /envFrom:[\s\S]*secretRef:[\s\S]*name: dd-agent-secrets/);
   assert.doesNotMatch(threadTemplate, /dd-k8s-home/);

@@ -24,11 +24,16 @@ Request body:
 {
   "taskId": "task uuid",
   "threadId": "thread uuid",
+  "repo": "git@github.com:org/repo.git",
+  "baseBranch": "dev",
   "prompt": "user prompt",
   "provider": "claude-sdk",
   "threadTitle": "optional title"
 }
 ```
+
+`repo` is required. The broker forwards it to NATS and to any direct worker dispatch, and it does
+not default to any repository.
 
 The current `dd-remote-rest-api` dispatch path is still left in place. This crate is the additive
 target for moving worker lifecycle and dispatch out of the REST data API.

@@ -123,8 +123,7 @@ RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
  && cd repo-template \
  && pnpm install --store-dir /home/node/repo-template/.pnpm-store --frozen-lockfile \
  && rm -f /home/node/.ssh/id_ed25519
-ENV DD_REPO_URL=$DD_REPO_URL \
-    DD_REPO_REF=$DD_REPO_REF \
+ENV DD_REPO_REF=$DD_REPO_REF \
     BASE_BRANCH=$DD_REPO_REF
 
 # --- Compiled Node server bundle ---

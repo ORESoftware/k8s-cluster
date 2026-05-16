@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 #
 # dd-dev-server-local — minikube-friendly Node.js + TypeScript HTTP server that
-# runs Claude/OpenAI coding agents against a baked, warm checkout of
-# dd-next-1 and streams events out (SSE / webhook / Supabase Broadcast).
+# runs Claude/OpenAI coding agents against a baked, warm checkout of a
+# configured Git repo and streams events out (SSE / webhook / Supabase Broadcast).
 #
 # Primary deployment shape: one local minikube pod pinned to a chat /
 # threadId from `k8s/minikube-dev-server.yaml`. Production EC2 Kubernetes
@@ -10,7 +10,7 @@
 #
 # Build (BuildKit required for --secret):
 #   DOCKER_BUILDKIT=1 docker build \
-#     --build-arg DD_REPO_URL=git@github.com:ORESoftware/k8s-cluster.git \
+#     --build-arg DD_REPO_URL=git@github.com:org/repo.git \
 #     --build-arg DD_REPO_REF=dev \
 #     --secret id=github_deploy_key,src=/path/to/dd_deploy \
 #     -t dd-dev-server-local:latest \
@@ -93,7 +93,7 @@ RUN (userdel -r node 2>/dev/null || true) \
 USER agent
 
 # ============================================================
-# Bake the "recent baseline" — dd-next-1 with warm node_modules.
+# Bake the "recent baseline" — configured repo with warm node_modules.
 # Baked at /home/agent/repo-template (NOT under workspace/) so the
 # v4 PVC mount at /home/agent/workspace doesn't mask it. entrypoint.sh
 # seeds /home/agent/workspace/repo from this template on first boot
@@ -101,7 +101,7 @@ USER agent
 # workspace and just `git fetch` the recent delta.
 # ============================================================
 WORKDIR /home/agent
-ARG DD_REPO_URL=git@github.com:ORESoftware/k8s-cluster.git
+ARG DD_REPO_URL
 ARG DD_REPO_REF=dev
 # node:22-bookworm-slim omits build-essential, but dd-next-1's deps include
 # native modules (bufferutil, utf-8-validate) that need python3/make/g++ via
@@ -113,7 +113,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 USER agent
 RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
-    mkdir -p /home/agent/.ssh \
+    test -n "$DD_REPO_URL" \
+ && mkdir -p /home/agent/.ssh \
  && cp /run/secrets/github_deploy_key /home/agent/.ssh/id_ed25519 \
  && chmod 600 /home/agent/.ssh/id_ed25519 \
  && ssh-keyscan github.com >> /home/agent/.ssh/known_hosts 2>/dev/null \

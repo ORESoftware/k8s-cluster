@@ -43,6 +43,17 @@ spec:
               value: http://dd-otel-collector.observability.svc.cluster.local:4318
             - name: REMOTE_DEV_THREAD_ID
               value: "00000000-0000-4000-8000-000000000001"
+            - name: DD_REPO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: DD_REPO_URL
+            - name: BASE_BRANCH
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: DD_REPO_REF
+                  optional: true
             - name: THREAD_CONTEXT_BASE_URL
               value: http://dd-remote-rest-api.default.svc.cluster.local:8082
             - name: EVENT_INGEST_URL

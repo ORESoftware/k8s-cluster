@@ -239,6 +239,10 @@ fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
         println!("worker image build disabled: WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY or GH_DEPLOY_KEY missing");
         return None;
     }
+    let Some(repo_url) = env_string("WORKER_IMAGE_BUILD_REPO_URL") else {
+        println!("worker image build disabled: WORKER_IMAGE_BUILD_REPO_URL missing");
+        return None;
+    };
 
     let timezone_name =
         env_string("WORKER_IMAGE_BUILD_TIMEZONE").unwrap_or_else(|| "America/New_York".to_string());
@@ -252,8 +256,7 @@ fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
     Some(WorkerImageBuildJob {
         repo_dir: env_string("WORKER_IMAGE_BUILD_REPO_DIR")
             .unwrap_or_else(|| "/opt/dd-next-1".to_string()),
-        repo_url: env_string("WORKER_IMAGE_BUILD_REPO_URL")
-            .unwrap_or_else(|| "git@github.com:ORESoftware/k8s-cluster.git".to_string()),
+        repo_url,
         repo_ref: env_string("WORKER_IMAGE_BUILD_REF").unwrap_or_else(|| "dev".to_string()),
         image: env_string("WORKER_IMAGE_BUILD_IMAGE")
             .unwrap_or_else(|| "docker.io/library/dd-dev-server:dev".to_string()),

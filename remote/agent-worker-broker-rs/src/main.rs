@@ -39,6 +39,8 @@ struct Config {
 struct DispatchTaskRequest {
     task_id: String,
     thread_id: Option<String>,
+    repo: Option<String>,
+    base_branch: Option<String>,
     prompt: String,
     provider: Option<String>,
     thread_title: Option<String>,
@@ -107,8 +109,8 @@ struct NatsTaskMessage {
     thread_id: String,
     task_id: String,
     provider: Option<String>,
-    repo: &'static str,
-    base_branch: &'static str,
+    repo: String,
+    base_branch: String,
     feature_branch: Option<String>,
     prompt: String,
     created_at_ms: u128,
@@ -129,7 +131,12 @@ fn env_value(key: &str, fallback: &str) -> String {
 
 fn env_bool(key: &str, fallback: bool) -> bool {
     first_env(&[key])
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"))
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
         .unwrap_or(fallback)
 }
 
@@ -145,6 +152,30 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis()
+}
+
+fn required_repo(request: &DispatchTaskRequest) -> Result<String, String> {
+    let repo = request
+        .repo
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "repo is required".to_string())?;
+    if repo.len() > 2048 {
+        return Err("repo must be 2048 characters or fewer".to_string());
+    }
+    Ok(repo.to_string())
+}
+
+fn requested_base_branch(request: &DispatchTaskRequest) -> Result<String, String> {
+    let base_branch = request.base_branch.as_deref().unwrap_or("dev").trim();
+    if base_branch.is_empty() {
+        return Err("baseBranch must not be empty".to_string());
+    }
+    if base_branch.len() > 120 {
+        return Err("baseBranch must be 120 characters or fewer".to_string());
+    }
+    Ok(base_branch.to_string())
 }
 
 fn thread_resource_name(thread_id: &str) -> String {
@@ -164,7 +195,10 @@ fn thread_worker_url(namespace: &str, name: &str, path: &str) -> String {
 fn config_from_env() -> Config {
     Config {
         namespace: env_value("THREAD_RUNTIME_NAMESPACE", "default"),
-        nats_url: env_value("NATS_URL", "nats://dd-nats.messaging.svc.cluster.local:4222"),
+        nats_url: env_value(
+            "NATS_URL",
+            "nats://dd-nats.messaging.svc.cluster.local:4222",
+        ),
         nats_task_stream: env_value("NATS_TASK_STREAM", "DD_REMOTE_TASKS"),
         nats_task_subject: env_value("NATS_TASK_SUBJECT", "dd.remote.thread.*.tasks"),
         nats_wakeup_subject: env_value("NATS_WAKEUP_SUBJECT", "dd.remote.orchestrator.wakeup"),
@@ -213,6 +247,8 @@ async fn publish_task_to_nats(
     config: &Config,
     thread_id: &str,
     request: &DispatchTaskRequest,
+    repo: &str,
+    base_branch: &str,
 ) -> Result<NatsPublishResult, String> {
     let client = async_nats::connect(config.nats_url.clone())
         .await
@@ -229,8 +265,8 @@ async fn publish_task_to_nats(
         thread_id: thread_id.to_string(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
-        repo: "git@github.com:ORESoftware/k8s-cluster.git",
-        base_branch: "dev",
+        repo: repo.to_string(),
+        base_branch: base_branch.to_string(),
         feature_branch: None,
         prompt: request.prompt.clone(),
         created_at_ms: now_ms(),
@@ -277,6 +313,8 @@ async fn direct_dispatch(
     thread_id: &str,
     worker_name: &str,
     request: &DispatchTaskRequest,
+    repo: &str,
+    base_branch: &str,
 ) -> WorkerDispatchResult {
     if !state.config.direct_dispatch_enabled {
         return WorkerDispatchResult {
@@ -314,6 +352,8 @@ async fn direct_dispatch(
     let worker_body = json!({
         "taskId": &request.task_id,
         "threadId": thread_id,
+        "repo": repo,
+        "baseBranch": base_branch,
         "prompt": &request.prompt,
         "provider": &request.provider,
         "threadTitle": &request.thread_title,
@@ -468,9 +508,23 @@ async fn dispatch_task(
                 .into_response();
         }
     }
+    let repo = match required_repo(&request) {
+        Ok(value) => value,
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    };
+    let base_branch = match requested_base_branch(&request) {
+        Ok(value) => value,
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    };
 
     let worker_name = thread_resource_name(&thread_id);
-    let nats = match publish_task_to_nats(&state.config, &thread_id, &request).await {
+    let nats = match publish_task_to_nats(&state.config, &thread_id, &request, &repo, &base_branch)
+        .await
+    {
         Ok(value) => value,
         Err(error) => {
             return (
@@ -480,7 +534,15 @@ async fn dispatch_task(
                 .into_response();
         }
     };
-    let direct_dispatch = direct_dispatch(&state, &thread_id, &worker_name, &request).await;
+    let direct_dispatch = direct_dispatch(
+        &state,
+        &thread_id,
+        &worker_name,
+        &request,
+        &repo,
+        &base_branch,
+    )
+    .await;
     let wake = if direct_dispatch.sent {
         K8sWakeResult {
             attempted: false,

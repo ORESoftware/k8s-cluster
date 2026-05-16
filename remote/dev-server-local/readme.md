@@ -87,7 +87,7 @@ API will stay blocked until Docker's socket is reachable.
 
 ```
 remote/dev-server-local/
-├── Dockerfile                 # multi-stage build; bakes a warm dd-next-1 + node_modules
+├── Dockerfile                 # multi-stage build; bakes a warm configured repo + node_modules
 ├── .dockerignore
 ├── package.json               # fastify + zod + supabase-js, tsx for dev
 ├── tsconfig.json              # strict, NodeNext, output to dist/
@@ -113,15 +113,15 @@ remote/dev-server-local/
 
 ## Local Docker Build
 
-The build needs a GitHub deploy key with read access to `ORESoftware/k8s-cluster` so the image
-can pre-clone the repo and run `pnpm install`. Use BuildKit's `--secret` flag — never `--build-arg`
-— so the key never lands in any image layer. For local minikube iteration, build from this folder
-and tag the image as `dd-dev-server-local:latest` so the minikube manifest can use
+The build needs a GitHub deploy key with read access to the configured repo so the image can
+pre-clone it and run `pnpm install`. Use BuildKit's `--secret` flag — never `--build-arg` — so the
+key never lands in any image layer. For local minikube iteration, build from this folder and tag the
+image as `dd-dev-server-local:latest` so the minikube manifest can use
 `imagePullPolicy: Never`.
 
 ```bash
 DOCKER_BUILDKIT=1 docker build \
-  --build-arg DD_REPO_URL=git@github.com:ORESoftware/k8s-cluster.git \
+  --build-arg DD_REPO_URL=git@github.com:org/repo.git \
   --build-arg DD_REPO_REF=dev \
   --secret id=github_deploy_key,src=$HOME/.ssh/dd_deploy \
   -t dd-dev-server-local:latest \
