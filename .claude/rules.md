@@ -1,0 +1,11 @@
+# Claude Instructions
+
+You are authorized to use all commands (whitelisted), EXCEPT for the following commands which are explicitly BLACKLISTED:
+
+- `rm`
+- `mv`
+- `git stash`
+- `git checkout`
+- `sed`
+
+Do not run, propose, or suggest these commands under any circumstances.

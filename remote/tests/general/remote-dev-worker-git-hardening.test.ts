@@ -67,6 +67,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const installResult = await installWorkspaceDependencies/);
   assert.match(server, /dependencyInstallOk: installResult\.ok/);
   assert.match(server, /dependencyInstallError: installResult\.error/);
+  assert.match(server, /await access\(join\(workspacePath, 'package\.json'\)\)/);
   assert.match(server, /import type \{ Dirent \} from 'node:fs'/);
   assert.match(server, /async function publishOutputs\(state: TaskState, taskOutputsDir: string\): Promise<void>/);
   assert.match(server, /let dirents: Dirent\[\];/);

@@ -551,14 +551,24 @@ fn authorized_internal_request(headers: &HeaderMap) -> bool {
         .is_some_and(|value| value == expected)
 }
 
-fn thread_resource_name(thread_id: &str) -> String {
-    let short = thread_id
+fn thread_short_id(thread_id: &str) -> String {
+    thread_id
         .chars()
         .filter(|value| value.is_ascii_alphanumeric())
         .take(12)
         .collect::<String>()
-        .to_lowercase();
-    format!("dd-thread-{short}")
+        .to_lowercase()
+}
+
+fn thread_resource_name(thread_id: &str) -> String {
+    format!("dd-thread-{}", thread_short_id(thread_id))
+}
+
+fn thread_terminal_url(thread_id: &str) -> String {
+    format!(
+        "/dd-thread/{}/terminal?threadId={thread_id}",
+        thread_short_id(thread_id)
+    )
 }
 
 fn worker_auth_secret() -> Option<String> {
@@ -1365,6 +1375,98 @@ async fn wait_thread_worker_ready(namespace: &str, name: &str, secret: &str) -> 
     Err("thread worker readiness timed out".to_string())
 }
 
+async fn ensure_thread_worker_for_control(
+    thread_id: &str,
+    action: &'static str,
+    task_id: Option<&str>,
+    waking_message: &'static str,
+    awake_message: &'static str,
+) -> Result<(String, String, String), ThreadActionResponse> {
+    let namespace = thread_runtime_namespace();
+    let name = thread_resource_name(thread_id);
+    let Some(secret) = worker_auth_secret() else {
+        return Err(ThreadActionResponse {
+            ok: false,
+            action: action.to_string(),
+            thread_id: thread_id.to_string(),
+            k8s_name: name,
+            namespace,
+            results: Vec::new(),
+            errors: vec![missing_worker_auth_secret_message().to_string()],
+        });
+    };
+
+    if let Err(error) =
+        publish_thread_runtime_event_to_nats(thread_id, task_id, action, "waking", waking_message)
+            .await
+    {
+        eprintln!("failed to publish thread runtime event: {error}");
+    }
+
+    let repo_config = match fetch_thread_repo_config_from_postgres(thread_id).await {
+        Ok(Some(repo_config)) => repo_config,
+        Ok(None) => {
+            return Err(ThreadActionResponse {
+                ok: false,
+                action: action.to_string(),
+                thread_id: thread_id.to_string(),
+                k8s_name: name,
+                namespace,
+                results: Vec::new(),
+                errors: vec!["thread repo config is not configured".to_string()],
+            });
+        }
+        Err(error) => {
+            return Err(ThreadActionResponse {
+                ok: false,
+                action: action.to_string(),
+                thread_id: thread_id.to_string(),
+                k8s_name: name,
+                namespace,
+                results: Vec::new(),
+                errors: vec![error],
+            });
+        }
+    };
+
+    let (namespace, name, _results) =
+        match ensure_thread_worker(thread_id, &repo_config.repo, &repo_config.base_branch).await {
+            Ok(result) => result,
+            Err(error) => {
+                return Err(ThreadActionResponse {
+                    ok: false,
+                    action: action.to_string(),
+                    thread_id: thread_id.to_string(),
+                    k8s_name: name,
+                    namespace,
+                    results: Vec::new(),
+                    errors: vec![error],
+                });
+            }
+        };
+
+    if let Err(error) = wait_thread_worker_ready(&namespace, &name, &secret).await {
+        return Err(ThreadActionResponse {
+            ok: false,
+            action: action.to_string(),
+            thread_id: thread_id.to_string(),
+            k8s_name: name,
+            namespace,
+            results: Vec::new(),
+            errors: vec![error],
+        });
+    }
+
+    if let Err(error) =
+        publish_thread_runtime_event_to_nats(thread_id, task_id, action, "awake", awake_message)
+            .await
+    {
+        eprintln!("failed to publish thread runtime event: {error}");
+    }
+
+    Ok((namespace, name, secret))
+}
+
 async fn merge_thread_upstream(thread_id: String, request: ThreadControlRequest) -> Response {
     record_request(
         "POST",
@@ -1604,6 +1706,98 @@ async fn open_thread_pr(thread_id: String, request: ThreadControlRequest) -> Res
             (StatusCode::BAD_GATEWAY, Json(response)).into_response()
         }
     }
+}
+
+async fn make_thread_commit(thread_id: String, request: ThreadControlRequest) -> Response {
+    record_request(
+        "POST",
+        "/api/agents/threads/:threadId/make-commit",
+        StatusCode::OK,
+    );
+    let (namespace, name, secret) = match ensure_thread_worker_for_control(
+        &thread_id,
+        "make-commit",
+        request.task_id.as_deref(),
+        "waking thread runtime for commit",
+        "thread runtime ready for commit",
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(response) => return (StatusCode::BAD_GATEWAY, Json(response)).into_response(),
+    };
+
+    let client = reqwest::Client::new();
+    let worker_response = client
+        .post(thread_worker_url(&namespace, &name, "/thread/make-commit"))
+        .header("X-Server-Auth", secret)
+        .json(&json!({
+            "kind": "thread-control",
+            "action": "make-commit",
+            "threadId": thread_id.clone(),
+            "taskId": request.task_id,
+            "requestedBy": request.requested_by,
+            "reason": request.reason,
+        }))
+        .send()
+        .await;
+    match worker_response {
+        Ok(response) => {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let public_status =
+                StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+            (
+                public_status,
+                [(header::CONTENT_TYPE, "application/json")],
+                body,
+            )
+                .into_response()
+        }
+        Err(error) => {
+            let response = ThreadActionResponse {
+                ok: false,
+                action: "make-commit".to_string(),
+                thread_id,
+                k8s_name: name,
+                namespace,
+                results: Vec::new(),
+                errors: vec![error.to_string()],
+            };
+            (StatusCode::BAD_GATEWAY, Json(response)).into_response()
+        }
+    }
+}
+
+async fn open_thread_terminal(thread_id: String, request: ThreadControlRequest) -> Response {
+    record_request(
+        "POST",
+        "/api/agents/threads/:threadId/terminal",
+        StatusCode::OK,
+    );
+    let (namespace, name, _secret) = match ensure_thread_worker_for_control(
+        &thread_id,
+        "terminal",
+        request.task_id.as_deref(),
+        "waking thread runtime for terminal",
+        "thread runtime ready for terminal",
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(response) => return (StatusCode::BAD_GATEWAY, Json(response)).into_response(),
+    };
+
+    let terminal_url = thread_terminal_url(&thread_id);
+    Json(json!({
+        "ok": true,
+        "action": "terminal",
+        "threadId": thread_id,
+        "k8sName": name,
+        "namespace": namespace,
+        "terminalUrl": terminal_url,
+    }))
+    .into_response()
 }
 
 fn summarize(threads: &[AgentThreadRow], tasks: &[AgentTaskRow]) -> AgentsSummary {
@@ -3533,6 +3727,26 @@ async fn open_pr_thread(
     open_thread_pr(thread_id, request).await
 }
 
+async fn make_commit_thread(
+    Path(thread_id): Path<String>,
+    Json(request): Json<ThreadControlRequest>,
+) -> Response {
+    if let Err(error) = validate_thread_control_signal(&thread_id, "make-commit", &request) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+    }
+    make_thread_commit(thread_id, request).await
+}
+
+async fn terminal_thread(
+    Path(thread_id): Path<String>,
+    Json(request): Json<ThreadControlRequest>,
+) -> Response {
+    if let Err(error) = validate_thread_control_signal(&thread_id, "terminal", &request) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+    }
+    open_thread_terminal(thread_id, request).await
+}
+
 async fn metrics() -> impl IntoResponse {
     record_request("GET", "/metrics", StatusCode::OK);
     UPTIME_SECONDS.set(STARTED_AT.elapsed().as_secs() as i64);
@@ -3612,6 +3826,14 @@ async fn main() {
         .route(
             "/api/agents/threads/:thread_id/open-pr",
             post(open_pr_thread),
+        )
+        .route(
+            "/api/agents/threads/:thread_id/make-commit",
+            post(make_commit_thread),
+        )
+        .route(
+            "/api/agents/threads/:thread_id/terminal",
+            post(terminal_thread),
         )
         .route("/metrics", get(metrics));
 

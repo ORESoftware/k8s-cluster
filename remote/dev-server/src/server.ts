@@ -8,7 +8,9 @@
 //   GET  /ws                     — WebSocket replay/live stream for pinned thread tasks
 //   POST /tasks/:taskId/cancel   — abort an in-flight task
 //   POST /thread/merge-upstream  — merge configured base branch into the pinned thread branch
+//   POST /thread/make-commit     — commit current workspace changes and push the thread branch
 //   POST /thread/open-pr         — explicitly open/reuse a draft WIP PR
+//   GET  /terminal               — browser terminal for the pinned worker container
 //   GET  /healthz                — liveness probe
 //
 // Per thread, the server prepares/reuses a stable branch
@@ -163,6 +165,17 @@ type MergeUpstreamResult = {
   before: string;
   after: string;
   fastForward: boolean;
+};
+
+type MakeCommitResult = {
+  ok: true;
+  threadId: string;
+  branch: string;
+  before: string;
+  after: string;
+  committed: boolean;
+  pushed: true;
+  status: string;
 };
 
 type OpenPullRequestResult = {
@@ -373,6 +386,11 @@ async function installWorkspaceDependencies(workspacePath: string): Promise<{
   ok: boolean;
   error?: string;
 }> {
+  try {
+    await access(join(workspacePath, 'package.json'));
+  } catch {
+    return { ok: true };
+  }
   try {
     await shCapture('pnpm', ['install', '--frozen-lockfile'], workspacePath, {
       timeoutMs: TIMEOUT_PNPM_INSTALL,
@@ -809,6 +827,130 @@ async function mergeUpstreamForThread(input: {
     () => undefined,
   );
   return queuedMerge;
+}
+
+function manualCommitMessage(input: { threadId: string; reason?: string; threadTitle?: string }): string {
+  const message = (input.reason ?? input.threadTitle ?? '').trim().replace(/\s+/g, ' ');
+  if (message) {
+    return message.slice(0, 200);
+  }
+  return `agent(${input.threadId}): manual commit`;
+}
+
+async function makeCommitForThread(input: {
+  taskId?: string;
+  threadId?: string;
+  userId?: string;
+  branch?: string;
+  threadTitle?: string;
+  reason?: string;
+}): Promise<MakeCommitResult> {
+  const threadId = input.threadId ?? config.threadId ?? undefined;
+  const userId = input.userId ?? config.userId ?? undefined;
+  if (!threadId) {
+    throw new Error('threadId required');
+  }
+  if (config.threadId && threadId !== config.threadId) {
+    throw new Error(`container is pinned to thread ${config.threadId}, got ${threadId}`);
+  }
+  if (config.userId && userId && userId !== config.userId) {
+    throw new Error(`container is pinned to user ${config.userId}, got ${userId}`);
+  }
+
+  const taskId = input.taskId ?? randomUUID();
+  const session = getOrCreateSession({
+    taskId,
+    threadId,
+    userId,
+    branch: input.branch,
+    threadTitle: input.threadTitle ?? input.reason,
+  });
+  const taskState = input.taskId ? tasks.get(input.taskId) : undefined;
+  if (taskState) {
+    emit(taskState, { kind: 'status', status: 'manual-commit-pushing' });
+  }
+
+  await waitForBootGitReady();
+  await session.ready;
+
+  const queuedCommit = session.queue
+    .catch(() => undefined)
+    .then(async () => {
+      session.lastActiveAt = Date.now();
+      const before = (
+        await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
+          timeoutMs: TIMEOUT_GIT_QUICK,
+        })
+      ).trim();
+      await appendFile(
+        session.logPath,
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          kind: 'make-commit-start',
+          sessionId: session.sessionId,
+          branch: session.branch,
+          taskId,
+        }) + '\n',
+      );
+      const status = await shCapture('git', ['status', '--porcelain'], session.workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+      });
+      const hasChanges = status.trim().length > 0;
+      if (hasChanges) {
+        await shCapture('git', ['add', '-A'], session.workspacePath, {
+          timeoutMs: TIMEOUT_GIT_QUICK,
+        });
+        await shCapture(
+          'git',
+          ['commit', '--no-verify', '-m', manualCommitMessage({ ...input, threadId })],
+          session.workspacePath,
+          { timeoutMs: TIMEOUT_GIT_QUICK },
+        );
+      }
+      const after = (
+        await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
+          timeoutMs: TIMEOUT_GIT_QUICK,
+        })
+      ).trim();
+      await shCapture(
+        'git',
+        ['push', '--no-verify', '--set-upstream', 'origin', session.branch],
+        session.workspacePath,
+        { timeoutMs: TIMEOUT_GIT_NETWORK },
+      );
+      await appendFile(
+        session.logPath,
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          kind: 'make-commit-done',
+          sessionId: session.sessionId,
+          branch: session.branch,
+          taskId,
+          before,
+          after,
+          committed: hasChanges,
+        }) + '\n',
+      );
+      if (taskState) {
+        emit(taskState, { kind: 'status', status: hasChanges ? 'manual-commit-pushed' : 'pushed' });
+      }
+      return {
+        ok: true as const,
+        threadId,
+        branch: session.branch,
+        before,
+        after,
+        committed: hasChanges,
+        pushed: true as const,
+        status: hasChanges ? 'committed-and-pushed' : 'pushed-without-new-commit',
+      };
+    });
+
+  session.queue = queuedCommit.then(
+    () => undefined,
+    () => undefined,
+  );
+  return queuedCommit;
 }
 
 async function openPullRequestForThread(input: {
@@ -1313,6 +1455,7 @@ type MetricLabels = Record<string, string | number | boolean | undefined>;
 
 const counters = new Map<string, { labels: MetricLabels; value: number }>();
 const activeWorkerSockets = new Set<WorkerWebSocketClient>();
+const activeTerminalSockets = new Set<TerminalWebSocketClient>();
 
 function metricKey(name: string, labels: MetricLabels): string {
   return `${name}:${Object.entries(labels)
@@ -1403,6 +1546,11 @@ function renderMetrics(): string {
       'dd_runtime_worker_ws_active_connections',
       'Currently active worker websocket connections.',
       activeWorkerSockets.size,
+    ),
+    ...renderGauge(
+      'dd_runtime_terminal_ws_active_connections',
+      'Currently active worker terminal websocket connections.',
+      activeTerminalSockets.size,
     ),
   ];
   return `${lines.join('\n')}\n`;
@@ -1710,13 +1858,352 @@ class WorkerWebSocketClient {
   }
 }
 
+function terminalPageHtml(threadId: string): string {
+  const encodedThreadId = JSON.stringify(threadId);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thread terminal</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0d1117; --panel: #111827; --line: #263244; --text: #e5edf7; --muted: #9aa7b7; --accent: #7dd3fc; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    header { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #0f172a; }
+    h1 { margin: 0; font-size: 16px; font-weight: 650; }
+    #status { color: var(--muted); font-size: 13px; }
+    #output { width: 100%; height: 100%; min-height: 0; resize: none; border: 0; outline: 0; padding: 14px; background: #05080d; color: #d5f5e3; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
+    form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); background: var(--panel); }
+    input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; background: #0b1220; color: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    button { border: 1px solid #31536d; border-radius: 6px; padding: 9px 12px; background: #12324a; color: var(--text); font-weight: 650; cursor: pointer; }
+    button:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Thread terminal</h1>
+      <span id="status">connecting</span>
+    </header>
+    <textarea id="output" spellcheck="false" readonly></textarea>
+    <form id="command-form">
+      <input id="command" autocomplete="off" spellcheck="false" placeholder="command" disabled>
+      <button id="send" type="submit" disabled>Run</button>
+    </form>
+  </main>
+  <script>
+    const threadId = ${encodedThreadId};
+    const statusNode = document.getElementById("status");
+    const output = document.getElementById("output");
+    const form = document.getElementById("command-form");
+    const command = document.getElementById("command");
+    const send = document.getElementById("send");
+    let socket;
+    function append(value) {
+      output.value += value;
+      output.scrollTop = output.scrollHeight;
+    }
+    function connect() {
+      const url = new URL("terminal/ws", window.location.href);
+      url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      url.searchParams.set("threadId", threadId);
+      socket = new WebSocket(url);
+      socket.addEventListener("open", () => {
+        statusNode.textContent = "connected";
+        command.disabled = false;
+        send.disabled = false;
+        command.focus();
+      });
+      socket.addEventListener("message", (event) => {
+        let message;
+        try {
+          message = JSON.parse(event.data);
+        } catch {
+          append(String(event.data));
+          return;
+        }
+        if (message.type === "terminal-output") append(String(message.data || ""));
+        if (message.type === "terminal-status") statusNode.textContent = String(message.status || "status");
+        if (message.type === "terminal-error") {
+          statusNode.textContent = "error";
+          append("\\n" + String(message.message || "terminal error") + "\\n");
+        }
+        if (message.type === "terminal-exit") {
+          statusNode.textContent = "closed";
+          command.disabled = true;
+          send.disabled = true;
+        }
+      });
+      socket.addEventListener("close", () => {
+        statusNode.textContent = "closed";
+        command.disabled = true;
+        send.disabled = true;
+      });
+      socket.addEventListener("error", () => {
+        statusNode.textContent = "connection error";
+      });
+    }
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      const value = command.value;
+      command.value = "";
+      socket.send(JSON.stringify({ type: "input", data: value + "\\n" }));
+    });
+    connect();
+  </script>
+</body>
+</html>`;
+}
+
+class TerminalWebSocketClient {
+  private buffer = Buffer.alloc(0);
+  private closed = false;
+  private child?: ChildProcess;
+
+  constructor(
+    private readonly socket: Socket,
+    private readonly threadId: string,
+  ) {
+    activeTerminalSockets.add(this);
+    incCounter('dd_runtime_terminal_ws_connections_total', {
+      service: 'dd-dev-server-api',
+      threadId: this.threadId,
+    });
+    this.socket.on('data', (chunk) => this.receive(chunk));
+    this.socket.on('close', () => this.close());
+    this.socket.on('error', () => this.close());
+    void this.start();
+  }
+
+  async start(): Promise<void> {
+    try {
+      if (config.threadId && this.threadId !== config.threadId) {
+        throw new Error(`container is pinned to thread ${config.threadId}, got ${this.threadId}`);
+      }
+      await waitForBootGitReady();
+      const session = getOrCreateSession({
+        taskId: randomUUID(),
+        threadId: this.threadId,
+        userId: config.userId ?? undefined,
+      });
+      await session.ready;
+      session.lastActiveAt = Date.now();
+      this.sendJson({
+        type: 'terminal-status',
+        source: 'node-worker-terminal',
+        status: 'starting-shell',
+        threadId: this.threadId,
+        branch: session.branch,
+        cwd: session.workspacePath,
+        atMs: Date.now(),
+      });
+      const shell = process.env.SHELL || '/bin/bash';
+      this.child = spawn(shell, ['-i'], {
+        cwd: session.workspacePath,
+        env: {
+          ...(process.env as Record<string, string>),
+          SHELL: shell,
+          TERM: process.env.TERM || 'xterm-256color',
+          PS1: '\\w $ ',
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      this.child.stdout?.on('data', (chunk: Buffer) => {
+        this.sendOutput(chunk.toString('utf8'));
+      });
+      this.child.stderr?.on('data', (chunk: Buffer) => {
+        this.sendOutput(chunk.toString('utf8'));
+      });
+      this.child.on('close', (code, signal) => {
+        this.sendJson({
+          type: 'terminal-exit',
+          source: 'node-worker-terminal',
+          code,
+          signal,
+          atMs: Date.now(),
+        });
+        this.close();
+      });
+      this.child.on('error', (error) => {
+        this.sendJson({
+          type: 'terminal-error',
+          source: 'node-worker-terminal',
+          message: error.message,
+          atMs: Date.now(),
+        });
+        this.close();
+      });
+      this.sendJson({
+        type: 'terminal-status',
+        source: 'node-worker-terminal',
+        status: 'connected',
+        threadId: this.threadId,
+        branch: session.branch,
+        cwd: session.workspacePath,
+        atMs: Date.now(),
+      });
+    } catch (error) {
+      this.sendJson({
+        type: 'terminal-error',
+        source: 'node-worker-terminal',
+        message: error instanceof Error ? error.message : String(error),
+        atMs: Date.now(),
+      });
+      this.close();
+    }
+  }
+
+  receive(chunk: Buffer): void {
+    if (this.closed) {
+      return;
+    }
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+    while (this.buffer.length >= 2) {
+      const first = this.buffer.readUInt8(0);
+      const second = this.buffer.readUInt8(1);
+      const opcode = first & 0x0f;
+      const masked = (second & 0x80) === 0x80;
+      let length = second & 0x7f;
+      let offset = 2;
+      if (length === 126) {
+        if (this.buffer.length < 4) {
+          return;
+        }
+        length = this.buffer.readUInt16BE(2);
+        offset = 4;
+      } else if (length === 127) {
+        if (this.buffer.length < 10) {
+          return;
+        }
+        const longLength = this.buffer.readBigUInt64BE(2);
+        if (longLength > BigInt(Number.MAX_SAFE_INTEGER)) {
+          this.close();
+          return;
+        }
+        length = Number(longLength);
+        offset = 10;
+      }
+      const maskOffset = offset;
+      if (masked) {
+        offset += 4;
+      }
+      const frameLength = offset + length;
+      if (this.buffer.length < frameLength) {
+        return;
+      }
+      let payload = this.buffer.subarray(offset, frameLength);
+      if (masked) {
+        const mask = this.buffer.subarray(maskOffset, maskOffset + 4);
+        payload = Buffer.from(payload.map((byte, index) => byte ^ mask[index % 4]!));
+      }
+      this.buffer = this.buffer.subarray(frameLength);
+
+      if (opcode === 0x8) {
+        this.close();
+        return;
+      }
+      if (opcode === 0x9) {
+        writeWebSocketFrame(this.socket, 0x0a, payload);
+        continue;
+      }
+      if (opcode === 0x1) {
+        this.handleText(payload.toString('utf8'));
+      }
+    }
+  }
+
+  handleText(text: string): void {
+    let parsed: WebSocketJsonValue;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      this.sendJson({
+        type: 'terminal-error',
+        source: 'node-worker-terminal',
+        message: 'send JSON text frames',
+        atMs: Date.now(),
+      });
+      return;
+    }
+    const payload = isWebSocketJsonObject(parsed) ? parsed : {};
+    const messageType = typeof payload.type === 'string' ? payload.type : 'message';
+    incCounter('dd_runtime_terminal_ws_messages_total', {
+      service: 'dd-dev-server-api',
+      messageType,
+    });
+    if (messageType === 'ping') {
+      this.sendJson({
+        type: 'terminal-pong',
+        source: 'node-worker-terminal',
+        threadId: this.threadId,
+        atMs: Date.now(),
+      });
+      return;
+    }
+    if (messageType === 'input') {
+      const data = typeof payload.data === 'string' ? payload.data : '';
+      if (data && this.child?.stdin?.writable) {
+        this.child.stdin.write(data);
+      }
+      return;
+    }
+    this.sendJson({
+      type: 'terminal-error',
+      source: 'node-worker-terminal',
+      message: 'supported types: input, ping',
+      receivedType: messageType,
+      atMs: Date.now(),
+    });
+  }
+
+  sendOutput(data: string): void {
+    this.sendJson({
+      type: 'terminal-output',
+      source: 'node-worker-terminal',
+      data,
+      atMs: Date.now(),
+    });
+  }
+
+  sendJson(payload: Record<string, unknown>): void {
+    if (this.closed || this.socket.destroyed) {
+      return;
+    }
+    writeWebSocketFrame(this.socket, 0x1, JSON.stringify(payload));
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    activeTerminalSockets.delete(this);
+    if (this.child && !this.child.killed) {
+      try {
+        this.child.kill('SIGHUP');
+      } catch {
+        /* shell may already be gone */
+      }
+    }
+    try {
+      writeWebSocketFrame(this.socket, 0x8);
+    } catch {
+      /* socket may already be gone */
+    }
+    this.socket.destroy();
+  }
+}
+
 function registerWorkerWebSocketUpgrade(): void {
   fastify.server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
     const requestUrl = new URL(
       request.url ?? '/',
       `http://${request.headers.host ?? 'localhost'}`,
     );
-    if (requestUrl.pathname !== '/ws') {
+    if (requestUrl.pathname !== '/ws' && requestUrl.pathname !== '/terminal/ws') {
       rejectUpgrade(socket, 404, 'websocket path not found');
       return;
     }
@@ -1749,7 +2236,10 @@ function registerWorkerWebSocketUpgrade(): void {
         `Sec-WebSocket-Accept: ${createWebSocketAcceptKey(key)}\r\n` +
         '\r\n',
     );
-    const client = new WorkerWebSocketClient(socket, requestedThreadId, taskId);
+    const client =
+      requestUrl.pathname === '/terminal/ws'
+        ? new TerminalWebSocketClient(socket, requestedThreadId)
+        : new WorkerWebSocketClient(socket, requestedThreadId, taskId);
     if (head.length > 0) {
       client.receive(head);
     }
@@ -1815,6 +2305,25 @@ fastify.get('/status', async () => ({
   ingestCircuit: eventBus.getCircuitState(),
   idleTimeoutMs: config.threadId ? config.idleTimeoutMs : undefined,
 }));
+
+fastify.get('/terminal', async (req, reply) => {
+  const parsed = TerminalQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return reply.code(400).send({ error: parsed.error.format() });
+  }
+  const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
+  if (!threadId) {
+    return reply.code(400).send({ error: 'threadId is required' });
+  }
+  if (config.threadId && threadId !== config.threadId) {
+    return reply.code(409).send({
+      error: 'container is bound to a different thread',
+      boundThreadId: config.threadId,
+    });
+  }
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return terminalPageHtml(threadId);
+});
 
 // Provider availability — boot-probed list of which AGENT_PROVIDER
 // values can actually be used in this image (binaries on PATH, SDKs
@@ -1884,6 +2393,18 @@ const MergeUpstreamSchema = z.object({
   reason: z.string().max(300).optional(),
 });
 
+const MakeCommitSchema = z.object({
+  kind: z.literal('thread-control').optional(),
+  action: z.literal('make-commit').optional(),
+  taskId: z.string().uuid().optional(),
+  threadId: z.string().uuid().optional(),
+  userId: z.string().uuid().optional(),
+  branch: z.string().max(200).optional(),
+  threadTitle: z.string().min(1).max(200).optional(),
+  requestedBy: z.string().max(120).optional(),
+  reason: z.string().max(300).optional(),
+});
+
 const OpenPullRequestSchema = z.object({
   kind: z.literal('thread-control').optional(),
   action: z.literal('open-pr').optional(),
@@ -1894,6 +2415,10 @@ const OpenPullRequestSchema = z.object({
   threadTitle: z.string().min(1).max(200).optional(),
   requestedBy: z.string().max(120).optional(),
   reason: z.string().max(300).optional(),
+});
+
+const TerminalQuerySchema = z.object({
+  threadId: z.string().uuid().optional(),
 });
 
 fastify.post('/tasks', async (req, reply) => {
@@ -2051,6 +2576,38 @@ fastify.post('/thread/merge-upstream', async (req, reply) => {
         const result = await mergeUpstreamForThread(parsed.data);
         span.setAttribute('dd.remote.branch', result.branch);
         span.setAttribute('dd.remote.base_branch', result.baseBranch);
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const status = message.includes('pinned to') ? 409 : 500;
+        return reply.code(status).send({ error: message });
+      }
+    },
+  );
+});
+
+fastify.post('/thread/make-commit', async (req, reply) => {
+  return withSpan(
+    'remote-dev.make-commit',
+    {
+      'http.method': req.method,
+      'http.route': '/thread/make-commit',
+      'dd.remote.thread_id': config.threadId ?? undefined,
+    },
+    async (span) => {
+      const parsed = MakeCommitSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.format() });
+      }
+      const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
+      if (threadId) {
+        span.setAttribute('dd.remote.thread_id', threadId);
+      }
+      try {
+        const result = await makeCommitForThread(parsed.data);
+        span.setAttribute('dd.remote.branch', result.branch);
+        span.setAttribute('dd.remote.committed', result.committed);
+        span.setAttribute('dd.remote.pushed', result.pushed);
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

@@ -142,7 +142,7 @@ export const openaiSdkRunner = {
         };
         const agent = new agents.Agent({
             name: "DD Remote Dev Agent",
-            model: opts.env.OPENAI_MODEL ?? "gpt-5.4",
+            model: opts.env.OPENAI_MODEL ?? "gpt-5.5",
             instructions: "You are a coding agent working inside a per-thread git workspace. " +
                 "Use apply_patch for file edits and shell for inspection/tests. " +
                 "Do not use rm, sed, mv, git reset, git checkout, or git stash. " +

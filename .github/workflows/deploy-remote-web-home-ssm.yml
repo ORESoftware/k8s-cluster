@@ -1,0 +1,56 @@
+name: Deploy remote web-home image runtime
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-remote-web-home-ssm
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Build and deploy on EC2 through SSM
+        run: |
+          set -euo pipefail
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "${{ secrets.AWS_SSM_INSTANCE_ID }}" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Deploy remote web-home image runtime" \
+              --parameters 'commands=[
+                "set -euo pipefail",
+                "cd /home/ec2-user/codes/dd/dd-next-1",
+                "git fetch origin dev",
+                "git merge --ff-only origin/dev",
+                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/web-home-rs",
+                "kubectl apply -f remote/argocd/dd-next-runtime/dd-idle-reaper.configmap.yaml",
+                "kubectl apply -f remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml",
+                "kubectl rollout restart deployment/dd-remote-web-home -n default",
+                "kubectl rollout status deployment/dd-remote-web-home -n default --timeout=300s"
+              ]' \
+              --query "Command.CommandId" \
+              --output text
+          )"
+          aws ssm wait command-executed \
+            --command-id "$command_id" \
+            --instance-id "${{ secrets.AWS_SSM_INSTANCE_ID }}"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "${{ secrets.AWS_SSM_INSTANCE_ID }}" \
+            --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
+            --output json

@@ -458,6 +458,8 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml',
   );
+  const dockerfile = await readRepoFile('remote/web-home-rs/Dockerfile');
+  const deployWorkflow = await readRepoFile('.github/workflows/deploy-remote-web-home-ssm.yml');
   const restDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-rest-api.deployment.yaml',
   );
@@ -491,7 +493,42 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(readme, /Node\.js is not the UUID router/);
   assert.match(readme, /\/dd-thread\/<thread-short>\/tasks/);
   assert.doesNotMatch(cargo, /reqwest/);
-  assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
+  assert.match(deployment, /image:\s*docker\.io\/library\/dd-remote-web-home:dev/);
+  assert.match(deployment, /runAsNonRoot:\s*true/);
+  assert.match(deployment, /runAsUser:\s*10001/);
+  assert.match(deployment, /runAsGroup:\s*10001/);
+  assert.doesNotMatch(deployment, /\/opt\/dd-next-1/);
+  assert.doesNotMatch(deployment, /hostPath:/);
+  assert.doesNotMatch(deployment, /cargo run --release/);
+  assert.match(deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+  assert.match(deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+  assert.match(dockerfile, /COPY --from=build \/app\/target\/release\/dd-remote-web-home/);
+  assert.match(dockerfile, /USER 10001:10001/);
+  assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/dd-remote-web-home"\]/);
+  assert.match(deployWorkflow, /name: Deploy remote web-home image runtime/);
+  assert.match(deployWorkflow, /workflow_dispatch:/);
+  assert.match(deployWorkflow, /group: deploy-remote-web-home-ssm/);
+  assert.match(deployWorkflow, /ref: dev/);
+  assert.match(deployWorkflow, /role-to-assume: \$\{\{ secrets\.AWS_ROLE_TO_ASSUME \}\}/);
+  assert.match(
+    deployWorkflow,
+    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/web-home-rs/,
+  );
+  assert.match(
+    deployWorkflow,
+    /kubectl apply -f remote\/argocd\/dd-next-runtime\/dd-idle-reaper\.configmap\.yaml/,
+  );
+  assert.match(
+    deployWorkflow,
+    /kubectl apply -f remote\/argocd\/dd-next-runtime\/dd-remote-web-home\.deployment\.yaml/,
+  );
+  assert.match(
+    deployWorkflow,
+    /kubectl rollout status deployment\/dd-remote-web-home -n default --timeout=300s/,
+  );
+  assert.match(deployWorkflow, /aws ssm send-command/);
+  assert.match(deployWorkflow, /aws ssm get-command-invocation/);
   assert.doesNotMatch(deployment, /REMOTE_REST_API_URL/);
   assert.doesNotMatch(deployment, /dd-remote-web-home-secrets/);
   assert.match(restDeployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
@@ -653,15 +690,21 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
-  assert.match(server, /div class="grid task-stream-grid"/);
+  assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
   assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
+  assert.match(server, /\.task-stream-grid\.tasks-wide \{[\s\S]*grid-template-columns: minmax\(0, 1\.02fr\) minmax\(0, 0\.98fr\);/);
+  assert.match(server, /\.task-stream-grid\.stream-wide \{[\s\S]*grid-template-columns: minmax\(0, 0\.62fr\) minmax\(0, 1\.38fr\);/);
+  assert.match(server, /function setTaskStreamLayout\(mode\) \{/);
+  assert.match(server, /\$\("previous-tasks-panel"\)\.addEventListener\("click", \(\) => setTaskStreamLayout\("tasks"\)\)/);
+  assert.match(server, /\$\("response-stream-panel"\)\.addEventListener\("click", \(\) => setTaskStreamLayout\("stream"\)\)/);
   assert.doesNotMatch(server, /div class="grid" style="margin-top: 14px"/);
   assert.match(server, /\.route\("\/agents\/threads", get\(agents_threads_page\)\)/);
   assert.match(server, /\.route\("\/agents\/threads\/", get\(agents_threads_page\)\)/);
   assert.match(server, /Agent threads/);
   assert.match(server, /id="thread-list"/);
-  assert.match(server, /id="repo-url"/);
-  assert.match(server, /id="known-repo-options"/);
+  assert.match(server, /select id="repo-url"/);
+  assert.match(server, /input id="repo-url-new"/);
+  assert.match(server, /New repo URL\.\.\./);
   assert.match(server, /id="task-list"/);
   assert.match(server, /id="stream"/);
   assert.match(server, /Response stream/);
@@ -684,11 +727,29 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /new EventSource\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/stream\/\$\{encodeURIComponent\(taskId\)\}`\)/,
   );
-  assert.match(server, /Pause\/Sleep \(Reduce resources to container\)/);
-  assert.match(server, /Archive \(Deep Sleep - Suspend container\?\)/);
+  assert.match(
+    server,
+    /button id="save-repo" type="button" title="Save this repo URL and default branch to the known repo list" \{ "Save repo URL" \}/,
+  );
+  assert.match(
+    server,
+    /button id="sleep-thread" type="button" title="Reduce resources by scaling the thread container to zero" \{ "Pause\/Sleep" \}/,
+  );
+  assert.match(
+    server,
+    /button id="archive-thread" class="warn" type="button" title="Deep sleep: suspend the thread container" \{ "Archive" \}/,
+  );
   assert.match(server, /Delete \(Delete Container\)/);
   assert.match(server, /Merge with upstream/);
+  assert.match(
+    server,
+    /button id="commit-thread" type="button" title="Commit current worker changes and push the thread branch" \{ "Make commit" \}/,
+  );
   assert.match(server, /Open draft PR/);
+  assert.match(
+    server,
+    /button id="terminal-thread" type="button" title="Open a shell in the thread's Node\.js worker container" \{ "Terminal" \}/,
+  );
   assert.match(server, /sendFeedback\(seq, vote, button\)/);
   assert.match(server, /collectText\(raw\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
@@ -712,17 +773,28 @@ test('rust agent threads page renders stored response events and feedback contro
     /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
   );
   assert.match(server, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/);
-  assert.match(
-    server,
-    /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
-  );
+  assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
   assert.match(server, /\.thread-meta span \{[\s\S]*text-overflow: ellipsis;/);
   assert.match(server, /section class="panel prompt-panel" aria-label="Thread prompt"/);
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
+  assert.match(server, /\.prompt-panel \{[\s\S]*overflow: visible;[\s\S]*z-index: 1;/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
-  assert.match(server, /div class="grid task-stream-grid"/);
+  assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
   assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
+  assert.match(server, /\.main > \.grid \{[\s\S]*flex: 1 1 auto;/);
+  assert.match(
+    server,
+    /\.grid > \.panel > \.task-list,[\s\S]*\.grid > \.panel > \.stream \{[\s\S]*flex: 1 1 auto;/,
+  );
+  assert.match(
+    server,
+    /@media \(max-width: 980px\) \{[\s\S]*\.app \{[\s\S]*grid-template-rows: minmax\(150px, 28dvh\) minmax\(0, 1fr\);/,
+  );
+  assert.match(
+    server,
+    /@media \(max-width: 980px\) \{[\s\S]*\.main \{[\s\S]*overflow: hidden auto;[\s\S]*overscroll-behavior: contain;/,
+  );
   assert.doesNotMatch(server, /html, body \{ overflow: auto; \}/);
   assert.doesNotMatch(server, /height: auto; overflow: visible/);
   assert.doesNotMatch(server, /div class="grid" style="margin-top: 14px"/);
@@ -773,23 +845,25 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
 test('rust agent tasks page exposes runtime thread controls without collapsing admin archival semantics', async () => {
   const server = await readRepoFile('remote/web-home-rs/src/main.rs');
   const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
-  const adminEndRoute = await readRepoFile(
-    'src/app/api/admin/remote-dev/threads/[threadId]/end/route.ts',
-  );
-  const adminSleepRoute = await readRepoFile(
-    'src/app/api/admin/remote-dev/threads/[threadId]/sleep/route.ts',
-  );
-  const adminHardDeleteRoute = await readRepoFile(
-    'src/app/api/admin/remote-dev/threads/[threadId]/hard-delete/route.ts',
-  );
-  const adminMergeUpstreamRoute = await readRepoFile(
-    'src/app/api/admin/remote-dev/threads/[threadId]/merge-upstream/route.ts',
-  );
 
-  assert.match(server, /button id="thread-sleep" type="button" \{ "Pause\/Sleep/);
-  assert.match(server, /button id="thread-archive" class="warn" type="button" \{ "Archive/);
+  assert.match(
+    server,
+    /button id="thread-sleep" type="button" title="Reduce resources by scaling the thread container to zero" \{ "Pause\/Sleep" \}/,
+  );
+  assert.match(
+    server,
+    /button id="thread-archive" class="warn" type="button" title="Deep sleep: suspend the thread container" \{ "Archive" \}/,
+  );
   assert.match(server, /button id="thread-delete" class="danger" type="button" \{ "Delete/);
   assert.match(server, /button id="thread-merge" type="button" \{ "Merge with upstream/);
+  assert.match(
+    server,
+    /button id="thread-commit" type="button" title="Commit current worker changes and push the thread branch" \{ "Make commit" \}/,
+  );
+  assert.match(
+    server,
+    /button id="thread-terminal" type="button" title="Open a shell in the thread's Node\.js worker container" \{ "Terminal" \}/,
+  );
   assert.match(
     server,
     /route: `\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/sleep`/,
@@ -810,6 +884,15 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
     server,
     /route: `\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/open-pr`/,
   );
+  assert.match(
+    server,
+    /route: `\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/make-commit`/,
+  );
+  assert.match(
+    server,
+    /route: `\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/terminal`/,
+  );
+  assert.match(server, /const threadTerminalUrl = \(threadId\) => `\$\{threadIngressPrefix\(threadId\)\}\/terminal\?threadId=\$\{encodeURIComponent\(threadId\)\}`/);
   assert.match(server, /kind: "thread-control"/);
   assert.match(server, /action: config\.action/);
   assert.match(server, /openTaskWebSocket\(threadId, taskId\)/);
@@ -833,7 +916,9 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
   assert.match(restServer, /validate_thread_control_signal/);
   assert.match(restServer, /"control payload kind must be thread-control"/);
   assert.match(server, /confirm: "Scale this thread runtime to zero replicas\?"/);
-  assert.match(server, /confirm: "Archive\/deep-sleep this thread runtime\?"/);
+  assert.match(server, /confirm: "Archive this thread runtime\?"/);
+  assert.match(server, /confirm: "Commit current worker changes and push this thread branch\?"/);
+  assert.match(server, /confirm: "Open a terminal to this thread worker container\?"/);
   assert.match(
     server,
     /confirm: "Delete the Kubernetes runtime resources for this thread\? GitHub PRs are not deleted\."/,
@@ -881,9 +966,14 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
     restServer,
     /validate_thread_control_signal\(&thread_id, "merge-upstream", &request\)/,
   );
+  assert.match(restServer, /validate_thread_control_signal\(&thread_id, "make-commit", &request\)/);
+  assert.match(restServer, /validate_thread_control_signal\(&thread_id, "terminal", &request\)/);
   assert.match(restServer, /validate_thread_control_signal\(&thread_id, "open-pr", &request\)/);
   assert.match(restServer, /"action": "merge-upstream"/);
+  assert.match(restServer, /"action": "make-commit"/);
   assert.match(restServer, /"action": "open-pr"/);
+  assert.match(restServer, /thread_terminal_url/);
+  assert.match(restServer, /"terminalUrl": terminal_url/);
   assert.match(restServer, /publish_thread_runtime_event_to_nats/);
   assert.match(restServer, /"kind": "thread-runtime"/);
   assert.match(restServer, /"status": status/);
@@ -901,12 +991,14 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
     restServer,
     /\.route\(\s*"\/api\/agents\/threads\/:thread_id\/open-pr",\s*post\(open_pr_thread\),?\s*\)/,
   );
-  assert.match(adminEndRoute, /archivedAt: new Date\(\)/);
-  assert.match(adminEndRoute, /sleepThreadRuntime\(threadId\)/);
-  assert.match(adminSleepRoute, /sleepThreadRuntime\(threadId\)/);
-  assert.doesNotMatch(adminSleepRoute, /archivedAt: new Date\(\)/);
-  assert.match(adminHardDeleteRoute, /hardDeleteThreadRuntime\(threadId\)/);
-  assert.match(adminMergeUpstreamRoute, /mergeUpstreamOnDocker\(\{/);
+  assert.match(
+    restServer,
+    /\.route\(\s*"\/api\/agents\/threads\/:thread_id\/make-commit",\s*post\(make_commit_thread\),?\s*\)/,
+  );
+  assert.match(
+    restServer,
+    /\.route\(\s*"\/api\/agents\/threads\/:thread_id\/terminal",\s*post\(terminal_thread\),?\s*\)/,
+  );
 });
 
 test('prometheus is configured for gateway subpath hosting', async () => {
@@ -991,14 +1083,8 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
 
 test('node worker opens draft PRs only through explicit control action', async () => {
   const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const zod = await readRepoFile('src/lib/isomorph/zod-shared/remote-dev-zod.ts');
-  const eventsRoute = await readRepoFile('src/app/api/admin/remote-dev/events/route.ts');
-  const openPrRoute = await readRepoFile(
-    'src/app/api/admin/remote-dev/threads/[threadId]/open-pr/route.ts',
-  );
-  const client = await readRepoFile(
-    'src/app/(pages)/(private)/u/admin/remote-dev/remote-dev-client.tsx',
-  );
+  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const webHome = await readRepoFile('remote/web-home-rs/src/main.rs');
 
   assert.match(server, /POST \/thread\/open-pr/);
   assert.match(server, /fastify\.post\('\/thread\/open-pr'/);
@@ -1014,12 +1100,25 @@ test('node worker opens draft PRs only through explicit control action', async (
   assert.match(server, /kind: 'pr_open'/);
   assert.doesNotMatch(server, /status: 'opening-pr'/);
   assert.doesNotMatch(server, /const prUrl = await ensurePullRequest/);
-  assert.match(zod, /'pr_open'/);
-  assert.match(eventsRoute, /if \(exitReason === 'completed'\) \{return 'done';\}/);
-  assert.match(eventsRoute, /event\.kind === 'pr_open'/);
-  assert.match(eventsRoute, /prState: 'draft'/);
-  assert.match(openPrRoute, /openPullRequestOnDocker/);
-  assert.match(openPrRoute, /status: 'pr_open'/);
-  assert.match(client, /Open draft PR/);
-  assert.match(client, /\/open-pr`/);
+  assert.match(restServer, /validate_thread_control_signal\(&thread_id, "open-pr", &request\)/);
+  assert.match(restServer, /open_thread_pr\(thread_id, request\)\.await/);
+  assert.match(webHome, /Open draft PR/);
+  assert.match(webHome, /\/open-pr`/);
+});
+
+test('node worker exposes manual commit and terminal controls for pinned threads', async () => {
+  const server = await readRepoFile('remote/dev-server/src/server.ts');
+
+  assert.match(server, /POST \/thread\/make-commit/);
+  assert.match(server, /GET  \/terminal/);
+  assert.match(server, /fastify\.post\('\/thread\/make-commit'/);
+  assert.match(server, /fastify\.get\('\/terminal'/);
+  assert.match(server, /requestUrl\.pathname !== '\/ws' && requestUrl\.pathname !== '\/terminal\/ws'/);
+  assert.match(server, /class TerminalWebSocketClient/);
+  assert.match(server, /terminalPageHtml/);
+  assert.match(server, /async function makeCommitForThread/);
+  assert.match(server, /\['commit', '--no-verify', '-m', manualCommitMessage/);
+  assert.match(server, /\['push', '--no-verify', '--set-upstream', 'origin', session\.branch\]/);
+  assert.match(server, /type: 'terminal-output'/);
+  assert.match(server, /spawn\(shell, \['-i'\]/);
 });

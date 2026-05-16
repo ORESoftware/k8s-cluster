@@ -93,6 +93,9 @@ making `/agents/tasks` durable instead of memory-only.
 
 Normal task completion now marks tasks `done` after commit/push. PR creation is not automatic. A
 user must click `Open draft PR`, which emits a `pr_open` event and stores `pr_state = draft`.
+Operators can also click `Make commit` to wake the thread worker, commit any current workspace
+changes, and push the thread branch. `Terminal` wakes the same worker and opens the gateway-proxied
+container shell at `/dd-thread/<thread-short>/terminal`.
 
 ## Kubernetes
 

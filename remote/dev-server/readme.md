@@ -25,7 +25,7 @@ remote/dev-server/
 ├── package.json               # fastify + zod + supabase-js, tsx for dev
 ├── tsconfig.json              # strict, NodeNext, output to dist/
 └── src/
-    ├── server.ts              # HTTP server, /tasks /stream /ws /cancel /thread/merge-upstream /thread/open-pr /healthz
+    ├── server.ts              # HTTP server, /tasks /stream /ws /terminal /cancel /thread/merge-upstream /thread/make-commit /thread/open-pr /healthz
     ├── token.ts               # HMAC verifier for direct browser → docker SSE
     ├── realtime.ts            # Supabase Broadcast publisher (per-user channel)
     ├── agents/
@@ -102,6 +102,15 @@ Runtime split in the baseline Argo app:
 worker. It fetches `origin/$BASE_BRANCH`, merges it into the thread branch with
 `git merge --no-edit origin/$BASE_BRANCH` (no rebase), and pushes the branch so the existing
 GitHub PR updates.
+
+`POST /thread/make-commit` is server-authenticated and runs inside the pinned worker. It stages all
+workspace changes, creates a manual commit when the tree is dirty, and pushes the thread branch.
+`GET /terminal` serves the browser terminal; `/terminal/ws` carries command input and output over
+the gateway-proxied worker WebSocket.
+
+The worker prepares Node dependencies only when the configured repo has a root `package.json`.
+Non-Node repositories still get the same git checkout, thread branch, commit, PR, and terminal
+workflow without a failing package install.
 
 ## Environment variables
 
@@ -286,7 +295,9 @@ from `src/telemetry.ts` and exposes Prometheus metrics at `/metrics`.
 | `POST` | `/tasks`                | `X-Server-Auth`                   | Body `{ taskId, prompt, repo?, baseBranch?, userId?, threadId?, provider?, branch?, threadTitle? }`. Queues the run into the thread workspace and rejects a different repo/base branch than the container is pinned to. |
 | `GET`  | `/stream/:taskId`       | `X-Server-Auth` **or** `?token=…` | Server-Sent Events. `Last-Event-ID` resumes.                                                                                                                                    |
 | `GET`  | `/ws`                   | `X-Server-Auth`                   | Worker WebSocket for the pinned thread. Use `/dd-thread/<short>/ws?threadId=<uuid>&taskId=<uuid>` through the gateway; it replays task events and streams new worker events faster than the NATS/Gleam fanout path. |
+| `GET`  | `/terminal`             | `X-Server-Auth`                   | Browser terminal for the pinned worker. Use `/dd-thread/<short>/terminal?threadId=<uuid>` through the gateway.                                                                  |
 | `POST` | `/thread/merge-upstream` | `X-Server-Auth`                  | Merges `origin/$BASE_BRANCH` into the pinned thread branch and pushes.                                                                                                          |
+| `POST` | `/thread/make-commit`   | `X-Server-Auth`                   | Stages current workspace changes, commits if dirty, and pushes the pinned thread branch.                                                                                        |
 | `POST` | `/thread/open-pr`       | `X-Server-Auth`                   | Explicitly opens or reuses a draft WIP PR for the pinned thread branch. Normal tasks do not create PRs.                                                                         |
 | `POST` | `/tasks/:taskId/cancel` | `X-Server-Auth`                   | SIGTERMs the child, emits `done` with `cancelled`.                                                                                                                              |
 

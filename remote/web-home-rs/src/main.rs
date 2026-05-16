@@ -559,40 +559,45 @@ fn agents_threads_body() -> Markup {
                         }
                         label class="field-wide" {
                             span { "Git repo URL" }
-                            input id="repo-url" list="known-repo-options" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
+                            select id="repo-url" {}
+                        }
+                        label id="repo-url-new-row" class="field-wide" hidden="hidden" {
+                            span { "New repo URL" }
+                            input id="repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
                         }
                         label {
                             span { "Base branch" }
                             input id="base-branch" autocomplete="off" spellcheck="false" value="dev";
                         }
-                        datalist id="known-repo-options" {}
                         label class="field-wide" {
                             span { "Prompt" }
                             textarea id="prompt" placeholder="Ask this thread worker to do something" {}
                         }
                     }
                     div class="actions prompt-actions" {
-                        button id="save-repo" type="button" { "Save repo" }
+                        button id="save-repo" type="button" title="Save this repo URL and default branch to the known repo list" { "Save repo URL" }
                         button id="new-task" type="button" { "New task" }
-                        button id="sleep-thread" type="button" { "Pause/Sleep (Reduce resources to container)" }
-                        button id="archive-thread" class="warn" type="button" { "Archive (Deep Sleep - Suspend container?)" }
+                        button id="sleep-thread" type="button" title="Reduce resources by scaling the thread container to zero" { "Pause/Sleep" }
+                        button id="archive-thread" class="warn" type="button" title="Deep sleep: suspend the thread container" { "Archive" }
                         button id="delete-thread" class="danger" type="button" { "Delete (Delete Container)" }
                         button id="merge-thread" type="button" { "Merge with upstream" }
+                        button id="commit-thread" type="button" title="Commit current worker changes and push the thread branch" { "Make commit" }
                         button id="open-pr-thread" type="button" { "Open draft PR" }
+                        button id="terminal-thread" type="button" title="Open a shell in the thread's Node.js worker container" { "Terminal" }
                         button id="send" class="primary" type="button" { "Send" }
                     }
                     p id="status-line" class="muted status-line" { "idle" }
                 }
 
-                div class="grid task-stream-grid" {
-                    section class="panel" {
+                div id="task-stream-grid" class="grid task-stream-grid" {
+                    section id="previous-tasks-panel" class="panel" tabindex="0" aria-label="Previous tasks panel" {
                         div class="topbar" {
                             h2 { "Previous tasks" }
                             span id="task-count" class="pill" { "0 tasks" }
                         }
                         div id="task-list" class="task-list" {}
                     }
-                    section class="panel" {
+                    section id="response-stream-panel" class="panel" tabindex="0" aria-label="Response stream panel" {
                         div class="topbar" {
                             h2 { "Response stream" }
                             span id="stream-state" class="pill warn" { "no task selected" }
@@ -662,13 +667,16 @@ fn agents_tasks_body() -> Markup {
                     }
                     label class="field field-wide" {
                         span { "Git repo URL" }
-                        input id="chat-repo-url" list="chat-known-repo-options" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
+                        select id="chat-repo-url" {}
+                    }
+                    label id="chat-repo-url-new-row" class="field field-wide" hidden="hidden" {
+                        span { "New repo URL" }
+                        input id="chat-repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git";
                     }
                     label class="field" {
                         span { "Base branch" }
                         input id="chat-base-branch" autocomplete="off" spellcheck="false" value="dev";
                     }
-                    datalist id="chat-known-repo-options" {}
                     label class="field field-wide" {
                         span { "Prompt" }
                         textarea id="chat-prompt" {}
@@ -678,12 +686,14 @@ fn agents_tasks_body() -> Markup {
                     span id="chat-route" class="muted" {}
                     button id="new-thread" type="button" { "New thread" }
                     button id="new-task" type="button" { "New task" }
-                    button id="save-chat-repo" type="button" { "Save repo" }
-                    button id="thread-sleep" type="button" { "Pause/Sleep (Reduce resources to container)" }
-                    button id="thread-archive" class="warn" type="button" { "Archive (Deep Sleep - Suspend container?)" }
+                    button id="save-chat-repo" type="button" title="Save this repo URL and default branch to the known repo list" { "Save repo URL" }
+                    button id="thread-sleep" type="button" title="Reduce resources by scaling the thread container to zero" { "Pause/Sleep" }
+                    button id="thread-archive" class="warn" type="button" title="Deep sleep: suspend the thread container" { "Archive" }
                     button id="thread-delete" class="danger" type="button" { "Delete (Delete Container)" }
                     button id="thread-merge" type="button" { "Merge with upstream" }
+                    button id="thread-commit" type="button" title="Commit current worker changes and push the thread branch" { "Make commit" }
                     button id="thread-open-pr" type="button" { "Open draft PR" }
+                    button id="thread-terminal" type="button" title="Open a shell in the thread's Node.js worker container" { "Terminal" }
                     button id="send-chat" type="button" { "Send" }
                 }
                 pre id="chat-stream" class="stream-box" { "No active stream." }
@@ -948,6 +958,17 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       }
       .task-stream-grid {
         margin-top: 6px;
+        transition: grid-template-columns 160ms ease;
+      }
+      .task-stream-grid.tasks-wide {
+        grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+      }
+      .task-stream-grid.stream-wide {
+        grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr);
+      }
+      #previous-tasks-panel,
+      #response-stream-panel {
+        cursor: pointer;
       }
       .form-grid {
         display: grid;
@@ -1104,6 +1125,23 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return String(id || "").replace(/-/g, "").slice(0, 12) || "new-thread";
       }
 
+      function terminalUrl(threadId) {
+        return `/dd-thread/${shortId(threadId).toLowerCase()}/terminal?threadId=${encodeURIComponent(threadId)}`;
+      }
+
+      function setTaskStreamLayout(mode) {
+        const grid = $("task-stream-grid");
+        grid.classList.remove("tasks-wide", "stream-wide");
+        if (mode === "tasks") grid.classList.add("tasks-wide");
+        if (mode === "stream") grid.classList.add("stream-wide");
+      }
+
+      function handlePanelKey(event, mode) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        setTaskStreamLayout(mode);
+      }
+
       function fmt(value) {
         if (!value) return "unknown";
         const date = new Date(value);
@@ -1119,23 +1157,66 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         $("status-line").style.color = bad ? "var(--danger)" : "var(--muted)";
       }
 
+      const NEW_REPO_VALUE = "__new__";
+
       function currentRepoUrl() {
-        return $("repo-url").value.trim();
+        const selected = $("repo-url").value.trim();
+        return selected === NEW_REPO_VALUE ? $("repo-url-new").value.trim() : selected;
       }
 
       function currentBaseBranch() {
         return $("base-branch").value.trim() || "dev";
       }
 
+      function optionLabel(repo) {
+        return `${repo.displayName || repo.repoUrl} (${repo.defaultBranch || "dev"})`;
+      }
+
+      function updateRepoUrlMode() {
+        const selected = $("repo-url").value;
+        const isNew = selected === NEW_REPO_VALUE;
+        $("repo-url-new-row").hidden = !isNew;
+        if (!isNew) {
+          const repo = state.knownRepos.find((item) => item.repoUrl === selected);
+          if (repo?.defaultBranch) $("base-branch").value = repo.defaultBranch;
+        }
+      }
+
+      function setRepoSelection(repoUrl) {
+        if (!repoUrl) {
+          $("repo-url").value = "";
+          updateRepoUrlMode();
+          return;
+        }
+        const known = state.knownRepos.some((repo) => repo.repoUrl === repoUrl);
+        if (known) {
+          $("repo-url").value = repoUrl;
+        } else {
+          $("repo-url").value = NEW_REPO_VALUE;
+          $("repo-url-new").value = repoUrl;
+        }
+        updateRepoUrlMode();
+      }
+
       function renderKnownRepos() {
-        const list = $("known-repo-options");
-        list.textContent = "";
+        const select = $("repo-url");
+        const selected = currentRepoUrl();
+        select.textContent = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select a repo";
+        select.appendChild(placeholder);
         for (const repo of state.knownRepos) {
           const option = document.createElement("option");
           option.value = repo.repoUrl;
-          option.label = `${repo.displayName || repo.repoUrl} (${repo.defaultBranch || "dev"})`;
-          list.appendChild(option);
+          option.textContent = optionLabel(repo);
+          select.appendChild(option);
         }
+        const newOption = document.createElement("option");
+        newOption.value = NEW_REPO_VALUE;
+        newOption.textContent = "New repo URL...";
+        select.appendChild(newOption);
+        setRepoSelection(selected);
       }
 
       async function loadKnownRepos() {
@@ -1162,10 +1243,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         const body = await response.text();
         if (!response.ok) {
-          setStatus(`repo save failed ${response.status}: ${body.slice(0, 200)}`, true);
+          setStatus(`repo URL save failed ${response.status}: ${body.slice(0, 200)}`, true);
           return;
         }
-        setStatus("repo saved");
+        setStatus("repo URL saved");
         await loadKnownRepos();
       }
 
@@ -1254,7 +1335,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           ? `${state.selectedThreadId} · ${threadTasks(state.selectedThreadId).length} tasks`
           : "Pick a thread from the sidebar or start a new one.";
         $("thread-id").value = state.selectedThreadId || "";
-        if (thread?.repo) $("repo-url").value = thread.repo;
+        if (thread?.repo) setRepoSelection(thread.repo);
         if (thread?.baseBranch) $("base-branch").value = thread.baseBranch;
         if (!state.selectedTaskId) $("task-id").value = makeUuid();
       }
@@ -1632,7 +1713,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           return;
         }
         const taskId = $("task-id").value.trim() || makeUuid();
-        const routeAction = action === "delete" ? "hard-delete" : action === "merge" ? "merge-upstream" : action === "open-pr" ? "open-pr" : action;
+        $("task-id").value = taskId;
+        const routeActions = {
+          delete: "hard-delete",
+          merge: "merge-upstream",
+          commit: "make-commit",
+          terminal: "terminal",
+          "open-pr": "open-pr",
+        };
+        const routeAction = routeActions[action] || action;
+        const terminalWindow = routeAction === "terminal" ? window.open("about:blank", "_blank") : null;
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/${routeAction}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1642,6 +1732,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
             threadId,
             taskId,
             requestedBy: "agents-threads-ui",
+            reason: routeAction === "make-commit" ? "manual commit" : routeAction,
           }),
         });
         const body = await response.text();
@@ -1655,9 +1746,22 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           },
           createdAt: new Date().toISOString(),
         });
-        if (!response.ok) setStatus(`${routeAction} failed`, true);
-        else {
+        if (!response.ok) {
+          if (terminalWindow) terminalWindow.close();
+          setStatus(`${routeAction} failed`, true);
+        } else {
           setStatus(`${routeAction} accepted`);
+          if (routeAction === "terminal") {
+            let targetUrl = terminalUrl(threadId);
+            try {
+              const parsed = JSON.parse(body);
+              if (parsed.terminalUrl) targetUrl = parsed.terminalUrl;
+            } catch {
+              /* fall back to deterministic gateway URL */
+            }
+            if (terminalWindow) terminalWindow.location.href = targetUrl;
+            else window.open(targetUrl, "_blank");
+          }
           await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${String(error)}`));
         }
       }
@@ -1667,6 +1771,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         loadSnapshot().catch((error) => setStatus(String(error), true));
       });
       $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(String(error), true)));
+      $("repo-url").addEventListener("change", updateRepoUrlMode);
+      $("previous-tasks-panel").addEventListener("click", () => setTaskStreamLayout("tasks"));
+      $("previous-tasks-panel").addEventListener("keydown", (event) => handlePanelKey(event, "tasks"));
+      $("response-stream-panel").addEventListener("click", () => setTaskStreamLayout("stream"));
+      $("response-stream-panel").addEventListener("keydown", (event) => handlePanelKey(event, "stream"));
       $("new-thread").addEventListener("click", () => {
         state.selectedThreadId = makeUuid();
         state.selectedTaskId = null;
@@ -1696,7 +1805,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("archive-thread").addEventListener("click", () => threadControl("archive").catch((error) => renderError(String(error))));
       $("delete-thread").addEventListener("click", () => threadControl("delete").catch((error) => renderError(String(error))));
       $("merge-thread").addEventListener("click", () => threadControl("merge").catch((error) => renderError(String(error))));
+      $("commit-thread").addEventListener("click", () => threadControl("commit").catch((error) => renderError(String(error))));
       $("open-pr-thread").addEventListener("click", () => threadControl("open-pr").catch((error) => renderError(String(error))));
+      $("terminal-thread").addEventListener("click", () => threadControl("terminal").catch((error) => renderError(String(error))));
 
       loadKnownRepos().catch((error) => setStatus(String(error), true));
       loadSnapshot().catch((error) => {
@@ -1915,6 +2026,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       };
       const threadShort = (threadId) => String(threadId || "").replace(/[^a-z0-9]/gi, "").slice(0, 12).toLowerCase();
       const threadIngressPrefix = (threadId) => `/dd-thread/${threadShort(threadId)}`;
+      const threadTerminalUrl = (threadId) => `${threadIngressPrefix(threadId)}/terminal?threadId=${encodeURIComponent(threadId)}`;
       let activeStream = null;
       let activeWs = null;
       const workerSockets = new Map();
@@ -1956,17 +2068,56 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         $("chat-route").textContent = threadId ? `/api/agents/threads/${threadId}/tasks` : "";
         updateThreadRuntimeControls();
       };
-      const currentChatRepoUrl = () => $("chat-repo-url").value.trim();
+      const NEW_REPO_VALUE = "__new__";
+      const currentChatRepoUrl = () => {
+        const selected = $("chat-repo-url").value.trim();
+        return selected === NEW_REPO_VALUE ? $("chat-repo-url-new").value.trim() : selected;
+      };
       const currentChatBaseBranch = () => $("chat-base-branch").value.trim() || "dev";
+      const repoOptionLabel = (repo) => `${repo.displayName || repo.repoUrl} (${repo.defaultBranch || "dev"})`;
+      const updateChatRepoUrlMode = () => {
+        const selected = $("chat-repo-url").value;
+        const isNew = selected === NEW_REPO_VALUE;
+        $("chat-repo-url-new-row").hidden = !isNew;
+        if (!isNew) {
+          const repo = knownRepos.find((item) => item.repoUrl === selected);
+          if (repo?.defaultBranch) $("chat-base-branch").value = repo.defaultBranch;
+        }
+      };
+      const setChatRepoSelection = (repoUrl) => {
+        if (!repoUrl) {
+          $("chat-repo-url").value = "";
+          updateChatRepoUrlMode();
+          return;
+        }
+        const known = knownRepos.some((repo) => repo.repoUrl === repoUrl);
+        if (known) {
+          $("chat-repo-url").value = repoUrl;
+        } else {
+          $("chat-repo-url").value = NEW_REPO_VALUE;
+          $("chat-repo-url-new").value = repoUrl;
+        }
+        updateChatRepoUrlMode();
+      };
       const renderKnownRepos = () => {
-        const list = $("chat-known-repo-options");
-        list.textContent = "";
+        const select = $("chat-repo-url");
+        const selected = currentChatRepoUrl();
+        select.textContent = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Select a repo";
+        select.appendChild(placeholder);
         for (const repo of knownRepos) {
           const option = document.createElement("option");
           option.value = repo.repoUrl;
-          option.label = `${repo.displayName || repo.repoUrl} (${repo.defaultBranch || "dev"})`;
-          list.appendChild(option);
+          option.textContent = repoOptionLabel(repo);
+          select.appendChild(option);
         }
+        const newOption = document.createElement("option");
+        newOption.value = NEW_REPO_VALUE;
+        newOption.textContent = "New repo URL...";
+        select.appendChild(newOption);
+        setChatRepoSelection(selected);
       };
       const loadKnownRepos = async () => {
         const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
@@ -1991,10 +2142,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         });
         const body = await response.text();
         if (!response.ok) {
-          appendStreamLine(`repo save failed ${response.status}: ${body.slice(0, 500)}`);
+          appendStreamLine(`repo URL save failed ${response.status}: ${body.slice(0, 500)}`);
           return;
         }
-        appendStreamLine(`repo saved ${body.slice(0, 500)}`);
+        appendStreamLine(`repo URL saved ${body.slice(0, 500)}`);
         await loadKnownRepos();
       };
       const resetTaskId = () => {
@@ -2236,16 +2387,16 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         }
         const config = {
           sleep: {
-            label: "Pause/Sleep (Reduce resources to container)",
+            label: "Pause/Sleep",
             action: "sleep",
             route: `/api/agents/threads/${encodeURIComponent(threadId)}/sleep`,
             confirm: "Scale this thread runtime to zero replicas?"
           },
           archive: {
-            label: "Archive (Deep Sleep - Suspend container?)",
+            label: "Archive",
             action: "archive",
             route: `/api/agents/threads/${encodeURIComponent(threadId)}/archive`,
-            confirm: "Archive/deep-sleep this thread runtime?"
+            confirm: "Archive this thread runtime?"
           },
           delete: {
             label: "Delete (Delete Container)",
@@ -2259,27 +2410,41 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
             route: `/api/agents/threads/${encodeURIComponent(threadId)}/merge-upstream`,
             confirm: "Merge the configured base branch into this thread branch and push?"
           },
+          makeCommit: {
+            label: "Make commit",
+            action: "make-commit",
+            route: `/api/agents/threads/${encodeURIComponent(threadId)}/make-commit`,
+            confirm: "Commit current worker changes and push this thread branch?",
+            reason: "manual commit"
+          },
           openPr: {
             label: "Open draft PR",
             action: "open-pr",
             route: `/api/agents/threads/${encodeURIComponent(threadId)}/open-pr`,
             confirm: "Open or reuse a draft WIP pull request for this thread branch?"
+          },
+          terminal: {
+            label: "Terminal",
+            action: "terminal",
+            route: `/api/agents/threads/${encodeURIComponent(threadId)}/terminal`,
+            confirm: "Open a terminal to this thread worker container?"
           }
         }[action];
         if (!config || !confirm(config.confirm)) return;
+        const terminalWindow = config.action === "terminal" ? window.open("about:blank", "_blank") : null;
         const payload = {
           kind: "thread-control",
           action: config.action,
           threadId,
           taskId: $("chat-task-id").value.trim() || undefined,
           requestedBy: "rust-web-home",
-          reason: config.label
+          reason: config.reason || config.label
         };
         const taskId = payload.taskId || newUuid();
         payload.taskId = taskId;
         $("chat-task-id").value = taskId;
         openTaskWebSocket(threadId, taskId);
-        if (config.action === "merge-upstream" || config.action === "open-pr") {
+        if (["merge-upstream", "make-commit", "open-pr", "terminal"].includes(config.action)) {
           setThreadRuntimeState(threadId, "waking", { action: config.action, message: `${config.label} requested` });
         }
         appendStreamLine(`POST ${config.route}`);
@@ -2291,10 +2456,22 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         });
         const textBody = await response.text();
         if (!response.ok) {
+          if (terminalWindow) terminalWindow.close();
           appendStreamLine(`${config.label} failed ${response.status}: ${textBody.slice(0, 500)}`);
           return;
         }
         appendStreamLine(`${config.label} accepted ${textBody.slice(0, 500)}`);
+        if (config.action === "terminal") {
+          let targetUrl = threadTerminalUrl(threadId);
+          try {
+            const parsed = JSON.parse(textBody);
+            if (parsed.terminalUrl) targetUrl = parsed.terminalUrl;
+          } catch {
+            /* fall back to deterministic gateway URL */
+          }
+          if (terminalWindow) terminalWindow.location.href = targetUrl;
+          else window.open(targetUrl, "_blank");
+        }
         if (config.action === "sleep") {
           setThreadRuntimeState(threadId, "sleeping", { action: config.action, message: "runtime scaled to zero" });
         } else if (config.action === "archive") {
@@ -2435,7 +2612,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
           renderTasks(data.tasks || []);
           renderThreads(data.threads || []);
           const selectedThread = (data.threads || []).find((thread) => thread.id === $("chat-thread-id").value.trim());
-          if (selectedThread?.repo) $("chat-repo-url").value = selectedThread.repo;
+          if (selectedThread?.repo) setChatRepoSelection(selectedThread.repo);
           if (selectedThread?.baseBranch) $("chat-base-branch").value = selectedThread.baseBranch;
           if (data.errors && data.errors.length) {
             errors.hidden = false;
@@ -2457,8 +2634,9 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       $("new-thread").addEventListener("click", resetThreadId);
       $("new-task").addEventListener("click", resetTaskId);
       $("save-chat-repo").addEventListener("click", () => {
-        saveChatRepo().catch((error) => appendStreamLine(`repo save error: ${String(error)}`));
+        saveChatRepo().catch((error) => appendStreamLine(`repo URL save error: ${String(error)}`));
       });
+      $("chat-repo-url").addEventListener("change", updateChatRepoUrlMode);
       $("thread-sleep").addEventListener("click", () => {
         runThreadControl("sleep").catch((error) => appendStreamLine(`sleep error: ${String(error)}`));
       });
@@ -2471,8 +2649,14 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       $("thread-merge").addEventListener("click", () => {
         runThreadControl("merge").catch((error) => appendStreamLine(`merge error: ${String(error)}`));
       });
+      $("thread-commit").addEventListener("click", () => {
+        runThreadControl("makeCommit").catch((error) => appendStreamLine(`commit error: ${String(error)}`));
+      });
       $("thread-open-pr").addEventListener("click", () => {
         runThreadControl("openPr").catch((error) => appendStreamLine(`open PR error: ${String(error)}`));
+      });
+      $("thread-terminal").addEventListener("click", () => {
+        runThreadControl("terminal").catch((error) => appendStreamLine(`terminal error: ${String(error)}`));
       });
       $("send-chat").addEventListener("click", () => {
         dispatchChat().catch((error) => appendStreamLine(`dispatch error: ${String(error)}`));

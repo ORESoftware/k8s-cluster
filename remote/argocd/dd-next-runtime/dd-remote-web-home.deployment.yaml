@@ -22,16 +22,12 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: remote-web-home
-          image: docker.io/library/rust:1.90-bookworm
+          image: docker.io/library/dd-remote-web-home:dev
           imagePullPolicy: IfNotPresent
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              cd /opt/dd-next-1/remote/web-home-rs
-              exec /usr/local/cargo/bin/cargo run --release
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
           env:
             - name: HOST
               value: 0.0.0.0
@@ -47,11 +43,23 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
-          volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-      volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

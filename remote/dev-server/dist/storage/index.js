@@ -36,7 +36,7 @@ export function getAdapter(provider) {
     switch (provider) {
         case 'local':
             return makeLocalAdapter({
-                rootDir: getEnv('LOCAL_STORAGE_ROOT', '/home/agent/workspace/published'),
+                rootDir: getEnv('LOCAL_STORAGE_ROOT', '/home/node/workspace/published'),
                 publicBaseUrl: getRequiredEnv('LOCAL_STORAGE_PUBLIC_BASE_URL'),
             });
         case 's3':

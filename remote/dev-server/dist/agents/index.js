@@ -2,33 +2,44 @@
 //   1. Per-task `provider` field on the dispatch payload (untrusted input,
 //      validated against the AgentProvider union).
 //   2. AGENT_PROVIDER env var.
-//   3. Hard-coded default: "claude-sdk" (SDK first; CLI remains fallback via env).
+//   3. Hard-coded default: "claude-sdk" (SDK first; CLI remains fallback via probe).
 //
 // Per-runner secret needs (must be present in the env allowlist passed to
 // run(), not just process.env):
 //   claude-cli       → ANTHROPIC_API_KEY
 //   claude-sdk       → ANTHROPIC_API_KEY  (after SDK install)
+//   echo             → no external secret; deterministic fallback/test runner
+//   gemini-sdk       → GEMINI_API_KEY      (after SDK install)
 //   openai-codex-cli → OPENAI_API_KEY     (and `codex` binary on PATH)
 //   openai-sdk       → OPENAI_API_KEY     (after SDK install)
-import { spawn } from "node:child_process";
-import { claudeCliRunner } from "./claude-cli.js";
-import { claudeSdkRunner } from "./claude-sdk.js";
-import { openaiCodexCliRunner } from "./openai-codex-cli.js";
-import { openaiSdkRunner } from "./openai-sdk.js";
+import { spawn } from 'node:child_process';
+import { claudeCliRunner } from './claude-cli.js';
+import { claudeSdkRunner, resolveClaudeCodeExecutable } from './claude-sdk.js';
+import { echoRunner } from './echo.js';
+import { geminiSdkRunner } from './gemini-sdk.js';
+import { openaiCodexCliRunner } from './openai-codex-cli.js';
+import { openaiSdkRunner } from './openai-sdk.js';
 const RUNNERS = {
-    "claude-cli": claudeCliRunner,
-    "claude-sdk": claudeSdkRunner,
-    "openai-codex-cli": openaiCodexCliRunner,
-    "openai-sdk": openaiSdkRunner,
+    'claude-cli': claudeCliRunner,
+    'claude-sdk': claudeSdkRunner,
+    echo: echoRunner,
+    'gemini-sdk': geminiSdkRunner,
+    'openai-codex-cli': openaiCodexCliRunner,
+    'openai-sdk': openaiSdkRunner,
 };
+const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
+const DEFAULT_GEMINI_MODEL = 'gemini-3-pro-preview';
+const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 const VALID_PROVIDERS = new Set([
-    "claude-cli",
-    "claude-sdk",
-    "openai-codex-cli",
-    "openai-sdk",
+    'claude-cli',
+    'claude-sdk',
+    'echo',
+    'gemini-sdk',
+    'openai-codex-cli',
+    'openai-sdk',
 ]);
 function isAgentProvider(value) {
-    return typeof value === "string" && VALID_PROVIDERS.has(value);
+    return typeof value === 'string' && VALID_PROVIDERS.has(value);
 }
 /**
  * Resolve which agent provider to use. Order of precedence:
@@ -48,19 +59,19 @@ export function resolveAgentProvider(perTaskOverride) {
     }
     else {
         const fromEnv = process.env.AGENT_PROVIDER;
-        chosen = isAgentProvider(fromEnv) ? fromEnv : "claude-sdk";
+        chosen = isAgentProvider(fromEnv) ? fromEnv : 'claude-sdk';
     }
     // Prefer SDK runners when available, but fall back to CLI if the cached
     // probe says an SDK default is unavailable.
     // Skip adjustments if the user explicitly picked a per-task provider.
     if (!perTaskOverride && cachedAvailability) {
         const sdkUpgrades = {
-            "claude-cli": "claude-sdk",
-            "openai-codex-cli": "openai-sdk",
+            'claude-cli': 'claude-sdk',
+            'openai-codex-cli': 'openai-sdk',
         };
         const cliFallbacks = {
-            "claude-sdk": "claude-cli",
-            "openai-sdk": "openai-codex-cli",
+            'claude-sdk': 'claude-cli',
+            'openai-sdk': 'openai-codex-cli',
         };
         const sdkTarget = sdkUpgrades[chosen];
         if (sdkTarget) {
@@ -95,37 +106,40 @@ export function getRunner(provider) {
  */
 export function buildAgentEnv(provider) {
     const base = {
-        PATH: process.env.PATH ?? "",
-        HOME: process.env.HOME ?? "/home/agent",
-        USER: process.env.USER ?? "agent",
-        LANG: process.env.LANG ?? "C.UTF-8",
-        NODE_ENV: process.env.NODE_ENV ?? "production",
+        PATH: process.env.PATH ?? '',
+        HOME: process.env.HOME ?? '/home/node',
+        USER: process.env.USER ?? 'node',
+        LANG: process.env.LANG ?? 'C.UTF-8',
+        NODE_ENV: process.env.NODE_ENV ?? 'production',
     };
-    if (provider === "claude-cli" || provider === "claude-sdk") {
+    if (provider === 'claude-cli' || provider === 'claude-sdk') {
         if (process.env.ANTHROPIC_API_KEY) {
             base.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
         }
         // Pin the model when set (e.g. `claude-opus-4-7`). Without this we
         // get whatever the CLI's config / SDK default picks, which can drift
         // when Anthropic ships a newer flagship.
-        if (process.env.ANTHROPIC_MODEL) {
-            base.ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL;
-        }
+        base.ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL;
         // Pass through proxy / Bedrock / custom-endpoint config when set.
         if (process.env.ANTHROPIC_BASE_URL) {
             base.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL;
         }
     }
-    if (provider === "openai-codex-cli" || provider === "openai-sdk") {
+    if (provider === 'echo') {
+        base.AGENT_PROVIDER = 'echo';
+    }
+    if (provider === 'gemini-sdk') {
+        if (process.env.GEMINI_API_KEY) {
+            base.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+        }
+        base.GEMINI_MODEL = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
+    }
+    if (provider === 'openai-codex-cli' || provider === 'openai-sdk') {
         if (process.env.OPENAI_API_KEY) {
             base.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
         }
-        if (process.env.OPENAI_MODEL) {
-            base.OPENAI_MODEL = process.env.OPENAI_MODEL;
-        }
-        if (process.env.CODEX_MODEL) {
-            base.CODEX_MODEL = process.env.CODEX_MODEL;
-        }
+        base.OPENAI_MODEL = process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
+        base.CODEX_MODEL = process.env.CODEX_MODEL ?? base.OPENAI_MODEL;
         // Azure OpenAI / proxy support.
         if (process.env.OPENAI_BASE_URL) {
             base.OPENAI_BASE_URL = process.env.OPENAI_BASE_URL;
@@ -154,7 +168,7 @@ function probeBinary(bin) {
         };
         let child;
         try {
-            child = spawn(bin, ["--version"], { stdio: "ignore" });
+            child = spawn(bin, ['--version'], { stdio: 'ignore' });
         }
         catch {
             finish(false);
@@ -162,18 +176,18 @@ function probeBinary(bin) {
         }
         const t = setTimeout(() => {
             try {
-                child.kill("SIGKILL");
+                child.kill('SIGKILL');
             }
             catch {
                 /* ignore */
             }
             finish(false);
         }, HAS_BIN_TIMEOUT_MS);
-        child.on("error", () => {
+        child.on('error', () => {
             clearTimeout(t);
             finish(false);
         });
-        child.on("close", (code) => {
+        child.on('close', (code) => {
             clearTimeout(t);
             finish(code === 0);
         });
@@ -202,51 +216,70 @@ export async function probeAllProviders() {
     if (cachedAvailability) {
         return cachedAvailability;
     }
-    const [hasClaude, hasCodex, hasClaudeSdk, hasOpenaiSdk] = await Promise.all([
-        probeBinary("claude"),
-        probeBinary("codex"),
-        probePackage("@anthropic-ai/claude-agent-sdk"),
-        probePackage("@openai/agents"),
+    const [hasClaude, hasCodex, hasClaudeSdkPackage, hasGeminiSdk, hasOpenaiSdk] = await Promise.all([
+        probeBinary('claude'),
+        probeBinary('codex'),
+        probePackage('@anthropic-ai/claude-agent-sdk'),
+        probePackage('@google/genai'),
+        probePackage('@openai/agents'),
     ]);
+    const hasClaudeSdkExecutable = hasClaudeSdkPackage && !!resolveClaudeCodeExecutable();
     const out = [
         {
-            provider: "claude-cli",
+            provider: 'claude-cli',
             displayName: claudeCliRunner.displayName,
             available: hasClaude && !!process.env.ANTHROPIC_API_KEY,
             reason: !hasClaude
-                ? "`claude` binary not on PATH (npm i -g @anthropic-ai/claude-code)"
+                ? '`claude` binary not on PATH (npm i -g @anthropic-ai/claude-code)'
                 : !process.env.ANTHROPIC_API_KEY
-                    ? "ANTHROPIC_API_KEY not set"
+                    ? 'ANTHROPIC_API_KEY not set'
                     : undefined,
         },
         {
-            provider: "claude-sdk",
+            provider: 'claude-sdk',
             displayName: claudeSdkRunner.displayName,
-            available: hasClaudeSdk && !!process.env.ANTHROPIC_API_KEY,
-            reason: !hasClaudeSdk
-                ? "@anthropic-ai/claude-agent-sdk not installed (pnpm add @anthropic-ai/claude-agent-sdk)"
-                : !process.env.ANTHROPIC_API_KEY
-                    ? "ANTHROPIC_API_KEY not set"
+            available: hasClaudeSdkPackage && hasClaudeSdkExecutable && !!process.env.ANTHROPIC_API_KEY,
+            reason: !hasClaudeSdkPackage
+                ? '@anthropic-ai/claude-agent-sdk not installed (pnpm add @anthropic-ai/claude-agent-sdk)'
+                : !hasClaudeSdkExecutable
+                    ? 'Claude SDK native executable not found or not executable'
+                    : !process.env.ANTHROPIC_API_KEY
+                        ? 'ANTHROPIC_API_KEY not set'
+                        : undefined,
+        },
+        {
+            provider: 'echo',
+            displayName: echoRunner.displayName,
+            available: true,
+        },
+        {
+            provider: 'gemini-sdk',
+            displayName: geminiSdkRunner.displayName,
+            available: hasGeminiSdk && !!process.env.GEMINI_API_KEY,
+            reason: !hasGeminiSdk
+                ? '@google/genai package not installed'
+                : !process.env.GEMINI_API_KEY
+                    ? 'GEMINI_API_KEY not set'
                     : undefined,
         },
         {
-            provider: "openai-codex-cli",
+            provider: 'openai-codex-cli',
             displayName: openaiCodexCliRunner.displayName,
             available: hasCodex && !!process.env.OPENAI_API_KEY,
             reason: !hasCodex
-                ? "`codex` binary not on PATH (install OpenAI Codex CLI)"
+                ? '`codex` binary not on PATH (install OpenAI Codex CLI)'
                 : !process.env.OPENAI_API_KEY
-                    ? "OPENAI_API_KEY not set"
+                    ? 'OPENAI_API_KEY not set'
                     : undefined,
         },
         {
-            provider: "openai-sdk",
+            provider: 'openai-sdk',
             displayName: openaiSdkRunner.displayName,
             available: hasOpenaiSdk && !!process.env.OPENAI_API_KEY,
             reason: !hasOpenaiSdk
-                ? "@openai/agents package not installed"
+                ? '@openai/agents package not installed'
                 : !process.env.OPENAI_API_KEY
-                    ? "OPENAI_API_KEY not set"
+                    ? 'OPENAI_API_KEY not set'
                     : undefined,
         },
     ];
