@@ -527,7 +527,7 @@ fn agents_threads_body() -> Markup {
                 button id="new-thread" class="primary" type="button" { "New thread" }
                 div id="thread-list" class="thread-list" aria-live="polite" {}
             }
-            main id="thread-workspace" class="main" {
+            main id="thread-workspace" class="main mode-empty control-wide" {
                 div class="topbar" {
                     div {
                         h1 id="selected-title" { "Select a thread" }
@@ -879,6 +879,22 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         --control-share: 0.8;
         --lower-share: 1.2;
       }
+      .main.mode-empty #sleep-thread,
+      .main.mode-empty #archive-thread,
+      .main.mode-empty #delete-thread,
+      .main.mode-empty #merge-thread,
+      .main.mode-empty #commit-thread,
+      .main.mode-empty #open-pr-thread,
+      .main.mode-empty #terminal-thread,
+      .main.mode-new #sleep-thread,
+      .main.mode-new #archive-thread,
+      .main.mode-new #delete-thread,
+      .main.mode-new #merge-thread,
+      .main.mode-new #commit-thread,
+      .main.mode-new #open-pr-thread,
+      .main.mode-new #terminal-thread {
+        display: none;
+      }
       .topbar, .row, .actions {
         display: flex;
         align-items: center;
@@ -980,6 +996,10 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       }
       .main.lower-wide .prompt-panel {
         min-height: 140px;
+      }
+      .main.mode-existing.lower-wide textarea {
+        min-height: 78px;
+        max-height: 28dvh;
       }
       .thread-control-heading {
         margin-bottom: 12px;
@@ -1185,6 +1205,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         renderedEvents: new Set(),
         runtimePoll: null,
         lastRuntimeSummary: "",
+        threadUiMode: "empty",
       };
 
       function makeUuid() {
@@ -1210,6 +1231,18 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (mode === "lower") workspace.classList.add("lower-wide");
       }
 
+      function setThreadUiMode(modeName) {
+        const workspace = $("thread-workspace");
+        state.threadUiMode = modeName;
+        workspace.classList.remove("mode-empty", "mode-new", "mode-existing");
+        workspace.classList.add(`mode-${modeName}`);
+        $("new-task").disabled = modeName === "empty";
+        $("send").textContent = modeName === "new" ? "Create thread & send" : modeName === "existing" ? "Send task" : "Send";
+        for (const id of ["sleep-thread", "archive-thread", "delete-thread", "merge-thread", "commit-thread", "open-pr-thread", "terminal-thread"]) {
+          $(id).disabled = modeName !== "existing";
+        }
+      }
+
       function setTaskStreamLayout(mode) {
         const grid = $("task-stream-grid");
         grid.classList.remove("tasks-wide", "stream-wide");
@@ -1219,6 +1252,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       function handlePanelKey(event, mode) {
+        if (shouldIgnorePanelShortcut(event.target)) return;
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         setTaskStreamLayout(mode);
@@ -1226,6 +1260,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function shouldIgnorePanelShortcut(target) {
         return Boolean(target?.closest?.("button, input, select, textarea, a"));
+      }
+
+      function handleControlPanelClick(event) {
+        if (shouldIgnorePanelShortcut(event.target)) return;
+        setWorkspaceLayout("control");
+      }
+
+      function handleLowerPanelClick(event, mode) {
+        if (shouldIgnorePanelShortcut(event.target)) return;
+        setTaskStreamLayout(mode);
       }
 
       function handleControlPanelKey(event) {
@@ -1480,20 +1524,23 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const mode = $("thread-mode");
         const subtitle = $("thread-control-subtitle");
         if (!threadId) {
+          setThreadUiMode("empty");
           mode.textContent = "select thread";
           mode.className = "pill warn";
           subtitle.textContent = "Select an existing worker thread or prepare a new one.";
           return;
         }
         if (existingThread(threadId)) {
+          setThreadUiMode("existing");
           mode.textContent = "viewing existing";
           mode.className = "pill";
-          subtitle.textContent = "Controls affect the selected worker thread.";
+          subtitle.textContent = "Viewing an existing worker. Pick a previous task below, send another task, or open the inline terminal.";
           return;
         }
+        setThreadUiMode("new");
         mode.textContent = "creating new";
         mode.className = "pill warn";
-        subtitle.textContent = "Send will create this thread and start its first task.";
+        subtitle.textContent = "Creating a new worker. Repo, branch, provider, and prompt are used for the first task.";
       }
 
       function renderThreads() {
@@ -1862,7 +1909,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const params = new URLSearchParams(window.location.search);
         const requestedThread = params.get("thread");
         const requestedTask = params.get("task");
-        if (requestedThread && state.threads.some((thread) => thread.id === requestedThread)) {
+        if (requestedThread) {
           state.selectedThreadId = requestedThread;
         }
         if (!state.selectedThreadId && state.threads.length) state.selectedThreadId = state.threads[0].id;
@@ -1984,18 +2031,44 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           "open-pr": "open-pr",
         };
         const routeAction = routeActions[action] || action;
-        const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/${routeAction}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            kind: "thread-control",
-            action: routeAction,
-            threadId,
-            taskId,
-            requestedBy: "agents-threads-ui",
-            reason: routeAction === "make-commit" ? "manual commit" : routeAction,
-          }),
-        });
+        if (["hard-delete", "merge-upstream", "make-commit", "open-pr", "terminal", "sleep", "archive"].includes(routeAction) && !existingThread(threadId)) {
+          setStatus(`${routeAction} is available after this thread has been created`, true);
+          return;
+        }
+        const pollRuntime = routeAction === "terminal";
+        if (pollRuntime) {
+          closeInlineTerminal();
+          setTaskStreamLayout("stream");
+          clearStream("waking terminal");
+          renderEventRow({
+            seq: `terminal-start-${Date.now()}`,
+            eventKind: "status",
+            payload: {
+              kind: "status",
+              status: "waking terminal",
+              message: "Waking the selected worker and opening its shell inside the response panel.",
+            },
+            createdAt: new Date().toISOString(),
+          });
+          startRuntimePolling(threadId);
+        }
+        let response;
+        try {
+          response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/${routeAction}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              kind: "thread-control",
+              action: routeAction,
+              threadId,
+              taskId,
+              requestedBy: "agents-threads-ui",
+              reason: routeAction === "make-commit" ? "manual commit" : routeAction,
+            }),
+          });
+        } finally {
+          if (pollRuntime) stopRuntimePolling();
+        }
         const body = await response.text();
         renderEventRow({
           seq: `control-${Date.now()}`,
@@ -2034,11 +2107,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("repo-url").addEventListener("change", updateRepoUrlMode);
       $("repo-url-new").addEventListener("blur", validateRepoUrlField);
       $("repo-url-new").addEventListener("input", () => $("repo-url-new").setCustomValidity(""));
-      $("thread-control-panel").addEventListener("click", () => setWorkspaceLayout("control"));
+      $("thread-control-panel").addEventListener("click", handleControlPanelClick);
       $("thread-control-panel").addEventListener("keydown", handleControlPanelKey);
-      $("previous-tasks-panel").addEventListener("click", () => setTaskStreamLayout("tasks"));
+      $("previous-tasks-panel").addEventListener("click", (event) => handleLowerPanelClick(event, "tasks"));
       $("previous-tasks-panel").addEventListener("keydown", (event) => handlePanelKey(event, "tasks"));
-      $("response-stream-panel").addEventListener("click", () => setTaskStreamLayout("stream"));
+      $("response-stream-panel").addEventListener("click", (event) => handleLowerPanelClick(event, "stream"));
       $("response-stream-panel").addEventListener("keydown", (event) => handlePanelKey(event, "stream"));
       $("terminal-close").addEventListener("click", (event) => {
         event.stopPropagation();

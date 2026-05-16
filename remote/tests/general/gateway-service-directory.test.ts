@@ -514,7 +514,11 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(refreshWorkflow, /workflow_dispatch:/);
   assert.match(refreshWorkflow, /group: refresh-remote-web-home-local-image/);
   assert.match(refreshWorkflow, /ref: dev/);
-  assert.match(refreshWorkflow, /role-to-assume: \$\{\{ secrets\.AWS_ROLE_TO_ASSUME \}\}/);
+  assert.match(
+    refreshWorkflow,
+    /role-to-assume: \$\{\{ secrets\.AWS_ROLE_TO_ASSUME \|\| secrets\.REMOTE_DEV_AWS_ROLE_TO_ASSUME \|\| secrets\.AWS_OIDC_ROLE_ARN \|\| secrets\.AWS_ECR_ROLE_ARN \}\}/,
+  );
+  assert.match(refreshWorkflow, /aws-region: \$\{\{ vars\.AWS_REGION \|\| secrets\.AWS_REGION \|\| 'us-east-1' \}\}/);
   assert.match(
     refreshWorkflow,
     /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/web-home-rs/,
@@ -723,10 +727,13 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.task-stream-grid\.tasks-wide \{[\s\S]*grid-template-columns: minmax\(0, 1\.02fr\) minmax\(0, 0\.98fr\);/);
   assert.match(server, /\.task-stream-grid\.stream-wide \{[\s\S]*grid-template-columns: minmax\(0, 0\.62fr\) minmax\(0, 1\.38fr\);/);
   assert.match(server, /function setWorkspaceLayout\(mode\) \{/);
-  assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", \(\) => setWorkspaceLayout\("control"\)\)/);
+  assert.match(server, /function setThreadUiMode\(modeName\) \{/);
+  assert.match(server, /\.main\.mode-new #terminal-thread[\s\S]*display: none;/);
+  assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", handleControlPanelClick\)/);
   assert.match(server, /function setTaskStreamLayout\(mode\) \{/);
-  assert.match(server, /\$\("previous-tasks-panel"\)\.addEventListener\("click", \(\) => setTaskStreamLayout\("tasks"\)\)/);
-  assert.match(server, /\$\("response-stream-panel"\)\.addEventListener\("click", \(\) => setTaskStreamLayout\("stream"\)\)/);
+  assert.match(server, /function handleLowerPanelClick\(event, mode\) \{/);
+  assert.match(server, /\$\("previous-tasks-panel"\)\.addEventListener\("click", \(event\) => handleLowerPanelClick\(event, "tasks"\)\)/);
+  assert.match(server, /\$\("response-stream-panel"\)\.addEventListener\("click", \(event\) => handleLowerPanelClick\(event, "stream"\)\)/);
   assert.doesNotMatch(server, /div class="grid" style="margin-top: 14px"/);
   assert.match(server, /\.route\("\/agents\/threads", get\(agents_threads_page\)\)/);
   assert.match(server, /\.route\("\/agents\/threads\/", get\(agents_threads_page\)\)/);
