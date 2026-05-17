@@ -57,6 +57,9 @@ function spawnWorker(workerId) {
   child.on('exit', (code, signal) => {
     children.delete(workerId);
     if (shuttingDown) {
+      if (children.size === 0) {
+        process.exit(0);
+      }
       return;
     }
 
@@ -138,6 +141,9 @@ function shutdown() {
 
   shuttingDown = true;
   console.log('lock-loadtest-node shutting_down');
+  if (children.size === 0) {
+    process.exit(0);
+  }
   for (const child of children.values()) {
     child.send({ type: 'shutdown' });
     setTimeout(() => child.kill('SIGTERM'), 5000).unref();
