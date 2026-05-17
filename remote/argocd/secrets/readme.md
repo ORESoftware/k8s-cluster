@@ -30,12 +30,6 @@ credential chain. On EC2 this means the node instance role must allow
 consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda
 definitions by UUID without inheriting the REST API secret bundle.
 
-`dd/remote-dev/agent-secrets` may also include `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
-`AWS_SESSION_TOKEN` for `dd-build-server` ECR pushes. Prefer short-lived credentials or a dedicated
-role limited to `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`,
-`ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, and
-`ecr:PutImage` on the build repositories.
-
 ## Updating Values
 
 Update live values in AWS Secrets Manager, not in Git. This repo should only change when the secret

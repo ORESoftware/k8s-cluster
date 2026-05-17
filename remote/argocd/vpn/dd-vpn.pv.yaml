@@ -6,7 +6,6 @@ metadata:
     app.kubernetes.io/name: dd-vpn
     app.kubernetes.io/part-of: dd-remote-dev
 spec:
-  storageClassName: dd-vpn-hostpath
   capacity:
     storage: 1Gi
   accessModes:
