@@ -44,13 +44,12 @@ spec:
               value: '8086'
             - name: JAVA_OPTS
               value: -XX:+UseG1GC -XX:MaxRAMPercentage=70 -Dfile.encoding=UTF-8
-            # Capped at 30 because async.java's `synchronized` accessors pin virtual threads
-            # on JDK 21 — 23 (fixed by JEP 491 in JDK 24); higher counts trip a TimeoutException
-            # around iteration 40-130. Bump once we either move to JDK 24+ or switch
-            # async.java's ShortCircuit to AtomicBoolean. See readme.md "JDK 21
-            # synchronized-pinning" finding.
+            # The pinned-at-30 workaround was removed once async-java/async.java#9 landed
+            # the CounterLimit AtomicInteger fix. With the fix the live /v1/benchmark endpoint
+            # runs the full 200 iterations and returns p50/p95/p99 + throughput from a
+            # statistically meaningful sample size.
             - name: BENCHMARK_ITERATIONS
-              value: '30'
+              value: '200'
             - name: BENCHMARK_PAYLOAD
               value: '{"id":"bench","payload":"a benchmark message body"}'
           ports:

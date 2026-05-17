@@ -39,17 +39,18 @@
         <hikaricp.version>5.1.0</hikaricp.version>
 
         <!--
-          Pinned to the merge commit of async-java/async.java#8 (production-readiness
-          patches: daemon-thread NeoQueue executor, NeoLock thread-safety fix,
-          modernized pom and CI). Once Sonatype Central is wired up per RELEASING.md
-          in that repo and a `v0.2.0` tag is cut, switch this dependency to
-          `io.github.async-java:async-java:0.2.0` from Maven Central proper.
+          Pinned to the head of async-java/async.java fix/vt-pinning-investigation
+          (PR #9), which fixes a CounterLimit lost-update data race that affected
+          every combinator using CounterLimit (Parallel / Series / Map / Each / Reduce
+          / Times / Concat / FilterMap / Whilst / Waterfall / Inject / Race / GroupBy
+          / Queue) under sustained concurrent load.
+          See: https://github.com/async-java/async.java/pull/9
 
-          Until then we consume the patched library through JitPack, which builds any
-          git ref on demand. The ref is a 10-character commit SHA so the build is
-          reproducible (master-SNAPSHOT would drift on every upstream commit).
+          When PR #9 merges to master, bump to the merge SHA. When
+          io.github.async-java:async-java:0.2.0 publishes to Maven Central, switch to
+          that stable coordinate.
         -->
-        <async-java.version>937c0e3</async-java.version>
+        <async-java.version>dd55f5a</async-java.version>
 
         <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
     </properties>

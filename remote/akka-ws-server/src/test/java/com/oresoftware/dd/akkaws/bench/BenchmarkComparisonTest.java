@@ -50,14 +50,12 @@ class BenchmarkComparisonTest {
     final var runner = new BenchmarkRunner(asyncJava, akkaStreams);
 
     final String payload = "{\"id\":\"bench\",\"payload\":\"a benchmark message body\"}";
-    // Iteration count is intentionally modest. async.java's ShortCircuit + per-task cbLock
-    // use `synchronized`, which is correct for the JMM. On JDK 21-23 those monitors pin
-    // virtual threads — under sustained rapid-fire (~50+ ordered iterations) the carrier
-    // pool starves and we see a TimeoutException at ~iter 40. JDK 24's JEP 491 fixes the
-    // pinning, and a future async.java patch could switch ShortCircuit to AtomicBoolean to
-    // make this lock-free entirely. For now we cap iterations so the comparison itself
-    // remains green; the pinning behaviour is documented in `comparison.md` as a finding.
-    final int iterations = 30;
+    // Was capped at 30 to dodge a CounterLimit lost-update data race in async.java that
+    // hung Asyncc.Parallel under sustained rapid-fire load. Fixed upstream by
+    // async-java/async.java#9 (CounterLimit.{started,finished} -> AtomicInteger). The
+    // current async-java.version coordinate in pom.xml pins to that fix branch's HEAD;
+    // once #9 merges and we bump to the merge SHA this can stay at 200.
+    final int iterations = 200;
 
     final String summary = runner.runAsync(iterations, payload).toCompletableFuture()
         .get(60, TimeUnit.SECONDS);

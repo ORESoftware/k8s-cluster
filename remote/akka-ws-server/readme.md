@@ -66,14 +66,18 @@ from `BenchmarkComparisonTest` on JDK 21 (Eclipse Temurin), 30 iterations,
 
 ## Performance
 
+From `BenchmarkComparisonTest` running 200 iterations on JDK 21 (Eclipse
+Temurin), 20-iteration warmup, virtual-thread executor, against
+async-java/async.java post-PR-#9 (CounterLimit race fixed):
+
 ```
                 async.java           akka-streams         async/akka
-p50 latency     4026 µs              5255 µs              0.77  (faster)
-p95 latency     5938 µs              7012 µs              0.85
-p99 latency     5959 µs              7201 µs              0.83
-max latency     5959 µs              7201 µs
-throughput      245 req/s            194 req/s            1.26  (higher)
-wall time        122 ms               154 ms
+p50 latency     4460 µs              5826 µs              0.77  (faster)
+p95 latency     6140 µs              7593 µs              0.81
+p99 latency     6663 µs              8046 µs              0.83
+max latency     7280 µs              8681 µs
+throughput      227 req/s            172 req/s            1.32  (higher)
+wall time        882 ms              1162 ms
 ```
 
 **Read**: for short, simple pipelines where each request lives ~5ms, async.java
@@ -112,31 +116,53 @@ is its own small pipeline. For consumer workloads (Kafka, NATS, JetStream)
 that ingest at unbounded rates, Akka Streams' built-in back-pressure is
 strictly easier to get right.
 
-### JDK 21 synchronized-pinning (observed during benchmark)
+### A misdiagnosed-then-fixed correctness bug (CounterLimit data race)
 
-A surprising finding from the benchmark harness: running async.java
-rapid-fire on JDK 21 with a virtual-thread executor times out around
-iteration 40 of a sustained sequential drive. Root cause: async.java's
-`ShortCircuit` and per-task `cbLock` use `synchronized` (correct for the
-Java Memory Model), but **on JDK 21 — 23, `synchronized` blocks pin a
-virtual thread to its carrier**. With a small carrier pool (default = CPU
-count) and many VTs simultaneously trying to enter the same `synchronized`
-block on `cbLock`, the carriers starve.
+The first benchmark run against the patched-but-not-yet-debugged async.java
+timed out around iteration 40 of a sustained sequential drive. Initial
+hypothesis: a JDK 21 virtual-thread pinning issue caused by the
+`synchronized` accessors added to `ShortCircuit` in
+[async-java/async.java#8](https://github.com/async-java/async.java/pull/8).
 
-This was fixed at the JDK level by
-[JEP 491](https://openjdk.org/jeps/491) in JDK 24 (March 2025). The
-benchmark intentionally caps at 30 iterations so the harness stays green
-on JDK 21; rerun on JDK 24+ to push higher.
+**That hypothesis turned out to be wrong.** `-Djdk.tracePinnedThreads=full`
+produced zero pinning output. The actual root cause is a
+**`CounterLimit` lost-update data race that pre-existed #8**:
 
-Akka Streams does not have this issue because its graph runs on a
-fork-join dispatcher (`akka.actor.default-dispatcher`) using platform
-threads, not virtual threads — none of its synchronisation pins anything.
-(That dispatcher style has its own constraints, but pinning isn't one.)
+- `CounterLimit.{started, finished}` were plain `Integer` fields.
+- `NeoParallel.AsyncTaskRunner.done()` calls `p.c.incrementFinished()`
+  inside `synchronized(this.cbLock)`, but `cbLock` is **per-task-runner**,
+  not shared.
+- Two parallel-task callbacks can therefore enter their (different)
+  `cbLock` blocks simultaneously and both `this.finished++` against the
+  shared counter — a textbook read-modify-write race.
+- One lost increment means `finished < started` forever, so
+  `ParallelRunner.isDone()` returns `false` forever, so the final
+  `Asyncc.Parallel` callback never fires.
 
-This is documented as a follow-up improvement in
-`async-java/async.java`: switching `ShortCircuit` from `synchronized`
-accessors to `AtomicBoolean` would make it lock-free and side-step the
-pinning issue on every JDK version.
+The fix is two lines:
+`CounterLimit.{started, finished}` → `AtomicInteger`. Lock-free,
+provides the memory-visibility guarantees the existing call sites assume,
+and removes any concern about `synchronized`-pinning at the same time
+(by making most of those `synchronized` blocks dead code).
+
+Fix lives in
+[async-java/async.java#9](https://github.com/async-java/async.java/pull/9).
+This repo's `pom.xml` consumes the fix-branch SHA via JitPack until #9
+merges. After that, bump both `async-java.version` properties to the merge
+commit SHA, and after the next Maven Central release bump them to the
+stable `io.github.async-java:async-java:0.2.0` coordinate.
+
+Why virtual threads surfaced this and platform threads didn't: VTs make
+spawning concurrent callbacks essentially free, so the contention window
+between the two per-task `synchronized(cbLock)` sections is hit on nearly
+every iteration. With a small platform-thread pool the contention is
+much rarer, the race happens occasionally but the test suite (which
+doesn't drive `Parallel` in a sustained loop) never noticed.
+
+Akka Streams does not have an analogous internal race because its stage
+state transitions are dispatched through a single actor mailbox — every
+stage event is processed serially by definition. No shared counter
+across concurrent callback threads.
 
 ### Tail latency
 

@@ -44,17 +44,19 @@
         <akka.http.version>10.5.3</akka.http.version>
 
         <!--
-          Pinned to the merge commit of async-java/async.java#8 (production-readiness
-          patches: daemon-thread NeoQueue executor, NeoLock thread-safety fix, JEP 491
-          stack-trace cleanup, modernized pom). Once Sonatype Central is wired up
-          per RELEASING.md and a `v0.2.0` tag is cut, switch this dependency to
-          `io.github.async-java:async-java:0.2.0` from Maven Central proper.
+          Pinned to the head of async-java/async.java fix/vt-pinning-investigation
+          (PR #9), which fixes a CounterLimit lost-update data race that hung
+          Asyncc.Parallel under sustained rapid-fire virtual-thread load.
+          See: https://github.com/async-java/async.java/pull/9
 
-          Until then we consume the patched library through JitPack, which builds any
-          git ref on demand. The ref is a 10-character commit SHA so the build is
-          reproducible (master-SNAPSHOT would drift).
+          Earlier rev (937c0e3, post-#8) had the same race and is what triggered
+          the BENCHMARK_ITERATIONS=30 workaround we removed in this same commit.
+
+          When PR #9 merges to master, bump this to the merge SHA. When
+          io.github.async-java:async-java:0.2.0 publishes to Maven Central, switch
+          to that stable coordinate.
         -->
-        <async-java.version>937c0e3</async-java.version>
+        <async-java.version>dd55f5a</async-java.version>
         <jackson.version>2.17.2</jackson.version>
         <logback.version>1.5.6</logback.version>
         <slf4j.version>2.0.13</slf4j.version>
