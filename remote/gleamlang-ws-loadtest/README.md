@@ -19,6 +19,29 @@ Default behavior:
 - `RECONNECT_DELAY_MS` (default `1000`)
 - `RAMP_DELAY_MS` (default `1`)
 - `REPORT_INTERVAL_SECONDS` (default `10`)
+- `LOAD_MODE` (default `hold`) — set to `pipeline` to switch from the
+  legacy "connect + ping once + hold open" capacity test to a rate-driven
+  pipeline test that sends shaped JSON frames and measures end-to-end
+  round-trip latency. Designed for driving
+  [`dd-akka-ws-server`](../akka-ws-server/readme.md)'s `/ws/asyncjava`
+  and `/ws/akkastreams` endpoints for the side-by-side comparison.
+
+### Pipeline mode (`LOAD_MODE=pipeline`) extras
+
+- `MESSAGES_PER_SECOND_PER_CLIENT` (default `10.0`) — per-client send
+  rate.
+- `MESSAGE_PAYLOAD` (default `"a benchmark message body"`) — string
+  inserted into the JSON payload field. The frame shape is
+  `{"id":"c{client}-{seq}","payload":"{payload}"}`.
+- `CORRELATION_TIMEOUT_MS` (default `10000`) — pending-request entries
+  older than this are swept from the in-memory map so a slow server
+  can't grow the loadtest indefinitely. Responses that arrive after the
+  sweep are counted as `correlation_misses` rather than as round-trip
+  samples.
+
+The pipeline report line replaces `messages` with the latency histogram
+(`p50_us / p95_us / p99_us / max_us`) plus
+`sent / received / in_flight_peak / correlation_misses / receive_errors`.
 
 ## Container pool smoke mode
 

@@ -66,9 +66,21 @@ from `BenchmarkComparisonTest` on JDK 21 (Eclipse Temurin), 30 iterations,
 
 ## Performance
 
-From `BenchmarkComparisonTest` running 200 iterations on JDK 21 (Eclipse
-Temurin), 20-iteration warmup, virtual-thread executor, against
-async-java/async.java post-PR-#9 (CounterLimit race fixed):
+Two complementary views of the same question:
+
+1. **Synthetic micro-benchmark** (`BenchmarkComparisonTest`) — one client,
+   sequential, no network. Tells you each library's per-call overhead.
+2. **Real WebSocket load test** — many concurrent clients each sending at a
+   fixed rate over real WS frames. Tells you how each library behaves under
+   the kind of concurrency a production endpoint actually sees.
+
+The two paint **very different pictures**. Worth understanding both.
+
+### 1. Synthetic micro-benchmark
+
+200 iterations on JDK 21 (Eclipse Temurin), 20-iter warmup, virtual-thread
+executor, against async-java/async.java post-PR-#9
+(CounterLimit race fixed):
 
 ```
                 async.java           akka-streams         async/akka
@@ -79,6 +91,132 @@ max latency     7280 µs              8681 µs
 throughput      227 req/s            172 req/s            1.32  (higher)
 wall time        882 ms              1162 ms
 ```
+
+**Read**: when one caller drives the pipeline sequentially, async.java is
+~25 % faster on median and ~32 % higher throughput. This is the
+per-call-overhead view; Akka Streams' graph materialisation cost
+dominates short pipelines.
+
+### 2. Real WebSocket load test (Rust loadtest in pipeline mode)
+
+This is where the comparison gets interesting. 50 concurrent WS clients,
+each sending shaped JSON messages at 10 msg/sec → 500 msg/sec offered
+load. 25-second runs against each endpoint.
+
+```
+                              async.java      akka-streams
+sent (over 20s)               9 967           9 975
+received                      9 420           9 974
+delivery rate                  94.5 %          99.99 %
+correlation_misses            0               0
+p50 latency                   4 995 µs        5 063 µs
+p95 latency                   7 299 µs        6 999 µs
+p99 latency                  10 183 µs        8 887 µs
+max latency                  42 655 µs       39 679 µs
+```
+
+**Read**: under realistic concurrent WS load, **Akka Streams delivered
+99.99 % of messages while async.java dropped ~5 % outright.** Median
+latency is essentially the same; Akka Streams' tail is tighter (p99
+8.9 ms vs 10.2 ms). The 547 missing async.java responses are not
+correlation-timeout misses (the loadtest's pending-map sweep would
+record those as `correlation_misses`); they're sends that never
+produced a server-side response within the 10-second observation
+window.
+
+### 3. Real WebSocket load test — higher concurrency (1 000 msg/sec)
+
+200 clients × 5 msg/sec = 1 000 msg/sec offered. 30-second runs.
+
+```
+                              async.java         akka-streams
+sent (over 20s)              19 753             19 755
+received                     19 614             19 754
+delivery rate                  99.3 %            99.99 %
+p50 latency                   4 715 µs           5 179 µs
+p95 latency                   6 167 µs          43 167 µs   <-- !
+p99 latency                   7 987 µs          50 271 µs   <-- !!
+max latency                  19 455 µs          63 871 µs
+```
+
+**Read** — and this one's the headline finding:
+
+* **At saturation, Akka Streams' back-pressure kicks in and trades latency
+  for completeness.** Median stayed at ~5 ms but p99 collapsed from 8 ms
+  (under-saturation) to 50 ms (over-saturation). Delivery rate stayed at
+  99.99 % the whole time.
+* **async.java held its latency steady** (p99 7.9 ms, ~unchanged from
+  light load) but dropped 0.7 % of messages with no signal back to the
+  caller.
+
+This is the same philosophical difference the readme called out earlier,
+now visible in measurements: Akka Streams is built around structural
+back-pressure, so saturation manifests as latency growth not message loss.
+async.java has no back-pressure in `Asyncc.Parallel`, so saturation
+manifests as silent message loss while latency stays clean. **Either can
+be the right answer** depending on what your application can tolerate —
+but the choice should be conscious. async.java with `NeoQueue` for
+per-endpoint concurrency capping (which `ParallelLimit` also provides
+inline) would close the gap; that's the recommended pattern in the
+[Project Loom](https://github.com/async-java/async.java/blob/master/readme.md#project-loom-and-asyncjava)
+section of the upstream readme.
+
+### Reproducing the real-load comparison
+
+The two existing loadtest services in this repo
+(`remote/ws-loadtest-rs/` and `remote/gleamlang-ws-loadtest/`) gained a
+`LOAD_MODE=pipeline` option for this comparison. In `pipeline` mode each
+client sends shaped JSON at `MESSAGES_PER_SECOND_PER_CLIENT` and the
+harness correlates responses by `id` for round-trip latency.
+
+```bash
+# 1. Boot the akka-ws-server with the patched async.java
+docker run -d --name akkaws -p 8086:8086 \
+    -v "$(pwd)"/remote/akka-ws-server:/work -w /work \
+    maven:3.9.9-eclipse-temurin-21 java -jar target/dd-akka-ws-server.jar
+
+# 2. Build the Rust loadtest once
+docker run --rm -v "$(pwd)"/remote/ws-loadtest-rs:/work -w /work \
+    rust:1.86-slim cargo build --release
+
+# 3. Run the harness against each endpoint
+for endpoint in asyncjava akkastreams; do
+    docker run --rm \
+        -v "$(pwd)"/remote/ws-loadtest-rs/target/release:/bin/bench:ro \
+        -e LOAD_MODE=pipeline \
+        -e CLIENT_COUNT=50 \
+        -e MESSAGES_PER_SECOND_PER_CLIENT=10 \
+        -e TARGET_WS_URL="ws://host.docker.internal:8086/ws/$endpoint" \
+        -e REPORT_INTERVAL_SECONDS=5 \
+        -e HOLD_SECONDS=20 \
+        debian:bookworm-slim timeout 25 /bin/bench/ws-loadtest-rs
+done
+```
+
+The same `LOAD_MODE=pipeline` and `MESSAGES_PER_SECOND_PER_CLIENT` env
+vars work for the Gleam loadtest (`remote/gleamlang-ws-loadtest/`).
+
+### In-cluster
+
+`dd-ws-loadtest-rs` and `dd-ws-loadtest-gleam` are already deployed as
+Argo CD Applications, currently targeting `dd-gleamlang-server` for
+WS-capacity stress testing. To repoint at the akka-ws-server temporarily,
+override the env via `kubectl`:
+
+```bash
+kubectl set env deployment/dd-ws-loadtest-rs \
+    LOAD_MODE=pipeline \
+    CLIENT_COUNT=50 \
+    MESSAGES_PER_SECOND_PER_CLIENT=10 \
+    TARGET_WS_URL=ws://dd-akka-ws-server.default.svc.cluster.local:8086/ws/asyncjava \
+    HOLD_SECONDS=300
+```
+
+Then `kubectl logs -f deployment/dd-ws-loadtest-rs` for the rolling
+`pipeline-report` lines. Repeat with the `/ws/akkastreams` URL for the
+B-side. When done, restore the original target via
+`kubectl rollout undo` so Argo CD doesn't see a permanent drift from the
+manifest.
 
 **Read**: for short, simple pipelines where each request lives ~5ms, async.java
 wins by ~25%. The reason is **fixed setup cost per request**. Akka Streams
