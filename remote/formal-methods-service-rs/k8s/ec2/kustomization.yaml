@@ -4,3 +4,7 @@ kind: Kustomization
 resources:
   - dd-formal-methods-service.deployment.yaml
   - dd-formal-methods-service.service.yaml
+  # Uncomment once ingress-nginx + cert-manager + DNS for the host
+  # below are wired up. See dd-formal-methods-service.ingress.yaml
+  # for the full prerequisite checklist.
+  # - dd-formal-methods-service.ingress.yaml

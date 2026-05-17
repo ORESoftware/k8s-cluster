@@ -1,0 +1,82 @@
+# Opt-in Ingress for external GitHub webhook delivery.
+#
+# This file is NOT part of `kustomization.yaml` by default — the
+# ClusterIP Service alone is enough for internal verification
+# (`kubectl exec ... curl 127.0.0.1:8111/health`). Add this file to
+# `kustomization.yaml::resources` once you have:
+#
+#   1. ingress-nginx running in the cluster (kubectl get pods -n
+#      ingress-nginx). The cluster bootstrap script provisions it.
+#   2. cert-manager + a ClusterIssuer for Let's Encrypt (or a
+#      hand-imported TLS Secret). See remote/k8s/readme.md → "DNS + TLS".
+#   3. A DNS A/AAAA record for `{INGRESS_HOST}` (substitute the host
+#      below) pointing at the LoadBalancer/NLB fronting ingress-nginx.
+#
+# GitHub webhook URL once this is live:
+#
+#   https://{INGRESS_HOST}/webhook/github
+#
+# Pin that URL in the repo's `Settings → Webhooks` with:
+#   - Content type:     application/json
+#   - Secret:           same value as FORMAL_METHODS_GITHUB_WEBHOOK_SECRET
+#                       in AWS Secrets Manager key
+#                       `dd/remote-dev/agent-secrets`
+#   - Events:           Pull requests only
+#
+# Notes on annotations:
+#   - body-size 8m: GitHub `pull_request` payloads with large file
+#     diffs can approach 1MB. 8m is generous headroom.
+#   - read/send timeouts 60s: webhook handler returns 202 in well
+#     under a second (analysis runs async). 60s is just for slow
+#     network paths.
+#   - proxy-buffering on (default): the webhook reply is small JSON;
+#     no SSE here, so buffering is fine.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dd-formal-methods-service
+  namespace: default
+  labels:
+    app: dd-formal-methods-service
+  annotations:
+    # Hand off to cert-manager for automatic Let's Encrypt issuance.
+    # Drop this annotation if you imported a TLS secret manually.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 8m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '60'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '60'
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - formal-methods.example.com
+      secretName: dd-formal-methods-service-tls
+  rules:
+    - host: formal-methods.example.com
+      http:
+        paths:
+          # Only expose the webhook + health/ready endpoints. Anything
+          # else (admin, rerun, future internal routes) stays
+          # cluster-internal. If you add new public routes, list them
+          # here explicitly rather than `/`.
+          - path: /webhook/github
+            pathType: Exact
+            backend:
+              service:
+                name: dd-formal-methods-service
+                port:
+                  number: 8111
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: dd-formal-methods-service
+                port:
+                  number: 8111
+          - path: /ready
+            pathType: Exact
+            backend:
+              service:
+                name: dd-formal-methods-service
+                port:
+                  number: 8111

@@ -34,6 +34,7 @@ remote/formal-methods-service-rs/
   k8s/ec2/
     dd-formal-methods-service.deployment.yaml                # hostPath repo mount + cargo run --release
     dd-formal-methods-service.service.yaml                   # ClusterIP on port 8111
+    dd-formal-methods-service.ingress.yaml                   # opt-in: external HTTPS for GitHub webhook
     kustomization.yaml                                       # Argo CD source path
   templates/github-actions/
     formal-methods-trigger.yml                               # opt-in Option B trigger workflow
@@ -55,6 +56,21 @@ The container also mounts:
   so a restart does not rebuild from scratch.
 - `/var/lib/dd-formal-methods-service` — `WORKDIR_ROOT`, where each
   PR's transient git worktree is created (cleaned up on drop).
+
+### Toolchain gotcha (PATH, RUSTC, CARGO)
+
+The deployment's `args` block explicitly sets `PATH`, `RUSTC`, and
+`CARGO` to absolute paths under
+`/usr/local/rustup/toolchains/1.90.0-x86_64-unknown-linux-gnu/bin/`.
+`bash -lc` sources `/etc/profile`, which resets `PATH` to a vanilla
+Debian default and silently drops `/usr/local/cargo/bin` — the
+directory where the `rust:1.90` image stages the rustup proxies.
+Without the fix the rustup proxy resolves fine when invoked via
+absolute path, but the real cargo subprocess then spawns `rustc`
+through a PATH lookup and crashes with the misleading
+`error: could not execute process rustc -vV (never executed)
+Caused by: No such file or directory (os error 2)`. Keep the explicit
+exports if you change the args block.
 
 ## Endpoints
 
@@ -133,31 +149,65 @@ commit before the service is reachable.
 
 ## Operator setup checklist
 
-1. Add the `FORMAL_METHODS_GITHUB_WEBHOOK_SECRET` (required) and
-   `FORMAL_METHODS_GITHUB_TOKEN` (recommended; scope `repo:status` +
-   `pull_requests:read`) keys to the `dd-agent-secrets` Kubernetes
-   Secret via AWS Secrets Manager (see
-   [`../argocd/secrets/`](../argocd/secrets/)). The deployment reads them
-   via `secretKeyRef`.
-2. Edit the deployment env block at
+1. **Secrets in AWS.** Add the `FORMAL_METHODS_GITHUB_WEBHOOK_SECRET`
+   (required) and `FORMAL_METHODS_GITHUB_TOKEN` (recommended; scope
+   `repo:status` + `pull_requests:read`) keys to the AWS Secrets
+   Manager secret `dd/remote-dev/agent-secrets`. The
+   `ExternalSecret` at
+   [`../argocd/secrets/external-secrets.yaml`](../argocd/secrets/external-secrets.yaml)
+   syncs them into the `dd-agent-secrets` Kubernetes Secret every
+   15 min; the deployment reads them via `secretKeyRef`.
+2. **Tighten the allowlists.** Edit the deployment env block at
    [`k8s/ec2/dd-formal-methods-service.deployment.yaml`](./k8s/ec2/dd-formal-methods-service.deployment.yaml)
    so `FORMAL_METHODS_ALLOWED_REPOS` is set to your `owner/repo` (or
    `owner/*`) and `FORMAL_METHODS_PATH_PREFIXES` lists the directories
    that should gate the pipeline. The defaults are `*` (allow all) and
    empty (run on every PR) for first-touch convenience; tighten before
    exposing the webhook to the open internet.
-3. Apply the Argo CD `Application`:
+3. **Apply the Argo CD Application.** From a kubeconfig with cluster
+   admin:
    ```
    kubectl apply -f remote/argocd/apps/dd-formal-methods-service.application.yaml
    ```
    Argo CD then syncs the kustomization at
-   `remote/formal-methods-service-rs/k8s/ec2`.
-4. Pick **Option A or B** from the section above and configure the
+   `remote/formal-methods-service-rs/k8s/ec2` and the pod comes up as
+   `dd-formal-methods-service` in the `default` namespace. First cold
+   build of the release binary takes ~1 min on a 2-vCPU EC2 node;
+   restarts hit the warm `target/` cache and are sub-10s.
+4. **Verify internally** before exposing externally:
+   ```
+   kubectl -n default exec deploy/dd-formal-methods-service -- \
+     curl -sS http://127.0.0.1:8111/ready | jq .
+   ```
+   Expected: `status: ok`, all seven analyzers listed,
+   `github_token_configured: true`, repo allowlist and path filter
+   reflecting your env-var edits from step 2.
+5. **Expose externally** for GitHub. The service ships as a ClusterIP
+   only — to let GitHub reach the webhook you need an Ingress.
+   - Edit [`k8s/ec2/dd-formal-methods-service.ingress.yaml`](./k8s/ec2/dd-formal-methods-service.ingress.yaml):
+     replace `formal-methods.example.com` with your real host on both
+     the `tls.hosts` and `rules.host` lines. If you do not use
+     cert-manager, drop the `cert-manager.io/cluster-issuer`
+     annotation and pre-create the TLS secret named
+     `dd-formal-methods-service-tls` in the `default` namespace.
+   - Uncomment the ingress entry in
+     [`k8s/ec2/kustomization.yaml`](./k8s/ec2/kustomization.yaml).
+   - Add a DNS A/AAAA record for your host pointing at the
+     LoadBalancer/NLB fronting `ingress-nginx`. The cluster's per-thread
+     ingress pattern is documented in
+     [`../k8s/readme.md`](../k8s/readme.md#4-dns--tls); the same DNS
+     hop applies.
+   - `git commit && git push`; Argo CD syncs the Ingress within a
+     minute.
+6. **Pick Option A or B** from the section above and configure the
    consumer repo accordingly.
-5. In the consumer repo, mark the `STATUS_CONTEXT` value
-   (default `formal-methods/analysis`) as a required status check in
-   branch protection. Without that step the commit status is
-   informational only.
+   - The GitHub webhook URL is `https://<host>/webhook/github`.
+   - The `Secret` in the GitHub webhook form must match the value of
+     `FORMAL_METHODS_GITHUB_WEBHOOK_SECRET` from step 1 byte-for-byte.
+7. **Require the status check** in the consumer repo's
+   `Settings → Branches → <protected branch>`. The check name is the
+   `STATUS_CONTEXT` env value (default `formal-methods/analysis`).
+   Without this step the commit status is informational only.
 
 ## Environment variables
 
