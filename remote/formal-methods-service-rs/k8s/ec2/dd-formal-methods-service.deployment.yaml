@@ -44,12 +44,32 @@ spec:
                 apt-get install -y --no-install-recommends git
                 rm -rf /var/lib/apt/lists/*
               fi
+              # The rust:bookworm image ships rustup at /usr/local/rustup and
+              # a default toolchain at the image's RUST_VERSION. Setting both
+              # vars explicitly avoids rustup trying to re-bootstrap from
+              # network when HOME is redirected to a writable scratch dir.
+              export RUSTUP_HOME=/usr/local/rustup
+              export RUSTUP_TOOLCHAIN=${RUSTUP_TOOLCHAIN:-1.90.0}
               export CARGO_HOME=/var/cache/dd-formal-methods-service/cargo
               export CARGO_TARGET_DIR=/var/cache/dd-formal-methods-service/target
               export HOME=/tmp
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$FORMAL_METHODS_WORKDIR_ROOT"
+              echo "--- toolchain diagnostics ---"
+              /usr/local/cargo/bin/cargo --version
+              /usr/local/cargo/bin/rustc --version 2>&1 || true
+              ls /usr/local/rustup/toolchains/ 2>&1 || true
+              echo "------------------------------"
               cd /opt/dd-next-1/remote/formal-methods-service-rs
-              exec /usr/local/cargo/bin/cargo run --release
+              # First explicit `cargo check --locked` so a config / lockfile
+              # problem surfaces with a clear error before we tail-call into
+              # `cargo run`. The build cache hostPath persists across
+              # restarts, so subsequent restarts hit the warmed dep graph.
+              /usr/local/cargo/bin/cargo check --locked --quiet || {
+                echo "cargo check failed; printing recent target/debug/.. tree"
+                ls -la "$CARGO_TARGET_DIR" 2>&1 || true
+                exit 1
+              }
+              exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: HOME
               value: /tmp

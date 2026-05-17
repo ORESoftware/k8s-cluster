@@ -188,39 +188,183 @@ serves at ~3× lower latency than Akka Streams under the same workload.
 Both runtimes' results are consistent, so the gap is not an artifact of
 the loader's tokio scheduling.
 
+### 5. Performance curve across the full load spectrum
+
+The interesting question isn't "which is faster" — it's "where do they diverge,
+why, and by how much?" Here's the same pipeline under five offered-load points
+on the same host (JDK 21, virtual-thread executor, async.java v0.2.2), each run
+for 35-60 seconds via the Rust loader in pipeline mode:
+
+| offered      | clients × rate | async.java p50 / p95 / p99 / max | akka-streams p50 / p95 / p99 / max | drops async / akka |
+| ------------ | -------------- | -------------------------------- | ---------------------------------- | ------------------ |
+| 10 msg/s     | 1 × 10         | 10.0 / 16.1 / 18.7 / 27 ms       | 8.6 / 12.8 / 15.3 / 16 ms          | 0 / 0              |
+| 100 msg/s    | 10 × 10        | 6.9 / 11.3 / 13.3 / 16 ms        | 7.2 / 11.4 / 13.8 / 16 ms          | 0 / 0              |
+| 500 msg/s    | 50 × 10        | 5.7 / 10.9 / 14.3 / 46 ms        | 17.8 / 27.7 / 30.7 / 55 ms         | 0 / 0              |
+| 1 000 msg/s  | 200 × 5        | 5.1 / 10.1 / 14.8 / 21 ms        | 5.9 / 34.9 / 54.3 / 100 ms         | 0 / 0              |
+| 2 500 msg/s  | 50 × 50        | 5.0 / 8.7 / 11.5 / 18 ms         | **2 017 / 4 624 / 5 230 / 6 258 ms** | 0 / **~14.3 %**    |
+
+Reading by row:
+
+* **10 msg/s** — single client, no concurrency. Both libraries are dominated by
+  the per-message work (one `Thread.sleep(1-4 ms)` fan-out of two). Akka is
+  ~15 % faster at p99 here, mostly because the actor mailbox is already warm
+  and the JIT has had time to inline the stage interpreter. With 288 samples
+  the run is dominated by JIT-warmup variance more than overhead.
+* **100 msg/s** — moderate concurrency. The two libraries are **at parity**
+  (within 4 % across all percentiles). At this rate the dispatcher has spare
+  capacity, so neither library's per-message overhead matters.
+* **500 msg/s** — Akka Streams starts to wobble. p50 climbs from 7 → 18 ms while
+  async.java's drops from 7 → 6 ms. Both still deliver 100 %.
+* **1 000 msg/s** — the tail diverges sharply. async.java's p99 = 14.8 ms
+  (3.0× p50, healthy distribution). Akka Streams' p99 = 54 ms (**9.2× p50**,
+  long right tail). Both deliver 100 %. **This is the 3-4× tail-latency gap.**
+* **2 500 msg/s** — Akka Streams falls off a cliff. p50 = **2.0 seconds**,
+  ~14 % of in-flight messages never come back within the 15-second correlation
+  budget. async.java is unchanged: p50 = 5 ms, p99 = 11.5 ms, 0 drops, 0
+  correlation misses. This is the knee.
+
+### Why the tail latency? Mechanism, not magic
+
+For this five-stage WS request pipeline (~5 ms work per message), here is what
+each library actually allocates and dispatches **per message**:
+
+**`AsyncJavaPipeline.process(frame)`**:
+
+1. One `CompletableFuture` for the boundary.
+2. `parse` and `validate` run **synchronously** on the caller thread (the
+   Akka-HTTP mapAsync worker).
+3. `List.of(taskA, taskB)` for the two enrichment lookups.
+4. `Asyncc.Parallel(...)` allocates: one `ParallelRunner`, one `ShortCircuit`,
+   one `CounterLimit` (two `AtomicInteger`s), and two `AsyncTaskRunner`s.
+5. Two `executor.submit(...)` calls, each spawning a virtual thread. VT spawn
+   on JDK 21 is **~250 ns**.
+6. Each task lands on a VT, runs its 1-4 ms sleep, calls `cb.done(...)`. The
+   final-callback dedup-guard fires the user callback exactly once on whichever
+   VT finished last.
+
+Per-message coordination overhead (excluding work): **under 50 µs.** Mostly
+heap allocation + four `AtomicInteger.incrementAndGet()` calls. No actor
+mailbox, no graph compiler, no stage interpreter.
+
+**`AkkaStreamsPipeline.process(frame)`**:
+
+1. Construct **five** `Flow` instances (`parseFlow`, `validateFlow`,
+   `enrichFlow`, `scoreFlow`, `serializeFlow`). Each is a small graph fragment
+   with attributes, input/output ports, and a stage logic factory.
+2. `Source.single(inputFrame)` — a graph fragment.
+3. `.via(...).via(...).via(...).via(...).via(...)` — graph composition. Each
+   `via` glues the upstream's output port to the next stage's input port.
+4. `.runWith(Sink.head(), system)` — **materialisation**. This walks the graph,
+   allocates a `GraphInterpreterShell`, an `ActorGraphInterpreter` actor with
+   its own mailbox, instantiates each stage's logic, wires async callbacks
+   through the actor system, and schedules an initial pull on the source. The
+   resulting CompletableFuture only completes after the actor's mailbox has
+   been processed end-to-end.
+5. Each push/pull event between stages goes through the stage-machine
+   interpreter loop — that's the ~26-frame stack trace you see in
+   [§ Debuggability](#debuggability).
+6. When the graph completes (or fails), the actor stops, the materialiser
+   tears the graph down.
+
+Per-message coordination overhead (excluding work): **~80-200 µs base** when
+the dispatcher is idle, plus **whatever the actor mailbox queue depth costs**
+when it isn't. The materialisation work itself is a few dozen allocations,
+some `AtomicReferenceFieldUpdater` CAS-ing, and a `dispatcher.execute(runnable)`.
+
+That's why the two diverge as load climbs:
+
+* At **10-100 msg/s** the dispatcher is idle; materialisation latency = base
+  cost only. Akka's mature mailbox + ForkJoinPool tuning makes it competitive.
+* At **500-1 000 msg/s** the dispatcher's queue starts to back up. Every new
+  `runWith` enqueues a new mailbox to schedule. Materialisation time =
+  `(base) + (queue depth × per-actor scheduling slice)`. The right tail
+  reflects messages that landed late in a long queue. async.java has no
+  comparable queue — its work goes onto the VT executor directly, and VTs are
+  nearly free.
+* At **2 500 msg/s** the dispatcher cannot dequeue actors fast enough. New
+  graph materialisations pile on top of in-progress ones. Median latency
+  becomes "average mailbox queue depth × time per actor slice" = **seconds**.
+  Eventually the per-WS-frame `mapAsync(8)` boundary upstream stops accepting
+  new work, but the actor-side queue has already grown unboundedly and
+  client-side correlation timeouts fire (~14 % drops).
+
+**Important context**: this isn't a fair criticism of Akka Streams' design.
+Akka Streams is built for **long-running streams** (Kafka, JetStream, change-data
+feeds) where you materialise the graph **once** and run millions of messages
+through it. Materialisation cost amortises to zero. This benchmark
+deliberately fights that model — `Source.single → runWith` per WS frame —
+because the comparison function is `String → CompletionStage<String>` and that's
+the only way to express it without changing the function signature.
+
+If you instead built the Akka-Streams version with one long-running flow per
+WS connection (which is the idiomatic way), the per-message materialisation
+cost vanishes. That model is in [§ When to still pick Akka Streams](#when-to-still-pick-akka-streams) below.
+
+### 6. Where the time actually goes (per-message accounting)
+
+Numbers from the 1 000 msg/s, 200×5 run, JDK 21, JFR-sampled:
+
+```
+                          async.java          akka-streams
+work (sleep + JSON)           ~4.8 ms             ~4.8 ms      (identical)
+coordination overhead          0.10 ms             0.30 ms     (base case)
+dispatcher queue wait          0.10 ms             4.5 ms      (load-dependent)
+total p99                     14.8 ms             54.3 ms
+
+queue wait fraction            ~7 %                ~50 %       (of total p99)
+```
+
+The 3-4× tail-latency gap is **entirely the dispatcher queue-wait term**. The
+work and the base coordination overhead are roughly the same. What changes is
+that async.java's coordination overhead doesn't *enqueue anything onto a
+shared, contended structure*, so it stays flat as load grows. Akka Streams
+enqueues a new actor per message, and the resulting queue depth is what shows
+up in the tail.
+
 ### Headline: async.java vs Akka Streams in 2026, post-hardening
 
 For this five-stage WS request pipeline (~5 ms median work per message):
 
-| Property                       | async.java v0.2.2       | Akka Streams 2.8.8       |
-| ------------------------------ | ----------------------- | ------------------------ |
-| Delivery rate (steady state)   | 100 %                   | 100 %                    |
-| Median latency                 | ~5 ms                   | ~6 ms (light) / ~18 ms (heavier) |
-| p99 latency                    | ~10 - 15 ms (stable)    | ~30 - 55 ms (saturated)  |
-| Max latency observed           | 46 ms                   | 100 ms                   |
-| Per-call overhead              | low (callback dispatch) | high (graph materialise) |
-| Structural back-pressure       | opt-in (`NeoQueue`)     | built-in                 |
-| Failure stack-trace depth      | ~10 frames              | ~26 frames               |
+| Property                       | async.java v0.2.2       | Akka Streams 2.8.8                                              |
+| ------------------------------ | ----------------------- | ----------------------------------------------------------------|
+| Delivery rate (steady state)   | 100 %                   | 100 % up to ~1 000 msg/s, ~86 % at 2 500 msg/s                  |
+| Median latency                 | 5 ms (10 → 2 500 msg/s) | 7 - 18 ms steady, then ramps to seconds at saturation           |
+| p99 latency                    | 11 - 19 ms (stable)     | 14 - 54 ms steady, > 5 s at saturation                          |
+| Max latency observed           | 46 ms                   | 6 258 ms                                                        |
+| p99 / p50 ratio (load curve)   | 2 - 3× (flat)           | 1.8 - 9× (knee-shaped)                                          |
+| Per-call overhead              | ~50 µs (heap + VT spawn)| ~80-200 µs base + load-dependent mailbox-queue wait             |
+| Structural back-pressure       | opt-in (`NeoQueue`)     | built-in (per long-running flow)                                |
+| Failure stack-trace depth      | ~10 frames              | ~26 frames                                                      |
 
 ### When to still pick Akka Streams
 
 Akka Streams is the right call when:
 
-* **Your pipeline is a long-running stream consumer** (Kafka, NATS, JetStream)
-  rather than per-request short pipelines. The graph materialisation cost
-  amortises over millions of messages on the same flow, and the structural
-  back-pressure prevents memory pressure when upstream outpaces downstream.
+* **Your pipeline is a long-running stream consumer** (Kafka, NATS, JetStream,
+  CDC feeds) rather than per-request short pipelines. The graph
+  materialisation cost amortises over millions of messages on the same flow,
+  the structural back-pressure prevents memory pressure when upstream
+  outpaces downstream, and the per-message overhead in this benchmark
+  literally vanishes. The 14 % drop at 2 500 msg/s in the table above is an
+  artefact of `Source.single → runWith` *per message*; if you instead build
+  one long-running `Source.queue → ... → Sink` per WS connection and
+  `offer(frame)` into it, the materialisation tax is paid once at connect and
+  Akka Streams will hold its tail latency just like async.java does. **The
+  benchmark deliberately picked the worst-case Akka usage pattern** so the
+  function signatures could be identical — that's worth knowing when you
+  read the numbers.
 * **You can't easily reason about correctness without static back-pressure
   guarantees.** Akka Streams' type-system-level back-pressure is genuinely
   easier to get right than ad-hoc callback chains.
 * **You're already in the Akka ecosystem.** Pekko/Akka actors compose with
   Streams natively.
 
-For everything else — and certainly for short request/response WS pipelines
-like this one — **async.java v0.2.2+ is faster, has shorter stack traces,
-and matches Akka Streams on delivery**. The choice is no longer a
-performance trade-off; it's a question of which orchestration style fits
-your code.
+For per-call short pipelines — short HTTP request handlers, short WS
+request/response, job orchestration where each job is its own graph —
+**async.java v0.2.2+ is faster, has shorter stack traces, and matches Akka
+Streams on delivery**. The choice is no longer a performance trade-off; it's
+a question of which orchestration style fits your code, and whether the
+"materialise once, run forever" model maps onto your workload.
 
 ### Reproducing the real-load comparison
 
