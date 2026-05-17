@@ -27,6 +27,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   const externalSecret = await readRepoFile(
     'remote/argocd/vpn/dd-vpn-secrets.externalsecret.yaml',
   );
+  const persistentVolume = await readRepoFile('remote/argocd/vpn/dd-vpn.pv.yaml');
   const deployment = await readRepoFile('remote/argocd/vpn/dd-vpn.deployment.yaml');
   const service = await readRepoFile('remote/argocd/vpn/dd-vpn-ui.service.yaml');
   const networkPolicy = await readRepoFile('remote/argocd/vpn/dd-vpn.networkpolicy.yaml');
@@ -42,6 +43,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
     'dd-vpn.serviceaccount.yaml',
     'dd-vpn.configmap.yaml',
     'dd-vpn-secrets.externalsecret.yaml',
+    'dd-vpn.pv.yaml',
     'dd-vpn.pvc.yaml',
     'dd-vpn.deployment.yaml',
     'dd-vpn-ui.service.yaml',
@@ -60,6 +62,12 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   assert.match(externalSecret, /kind:\s*ExternalSecret/);
   assert.match(externalSecret, /name:\s*dd-vpn-secrets/);
   assert.match(externalSecret, /key:\s*dd\/remote-dev\/vpn-secrets/);
+
+  assert.match(persistentVolume, /kind:\s*PersistentVolume/);
+  assert.match(persistentVolume, /name:\s*dd-vpn-config/);
+  assert.match(persistentVolume, /persistentVolumeReclaimPolicy:\s*Retain/);
+  assert.match(persistentVolume, /claimRef:[\s\S]*namespace:\s*vpn[\s\S]*name:\s*dd-vpn-config/);
+  assert.match(persistentVolume, /path:\s*\/home\/ec2-user\/dd-vpn-config/);
 
   assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
   assert.match(deployment, /image:\s*ghcr\.io\/wg-easy\/wg-easy:15/);
