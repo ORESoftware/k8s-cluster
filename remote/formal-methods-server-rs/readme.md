@@ -237,6 +237,301 @@ non-comment line ends the unit. The plain-source heuristic checks
 fire when every identifier inside the `if (...)` guard is already declared
 via `@var` somewhere in the file.
 
+## Practical examples: real-world functions with data and I/O
+
+Most production functions don't *only* do math — they transform records, hit
+databases, call HTTP services, and update process state. The DSL is still
+just `Int` / `Real` / `Bool` plus arithmetic and booleans (deliberately small,
+so a single Z3 query is microseconds, not seconds). The recipe for the
+non-math case is always the same:
+
+> Use **ghost variables**. Declare a `@var` for each value of interest
+> (an input field, a read-back DB column, a computed intermediate, an
+> aggregate over a list, an I/O return value). Capture the relationships
+> you care about with `@assume`, and prove the high-level property with
+> `@ensures` / `@assert`. The server checks that the *logical layer* is
+> consistent; your test suite checks that the code matches the
+> `@assume`d behaviour.
+
+In other words: the FM layer reasons over a small **algebraic projection**
+of your function. I/O calls are opaque, but their *results* — "the row that
+came back has these fields", "the request body had this size", "this side
+effect produced this delta" — are perfectly fine as `@assume`s.
+
+### Node.js / NestJS
+
+A pure data transformation in a NestJS service:
+
+```ts
+// @var item_count: Int
+// @var unit_price: Int             // cents
+// @var discount_bps: Int           // 0..10000
+// @var subtotal: Int
+// @var discount: Int
+// @var total: Int
+//
+// @requires item_count > 0
+// @requires unit_price > 0
+// @requires discount_bps >= 0 && discount_bps <= 10000
+// @assume subtotal == item_count * unit_price
+// @assume discount == (subtotal * discount_bps) / 10000
+// @assume total == subtotal - discount
+//
+// @ensures total >= 0
+// @ensures total <= subtotal
+// @ensures (subtotal - total) == discount
+@Injectable()
+export class PricingService {
+  computeTotal(itemCount: number, unitPrice: number, discountBps: number): number {
+    const subtotal = itemCount * unitPrice;
+    const discount = Math.floor((subtotal * discountBps) / 10000);
+    return subtotal - discount;
+  }
+}
+```
+
+The same pattern when there is real I/O. The `await` calls are opaque to
+the analyser, but we *model the observed values* (`balance_before` after
+the read, `balance_after` after the write) as ghost vars, and capture the
+DB-level invariant as an `@assume`:
+
+```ts
+// @var requested: Int
+// @var balance_before: Int          // observed value of users.balance read
+// @var balance_after: Int           // value we will write back
+//
+// @requires requested > 0
+// @assume balance_before >= 0       // schema invariant on users.balance
+// @requires balance_before >= requested
+// @assume balance_after == balance_before - requested
+//
+// @ensures balance_after >= 0
+// @ensures balance_after < balance_before
+async withdraw(userId: number, requested: number): Promise<number> {
+  const user = await this.users.findOneOrFail({ where: { id: userId } });
+  if (user.balance < requested) throw new ForbiddenException('insufficient');
+  user.balance -= requested;
+  await this.users.save(user);
+  return user.balance;
+}
+```
+
+`balance_before >= 0` is an `@assume`, not an `@ensures` — we are claiming
+"*if* the DB column is non-negative (which the schema and migrations
+enforce), then this function preserves that invariant". The non-negativity
+of the column itself is the database's job; ours is to prove we never
+violate it.
+
+### Rust
+
+A pure widening split (the kind of math that already bit at least one
+Solana AMM):
+
+```rust
+// @var total: Int
+// @var split_bps: Int           // 0..10000
+// @var part_a: Int
+// @var part_b: Int
+//
+// @requires total >= 0
+// @requires split_bps >= 0 && split_bps <= 10000
+// @assume part_a == (total * split_bps) / 10000
+// @assume part_b == total - part_a
+//
+// @ensures part_a + part_b == total
+// @ensures part_a >= 0 && part_b >= 0
+// @ensures part_a <= total && part_b <= total
+pub fn split(total: u64, split_bps: u16) -> (u64, u64) {
+    let part_a = ((total as u128 * split_bps as u128) / 10_000) as u64;
+    (part_a, total - part_a)
+}
+```
+
+I/O-bound: a capped read on a `tokio::TcpStream`. The actual `.read(...)`
+is opaque, but we constrain the **return-value semantics** by introducing
+`bytes_read` as a ghost variable:
+
+```rust
+// @var buf_capacity: Int
+// @var max_allowed: Int
+// @var bytes_read: Int
+//
+// @requires buf_capacity > 0
+// @requires max_allowed > 0
+// @requires max_allowed <= buf_capacity
+// @assume bytes_read >= 0
+// @assume bytes_read <= max_allowed
+//
+// @ensures bytes_read <= buf_capacity
+// @ensures bytes_read <= max_allowed
+pub async fn read_capped(
+    stream: &mut tokio::net::TcpStream,
+    buf: &mut [u8],
+    max_allowed: usize,
+) -> std::io::Result<usize> {
+    let cap = buf.len().min(max_allowed);
+    stream.read(&mut buf[..cap]).await
+}
+```
+
+### Elixir
+
+A `GenServer` state transition with a fee:
+
+```elixir
+# @var balance_before: Int
+# @var balance_after: Int
+# @var amount: Int
+# @var fee: Int
+#
+# @requires amount > 0
+# @requires fee >= 0
+# @requires fee < amount
+# @requires balance_before >= amount
+# @assume balance_after == balance_before - amount
+#
+# @ensures balance_after >= 0
+# @ensures balance_after < balance_before
+# @ensures (balance_before - balance_after) == amount
+def handle_call({:withdraw, amount, fee}, _from, %{balance: balance} = state) do
+  cond do
+    amount <= fee -> {:reply, {:error, :fee_too_high}, state}
+    balance < amount -> {:reply, {:error, :insufficient}, state}
+    true ->
+      new_balance = balance - amount
+      {:reply, {:ok, new_balance}, %{state | balance: new_balance}}
+  end
+end
+```
+
+A Phoenix-style rate limiter — `tokens_before` and `elapsed_ms` come from
+I/O (the system clock and the persisted bucket), and we model the refill
++ admit decision as ghost-variable algebra:
+
+```elixir
+# @var tokens_before: Int
+# @var refill_per_sec: Int
+# @var elapsed_ms: Int
+# @var max_tokens: Int
+# @var refilled: Int
+# @var tokens_after: Int
+# @var cost: Int
+#
+# @requires tokens_before >= 0
+# @requires max_tokens >= tokens_before
+# @requires refill_per_sec >= 0
+# @requires elapsed_ms >= 0
+# @requires cost > 0
+# @assume refilled == tokens_before + (refill_per_sec * elapsed_ms) / 1000
+# @assume tokens_after == min(refilled, max_tokens)
+#
+# @ensures tokens_after >= tokens_before
+# @ensures tokens_after <= max_tokens
+# @ensures refilled >= tokens_before
+def refill(bucket, elapsed_ms) do
+  refilled = bucket.tokens + div(bucket.rate * elapsed_ms, 1000)
+  %{bucket | tokens: min(refilled, bucket.max)}
+end
+```
+
+### Aggregates: lists, maps, batches
+
+You don't reason over a list by spelling out every element — you reason
+over its *aggregates*. Typical ghost variables for a collection:
+
+- `count` — `Enum.count`, `.length`, `.size`.
+- `sum`, `min`, `max` over a numeric field.
+- `is_sorted` (`Bool`) — taken as an `@assume` from the producer, used as
+  an invariant downstream.
+- `is_non_empty` (`Bool`).
+
+The same `count > 0 ⇒ sum / count > 0` style invariants then drop straight
+into `@ensures` without ever modelling the list literal.
+
+### Where the FM layer ends and tests begin
+
+`@assume balance_after == balance_before - requested` is a *claim about the
+code below*. The server checks the logical layer holds *given* the claim;
+your test suite is what makes sure the claim is true. The division of
+labour is intentional:
+
+- The `@assume`s are usually small, mechanical, almost-obvious
+  restatements of what the body does. Drift between code and assume is
+  caught by ordinary unit tests, because a unit test exercising
+  `withdraw(100, 30)` and checking the resulting balance is exactly
+  testing `balance_after == balance_before - 30`.
+- The `@ensures` are usually the cross-cutting business invariant — the
+  thing nobody wrote a unit test for because "obviously it can't go
+  negative". This is the layer SMT shines at: it does not care about
+  finitely many inputs; it asks *"does any value exist that falsifies
+  this?"* and produces one if so.
+
+## Why we don't piggyback on the host type system (and what to use when you want to)
+
+Your instinct — that the strongest formal-methods layer is one *fused* with
+the type system — is correct, and it is exactly what the deepest verification
+research has converged on:
+
+| Approach                                       | Language                          | What lives in the type                                                            |
+| ---------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------- |
+| Refinement types                               | [LiquidHaskell][lh] / [Flux][flux] for Rust | `i32{v: 0 <= v && v < 100}` is a type the compiler checks at every use site. |
+| Dependent types                                | Idris, Lean 4, Agda, Coq          | `Vec n A` literally encodes the length in the type.                               |
+| Behavioural specs as annotations               | Dafny, [Why3][why3], Frama-C, [Prusti][prusti], [Creusot][creusot] | `requires` / `ensures` in a dedicated annotation language tied to the compiler.   |
+| F* / Lean tactics                              | F\*, Lean                         | The proof itself is a program.                                                    |
+
+[lh]: https://ucsd-progsys.github.io/liquidhaskell/
+[flux]: https://flux-rs.github.io/flux/
+[why3]: https://why3.lri.fr/
+[prusti]: https://www.pm.inf.ethz.ch/research/prusti.html
+[creusot]: https://github.com/creusot-rs/creusot
+
+The hard problem is that **none of these are available in the standard
+toolchain of the languages most production code is written in**: TypeScript,
+Rust (stable), Go, Python, Java, Kotlin, Swift, Elixir, C++. Adding them
+requires a compiler plugin or a dialect, and adopting them is a per-language
+commitment.
+
+`dd-formal-methods-server` deliberately picks the *other* side of that
+trade-off:
+
+1. **Comments are universal.** The same DSL works on a Rust crate, a
+   NestJS service, an Elixir GenServer, a Bash deploy script, and a YAML
+   policy — anything with line comments. One CI job; one PR check.
+2. **Refactor-safe.** Rename `subtotal` to `pre_tax_total` and only the
+   annotation block needs updating. The Z3 query is built from comments,
+   not from a re-parse of the host language.
+3. **Cheap.** Hundreds of milliseconds per PR for a typical service,
+   because each query is `Int`/`Real`/`Bool` first-order arithmetic — the
+   easy fragment for Z3.
+
+What you lose, and how to recover it:
+
+- **Tight binding to real types.** If the codebase already uses a
+  refinement-typed language (Flux for Rust, LiquidHaskell), use that for
+  shape *and* behaviour, and use this server only for cross-cutting
+  invariants that span functions/services.
+- **Aliasing, ownership, side-effect tracking.** For *real* Rust Hoare-style
+  proofs over `&mut self`, use [Prusti][prusti] or [Creusot][creusot]
+  alongside this server. They understand Rust ownership; we don't.
+- **Panic / overflow / bounds in actual code paths.** For Rust, run
+  [Kani][kani] (CBMC-backed bounded model checker) on `#[kani::proof]`
+  harnesses. It will literally search the state space of your real code.
+
+[kani]: https://model-checking.github.io/kani/
+
+**The recommended stratification** (and what large verified systems like
+seL4, IronFleet, and Project Everest all do in some form):
+
+1. Compile-time **types** describe *shape* — what values inhabit a type.
+2. Comment-based **specs** (this server) describe *behaviour* — invariants
+   that span steps, conservation laws, monotonicity, bounded outputs.
+3. A heavier **verifier** (Prusti / Kani / Flux / Certora / Dafny)
+   describes *implementation* — that the body actually realises the spec.
+
+Layer 1 is free. Layer 2 (us) is what runs on every PR. Layer 3 is what
+runs before a release that matters. The three layers don't replace each
+other; they catch different bugs.
+
 ## HTTP API
 
 | Method | Path                                       | Auth header           | Purpose                                                       |

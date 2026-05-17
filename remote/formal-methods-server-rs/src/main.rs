@@ -1075,6 +1075,16 @@ fn parse_annotations(file: &str, content: &str) -> ParsedSource {
                 }),
                 _ => {}
             }
+        } else if comment.is_some() {
+            // A comment line with no @-directive (a blank `//`, a `// some prose`,
+            // a `# ----`, etc.) does NOT close the current annotation block — it
+            // is part of the same visual span. Only a non-comment line ends the
+            // block.
+            if let Some(block) = current.as_mut() {
+                block.end_line = line_no;
+            } else {
+                plain_lines.push((line_no, line.to_string()));
+            }
         } else {
             if let Some(block) = current.take() {
                 blocks.push(block);
@@ -3518,6 +3528,39 @@ mod tests {
         let expr = parse_expr("min(a, max(b, c)) > abs(d)").unwrap();
         let smt = expr_to_smt(&expr).unwrap();
         assert!(smt.contains("ite"));
+    }
+
+    #[test]
+    fn annotation_extractor_keeps_block_across_blank_comment_lines() {
+        let src = "\
+// @var x: Int
+// @requires x > 0
+// @assume x < 100
+//
+// @ensures x + 1 > 0
+fn f(x: i64) -> i64 { x + 1 }
+";
+        let parsed = parse_annotations("t.rs", src);
+        assert_eq!(parsed.blocks.len(), 1, "blank `//` must not split a block");
+        let block = &parsed.blocks[0];
+        assert_eq!(block.decls.len(), 1);
+        assert_eq!(block.requires.len(), 1);
+        assert_eq!(block.assumes.len(), 1);
+        assert_eq!(block.ensures.len(), 1);
+    }
+
+    #[test]
+    fn annotation_extractor_keeps_block_across_prose_comment_lines() {
+        let src = "\
+// @var x: Int
+// @requires x > 0
+// Some explanatory prose between requires and ensures.
+// @ensures x + 1 > 0
+fn f(x: i64) -> i64 { x + 1 }
+";
+        let parsed = parse_annotations("t.rs", src);
+        assert_eq!(parsed.blocks.len(), 1);
+        assert_eq!(parsed.blocks[0].ensures.len(), 1);
     }
 
     #[test]
