@@ -47,6 +47,12 @@ spec:
               fi
               cd /opt/dd-next-1/remote/gleam-lambda-runner
               gleam deps download
+              gleam build
+              if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
+                mkdir -p build/dev/erlang/hpack/ebin
+                erlc -o build/dev/erlang/hpack/ebin build/dev/erlang/hpack/src/*.erl
+                cp build/dev/erlang/hpack/src/hpack.app.src build/dev/erlang/hpack/ebin/hpack.app
+              fi
               exec gleam run
           env:
             - name: HOST

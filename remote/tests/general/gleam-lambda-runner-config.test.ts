@@ -256,6 +256,9 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   assert.match(ec2Deployment, /rebar3/);
   assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
   assert.match(ec2Deployment, /gleam deps download/);
+  assert.match(ec2Deployment, /gleam build/);
+  assert.match(ec2Deployment, /hpack\.app/);
+  assert.match(ec2Deployment, /erlc -o build\/dev\/erlang\/hpack\/ebin/);
   assert.match(ec2Deployment, /containerPort:\s*8083/);
   assert.match(ec2Deployment, /requests:[\s\S]*memory:\s*512Mi/);
   assert.match(ec2Deployment, /limits:[\s\S]*memory:\s*4Gi/);
