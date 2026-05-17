@@ -62,6 +62,10 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   assert.match(externalSecret, /kind:\s*ExternalSecret/);
   assert.match(externalSecret, /name:\s*dd-vpn-secrets/);
   assert.match(externalSecret, /key:\s*dd\/remote-dev\/vpn-secrets/);
+  assert.match(externalSecret, /deletionPolicy:\s*Retain/);
+  assert.match(externalSecret, /conversionStrategy:\s*Default/);
+  assert.match(externalSecret, /decodingStrategy:\s*None/);
+  assert.match(externalSecret, /metadataPolicy:\s*None/);
 
   assert.match(persistentVolume, /kind:\s*PersistentVolume/);
   assert.match(persistentVolume, /name:\s*dd-vpn-config/);
