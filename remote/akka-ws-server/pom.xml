@@ -44,19 +44,27 @@
         <akka.http.version>10.5.3</akka.http.version>
 
         <!--
-          Pinned to the head of async-java/async.java fix/vt-pinning-investigation
-          (PR #9), which fixes a CounterLimit lost-update data race that hung
-          Asyncc.Parallel under sustained rapid-fire virtual-thread load.
-          See: https://github.com/async-java/async.java/pull/9
+          v0.2.2 of async-java/async.java served via JitPack. Brings:
+            - PR #8  : daemon-thread NeoQueue executor, NeoLock thread-safety,
+                       modernised pom, Central Portal publishing config, JitPack,
+                       LICENSE, Loom-aware readme.
+            - PR #9  : CounterLimit lost-update race fix (Asyncc.Parallel hung after
+                       a few dozen sequential iterations on JDK 21).
+            - PR #10 : NeoParallel.Parallel(List, callback) double-fire fix (the
+                       ~5% message drop in this server's WS load test).
+            - v0.2.1 : NeoReduce defensive fireFinalCallback routing + MisuseTest
+                       (12 adversarial / user-misuse scenarios pinned).
+            - v0.2.2 : NeoParallel/NeoMap slot-write-before-counter-increment fix
+                       (was publishing null entries at the last-finishing index
+                       under 1 000-task fan-out), plus Unlock made public so
+                       NeoLock is actually usable from outside org.ores.async.
 
-          Earlier rev (937c0e3, post-#8) had the same race and is what triggered
-          the BENCHMARK_ITERATIONS=30 workaround we removed in this same commit.
-
-          When PR #9 merges to master, bump this to the merge SHA. When
-          io.github.async-java:async-java:0.2.0 publishes to Maven Central, switch
-          to that stable coordinate.
+          When io.github.async-java:async-java:0.2.2 lands on Maven Central
+          proper, switch this property to that stable coordinate. Until then
+          the JitPack `com.github.async-java:async.java:v0.2.2` coordinate is the
+          authoritative release artifact.
         -->
-        <async-java.version>f823320</async-java.version>
+        <async-java.version>v0.2.2</async-java.version>
         <jackson.version>2.17.2</jackson.version>
         <logback.version>1.5.6</logback.version>
         <slf4j.version>2.0.13</slf4j.version>

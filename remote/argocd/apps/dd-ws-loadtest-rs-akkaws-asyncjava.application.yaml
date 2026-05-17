@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-ws-loadtest-rs-akkaws-asyncjava
+  namespace: argocd
+  labels:
+    role: loadtest
+    target: dd-akka-ws-server
+    pipeline: asyncjava
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/ws-loadtest-rs/k8s/akkaws-asyncjava
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

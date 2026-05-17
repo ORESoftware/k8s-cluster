@@ -221,25 +221,57 @@ vars work for the Gleam loadtest (`remote/gleamlang-ws-loadtest/`).
 
 ### In-cluster
 
-`dd-ws-loadtest-rs` and `dd-ws-loadtest-gleam` are already deployed as
-Argo CD Applications, currently targeting `dd-gleamlang-server` for
-WS-capacity stress testing. To repoint at the akka-ws-server temporarily,
-override the env via `kubectl`:
+Four dedicated Argo CD applications drive both endpoints in pipeline
+mode continuously from inside the cluster, alongside the existing
+`dd-ws-loadtest-rs` / `dd-ws-loadtest-gleam` apps that keep doing the
+older capacity-style stress test against `dd-gleamlang-server`:
+
+| Application                                              | Loadtest    | Endpoint              |
+| -------------------------------------------------------- | ----------- | --------------------- |
+| `dd-ws-loadtest-rs-akkaws-asyncjava`                     | Rust        | `/ws/asyncjava`       |
+| `dd-ws-loadtest-rs-akkaws-akkastreams`                   | Rust        | `/ws/akkastreams`     |
+| `dd-gleamlang-ws-loadtest-akkaws-asyncjava`              | Gleam/Node  | `/ws/asyncjava`       |
+| `dd-gleamlang-ws-loadtest-akkaws-akkastreams`            | Gleam/Node  | `/ws/akkastreams`     |
+
+Each runs 50 clients × 10 msg/sec (500 msg/sec offered) for an hour at a
+time, reconnecting on `HOLD_SECONDS` boundaries. Manifests live under
+`remote/ws-loadtest-rs/k8s/akkaws-{asyncjava,akkastreams}/` and
+`remote/gleamlang-ws-loadtest/k8s/akkaws-{asyncjava,akkastreams}/`; the
+Argo CD apps live at `remote/argocd/apps/dd-{ws,gleamlang-ws}-loadtest*-akkaws-*.application.yaml`.
+
+To compare:
 
 ```bash
-kubectl set env deployment/dd-ws-loadtest-rs \
-    LOAD_MODE=pipeline \
-    CLIENT_COUNT=50 \
-    MESSAGES_PER_SECOND_PER_CLIENT=10 \
-    TARGET_WS_URL=ws://dd-akka-ws-server.default.svc.cluster.local:8086/ws/asyncjava \
-    HOLD_SECONDS=300
+# Watch the rolling pipeline-report from each loadtest pod.
+kubectl logs -f deployment/dd-ws-loadtest-rs-akkaws-asyncjava
+kubectl logs -f deployment/dd-ws-loadtest-rs-akkaws-akkastreams
+kubectl logs -f deployment/dd-gleamlang-ws-loadtest-akkaws-asyncjava
+kubectl logs -f deployment/dd-gleamlang-ws-loadtest-akkaws-akkastreams
 ```
 
-Then `kubectl logs -f deployment/dd-ws-loadtest-rs` for the rolling
-`pipeline-report` lines. Repeat with the `/ws/akkastreams` URL for the
-B-side. When done, restore the original target via
-`kubectl rollout undo` so Argo CD doesn't see a permanent drift from the
-manifest.
+The `pipeline-report` log lines emit the same shape from every loadtest:
+
+```
+pipeline-report attempted=… connected=… failed=… open=… sent=… received=…
+                in_flight=… correlation_misses=… receive_errors=…
+                p50_us=… p95_us=… p99_us=… max_us=… mean_us=… sample=…
+```
+
+so diffing the four streams is straightforward.
+
+To pause the comparison loadtests without removing the apps, scale them
+to zero replicas:
+
+```bash
+for app in dd-ws-loadtest-rs-akkaws-asyncjava dd-ws-loadtest-rs-akkaws-akkastreams \
+           dd-gleamlang-ws-loadtest-akkaws-asyncjava dd-gleamlang-ws-loadtest-akkaws-akkastreams; do
+    kubectl scale deployment/$app --replicas=0
+done
+```
+
+Argo CD will see this as drift (since the manifest declares
+`replicas: 1`) and re-up them on the next reconcile, so for a long
+pause prefer editing the manifest in this repo and pushing.
 
 **Read**: for short, simple pipelines where each request lives ~5ms, async.java
 wins by ~25%. The reason is **fixed setup cost per request**. Akka Streams

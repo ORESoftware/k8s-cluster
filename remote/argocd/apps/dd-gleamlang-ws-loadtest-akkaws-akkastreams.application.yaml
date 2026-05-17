@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-gleamlang-ws-loadtest-akkaws-akkastreams
+  namespace: argocd
+  labels:
+    role: loadtest
+    target: dd-akka-ws-server
+    pipeline: akkastreams
+    runtime: gleam-js
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/gleamlang-ws-loadtest/k8s/akkaws-akkastreams
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
