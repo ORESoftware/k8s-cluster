@@ -30,9 +30,11 @@ let Argo sync them; the manual GitHub Actions workflow only refreshes the curren
 
 ## Live-Mutex broker
 
-`dd-live-mutex` runs the upstream Docker Hub broker image documented by
-`ORESoftware/live-mutex`: `docker.io/oresoftware/live-mutex-broker:latest`. The Deployment keeps
-`imagePullPolicy: Always` so a restart pulls the current upstream `latest` tag.
+`dd-live-mutex` runs the published `live-mutex@0.2.25` package from
+`docker.io/library/node:22-bookworm-slim` and starts the package-provided `lmx_start_server`
+broker on port `6970`. The upstream project does not currently publish a
+`docker.io/oresoftware/live-mutex-broker:latest` image, so the Deployment avoids that missing image
+reference.
 
 The broker is exposed only inside the cluster at `dd-live-mutex.default.svc.cluster.local:6970`.
 Live-Mutex is a single-source-of-truth broker, so this workload intentionally stays at

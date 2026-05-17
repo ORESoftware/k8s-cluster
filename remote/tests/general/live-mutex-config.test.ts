@@ -30,8 +30,10 @@ test('live-mutex broker is deployed as a singleton cluster-local TCP service', a
   assert.match(deployment, /name:\s*dd-live-mutex/);
   assert.match(deployment, /replicas:\s*1/);
   assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
-  assert.match(deployment, /docker\.io\/oresoftware\/live-mutex-broker:latest/);
-  assert.match(deployment, /imagePullPolicy:\s*Always/);
+  assert.match(deployment, /docker\.io\/library\/node:22-bookworm-slim/);
+  assert.match(deployment, /imagePullPolicy:\s*IfNotPresent/);
+  assert.match(deployment, /npm install --global --omit=dev --ignore-scripts live-mutex@0\.2\.25/);
+  assert.match(deployment, /live_mutex_host=0\.0\.0\.0 live_mutex_port=6970 lmx_start_server/);
   assert.match(deployment, /name:\s*lmx[\s\S]*containerPort:\s*6970/);
   assert.match(deployment, /startupProbe:[\s\S]*tcpSocket:[\s\S]*port:\s*lmx/);
   assert.match(deployment, /readinessProbe:[\s\S]*tcpSocket:[\s\S]*port:\s*lmx/);

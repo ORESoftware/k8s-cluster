@@ -41,6 +41,9 @@ test('redis cache is deployed as an ephemeral cluster-local service', async () =
   assert.match(deployment, /readinessProbe:[\s\S]*redis-cli[\s\S]*ping/);
   assert.match(deployment, /livenessProbe:[\s\S]*redis-cli[\s\S]*ping/);
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
+  assert.match(deployment, /runAsNonRoot:\s*true/);
+  assert.match(deployment, /runAsUser:\s*999/);
+  assert.match(deployment, /runAsGroup:\s*999/);
   assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(deployment, /seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
   assert.match(service, /name:\s*dd-redis-cache/);
