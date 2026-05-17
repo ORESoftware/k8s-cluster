@@ -238,6 +238,7 @@ work="/tmp/dd-gleam-lambda-it-$run_id"
 repo="$work/repo"
 pg_name="dd-lambda-it-pg-$run_id"
 runner_name="dd-lambda-it-runner-$run_id"
+auth_secret="dd-gleam-lambda-it-$run_id"
 node_image=${shellQuote(nodeImage)}
 python_image=${shellQuote(pythonImage)}
 ruby_image=${shellQuote(rubyImage)}
@@ -366,6 +367,8 @@ spec:
       env:
         - name: LAMBDA_DATABASE_URL
           value: postgres://postgres:postgres@$pg_name.default.svc.cluster.local:5432/postgres
+        - name: SERVER_AUTH_SECRET
+          value: $auth_secret
         - name: LAMBDA_PREWARM_RUNTIMES
           value: ""
         - name: LAMBDA_PREWARM_CONTAINER_RUNTIMES
@@ -460,6 +463,7 @@ import urllib.error
 import urllib.request
 
 work = os.environ["WORK_DIR"]
+auth_secret = os.environ["RUNNER_AUTH_SECRET"]
 with open(os.path.join(work, "cases.json"), "r", encoding="utf-8") as handle:
     payload = json.load(handle)
 
@@ -467,7 +471,7 @@ def post_json(function_id, body):
     request = urllib.request.Request(
         f"http://127.0.0.1:8083/invoke/{function_id}",
         data=json.dumps(body).encode("utf-8"),
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "X-Server-Auth": auth_secret},
         method="POST",
     )
     try:
@@ -486,7 +490,7 @@ def post_outer(function_id, body):
     request = urllib.request.Request(
         f"http://127.0.0.1:8083/invoke/{function_id}",
         data=json.dumps(body).encode("utf-8"),
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "X-Server-Auth": auth_secret},
         method="POST",
     )
     try:
@@ -494,6 +498,19 @@ def post_outer(function_id, body):
             return response.status, json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         return error.code, json.loads(error.read().decode("utf-8"))
+
+unauthorized_request = urllib.request.Request(
+    f"http://127.0.0.1:8083/invoke/{payload['cases'][0]['id']}",
+    data=json.dumps({"body": {"intent": "unauthorized"}}).encode("utf-8"),
+    headers={"content-type": "application/json"},
+    method="POST",
+)
+try:
+    urllib.request.urlopen(unauthorized_request, timeout=30)
+    raise AssertionError("unauthenticated direct invoke unexpectedly succeeded")
+except urllib.error.HTTPError as error:
+    if error.code != 401:
+        raise AssertionError(f"expected unauthenticated invoke to return 401, got {error.code}")
 
 results = []
 for case in payload["cases"]:
@@ -549,7 +566,7 @@ print("DD_GLEAM_LAMBDA_IT_RESULT=" + json.dumps({
 }, sort_keys=True))
 PY
 
-if ! kubectl exec "$runner_name" -n default -- env WORK_DIR=/opt/dd-it python3 /opt/dd-it/verify.py; then
+if ! kubectl exec "$runner_name" -n default -- env WORK_DIR=/opt/dd-it RUNNER_AUTH_SECRET="$auth_secret" python3 /opt/dd-it/verify.py; then
   kubectl logs "$runner_name" -n default >&2 || true
   exit 1
 fi

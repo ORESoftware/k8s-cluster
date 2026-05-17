@@ -17,6 +17,7 @@ spec:
       labels:
         app: dd-gleam-lambda-runner
     spec:
+      serviceAccountName: dd-gleam-lambda-runner
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
@@ -46,7 +47,7 @@ spec:
                 exit 1
               fi
               cd /opt/dd-next-1/remote/gleam-lambda-runner
-              gleam deps download
+              gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
               gleam build
               if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
                 mkdir -p build/dev/erlang/hpack/ebin
@@ -69,6 +70,14 @@ spec:
               value: dd.remote.lambdas.results
             - name: NATS_LAMBDA_FUNCTIONS_SUBJECT
               value: dd.remote.lambdas.functions
+            - name: NATS_LAMBDA_MAX_PAYLOAD_BYTES
+              value: '5242880'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
             - name: LAMBDA_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -116,6 +125,13 @@ spec:
           ports:
             - name: http
               containerPort: 8083
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /healthz

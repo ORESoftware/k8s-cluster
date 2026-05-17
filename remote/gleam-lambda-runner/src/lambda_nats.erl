@@ -49,6 +49,9 @@ init() ->
         queue_group => env_binary("NATS_LAMBDA_QUEUE_GROUP", <<"dd-gleam-lambda-runner">>),
         result_subject => env_binary("NATS_LAMBDA_RESULT_SUBJECT", <<"dd.remote.lambdas.results">>),
         functions_subject => env_binary("NATS_LAMBDA_FUNCTIONS_SUBJECT", <<"dd.remote.lambdas.functions">>),
+        nats_username => env_binary("NATS_USERNAME", <<>>),
+        nats_password => env_binary("NATS_PASSWORD", <<>>),
+        nats_token => env_binary("NATS_TOKEN", <<>>),
         reconnect_ms => env_int("NATS_LAMBDA_RECONNECT_MS", 1000),
         max_payload_bytes => env_int("NATS_LAMBDA_MAX_PAYLOAD_BYTES", 5242880),
         buffer => <<>>
@@ -57,10 +60,10 @@ init() ->
 
 connect(State) ->
     case parse_nats_url(maps:get(nats_url, State)) of
-        {ok, Host, Port} ->
+        {ok, Host, Port, UrlAuth} ->
             case gen_tcp:connect(Host, Port, [binary, {packet, raw}, {active, true}], 5000) of
                 {ok, Socket} ->
-                    ok = gen_tcp:send(Socket, <<"CONNECT {\"verbose\":false,\"pedantic\":false,\"lang\":\"erlang\",\"version\":\"dd-gleam-lambda-runner\"}\r\n">>),
+                    ok = gen_tcp:send(Socket, connect_payload(nats_auth(State, UrlAuth))),
                     subscribe(Socket, maps:get(invoke_subject, State), maps:get(queue_group, State), 1),
                     subscribe(Socket, maps:get(functions_subject, State), <<>>, 2),
                     io:format(
@@ -393,6 +396,34 @@ send_pub(Socket, Subject, Payload) ->
         "\r\n"
     ]).
 
+connect_payload(Auth) ->
+    iolist_to_binary([
+        "CONNECT {\"verbose\":false,\"pedantic\":false,\"lang\":\"erlang\",\"version\":\"dd-gleam-lambda-runner\"",
+        nats_auth_fields(Auth),
+        "}\r\n"
+    ]).
+
+nats_auth(State, UrlAuth) ->
+    case maps:get(nats_token, State) of
+        <<>> ->
+            User = maps:get(nats_username, State),
+            Pass = maps:get(nats_password, State),
+            case {User, Pass} of
+                {<<>>, _} -> UrlAuth;
+                {_, <<>>} -> UrlAuth;
+                _ -> #{user => User, pass => Pass}
+            end;
+        Token ->
+            #{token => Token}
+    end.
+
+nats_auth_fields(#{token := Token}) ->
+    [",\"auth_token\":\"", json_escape(Token), "\""];
+nats_auth_fields(#{user := User, pass := Pass}) ->
+    [",\"user\":\"", json_escape(User), "\",\"pass\":\"", json_escape(Pass), "\""];
+nats_auth_fields(_) ->
+    [].
+
 subject_matches(Subject, Pattern) ->
     case binary:match(Pattern, <<"*">>) of
         nomatch -> Subject =:= Pattern;
@@ -405,11 +436,24 @@ parse_nats_url(Url0) ->
     Url = binary_to_list(to_binary(Url0)),
     try uri_string:parse(Url) of
         #{scheme := "nats", host := Host} = Parsed ->
-            {ok, Host, maps:get(port, Parsed, 4222)};
+            {ok, Host, maps:get(port, Parsed, 4222), parse_nats_url_auth(maps:get(userinfo, Parsed, ""))};
         _ ->
             {error, Url0}
     catch
         _:_ -> {error, Url0}
+    end.
+
+parse_nats_url_auth("") ->
+    #{};
+parse_nats_url_auth(UserInfo0) ->
+    UserInfo = to_binary(uri_string:percent_decode(UserInfo0)),
+    case binary:match(UserInfo, <<":">>) of
+        nomatch ->
+            #{token => UserInfo};
+        {Index, 1} ->
+            User = binary:part(UserInfo, 0, Index),
+            Pass = binary:part(UserInfo, Index + 1, byte_size(UserInfo) - Index - 1),
+            #{user => User, pass => Pass}
     end.
 
 log_nats_line(<<"-ERR", _/binary>> = Line) ->

@@ -398,6 +398,59 @@ data:
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/;
       }
 
+      location = /gcs {
+        return 302 /gcs/health;
+      }
+
+      location = /gcs/health {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 30;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://gcs.default.svc.cluster.local:3000/chat/v1/health/3000;
+      }
+
+      location = /gcs/ws-health {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 30;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://gcs.default.svc.cluster.local:3001/v1/health/3001;
+      }
+
+      location /gcs/api/ {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        rewrite ^/gcs/api/?(.*)$ /chat/$1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://gcs.default.svc.cluster.local:3000;
+      }
+
+      location /gcs/ws/ {
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        rewrite ^/gcs/ws/?(.*)$ /$1 break;
+        proxy_pass http://gcs.default.svc.cluster.local:3001;
+      }
+
       location = /webrtc {
         return 302 /webrtc/;
       }

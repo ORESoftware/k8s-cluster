@@ -3,18 +3,21 @@ import gleam/bytes_tree
 import gleam/http
 import gleam/http/request
 import gleam/http/response
+import gleam/int
 import gleam/string
 import gleam_lambda_runner/child_process
 import mist
 
-const host = "0.0.0.0"
+@external(erlang, "lambda_runtime_env", "getenv")
+fn env_get(name: String) -> String
 
-const port = 8083
+const default_host = "0.0.0.0"
+
+const default_port = 8083
 
 const max_body_bytes = 5_242_880
 
-const default_command =
-  "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
+const default_command = "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
 
 const child_idle_ms = 300_000
 
@@ -22,9 +25,28 @@ const child_timeout_ms = 30_000
 
 pub fn supervised() {
   mist.new(route)
-  |> mist.bind(host)
-  |> mist.port(port)
+  |> mist.bind(bind_host())
+  |> mist.port(bind_port())
   |> mist.supervised
+}
+
+pub fn bind_host() -> String {
+  case env_get("HOST") {
+    "" -> default_host
+    value -> value
+  }
+}
+
+pub fn bind_port() -> Int {
+  case int.parse(env_get("PORT")) {
+    Ok(value) -> {
+      case value > 0 && value <= 65_535 {
+        True -> value
+        False -> default_port
+      }
+    }
+    Error(_) -> default_port
+  }
 }
 
 fn route(
@@ -35,8 +57,10 @@ fn route(
     ["home"] -> home_page()
     ["healthz"] -> healthz()
     ["metrics"] -> metrics()
-    ["invoke", function_id] -> require_post(req, fn() { invoke(req, function_id) })
-    ["destroy", reuse_key] -> require_post(req, fn() { destroy(reuse_key) })
+    ["invoke", function_id] ->
+      require_authenticated_post(req, fn() { invoke(req, function_id) })
+    ["destroy", reuse_key] ->
+      require_authenticated_post(req, fn() { destroy(reuse_key) })
     _ -> not_found()
   }
 }
@@ -49,21 +73,30 @@ fn invoke(
     Ok(req) -> {
       case bit_array.to_string(req.body) {
         Ok(payload) -> {
-          case child_process.invoke(
-            default_command,
-            function_id,
-            request_payload(payload),
-            child_idle_ms,
-            child_timeout_ms,
-          ) {
+          case
+            child_process.invoke(
+              default_command,
+              function_id,
+              request_payload(payload),
+              child_idle_ms,
+              child_timeout_ms,
+            )
+          {
             Ok(output) ->
-              json_response(200, "{\"ok\":true,\"output\":\"" <> json_escape(output) <> "\"}")
+              json_response(
+                200,
+                "{\"ok\":true,\"output\":\"" <> json_escape(output) <> "\"}",
+              )
 
             Error(error) ->
-              json_response(502, "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}")
+              json_response(
+                502,
+                "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
+              )
           }
         }
-        Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"body-not-utf8\"}")
+        Error(_) ->
+          json_response(400, "{\"ok\":false,\"error\":\"body-not-utf8\"}")
       }
     }
     Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"invalid-body\"}")
@@ -73,10 +106,16 @@ fn invoke(
 fn destroy(reuse_key: String) -> response.Response(mist.ResponseData) {
   case child_process.destroy(reuse_key) {
     Ok(message) ->
-      json_response(200, "{\"ok\":true,\"message\":\"" <> json_escape(message) <> "\"}")
+      json_response(
+        200,
+        "{\"ok\":true,\"message\":\"" <> json_escape(message) <> "\"}",
+      )
 
     Error(error) ->
-      json_response(502, "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}")
+      json_response(
+        502,
+        "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
+      )
   }
 }
 
@@ -93,7 +132,16 @@ fn home_page() -> response.Response(mist.ResponseData) {
 }
 
 fn healthz() -> response.Response(mist.ResponseData) {
-  json_response(200, "{\"ok\":true,\"service\":\"dd-gleam-lambda-runner\"}")
+  json_response(
+    200,
+    "{\"ok\":true,\"service\":\"dd-gleam-lambda-runner\",\"authConfigured\":"
+      <> bool_json(server_auth_configured())
+      <> ",\"postgresConfigured\":"
+      <> bool_json(env_get("LAMBDA_DATABASE_URL") != "")
+      <> ",\"natsConfigured\":"
+      <> bool_json(env_get("NATS_URL") != "")
+      <> "}",
+  )
 }
 
 fn metrics() -> response.Response(mist.ResponseData) {
@@ -102,7 +150,9 @@ fn metrics() -> response.Response(mist.ResponseData) {
     "content-type",
     "text/plain; version=0.0.4; charset=utf-8",
   )
-  |> response.set_body(mist.Bytes(bytes_tree.from_string(child_process.metrics())))
+  |> response.set_body(
+    mist.Bytes(bytes_tree.from_string(child_process.metrics())),
+  )
 }
 
 fn not_found() -> response.Response(mist.ResponseData) {
@@ -113,7 +163,22 @@ fn method_not_allowed() -> response.Response(mist.ResponseData) {
   response.new(405)
   |> response.set_header("allow", "POST")
   |> response.set_header("content-type", "application/json")
-  |> response.set_body(mist.Bytes(bytes_tree.from_string("{\"ok\":false,\"error\":\"method-not-allowed\"}")))
+  |> response.set_body(
+    mist.Bytes(bytes_tree.from_string(
+      "{\"ok\":false,\"error\":\"method-not-allowed\"}",
+    )),
+  )
+}
+
+fn unauthorized() -> response.Response(mist.ResponseData) {
+  json_response(401, "{\"ok\":false,\"error\":\"unauthorized\"}")
+}
+
+fn auth_not_configured() -> response.Response(mist.ResponseData) {
+  json_response(
+    503,
+    "{\"ok\":false,\"error\":\"SERVER_AUTH_SECRET is not configured\"}",
+  )
 }
 
 fn require_post(
@@ -123,6 +188,67 @@ fn require_post(
   case req.method {
     http.Post -> next()
     _ -> method_not_allowed()
+  }
+}
+
+fn require_authenticated_post(
+  req: request.Request(mist.Connection),
+  next: fn() -> response.Response(mist.ResponseData),
+) -> response.Response(mist.ResponseData) {
+  require_post(req, fn() {
+    let secret = server_auth_secret()
+    case secret {
+      "" -> auth_not_configured()
+      _ -> {
+        case request_is_authorized(req, secret) {
+          True -> next()
+          False -> unauthorized()
+        }
+      }
+    }
+  })
+}
+
+fn server_auth_secret() -> String {
+  case env_get("LAMBDA_SERVER_AUTH_SECRET") {
+    "" -> {
+      case env_get("SERVER_AUTH_SECRET") {
+        "" -> env_get("REMOTE_DEV_SERVER_SECRET")
+        value -> value
+      }
+    }
+    value -> value
+  }
+}
+
+fn server_auth_configured() -> Bool {
+  server_auth_secret() != ""
+}
+
+fn request_is_authorized(
+  req: request.Request(mist.Connection),
+  secret: String,
+) -> Bool {
+  case request.get_header(req, "x-server-auth") {
+    Ok(value) -> value == secret
+    Error(_) -> {
+      case request.get_header(req, "x-lambda-runner-auth") {
+        Ok(value) -> value == secret
+        Error(_) -> {
+          case request.get_header(req, "x-agent-auth") {
+            Ok(value) -> value == secret
+            Error(_) -> False
+          }
+        }
+      }
+    }
+  }
+}
+
+fn bool_json(value: Bool) -> String {
+  case value {
+    True -> "true"
+    False -> "false"
   }
 }
 
@@ -141,6 +267,7 @@ fn json_escape(input: String) -> String {
   |> string.replace("\"", "\\\"")
   |> string.replace("\n", "\\n")
   |> string.replace("\r", "\\r")
+  |> string.replace("\t", "\\t")
 }
 
 fn request_payload(request_payload: String) -> String {

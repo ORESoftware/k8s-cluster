@@ -15,6 +15,7 @@ resources:
   - dd-agent-worker-broker.service.yaml
   - dd-container-pool-rbac.yaml
   - dd-container-pool.deployment.yaml
+  - dd-container-pool.networkpolicy.yaml
   - dd-container-pool.service.yaml
   - dd-build-server-rbac.yaml
   - dd-build-server.deployment.yaml

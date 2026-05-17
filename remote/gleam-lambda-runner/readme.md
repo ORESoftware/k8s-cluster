@@ -8,6 +8,11 @@ optional non-root containers.
 - `POST /invoke/:function_id` forwards one request envelope to a child process.
 - `POST /destroy/:reuse_key` closes a cached child process.
 
+`POST /invoke/:function_id` and `POST /destroy/:reuse_key` fail closed unless
+`LAMBDA_SERVER_AUTH_SECRET`, `SERVER_AUTH_SECRET`, or `REMOTE_DEV_SERVER_SECRET` is configured.
+Callers must present the secret in `X-Server-Auth`, `X-Lambda-Runner-Auth`, or `X-Agent-Auth`.
+`GET /healthz` and `GET /metrics` remain unauthenticated for Kubernetes probes and scraping.
+
 The runner also starts an in-process NATS singleton when `NATS_URL` is configured. The Gleam module
 `gleam_lambda_runner/nats.gleam` owns the app-facing interface and delegates the raw TCP protocol to
 `lambda_nats.erl` inside the same BEAM VM. It subscribes to lambda invocation messages, invokes the
@@ -20,11 +25,20 @@ same child runner used by HTTP, and publishes invocation results back to NATS:
 | `NATS_LAMBDA_QUEUE_GROUP` | `dd-gleam-lambda-runner` |
 | `NATS_LAMBDA_RESULT_SUBJECT` | `dd.remote.lambdas.results` |
 | `NATS_LAMBDA_FUNCTIONS_SUBJECT` | `dd.remote.lambdas.functions` |
+| `NATS_USERNAME` / `NATS_PASSWORD` | unset, optional NATS user/pass auth |
+| `NATS_TOKEN` | unset, optional NATS token auth |
 
 Invocation messages can either target a function through the subject suffix
 (`dd.remote.lambdas.invoke.<function-id-or-slug>`) or include `functionId`, `function_id`, `slug`,
 or `id` in the JSON payload. The request body passed to the lambda is the message `payload` field,
 then `request`, then the full message as a fallback.
+
+This service is function-definition-aware: it looks up an active lambda in Postgres and runs it in a
+managed host child or per-function runtime container. The Rust container pool is the lower-level
+generic warm-container service: it reads pool configuration from Postgres, keeps runtime containers
+warm, health-checks and replaces them, then forwards HTTP/NATS work to whichever container is
+leased. Use the pool for runtime-shaped work queues; use this runner when invocation must resolve a
+stored lambda function definition.
 
 The Rust REST API is responsible for CRUD/read models over Postgres. Invocation traffic goes
 directly through the load balancer/gateway to this Gleam service. The BEAM runner loads the active
@@ -74,6 +88,9 @@ and a privileged runner pod (or an equivalent trusted host-side helper). The EC2
 is not a stable generic CNI entrypoint from inside that trusted pod. Treat the runner pod as
 node-level infrastructure: keep invocation and CRUD routes authenticated, and rely on the
 per-lambda runtime flags above for the untrusted function containers.
+
+The EC2 and minikube manifests include a `startupProbe` on `/healthz` so package install, dependency
+download, and Gleam build work at boot do not trip liveness before the service is ready.
 
 ## Runtime images
 

@@ -30,6 +30,7 @@ const SERVICE_NAME: &str = "dd-container-pool";
 const DEFAULT_PORT: u16 = 8102;
 const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 2 * 1024 * 1024;
+const MAX_WORKER_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Clone)]
 struct AppState {
@@ -52,6 +53,8 @@ struct ServiceConfig {
     nats_url: Option<String>,
     nats_subject: String,
     nats_result_subject: String,
+    nats_max_payload_bytes: usize,
+    worker_response_max_bytes: usize,
     config_refresh: Duration,
     reconcile_interval: Duration,
     command_timeout: Duration,
@@ -64,6 +67,10 @@ struct ServiceConfig {
     port_end: u16,
     cleanup_on_start: bool,
     server_auth_secret: Option<String>,
+    container_memory: Option<String>,
+    container_cpus: Option<String>,
+    pids_limit: u64,
+    nofile_limit: u64,
 }
 
 #[derive(Default)]
@@ -259,6 +266,13 @@ fn env_u16(key: &str, fallback: u16) -> u16 {
         .unwrap_or(fallback)
 }
 
+fn env_usize(key: &str, fallback: usize) -> usize {
+    first_env(&[key])
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(fallback)
+}
+
 fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -269,11 +283,18 @@ fn now_ms() -> u128 {
 fn service_config_from_env() -> ServiceConfig {
     let port_start = env_u16("CONTAINER_POOL_PORT_START", 12_000);
     let port_end = env_u16("CONTAINER_POOL_PORT_END", 12_999).max(port_start);
+    let network = env_value("CONTAINER_POOL_NETWORK", "host");
     ServiceConfig {
         nerdctl_bin: env_value("CONTAINER_POOL_NERDCTL_BIN", "/usr/local/bin/nerdctl"),
         containerd_namespace: env_value("CONTAINER_POOL_CONTAINERD_NAMESPACE", "k8s.io"),
-        network: env_value("CONTAINER_POOL_NETWORK", "host"),
-        pull_policy: first_env(&["CONTAINER_POOL_PULL_POLICY"]),
+        network: if safe_network_name(&network) {
+            network
+        } else {
+            "host".to_string()
+        },
+        pull_policy: first_env(&["CONTAINER_POOL_PULL_POLICY"]).and_then(|value| {
+            matches!(value.as_str(), "always" | "missing" | "never").then_some(value)
+        }),
         database_url: first_env(&[
             "CONTAINER_POOL_DATABASE_URL",
             "AGENT_TASKS_RDS_DATABASE_URL",
@@ -294,6 +315,16 @@ fn service_config_from_env() -> ServiceConfig {
             "CONTAINER_POOL_NATS_RESULT_SUBJECT",
             "dd.remote.container_pool.results",
         ),
+        nats_max_payload_bytes: env_usize(
+            "CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES",
+            MAX_NATS_PAYLOAD_BYTES,
+        )
+        .min(16 * 1024 * 1024),
+        worker_response_max_bytes: env_usize(
+            "CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES",
+            MAX_WORKER_RESPONSE_BYTES,
+        )
+        .min(16 * 1024 * 1024),
         config_refresh: Duration::from_secs(env_u64("CONTAINER_POOL_CONFIG_REFRESH_SECONDS", 30)),
         reconcile_interval: Duration::from_secs(env_u64("CONTAINER_POOL_RECONCILE_SECONDS", 10)),
         command_timeout: Duration::from_secs(env_u64("CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS", 30)),
@@ -320,6 +351,12 @@ fn service_config_from_env() -> ServiceConfig {
             "SERVER_AUTH_SECRET",
             "REMOTE_DEV_SERVER_SECRET",
         ]),
+        container_memory: first_env(&["CONTAINER_POOL_CONTAINER_MEMORY"])
+            .filter(|value| safe_resource_value(value)),
+        container_cpus: first_env(&["CONTAINER_POOL_CONTAINER_CPUS"])
+            .filter(|value| safe_resource_value(value)),
+        pids_limit: env_u64("CONTAINER_POOL_PIDS_LIMIT", 128).clamp(16, 4096),
+        nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 128).clamp(32, 8192),
     }
 }
 
@@ -371,7 +408,72 @@ fn safe_env_key(input: &str) -> bool {
 }
 
 fn safe_local_path(input: &str) -> bool {
-    input.starts_with('/') && !input.contains("://") && input.len() <= 256
+    input.starts_with('/')
+        && !input.starts_with("//")
+        && !input.contains("://")
+        && !input.contains('?')
+        && !input.contains('#')
+        && input.len() <= 256
+        && !input
+            .bytes()
+            .any(|byte| byte <= 0x20 || byte == 0x7f || byte == b'\\')
+        && !input
+            .split('/')
+            .any(|segment| matches!(segment, "." | ".."))
+}
+
+fn safe_container_image(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 512
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'@' | b'-')
+        })
+}
+
+fn safe_config_id(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 120
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+}
+
+fn safe_network_name(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 128
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+}
+
+fn safe_resource_value(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 32
+        && bytes[0].is_ascii_digit()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'.')
+}
+
+fn safe_nats_subject(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 256
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'*' | b'>')
+        })
+}
+
+fn safe_env_value(input: &str) -> bool {
+    input.len() <= 8192 && !input.contains('\0')
 }
 
 fn string_vec_from_json(value: Value) -> Vec<String> {
@@ -387,6 +489,14 @@ fn string_vec_from_json(value: Value) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn command_vec_from_json(value: Value) -> Vec<String> {
+    string_vec_from_json(value)
+        .into_iter()
+        .filter(|value| !value.contains('\0') && value.len() <= 512)
+        .take(32)
+        .collect()
 }
 
 fn json_string_field(value: &Value, camel_key: &str, snake_key: &str) -> Option<String> {
@@ -414,8 +524,8 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
     }
     let image = json_string_field(value, "image", "image")
         .ok_or_else(|| format!("container pool {slug} is missing image"))?;
-    if image.len() > 512 {
-        return Err(format!("container pool {slug} image exceeds 512 bytes"));
+    if !safe_container_image(&image) {
+        return Err(format!("container pool {slug} has invalid image"));
     }
     let min_warm = json_u64_field(value, "minWarm", "min_warm")
         .and_then(|value| usize::try_from(value).ok())
@@ -432,13 +542,23 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
     let health_path = json_string_field(value, "healthPath", "health_path")
         .filter(|path| safe_local_path(path))
         .unwrap_or_else(|| "/healthz".to_string());
+    let id = json_string_field(value, "id", "id").unwrap_or_else(|| slug.clone());
+    if !safe_config_id(&id) {
+        return Err(format!("container pool {slug} has invalid id"));
+    }
+    let nats_subject = json_string_field(value, "natsSubject", "nats_subject");
+    if let Some(subject) = nats_subject.as_deref() {
+        if !safe_nats_subject(subject) {
+            return Err(format!("container pool {slug} has invalid nats_subject"));
+        }
+    }
     Ok(PoolConfig {
-        id: json_string_field(value, "id", "id").unwrap_or_else(|| slug.clone()),
+        id,
         slug: slug.clone(),
         display_name: json_string_field(value, "displayName", "display_name")
             .unwrap_or_else(|| slug.clone()),
         image,
-        command: string_vec_from_json(value.get("command").cloned().unwrap_or_else(|| json!([]))),
+        command: command_vec_from_json(value.get("command").cloned().unwrap_or_else(|| json!([]))),
         env: env_map_from_json(value.get("env").cloned().unwrap_or_else(|| json!({}))),
         request_path,
         health_path,
@@ -465,7 +585,7 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
                 .unwrap_or(900)
                 .clamp(10, 86_400),
         ),
-        nats_subject: json_string_field(value, "natsSubject", "nats_subject"),
+        nats_subject,
         labels: value.get("labels").cloned().unwrap_or_else(|| json!([])),
     })
 }
@@ -484,13 +604,15 @@ fn env_map_from_json(value: Value) -> BTreeMap<String, String> {
         .map(|object| {
             object
                 .iter()
-                .filter(|(key, _)| safe_env_key(key))
-                .map(|(key, value)| {
+                .filter_map(|(key, value)| {
+                    if !safe_env_key(key) {
+                        return None;
+                    }
                     let value = value
                         .as_str()
                         .map(ToString::to_string)
                         .unwrap_or_else(|| value.to_string());
-                    (key.to_string(), value)
+                    safe_env_value(&value).then(|| (key.to_string(), value))
                 })
                 .collect()
         })
@@ -535,8 +657,11 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         return Err(format!("invalid container pool slug: {slug}"));
     }
     let image = row_string(row, "image");
-    if image.trim().is_empty() || image.len() > 512 {
+    if !safe_container_image(&image) {
         return Err(format!("container pool {slug} has invalid image"));
+    }
+    if !safe_config_id(&id) {
+        return Err(format!("container pool {slug} has invalid id"));
     }
 
     let min_warm = clamp_i32_to_usize(row_i32(row, "min_warm", 1), 1, 0, 64);
@@ -556,12 +681,19 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         return Err(format!("container pool {slug} has invalid health_path"));
     }
 
+    let nats_subject = row_opt_string(row, "nats_subject");
+    if let Some(subject) = nats_subject.as_deref() {
+        if !safe_nats_subject(subject) {
+            return Err(format!("container pool {slug} has invalid nats_subject"));
+        }
+    }
+
     Ok(PoolConfig {
         id,
         slug,
         display_name: row_opt_string(row, "display_name").unwrap_or_else(|| image.clone()),
         image,
-        command: string_vec_from_json(row_value(row, "command", json!([]))),
+        command: command_vec_from_json(row_value(row, "command", json!([]))),
         env: env_map_from_json(row_value(row, "env", json!({}))),
         request_path,
         health_path,
@@ -571,7 +703,7 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         max_concurrency_per_container,
         request_timeout: Duration::from_millis(request_timeout_ms as u64),
         idle_ttl: Duration::from_secs(idle_ttl_seconds as u64),
-        nats_subject: row_opt_string(row, "nats_subject"),
+        nats_subject,
         labels: row_value(row, "labels", json!([])),
     })
 }
@@ -853,7 +985,28 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         format!("dd.container-pool.pool-id={}", pool.id),
         "--label".to_string(),
         format!("dd.container-pool.service={SERVICE_NAME}"),
+        "--read-only".to_string(),
+        "--tmpfs".to_string(),
+        "/tmp:rw,noexec,nosuid,size=64m".to_string(),
+        "--user".to_string(),
+        "10001:10001".to_string(),
+        "--cap-drop".to_string(),
+        "ALL".to_string(),
+        "--security-opt".to_string(),
+        "no-new-privileges".to_string(),
+        "--pids-limit".to_string(),
+        state.config.pids_limit.to_string(),
+        "--ulimit".to_string(),
+        format!("nofile={limit}:{limit}", limit = state.config.nofile_limit),
     ];
+    if let Some(memory) = state.config.container_memory.as_deref() {
+        args.push("--memory".to_string());
+        args.push(memory.to_string());
+    }
+    if let Some(cpus) = state.config.container_cpus.as_deref() {
+        args.push("--cpus".to_string());
+        args.push(cpus.to_string());
+    }
     if let Some(pull_policy) = state.config.pull_policy.as_deref() {
         args.push("--pull".to_string());
         args.push(pull_policy.to_string());
@@ -898,6 +1051,12 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     container_env
         .entry("DD_POOL_CONTAINER_PORT".to_string())
         .or_insert_with(|| pool.container_port.to_string());
+    container_env
+        .entry("DD_POOL_MAX_BODY_BYTES".to_string())
+        .or_insert_with(|| MAX_HTTP_BODY_BYTES.to_string());
+    container_env
+        .entry("DD_POOL_HANDLER_TIMEOUT_SECONDS".to_string())
+        .or_insert_with(|| pool.request_timeout.as_secs().max(1).to_string());
     if let Some(nats_url) = state.config.nats_url.as_deref() {
         container_env
             .entry("NATS_URL".to_string())
@@ -1442,12 +1601,27 @@ fn apply_forward_headers(
     let Some(headers) = headers else {
         return builder;
     };
-    for (key, value) in headers {
+    for (key, value) in headers.iter().take(32) {
+        if key.len() > 64 || value.len() > 8192 {
+            continue;
+        }
         let lower = key.to_ascii_lowercase();
         if matches!(
             lower.as_str(),
-            "authorization" | "cookie" | "host" | "x-server-auth" | "x-agent-auth"
-        ) {
+            "authorization"
+                | "cookie"
+                | "host"
+                | "connection"
+                | "content-length"
+                | "te"
+                | "trailer"
+                | "transfer-encoding"
+                | "upgrade"
+                | "x-agent-auth"
+                | "x-container-pool-auth"
+                | "x-server-auth"
+        ) || lower.starts_with("proxy-")
+        {
             continue;
         }
         let Ok(name) = HeaderName::from_bytes(key.as_bytes()) else {
@@ -1459,6 +1633,28 @@ fn apply_forward_headers(
         builder = builder.header(name, value);
     }
     builder
+}
+
+async fn read_limited_response_body(
+    response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(format!(
+            "container response exceeded configured byte limit ({max_bytes})"
+        ));
+    }
+
+    let body = response.bytes().await.map_err(|error| error.to_string())?;
+    if body.len() > max_bytes {
+        return Err(format!(
+            "container response exceeded configured byte limit ({max_bytes})"
+        ));
+    }
+    Ok(body.to_vec())
 }
 
 async fn dispatch_to_pool(
@@ -1496,7 +1692,8 @@ async fn dispatch_to_pool(
     let result = match response {
         Ok(Ok(response)) => {
             let status = response.status();
-            match response.bytes().await {
+            match read_limited_response_body(response, state.config.worker_response_max_bytes).await
+            {
                 Ok(bytes) => {
                     let body = serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
                         json!({
@@ -1877,7 +2074,7 @@ async fn run_nats_loop(state: AppState) {
             .metrics
             .nats_messages_total
             .fetch_add(1, Ordering::Relaxed);
-        if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
+        if message.payload.len() > state.config.nats_max_payload_bytes {
             state
                 .metrics
                 .nats_failures_total

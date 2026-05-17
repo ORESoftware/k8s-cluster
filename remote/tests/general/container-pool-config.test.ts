@@ -46,7 +46,13 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /AGENT_TASKS_RDS_DATABASE_URL/);
   assert.match(source, /CONTAINER_POOL_CONFIG_JSON/);
   assert.match(source, /CONTAINER_POOL_NATS_SUBJECT/);
+  assert.match(source, /CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES/);
+  assert.match(source, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES/);
   assert.match(source, /CONTAINER_POOL_START_TIMEOUT_SECONDS/);
+  assert.match(source, /CONTAINER_POOL_CONTAINER_MEMORY/);
+  assert.match(source, /CONTAINER_POOL_CONTAINER_CPUS/);
+  assert.match(source, /CONTAINER_POOL_PIDS_LIMIT/);
+  assert.match(source, /CONTAINER_POOL_NOFILE_LIMIT/);
   assert.match(source, /CONTAINER_POOL_HEALTH_CHECK_SECONDS/);
   assert.match(source, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD/);
   assert.match(source, /dd\.remote\.container_pool\.requests/);
@@ -62,8 +68,28 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /probe_container_health/);
   assert.match(source, /retire_container/);
   assert.match(source, /prune_unhealthy_containers/);
+  assert.match(source, /safe_container_image/);
+  assert.match(source, /safe_local_path/);
+  assert.match(source, /safe_nats_subject/);
   assert.match(source, /"--network"\.to_string\(\)/);
   assert.match(source, /"--label"\.to_string\(\)/);
+  assert.match(source, /"--read-only"\.to_string\(\)/);
+  assert.match(source, /"\/tmp:rw,noexec,nosuid,size=64m"\.to_string\(\)/);
+  assert.match(source, /"--user"\.to_string\(\)/);
+  assert.match(source, /"10001:10001"\.to_string\(\)/);
+  assert.match(source, /"--cap-drop"\.to_string\(\)/);
+  assert.match(source, /"ALL"\.to_string\(\)/);
+  assert.match(source, /"--security-opt"\.to_string\(\)/);
+  assert.match(source, /"no-new-privileges"\.to_string\(\)/);
+  assert.match(source, /"--pids-limit"\.to_string\(\)/);
+  assert.match(source, /"--ulimit"\.to_string\(\)/);
+  assert.match(source, /DD_POOL_MAX_BODY_BYTES/);
+  assert.match(source, /DD_POOL_HANDLER_TIMEOUT_SECONDS/);
+  assert.match(source, /read_limited_response_body/);
+  assert.match(source, /content_length\(\)/);
+  assert.match(source, /x-container-pool-auth/);
+  assert.match(source, /transfer-encoding/);
+  assert.match(source, /proxy-/);
   assert.match(source, /dd\.container-pool\.managed=true/);
   assert.match(source, /max_concurrency_per_container/);
   assert.match(source, /available_capacity/);
@@ -114,6 +140,9 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   );
   const service = await readRepoFile('remote/argocd/dd-next-runtime/dd-container-pool.service.yaml');
   const rbac = await readRepoFile('remote/argocd/dd-next-runtime/dd-container-pool-rbac.yaml');
+  const networkPolicy = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-container-pool.networkpolicy.yaml',
+  );
   const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
   const gateway = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
@@ -143,6 +172,12 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   );
   assert.match(deployment, /CONTAINER_POOL_NETWORK[\s\S]*value:\s*host/);
   assert.match(deployment, /CONTAINER_POOL_PORT_START[\s\S]*value:\s*'12000'/);
+  assert.match(deployment, /CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES[\s\S]*value:\s*'2097152'/);
+  assert.match(deployment, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES[\s\S]*value:\s*'2097152'/);
+  assert.match(deployment, /CONTAINER_POOL_CONTAINER_MEMORY[\s\S]*value:\s*512m/);
+  assert.match(deployment, /CONTAINER_POOL_CONTAINER_CPUS[\s\S]*value:\s*'1'/);
+  assert.match(deployment, /CONTAINER_POOL_PIDS_LIMIT[\s\S]*value:\s*'128'/);
+  assert.match(deployment, /CONTAINER_POOL_NOFILE_LIMIT[\s\S]*value:\s*'128'/);
   assert.match(deployment, /CONTAINER_POOL_HEALTH_CHECK_SECONDS[\s\S]*value:\s*'10'/);
   assert.match(deployment, /CONTAINER_POOL_HEALTH_TIMEOUT_MS[\s\S]*value:\s*'1000'/);
   assert.match(deployment, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD[\s\S]*value:\s*'2'/);
@@ -159,7 +194,15 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(rbac, /kind:\s*ServiceAccount[\s\S]*name:\s*dd-container-pool/);
   assert.match(kustomization, /dd-container-pool-rbac\.yaml/);
   assert.match(kustomization, /dd-container-pool\.deployment\.yaml/);
+  assert.match(kustomization, /dd-container-pool\.networkpolicy\.yaml/);
   assert.match(kustomization, /dd-container-pool\.service\.yaml/);
+  assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(networkPolicy, /app:\s*dd-container-pool/);
+  assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*messaging/);
+  assert.match(networkPolicy, /port:\s*4222/);
+  assert.match(networkPolicy, /port:\s*5432/);
+  assert.match(networkPolicy, /port:\s*8102/);
   assert.match(
     gateway,
     /location = \/container-pools[\s\S]*X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-container-pool\.default\.svc\.cluster\.local:8102\/pools/,
