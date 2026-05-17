@@ -173,6 +173,10 @@ public final class JobService {
       case SPARK_SUBMIT:
         runSparkSubmitParallel(rec, outcome);
         break;
+      case COMPOSITION_DEMO:
+        final int shardCount = Math.max(1, rec.getParams().getInteger("shardCount", 8));
+        CompositionDemoPipeline.run(rec, shardCount, outcome);
+        break;
       case SYNTHETIC_TEST:
       default:
         runSyntheticSeries(rec, outcome);

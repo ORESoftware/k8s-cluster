@@ -39,18 +39,22 @@
         <hikaricp.version>5.1.0</hikaricp.version>
 
         <!--
-          Pinned to the head of async-java/async.java fix/vt-pinning-investigation
-          (PR #9), which fixes a CounterLimit lost-update data race that affected
-          every combinator using CounterLimit (Parallel / Series / Map / Each / Reduce
-          / Times / Concat / FilterMap / Whilst / Waterfall / Inject / Race / GroupBy
-          / Queue) under sustained concurrent load.
-          See: https://github.com/async-java/async.java/pull/9
+          v0.2.1 of async-java/async.java served via JitPack. Brings:
+            - PR #8  : daemon-thread NeoQueue executor, NeoLock thread-safety, modernised
+                       pom, Central Portal publishing, JitPack, LICENSE, Loom-aware readme.
+            - PR #9  : CounterLimit lost-update race fix (Asyncc.Parallel hung after a
+                       few dozen sequential iterations on JDK 21).
+            - PR #10 : NeoParallel.Parallel(List, callback) double-fire fix (~5%
+                       message drop in WS load tests).
+            - v0.2.1 : NeoReduce defensive fireFinalCallback routing + MisuseTest
+                       (12 adversarial / user-misuse scenarios pinned).
 
-          When PR #9 merges to master, bump to the merge SHA. When
-          io.github.async-java:async-java:0.2.0 publishes to Maven Central, switch to
-          that stable coordinate.
+          When io.github.async-java:async-java:0.2.1 lands on Maven Central, switch
+          this property to that stable coordinate. Until then the JitPack
+          `com.github.async-java:async.java:v0.2.1` coordinate is the authoritative
+          release artifact.
         -->
-        <async-java.version>f823320</async-java.version>
+        <async-java.version>v0.2.2</async-java.version>
 
         <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
     </properties>
