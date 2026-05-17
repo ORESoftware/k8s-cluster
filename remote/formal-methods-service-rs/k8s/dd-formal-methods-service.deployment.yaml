@@ -1,0 +1,190 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-formal-methods-service
+  namespace: default
+  labels:
+    app: dd-formal-methods-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-formal-methods-service
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-17-formal-methods-service'
+      labels:
+        app: dd-formal-methods-service
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: formal-methods-service
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              if ! command -v git >/dev/null 2>&1; then
+                echo "installing git..."
+                apt-get update
+                apt-get install -y --no-install-recommends git
+                rm -rf /var/lib/apt/lists/*
+              fi
+              export CARGO_HOME=/var/cache/dd-formal-methods-service/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-formal-methods-service/target
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$FORMAL_METHODS_WORKDIR_ROOT"
+              cd /opt/dd-next-1/remote/formal-methods-service-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-formal-methods-service/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-formal-methods-service/target
+            - name: BIND_ADDR
+              value: 0.0.0.0
+            - name: PORT
+              value: '8111'
+            - name: RUST_LOG
+              value: formal_methods_service=info,tower_http=info
+            - name: WORKDIR_ROOT
+              value: /var/lib/dd-formal-methods-service/work
+            # Convenience env mirror used by the start-up `mkdir -p`.
+            - name: FORMAL_METHODS_WORKDIR_ROOT
+              value: /var/lib/dd-formal-methods-service/work
+            - name: CONTRACT_MANIFEST_PATH
+              value: packages/contract/Cargo.toml
+            - name: CARGO_TEST_PACKAGE
+              value: om-core
+            - name: MAX_CONCURRENT_ANALYSES
+              value: '2'
+            - name: ANALYZER_TIMEOUT_SECS
+              value: '900'
+            - name: FORMAL_METHODS_ALLOWED_REPOS
+              value: '*'
+            - name: FORMAL_METHODS_PATH_PREFIXES
+              value: ''
+            - name: DELIVERY_DEDUPE_CAPACITY
+              value: '1024'
+            - name: DELIVERY_DEDUPE_TTL_SECS
+              value: '3600'
+            - name: MAX_PR_FILES_PAGES
+              value: '3'
+            # GitHub commit-status context. Make this the required check in
+            # branch protection on the consumer repo.
+            - name: STATUS_CONTEXT
+              value: formal-methods/analysis
+            - name: FORMAL_METHODS_CARGO_CHECK_ENABLED
+              value: 'true'
+            - name: FORMAL_METHODS_CARGO_TEST_ENABLED
+              value: 'true'
+            - name: FORMAL_METHODS_PROPTEST_ENABLED
+              value: 'true'
+            # Kani/Verus/dReal self-skip when the tool is not on PATH, so it
+            # is safe to leave them enabled even though they are not
+            # installed in this image. To wire them in, build a custom
+            # image that includes the prover binaries and switch `image:`
+            # above.
+            - name: FORMAL_METHODS_KANI_ENABLED
+              value: 'true'
+            - name: FORMAL_METHODS_VERUS_ENABLED
+              value: 'true'
+            - name: FORMAL_METHODS_DREAL_ENABLED
+              value: 'true'
+            - name: FORMAL_METHODS_CERTORA_ENABLED
+              value: 'false'
+            - name: PROPTEST_TEST_TARGET
+              value: proptest_props
+            - name: VERUS_PROOF_CRATE_DIR
+              value: packages/contract/om-core/proofs/verus
+            - name: DREAL_QUERIES_DIR
+              value: packages/contract/om-core/proofs/dreal
+            - name: DREAL_PRECISION
+              value: '0.001'
+            - name: CERTORA_CONF_DIR
+              value: packages/contract/om-core/proofs/certora/conf
+            - name: GITHUB_API_BASE_URL
+              value: https://api.github.com
+            - name: GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: FORMAL_METHODS_GITHUB_WEBHOOK_SECRET
+                  optional: false
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: FORMAL_METHODS_GITHUB_TOKEN
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8111
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: '2'
+              memory: 1500Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-formal-methods-service
+            - name: work
+              mountPath: /var/lib/dd-formal-methods-service
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          hostPath:
+            path: /var/cache/dd-formal-methods-service
+            type: DirectoryOrCreate
+        - name: work
+          hostPath:
+            path: /var/lib/dd-formal-methods-service
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}

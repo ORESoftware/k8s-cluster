@@ -1,0 +1,10 @@
+target/
+.git/
+.env
+.env.*
+!.env.example
+node_modules/
+*.log
+logs/
+.work/
+.DS_Store
