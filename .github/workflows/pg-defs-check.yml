@@ -8,9 +8,12 @@ on:
       - 'remote/gleam-lambda-runner/**'
       - 'remote/gleam-mcp-server/**'
       - 'remote/gleamlang-server/**'
+      - 'remote/rest-api-rs/**'
+      - 'remote/web-home-rs/**'
       - 'remote/tests/general/pg-defs-bindings.test.ts'
       - 'remote/tests/general/pg-sql-centralized.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
+      - 'remote/tests/general/rust-pg-defs-wiring.test.ts'
       - '.github/workflows/pg-defs-check.yml'
   push:
     branches:
@@ -22,9 +25,12 @@ on:
       - 'remote/gleam-lambda-runner/**'
       - 'remote/gleam-mcp-server/**'
       - 'remote/gleamlang-server/**'
+      - 'remote/rest-api-rs/**'
+      - 'remote/web-home-rs/**'
       - 'remote/tests/general/pg-defs-bindings.test.ts'
       - 'remote/tests/general/pg-sql-centralized.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
+      - 'remote/tests/general/rust-pg-defs-wiring.test.ts'
       - '.github/workflows/pg-defs-check.yml'
 
 jobs:
@@ -113,4 +119,52 @@ jobs:
       # after the build (so silent dep drops never reach production).
       - name: Verify Gleam services compile + test against dd_pg_defs
         run: pnpm run test:cli:gleam-pg-defs-wiring
+        working-directory: remote/tests
+
+  rust-wiring:
+    name: cargo check + cargo test (dd-remote-rest-api pg_contract)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            remote/rest-api-rs/target
+            remote/libs/pg-defs/generated/rust/target
+          key: ${{ runner.os }}-cargo-pg-defs-${{ hashFiles('remote/rest-api-rs/Cargo.lock', 'remote/libs/pg-defs/generated/rust/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-pg-defs-
+
+      - name: Install tsx (remote/tests)
+        run: pnpm install --frozen-lockfile=false
+        working-directory: remote/tests
+
+      # Asserts:
+      #   1. dd-remote-rest-api lists dd-pg-defs as a path-dep
+      #   2. src/pg_contract.rs re-exports + provides assert_canonical_schema_matches_local_reads()
+      #   3. main.rs calls that assertion at startup
+      #   4. dd-remote-web-home stays free of any direct Postgres deps
+      #   5. cargo check passes (proves the path-dep resolves)
+      #   6. cargo test pg_contract passes (subset + table-name + status round-trip)
+      - name: Verify Rust services compile + test against dd-pg-defs
+        run: pnpm run test:cli:rust-pg-defs-wiring
         working-directory: remote/tests

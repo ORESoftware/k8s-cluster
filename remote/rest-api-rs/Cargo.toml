@@ -6,6 +6,13 @@ edition = "2021"
 [dependencies]
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
+# Single source of truth for the shared RDS Postgres contract. Reads /
+# writes against `app_config`, `lambda_functions`, `agent_remote_dev_*`,
+# and `known_git_repos` route through canonical column/table constants
+# in `pg_contract` so a schema-only diff in remote/libs/pg-defs/schema/
+# schema.sql immediately surfaces here (instead of silently shipping a
+# stale read or write).
+dd-pg-defs = { path = "../libs/pg-defs/generated/rust" }
 once_cell = "1"
 prometheus = "0.13"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls", "stream"] }

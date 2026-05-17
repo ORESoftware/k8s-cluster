@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+mod pg_contract;
+
 use axum::{
     body::Body,
     extract::{Path, Query},
@@ -4268,6 +4270,14 @@ async fn metrics() -> impl IntoResponse {
 
 #[tokio::main]
 async fn main() {
+    // Fail fast at startup if `remote/libs/pg-defs/schema/schema.sql`
+    // has drifted away from what this service reads or writes against
+    // RDS Postgres. The CI workflow `pg-defs-check` also enforces this
+    // at PR time, but the runtime assertion guarantees the wiring is
+    // exercised every time the binary boots (so a broken local build
+    // can't ship even if CI was skipped).
+    pg_contract::assert_canonical_schema_matches_local_reads();
+
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT")
         .ok()
