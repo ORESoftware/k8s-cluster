@@ -30,7 +30,10 @@ function formatError(error) {
 
 const config = loadConfig();
 const workerId = parseNonNegativeInteger('LIVE_MUTEX_WORKER_ID', 0);
-const workerRps = parsePositiveInteger('LIVE_MUTEX_WORKER_RPS', Math.ceil(config.requestsPerSecond / 3));
+const workerRps = parsePositiveInteger(
+  'LIVE_MUTEX_WORKER_RPS',
+  Math.ceil(config.requestsPerSecond / 3),
+);
 process.setMaxListeners(Math.max(process.getMaxListeners(), config.clientsPerWorker + 20));
 
 const tickMs = 100;
@@ -69,7 +72,7 @@ async function connectLiveMutexClient(client, index) {
       return;
     } catch (error) {
       console.error(
-        `live-mutex-loadtest-node worker_connect_failed worker_id=${workerId} client=${index} error=${formatError(error)}`,
+        `lock-loadtest-node worker_connect_failed worker_id=${workerId} client=${index} error=${formatError(error)}`,
       );
       await sleep(config.connectRetryDelayMs);
     }
@@ -102,11 +105,10 @@ async function connectPool() {
     if (config.lockBackend === 'redis') {
       client.on('error', (error) => {
         console.error(
-          `live-mutex-loadtest-node redis_client_error worker_id=${workerId} client=${index} error=${formatError(error)}`,
+          `lock-loadtest-node redis_client_error worker_id=${workerId} client=${index} error=${formatError(error)}`,
         );
       });
     }
-
     clients.push(client);
   }
 
@@ -213,7 +215,7 @@ async function runLockCycle() {
   } catch (error) {
     stats.failed += 1;
     console.error(
-      `live-mutex-loadtest-node worker_request_failed worker_id=${workerId} key=${lockKey} error=${formatError(error)}`,
+      `lock-loadtest-node worker_request_failed worker_id=${workerId} key=${lockKey} error=${formatError(error)}`,
     );
   } finally {
     stats.inFlight = Math.max(0, stats.inFlight - 1);
@@ -263,7 +265,7 @@ process.on('SIGTERM', () => {
 async function main() {
   console.log(
     [
-      'live-mutex-loadtest-node worker_starting',
+      'lock-loadtest-node worker_starting',
       `backend=${config.lockBackend}`,
       `worker_id=${workerId}`,
       `pid=${process.pid}`,
@@ -276,13 +278,13 @@ async function main() {
   );
 
   await connectPool();
-  console.log(`live-mutex-loadtest-node worker_ready worker_id=${workerId} pid=${process.pid}`);
+  console.log(`lock-loadtest-node worker_ready worker_id=${workerId} pid=${process.pid}`);
 
   setInterval(scheduleTick, tickMs);
   setInterval(sendStats, config.reportIntervalSeconds * 1000);
 }
 
 main().catch((error) => {
-  console.error(`live-mutex-loadtest-node worker_fatal worker_id=${workerId} error=${formatError(error)}`);
+  console.error(`lock-loadtest-node worker_fatal worker_id=${workerId} error=${formatError(error)}`);
   process.exit(1);
 });

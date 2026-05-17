@@ -1,9 +1,9 @@
 {
-  "name": "dd-live-mutex-loadtest-node",
+  "name": "dd-lock-loadtest-node",
   "version": "0.1.0",
   "private": true,
-  "description": "Node.js lock load generator for live-mutex and Redis",
-  "main": "src/main.js",
+  "description": "Node.js lock load-test trigger for live-mutex and Redis",
+  "main": "src/server.js",
   "scripts": {
     "compare": "node src/compare.js",
     "loadtest": "node src/main.js",

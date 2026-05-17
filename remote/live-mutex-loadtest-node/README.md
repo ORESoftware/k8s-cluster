@@ -77,8 +77,8 @@ single backend.
 ## Build
 
 ```bash
-docker build -t dd-live-mutex-loadtest-node:dev remote/live-mutex-loadtest-node
+docker build -t dd-lock-loadtest-node:dev remote/live-mutex-loadtest-node
 docker run --rm \
   -e BROKER_HOST=host.docker.internal \
-  dd-live-mutex-loadtest-node:dev
+  dd-lock-loadtest-node:dev
 ```

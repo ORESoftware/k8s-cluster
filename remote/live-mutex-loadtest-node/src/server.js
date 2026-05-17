@@ -41,7 +41,6 @@ function collectBody(request) {
         resolve({});
         return;
       }
-
       try {
         resolve(JSON.parse(body));
       } catch (error) {
@@ -83,7 +82,6 @@ function runSnapshot(run) {
   if (!run) {
     return null;
   }
-
   return {
     id: run.id,
     mode: run.mode,

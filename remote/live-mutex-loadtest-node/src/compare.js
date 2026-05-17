@@ -7,13 +7,13 @@ const { parseNonNegativeInteger } = require('./config');
 
 const mainPath = path.join(__dirname, 'main.js');
 const durationSeconds = Math.max(
-  10,
+  1,
   parseNonNegativeInteger('COMPARE_DURATION_SECONDS', 60, process.env),
 );
 const pauseSeconds = parseNonNegativeInteger('COMPARE_PAUSE_SECONDS', 5, process.env);
 
 function parseAggregate(line) {
-  if (!line.includes('live-mutex-loadtest-node aggregate')) {
+  if (!line.includes('lock-loadtest-node aggregate')) {
     return null;
   }
 
@@ -71,17 +71,14 @@ function runBackend(backend) {
       if (aggregate) {
         lastAggregate = aggregate;
       }
-
       if (code !== 0) {
         reject(new Error(`${backend} run exited with code=${code} signal=${signal}`));
         return;
       }
-
       if (!lastAggregate) {
         reject(new Error(`${backend} run did not emit aggregate stats`));
         return;
       }
-
       resolve({
         ...lastAggregate,
         throughputRps: lastAggregate.released / durationSeconds,
@@ -95,7 +92,6 @@ function chooseWinner(results) {
   if (Math.abs(first.throughputRps - second.throughputRps) >= 1) {
     return first.throughputRps > second.throughputRps ? first.backend : second.backend;
   }
-
   return first.avgLatencyMs <= second.avgLatencyMs ? first.backend : second.backend;
 }
 
@@ -103,9 +99,7 @@ async function main() {
   const results = [];
 
   for (const backend of ['live-mutex', 'redis']) {
-    console.log(
-      `lock-loadtest-compare starting backend=${backend} duration_seconds=${durationSeconds}`,
-    );
+    console.log(`lock-loadtest-compare starting backend=${backend} duration_seconds=${durationSeconds}`);
     results.push(await runBackend(backend));
     if (pauseSeconds > 0 && backend !== 'redis') {
       await new Promise((resolve) => setTimeout(resolve, pauseSeconds * 1000));

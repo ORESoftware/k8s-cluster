@@ -29,13 +29,13 @@ function serializeConfigForEnv(workerId, workerRate) {
     LOCK_REQUEST_TIMEOUT_MS: String(config.lockRequestTimeoutMs),
     LOCK_TTL_MS: String(config.lockTtlMs),
     MAX_IN_FLIGHT_PER_WORKER: String(config.maxInFlightPerWorker),
-    REPORT_INTERVAL_SECONDS: String(config.reportIntervalSeconds),
     REDIS_DATABASE: String(config.redisDatabase),
     REDIS_HOST: config.redisHost,
     REDIS_LOCK_PREFIX: config.redisLockPrefix,
     REDIS_LOCK_RETRY_DELAY_MS: String(config.redisRetryDelayMs),
     REDIS_PASSWORD: config.redisPassword,
     REDIS_PORT: String(config.redisPort),
+    REPORT_INTERVAL_SECONDS: String(config.reportIntervalSeconds),
     UNLOCK_REQUEST_TIMEOUT_MS: String(config.unlockRequestTimeoutMs),
   };
 }
@@ -48,7 +48,6 @@ function spawnWorker(workerId) {
   });
 
   children.set(workerId, child);
-
   child.on('message', (message) => {
     if (message && message.type === 'stats') {
       workerStats.set(workerId, message.stats);
@@ -62,7 +61,7 @@ function spawnWorker(workerId) {
     }
 
     console.error(
-      `live-mutex-loadtest-node worker_exit worker_id=${workerId} code=${code} signal=${signal}`,
+      `lock-loadtest-node worker_exit worker_id=${workerId} code=${code} signal=${signal}`,
     );
     setTimeout(() => spawnWorker(workerId), config.connectRetryDelayMs);
   });
@@ -109,7 +108,7 @@ function reportAggregate() {
 
   console.log(
     [
-      'live-mutex-loadtest-node aggregate',
+      'lock-loadtest-node aggregate',
       `backend=${config.lockBackend}`,
       `target_rps=${config.requestsPerSecond}`,
       `actual_released_rps=${(releasedDelta / intervalSeconds).toFixed(2)}`,
@@ -138,12 +137,11 @@ function shutdown() {
   }
 
   shuttingDown = true;
-  console.log('live-mutex-loadtest-node shutting_down');
+  console.log('lock-loadtest-node shutting_down');
   for (const child of children.values()) {
     child.send({ type: 'shutdown' });
     setTimeout(() => child.kill('SIGTERM'), 5000).unref();
   }
-
   setTimeout(() => process.exit(0), 6500).unref();
 }
 
@@ -152,7 +150,7 @@ process.on('SIGTERM', shutdown);
 
 console.log(
   [
-    'live-mutex-loadtest-node starting',
+    'lock-loadtest-node starting',
     `backend=${config.lockBackend}`,
     `broker=${config.brokerHost}:${config.brokerPort}`,
     `redis=${config.redisHost}:${config.redisPort}/${config.redisDatabase}`,
