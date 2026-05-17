@@ -5,61 +5,70 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.oresoftware.dd</groupId>
-    <artifactId>spark-pipeline-server</artifactId>
+    <artifactId>akka-ws-server</artifactId>
     <version>0.1.0</version>
     <packaging>jar</packaging>
 
-    <name>dd-spark-pipeline-server</name>
+    <name>dd-akka-ws-server</name>
     <description>
-        Vert.x-based Java service that orchestrates Spark and other JVM-ecosystem data pipeline
-        jobs. Uses the async-java/async.java library for callback flow control (Series, Parallel,
-        Waterfall, Queue) so that long-running multi-stage pipelines stay non-blocking on the
-        Vert.x event loop.
+        Akka HTTP WebSocket server that runs the same multi-stage pipeline through two different
+        coordination libraries — async-java/async.java (callback-style) and Akka Streams
+        (reactive-streams) — for a side-by-side comparison on performance, predictability under
+        load, and debuggability (stack-trace quality, ergonomics).
+
+        Licensing: Akka 2.10.x is under the BSL 1.1, which permits production use for
+        organizations with revenue under $25M. If that constraint matters for your deployment,
+        every import below translates one-for-one to Apache Pekko by swapping `akka.*` for
+        `org.apache.pekko.*` in source files and the matching coordinates here. The pipeline
+        implementations themselves are identical under both runtimes.
     </description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <!--
+          JDK 21 is required so we can install
+          `Executors.newVirtualThreadPerTaskExecutor()` as the per-task executor for the
+          async.java pipeline. The comparison readme leans on the
+          "async.java + Loom" pairing documented in async-java/async.java#8.
+        -->
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
 
-        <vertx.version>4.5.10</vertx.version>
+        <scala.binary.version>2.13</scala.binary.version>
+        <!--
+          Pinned to the latest stable Akka + Akka HTTP versions Lightbend still publishes
+          to Maven Central. 2.9+ moved to Lightbend's commercial repository under BSL, so
+          we cap at the 2.8.x line which remains BSL-licensed but Central-accessible.
+        -->
+        <akka.version>2.8.8</akka.version>
+        <akka.http.version>10.5.3</akka.http.version>
+
+        <!--
+          Pinned to the merge commit of async-java/async.java#8 (production-readiness
+          patches: daemon-thread NeoQueue executor, NeoLock thread-safety fix, JEP 491
+          stack-trace cleanup, modernized pom). Once Sonatype Central is wired up
+          per RELEASING.md and a `v0.2.0` tag is cut, switch this dependency to
+          `io.github.async-java:async-java:0.2.0` from Maven Central proper.
+
+          Until then we consume the patched library through JitPack, which builds any
+          git ref on demand. The ref is a 10-character commit SHA so the build is
+          reproducible (master-SNAPSHOT would drift).
+        -->
+        <async-java.version>937c0e3</async-java.version>
         <jackson.version>2.17.2</jackson.version>
         <logback.version>1.5.6</logback.version>
         <slf4j.version>2.0.13</slf4j.version>
         <junit.version>5.10.3</junit.version>
 
-        <!--
-          Postgres / jOOQ versions are pinned to whatever
-          remote/libs/pg-defs/generated/jvm/jooq/build.gradle declares, so the generated
-          Tables.java compiles cleanly against the same jOOQ API surface. If you bump the
-          version in pg-defs's build.gradle, bump it here too.
-        -->
-        <jooq.version>3.19.10</jooq.version>
-        <postgresql.version>42.7.4</postgresql.version>
-        <hikaricp.version>5.1.0</hikaricp.version>
-
-        <!--
-          Pinned to the merge commit of async-java/async.java#8 (production-readiness
-          patches: daemon-thread NeoQueue executor, NeoLock thread-safety fix,
-          modernized pom and CI). Once Sonatype Central is wired up per RELEASING.md
-          in that repo and a `v0.2.0` tag is cut, switch this dependency to
-          `io.github.async-java:async-java:0.2.0` from Maven Central proper.
-
-          Until then we consume the patched library through JitPack, which builds any
-          git ref on demand. The ref is a 10-character commit SHA so the build is
-          reproducible (master-SNAPSHOT would drift on every upstream commit).
-        -->
-        <async-java.version>937c0e3</async-java.version>
-
-        <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
+        <main.class>com.oresoftware.dd.akkaws.App</main.class>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>io.vertx</groupId>
-                <artifactId>vertx-stack-depchain</artifactId>
-                <version>${vertx.version}</version>
+                <groupId>com.typesafe.akka</groupId>
+                <artifactId>akka-bom_${scala.binary.version}</artifactId>
+                <version>${akka.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -75,35 +84,26 @@
 
     <dependencies>
         <dependency>
-            <groupId>io.vertx</groupId>
-            <artifactId>vertx-core</artifactId>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-actor-typed_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.vertx</groupId>
-            <artifactId>vertx-web</artifactId>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-stream_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.vertx</groupId>
-            <artifactId>vertx-config</artifactId>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http_${scala.binary.version}</artifactId>
+            <version>${akka.http.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.vertx</groupId>
-            <artifactId>vertx-health-check</artifactId>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-jackson_${scala.binary.version}</artifactId>
+            <version>${akka.http.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.vertx</groupId>
-            <artifactId>vertx-micrometer-metrics</artifactId>
-        </dependency>
-        <!--
-          Pinned to 1.12.x because vertx-micrometer-metrics 4.5.x reflectively looks up the
-          legacy package `io.micrometer.prometheus.PrometheusMeterRegistry` to wire its Vert.x
-          backend; the 1.13.x artifact relocated that class to
-          `io.micrometer.prometheusmetrics`, which breaks Vert.x's backend registry boot path.
-        -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
-            <version>1.12.13</version>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-slf4j_${scala.binary.version}</artifactId>
         </dependency>
 
         <!--
@@ -116,29 +116,6 @@
             <groupId>com.github.async-java</groupId>
             <artifactId>async.java</artifactId>
             <version>${async-java.version}</version>
-        </dependency>
-
-        <!--
-          Postgres + jOOQ + HikariCP for talking to the canonical dd_pg_defs database.
-
-          The generated jOOQ Tables.java in remote/libs/pg-defs/generated/jvm/jooq is added
-          to this module's source set below (build-helper-maven-plugin), so a single jar
-          ships with both the Vert.x service code and the pg-defs adapter classes.
-        -->
-        <dependency>
-            <groupId>org.jooq</groupId>
-            <artifactId>jooq</artifactId>
-            <version>${jooq.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>${postgresql.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.zaxxer</groupId>
-            <artifactId>HikariCP</artifactId>
-            <version>${hikaricp.version}</version>
         </dependency>
 
         <dependency>
@@ -165,61 +142,33 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>io.vertx</groupId>
-            <artifactId>vertx-junit5</artifactId>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-actor-testkit-typed_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-stream-testkit_${scala.binary.version}</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
 
     <build>
-        <finalName>dd-spark-pipeline-server</finalName>
+        <finalName>dd-akka-ws-server</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <release>17</release>
+                    <release>21</release>
                 </configuration>
             </plugin>
-
-            <!--
-              Compile the generated jOOQ Tables.java directly from the pg-defs source tree
-              instead of consuming it as a pre-built artifact. The pg-defs jvm/jooq module
-              ships a build.gradle (not a pom.xml), so we don't have a published Maven
-              coordinate to depend on. Compiling the sources in-place keeps a single source
-              of truth — pg-defs's generator regenerates that file, and Maven picks the new
-              version up on the next build with no manual install step.
-
-              Path is relative to this module's basedir; absolute build context is the
-              k8s-cluster repo root.
-            -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <id>add-pg-defs-jooq-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                        </goals>
-                        <configuration>
-                            <sources>
-                                <source>${project.basedir}/../libs/pg-defs/generated/jvm/jooq/src/main/java</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
             </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -241,6 +190,12 @@
                                 </transformer>
                                 <transformer
                                         implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <!-- Akka ships per-module reference.conf files; we must concatenate
+                                     them or Akka boots with a half-empty configuration. -->
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>reference.conf</resource>
+                                </transformer>
                             </transformers>
                             <filters>
                                 <filter>
