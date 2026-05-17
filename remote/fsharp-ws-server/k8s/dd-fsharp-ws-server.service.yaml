@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-fsharp-ws-server
+  namespace: default
+  labels:
+    app: dd-fsharp-ws-server
+spec:
+  selector:
+    app: dd-fsharp-ws-server
+  ports:
+    - name: http
+      port: 8087
+      targetPort: 8087
+  type: ClusterIP
