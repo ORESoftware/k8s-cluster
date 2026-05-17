@@ -14,6 +14,7 @@
     "test:cli:contract-service-config": "pnpm exec tsx --test general/contract-service-config.test.ts",
     "test:cli:des-simulator-config": "pnpm exec tsx --test general/des-simulator-config.test.ts",
     "test:cli:echo-runner": "pnpm exec tsx --test general/echo-runner.test.ts",
+    "test:cli:fsharp-ws-server-config": "pnpm exec tsx --test general/fsharp-ws-server-config.test.ts",
     "test:cli:gateway-service-directory": "pnpm exec tsx --test general/gateway-service-directory.test.ts",
     "test:cli:gleam-lambda-runner-config": "pnpm exec tsx --test general/gleam-lambda-runner-config.test.ts",
     "test:cli:gleam-lambda-runner-ec2": "DD_EC2_GLEAM_LAMBDA_INTEGRATION=1 pnpm exec tsx --test general/gleam-lambda-runner-ec2-integration.test.ts",

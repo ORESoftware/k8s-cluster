@@ -1,8 +1,10 @@
 module OresSoftware.Dd.FsWs.WsRoutes
 
 open System
+open System.IO
 open System.Net.WebSockets
 open System.Text
+open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
 open Microsoft.AspNetCore.Http
@@ -21,20 +23,97 @@ open Microsoft.Extensions.Logging
 
 let private receiveBufferSize = 16 * 1024
 
-let private escapeJson (raw: string) : string =
-    if isNull raw then ""
-    else raw.Replace("\\", "\\\\").Replace("\"", "\\\"")
+let private defaultMaxTextFrameBytes = 65536
+let private maxTextFrameBytesCeiling = 1048576
+let private defaultBenchmarkIterations = 200
+let private defaultMaxBenchmarkIterations = 1000
+let private maxBenchmarkIterationsCeiling = 10000
+
+let private jsonString (raw: string) : string =
+    JsonSerializer.Serialize(if isNull raw then "" else raw)
 
 let private okFrame (body: string) : string =
     sprintf "{\"ok\":true,\"result\":%s}" body
 
 let private errFrame (pipeline: string) (ex: exn) : string =
     let cause = if isNull ex.InnerException then ex else ex.InnerException
+    let error = sprintf "%s: %s" (cause.GetType().Name) cause.Message
     sprintf
-        "{\"ok\":false,\"pipeline\":\"%s\",\"error\":\"%s: %s\"}"
-        pipeline
-        (cause.GetType().Name)
-        (escapeJson cause.Message)
+        "{\"ok\":false,\"pipeline\":%s,\"error\":%s}"
+        (jsonString pipeline)
+        (jsonString error)
+
+let private parseBoundedPositiveIntEnv (name: string) (fallback: int) (upperBound: int) : int =
+    let boundedFallback = max 1 (min upperBound fallback)
+    match Environment.GetEnvironmentVariable name with
+    | null | "" -> boundedFallback
+    | raw ->
+        match Int32.TryParse(raw.Trim()) with
+        | true, v when v > 0 -> max 1 (min upperBound v)
+        | _ -> boundedFallback
+
+let private closeIfOpen
+        (ws: WebSocket)
+        (status: WebSocketCloseStatus)
+        (description: string)
+        (ct: CancellationToken)
+        : Task =
+    task {
+        if ws.State = WebSocketState.Open || ws.State = WebSocketState.CloseReceived then
+            do! ws.CloseAsync(status, description, ct)
+    }
+
+type private InboundFrame =
+    | TextFrame of string
+    | CloseFrame
+
+let private receiveTextFrame
+        (pipelineLabel: string)
+        (logger: ILogger)
+        (ws: WebSocket)
+        (ct: CancellationToken)
+        (maxTextFrameBytes: int)
+        : Task<InboundFrame> =
+    task {
+        let buffer = Array.zeroCreate<byte> receiveBufferSize
+        let segment = ArraySegment(buffer)
+        use message = new MemoryStream()
+        let mutable frame = CloseFrame
+        let mutable finished = false
+
+        while not finished do
+            let! result =
+                try ws.ReceiveAsync(segment, ct)
+                with ex ->
+                    logger.LogWarning(ex, "ws[{Pipeline}] receive failed", pipelineLabel)
+                    reraise ()
+
+            match result.MessageType with
+            | WebSocketMessageType.Close ->
+                finished <- true
+            | WebSocketMessageType.Binary ->
+                logger.LogInformation(sprintf "ws[%s] rejected binary frame" pipelineLabel)
+                do! closeIfOpen ws WebSocketCloseStatus.InvalidMessageType "binary frames not supported" ct
+                finished <- true
+            | _ ->
+                if result.Count > 0 then
+                    message.Write(buffer, 0, result.Count)
+
+                if message.Length > int64 maxTextFrameBytes then
+                    logger.LogWarning(
+                        sprintf
+                            "ws[%s] rejected oversized text frame: %d > %d"
+                            pipelineLabel
+                            message.Length
+                            maxTextFrameBytes)
+                    do! closeIfOpen ws WebSocketCloseStatus.MessageTooBig "text frame too large" ct
+                    finished <- true
+                elif result.EndOfMessage then
+                    frame <- TextFrame(Encoding.UTF8.GetString(message.ToArray()))
+                    finished <- true
+
+        return frame
+    }
 
 /// Drives a single WebSocket connection: receive a text frame, hand it to
 /// `pipeline`, send the result back as a text frame. Errors are converted to a
@@ -48,38 +127,19 @@ let private runWsLoop
         (ct: CancellationToken)
         : Task =
     task {
-        let buffer = Array.zeroCreate<byte> receiveBufferSize
-        let segment = ArraySegment(buffer)
+        let maxTextFrameBytes =
+            parseBoundedPositiveIntEnv
+                "MAX_WS_TEXT_FRAME_BYTES"
+                defaultMaxTextFrameBytes
+                maxTextFrameBytesCeiling
         let mutable keep = true
         while keep do
-            let! result =
-                try ws.ReceiveAsync(segment, ct)
-                with ex ->
-                    logger.LogWarning(ex, "ws[{Pipeline}] receive failed", pipelineLabel)
-                    reraise ()
-            match result.MessageType with
-            | WebSocketMessageType.Close ->
-                do! ws.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "bye",
-                        ct)
+            let! frame = receiveTextFrame pipelineLabel logger ws ct maxTextFrameBytes
+            match frame with
+            | CloseFrame ->
+                do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" ct
                 keep <- false
-            | WebSocketMessageType.Binary ->
-                // We only handle text frames; reject binary politely instead of
-                // dropping the connection.
-                let payload = Encoding.UTF8.GetBytes(
-                                "{\"ok\":false,\"error\":\"binary frames not supported\"}")
-                do! ws.SendAsync(
-                        ArraySegment(payload),
-                        WebSocketMessageType.Text,
-                        true,
-                        ct)
-            | _ ->
-                // Strict text frame. ReceiveAsync returned exactly result.Count
-                // bytes; if a frame is larger than `receiveBufferSize` we'd need
-                // to loop on `EndOfMessage` — kept simple here because the
-                // benchmark payloads are well under 1 KiB.
-                let input = Encoding.UTF8.GetString(buffer, 0, result.Count)
+            | TextFrame input ->
                 let! reply =
                     task {
                         try
@@ -119,17 +179,18 @@ let private acceptAndRun
 let handleRx     ctx = acceptAndRun "rx"    OresSoftware.Dd.FsWs.RxPipeline.processFrame    ctx
 let handleAsync  ctx = acceptAndRun "async" OresSoftware.Dd.FsWs.AsyncPipeline.processFrame ctx
 
-let private parsePositiveIntEnv (name: string) (fallback: int) : int =
-    match Environment.GetEnvironmentVariable name with
-    | null | "" -> fallback
-    | raw ->
-        match Int32.TryParse(raw.Trim()) with
-        | true, v when v > 0 -> v
-        | _ -> fallback
-
 let handleBenchmark (ctx: HttpContext) : Task =
     task {
-        let iterations = parsePositiveIntEnv "BENCHMARK_ITERATIONS" 200
+        let maxIterations =
+            parseBoundedPositiveIntEnv
+                "MAX_BENCHMARK_ITERATIONS"
+                defaultMaxBenchmarkIterations
+                maxBenchmarkIterationsCeiling
+        let iterations =
+            parseBoundedPositiveIntEnv
+                "BENCHMARK_ITERATIONS"
+                defaultBenchmarkIterations
+                maxIterations
         let payload =
             match Environment.GetEnvironmentVariable "BENCHMARK_PAYLOAD" with
             | null | "" -> "{\"id\":\"bench\",\"payload\":\"a benchmark message body\"}"
@@ -154,12 +215,12 @@ let handleLive (ctx: HttpContext) : Task =
     let uptimeMs =
         (DateTime.UtcNow - proc.StartTime.ToUniversalTime()).TotalMilliseconds
         |> int64
-    let runtime = Environment.Version.ToString()
+    let runtime = "dotnet-" + Environment.Version.ToString()
     let body =
         sprintf
-            "{\"ok\":true,\"service\":\"dd-fsharp-ws-server\",\"runtime\":\"dotnet-%s\",\"machine\":\"%s\",\"uptime_ms\":%d}"
-            runtime
-            (escapeJson machine)
+            "{\"ok\":true,\"service\":\"dd-fsharp-ws-server\",\"runtime\":%s,\"machine\":%s,\"uptime_ms\":%d}"
+            (jsonString runtime)
+            (jsonString machine)
             uptimeMs
     ctx.Response.ContentType <- "application/json"
     ctx.Response.WriteAsync(body)

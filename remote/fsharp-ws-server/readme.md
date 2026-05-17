@@ -61,14 +61,16 @@ so the same loadtest correlator works against this service and `dd-akka-ws-serve
 
 ## Environment variables
 
-| Var                    | Default     | Description                                                  |
-| ---------------------- | ----------- | ------------------------------------------------------------ |
-| `HTTP_HOST`            | `0.0.0.0`   | Bind address.                                                |
-| `HTTP_PORT`            | `8087`      | Bind port.                                                   |
-| `BENCHMARK_ITERATIONS` | `200`       | Iterations for `GET /v1/benchmark`.                          |
-| `BENCHMARK_PAYLOAD`    | sample JSON | Payload to drive the benchmark.                              |
-| `DOTNET_gcServer`      | `1`         | Server GC (multi-core, throughput-tuned).                    |
-| `DOTNET_TieredPGO`     | `1`         | Tiered JIT + dynamic PGO.                                    |
+| Var                       | Default     | Description                                                  |
+| ------------------------- | ----------- | ------------------------------------------------------------ |
+| `HTTP_HOST`               | `0.0.0.0`   | Bind address.                                                |
+| `HTTP_PORT`               | `8087`      | Bind port.                                                   |
+| `BENCHMARK_ITERATIONS`    | `200`       | Iterations for `GET /v1/benchmark`.                          |
+| `MAX_BENCHMARK_ITERATIONS` | `1000`     | Upper bound applied to `BENCHMARK_ITERATIONS` at runtime.    |
+| `BENCHMARK_PAYLOAD`       | sample JSON | Payload to drive the benchmark.                              |
+| `MAX_WS_TEXT_FRAME_BYTES` | `65536`     | Maximum assembled inbound WebSocket text frame size.         |
+| `DOTNET_gcServer`         | `1`         | Server GC (multi-core, throughput-tuned).                    |
+| `DOTNET_TieredPGO`        | `1`         | Tiered JIT + dynamic PGO.                                    |
 
 ## Local build
 
