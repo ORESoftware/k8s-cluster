@@ -125,11 +125,16 @@ Run the same command against `/ws/async` to diff the two pipelines.
 
 ## Kubernetes layout
 
-* `k8s/dd-fsharp-ws-server.deployment.yaml`
-* `k8s/dd-fsharp-ws-server.service.yaml`
-* `k8s/kustomization.yaml` (default)
+* `k8s/ec2/dd-fsharp-ws-server.deployment.yaml`
+* `k8s/ec2/dd-fsharp-ws-server.service.yaml`
 * `k8s/ec2/kustomization.yaml` (Argo CD target — synced via
   `remote/argocd/apps/dd-fsharp-ws-server.application.yaml`)
+
+The layout is flat (no `../` resource references) because ArgoCD's bundled
+kustomize runs with `LoadRestrictionsRootOnly` and rejects path traversal
+out of the kustomization root. Same posture as `dd-formal-methods-service`
+which hit and fixed the same constraint in commit
+[`73b78d6`](https://github.com/ORESoftware/k8s-cluster/commit/73b78d6).
 
 The EC2 deployment mounts the repo as a hostPath at `/opt/dd-next-1` and runs
 `dotnet publish` once on container start, matching the on-pod-build pattern
