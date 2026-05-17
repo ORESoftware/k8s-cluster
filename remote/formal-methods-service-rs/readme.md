@@ -31,11 +31,10 @@ remote/formal-methods-service-rs/
   Dockerfile                                                 # optional local image (cluster uses cargo run)
   src/                                                       # axum router, analyzers, GitHub client
   tests/webhook_integration.rs
-  k8s/
+  k8s/ec2/
     dd-formal-methods-service.deployment.yaml                # hostPath repo mount + cargo run --release
     dd-formal-methods-service.service.yaml                   # ClusterIP on port 8111
-    kustomization.yaml
-    ec2/kustomization.yaml                                   # Argo CD source path
+    kustomization.yaml                                       # Argo CD source path
   templates/github-actions/
     formal-methods-trigger.yml                               # opt-in Option B trigger workflow
 ```
@@ -141,7 +140,7 @@ commit before the service is reachable.
    [`../argocd/secrets/`](../argocd/secrets/)). The deployment reads them
    via `secretKeyRef`.
 2. Edit the deployment env block at
-   [`k8s/dd-formal-methods-service.deployment.yaml`](./k8s/dd-formal-methods-service.deployment.yaml)
+   [`k8s/ec2/dd-formal-methods-service.deployment.yaml`](./k8s/ec2/dd-formal-methods-service.deployment.yaml)
    so `FORMAL_METHODS_ALLOWED_REPOS` is set to your `owner/repo` (or
    `owner/*`) and `FORMAL_METHODS_PATH_PREFIXES` lists the directories
    that should gate the pipeline. The defaults are `*` (allow all) and
