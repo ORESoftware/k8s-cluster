@@ -2,6 +2,122 @@
 -- This file is the desired-state contract used by the remote migration diff generator.
 -- Do not apply it directly to a shared database; generate and review a diff instead.
 
+create table if not exists app_config (
+  id uuid primary key default gen_random_uuid(),
+  scope varchar(120) default 'default' not null,
+  key varchar(200) not null,
+  value jsonb not null,
+  version integer default 1 not null,
+  status varchar(32) default 'active' not null,
+  labels jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint app_config_scope_format_chk
+    check (scope ~ '^[A-Za-z0-9._/-]{1,120}$'),
+  constraint app_config_key_format_chk
+    check (key ~ '^[A-Za-z0-9._:/-]{1,200}$'),
+  constraint app_config_value_object_chk
+    check (jsonb_typeof(value) = 'object'),
+  constraint app_config_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint app_config_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint app_config_version_chk
+    check (version > 0),
+  constraint app_config_status_chk
+    check (status in ('active', 'paused', 'archived'))
+);
+
+create unique index if not exists app_config_scope_key_uq
+  on app_config (scope, key);
+
+create index if not exists app_config_status_idx
+  on app_config (status)
+  where is_soft_deleted = false;
+
+create index if not exists app_config_updated_at_idx
+  on app_config (updated_at desc)
+  where is_soft_deleted = false;
+
+create index if not exists app_config_labels_gin_idx
+  on app_config using gin (labels);
+
+create table if not exists container_pool_configs (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(120) not null,
+  display_name varchar(200) not null,
+  image text not null,
+  command jsonb default '[]'::jsonb not null,
+  env jsonb default '{}'::jsonb not null,
+  request_path varchar(256) default '/invoke' not null,
+  container_port integer default 8080 not null,
+  min_warm integer default 1 not null,
+  max_warm integer default 2 not null,
+  max_concurrency_per_container integer default 1 not null,
+  request_timeout_ms integer default 30000 not null,
+  idle_ttl_seconds integer default 900 not null,
+  nats_subject text,
+  status varchar(32) default 'active' not null,
+  labels jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint container_pool_configs_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'),
+  constraint container_pool_configs_image_size_chk
+    check (octet_length(image) between 1 and 512),
+  constraint container_pool_configs_display_name_size_chk
+    check (octet_length(display_name) <= 200),
+  constraint container_pool_configs_command_array_chk
+    check (jsonb_typeof(command) = 'array'),
+  constraint container_pool_configs_env_object_chk
+    check (jsonb_typeof(env) = 'object'),
+  constraint container_pool_configs_request_path_chk
+    check (request_path ~ '^/[A-Za-z0-9._~!$&''()*+,;=:@%/-]{0,255}$'),
+  constraint container_pool_configs_container_port_chk
+    check (container_port between 1 and 65535),
+  constraint container_pool_configs_min_warm_chk
+    check (min_warm between 0 and 64),
+  constraint container_pool_configs_max_warm_chk
+    check (max_warm between 1 and 128 and max_warm >= min_warm),
+  constraint container_pool_configs_concurrency_chk
+    check (max_concurrency_per_container between 1 and 128),
+  constraint container_pool_configs_timeout_chk
+    check (request_timeout_ms between 100 and 900000),
+  constraint container_pool_configs_idle_ttl_chk
+    check (idle_ttl_seconds between 10 and 86400),
+  constraint container_pool_configs_nats_subject_size_chk
+    check (nats_subject is null or octet_length(nats_subject) <= 256),
+  constraint container_pool_configs_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint container_pool_configs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint container_pool_configs_status_chk
+    check (status in ('active', 'paused', 'archived'))
+);
+
+create unique index if not exists container_pool_configs_slug_active_uq
+  on container_pool_configs (slug)
+  where is_soft_deleted = false;
+
+create index if not exists container_pool_configs_status_idx
+  on container_pool_configs (status)
+  where is_soft_deleted = false;
+
+create index if not exists container_pool_configs_updated_at_idx
+  on container_pool_configs (updated_at desc)
+  where is_soft_deleted = false;
+
+create index if not exists container_pool_configs_labels_gin_idx
+  on container_pool_configs using gin (labels);
+
 create table if not exists known_git_repos (
   id uuid primary key default gen_random_uuid(),
   repo_url text not null,
