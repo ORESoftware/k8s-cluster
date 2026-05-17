@@ -163,8 +163,10 @@ test('external secrets rollout stays aligned with runtime secret consumers', asy
   assert.match(operatorApp, /installCRDs:\s*true/);
   assert.match(secretStore, /kind:\s*ClusterSecretStore/);
   assert.match(secretStore, /name:\s*dd-aws-secrets-manager/);
+  assert.match(secretStore, /argocd\.argoproj\.io\/sync-options:\s*Replace=true/);
   assert.match(secretStore, /service:\s*SecretsManager/);
-  assert.match(secretStore, /name:\s*dd-aws-secrets-manager-auth/);
+  assert.match(secretStore, /region:\s*us-east-1/);
+  assert.doesNotMatch(secretStore, /accessKeyIDSecretRef/);
   assert.match(kustomization, /- aws-secret-store\.yaml/);
   assert.match(kustomization, /- external-secrets\.yaml/);
   assert.match(secrets, /name:\s*dd-agent-secrets/);
@@ -178,5 +180,5 @@ test('external secrets rollout stays aligned with runtime secret consumers', asy
   assert.match(secretsReadme, /dd\/remote-dev\/agent-secrets/);
   assert.match(secretsReadme, /dd\/remote-dev\/rest-api-secrets/);
   assert.match(secretsReadme, /dd\/remote-dev\/idle-reaper-secret/);
-  assert.match(secretsReadme, /dd-aws-secrets-manager-auth/);
+  assert.match(secretsReadme, /default AWS\s+credential chain/);
 });
