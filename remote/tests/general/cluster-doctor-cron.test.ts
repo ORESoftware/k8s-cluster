@@ -161,6 +161,8 @@ test('external secrets rollout stays aligned with runtime secret consumers', asy
   assert.match(operatorApp, /repoURL:\s*https:\/\/charts\.external-secrets\.io/);
   assert.match(operatorApp, /chart:\s*external-secrets/);
   assert.match(operatorApp, /installCRDs:\s*true/);
+  assert.match(operatorApp, /hostNetwork:\s*true/);
+  assert.match(operatorApp, /dnsPolicy:\s*ClusterFirstWithHostNet/);
   assert.match(secretStore, /kind:\s*ClusterSecretStore/);
   assert.match(secretStore, /name:\s*dd-aws-secrets-manager/);
   assert.match(secretStore, /argocd\.argoproj\.io\/sync-options:\s*Replace=true/);
