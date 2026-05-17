@@ -237,6 +237,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
+        proxy_set_header X-Agent-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
       }
