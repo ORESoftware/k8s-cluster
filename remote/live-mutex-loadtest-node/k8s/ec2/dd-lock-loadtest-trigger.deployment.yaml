@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dd-live-mutex-loadtest-node
+  name: dd-lock-loadtest-trigger
   namespace: default
   labels:
-    app: dd-live-mutex-loadtest-node
+    app: dd-lock-loadtest-trigger
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dd-live-mutex-loadtest-node
+      app: dd-lock-loadtest-trigger
   template:
     metadata:
       labels:
-        app: dd-live-mutex-loadtest-node
+        app: dd-lock-loadtest-trigger
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
-        - name: loadtest
+        - name: trigger
           image: docker.io/library/node:22-bookworm-slim
           imagePullPolicy: IfNotPresent
           securityContext:
@@ -33,10 +33,12 @@ spec:
               set -eu
               cd /opt/dd-next-1/remote/live-mutex-loadtest-node
               npm ci --omit=dev --ignore-scripts
-              exec node src/main.js
+              exec node src/server.js
           env:
-            - name: LOCK_BACKEND
-              value: live-mutex
+            - name: HTTP_PORT
+              value: "8110"
+            - name: DEFAULT_TEST_DURATION_SECONDS
+              value: "60"
             - name: BROKER_HOST
               value: dd-live-mutex.default.svc.cluster.local
             - name: BROKER_PORT
@@ -67,15 +69,36 @@ spec:
               value: "2000"
             - name: REPORT_INTERVAL_SECONDS
               value: "10"
-            - name: TEST_DURATION_SECONDS
-              value: "0"
+          ports:
+            - name: http
+              containerPort: 8110
           resources:
             requests:
-              cpu: "500m"
-              memory: 512Mi
+              cpu: 100m
+              memory: 256Mi
             limits:
               cpu: "4"
               memory: 4Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1

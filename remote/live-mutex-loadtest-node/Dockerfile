@@ -7,4 +7,4 @@ RUN npm ci --omit=dev --ignore-scripts
 
 COPY src ./src
 
-CMD ["node", "src/main.js"]
+CMD ["node", "src/server.js"]

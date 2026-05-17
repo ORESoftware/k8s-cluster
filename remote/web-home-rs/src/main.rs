@@ -362,10 +362,10 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
               <td>Ephemeral Redis cache deployment with bounded memory and Redis health probes.</td>
             </tr>
             <tr>
-              <td><code>dd-live-mutex-loadtest-node</code></td>
-              <td><code>deployment only</code></td>
+              <td><code>dd-lock-loadtest-trigger</code></td>
+              <td><code>dd-lock-loadtest-trigger:8110</code></td>
               <td><span class="pill warn">internal</span></td>
-              <td>Node.js live-mutex load generator targeting <code>dd-live-mutex.default.svc.cluster.local:6970</code>.</td>
+              <td>Node.js HTTP trigger for live-mutex versus Redis aggregate lock load tests.</td>
             </tr>
             <tr>
               <td><code>dd-trading-server</code></td>

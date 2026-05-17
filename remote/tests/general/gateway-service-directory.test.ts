@@ -39,7 +39,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /<code>dd-live-mutex<\/code>/);
   assert.match(home, /<code>dd-bastion<\/code>/);
   assert.match(home, /<code>dd-redis-cache<\/code>/);
-  assert.match(home, /<code>dd-live-mutex-loadtest-node<\/code>/);
+  assert.match(home, /<code>dd-lock-loadtest-trigger<\/code>/);
   assert.match(home, /<code>dd-container-pool<\/code>/);
   assert.match(home, /<h2>Live containers<\/h2>/);
   assert.match(home, /\/bastion\/runtime\/deployments/);

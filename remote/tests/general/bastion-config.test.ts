@@ -46,7 +46,7 @@ test('rust bastion serves authenticated vpn cluster access profile and kubeconfi
   assert.match(source, /route\("\/terminal"/);
   assert.match(source, /route\("\/terminal\/ws"/);
   assert.match(source, /const MANAGED_DEPLOYMENTS/);
-  assert.match(source, /dd-live-mutex-loadtest-node/);
+  assert.match(source, /dd-lock-loadtest-trigger/);
   assert.match(source, /dd-container-pool/);
   assert.match(source, /WebSocketUpgrade/);
   assert.match(source, /kubectl/);

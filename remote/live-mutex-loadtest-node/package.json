@@ -6,7 +6,8 @@
   "main": "src/main.js",
   "scripts": {
     "compare": "node src/compare.js",
-    "start": "node src/main.js",
+    "loadtest": "node src/main.js",
+    "start": "node src/server.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

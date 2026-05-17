@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-lock-loadtest-trigger
+  namespace: default
+  labels:
+    app: dd-lock-loadtest-trigger
+spec:
+  selector:
+    app: dd-lock-loadtest-trigger
+  ports:
+    - name: http
+      port: 8110
+      targetPort: http

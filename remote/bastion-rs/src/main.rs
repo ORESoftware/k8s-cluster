@@ -91,13 +91,13 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
         notes: "Ephemeral Redis cache with memory cap and health probes.",
     },
     ManagedDeployment {
-        slug: "live-mutex-loadtest",
-        title: "Node.js live-mutex load test",
+        slug: "lock-loadtest-trigger",
+        title: "Node.js lock loadtest trigger",
         namespace: "default",
-        deployment: "dd-live-mutex-loadtest-node",
-        service: "dd-live-mutex-loadtest-node.default.svc.cluster.local",
+        deployment: "dd-lock-loadtest-trigger",
+        service: "dd-lock-loadtest-trigger.default.svc.cluster.local:8110",
         access: "internal",
-        notes: "Node.js aggregate load generator for the live-mutex broker.",
+        notes: "HTTP trigger for live-mutex versus Redis aggregate lock load tests.",
     },
     ManagedDeployment {
         slug: "trading",

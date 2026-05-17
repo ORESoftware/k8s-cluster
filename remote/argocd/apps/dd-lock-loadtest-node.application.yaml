@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: dd-live-mutex-loadtest-node
+  name: dd-lock-loadtest-node
   namespace: argocd
 spec:
   project: default

@@ -1,8 +1,11 @@
 # `remote/live-mutex-loadtest-node`
 
-Node.js lock load generator for cluster-local `dd-live-mutex` and `dd-redis-cache`.
+Node.js lock load-test trigger for cluster-local `dd-live-mutex` and `dd-redis-cache`.
 
-Default behavior:
+The Kubernetes app is idle by default. It starts a finite load test only when the HTTP trigger
+receives `POST /runs`.
+
+Default triggered load behavior:
 
 - starts `3` separate Node.js worker processes
 - opens `12` live-mutex clients per worker
@@ -20,6 +23,8 @@ compare-and-delete script to release only the matching token.
 
 ## Environment variables
 
+- `HTTP_PORT` (default `8110`)
+- `DEFAULT_TEST_DURATION_SECONDS` (default `60` in the cluster deployment)
 - `LOCK_BACKEND` (default `live-mutex`; set `redis` for Redis locking)
 - `BROKER_HOST` (default `dd-live-mutex.default.svc.cluster.local`)
 - `BROKER_PORT` (default `6970`)
@@ -46,7 +51,7 @@ compare-and-delete script to release only the matching token.
 
 ```bash
 npm ci --ignore-scripts
-BROKER_HOST=127.0.0.1 npm start
+BROKER_HOST=127.0.0.1 npm run loadtest
 ```
 
 Run the sequential comparison harness:
@@ -54,6 +59,20 @@ Run the sequential comparison harness:
 ```bash
 COMPARE_DURATION_SECONDS=60 npm run compare
 ```
+
+Start the HTTP trigger:
+
+```bash
+npm start
+curl -sS -X POST http://127.0.0.1:8110/runs \
+  -H 'content-type: application/json' \
+  -d '{"mode":"compare","durationSeconds":60}'
+curl -sS http://127.0.0.1:8110/runs/active
+curl -sS http://127.0.0.1:8110/runs/last
+```
+
+Use `"backend":"live-mutex"` or `"backend":"redis"` instead of `"mode":"compare"` to run a
+single backend.
 
 ## Build
 
