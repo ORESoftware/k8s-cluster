@@ -7,14 +7,13 @@
 # Dockerfile is kept for local image-based runs and for environments that
 # prefer a built artifact (`docker build -t dd-formal-methods-service .`).
 
-ARG RUST_VERSION=1.88.0
+ARG RUST_VERSION=1.90
 ARG DEBIAN_RELEASE=bookworm
 
 FROM rust:${RUST_VERSION}-${DEBIAN_RELEASE} AS builder
 WORKDIR /build
 
 COPY Cargo.toml ./Cargo.toml
-COPY rust-toolchain.toml ./rust-toolchain.toml
 
 RUN mkdir -p src tests && \
     echo "fn main() {}" > src/main.rs && \
