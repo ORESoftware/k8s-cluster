@@ -56,6 +56,12 @@ jobs:
       - name: Verify generated bindings are in sync with schema.sql
         run: node remote/libs/pg-defs/src/generate.mjs --check
 
+      - name: Run pg-defs parser/generator self-tests
+        # Locks in the parser hardening contract: between/comparison/regex/foreign-key
+        # extraction. If any fact stops flowing into adapters, this job fails before the
+        # downstream wiring jobs even start running their per-language checks.
+        run: node --test remote/libs/pg-defs/src/generate.test.mjs
+
       - name: Print SQL DDL for review on stale runs
         if: failure()
         run: node remote/libs/pg-defs/src/generate.mjs --print-sql

@@ -97,6 +97,7 @@ pub fn validate_app_config_row(value: &AppConfigRow) -> Result<(), String> {
     validate_string_length("app_config.scope", &value.scope, None, Some(120))?;
     validate_string_length("app_config.key", &value.key, None, Some(200))?;
     if !(&value.value).is_object() { return Err("app_config.value must be a JSON object".to_string()); }
+    if *(&value.version) < 1 { return Err("app_config.version is below the minimum".to_string()); }
     if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported app_config.status: {}", &value.status)); }
     if !(&value.labels).is_array() { return Err("app_config.labels must be a JSON array".to_string()); }
     if !(&value.meta_data).is_object() { return Err("app_config.meta_data must be a JSON object".to_string()); }
@@ -112,6 +113,9 @@ pub fn validate_app_config_insert(value: &AppConfigInsert) -> Result<(), String>
     }
     if let Some(value) = &value.value {
         if !(value).is_object() { return Err("app_config.value must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.version {
+        if *(value) < 1 { return Err("app_config.version is below the minimum".to_string()); }
     }
     if let Some(value) = &value.status {
         if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported app_config.status: {}", value)); }
@@ -247,10 +251,26 @@ pub fn validate_container_pool_configs_row(value: &ContainerPoolConfigsRow) -> R
     validate_slug("container_pool_configs.slug", &value.slug)?;
     validate_string_length("container_pool_configs.display_name", &value.display_name, None, Some(200))?;
     if (&value.display_name).as_bytes().len() > 200 { return Err("container_pool_configs.display_name exceeds 200 bytes".to_string()); }
+    if (&value.image).as_bytes().len() > 512 { return Err("container_pool_configs.image exceeds 512 bytes".to_string()); }
     if !(&value.command).is_array() { return Err("container_pool_configs.command must be a JSON array".to_string()); }
     if !(&value.env).is_object() { return Err("container_pool_configs.env must be a JSON object".to_string()); }
     validate_string_length("container_pool_configs.request_path", &value.request_path, None, Some(256))?;
     validate_string_length("container_pool_configs.health_path", &value.health_path, None, Some(256))?;
+    if *(&value.container_port) < 1 { return Err("container_pool_configs.container_port is below the minimum".to_string()); }
+    if *(&value.container_port) > 65535 { return Err("container_pool_configs.container_port is above the maximum".to_string()); }
+    if *(&value.min_warm) < 0 { return Err("container_pool_configs.min_warm is below the minimum".to_string()); }
+    if *(&value.min_warm) > 64 { return Err("container_pool_configs.min_warm is above the maximum".to_string()); }
+    if *(&value.max_warm) < 1 { return Err("container_pool_configs.max_warm is below the minimum".to_string()); }
+    if *(&value.max_warm) > 128 { return Err("container_pool_configs.max_warm is above the maximum".to_string()); }
+    if *(&value.max_concurrency_per_container) < 1 { return Err("container_pool_configs.max_concurrency_per_container is below the minimum".to_string()); }
+    if *(&value.max_concurrency_per_container) > 128 { return Err("container_pool_configs.max_concurrency_per_container is above the maximum".to_string()); }
+    if *(&value.request_timeout_ms) < 100 { return Err("container_pool_configs.request_timeout_ms is below the minimum".to_string()); }
+    if *(&value.request_timeout_ms) > 900000 { return Err("container_pool_configs.request_timeout_ms is above the maximum".to_string()); }
+    if *(&value.idle_ttl_seconds) < 10 { return Err("container_pool_configs.idle_ttl_seconds is below the minimum".to_string()); }
+    if *(&value.idle_ttl_seconds) > 86400 { return Err("container_pool_configs.idle_ttl_seconds is above the maximum".to_string()); }
+    if let Some(value) = &value.nats_subject {
+        if (value).as_bytes().len() > 256 { return Err("container_pool_configs.nats_subject exceeds 256 bytes".to_string()); }
+    }
     if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported container_pool_configs.status: {}", &value.status)); }
     if !(&value.labels).is_array() { return Err("container_pool_configs.labels must be a JSON array".to_string()); }
     if !(&value.meta_data).is_object() { return Err("container_pool_configs.meta_data must be a JSON object".to_string()); }
@@ -265,6 +285,9 @@ pub fn validate_container_pool_configs_insert(value: &ContainerPoolConfigsInsert
         validate_string_length("container_pool_configs.display_name", value, None, Some(200))?;
         if (value).as_bytes().len() > 200 { return Err("container_pool_configs.display_name exceeds 200 bytes".to_string()); }
     }
+    if let Some(value) = &value.image {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_configs.image exceeds 512 bytes".to_string()); }
+    }
     if let Some(value) = &value.command {
         if !(value).is_array() { return Err("container_pool_configs.command must be a JSON array".to_string()); }
     }
@@ -276,6 +299,33 @@ pub fn validate_container_pool_configs_insert(value: &ContainerPoolConfigsInsert
     }
     if let Some(value) = &value.health_path {
         validate_string_length("container_pool_configs.health_path", value, None, Some(256))?;
+    }
+    if let Some(value) = &value.container_port {
+        if *(value) < 1 { return Err("container_pool_configs.container_port is below the minimum".to_string()); }
+        if *(value) > 65535 { return Err("container_pool_configs.container_port is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.min_warm {
+        if *(value) < 0 { return Err("container_pool_configs.min_warm is below the minimum".to_string()); }
+        if *(value) > 64 { return Err("container_pool_configs.min_warm is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.max_warm {
+        if *(value) < 1 { return Err("container_pool_configs.max_warm is below the minimum".to_string()); }
+        if *(value) > 128 { return Err("container_pool_configs.max_warm is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.max_concurrency_per_container {
+        if *(value) < 1 { return Err("container_pool_configs.max_concurrency_per_container is below the minimum".to_string()); }
+        if *(value) > 128 { return Err("container_pool_configs.max_concurrency_per_container is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.request_timeout_ms {
+        if *(value) < 100 { return Err("container_pool_configs.request_timeout_ms is below the minimum".to_string()); }
+        if *(value) > 900000 { return Err("container_pool_configs.request_timeout_ms is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.idle_ttl_seconds {
+        if *(value) < 10 { return Err("container_pool_configs.idle_ttl_seconds is below the minimum".to_string()); }
+        if *(value) > 86400 { return Err("container_pool_configs.idle_ttl_seconds is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.nats_subject {
+        if (value).as_bytes().len() > 256 { return Err("container_pool_configs.nats_subject exceeds 256 bytes".to_string()); }
     }
     if let Some(value) = &value.status {
         if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_configs.status: {}", value)); }
@@ -611,6 +661,75 @@ impl TryFrom<&str> for AgentRemoteDevTaskStatus {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentRemoteDevTaskPrState {
+    Draft,
+    Open,
+    Closed,
+    Merged,
+}
+
+impl AgentRemoteDevTaskPrState {
+    pub const VALUES: &'static [&'static str] = &["draft", "open", "closed", "merged"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Open => "open",
+            Self::Closed => "closed",
+            Self::Merged => "merged",
+        }
+    }
+}
+
+impl TryFrom<&str> for AgentRemoteDevTaskPrState {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "open" => Ok(Self::Open),
+            "closed" => Ok(Self::Closed),
+            "merged" => Ok(Self::Merged),
+            _ => Err(format!("unsupported pr_state: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentRemoteDevTaskExitReason {
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+impl AgentRemoteDevTaskExitReason {
+    pub const VALUES: &'static [&'static str] = &["completed", "cancelled", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for AgentRemoteDevTaskExitReason {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "completed" => Ok(Self::Completed),
+            "cancelled" => Ok(Self::Cancelled),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported exit_reason: {value}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
 #[serde(rename_all = "camelCase")]
@@ -670,10 +789,10 @@ pub fn validate_agent_remote_dev_tasks_row(value: &AgentRemoteDevTaskRow) -> Res
         validate_string_length("agent_remote_dev_tasks.branch", value, None, Some(200))?;
     }
     if let Some(value) = &value.pr_state {
-        validate_string_length("agent_remote_dev_tasks.pr_state", value, None, Some(32))?;
+        if !["draft", "open", "closed", "merged"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.pr_state: {}", value)); }
     }
     if let Some(value) = &value.exit_reason {
-        validate_string_length("agent_remote_dev_tasks.exit_reason", value, None, Some(32))?;
+        if !["completed", "cancelled", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.exit_reason: {}", value)); }
     }
     if !(&value.meta).is_object() { return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string()); }
     Ok(())
@@ -691,10 +810,10 @@ pub fn validate_agent_remote_dev_tasks_insert(value: &AgentRemoteDevTaskInsert) 
         validate_string_length("agent_remote_dev_tasks.branch", value, None, Some(200))?;
     }
     if let Some(value) = &value.pr_state {
-        validate_string_length("agent_remote_dev_tasks.pr_state", value, None, Some(32))?;
+        if !["draft", "open", "closed", "merged"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.pr_state: {}", value)); }
     }
     if let Some(value) = &value.exit_reason {
-        validate_string_length("agent_remote_dev_tasks.exit_reason", value, None, Some(32))?;
+        if !["completed", "cancelled", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_tasks.exit_reason: {}", value)); }
     }
     if let Some(value) = &value.meta {
         if !(value).is_object() { return Err("agent_remote_dev_tasks.meta must be a JSON object".to_string()); }
@@ -1207,6 +1326,7 @@ pub fn validate_lambda_functions_row(value: &LambdaFunctionRow) -> Result<(), St
     validate_slug("lambda_functions.slug", &value.slug)?;
     validate_string_length("lambda_functions.display_name", &value.display_name, Some(1), Some(200))?;
     if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
+    if (&value.entry_command).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
     validate_string_length("lambda_functions.function_body", &value.function_body, Some(1), None)?;
     if (&value.function_body).as_bytes().len() > 262144 { return Err("lambda_functions.function_body exceeds 262144 bytes".to_string()); }
     if let Some(value) = &value.reuse_key {
@@ -1216,7 +1336,13 @@ pub fn validate_lambda_functions_row(value: &LambdaFunctionRow) -> Result<(), St
     if *(&value.idle_timeout_seconds) > 3600 { return Err("lambda_functions.idle_timeout_seconds is above the maximum".to_string()); }
     if *(&value.max_run_ms) < 1000 { return Err("lambda_functions.max_run_ms is below the minimum".to_string()); }
     if *(&value.max_run_ms) > 300000 { return Err("lambda_functions.max_run_ms is above the maximum".to_string()); }
+    if let Some(value) = &value.container_image {
+        if (value).as_bytes().len() > 512 { return Err("lambda_functions.container_image exceeds 512 bytes".to_string()); }
+    }
     if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(&value.container_build_status).as_str()) { return Err(format!("unsupported lambda_functions.container_build_status: {}", &value.container_build_status)); }
+    if let Some(value) = &value.container_build_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_functions.container_build_error exceeds 8192 bytes".to_string()); }
+    }
     if !["draft", "active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported lambda_functions.status: {}", &value.status)); }
     if !(&value.env).is_object() { return Err("lambda_functions.env must be a JSON object".to_string()); }
     if !(&value.labels).is_array() { return Err("lambda_functions.labels must be a JSON array".to_string()); }
@@ -1234,6 +1360,9 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     if let Some(value) = &value.runtime {
         if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
     }
+    if let Some(value) = &value.entry_command {
+        if (value).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
+    }
     if let Some(value) = &value.function_body {
         validate_string_length("lambda_functions.function_body", value, Some(1), None)?;
         if (value).as_bytes().len() > 262144 { return Err("lambda_functions.function_body exceeds 262144 bytes".to_string()); }
@@ -1249,8 +1378,14 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
         if *(value) < 1000 { return Err("lambda_functions.max_run_ms is below the minimum".to_string()); }
         if *(value) > 300000 { return Err("lambda_functions.max_run_ms is above the maximum".to_string()); }
     }
+    if let Some(value) = &value.container_image {
+        if (value).as_bytes().len() > 512 { return Err("lambda_functions.container_image exceeds 512 bytes".to_string()); }
+    }
     if let Some(value) = &value.container_build_status {
         if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.container_build_status: {}", value)); }
+    }
+    if let Some(value) = &value.container_build_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_functions.container_build_error exceeds 8192 bytes".to_string()); }
     }
     if let Some(value) = &value.status {
         if !["draft", "active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.status: {}", value)); }

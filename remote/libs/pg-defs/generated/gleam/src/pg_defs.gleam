@@ -302,6 +302,55 @@ pub fn parse_agent_remote_dev_tasks_status(value: String) -> Result(AgentRemoteD
   }
 }
 
+pub type AgentRemoteDevTaskPrState {
+  AgentRemoteDevTaskPrStateDraft
+  AgentRemoteDevTaskPrStateOpen
+  AgentRemoteDevTaskPrStateClosed
+  AgentRemoteDevTaskPrStateMerged
+}
+
+pub fn agent_remote_dev_tasks_pr_state_to_string(value: AgentRemoteDevTaskPrState) -> String {
+  case value {
+    AgentRemoteDevTaskPrStateDraft -> "draft"
+    AgentRemoteDevTaskPrStateOpen -> "open"
+    AgentRemoteDevTaskPrStateClosed -> "closed"
+    AgentRemoteDevTaskPrStateMerged -> "merged"
+  }
+}
+
+pub fn parse_agent_remote_dev_tasks_pr_state(value: String) -> Result(AgentRemoteDevTaskPrState, String) {
+  case value {
+    "draft" -> Ok(AgentRemoteDevTaskPrStateDraft)
+    "open" -> Ok(AgentRemoteDevTaskPrStateOpen)
+    "closed" -> Ok(AgentRemoteDevTaskPrStateClosed)
+    "merged" -> Ok(AgentRemoteDevTaskPrStateMerged)
+    _ -> Error("unsupported agent_remote_dev_tasks.pr_state: " <> value)
+  }
+}
+
+pub type AgentRemoteDevTaskExitReason {
+  AgentRemoteDevTaskExitReasonCompleted
+  AgentRemoteDevTaskExitReasonCancelled
+  AgentRemoteDevTaskExitReasonFailed
+}
+
+pub fn agent_remote_dev_tasks_exit_reason_to_string(value: AgentRemoteDevTaskExitReason) -> String {
+  case value {
+    AgentRemoteDevTaskExitReasonCompleted -> "completed"
+    AgentRemoteDevTaskExitReasonCancelled -> "cancelled"
+    AgentRemoteDevTaskExitReasonFailed -> "failed"
+  }
+}
+
+pub fn parse_agent_remote_dev_tasks_exit_reason(value: String) -> Result(AgentRemoteDevTaskExitReason, String) {
+  case value {
+    "completed" -> Ok(AgentRemoteDevTaskExitReasonCompleted)
+    "cancelled" -> Ok(AgentRemoteDevTaskExitReasonCancelled)
+    "failed" -> Ok(AgentRemoteDevTaskExitReasonFailed)
+    _ -> Error("unsupported agent_remote_dev_tasks.exit_reason: " <> value)
+  }
+}
+
 pub type AgentRemoteDevTaskRow {
   AgentRemoteDevTaskRow(
     id: String,
@@ -339,6 +388,20 @@ pub fn validate_agent_remote_dev_tasks_status(value: String) -> Result(String, S
   case list.contains(["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"], value) {
     True -> Ok(value)
     False -> Error("unsupported agent_remote_dev_tasks.status: " <> value)
+  }
+}
+
+pub fn validate_agent_remote_dev_tasks_pr_state(value: String) -> Result(String, String) {
+  case list.contains(["draft", "open", "closed", "merged"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported agent_remote_dev_tasks.pr_state: " <> value)
+  }
+}
+
+pub fn validate_agent_remote_dev_tasks_exit_reason(value: String) -> Result(String, String) {
+  case list.contains(["completed", "cancelled", "failed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported agent_remote_dev_tasks.exit_reason: " <> value)
   }
 }
 

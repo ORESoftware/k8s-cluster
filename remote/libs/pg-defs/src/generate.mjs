@@ -20,7 +20,7 @@ async function main() {
     return;
   }
 
-  const outputs = renderOutputs(schema);
+  const outputs = renderOutputs(schema, sourceSql);
 
   if (args.has('--check')) {
     const stale = [];
@@ -59,29 +59,67 @@ async function main() {
   console.log(`Generated ${outputs.size} pg-defs adapter files.`);
 }
 
-function renderOutputs(schema) {
-  return new Map([
-    ['generated/typescript/index.ts', renderTypeScriptIndex()],
-    ['generated/typescript/drizzle.ts', renderDrizzleTypeScript(schema)],
-    ['generated/typescript/typeorm.ts', renderTypeOrmTypeScript(schema)],
-    ['generated/prisma/schema.prisma', renderPrisma(schema)],
-    ['generated/python/sqlalchemy_models.py', renderPythonSqlAlchemy(schema)],
-    ['generated/go/gorm/go.mod', renderGoGormMod()],
-    ['generated/go/gorm/pg_defs.go', renderGoGorm(schema)],
-    ['generated/go/bun/go.mod', renderGoBunMod()],
-    ['generated/go/bun/pg_defs.go', renderGoBun(schema)],
-    ['generated/dart/pubspec.yaml', renderDartPubspec()],
-    ['generated/dart/lib/pg_defs.dart', renderDart(schema)],
-    ['generated/rust/Cargo.toml', renderRustCargo()],
-    ['generated/rust/src/lib.rs', renderRust(schema)],
-    ['generated/rust/diesel/Cargo.toml', renderDieselCargo()],
-    ['generated/rust/diesel/src/lib.rs', renderDieselRust(schema)],
-    ['generated/rust/sea-orm/Cargo.toml', renderSeaOrmCargo()],
-    ['generated/rust/sea-orm/src/lib.rs', renderSeaOrmRust(schema)],
-    ['generated/gleam/gleam.toml', renderGleamToml()],
-    ['generated/gleam/src/pg_defs.gleam', renderGleam(schema)],
-    ['generated/erlang/src/pg_defs.erl', renderErlang(schema)],
-  ]);
+function renderOutputs(schema, sourceSql) {
+  const outputs = new Map();
+  const add = (relativePath, contents) => {
+    if (outputs.has(relativePath)) {
+      throw new Error(`Duplicate generated output path: ${relativePath}`);
+    }
+    outputs.set(relativePath, contents);
+  };
+
+  add('generated/typescript/index.ts', renderTypeScriptIndex());
+  add('generated/typescript/drizzle.ts', renderDrizzleTypeScript(schema));
+  add('generated/typescript/typeorm.ts', renderTypeOrmTypeScript(schema));
+  add('generated/prisma/schema.prisma', renderPrisma(schema));
+  add('generated/python/sqlalchemy_models.py', renderPythonSqlAlchemy(schema));
+  add('generated/go/gorm/go.mod', renderGoGormMod());
+  add('generated/go/gorm/pg_defs.go', renderGoGorm(schema));
+  add('generated/go/bun/go.mod', renderGoBunMod());
+  add('generated/go/bun/pg_defs.go', renderGoBun(schema));
+  add('generated/go/ent/go.mod', renderGoEntMod());
+  add('generated/go/ent/schema/doc.go', renderEntDocGo());
+  for (const [path, contents] of renderEntSchemaFiles(schema)) {
+    add(path, contents);
+  }
+  add('generated/go/sqlc/sqlc.yaml', renderSqlcYaml());
+  add('generated/go/sqlc/schema.sql', renderSqlcSchemaSql(sourceSql));
+  add('generated/go/sqlc/query.sql', renderSqlcQuerySql(schema));
+  add('generated/go/sqlc/readme.md', renderSqlcReadme());
+  add('generated/dart/pubspec.yaml', renderDartPubspec());
+  add('generated/dart/lib/pg_defs.dart', renderDart(schema));
+  add('generated/dart-drift/pubspec.yaml', renderDriftPubspec());
+  add('generated/dart-drift/lib/pg_defs_drift.dart', renderDriftDart(schema));
+  add('generated/dart-objectbox/pubspec.yaml', renderObjectBoxPubspec());
+  add('generated/dart-objectbox/lib/pg_defs_objectbox.dart', renderObjectBoxDart(schema));
+  add('generated/rust/Cargo.toml', renderRustCargo());
+  add('generated/rust/src/lib.rs', renderRust(schema));
+  add('generated/rust/diesel/Cargo.toml', renderDieselCargo());
+  add('generated/rust/diesel/src/lib.rs', renderDieselRust(schema));
+  add('generated/rust/sea-orm/Cargo.toml', renderSeaOrmCargo());
+  add('generated/rust/sea-orm/src/lib.rs', renderSeaOrmRust(schema));
+  add('generated/gleam/gleam.toml', renderGleamToml());
+  add('generated/gleam/src/pg_defs.gleam', renderGleam(schema));
+  add('generated/erlang/src/pg_defs.erl', renderErlang(schema));
+  add('generated/erlang/src/pg_defs_mnesia.erl', renderMnesiaErlang(schema));
+  add('generated/elixir/mix.exs', renderEctoMixExs());
+  add('generated/elixir/lib/dd_pg_defs.ex', renderEctoIndex(schema));
+  for (const [path, contents] of renderEctoSchemaFiles(schema)) {
+    add(path, contents);
+  }
+  add('generated/jvm/readme.md', renderJvmReadme());
+  add('generated/jvm/jooq/build.gradle', renderJooqBuildGradle());
+  add('generated/jvm/jooq/src/main/java/dd/pgdefs/jooq/Tables.java', renderJooqTablesJava(schema));
+  add('generated/jvm/hibernate/build.gradle', renderHibernateBuildGradle());
+  add(
+    'generated/jvm/hibernate/src/main/java/dd/pgdefs/hibernate/package-info.java',
+    renderHibernatePackageInfoJava(),
+  );
+  for (const [path, contents] of renderHibernateEntityFiles(schema)) {
+    add(path, contents);
+  }
+
+  return outputs;
 }
 
 function generatedNotice(prefix) {
@@ -535,8 +573,7 @@ function renderGoGorm(contract) {
     '\t"gorm.io/datatypes"',
     ')',
     '',
-    'var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)',
-    '',
+    ...renderGoRegexConstants(contract),
   ];
 
   for (const table of contract.tables) {
@@ -614,8 +651,7 @@ function renderGoBun(contract) {
     '\t"github.com/uptrace/bun"',
     ')',
     '',
-    'var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)',
-    '',
+    ...renderGoRegexConstants(contract),
   ];
 
   for (const table of contract.tables) {
@@ -661,6 +697,354 @@ function renderGoBun(contract) {
   lines.push('}');
 
   return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function renderDriftPubspec() {
+  return `${[
+    'name: dd_pg_defs_drift',
+    'description: Generated Drift table definitions for remote Postgres definitions.',
+    'version: 0.1.0',
+    'publish_to: none',
+    '',
+    'environment:',
+    "  sdk: '>=3.3.0 <4.0.0'",
+    '',
+    'dependencies:',
+    '  drift: ^2.20.0',
+    '  drift_postgres: ^1.5.0',
+    '',
+    'dev_dependencies:',
+    '  build_runner: ^2.4.0',
+    '  drift_dev: ^2.20.0',
+  ].join('\n')}\n`;
+}
+
+function renderDriftDart(contract) {
+  // Drift table definitions render every column as a `Column` getter so consumers can run
+  // `dart run build_runner build` to generate accompanying DAOs without re-modelling the schema.
+  // We deliberately use the explicit `customConstraint` fallback for things Drift cannot natively
+  // express (jsonb defaults, partial indexes, FKs to non-rowid tables) so the database remains
+  // the source of truth and Drift never silently drops a constraint.
+  const lines = [
+    ...generatedNotice('//'),
+    '',
+    "import 'package:drift/drift.dart';",
+    '',
+  ];
+
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    const hasIntegerPk = table.columns.some(
+      (column) => column.primaryKey && (column.sqlType === 'bigserial' || column.sqlType === 'integer'),
+    );
+    lines.push('@DataClassName(' + JSON.stringify(`${className}Data`) + ')');
+    lines.push(`class ${className}Table extends Table {`);
+    lines.push(`  @override String get tableName => ${JSON.stringify(table.name)};`);
+    lines.push('');
+    // Drift uses an implicit rowid/id when withoutRowId is false. Tables whose PK is a UUID need
+    // `withoutRowId = true` so Drift treats the explicit id column as the primary key; tables with
+    // a bigserial PK keep the default rowid behavior so the column maps to Drift's auto-increment.
+    if (!hasIntegerPk) {
+      lines.push('  @override bool get withoutRowId => true;');
+      lines.push('');
+    }
+    for (const column of table.columns) {
+      lines.push(`  ${driftColumn(column)}`);
+    }
+    const primaryKeyColumns = table.columns
+      .filter((column) => column.primaryKey)
+      .map((column) => `        ${camel(column.name)},`);
+    if (primaryKeyColumns.length > 0) {
+      lines.push('');
+      lines.push('  @override');
+      lines.push('  Set<Column> get primaryKey => {');
+      lines.push(...primaryKeyColumns);
+      lines.push('  };');
+    }
+    lines.push('}');
+    lines.push('');
+  }
+
+  lines.push('// Drift annotation users should re-export the table classes via:');
+  lines.push("// @DriftDatabase(tables: [...registeredDriftTables])");
+  lines.push('const List<Type> registeredDriftTables = <Type>[');
+  for (const table of contract.tables) {
+    lines.push(`  ${table.names?.rust ?? pascal(table.name)}Table,`);
+  }
+  lines.push('];');
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function driftColumn(column) {
+  const fieldName = camel(column.name);
+  const builder = driftColumnBuilder(column);
+  let chain = builder;
+  if (column.maxLength && column.kind === 'string') {
+    chain += `.withLength(max: ${column.maxLength})`;
+  }
+  // Skip clientDefault for server-generated columns (uuid PKs, bigserial PKs, server-default
+  // timestamps). Drift's clientDefault runs on the Dart side and would shadow the server-side
+  // default with a stale or wrong value.
+  if (column.defaultSql && !column.generated && !isServerGeneratedDefault(column)) {
+    const expression = driftDefaultExpression(column);
+    if (expression !== undefined) {
+      chain += `.clientDefault(() => ${expression})`;
+    }
+  }
+  if (!column.notNull) {
+    chain += '.nullable()';
+  }
+  // Drift cannot express partial / GIN / FK constraints in code; surface them via customConstraint
+  // so migrations driven from drift_dev still write the right SQL.
+  const constraint = driftCustomConstraint(column);
+  if (constraint) {
+    chain += `.customConstraint(${JSON.stringify(constraint)})`;
+  }
+  return `${driftColumnType(column)} get ${fieldName} => ${chain}();`;
+}
+
+function isServerGeneratedDefault(column) {
+  if (!column.defaultSql) {
+    return false;
+  }
+  const sql = column.defaultSql.toLowerCase();
+  return (
+    sql.includes('gen_random_uuid')
+    || sql === 'now()'
+    || column.sqlType === 'bigserial'
+  );
+}
+
+function driftColumnBuilder(column) {
+  const named = `named(${JSON.stringify(column.name)})`;
+  switch (column.kind) {
+    case 'integer':
+      return `integer().${named}`;
+    case 'bigint':
+      return `int64().${named}`;
+    case 'boolean':
+      return `boolean().${named}`;
+    case 'jsonObject':
+    case 'jsonArray':
+      return `text().${named}`;
+    case 'timestamp':
+      return `dateTime().${named}`;
+    default:
+      return `text().${named}`;
+  }
+}
+
+function driftColumnType(column) {
+  switch (column.kind) {
+    case 'integer':
+      return 'IntColumn';
+    case 'bigint':
+      return 'Int64Column';
+    case 'boolean':
+      return 'BoolColumn';
+    case 'timestamp':
+      return 'DateTimeColumn';
+    default:
+      return 'TextColumn';
+  }
+}
+
+function driftDefaultExpression(column) {
+  if (column.kind === 'boolean') {
+    return column.defaultValue ? 'true' : 'false';
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    if (column.defaultValue === undefined) {
+      return undefined;
+    }
+    return Number(column.defaultValue).toString();
+  }
+  if (column.kind === 'jsonObject') {
+    return "'{}'";
+  }
+  if (column.kind === 'jsonArray') {
+    return "'[]'";
+  }
+  if (column.kind === 'timestamp') {
+    return undefined;
+  }
+  if (typeof column.defaultValue === 'string') {
+    return dartLiteralString(column.defaultValue);
+  }
+  return undefined;
+}
+
+function dartLiteralString(value) {
+  // Use single-quoted Dart string literals so multi-line content stays compact. Backslashes,
+  // single quotes, and `$` need escaping; double quotes pass through.
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\$/g, '\\$');
+  return `'${escaped}'`;
+}
+
+function driftCustomConstraint(column) {
+  const parts = [];
+  if (column.sqlType === 'uuid') {
+    parts.push('UUID');
+  }
+  if (column.sqlType === 'jsonb') {
+    parts.push('JSONB');
+  }
+  if (column.sqlType === 'timestamptz') {
+    parts.push('TIMESTAMPTZ');
+  }
+  if (column.sqlType === 'bigserial') {
+    parts.push('BIGSERIAL');
+  }
+  if (column.foreignKey) {
+    parts.push(
+      `REFERENCES ${column.foreignKey.table} (${column.foreignKey.column})`,
+    );
+  }
+  return parts.join(' ');
+}
+
+function renderObjectBoxPubspec() {
+  return `${[
+    'name: dd_pg_defs_objectbox',
+    'description: Generated ObjectBox entity classes mirroring the canonical Postgres rows.',
+    'version: 0.1.0',
+    'publish_to: none',
+    '',
+    'environment:',
+    "  sdk: '>=3.3.0 <4.0.0'",
+    '',
+    'dependencies:',
+    '  objectbox: ^4.0.0',
+    '  objectbox_flutter_libs: ^4.0.0',
+    '',
+    'dev_dependencies:',
+    '  build_runner: ^2.4.0',
+    '  objectbox_generator: ^4.0.0',
+  ].join('\n')}\n`;
+}
+
+function renderObjectBoxDart(contract) {
+  // ObjectBox stores rows in an embedded NoSQL key/value store, but downstream Flutter clients
+  // still want strongly-typed mirrors of every server table for offline-first caching. We map
+  // Postgres UUIDs to ObjectBox `String` fields with `@Unique()` rather than ObjectBox `Id`s
+  // because changing the canonical id type silently in clients is dangerous.
+  const lines = [
+    ...generatedNotice('//'),
+    '',
+    "import 'dart:convert';",
+    "import 'package:objectbox/objectbox.dart';",
+    '',
+  ];
+
+  for (const table of contract.tables) {
+    const className = table.names?.rust ?? pascal(table.name);
+    lines.push('@Entity()');
+    lines.push(`class ${className}ObjectBox {`);
+    lines.push('  @Id()');
+    lines.push('  int obxId = 0;');
+    lines.push('');
+    for (const column of table.columns) {
+      lines.push(...objectBoxField(column));
+    }
+    lines.push('');
+    lines.push(`  ${className}ObjectBox({`);
+    for (const column of table.columns) {
+      // Required mirrors `not null` directly so the constructor matches the field type. JSON
+      // columns always get a non-empty default ("{}" / "[]") at the SQL layer, so they qualify
+      // as required just like any other not-null column.
+      const required = column.notNull;
+      lines.push(`    ${required ? 'required ' : ''}this.${camel(column.name)},`);
+    }
+    lines.push('  });');
+    lines.push('');
+    lines.push(`  Map<String, Object?> toJson() => <String, Object?>{`);
+    for (const column of table.columns) {
+      lines.push(`    ${JSON.stringify(camel(column.name))}: ${objectBoxToJsonExpression(column)},`);
+    }
+    lines.push('  };');
+    lines.push('');
+    lines.push(`  static ${className}ObjectBox fromJson(Map<String, Object?> json) {`);
+    lines.push(`    return ${className}ObjectBox(`);
+    for (const column of table.columns) {
+      lines.push(`      ${camel(column.name)}: ${objectBoxFromJsonExpression(column)},`);
+    }
+    lines.push('    );');
+    lines.push('  }');
+    lines.push('}');
+    lines.push('');
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function objectBoxFieldKind(column) {
+  return column.kind;
+}
+
+function objectBoxField(column) {
+  const lines = [];
+  const fieldName = camel(column.name);
+  const baseType = objectBoxDartType(column);
+  const declaration = column.notNull ? baseType : `${baseType}?`;
+
+  // Only mark the actual primary key column as unique. Other UUID columns (e.g. created_by /
+  // updated_by audit fields) can repeat across rows, so `@Unique()` would silently break inserts.
+  if (column.primaryKey) {
+    lines.push('  @Unique()');
+  }
+  if (column.kind === 'jsonObject' || column.kind === 'jsonArray') {
+    lines.push("  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.");
+  }
+  lines.push(`  ${declaration} ${fieldName};`);
+  lines.push('');
+  return lines;
+}
+
+function objectBoxDartType(column) {
+  switch (column.kind) {
+    case 'integer':
+      return 'int';
+    case 'bigint':
+      return 'int';
+    case 'boolean':
+      return 'bool';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'String';
+    case 'timestamp':
+      return 'String';
+    default:
+      return 'String';
+  }
+}
+
+function objectBoxFromJsonExpression(column) {
+  const key = JSON.stringify(camel(column.name));
+  const required = column.notNull;
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    return required
+      ? `(json[${key}] as num).toInt()`
+      : `json[${key}] == null ? null : (json[${key}] as num).toInt()`;
+  }
+  if (column.kind === 'boolean') {
+    return required ? `json[${key}] as bool` : `json[${key}] as bool?`;
+  }
+  if (column.kind === 'jsonObject' || column.kind === 'jsonArray') {
+    return `json[${key}] is String ? json[${key}] as String : jsonEncode(json[${key}])`;
+  }
+  return required ? `json[${key}] as String` : `json[${key}] as String?`;
+}
+
+function objectBoxToJsonExpression(column) {
+  const fieldName = camel(column.name);
+  if (column.kind === 'jsonObject' || column.kind === 'jsonArray') {
+    return `jsonDecode(${fieldName})`;
+  }
+  return fieldName;
 }
 
 function renderDartPubspec() {
@@ -1201,8 +1585,11 @@ function goValidationStatements(table, binding, flavor) {
     const nilGuardStart = column.notNull ? null : `\tif ${field} != nil {`;
     const nestedLines = [];
 
-    if (validation.regex?.startsWith('^[a-z0-9]')) {
-      nestedLines.push(`if !slugPattern.MatchString(${derefField}) { return errors.New(${JSON.stringify(`${table.name}.${column.name} must be a lowercase slug`)}) }`);
+    if (validation.regex) {
+      const patternConst = goRegexConstName(table, column);
+      nestedLines.push(
+        `if !${patternConst}.MatchString(${derefField}) { return errors.New(${JSON.stringify(`${table.name}.${column.name} does not match the required pattern`)}) }`,
+      );
     }
     if (column.kind === 'enum') {
       nestedLines.push(`if !containsString(${table.names?.rust ?? pascal(table.name)}${pascal(column.name)}Values, ${derefField}) { return errors.New(${JSON.stringify(`unsupported ${table.name}.${column.name}`)}) }`);
@@ -1212,6 +1599,9 @@ function goValidationStatements(table, binding, flavor) {
     }
     if (validation.maxBytes) {
       nestedLines.push(`if len([]byte(${derefField})) > ${validation.maxBytes} { return errors.New(${JSON.stringify(`${table.name}.${column.name} exceeds ${validation.maxBytes} bytes`)}) }`);
+    }
+    if (validation.minBytes) {
+      nestedLines.push(`if len([]byte(${derefField})) < ${validation.minBytes} { return errors.New(${JSON.stringify(`${table.name}.${column.name} is below ${validation.minBytes} bytes`)}) }`);
     }
     if (column.kind === 'jsonObject' || column.kind === 'jsonArray') {
       const validator = flavor === 'bun' ? 'validateRawJSON' : 'validateJSONString';
@@ -1238,6 +1628,31 @@ function goValidationStatements(table, binding, flavor) {
     }
   }
   return lines;
+}
+
+function renderGoRegexConstants(contract) {
+  const lines = [];
+  let emitted = 0;
+  for (const table of contract.tables) {
+    for (const column of table.columns) {
+      const pattern = column.validation?.regex;
+      if (!pattern) {
+        continue;
+      }
+      lines.push(
+        `var ${goRegexConstName(table, column)} = regexp.MustCompile(${goRawString(pattern)})`,
+      );
+      emitted += 1;
+    }
+  }
+  if (emitted > 0) {
+    lines.push('');
+  }
+  return lines;
+}
+
+function goRegexConstName(table, column) {
+  return `${camel(table.names?.rust ?? pascal(table.name))}${pascal(column.name)}Pattern`;
 }
 
 function dartType(column) {
@@ -1302,40 +1717,64 @@ function dartValidationStatements(table) {
     const field = camel(column.name);
     const validation = column.validation ?? {};
     const guardPrefix = column.notNull ? '' : `${field} != null && `;
-    if (validation.regex?.startsWith('^[a-z0-9]')) {
-      lines.push(`    if (${guardPrefix}!RegExp(r${JSON.stringify(validation.regex)}).hasMatch(${field}${column.notNull ? '' : '!' })) {`);
-      lines.push(`      errors.add(${JSON.stringify(`${table.name}.${column.name} must be a lowercase slug`)});`);
+    const accessor = `${field}${column.notNull ? '' : '!'}`;
+    if (validation.regex) {
+      const message = validation.regex.startsWith('^[a-z0-9]')
+        ? `${table.name}.${column.name} must be a lowercase slug`
+        : `${table.name}.${column.name} does not match the required pattern`;
+      lines.push(
+        `    if (${guardPrefix}!RegExp(r${dartRawRegexString(validation.regex)}).hasMatch(${accessor})) {`,
+      );
+      lines.push(`      errors.add(${JSON.stringify(message)});`);
       lines.push('    }');
     }
     if (column.kind === 'enum') {
-      lines.push(`    if (${guardPrefix}!${camel(table.names?.rust ?? pascal(table.name))}${pascal(column.name)}Values.contains(${field}${column.notNull ? '' : '!' })) {`);
+      lines.push(`    if (${guardPrefix}!${camel(table.names?.rust ?? pascal(table.name))}${pascal(column.name)}Values.contains(${accessor})) {`);
       lines.push(`      errors.add(${JSON.stringify(`unsupported ${table.name}.${column.name}`)});`);
       lines.push('    }');
     }
     if (validation.literal) {
-      lines.push(`    if (${guardPrefix}${field}${column.notNull ? '' : '!'} != ${JSON.stringify(validation.literal)}) {`);
+      lines.push(`    if (${guardPrefix}${accessor} != ${JSON.stringify(validation.literal)}) {`);
       lines.push(`      errors.add(${JSON.stringify(`${table.name}.${column.name} must use the managed value`)});`);
       lines.push('    }');
     }
     if (validation.maxBytes) {
-      lines.push(`    if (${guardPrefix}utf8.encode(${field}${column.notNull ? '' : '!'}).length > ${validation.maxBytes}) {`);
+      lines.push(`    if (${guardPrefix}utf8.encode(${accessor}).length > ${validation.maxBytes}) {`);
       lines.push(`      errors.add(${JSON.stringify(`${table.name}.${column.name} exceeds ${validation.maxBytes} bytes`)});`);
+      lines.push('    }');
+    }
+    if (validation.minBytes) {
+      lines.push(`    if (${guardPrefix}utf8.encode(${accessor}).length < ${validation.minBytes}) {`);
+      lines.push(`      errors.add(${JSON.stringify(`${table.name}.${column.name} is below ${validation.minBytes} bytes`)});`);
       lines.push('    }');
     }
     if (column.kind === 'integer') {
       if (validation.min !== undefined) {
-        lines.push(`    if (${guardPrefix}${field}${column.notNull ? '' : '!'} < ${validation.min}) {`);
+        lines.push(`    if (${guardPrefix}${accessor} < ${validation.min}) {`);
         lines.push(`      errors.add(${JSON.stringify(`${table.name}.${column.name} is below the minimum`)});`);
         lines.push('    }');
       }
       if (validation.max !== undefined) {
-        lines.push(`    if (${guardPrefix}${field}${column.notNull ? '' : '!'} > ${validation.max}) {`);
+        lines.push(`    if (${guardPrefix}${accessor} > ${validation.max}) {`);
         lines.push(`      errors.add(${JSON.stringify(`${table.name}.${column.name} is above the maximum`)});`);
         lines.push('    }');
       }
     }
   }
   return lines;
+}
+
+function dartRawRegexString(value) {
+  // Dart raw strings (`r'...'`) cannot contain the delimiter unescaped, so we cycle through
+  // candidates until we find one that does not appear in the regex source.
+  const candidates = ["'", '"', "'''", '"""'];
+  for (const delim of candidates) {
+    if (!value.includes(delim)) {
+      return `${delim}${value}${delim}`;
+    }
+  }
+  // Fallback: emit a non-raw string with backslashes escaped so the regex still parses.
+  return JSON.stringify(value);
 }
 
 function renderRustCargo() {
@@ -2048,6 +2487,936 @@ function renderErlang(contract) {
   ]
     .join('\n')
     .trimEnd()}\n`;
+}
+
+function renderMnesiaErlang(contract) {
+  // Mnesia stores rows as records keyed by the first attribute. We expose:
+  //   * a record(...) declaration per table
+  //   * an `<table>_attributes/0` helper
+  //   * an `<table>_table_def/0` helper that returns the property list expected by
+  //     `mnesia:create_table/2` (attributes, type=set, disc_copies on the calling node).
+  // Consumers should call the table_def helpers when bootstrapping schemas, and they
+  // remain free to override copy semantics (ram_copies, disc_only_copies, fragments) at
+  // runtime — we only encode safe defaults here so a downstream module that forgets to
+  // pass copies still gets a valid table definition.
+  const exports = [];
+  const records = [];
+  const functions = [];
+
+  for (const table of contract.tables) {
+    const attributeList = table.columns
+      .map((column) => column.name)
+      .join(', ');
+    records.push(`-record(${table.name}, {${attributeList}}).`);
+    exports.push(`${table.name}_attributes/0`);
+    exports.push(`${table.name}_table_def/0`);
+    exports.push(`${table.name}_record_info/0`);
+    functions.push(
+      `${table.name}_attributes() -> [${table.columns.map((column) => `'${column.name}'`).join(', ')}].`,
+    );
+    functions.push('');
+    functions.push(`${table.name}_record_info() ->`);
+    functions.push(`    {${table.name}, ${table.columns.length}, ${table.name}_attributes()}.`);
+    functions.push('');
+    functions.push(`${table.name}_table_def() ->`);
+    functions.push('    [');
+    functions.push(`        {attributes, ${table.name}_attributes()},`);
+    functions.push('        {type, set},');
+    functions.push(`        {record_name, ${table.name}},`);
+    functions.push('        {disc_copies, [node()]}');
+    functions.push('    ].');
+    functions.push('');
+  }
+
+  exports.push('all_table_defs/0');
+  functions.push('all_table_defs() ->');
+  functions.push(
+    `    [${contract.tables.map((table) => `{${table.name}, ${table.name}_table_def()}`).join(', ')}].`,
+  );
+
+  return `${[
+    ...generatedNotice('%'),
+    '-module(pg_defs_mnesia).',
+    `-export([${exports.join(', ')}]).`,
+    '',
+    ...records,
+    '',
+    ...functions,
+  ]
+    .join('\n')
+    .trimEnd()}\n`;
+}
+
+function renderEctoMixExs() {
+  return `${[
+    '# Generated by @dd/pg-defs. Do not edit by hand.',
+    '# SOURCE OF TRUTH: schema/schema.sql defines the database contract.',
+    '',
+    'defmodule DdPgDefs.MixProject do',
+    '  use Mix.Project',
+    '',
+    '  def project do',
+    '    [',
+    '      app: :dd_pg_defs,',
+    '      version: "0.1.0",',
+    '      elixir: "~> 1.16",',
+    '      start_permanent: Mix.env() == :prod,',
+    '      deps: deps()',
+    '    ]',
+    '  end',
+    '',
+    '  def application do',
+    '    [extra_applications: [:logger]]',
+    '  end',
+    '',
+    '  defp deps do',
+    '    [',
+    '      {:ecto, "~> 3.11"},',
+    '      {:ecto_sql, "~> 3.11"},',
+    '      {:postgrex, "~> 0.18"},',
+    '      {:jason, "~> 1.4"}',
+    '    ]',
+    '  end',
+    'end',
+  ].join('\n')}\n`;
+}
+
+function renderEctoIndex(contract) {
+  // The umbrella module re-exports the per-table schema modules and exposes a `tables/0`
+  // helper so consumers can iterate every canonical table without grepping the codebase.
+  const lines = [
+    ...generatedNotice('#'),
+    '',
+    'defmodule DdPgDefs do',
+    '  @moduledoc """',
+    '  Canonical Ecto adapters for the remote Postgres schema. The SQL file at',
+    '  `remote/libs/pg-defs/schema/schema.sql` is the source of truth; these schemas',
+    '  are generated and must not be edited by hand.',
+    '  """',
+    '',
+    '  @tables [',
+  ];
+  for (const table of contract.tables) {
+    lines.push(`    ${ectoModuleName(table)},`);
+  }
+  lines.push('  ]');
+  lines.push('');
+  lines.push('  @spec tables() :: [module()]');
+  lines.push('  def tables, do: @tables');
+  lines.push('end');
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function renderEctoSchemaFiles(contract) {
+  return contract.tables.map((table) => [
+    `generated/elixir/lib/dd_pg_defs/${table.name}.ex`,
+    renderEctoSchemaFile(table),
+  ]);
+}
+
+function renderEctoSchemaFile(table) {
+  // Each table gets its own Ecto.Schema module under `DdPgDefs.<TableModule>` with a generated
+  // `changeset/2` that re-applies every constraint we can statically derive from the SQL
+  // (required fields, length limits, regex patterns, enum membership, byte limits).
+  const moduleName = ectoModuleName(table);
+  const lines = [
+    ...generatedNotice('#'),
+    '',
+    `defmodule ${moduleName} do`,
+    '  use Ecto.Schema',
+    '  import Ecto.Changeset',
+    '',
+    `  @table ${JSON.stringify(table.name)}`,
+    '',
+  ];
+
+  // Determine primary key configuration
+  const pkColumns = table.columns.filter((column) => column.primaryKey);
+  const pkColumn = pkColumns[0];
+  const isUuidPk = pkColumn?.sqlType === 'uuid';
+  const isBigSerialPk = pkColumn?.sqlType === 'bigserial';
+  if (isUuidPk) {
+    lines.push('  @primary_key {:id, :binary_id, autogenerate: true}');
+    lines.push('  @foreign_key_type :binary_id');
+  } else if (isBigSerialPk) {
+    lines.push('  @primary_key {:id, :id, autogenerate: true}');
+  } else {
+    lines.push('  @primary_key false');
+  }
+  lines.push('');
+
+  // Field declarations
+  lines.push('  schema @table do');
+  for (const column of table.columns) {
+    if (column.primaryKey) {
+      continue;
+    }
+    if (column.name === 'created_at' || column.name === 'updated_at') {
+      // Handled via timestamps/1 macro to keep the Ecto idiom intact
+      continue;
+    }
+    lines.push(`    ${ectoFieldLine(column)}`);
+  }
+  if (
+    table.columns.some((column) => column.name === 'created_at')
+    && table.columns.some((column) => column.name === 'updated_at')
+  ) {
+    lines.push('    timestamps(inserted_at: :created_at, type: :utc_datetime_usec)');
+  }
+  lines.push('  end');
+  lines.push('');
+
+  const requiredFields = ectoRequiredFields(table);
+  const optionalFields = ectoOptionalFields(table);
+
+  lines.push('  @required_fields ~w(' + requiredFields.join(' ') + ')a');
+  lines.push('  @optional_fields ~w(' + optionalFields.join(' ') + ')a');
+  lines.push('');
+
+  lines.push('  @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."');
+  lines.push('  def changeset(struct, attrs) do');
+  lines.push('    struct');
+  lines.push('    |> cast(attrs, @required_fields ++ @optional_fields)');
+  if (requiredFields.length > 0) {
+    lines.push('    |> validate_required(@required_fields)');
+  }
+  for (const validation of ectoValidations(table)) {
+    lines.push(`    ${validation}`);
+  }
+  lines.push('  end');
+  lines.push('end');
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function ectoModuleName(table) {
+  return `DdPgDefs.${pascal(table.name)}`;
+}
+
+function ectoFieldLine(column) {
+  const fieldName = column.name;
+  const fieldType = ectoFieldType(column);
+  const options = [];
+  if (column.defaultValue !== undefined) {
+    options.push(`default: ${ectoLiteral(column.defaultValue)}`);
+  }
+  if (column.kind === 'enum') {
+    options.push('default: ' + ectoLiteral(column.defaultValue));
+  }
+  // Deduplicate (enum + default already pushed)
+  const seen = new Set();
+  const finalOptions = options.filter((item) => {
+    if (seen.has(item)) {
+      return false;
+    }
+    seen.add(item);
+    return true;
+  });
+  const optionsSql = finalOptions.length > 0 ? `, ${finalOptions.join(', ')}` : '';
+  return `field :${fieldName}, ${fieldType}${optionsSql}`;
+}
+
+function ectoFieldType(column) {
+  switch (column.kind) {
+    case 'uuid':
+      return ':binary_id';
+    case 'integer':
+      return ':integer';
+    case 'bigint':
+      return ':integer';
+    case 'boolean':
+      return ':boolean';
+    case 'timestamp':
+      return ':utc_datetime_usec';
+    case 'jsonObject':
+      return ':map';
+    case 'jsonArray':
+      return '{:array, :map}';
+    default:
+      return ':string';
+  }
+}
+
+function ectoLiteral(value) {
+  if (value === undefined || value === null) {
+    return 'nil';
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+  if (typeof value === 'number') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return '[]';
+  }
+  if (typeof value === 'object') {
+    return '%{}';
+  }
+  return JSON.stringify(value);
+}
+
+function ectoRequiredFields(table) {
+  const fields = [];
+  for (const column of table.columns) {
+    if (column.primaryKey) {
+      continue;
+    }
+    if (column.name === 'created_at' || column.name === 'updated_at') {
+      continue;
+    }
+    if (column.notNull && column.defaultSql === undefined && !column.generated) {
+      fields.push(column.name);
+    }
+  }
+  return fields;
+}
+
+function ectoOptionalFields(table) {
+  const fields = [];
+  for (const column of table.columns) {
+    if (column.primaryKey) {
+      continue;
+    }
+    if (column.name === 'created_at' || column.name === 'updated_at') {
+      continue;
+    }
+    if (!(column.notNull && column.defaultSql === undefined && !column.generated)) {
+      fields.push(column.name);
+    }
+  }
+  return fields;
+}
+
+function ectoValidations(table) {
+  const lines = [];
+  for (const column of table.columns) {
+    if (column.primaryKey) {
+      continue;
+    }
+    if (column.name === 'created_at' || column.name === 'updated_at') {
+      continue;
+    }
+    const validation = column.validation ?? {};
+    if (column.kind === 'enum' && Array.isArray(column.enumValues)) {
+      const values = column.enumValues.map((value) => `"${value}"`).join(', ');
+      lines.push(`|> validate_inclusion(:${column.name}, [${values}])`);
+    }
+    if (validation.regex) {
+      lines.push(
+        `|> validate_format(:${column.name}, ~r/${ectoRegexBody(validation.regex)}/)`,
+      );
+    }
+    if (validation.literal) {
+      lines.push(
+        `|> validate_inclusion(:${column.name}, [${JSON.stringify(validation.literal)}])`,
+      );
+    }
+    if (column.kind === 'string') {
+      const opts = [];
+      if (validation.minLength !== undefined) {
+        opts.push(`min: ${validation.minLength}`);
+      }
+      if (validation.maxLength !== undefined) {
+        opts.push(`max: ${validation.maxLength}`);
+      }
+      if (opts.length > 0) {
+        lines.push(`|> validate_length(:${column.name}, ${opts.join(', ')})`);
+      }
+    }
+    if (column.kind === 'integer' || column.kind === 'bigint') {
+      const opts = [];
+      if (validation.min !== undefined) {
+        opts.push(`greater_than_or_equal_to: ${validation.min}`);
+      }
+      if (validation.max !== undefined) {
+        opts.push(`less_than_or_equal_to: ${validation.max}`);
+      }
+      if (opts.length > 0) {
+        lines.push(`|> validate_number(:${column.name}, ${opts.join(', ')})`);
+      }
+    }
+  }
+  return lines;
+}
+
+function ectoRegexBody(pattern) {
+  // Elixir sigil regex `~r/.../` requires escaping forward slashes. Keep other characters intact
+  // because the source patterns are PCRE/POSIX-ERE compatible with Elixir's regex engine.
+  return pattern.replace(/\//g, '\\/');
+}
+
+function renderGoEntMod() {
+  return `${[
+    'module dd-pg-defs-ent',
+    '',
+    'go 1.23',
+    '',
+    'require (',
+    '\tentgo.io/ent v0.14.1',
+    '\tgithub.com/google/uuid v1.6.0',
+    ')',
+  ].join('\n')}\n`;
+}
+
+function renderEntDocGo() {
+  return `${[
+    ...generatedNotice('//'),
+    'package schema',
+    '',
+    'import "entgo.io/ent/schema"',
+    '',
+    '// Run `go generate ./ent` from a parent module to regenerate the ent client from these schemas.',
+    '// Each entity below mirrors a single table from schema/schema.sql; constraints that ent cannot',
+    '// fully express (partial indexes, JSONB defaults, custom CHECKs) live in the SQL contract and',
+    '// are enforced by the database.',
+    '',
+    '// entAnnotation attaches the SQL table name without forcing a dependency on the entsql package',
+    '// at codegen time. Defined in this file (rather than each schema file) so the package compiles',
+    '// even when consumers add or drop tables.',
+    'type entAnnotation struct {',
+    '\tTable string',
+    '}',
+    '',
+    'func (entAnnotation) Name() string { return "EntSQL" }',
+    '',
+    "// Compile-time guarantee that entAnnotation satisfies schema.Annotation.",
+    'var _ schema.Annotation = (*entAnnotation)(nil)',
+  ].join('\n')}\n`;
+}
+
+function renderEntSchemaFiles(contract) {
+  return contract.tables.map((table) => [
+    `generated/go/ent/schema/${entFileName(table)}.go`,
+    renderEntSchemaFile(table),
+  ]);
+}
+
+function entFileName(table) {
+  // ent's idiomatic file name matches the schema struct in lowercase, so we prefer the singular
+  // class name when metadata supplies one (e.g. `agentremotedevtask.go` ↔ `AgentRemoteDevTask`).
+  // Without metadata, we fall back to a stripped table name.
+  const className = table.names?.rust;
+  if (className) {
+    return className.toLowerCase();
+  }
+  return table.name.replace(/_/g, '');
+}
+
+function renderEntSchemaFile(table) {
+  const className = table.names?.rust ?? pascal(table.name);
+  const fieldLines = [];
+  for (const column of table.columns) {
+    fieldLines.push(...entFieldLines(column));
+  }
+
+  const indexLines = [];
+  let hasUsableIndex = false;
+  for (const tableIndex of table.indexes ?? []) {
+    if (tableIndex.method || tableIndex.where) {
+      indexLines.push(
+        `\t\t// ${tableIndex.name} lives in schema.sql because ent cannot model ${tableIndex.method ? `${tableIndex.method} ` : ''}${tableIndex.where ? 'partial ' : ''}indexes.`,
+      );
+      continue;
+    }
+    const fields = tableIndex.columns
+      .map((column) => JSON.stringify(typeof column === 'string' ? column : column.name))
+      .join(', ');
+    const builder = `index.Fields(${fields})`;
+    indexLines.push(`\t\t${tableIndex.unique ? `${builder}.Unique(),` : `${builder},`}`);
+    hasUsableIndex = true;
+  }
+
+  const usesRegexp = fieldLines.some((line) => line.includes('regexp.MustCompile'));
+  const usesUuid = table.columns.some((column) => column.kind === 'uuid');
+  const usesIndex = hasUsableIndex;
+
+  // Stdlib imports (sorted) come first, then third-party. We omit "time" because field.Time uses
+  // an internal type and the column-level metadata never needs `time.Time` literals here.
+  const stdlibImports = [];
+  if (usesRegexp) {
+    stdlibImports.push('\t"regexp"');
+  }
+
+  const thirdPartyImports = [
+    '\t"entgo.io/ent"',
+    '\t"entgo.io/ent/schema"',
+    '\t"entgo.io/ent/schema/field"',
+  ];
+  if (usesIndex) {
+    thirdPartyImports.push('\t"entgo.io/ent/schema/index"');
+  }
+  if (usesUuid) {
+    thirdPartyImports.push('\t"github.com/google/uuid"');
+  }
+
+  const importLines = stdlibImports.length > 0
+    ? [...stdlibImports, '', ...thirdPartyImports]
+    : thirdPartyImports;
+
+  const lines = [
+    ...generatedNotice('//'),
+    'package schema',
+    '',
+    'import (',
+    ...importLines,
+    ')',
+    '',
+    `// ${className} mirrors the canonical ${table.name} table.`,
+    `type ${className} struct {`,
+    '\tent.Schema',
+    '}',
+    '',
+    `func (${className}) Annotations() []schema.Annotation {`,
+    '\treturn []schema.Annotation{',
+    `\t\t&entAnnotation{Table: ${JSON.stringify(table.name)}},`,
+    '\t}',
+    '}',
+    '',
+    `func (${className}) Fields() []ent.Field {`,
+    '\treturn []ent.Field{',
+    ...fieldLines,
+    '\t}',
+    '}',
+    '',
+    `func (${className}) Indexes() []ent.Index {`,
+    '\treturn []ent.Index{',
+    ...indexLines,
+    '\t}',
+    '}',
+  ];
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function entFieldLines(column) {
+  const fieldName = JSON.stringify(column.name);
+  let line = `\t\t${entFieldBuilder(column, fieldName)}`;
+  const validation = column.validation ?? {};
+  if (column.kind === 'string') {
+    if (validation.minLength !== undefined) {
+      line += `.MinLen(${validation.minLength})`;
+    }
+    if (validation.maxLength !== undefined) {
+      line += `.MaxLen(${validation.maxLength})`;
+    }
+    if (validation.regex) {
+      line += `.Match(regexp.MustCompile(${goRawString(validation.regex)}))`;
+    }
+  }
+  if (column.kind === 'integer' || column.kind === 'bigint') {
+    if (validation.min !== undefined) {
+      line += `.Min(${validation.min})`;
+    }
+    if (validation.max !== undefined) {
+      line += `.Max(${validation.max})`;
+    }
+  }
+  if (column.kind === 'enum' && Array.isArray(column.enumValues)) {
+    const allowed = column.enumValues.map((value) => JSON.stringify(value)).join(', ');
+    line += `.Values(${allowed})`;
+  }
+  if (!column.notNull) {
+    line += '.Optional().Nillable()';
+  }
+  if (column.defaultValue !== undefined && !column.generated) {
+    if (column.kind === 'string' && typeof column.defaultValue === 'string') {
+      line += `.Default(${JSON.stringify(column.defaultValue)})`;
+    } else if (column.kind === 'integer' || column.kind === 'bigint') {
+      line += `.Default(${column.defaultValue})`;
+    } else if (column.kind === 'boolean') {
+      line += `.Default(${column.defaultValue ? 'true' : 'false'})`;
+    }
+  }
+  line += `.StorageKey(${fieldName}),`;
+  return [line];
+}
+
+function entFieldBuilder(column, fieldName) {
+  switch (column.kind) {
+    case 'uuid':
+      return `field.UUID(${fieldName}, uuid.UUID{})`;
+    case 'integer':
+      return `field.Int32(${fieldName})`;
+    case 'bigint':
+      return `field.Int64(${fieldName})`;
+    case 'boolean':
+      return `field.Bool(${fieldName})`;
+    case 'timestamp':
+      return `field.Time(${fieldName})`;
+    case 'jsonObject':
+      return `field.JSON(${fieldName}, map[string]interface{}{})`;
+    case 'jsonArray':
+      return `field.JSON(${fieldName}, []interface{}{})`;
+    case 'enum':
+      return `field.Enum(${fieldName})`;
+    default:
+      return `field.String(${fieldName})`;
+  }
+}
+
+function renderSqlcYaml() {
+  return `${[
+    '# Generated by @dd/pg-defs. Do not edit by hand.',
+    '# SOURCE OF TRUTH: ../schema/schema.sql defines the database contract.',
+    'version: "2"',
+    'sql:',
+    '  - schema: "schema.sql"',
+    '    queries: "query.sql"',
+    '    engine: "postgresql"',
+    '    gen:',
+    '      go:',
+    '        package: "pgdefs"',
+    '        out: "."',
+    '        sql_package: "pgx/v5"',
+    '        emit_json_tags: true',
+    '        emit_prepared_queries: false',
+    '        emit_pointers_for_null_types: true',
+  ].join('\n')}\n`;
+}
+
+function renderSqlcSchemaSql(sourceSql) {
+  // sqlc reads schema.sql as the DDL source. We mirror schema/schema.sql verbatim so that
+  // running `sqlc generate` against this directory produces types that line up with what the
+  // database actually enforces. NEVER apply this file directly — it is only for code generation.
+  const trimmed = sourceSql.endsWith('\n') ? sourceSql : `${sourceSql}\n`;
+  return `-- Generated by @dd/pg-defs. Do not edit by hand.\n-- SOURCE OF TRUTH: ../schema/schema.sql defines the database contract.\n-- WARNING: do NOT apply this file directly to any database. It exists only so that\n-- sqlc can introspect the schema for type generation. Apply migrations through the\n-- pg-defs diff workflow with explicit human review.\n\n${trimmed}`;
+}
+
+function renderSqlcQuerySql(contract) {
+  // Provide a minimal, dependency-free starter query catalogue per table so consumers can run
+  // `sqlc generate` immediately. Custom queries should live in the consuming service rather than
+  // inside this generated file.
+  const blocks = [
+    '-- Generated by @dd/pg-defs. Do not edit by hand.',
+    '-- SOURCE OF TRUTH: schema/schema.sql defines the database contract.',
+    '',
+  ];
+  for (const table of contract.tables) {
+    const baseName = pascal(table.name);
+    const columnList = table.columns.map((column) => column.name).join(', ');
+    const placeholders = table.columns.map((_, index) => `$${index + 1}`).join(', ');
+    const updatableColumns = table.columns.filter(
+      (column) => !column.primaryKey && column.name !== 'created_at',
+    );
+    const updateAssignments = updatableColumns
+      .map((column, index) => `${column.name} = $${index + 2}`)
+      .join(', ');
+
+    blocks.push(`-- name: List${baseName} :many`);
+    blocks.push(`select ${columnList} from ${table.name};`);
+    blocks.push('');
+    blocks.push(`-- name: Get${baseName} :one`);
+    const idColumn = table.columns.find((column) => column.primaryKey)?.name ?? 'id';
+    blocks.push(`select ${columnList} from ${table.name} where ${idColumn} = $1 limit 1;`);
+    blocks.push('');
+    blocks.push(`-- name: Create${baseName} :one`);
+    blocks.push(
+      `insert into ${table.name} (${columnList}) values (${placeholders}) returning ${columnList};`,
+    );
+    blocks.push('');
+    if (updatableColumns.length > 0) {
+      blocks.push(`-- name: Update${baseName} :one`);
+      blocks.push(
+        `update ${table.name} set ${updateAssignments} where ${idColumn} = $1 returning ${columnList};`,
+      );
+      blocks.push('');
+    }
+    blocks.push(`-- name: Delete${baseName} :exec`);
+    blocks.push(`delete from ${table.name} where ${idColumn} = $1;`);
+    blocks.push('');
+  }
+  return `${blocks.join('\n').trimEnd()}\n`;
+}
+
+function renderSqlcReadme() {
+  return `# Generated sqlc adapter
+
+This directory is a self-contained sqlc workspace. Run \`sqlc generate\` from inside this folder
+to produce the typed Go bindings; the canonical DDL is mirrored from
+\`remote/libs/pg-defs/schema/schema.sql\`. The query catalogue in \`query.sql\` is a starter set of
+list/get/create/update/delete queries — extend it inside your service rather than here.
+
+> Never apply \`schema.sql\` from this directory to a real database; this copy exists solely so that
+> \`sqlc\` can introspect the schema offline. Use the pg-defs diff workflow for migrations.
+`;
+}
+
+function renderJvmReadme() {
+  return `# Generated JVM adapters
+
+Two flavors live here:
+
+- \`jooq/\` — A jOOQ \`Tables.java\` that can be referenced from any JVM stack (plain Java, Spring
+  Boot, Vert.x, Micronaut, Scala via Java interop, Kotlin, etc.). The build script wires up the
+  jOOQ runtime dependency so you can run-time \`DSL.using(...)\` immediately, and serves as a
+  starting point for full \`jooq-codegen\` if you want everything — column-level constants live in
+  the generated \`Tables.java\` already.
+- \`hibernate/\` — One JPA-annotated entity class per canonical table. Drop these into a Spring Boot
+  \`@Repository\`, a Vert.x Hibernate Reactive verticle, or any plain JPA app. Constraints that JPA
+  cannot natively express (partial indexes, GIN indexes, JSONB CHECKs) are intentionally left to the
+  database; this package never owns migrations.
+
+Both directories ship a Gradle build file. Translating to Maven or sbt is mechanical: declare the
+same jOOQ / Hibernate / Jakarta Persistence dependencies and point your build at
+\`src/main/java\`.
+`;
+}
+
+function renderJooqBuildGradle() {
+  return `${[
+    '// Generated by @dd/pg-defs. Do not edit by hand.',
+    '// SOURCE OF TRUTH: ../../schema/schema.sql defines the database contract.',
+    'plugins {',
+    "    id 'java-library'",
+    '}',
+    '',
+    "group = 'dd.pgdefs'",
+    "version = '0.1.0'",
+    '',
+    'java {',
+    '    sourceCompatibility = JavaVersion.VERSION_17',
+    '    targetCompatibility = JavaVersion.VERSION_17',
+    '}',
+    '',
+    'repositories {',
+    '    mavenCentral()',
+    '}',
+    '',
+    'dependencies {',
+    "    api 'org.jooq:jooq:3.19.10'",
+    "    implementation 'org.postgresql:postgresql:42.7.4'",
+    '}',
+  ].join('\n')}\n`;
+}
+
+function renderJooqTablesJava(contract) {
+  const lines = [
+    '// Generated by @dd/pg-defs. Do not edit by hand.',
+    '// SOURCE OF TRUTH: schema/schema.sql defines the database contract.',
+    '// Generated ORM/client code is an adapter only; do not infer migrations from it.',
+    '// MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review',
+    '// and approval before any database write.',
+    'package dd.pgdefs.jooq;',
+    '',
+    'import java.time.OffsetDateTime;',
+    'import java.util.UUID;',
+    'import org.jooq.Field;',
+    'import org.jooq.JSONB;',
+    'import org.jooq.Name;',
+    'import org.jooq.Table;',
+    'import org.jooq.impl.DSL;',
+    'import org.jooq.impl.SQLDataType;',
+    '',
+    '/**',
+    ' * jOOQ table + column references for every canonical pg-defs table.',
+    ' * <p>',
+    ' * Use {@code DSL.using(connection).select(Tables.APP_CONFIG_ID).from(Tables.APP_CONFIG).fetch()}.',
+    ' * Run-time jOOQ avoids the codegen Gradle plugin so this file is enough for read-side queries.',
+    ' */',
+    'public final class Tables {',
+    '    private Tables() {',
+    '    }',
+    '',
+  ];
+
+  for (const table of contract.tables) {
+    const tableConst = screaming(table.name);
+    lines.push(`    public static final Name ${tableConst}_NAME = DSL.name(${JSON.stringify(table.name)});`);
+    lines.push(`    public static final Table<org.jooq.Record> ${tableConst} = DSL.table(${tableConst}_NAME);`);
+    for (const column of table.columns) {
+      const colConst = `${tableConst}_${screaming(column.name)}`;
+      const javaType = jooqJavaType(column);
+      const dataType = jooqDataType(column);
+      lines.push(
+        `    public static final Field<${javaType}> ${colConst} = DSL.field(DSL.name(${JSON.stringify(table.name)}, ${JSON.stringify(column.name)}), ${dataType});`,
+      );
+    }
+    lines.push('');
+  }
+
+  lines.push('}');
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function jooqJavaType(column) {
+  switch (column.kind) {
+    case 'uuid':
+      return 'UUID';
+    case 'integer':
+      return 'Integer';
+    case 'bigint':
+      return 'Long';
+    case 'boolean':
+      return 'Boolean';
+    case 'timestamp':
+      return 'OffsetDateTime';
+    case 'jsonObject':
+    case 'jsonArray':
+      // SQLDataType.JSONB is DataType<JSONB>, so the matching Field<T> parameter must be
+      // `org.jooq.JSONB` (jOOQ's JSON wrapper). Returning `String` here breaks javac type
+      // inference (Field<String> vs DataType<JSONB>). Callers that want the raw JSON text
+      // can call .data() on the JSONB instance.
+      return 'JSONB';
+    default:
+      return 'String';
+  }
+}
+
+function jooqDataType(column) {
+  switch (column.sqlType) {
+    case 'uuid':
+      return 'SQLDataType.UUID';
+    case 'varchar':
+      return `SQLDataType.VARCHAR(${column.maxLength})`;
+    case 'text':
+      return 'SQLDataType.CLOB';
+    case 'integer':
+      return 'SQLDataType.INTEGER';
+    case 'bigint':
+    case 'bigserial':
+      return 'SQLDataType.BIGINT';
+    case 'boolean':
+      return 'SQLDataType.BOOLEAN';
+    case 'jsonb':
+      return 'SQLDataType.JSONB';
+    case 'timestamptz':
+      return 'SQLDataType.TIMESTAMPWITHTIMEZONE';
+    default:
+      return 'SQLDataType.CLOB';
+  }
+}
+
+function renderHibernateBuildGradle() {
+  return `${[
+    '// Generated by @dd/pg-defs. Do not edit by hand.',
+    '// SOURCE OF TRUTH: ../../schema/schema.sql defines the database contract.',
+    'plugins {',
+    "    id 'java-library'",
+    '}',
+    '',
+    "group = 'dd.pgdefs'",
+    "version = '0.1.0'",
+    '',
+    'java {',
+    '    sourceCompatibility = JavaVersion.VERSION_17',
+    '    targetCompatibility = JavaVersion.VERSION_17',
+    '}',
+    '',
+    'repositories {',
+    '    mavenCentral()',
+    '}',
+    '',
+    'dependencies {',
+    "    api 'jakarta.persistence:jakarta.persistence-api:3.1.0'",
+    "    implementation 'org.hibernate.orm:hibernate-core:6.5.2.Final'",
+    "    implementation 'com.vladmihalcea:hibernate-types-60:2.21.1'",
+    '}',
+  ].join('\n')}\n`;
+}
+
+function renderHibernatePackageInfoJava() {
+  return `${[
+    '// Generated by @dd/pg-defs. Do not edit by hand.',
+    '// SOURCE OF TRUTH: schema/schema.sql defines the database contract.',
+    '/**',
+    ' * Hibernate / JPA entity classes generated from {@code schema/schema.sql}.',
+    ' * Compatible with plain JPA, Spring Data JPA, Vert.x Hibernate Reactive, and Quarkus.',
+    ' */',
+    'package dd.pgdefs.hibernate;',
+  ].join('\n')}\n`;
+}
+
+function renderHibernateEntityFiles(contract) {
+  return contract.tables.map((table) => {
+    const className = `${table.names?.rust ?? pascal(table.name)}Entity`;
+    return [
+      `generated/jvm/hibernate/src/main/java/dd/pgdefs/hibernate/${className}.java`,
+      renderHibernateEntityFile(table),
+    ];
+  });
+}
+
+function renderHibernateEntityFile(table) {
+  const className = `${table.names?.rust ?? pascal(table.name)}Entity`;
+  const lines = [
+    '// Generated by @dd/pg-defs. Do not edit by hand.',
+    '// SOURCE OF TRUTH: schema/schema.sql defines the database contract.',
+    '// Generated ORM/client code is an adapter only; do not infer migrations from it.',
+    '// MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review',
+    '// and approval before any database write.',
+    'package dd.pgdefs.hibernate;',
+    '',
+    'import jakarta.persistence.Column;',
+    'import jakarta.persistence.Entity;',
+    'import jakarta.persistence.Id;',
+    'import jakarta.persistence.Table;',
+    'import java.time.OffsetDateTime;',
+    'import java.util.UUID;',
+    '',
+    '@Entity',
+    `@Table(name = ${JSON.stringify(table.name)})`,
+    `public class ${className} {`,
+  ];
+
+  for (const column of table.columns) {
+    if (column.primaryKey) {
+      lines.push('    @Id');
+    }
+    const annotationOptions = [`name = ${JSON.stringify(column.name)}`];
+    if (column.maxLength) {
+      annotationOptions.push(`length = ${column.maxLength}`);
+    }
+    if (!column.notNull) {
+      annotationOptions.push('nullable = true');
+    } else if (!column.primaryKey) {
+      annotationOptions.push('nullable = false');
+    }
+    if (column.kind === 'jsonObject' || column.kind === 'jsonArray') {
+      annotationOptions.push('columnDefinition = "jsonb"');
+    } else if (column.sqlType === 'timestamptz') {
+      annotationOptions.push('columnDefinition = "timestamptz"');
+    }
+    lines.push(`    @Column(${annotationOptions.join(', ')})`);
+    lines.push(`    private ${hibernateJavaType(column)} ${camel(column.name)};`);
+    lines.push('');
+  }
+
+  // Getters and setters
+  for (const column of table.columns) {
+    const fieldName = camel(column.name);
+    const javaType = hibernateJavaType(column);
+    const accessor = `${pascal(column.name)}`;
+    lines.push(`    public ${javaType} get${accessor}() {`);
+    lines.push(`        return ${fieldName};`);
+    lines.push('    }');
+    lines.push('');
+    lines.push(`    public void set${accessor}(${javaType} ${fieldName}) {`);
+    lines.push(`        this.${fieldName} = ${fieldName};`);
+    lines.push('    }');
+    lines.push('');
+  }
+  lines.push('}');
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function hibernateJavaType(column) {
+  switch (column.kind) {
+    case 'uuid':
+      return 'UUID';
+    case 'integer':
+      return 'Integer';
+    case 'bigint':
+      return 'Long';
+    case 'boolean':
+      return 'Boolean';
+    case 'timestamp':
+      return 'OffsetDateTime';
+    case 'jsonObject':
+    case 'jsonArray':
+      return 'String';
+    default:
+      return 'String';
+  }
 }
 
 function renderDdl(contract) {

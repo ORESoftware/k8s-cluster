@@ -27,7 +27,12 @@ const ALLOWED_SEED_DIR = 'remote/databases/pg/seeds';
 // reasons unrelated to RDS schema (e.g. generated artifacts inside ignored
 // build trees, third-party vendored sources). Keep this list empty to enforce
 // the strict policy and only add entries when the asymmetry is justified.
-const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [];
+const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [
+  // The generated sqlc adapter mirrors schema.sql + emits a starter query catalogue. These
+  // .sql files are codegen INPUTS (consumed by `sqlc generate`), not authoritative DDL — the
+  // pg-defs `--check` workflow keeps them locked to schema/schema.sql.
+  'remote/libs/pg-defs/generated/go/sqlc',
+];
 
 const IGNORED_DIRS = new Set([
   '.git',

@@ -7,6 +7,7 @@
   "scripts": {
     "generate": "node src/generate.mjs",
     "check": "node src/generate.mjs --check",
+    "test": "node --test src/",
     "print:sql": "node src/generate.mjs --print-sql",
     "parse:sql": "node src/diff.mjs --parse-only",
     "diff": "node src/diff.mjs",
@@ -21,12 +22,20 @@
     "./python": "./generated/python/sqlalchemy_models.py",
     "./go-gorm": "./generated/go/gorm/pg_defs.go",
     "./go-bun": "./generated/go/bun/pg_defs.go",
+    "./go-ent": "./generated/go/ent/schema/doc.go",
+    "./go-sqlc": "./generated/go/sqlc/sqlc.yaml",
     "./dart": "./generated/dart/lib/pg_defs.dart",
+    "./dart-drift": "./generated/dart-drift/lib/pg_defs_drift.dart",
+    "./dart-objectbox": "./generated/dart-objectbox/lib/pg_defs_objectbox.dart",
     "./rust": "./generated/rust/src/lib.rs",
     "./rust-diesel": "./generated/rust/diesel/src/lib.rs",
     "./rust-sea-orm": "./generated/rust/sea-orm/src/lib.rs",
     "./gleam": "./generated/gleam/src/pg_defs.gleam",
-    "./erlang": "./generated/erlang/src/pg_defs.erl"
+    "./erlang": "./generated/erlang/src/pg_defs.erl",
+    "./erlang-mnesia": "./generated/erlang/src/pg_defs_mnesia.erl",
+    "./elixir": "./generated/elixir/lib/dd_pg_defs.ex",
+    "./jvm-jooq": "./generated/jvm/jooq/src/main/java/dd/pgdefs/jooq/Tables.java",
+    "./jvm-hibernate": "./generated/jvm/hibernate/src/main/java/dd/pgdefs/hibernate/package-info.java"
   },
   "peerDependencies": {
     "drizzle-orm": "^0.45.1",

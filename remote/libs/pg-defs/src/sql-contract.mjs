@@ -209,13 +209,28 @@ export function parseSchemaSql(sourceSql) {
 
   for (const statement of statements) {
     const index = parseCreateIndex(statement);
-    if (!index) {
+    if (index) {
+      const table = tableByName.get(index.tableName);
+      if (table) {
+        table.indexes.push(index);
+      }
       continue;
     }
 
-    const table = tableByName.get(index.tableName);
-    if (table) {
-      table.indexes.push(index);
+    const foreignKey = parseForeignKey(statement);
+    if (foreignKey) {
+      const table = tableByName.get(foreignKey.tableName);
+      if (table) {
+        table.foreignKeys.push(foreignKey);
+        const column = table.columns.find((item) => item.name === foreignKey.column);
+        if (column) {
+          column.foreignKey = {
+            table: foreignKey.references.table,
+            column: foreignKey.references.column,
+            constraint: foreignKey.name,
+          };
+        }
+      }
     }
   }
 
@@ -324,7 +339,31 @@ function parseCreateTable(statement) {
     columns,
     checks,
     indexes: [],
+    foreignKeys: [],
     createStatement: statement.trim(),
+  };
+}
+
+function parseForeignKey(statement) {
+  // Matches: alter table [if exists] X add constraint Y foreign key (col) references Z(col2)
+  // Captures the constraint name, source column, target table, and target column so adapters can
+  // expose relationship metadata. Compound (multi-column) FKs are intentionally skipped because
+  // the current schema does not use them and a compound FK on a column-level adapter would lie.
+  const match = statement.match(
+    /^alter\s+table\s+(?:if\s+exists\s+)?("?[\w]+"?)\s+add\s+constraint\s+("?[\w]+"?)\s+foreign\s+key\s*\(\s*("?[\w]+"?)\s*\)\s+references\s+("?[\w]+"?)\s*\(\s*("?[\w]+"?)\s*\)\s*;?$/i,
+  );
+  if (!match) {
+    return null;
+  }
+  return {
+    tableName: unquoteIdent(match[1]),
+    name: unquoteIdent(match[2]),
+    column: unquoteIdent(match[3]),
+    references: {
+      table: unquoteIdent(match[4]),
+      column: unquoteIdent(match[5]),
+    },
+    statement: statement.trim(),
   };
 }
 
@@ -410,38 +449,208 @@ function parseColumn(value) {
 
 function applyCheckValidation(columns, check) {
   const columnByName = new Map(columns.map((column) => [column.name, column]));
-  const regexMatch = check.sql.match(/^([\w]+)\s*~\s*'([^']+)'$/i);
-  if (regexMatch) {
-    mergeValidation(columnByName.get(regexMatch[1]), { regex: regexMatch[2] });
+  // CHECK clauses can be compound (e.g. `max_warm between 1 and 128 and max_warm >= min_warm`).
+  // Split on top-level AND and let each clause try to match a known shape so compound checks
+  // still contribute every fact they can, instead of being dropped wholesale.
+  for (const clause of splitTopLevelAnd(check.sql)) {
+    applyCheckClause(columnByName, clause.trim());
+  }
+}
+
+function applyCheckClause(columnByName, clauseSql) {
+  if (!clauseSql) {
+    return;
   }
 
-  const maxBytesMatch = check.sql.match(/^octet_length\(([\w]+)\)\s*<=\s*(\d+)$/i);
+  // Strip a single leading null guard like `col is null or <inner>` so range checks on nullable
+  // columns (e.g. `nats_subject is null or octet_length(nats_subject) <= 256`) still capture
+  // their inner constraint without losing nullability semantics.
+  const nullGuardMatch = clauseSql.match(/^([\w]+)\s+is\s+null\s+or\s+([\s\S]+)$/i);
+  if (nullGuardMatch) {
+    applyCheckClause(columnByName, nullGuardMatch[2].trim());
+    return;
+  }
+
+  const regexMatch = clauseSql.match(/^([\w]+)\s*~\s*'([\s\S]+)'$/i);
+  if (regexMatch) {
+    // SQL string literals double single-quotes (`''`) to escape an embedded apostrophe; unescape
+    // so the captured pattern is the literal regex other languages will compile.
+    const pattern = regexMatch[2].replace(/''/g, "'");
+    mergeValidation(columnByName.get(regexMatch[1]), { regex: pattern });
+    return;
+  }
+
+  const maxBytesMatch = clauseSql.match(/^octet_length\(([\w]+)\)\s*<=\s*(\d+)$/i);
   if (maxBytesMatch) {
     mergeValidation(columnByName.get(maxBytesMatch[1]), { maxBytes: Number(maxBytesMatch[2]) });
+    return;
   }
 
-  const literalMatch = check.sql.match(/^([\w]+)\s*=\s*'((?:''|[^'])*)'$/i);
+  const bytesBetweenMatch = clauseSql.match(
+    /^octet_length\(([\w]+)\)\s+between\s+(\d+)\s+and\s+(\d+)$/i,
+  );
+  if (bytesBetweenMatch) {
+    mergeValidation(columnByName.get(bytesBetweenMatch[1]), {
+      minBytes: Number(bytesBetweenMatch[2]),
+      maxBytes: Number(bytesBetweenMatch[3]),
+    });
+    return;
+  }
+
+  const intBetweenMatch = clauseSql.match(/^([\w]+)\s+between\s+(-?\d+)\s+and\s+(-?\d+)$/i);
+  if (intBetweenMatch) {
+    mergeValidation(columnByName.get(intBetweenMatch[1]), {
+      min: Number(intBetweenMatch[2]),
+      max: Number(intBetweenMatch[3]),
+    });
+    return;
+  }
+
+  const intCmpMatch = clauseSql.match(/^([\w]+)\s*(>=|<=|>|<)\s*(-?\d+)$/);
+  if (intCmpMatch) {
+    const target = columnByName.get(intCmpMatch[1]);
+    if (target) {
+      const limit = Number(intCmpMatch[3]);
+      switch (intCmpMatch[2]) {
+        case ">=":
+          mergeValidation(target, { min: limit });
+          break;
+        case ">":
+          mergeValidation(target, { min: limit + 1 });
+          break;
+        case "<=":
+          mergeValidation(target, { max: limit });
+          break;
+        case "<":
+          mergeValidation(target, { max: limit - 1 });
+          break;
+      }
+    }
+    return;
+  }
+
+  const literalMatch = clauseSql.match(/^([\w]+)\s*=\s*'((?:''|[^'])*)'$/i);
   if (literalMatch) {
-    mergeValidation(columnByName.get(literalMatch[1]), { literal: literalMatch[2].replace(/''/g, "'") });
+    mergeValidation(columnByName.get(literalMatch[1]), {
+      literal: literalMatch[2].replace(/''/g, "'"),
+    });
+    return;
   }
 
-  const jsonMatch = check.sql.match(/^jsonb_typeof\(([\w]+)\)\s*=\s*'(array|object)'$/i);
+  const jsonMatch = clauseSql.match(/^jsonb_typeof\(([\w]+)\)\s*=\s*'(array|object)'$/i);
   if (jsonMatch) {
     const column = columnByName.get(jsonMatch[1]);
     if (column) {
       column.kind = jsonMatch[2] === "array" ? "jsonArray" : "jsonObject";
     }
+    return;
   }
 
-  const enumMatch = check.sql.match(/^([\w]+)\s+in\s+\(([\s\S]+)\)$/i);
+  const enumMatch = clauseSql.match(/^([\w]+)\s+in\s+\(([\s\S]+)\)$/i);
   if (enumMatch) {
-    const values = splitTopLevelComma(enumMatch[2]).map((item) => item.trim().replace(/^'|'$/g, ""));
+    const values = splitTopLevelComma(enumMatch[2]).map((item) =>
+      item.trim().replace(/^'|'$/g, ""),
+    );
     const column = columnByName.get(enumMatch[1]);
     if (column) {
       column.kind = "enum";
       column.enumValues = values;
     }
+    return;
   }
+
+  // Cross-column comparisons (e.g. `max_warm >= min_warm`) and other shapes we don't model are
+  // intentionally ignored here. They remain enforced by the database; adapters do not need to
+  // re-implement them and silently dropping them keeps codegen deterministic.
+}
+
+function splitTopLevelAnd(value) {
+  // Splits a SQL boolean expression on top-level AND tokens while respecting parentheses,
+  // quoted strings, and the embedded AND that lives inside `BETWEEN X AND Y`. The latter is
+  // not a logical conjunction and must not become a split point or compound checks like
+  // `col between 1 and 64 and col >= other_col` would silently drop the `between` fact.
+  // We deliberately do NOT split on OR — null guards like `col is null or octet_length(col)
+  // <= N` are handled in `applyCheckClause` so the inner constraint can still be captured.
+  const tokens = [];
+  let current = "";
+  let depth = 0;
+  let singleQuoted = false;
+  let doubleQuoted = false;
+  // betweenAndPending counts how many upcoming AND tokens belong to a still-open BETWEEN. We
+  // increment on each `between` keyword and decrement on the matching AND.
+  let betweenAndPending = 0;
+
+  const flush = () => {
+    const trimmed = current.trim();
+    if (trimmed) {
+      tokens.push(trimmed);
+    }
+    current = "";
+  };
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    const next = value[index + 1];
+
+    if (char === "'" && !doubleQuoted) {
+      current += char;
+      if (singleQuoted && next === "'") {
+        current += next;
+        index += 1;
+        continue;
+      }
+      singleQuoted = !singleQuoted;
+      continue;
+    }
+
+    if (char === '"' && !singleQuoted) {
+      current += char;
+      doubleQuoted = !doubleQuoted;
+      continue;
+    }
+
+    if (singleQuoted || doubleQuoted) {
+      current += char;
+      continue;
+    }
+
+    if (char === "(") {
+      depth += 1;
+      current += char;
+      continue;
+    }
+    if (char === ")") {
+      depth -= 1;
+      current += char;
+      continue;
+    }
+
+    if (depth === 0 && /\s/.test(char)) {
+      const remaining = value.slice(index + 1);
+      const betweenMatch = remaining.match(/^(between)\s+/i);
+      if (betweenMatch) {
+        betweenAndPending += 1;
+        current += char;
+        continue;
+      }
+      const keywordMatch = remaining.match(/^(and)\s+/i);
+      if (keywordMatch) {
+        if (betweenAndPending > 0) {
+          betweenAndPending -= 1;
+          current += char;
+          continue;
+        }
+        flush();
+        index += keywordMatch[0].length;
+        continue;
+      }
+    }
+
+    current += char;
+  }
+
+  flush();
+  return tokens;
 }
 
 function applyMetadata(contract) {
