@@ -1866,14 +1866,14 @@ function renderGleam(contract) {
       const typeName = `${baseName}${pascal(column.name)}`;
       lines.push(`pub type ${typeName} {`);
       for (const value of column.enumValues) {
-        lines.push(`  ${pascal(value)}`);
+        lines.push(`  ${gleamEnumVariantName(typeName, value)}`);
       }
       lines.push('}');
       lines.push('');
       lines.push(`pub fn ${table.name}_${column.name}_to_string(value: ${typeName}) -> String {`);
       lines.push('  case value {');
       for (const value of column.enumValues) {
-        lines.push(`    ${pascal(value)} -> ${JSON.stringify(value)}`);
+        lines.push(`    ${gleamEnumVariantName(typeName, value)} -> ${JSON.stringify(value)}`);
       }
       lines.push('  }');
       lines.push('}');
@@ -1883,7 +1883,7 @@ function renderGleam(contract) {
       );
       lines.push('  case value {');
       for (const value of column.enumValues) {
-        lines.push(`    ${JSON.stringify(value)} -> Ok(${pascal(value)})`);
+        lines.push(`    ${JSON.stringify(value)} -> Ok(${gleamEnumVariantName(typeName, value)})`);
       }
       lines.push(`    _ -> Error("unsupported ${table.name}.${column.name}: " <> value)`);
       lines.push('  }');
@@ -1961,6 +1961,10 @@ function renderGleam(contract) {
   lines.push('}');
 
   return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function gleamEnumVariantName(typeName, value) {
+  return `${typeName}${pascal(value)}`;
 }
 
 function gleamType(column) {
