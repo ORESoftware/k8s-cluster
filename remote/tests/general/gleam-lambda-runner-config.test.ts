@@ -253,6 +253,8 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
   assert.match(ec2Deployment, /gleam deps download/);
   assert.match(ec2Deployment, /containerPort:\s*8083/);
+  assert.match(ec2Deployment, /requests:[\s\S]*memory:\s*512Mi/);
+  assert.match(ec2Deployment, /limits:[\s\S]*memory:\s*4Gi/);
   assert.match(ec2Deployment, /path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1/);
   assert.match(ec2Deployment, /dd-gleam-lambda-runner-secrets/);
   assert.match(ec2Deployment, /name:\s*LAMBDA_DATABASE_URL[\s\S]*key:\s*LAMBDA_DATABASE_URL/);
