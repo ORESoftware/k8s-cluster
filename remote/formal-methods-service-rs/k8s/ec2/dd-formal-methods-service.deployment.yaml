@@ -37,44 +37,29 @@ spec:
             - -lc
           args:
             - |
-              set -uo pipefail
+              set -euo pipefail
               if ! command -v git >/dev/null 2>&1; then
                 echo "installing git..."
                 apt-get update
                 apt-get install -y --no-install-recommends git
                 rm -rf /var/lib/apt/lists/*
               fi
+              # `bash -lc` sources /etc/profile which RESETS PATH to a
+              # vanilla Debian default and drops /usr/local/cargo/bin —
+              # the dir the rust:1.90 image puts the rustup proxy in.
+              # The proxy resolves cargo fine (we use the absolute path
+              # below), but the real cargo subprocess then spawns
+              # `rustc` via PATH lookup and gets ENOENT. Re-prepend
+              # the toolchain dirs so all child spawns resolve.
+              TOOLCHAIN_BIN=/usr/local/rustup/toolchains/1.90.0-x86_64-unknown-linux-gnu/bin
+              export PATH="/usr/local/cargo/bin:${TOOLCHAIN_BIN}:${PATH}"
+              export RUSTC="${TOOLCHAIN_BIN}/rustc"
+              export CARGO="${TOOLCHAIN_BIN}/cargo"
               export CARGO_HOME=/var/cache/dd-formal-methods-service/cargo
               export CARGO_TARGET_DIR=/var/cache/dd-formal-methods-service/target
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$FORMAL_METHODS_WORKDIR_ROOT"
-              echo "==== diag ===="
-              echo "PATH=$PATH"
-              echo "HOME=$HOME"
-              echo "PWD=$PWD"
-              echo "RUSTUP_HOME=${RUSTUP_HOME:-<unset>}"
-              echo "CARGO_HOME=$CARGO_HOME"
-              echo "which cargo: $(which cargo 2>&1)"
-              echo "which rustc: $(which rustc 2>&1)"
-              echo "ls /usr/local/cargo/bin/:"
-              ls -la /usr/local/cargo/bin/ 2>&1 | head -20
-              echo "ls /usr/local/rustup/toolchains/:"
-              ls -la /usr/local/rustup/toolchains/ 2>&1 | head -10
-              TC=$(ls /usr/local/rustup/toolchains/ 2>/dev/null | head -1)
-              echo "first toolchain: $TC"
-              if [[ -n "$TC" ]]; then
-                echo "ls /usr/local/rustup/toolchains/$TC/bin/:"
-                ls -la "/usr/local/rustup/toolchains/$TC/bin/" 2>&1 | head -20
-                echo "direct rustc -vV:"
-                "/usr/local/rustup/toolchains/$TC/bin/rustc" -vV 2>&1 || echo "(direct rustc failed)"
-              fi
-              echo "==== end diag ===="
               cd /opt/dd-next-1/remote/formal-methods-service-rs
-              echo "trying cargo run..."
-              /usr/local/cargo/bin/cargo run --release --locked
-              rc=$?
-              echo "cargo run exited with rc=$rc; sleeping 600s to allow inspection"
-              sleep 600
-              exit $rc
+              exec "$CARGO" run --release --locked
           env:
             - name: HOME
               value: /tmp
@@ -168,16 +153,29 @@ spec:
             limits:
               cpu: '2'
               memory: 1500Mi
-          # Probes temporarily disabled while we debug the cargo
-          # toolchain spawn issue; re-enable once `cargo run` starts
-          # the axum listener on :8111. See deployment args for the
-          # debug sleep 600 fallback.
+          # startupProbe gives cargo time to compile the release
+          # binary on first start (cold cache: ~10 min on the EC2
+          # node). After warm-cache restarts this is seconds.
           startupProbe:
-            exec:
-              command:
-                - /bin/true
-            periodSeconds: 60
-            failureThreshold: 30
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
