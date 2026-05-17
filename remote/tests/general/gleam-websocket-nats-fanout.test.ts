@@ -64,7 +64,7 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(httpServer, /\["broadcast"\] -> broadcast\(req, broker_name\)/);
   assert.match(httpServer, /mist\.read_body\(req, 1_048_576\)/);
   assert.match(httpServer, /broadcaster\.BroadcastJson\(payload\)/);
-  assert.match(httpServer, /os\.get_env\("GLEAM_BROADCAST_SECRET"\)/);
+  assert.match(httpServer, /env_get\("GLEAM_BROADCAST_SECRET"\)/);
   assert.match(bridge, /net\.createConnection/);
   assert.match(bridge, /SUB \$\{subject\} 1/);
   assert.match(bridge, /http:\/\/127\.0\.0\.1:8081\/broadcast/);

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dd-vpn-config
+  namespace: vpn
+  labels:
+    app.kubernetes.io/name: dd-vpn
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+

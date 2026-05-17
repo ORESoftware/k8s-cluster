@@ -1,0 +1,80 @@
+name: remote-dev ECR rebuild
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub cron is UTC-only. Run both possible UTC hours and gate below
+    # so the build happens at 04:00 America/New_York across DST changes.
+    - cron: '0 8 * * *'
+    - cron: '0 9 * * *'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: remote-dev-ecr-rebuild
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate every third Eastern day
+        id: cadence
+        shell: bash
+        run: |
+          eastern_hour="$(TZ=America/New_York date +%H)"
+          eastern_epoch_day="$(TZ=America/New_York date +%s)"
+          cadence_day="$(( eastern_epoch_day / 86400 ))"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          elif [ "$eastern_hour" = "04" ] && [ "$(( cadence_day % 3 ))" = "0" ]; then
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.cadence.outputs.run_build == 'true'
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: steps.cadence.outputs.run_build == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: steps.cadence.outputs.run_build == 'true'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: steps.cadence.outputs.run_build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare GitHub deploy key secret
+        if: steps.cadence.outputs.run_build == 'true'
+        shell: bash
+        run: |
+          install -m 0700 -d "$RUNNER_TEMP/remote-dev"
+          printf '%s' "${{ secrets.DD_REPO_DEPLOY_KEY }}" > "$RUNNER_TEMP/remote-dev/github_deploy_key"
+          chmod 0600 "$RUNNER_TEMP/remote-dev/github_deploy_key"
+
+      - name: Build and push remote-dev image
+        if: steps.cadence.outputs.run_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: remote/dev-server
+          file: remote/dev-server/Dockerfile
+          push: true
+          build-args: |
+            DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git
+            DD_REPO_REF=dev
+          secret-files: |
+            github_deploy_key=${{ runner.temp }}/remote-dev/github_deploy_key
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ vars.REMOTE_DEV_ECR_REPOSITORY }}:latest
+            ${{ steps.ecr.outputs.registry }}/${{ vars.REMOTE_DEV_ECR_REPOSITORY }}:dev-${{ github.sha }}

@@ -9,6 +9,7 @@ Smoke tests for the live remote dev-server on EC2.
 - `REMOTE_DEV_EC2_HOST` (optional): defaults to `54.91.17.58`
 - `REMOTE_DEV_EC2_USER` (optional): defaults to `ec2-user`
 - `REMOTE_DEV_EC2_KEY_PATH` (optional): defaults to `/Users/maca5/Downloads/main-key-pair.pem`
+- `DD_EC2_GLEAM_LAMBDA_INTEGRATION=1`: enables the destructive-on-temp-resources EC2 Gleam lambda runner integration test
 - `REMOTE_DEV_K8S_NAMESPACE` (optional): defaults to `default`
 - `REMOTE_DEV_K8S_DEPLOYMENT` (optional): defaults to `dd-dev-server-api`
 - `REMOTE_DEV_ECHO_PROVIDER` (optional): defaults to `claude-sdk` for the browser echo test
@@ -62,4 +63,14 @@ Run NATS messaging checks (NATS deployment + exporter scrape + Grafana panels):
 
 ```bash
 pnpm --dir remote/tests run test:cli:nats-config
+```
+
+Run the true EC2 Gleam lambda runner integration. This copies the local runner/schema files to
+`/tmp` on EC2, starts temporary Postgres and Gleam runner pods, builds runtime images with real
+`nerdctl`, runs lambda containers through `ctr`/containerd, invokes host and containerized
+Node/Python/Ruby/Bash functions, checks the runner survives a failed invocation, and cleans up its
+temporary containers/images:
+
+```bash
+pnpm --dir remote/tests run test:cli:gleam-lambda-runner-ec2
 ```

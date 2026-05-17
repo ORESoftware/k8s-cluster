@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-spark-operator
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://apache.github.io/spark-kubernetes-operator
+    chart: spark-kubernetes-operator
+    targetRevision: 1.6.0
+    helm:
+      values: |
+        controller:
+          replicas: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spark
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

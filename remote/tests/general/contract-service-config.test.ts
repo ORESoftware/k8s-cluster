@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import test from 'node:test';
+
+function findRepoRoot(): string {
+  for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
+    if (existsSync(resolve(candidate, 'remote/contract-service-rs/Cargo.toml'))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Unable to locate repo root from ${process.cwd()}`);
+}
+
+const repoRoot = findRepoRoot();
+
+async function readRepoFile(relativePath: string): Promise<string> {
+  return readFile(resolve(repoRoot, relativePath), 'utf8');
+}
+
+test('rust solana contract service is deployed, scraped, and guarded', async () => {
+  const cargo = await readRepoFile('remote/contract-service-rs/Cargo.toml');
+  const source = await readRepoFile('remote/contract-service-rs/src/main.rs');
+  const readme = await readRepoFile('remote/contract-service-rs/readme.md');
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-contract-service.deployment.yaml',
+  );
+  const service = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-contract-service.service.yaml',
+  );
+  const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
+  const gateway = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
+  );
+  const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
+  const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
+  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
+
+  assert.match(cargo, /name = "dd-contract-service"/);
+  assert.match(cargo, /async-nats = "=0\.38\.0"/);
+  assert.match(cargo, /reqwest[\s\S]*rustls-tls/);
+  assert.match(cargo, /bs58/);
+  assert.match(source, /const SCHEMA_VERSION: &str = "solana\.contract\.v1"/);
+  assert.match(source, /struct ContractRequest/);
+  assert.match(source, /fn validate_contract_request/);
+  assert.match(source, /fn validate_pubkey/);
+  assert.match(source, /simulateTransaction/);
+  assert.match(source, /sendTransaction/);
+  assert.match(source, /SOLANA_SEND_ENABLED/);
+  assert.match(source, /dd\.remote\.contracts\.solana\.validate/);
+  assert.match(source, /dd\.remote\.contracts\.solana\.results/);
+  assert.match(source, /dd_contract_service_rpc_requests_total/);
+  assert.match(source, /dd_contract_service_send_blocked_total/);
+  assert.match(source, /DefaultBodyLimit::max\(MAX_HTTP_BODY_BYTES\)/);
+  assert.match(source, /payload\.len\(\) > MAX_NATS_PAYLOAD_BYTES/);
+  assert.match(source, /\.route\("\/healthz", get\(healthz\)\)/);
+  assert.match(source, /\.route\("\/schema", get\(schema_http\)\)/);
+  assert.match(source, /\.route\("\/validate", post\(validate_http\)\)/);
+  assert.match(source, /\.route\("\/simulate", post\(simulate_http\)\)/);
+  assert.match(readme, /GET \/schema/);
+  assert.match(readme, /POST \/simulate/);
+  assert.match(readme, /schemaVersion": "solana\.contract\.v1"/);
+
+  assert.match(deployment, /name:\s*dd-contract-service/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/contract-service-rs/);
+  assert.match(deployment, /PORT[\s\S]*value:\s*'8101'/);
+  assert.match(deployment, /SOLANA_CLUSTER[\s\S]*value:\s*devnet/);
+  assert.match(deployment, /SOLANA_RPC_URL[\s\S]*https:\/\/api\.devnet\.solana\.com/);
+  assert.match(deployment, /SOLANA_SEND_ENABLED[\s\S]*value:\s*'false'/);
+  assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
+  assert.match(deployment, /CONTRACT_VALIDATE_SUBJECT[\s\S]*dd\.remote\.contracts\.solana\.validate/);
+  assert.match(deployment, /CONTRACT_QUEUE_GROUP[\s\S]*dd-contract-service/);
+  assert.match(deployment, /CONTRACT_RESULT_SUBJECT[\s\S]*dd\.remote\.contracts\.solana\.results/);
+  assert.match(deployment, /CONTRACT_EVENT_SUBJECT[\s\S]*dd\.remote\.events/);
+  assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(service, /name:\s*dd-contract-service/);
+  assert.match(service, /port:\s*8101/);
+  assert.match(service, /targetPort:\s*http/);
+  assert.match(kustomization, /dd-contract-service\.deployment\.yaml/);
+  assert.match(kustomization, /dd-contract-service\.service\.yaml/);
+  assert.match(gateway, /location = \/contracts[\s\S]*return 302 \/contracts\//);
+  assert.match(gateway, /location \/contracts\/[\s\S]*dd-contract-service\.default\.svc\.cluster\.local:8101\//);
+  assert.match(gateway, /location \/contracts\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)/);
+  assert.match(prometheus, /job_name:\s*dd-contract-service/);
+  assert.match(prometheus, /dd-contract-service\.default\.svc\.cluster\.local:8101/);
+  assert.match(otel, /job_name:\s*dd-contract-service/);
+  assert.match(otel, /dd-contract-service\.default\.svc\.cluster\.local:8101/);
+  assert.match(home, /Rust Solana contract service/);
+  assert.match(home, /\/contracts\/schema/);
+  assert.match(home, /dd\.remote\.contracts\.solana\.validate/);
+  assert.match(runtimeReadme, /`dd-contract-service`/);
+  assert.match(runtimeReadme, /\/contracts\/schema/);
+});

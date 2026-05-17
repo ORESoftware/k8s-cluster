@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - dd-vpn.serviceaccount.yaml
+  - dd-vpn.configmap.yaml
+  - dd-vpn-secrets.externalsecret.yaml
+  - dd-vpn.pvc.yaml
+  - dd-vpn.deployment.yaml
+  - dd-vpn-ui.service.yaml
+  - dd-vpn.networkpolicy.yaml
+

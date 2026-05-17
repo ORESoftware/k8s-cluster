@@ -395,6 +395,7 @@ dependencies = [
  "prometheus",
  "reqwest",
  "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "time",

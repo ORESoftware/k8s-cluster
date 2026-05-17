@@ -35,15 +35,27 @@ The child is started through `env -i`, so it receives no database secrets, and n
 child-process, worker, addon, or inspector permission is granted. The deployment installs Alpine
 `nodejs-current` because network permissions require Node 25 or newer.
 
-Python children run with a small builtins set and an explicit `fetch(...)` helper. Ruby and Bash do
-not have a reliable in-process filesystem sandbox, so use `containerized: true` for untrusted Ruby
-or Bash functions. The container path uses `nerdctl run --read-only --tmpfs /tmp --user
-10001:10001 --cap-drop ALL --security-opt no-new-privileges`, with network left enabled and no
-host code mounted into packaged function images.
+Python, Ruby, and Bash do not have a reliable in-process filesystem sandbox. The API and runner
+therefore require `containerized: true` for those runtimes by default. Host execution is limited to
+Node.js unless `LAMBDA_ALLOW_HOST_RUNTIMES` is explicitly widened for a trusted environment. The
+container path supports `LAMBDA_CONTAINER_RUNNER=nerdctl` and `LAMBDA_CONTAINER_RUNNER=ctr`.
+`nerdctl` uses `--read-only --tmpfs /tmp --user 10001:10001 --cap-drop ALL --security-opt
+no-new-privileges --pids-limit 64 --ulimit nofile=64:64`; `ctr` uses equivalent containerd flags
+for read-only rootfs, tmpfs `/tmp`, non-root user, `LAMBDA_CONTAINER_NETWORK`-selected networking,
+seccomp, memory/CPU limits, and dropped default capabilities. No host code is mounted into packaged
+function images.
 
-The manager prewarms one host worker per runtime by default via `LAMBDA_PREWARM_RUNTIMES`.
+The manager prewarms one Node.js host worker by default via `LAMBDA_PREWARM_RUNTIMES`.
 `LAMBDA_PREWARM_CONTAINER_RUNTIMES` can also warm container workers when the runtime images below
 exist in the EC2 node's local containerd image store.
+
+On EC2 Kubernetes, launching those nested containerd containers from the runner pod requires the
+host `/run/containerd` directory for the socket/FIFOs, the host `/var/lib/containerd` snapshot tree,
+and a privileged runner pod (or an equivalent trusted host-side helper). The EC2 manifest sets
+`LAMBDA_CONTAINER_NETWORK=host` for the nested `ctr` containers because the node's Cilium CNI path
+is not a stable generic CNI entrypoint from inside that trusted pod. Treat the runner pod as
+node-level infrastructure: keep invocation and CRUD routes authenticated, and rely on the
+per-lambda runtime flags above for the untrusted function containers.
 
 ## Runtime images
 

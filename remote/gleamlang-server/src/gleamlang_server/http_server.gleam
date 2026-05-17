@@ -1,6 +1,5 @@
 import gleam/bit_array
 import gleam/bytes_tree
-import gleam/erlang/os
 import gleam/erlang/process
 import gleam/http/request
 import gleam/http/response
@@ -12,6 +11,9 @@ import mist
 const host = "0.0.0.0"
 
 const port = 8081
+
+@external(erlang, "gleamlang_server_env", "getenv")
+fn env_get(name: String) -> Result(String, Nil)
 
 type WsState {
   WsState(
@@ -167,7 +169,7 @@ fn broadcast(
 }
 
 fn broadcast_secret() -> String {
-  let assert Ok(secret) = os.get_env("GLEAM_BROADCAST_SECRET")
+  let assert Ok(secret) = env_get("GLEAM_BROADCAST_SECRET")
   case secret {
     "" -> panic as "GLEAM_BROADCAST_SECRET must be configured"
     value -> value

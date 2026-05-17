@@ -42,17 +42,16 @@ jobs:
               --comment "Refresh remote web-home local image" \
               --parameters 'commands=[
                 "set -euo pipefail",
+                "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin dev; git merge --ff-only origin/dev; git rev-parse --short HEAD'\''",
                 "cd /home/ec2-user/codes/dd/dd-next-1",
-                "git fetch origin dev",
-                "git merge --ff-only origin/dev",
                 "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/web-home-rs",
-                "kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml",
-                "kubectl -n argocd get application/dd-next-runtime",
-                "kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite",
-                "kubectl delete pod -n default -l app=dd-remote-web-home --wait=true --timeout=120s",
-                "kubectl wait --for=condition=Available deployment/dd-remote-web-home -n default --timeout=300s",
-                "kubectl get deployment dd-remote-web-home -n default -o wide",
-                "kubectl get pods -n default -l app=dd-remote-web-home -o wide"
+                "sudo -u ec2-user -H bash -lc '\''cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-next-runtime'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl delete pod -n default -l app=dd-remote-web-home --wait=true --timeout=120s'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl wait --for=condition=Available deployment/dd-remote-web-home -n default --timeout=300s'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl get deployment dd-remote-web-home -n default -o wide'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl get pods -n default -l app=dd-remote-web-home -o wide'\''"
               ]' \
               --query "Command.CommandId" \
               --output text

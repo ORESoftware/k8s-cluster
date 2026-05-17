@@ -25,6 +25,8 @@ spec:
         - name: remote-rest-api
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
           command:
             - /bin/bash
             - -lc
@@ -58,6 +60,8 @@ spec:
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_IMAGE_BUILD_NAMESPACE
               value: k8s.io
+            - name: LAMBDA_ALLOW_HOST_RUNTIMES
+              value: nodejs
           envFrom:
             - secretRef:
                 name: dd-agent-secrets
@@ -102,6 +106,9 @@ spec:
               mountPath: /var/lib/dd-lambdas
             - name: containerd-sock
               mountPath: /run/containerd/containerd.sock
+            - name: containerd-root
+              mountPath: /var/lib/containerd
+              mountPropagation: Bidirectional
             - name: nerdctl-bin
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
@@ -118,6 +125,10 @@ spec:
           hostPath:
             path: /run/containerd/containerd.sock
             type: Socket
+        - name: containerd-root
+          hostPath:
+            path: /var/lib/containerd
+            type: Directory
         - name: nerdctl-bin
           hostPath:
             path: /usr/local/bin/nerdctl

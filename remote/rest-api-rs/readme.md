@@ -33,6 +33,7 @@ The public webserver in `remote/web-home-rs` serves HTML and calls this service 
 | `POST /api/agents/threads/:threadId/hard-delete`     | delete the UUID-matched Ingress, Service, Deployment, and PVC; GitHub PRs are not deleted                           |
 | `POST /api/agents/threads/:threadId/merge-upstream`  | scale the thread worker up if needed, wait for readiness, then ask it to merge its configured base branch           |
 | `POST /api/agents/threads/:threadId/open-pr`         | scale the worker up if needed, wait for readiness, then ask it to open or reuse a draft WIP PR                      |
+| `GET /api/lambdas/functions/:idOrSlug`               | fetch one lambda definition over HTTP so non-REST deployments do not need direct RDS TCP credentials                |
 
 ## Data sources
 
@@ -73,16 +74,27 @@ deliveries.
 The lambda function API is CRUD-only:
 
 - `GET /api/lambdas/functions`
+- `GET /api/lambdas/functions/:idOrSlug`
 - `POST /api/lambdas/functions`
 - `PATCH /api/lambdas/functions/:id`
 
 Invocation is deliberately outside this REST service. The gateway sends
 `POST /lambdas/invoke/<slug>` directly to the Gleam lambda runner.
 
-Lambda saves accept managed runtimes `nodejs`, `python3`, `ruby`, and `bash`. Setting
+Standard provisioned RDS Postgres does not provide an HTTP SQL endpoint. Services that should avoid
+direct TCP database access should call this REST API over HTTP instead; keep the RDS URL mounted
+only into `dd-remote-rest-api` unless a service explicitly needs direct SQL.
+
+Lambda saves accept managed runtimes `nodejs`, `python3`, `ruby`, and `bash`. Host execution is
+limited to `nodejs` by default; `python3`, `ruby`, and `bash` saves must set `containerized: true`
+unless `LAMBDA_ALLOW_HOST_RUNTIMES` is explicitly widened for a trusted environment. Setting
 `containerized: true` records container packaging metadata and, when `LAMBDA_IMAGE_BUILD_ENABLED`
 is true, builds a local image with `nerdctl -n k8s.io build` into the EC2 node's containerd store.
 The default image tag is `docker.io/library/dd-lambda-function:<slug>-<id>`.
+
+On Kubernetes, the local `nerdctl` build path requires a trusted pod with the containerd socket,
+the host `/var/lib/containerd` snapshot tree, and privileged mount capability. Treat that as
+node-level infrastructure, not as a sandbox boundary.
 
 Container build environment:
 
@@ -92,6 +104,7 @@ Container build environment:
 - `LAMBDA_IMAGE_REPOSITORY` defaults to `docker.io/library/dd-lambda-function`
 - `LAMBDA_IMAGE_BUILD_NERDCTL` defaults to `/usr/local/bin/nerdctl`
 - `LAMBDA_IMAGE_BUILD_NAMESPACE` defaults to `k8s.io`
+- `LAMBDA_ALLOW_HOST_RUNTIMES` defaults to `nodejs`
 
 Dispatch writes the task row before the worker is fully ready. That marks the thread active during
 cold start so idle sweepers do not scale a newly-created worker to zero before `/tasks` is

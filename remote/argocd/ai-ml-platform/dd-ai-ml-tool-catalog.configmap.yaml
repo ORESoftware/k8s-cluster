@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-ai-ml-tool-catalog
+  namespace: ai-ml
+  labels:
+    app: dd-ai-ml-platform
+data:
+  tools.json: |
+    {
+      "service": "dd-ai-ml-platform",
+      "purpose": "Open-source data, ML, and LLM platform map for the remote Kubernetes runtime.",
+      "dataFlow": [
+        "Airbyte/dbt/Dagster/Airflow jobs land or transform data",
+        "Kafka streams high-volume events where NATS is not enough",
+        "Spark produces large feature batches",
+        "dd-ai-ml-pipeline scores online telemetry features",
+        "MLflow tracks model versions and experiments",
+        "Metaflow packages ML workflows for data scientists",
+        "LlamaIndex builds RAG/LLM pipelines",
+        "Qdrant stores vector embeddings",
+        "dd-mdp-optimizer turns ML-enriched telemetry into policy actions"
+      ],
+      "tools": [
+        {
+          "category": "Orchestration",
+          "name": "Dagster",
+          "clusterRole": "asset-aware data and ML orchestration",
+          "installMode": "Argo CD Helm Application",
+          "appManifest": "remote/argocd/apps/dd-dagster.application.yaml"
+        },
+        {
+          "category": "Enterprise orchestration",
+          "name": "Airflow",
+          "clusterRole": "enterprise DAG scheduler and backfill runner",
+          "installMode": "Argo CD Helm Application",
+          "appManifest": "remote/argocd/apps/dd-airflow.application.yaml"
+        },
+        {
+          "category": "ML tracking",
+          "name": "MLflow",
+          "clusterRole": "experiment tracking, model registry, and model artifact metadata",
+          "installMode": "Argo CD Helm Application",
+          "appManifest": "remote/argocd/apps/dd-mlflow.application.yaml"
+        },
+        {
+          "category": "Data transformation",
+          "name": "dbt",
+          "clusterRole": "SQL transformation jobs launched by Dagster or Airflow",
+          "installMode": "workflow image dependency",
+          "packageHint": "dbt-core plus warehouse adapter"
+        },
+        {
+          "category": "Streaming",
+          "name": "Kafka",
+          "clusterRole": "durable high-throughput stream backbone for data products",
+          "installMode": "Strimzi Argo CD Helm Application",
+          "appManifest": "remote/argocd/apps/dd-kafka-strimzi.application.yaml"
+        },
+        {
+          "category": "Distributed compute",
+          "name": "Spark",
+          "clusterRole": "distributed feature engineering and batch inference",
+          "installMode": "Apache Spark Kubernetes Operator Argo CD Helm Application",
+          "appManifest": "remote/argocd/apps/dd-spark-operator.application.yaml"
+        },
+        {
+          "category": "ML workflows",
+          "name": "Metaflow",
+          "clusterRole": "developer-friendly ML flows that can target Kubernetes compute",
+          "installMode": "workflow image dependency",
+          "packageHint": "metaflow"
+        },
+        {
+          "category": "LLM pipelines",
+          "name": "LlamaIndex",
+          "clusterRole": "RAG ingestion, retrieval, and LLM pipeline library",
+          "installMode": "service or workflow image dependency",
+          "packageHint": "llama-index"
+        },
+        {
+          "category": "Vector DB",
+          "name": "Qdrant",
+          "clusterRole": "embedding storage and vector similarity search",
+          "installMode": "Argo CD Helm Application",
+          "appManifest": "remote/argocd/apps/dd-qdrant.application.yaml"
+        },
+        {
+          "category": "Data ingestion",
+          "name": "Airbyte",
+          "clusterRole": "connector-driven ELT ingestion into the data lake or warehouse",
+          "installMode": "Argo CD Helm Application",
+          "appManifest": "remote/argocd/apps/dd-airbyte.application.yaml"
+        }
+      ]
+    }

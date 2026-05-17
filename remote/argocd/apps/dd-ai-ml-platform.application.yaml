@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-ai-ml-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/ai-ml-platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-ml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

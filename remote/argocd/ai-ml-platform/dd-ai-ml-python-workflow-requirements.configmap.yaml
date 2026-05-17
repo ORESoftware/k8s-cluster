@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-ai-ml-python-workflow-requirements
+  namespace: ai-ml
+  labels:
+    app: dd-ai-ml-platform
+data:
+  requirements.txt: |
+    dbt-core
+    metaflow
+    llama-index
+  notes.md: |
+    dbt, Metaflow, and LlamaIndex are best carried in workflow or service images rather than
+    installed as idle cluster control-plane deployments. Dagster, Airflow, Spark, or Kubernetes Jobs
+    can mount this ConfigMap as a starter dependency list when building a purpose-specific image.

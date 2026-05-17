@@ -12,10 +12,17 @@ resources:
   - dd-agent-worker-broker-rbac.yaml
   - dd-agent-worker-broker.deployment.yaml
   - dd-agent-worker-broker.service.yaml
+  - dd-build-server-rbac.yaml
+  - dd-build-server.deployment.yaml
+  - dd-build-server.service.yaml
   - dd-remote-queue-consumer.deployment.yaml
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
   - dd-mdp-optimizer.service.yaml
+  - dd-des-simulator.deployment.yaml
+  - dd-des-simulator.service.yaml
+  - dd-contract-service.deployment.yaml
+  - dd-contract-service.service.yaml
   - dd-web-scraper.deployment.yaml
   - dd-web-scraper.service.yaml
   - dd-remote-web-home.deployment.yaml

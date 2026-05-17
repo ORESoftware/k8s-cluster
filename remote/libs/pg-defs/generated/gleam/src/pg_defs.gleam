@@ -10,50 +10,50 @@ pub const known_git_repos_table = "known_git_repos"
 pub const known_git_repos_select_sql = "select\n      id::text as id,\n      repo_url,\n      display_name,\n      provider,\n      default_branch,\n      status,\n      to_char(last_verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_verified_at,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from known_git_repos"
 
 pub type KnownGitRepoProvider {
-  Github
-  Gitlab
-  Bitbucket
-  Generic
+  KnownGitRepoProviderGithub
+  KnownGitRepoProviderGitlab
+  KnownGitRepoProviderBitbucket
+  KnownGitRepoProviderGeneric
 }
 
 pub fn known_git_repos_provider_to_string(value: KnownGitRepoProvider) -> String {
   case value {
-    Github -> "github"
-    Gitlab -> "gitlab"
-    Bitbucket -> "bitbucket"
-    Generic -> "generic"
+    KnownGitRepoProviderGithub -> "github"
+    KnownGitRepoProviderGitlab -> "gitlab"
+    KnownGitRepoProviderBitbucket -> "bitbucket"
+    KnownGitRepoProviderGeneric -> "generic"
   }
 }
 
 pub fn parse_known_git_repos_provider(value: String) -> Result(KnownGitRepoProvider, String) {
   case value {
-    "github" -> Ok(Github)
-    "gitlab" -> Ok(Gitlab)
-    "bitbucket" -> Ok(Bitbucket)
-    "generic" -> Ok(Generic)
+    "github" -> Ok(KnownGitRepoProviderGithub)
+    "gitlab" -> Ok(KnownGitRepoProviderGitlab)
+    "bitbucket" -> Ok(KnownGitRepoProviderBitbucket)
+    "generic" -> Ok(KnownGitRepoProviderGeneric)
     _ -> Error("unsupported known_git_repos.provider: " <> value)
   }
 }
 
 pub type KnownGitRepoStatus {
-  Active
-  Paused
-  Archived
+  KnownGitRepoStatusActive
+  KnownGitRepoStatusPaused
+  KnownGitRepoStatusArchived
 }
 
 pub fn known_git_repos_status_to_string(value: KnownGitRepoStatus) -> String {
   case value {
-    Active -> "active"
-    Paused -> "paused"
-    Archived -> "archived"
+    KnownGitRepoStatusActive -> "active"
+    KnownGitRepoStatusPaused -> "paused"
+    KnownGitRepoStatusArchived -> "archived"
   }
 }
 
 pub fn parse_known_git_repos_status(value: String) -> Result(KnownGitRepoStatus, String) {
   case value {
-    "active" -> Ok(Active)
-    "paused" -> Ok(Paused)
-    "archived" -> Ok(Archived)
+    "active" -> Ok(KnownGitRepoStatusActive)
+    "paused" -> Ok(KnownGitRepoStatusPaused)
+    "archived" -> Ok(KnownGitRepoStatusArchived)
     _ -> Error("unsupported known_git_repos.status: " <> value)
   }
 }
@@ -131,45 +131,45 @@ pub const agent_remote_dev_tasks_table = "agent_remote_dev_tasks"
 pub const agent_remote_dev_tasks_select_sql = "select\n      id::text as id,\n      thread_id::text as thread_id,\n      user_id::text as user_id,\n      docker_task_id::text as docker_task_id,\n      prompt,\n      status,\n      branch,\n      pr_url,\n      pr_state,\n      exit_reason,\n      error_message,\n      last_event_seq,\n      meta::text as meta_json,\n      is_soft_deleted,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_tasks"
 
 pub type AgentRemoteDevTaskStatus {
-  Queued
-  Running
-  Streaming
-  Pushed
-  PrOpen
-  PrMerged
-  PrClosed
-  Done
-  Failed
-  Cancelled
+  AgentRemoteDevTaskStatusQueued
+  AgentRemoteDevTaskStatusRunning
+  AgentRemoteDevTaskStatusStreaming
+  AgentRemoteDevTaskStatusPushed
+  AgentRemoteDevTaskStatusPrOpen
+  AgentRemoteDevTaskStatusPrMerged
+  AgentRemoteDevTaskStatusPrClosed
+  AgentRemoteDevTaskStatusDone
+  AgentRemoteDevTaskStatusFailed
+  AgentRemoteDevTaskStatusCancelled
 }
 
 pub fn agent_remote_dev_tasks_status_to_string(value: AgentRemoteDevTaskStatus) -> String {
   case value {
-    Queued -> "queued"
-    Running -> "running"
-    Streaming -> "streaming"
-    Pushed -> "pushed"
-    PrOpen -> "pr_open"
-    PrMerged -> "pr_merged"
-    PrClosed -> "pr_closed"
-    Done -> "done"
-    Failed -> "failed"
-    Cancelled -> "cancelled"
+    AgentRemoteDevTaskStatusQueued -> "queued"
+    AgentRemoteDevTaskStatusRunning -> "running"
+    AgentRemoteDevTaskStatusStreaming -> "streaming"
+    AgentRemoteDevTaskStatusPushed -> "pushed"
+    AgentRemoteDevTaskStatusPrOpen -> "pr_open"
+    AgentRemoteDevTaskStatusPrMerged -> "pr_merged"
+    AgentRemoteDevTaskStatusPrClosed -> "pr_closed"
+    AgentRemoteDevTaskStatusDone -> "done"
+    AgentRemoteDevTaskStatusFailed -> "failed"
+    AgentRemoteDevTaskStatusCancelled -> "cancelled"
   }
 }
 
 pub fn parse_agent_remote_dev_tasks_status(value: String) -> Result(AgentRemoteDevTaskStatus, String) {
   case value {
-    "queued" -> Ok(Queued)
-    "running" -> Ok(Running)
-    "streaming" -> Ok(Streaming)
-    "pushed" -> Ok(Pushed)
-    "pr_open" -> Ok(PrOpen)
-    "pr_merged" -> Ok(PrMerged)
-    "pr_closed" -> Ok(PrClosed)
-    "done" -> Ok(Done)
-    "failed" -> Ok(Failed)
-    "cancelled" -> Ok(Cancelled)
+    "queued" -> Ok(AgentRemoteDevTaskStatusQueued)
+    "running" -> Ok(AgentRemoteDevTaskStatusRunning)
+    "streaming" -> Ok(AgentRemoteDevTaskStatusStreaming)
+    "pushed" -> Ok(AgentRemoteDevTaskStatusPushed)
+    "pr_open" -> Ok(AgentRemoteDevTaskStatusPrOpen)
+    "pr_merged" -> Ok(AgentRemoteDevTaskStatusPrMerged)
+    "pr_closed" -> Ok(AgentRemoteDevTaskStatusPrClosed)
+    "done" -> Ok(AgentRemoteDevTaskStatusDone)
+    "failed" -> Ok(AgentRemoteDevTaskStatusFailed)
+    "cancelled" -> Ok(AgentRemoteDevTaskStatusCancelled)
     _ -> Error("unsupported agent_remote_dev_tasks.status: " <> value)
   }
 }
@@ -240,30 +240,30 @@ pub const agent_remote_dev_artifacts_table = "agent_remote_dev_artifacts"
 pub const agent_remote_dev_artifacts_select_sql = "select\n      id::text as id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      filename,\n      content_type,\n      size_bytes,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      url,\n      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as signed_url_expires_at,\n      sha256,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_artifacts"
 
 pub type AgentRemoteDevArtifactStorageProvider {
-  S3
-  R2
-  Gcs
-  Drive
-  Local
+  AgentRemoteDevArtifactStorageProviderS3
+  AgentRemoteDevArtifactStorageProviderR2
+  AgentRemoteDevArtifactStorageProviderGcs
+  AgentRemoteDevArtifactStorageProviderDrive
+  AgentRemoteDevArtifactStorageProviderLocal
 }
 
 pub fn agent_remote_dev_artifacts_storage_provider_to_string(value: AgentRemoteDevArtifactStorageProvider) -> String {
   case value {
-    S3 -> "s3"
-    R2 -> "r2"
-    Gcs -> "gcs"
-    Drive -> "drive"
-    Local -> "local"
+    AgentRemoteDevArtifactStorageProviderS3 -> "s3"
+    AgentRemoteDevArtifactStorageProviderR2 -> "r2"
+    AgentRemoteDevArtifactStorageProviderGcs -> "gcs"
+    AgentRemoteDevArtifactStorageProviderDrive -> "drive"
+    AgentRemoteDevArtifactStorageProviderLocal -> "local"
   }
 }
 
 pub fn parse_agent_remote_dev_artifacts_storage_provider(value: String) -> Result(AgentRemoteDevArtifactStorageProvider, String) {
   case value {
-    "s3" -> Ok(S3)
-    "r2" -> Ok(R2)
-    "gcs" -> Ok(Gcs)
-    "drive" -> Ok(Drive)
-    "local" -> Ok(Local)
+    "s3" -> Ok(AgentRemoteDevArtifactStorageProviderS3)
+    "r2" -> Ok(AgentRemoteDevArtifactStorageProviderR2)
+    "gcs" -> Ok(AgentRemoteDevArtifactStorageProviderGcs)
+    "drive" -> Ok(AgentRemoteDevArtifactStorageProviderDrive)
+    "local" -> Ok(AgentRemoteDevArtifactStorageProviderLocal)
     _ -> Error("unsupported agent_remote_dev_artifacts.storage_provider: " <> value)
   }
 }
@@ -306,24 +306,24 @@ pub const agent_remote_dev_runtime_locks_table = "agent_remote_dev_runtime_locks
 pub const agent_remote_dev_runtime_locks_select_sql = "select\n      id::text as id,\n      thread_id::text as thread_id,\n      owner,\n      status,\n      fencing_token,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from agent_remote_dev_runtime_locks"
 
 pub type AgentRemoteDevRuntimeLockStatus {
-  Active
-  Released
-  Expired
+  AgentRemoteDevRuntimeLockStatusActive
+  AgentRemoteDevRuntimeLockStatusReleased
+  AgentRemoteDevRuntimeLockStatusExpired
 }
 
 pub fn agent_remote_dev_runtime_locks_status_to_string(value: AgentRemoteDevRuntimeLockStatus) -> String {
   case value {
-    Active -> "active"
-    Released -> "released"
-    Expired -> "expired"
+    AgentRemoteDevRuntimeLockStatusActive -> "active"
+    AgentRemoteDevRuntimeLockStatusReleased -> "released"
+    AgentRemoteDevRuntimeLockStatusExpired -> "expired"
   }
 }
 
 pub fn parse_agent_remote_dev_runtime_locks_status(value: String) -> Result(AgentRemoteDevRuntimeLockStatus, String) {
   case value {
-    "active" -> Ok(Active)
-    "released" -> Ok(Released)
-    "expired" -> Ok(Expired)
+    "active" -> Ok(AgentRemoteDevRuntimeLockStatusActive)
+    "released" -> Ok(AgentRemoteDevRuntimeLockStatusReleased)
+    "expired" -> Ok(AgentRemoteDevRuntimeLockStatusExpired)
     _ -> Error("unsupported agent_remote_dev_runtime_locks.status: " <> value)
   }
 }
@@ -360,97 +360,97 @@ pub const lambda_functions_table = "lambda_functions"
 pub const lambda_functions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions"
 
 pub type LambdaFunctionRuntime {
-  Nodejs
-  Javascript
-  Typescript
-  Python3
-  Python
-  Ruby
-  Bash
-  Shell
+  LambdaFunctionRuntimeNodejs
+  LambdaFunctionRuntimeJavascript
+  LambdaFunctionRuntimeTypescript
+  LambdaFunctionRuntimePython3
+  LambdaFunctionRuntimePython
+  LambdaFunctionRuntimeRuby
+  LambdaFunctionRuntimeBash
+  LambdaFunctionRuntimeShell
 }
 
 pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> String {
   case value {
-    Nodejs -> "nodejs"
-    Javascript -> "javascript"
-    Typescript -> "typescript"
-    Python3 -> "python3"
-    Python -> "python"
-    Ruby -> "ruby"
-    Bash -> "bash"
-    Shell -> "shell"
+    LambdaFunctionRuntimeNodejs -> "nodejs"
+    LambdaFunctionRuntimeJavascript -> "javascript"
+    LambdaFunctionRuntimeTypescript -> "typescript"
+    LambdaFunctionRuntimePython3 -> "python3"
+    LambdaFunctionRuntimePython -> "python"
+    LambdaFunctionRuntimeRuby -> "ruby"
+    LambdaFunctionRuntimeBash -> "bash"
+    LambdaFunctionRuntimeShell -> "shell"
   }
 }
 
 pub fn parse_lambda_functions_runtime(value: String) -> Result(LambdaFunctionRuntime, String) {
   case value {
-    "nodejs" -> Ok(Nodejs)
-    "javascript" -> Ok(Javascript)
-    "typescript" -> Ok(Typescript)
-    "python3" -> Ok(Python3)
-    "python" -> Ok(Python)
-    "ruby" -> Ok(Ruby)
-    "bash" -> Ok(Bash)
-    "shell" -> Ok(Shell)
+    "nodejs" -> Ok(LambdaFunctionRuntimeNodejs)
+    "javascript" -> Ok(LambdaFunctionRuntimeJavascript)
+    "typescript" -> Ok(LambdaFunctionRuntimeTypescript)
+    "python3" -> Ok(LambdaFunctionRuntimePython3)
+    "python" -> Ok(LambdaFunctionRuntimePython)
+    "ruby" -> Ok(LambdaFunctionRuntimeRuby)
+    "bash" -> Ok(LambdaFunctionRuntimeBash)
+    "shell" -> Ok(LambdaFunctionRuntimeShell)
     _ -> Error("unsupported lambda_functions.runtime: " <> value)
   }
 }
 
 pub type LambdaFunctionContainerBuildStatus {
-  NotRequested
-  Pending
-  Building
-  Built
-  Failed
-  Skipped
+  LambdaFunctionContainerBuildStatusNotRequested
+  LambdaFunctionContainerBuildStatusPending
+  LambdaFunctionContainerBuildStatusBuilding
+  LambdaFunctionContainerBuildStatusBuilt
+  LambdaFunctionContainerBuildStatusFailed
+  LambdaFunctionContainerBuildStatusSkipped
 }
 
 pub fn lambda_functions_container_build_status_to_string(value: LambdaFunctionContainerBuildStatus) -> String {
   case value {
-    NotRequested -> "not_requested"
-    Pending -> "pending"
-    Building -> "building"
-    Built -> "built"
-    Failed -> "failed"
-    Skipped -> "skipped"
+    LambdaFunctionContainerBuildStatusNotRequested -> "not_requested"
+    LambdaFunctionContainerBuildStatusPending -> "pending"
+    LambdaFunctionContainerBuildStatusBuilding -> "building"
+    LambdaFunctionContainerBuildStatusBuilt -> "built"
+    LambdaFunctionContainerBuildStatusFailed -> "failed"
+    LambdaFunctionContainerBuildStatusSkipped -> "skipped"
   }
 }
 
 pub fn parse_lambda_functions_container_build_status(value: String) -> Result(LambdaFunctionContainerBuildStatus, String) {
   case value {
-    "not_requested" -> Ok(NotRequested)
-    "pending" -> Ok(Pending)
-    "building" -> Ok(Building)
-    "built" -> Ok(Built)
-    "failed" -> Ok(Failed)
-    "skipped" -> Ok(Skipped)
+    "not_requested" -> Ok(LambdaFunctionContainerBuildStatusNotRequested)
+    "pending" -> Ok(LambdaFunctionContainerBuildStatusPending)
+    "building" -> Ok(LambdaFunctionContainerBuildStatusBuilding)
+    "built" -> Ok(LambdaFunctionContainerBuildStatusBuilt)
+    "failed" -> Ok(LambdaFunctionContainerBuildStatusFailed)
+    "skipped" -> Ok(LambdaFunctionContainerBuildStatusSkipped)
     _ -> Error("unsupported lambda_functions.container_build_status: " <> value)
   }
 }
 
 pub type LambdaFunctionStatus {
-  Draft
-  Active
-  Paused
-  Archived
+  LambdaFunctionStatusDraft
+  LambdaFunctionStatusActive
+  LambdaFunctionStatusPaused
+  LambdaFunctionStatusArchived
 }
 
 pub fn lambda_functions_status_to_string(value: LambdaFunctionStatus) -> String {
   case value {
-    Draft -> "draft"
-    Active -> "active"
-    Paused -> "paused"
-    Archived -> "archived"
+    LambdaFunctionStatusDraft -> "draft"
+    LambdaFunctionStatusActive -> "active"
+    LambdaFunctionStatusPaused -> "paused"
+    LambdaFunctionStatusArchived -> "archived"
   }
 }
 
 pub fn parse_lambda_functions_status(value: String) -> Result(LambdaFunctionStatus, String) {
   case value {
-    "draft" -> Ok(Draft)
-    "active" -> Ok(Active)
-    "paused" -> Ok(Paused)
-    "archived" -> Ok(Archived)
+    "draft" -> Ok(LambdaFunctionStatusDraft)
+    "active" -> Ok(LambdaFunctionStatusActive)
+    "paused" -> Ok(LambdaFunctionStatusPaused)
+    "archived" -> Ok(LambdaFunctionStatusArchived)
     _ -> Error("unsupported lambda_functions.status: " <> value)
   }
 }

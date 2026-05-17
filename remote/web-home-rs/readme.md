@@ -35,13 +35,16 @@ by the gateway.
 
 ## Thread chat
 
-The `/agents/threads` page is the operator chat surface: sidebar threads, selected-thread prompt
-input, previous tasks, stored response stream, and upvote/downvote feedback events. The
+The `/agents/threads` page is the operator chat surface: sidebar threads, Thread Control for the
+selected worker, previous tasks, stored response stream, and upvote/downvote feedback events. The
 `/agents/tasks` page remains useful as the compact snapshot/diagnostics table. When dispatch has to
 cold-start a UUID-bound worker, `/agents/threads` shows visible waking/still-waiting status events
 instead of leaving the response pane stuck on a generic dispatch message. While the dispatch
 request is still pending, the page also polls `GET /api/agents/threads/:threadId/runtime` so the
 operator can see the Kubernetes Deployment, Pod phase, container readiness, and waiting reason.
+Thread Control expands while creating a new worker, while selecting Previous tasks or Response
+stream gives those lower panels the larger share. Existing-thread-only controls stay hidden until
+the selected UUID is backed by a stored thread.
 
 Both UI pages target the per-thread Ingress shape:
 
@@ -79,5 +82,5 @@ The same page now exposes per-thread controls:
   pushes the thread branch.
 - `Open draft PR` wakes the worker and opens or reuses a GitHub PR only on demand. New PRs are
   created as drafts with `WIP - ...` titles and a body beginning with `WIP`.
-- `Terminal` wakes the worker and opens `/dd-thread/<thread-short>/terminal` for a shell inside the
-  Node.js worker container.
+- `Terminal` wakes the worker and opens `/dd-thread/<thread-short>/terminal` inline in the response
+  panel for a shell inside the Node.js worker container.

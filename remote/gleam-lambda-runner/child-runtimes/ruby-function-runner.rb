@@ -20,6 +20,8 @@ class LambdaConsole
 end
 
 class LambdaContext < BasicObject
+  StandardError = ::StandardError
+
   def initialize(request, lambda_context, console)
     @request = request
     @lambda_context = lambda_context

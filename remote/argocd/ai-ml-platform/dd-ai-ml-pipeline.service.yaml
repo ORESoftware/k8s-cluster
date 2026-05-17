@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-ai-ml-pipeline
+  namespace: ai-ml
+  labels:
+    app: dd-ai-ml-pipeline
+spec:
+  selector:
+    app: dd-ai-ml-pipeline
+  ports:
+    - name: http
+      port: 8099
+      targetPort: http

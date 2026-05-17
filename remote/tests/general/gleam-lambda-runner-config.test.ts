@@ -56,6 +56,12 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
   const manifest = await readRepoFile('remote/gleam-lambda-runner/manifest.toml');
   const dockerfile = await readRepoFile('remote/gleam-lambda-runner/Dockerfile');
+  const nodeRuntimeDockerfile = await readRepoFile(
+    'remote/gleam-lambda-runner/runtime-images/nodejs.Dockerfile',
+  );
+  const bashRuntimeDockerfile = await readRepoFile(
+    'remote/gleam-lambda-runner/runtime-images/bash.Dockerfile',
+  );
 
   assert.match(gleamToml, /name = "gleam_lambda_runner"/);
   assert.match(gleamToml, /dd_pg_defs = \{ path = "\.\.\/libs\/pg-defs\/generated\/gleam" \}/);
@@ -68,6 +74,10 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(dockerfile, /COPY remote\/gleam-lambda-runner\/runtime-images \.\/remote\/gleam-lambda-runner\/runtime-images/);
   assert.doesNotMatch(dockerfile, /COPY remote\/gleam-lambda-runner \.\/remote\/gleam-lambda-runner/);
   assert.match(dockerfile, /WORKDIR \/app\/remote\/gleam-lambda-runner/);
+  assert.match(nodeRuntimeDockerfile, /nodejs-current/);
+  assert.match(bashRuntimeDockerfile, /nodejs-current/);
+  assert.doesNotMatch(nodeRuntimeDockerfile, /node:22-alpine/);
+  assert.doesNotMatch(bashRuntimeDockerfile, /node:22-alpine/);
   assert.match(pgContract, /import pg_defs/);
   assert.match(pgContract, /pg_defs\.lambda_functions_select_sql/);
   assert.match(gleamToml, /mist = ">= 6\.0\.0 and < 7\.0\.0"/);
@@ -87,7 +97,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   );
   assert.match(httpServer, /max_body_bytes = 5_242_880/);
   assert.match(childProcess, /@external\(erlang, "lambda_child_runner", "invoke"\)/);
-  assert.match(erlPort, /open_port\(\{spawn, binary_to_list\(Command\)\}/);
+  assert.match(erlPort, /ShellCommand = "exec " \+\+ binary_to_list\(Command\)/);
+  assert.match(erlPort, /open_port\(\{spawn_executable, "\/bin\/sh"\}/);
   assert.match(erlPort, /worker_loop/);
   assert.match(erlPort, /lambda_child_runner_manager/);
   assert.match(erlPort, /manager_bootstrap/);
@@ -98,10 +109,18 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /host_command\(<<"python3">>\)/);
   assert.match(erlPort, /host_command\(<<"ruby">>\)/);
   assert.match(erlPort, /host_command\(<<"bash">>\)/);
+  assert.match(erlPort, /host_runtime_allowed/);
+  assert.match(erlPort, /LAMBDA_ALLOW_HOST_RUNTIMES/);
+  assert.match(erlPort, /lambda runtime requires containerized=true/);
   assert.match(erlPort, /container_command/);
+  assert.match(erlPort, /LAMBDA_CONTAINER_RUNNER/);
+  assert.match(erlPort, /ctr_container_command/);
+  assert.match(erlPort, /--mount type=tmpfs,dst=\/tmp,options=rw:noexec:nosuid:size=16m/);
+  assert.match(erlPort, /--cap-drop CAP_NET_RAW/);
   assert.match(erlPort, /--read-only/);
   assert.match(erlPort, /--user 10001:10001/);
   assert.match(erlPort, /--cap-drop ALL/);
+  assert.match(erlPort, /--ulimit nofile=64:64/);
   assert.match(erlPort, /prewarm_workers/);
   assert.match(erlPort, /os:getenv\("LAMBDA_DATABASE_URL"\)/);
   assert.doesNotMatch(erlPort, /AGENT_TASKS_RDS_DATABASE_URL|AGENT_TASKS_DATABASE_URL|RDS_DATABASE_URL/);
@@ -121,6 +140,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(pythonRunner, /urllib\.request/);
   assert.match(pythonRunner, /handler\(request, context\)/);
   assert.match(rubyRunner, /BasicObject/);
+  assert.match(rubyRunner, /StandardError = ::StandardError/);
   assert.match(rubyRunner, /Net::HTTP/);
   assert.match(bashRunner, /spawn\('\/bin\/bash'/);
   assert.match(bashRunner, /LAMBDA_REQUEST_JSON/);
@@ -134,18 +154,31 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(restApi, /"bash"/);
   assert.match(restApi, /maybe_package_lambda_image/);
   assert.match(restApi, /LAMBDA_IMAGE_BUILD_ENABLED/);
+  assert.match(restApi, /LAMBDA_ALLOW_HOST_RUNTIMES/);
+  assert.match(restApi, /nodejs-current/);
+  assert.doesNotMatch(restApi, /node:22-alpine/);
+  assert.match(restApi, /normalize_lambda_runtime_alias/);
+  assert.match(restApi, /filter_map\(normalize_lambda_runtime_alias\)/);
+  assert.match(restApi, /host execution is disabled for this runtime/);
   assert.match(restApi, /nerdctl/);
+  assert.match(restApi, /lambda-\{\}", function\.id/);
   assert.match(restApi, /entryCommand must use the managed lambda child runtime/);
   assert.match(restApi, /functionBody exceeds configured byte limit/);
   assert.match(restApi, /NatsLambdaFunctionMessage/);
   assert.match(restApi, /publish_lambda_function_update_to_nats/);
   assert.doesNotMatch(restApi, /invoke_lambda_function/);
   assert.match(webHome, /id="containerized" type="checkbox"/);
+  assert.match(webHome, /const hostAllowedRuntimes = new Set\(\["nodejs"\]\)/);
+  assert.match(webHome, /function syncContainerPolicy\(\)/);
+  assert.match(webHome, /requiresContainer \? "This runtime requires container execution\."/);
   assert.match(webHome, /<option value="python3">python3<\/option>/);
   assert.match(webHome, /<option value="ruby">ruby<\/option>/);
   assert.match(webHome, /<option value="bash">bash<\/option>/);
   assert.match(restApiDeployment, /LAMBDA_IMAGE_BUILD_ENABLED/);
+  assert.match(restApiDeployment, /securityContext:\s*\n\s*privileged:\s*true/);
   assert.match(restApiDeployment, /mountPath:\s*\/run\/containerd\/containerd.sock/);
+  assert.match(restApiDeployment, /mountPath:\s*\/var\/lib\/containerd/);
+  assert.match(restApiDeployment, /mountPropagation:\s*Bidirectional/);
   assert.match(restApiDeployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
   assert.match(
     gateway,
@@ -186,10 +219,15 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   );
 
   assert.match(ec2Deployment, /name:\s*dd-gleam-lambda-runner/);
+  assert.match(ec2Deployment, /securityContext:\s*\n\s*privileged:\s*true/);
+  assert.doesNotMatch(ec2Deployment, /hostPID:\s*true/);
+  assert.match(ec2Deployment, /alpine\/edge\/main/);
   assert.match(ec2Deployment, /nodejs-current/);
   assert.match(ec2Deployment, /python3/);
   assert.match(ec2Deployment, /ruby/);
   assert.match(ec2Deployment, /bash/);
+  assert.match(ec2Deployment, /gcompat/);
+  assert.match(ec2Deployment, /libc6-compat/);
   assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
   assert.match(ec2Deployment, /gleam deps download/);
   assert.match(ec2Deployment, /containerPort:\s*8083/);
@@ -197,10 +235,19 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   assert.match(ec2Deployment, /dd-gleam-lambda-runner-secrets/);
   assert.match(ec2Deployment, /name:\s*LAMBDA_DATABASE_URL[\s\S]*key:\s*LAMBDA_DATABASE_URL/);
   assert.match(ec2Deployment, /LAMBDA_RESULT_MAX_BYTES[\s\S]*1048576/);
-  assert.match(ec2Deployment, /LAMBDA_PREWARM_RUNTIMES[\s\S]*nodejs,python3,ruby,bash/);
+  assert.match(ec2Deployment, /LAMBDA_ALLOW_HOST_RUNTIMES[\s\S]*nodejs/);
+  assert.match(ec2Deployment, /LAMBDA_PREWARM_RUNTIMES[\s\S]*nodejs/);
   assert.match(ec2Deployment, /LAMBDA_PREWARM_CONTAINER_RUNTIMES[\s\S]*nodejs,python3,ruby,bash/);
-  assert.match(ec2Deployment, /mountPath:\s*\/run\/containerd\/containerd.sock/);
+  assert.match(ec2Deployment, /mountPath:\s*\/run\/containerd/);
+  assert.match(ec2Deployment, /mountPath:\s*\/var\/lib\/containerd/);
+  assert.match(ec2Deployment, /mountPropagation:\s*Bidirectional/);
   assert.match(ec2Deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
+  assert.match(ec2Deployment, /LAMBDA_CONTAINER_RUNNER[\s\S]*value:\s*ctr/);
+  assert.match(ec2Deployment, /LAMBDA_CONTAINER_NETWORK[\s\S]*value:\s*host/);
+  assert.match(ec2Deployment, /mountPath:\s*\/usr\/local\/bin\/ctr/);
+  assert.doesNotMatch(ec2Deployment, /mountPath:\s*\/opt\/cni\/bin/);
+  assert.doesNotMatch(ec2Deployment, /mountPath:\s*\/var\/run\/cilium/);
+  assert.doesNotMatch(ec2Deployment, /apk add[\s\S]*\|\| true/);
   assert.doesNotMatch(ec2Deployment, /dd-remote-rest-api-secrets/);
   assert.match(ec2Service, /port:\s*8083/);
   assert.match(minikubeDeployment, /image:\s*dd-gleam-lambda-runner:dev/);
@@ -208,6 +255,7 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   assert.match(minikubeDeployment, /dd-gleam-lambda-runner-secrets/);
   assert.match(minikubeDeployment, /name:\s*LAMBDA_DATABASE_URL[\s\S]*key:\s*LAMBDA_DATABASE_URL/);
   assert.match(minikubeDeployment, /LAMBDA_FUNCTION_BODY_MAX_BYTES[\s\S]*262144/);
-  assert.match(minikubeDeployment, /LAMBDA_PREWARM_RUNTIMES[\s\S]*nodejs,python3,ruby,bash/);
+  assert.match(minikubeDeployment, /LAMBDA_ALLOW_HOST_RUNTIMES[\s\S]*nodejs/);
+  assert.match(minikubeDeployment, /LAMBDA_PREWARM_RUNTIMES[\s\S]*nodejs/);
   assert.match(minikubeService, /targetPort:\s*http/);
 });

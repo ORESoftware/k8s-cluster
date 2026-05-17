@@ -1,6 +1,9 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::HashMap,
     env, fs,
+    io::BufReader,
     net::SocketAddr,
     path::{Path as FsPath, PathBuf},
     process::Command,
@@ -13,7 +16,7 @@ use axum::{
     extract::{Path, Query},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, patch, post},
+    routing::{get, post},
     Json, Router,
 };
 use once_cell::sync::Lazy;
@@ -468,6 +471,24 @@ fn public_data_source_error(source: &str) -> String {
     format!("{source} source unavailable; check remote REST API server logs")
 }
 
+fn add_rds_root_certificates(root_store: &mut rustls::RootCertStore) -> Result<(), String> {
+    let mut reader = BufReader::new(&include_bytes!("../certs/rds-us-east-1-bundle.pem")[..]);
+    let mut added = 0usize;
+
+    for cert in rustls_pemfile::certs(&mut reader) {
+        let cert = cert.map_err(|error| format!("failed to parse RDS CA certificate: {error}"))?;
+        if root_store.add(cert).is_ok() {
+            added += 1;
+        }
+    }
+
+    if added == 0 {
+        return Err("no RDS CA certificates loaded".to_string());
+    }
+
+    Ok(())
+}
+
 fn public_thread_worker_proxy_error(action: &str) -> String {
     format!("thread worker {action} failed; check remote REST API server logs")
 }
@@ -697,11 +718,19 @@ fn validate_thread_control_signal(
     if request.kind != "thread-control" {
         return Err("control payload kind must be thread-control".to_string());
     }
+    if !looks_like_uuid(path_thread_id) {
+        return Err("threadId must be a UUID".to_string());
+    }
     if request.action != expected_action {
         return Err(format!("control payload action must be {expected_action}"));
     }
     if request.thread_id != path_thread_id {
         return Err("threadId path/body mismatch".to_string());
+    }
+    if let Some(task_id) = request.task_id.as_deref() {
+        if !looks_like_uuid(task_id) {
+            return Err("taskId must be a UUID".to_string());
+        }
     }
     Ok(())
 }
@@ -1929,6 +1958,21 @@ fn normalize_lambda_slug(input: &str) -> String {
     slug
 }
 
+fn looks_like_uuid(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    if bytes.len() != 36 {
+        return false;
+    }
+
+    bytes.iter().enumerate().all(|(index, byte)| {
+        if matches!(index, 8 | 13 | 18 | 23) {
+            *byte == b'-'
+        } else {
+            byte.is_ascii_hexdigit()
+        }
+    })
+}
+
 fn validate_lambda_status(input: Option<&str>) -> String {
     match input.unwrap_or("draft").trim() {
         "draft" => "draft".to_string(),
@@ -1939,14 +1983,30 @@ fn validate_lambda_status(input: Option<&str>) -> String {
     }
 }
 
-fn validate_lambda_runtime(input: Option<&str>) -> String {
-    match input.unwrap_or("javascript").trim() {
-        "node" | "nodejs" | "javascript" | "typescript" => "nodejs".to_string(),
-        "python" | "python3" => "python3".to_string(),
-        "ruby" => "ruby".to_string(),
-        "bash" | "shell" => "bash".to_string(),
-        _ => "nodejs".to_string(),
+fn normalize_lambda_runtime_alias(input: &str) -> Option<&'static str> {
+    match input.trim() {
+        "node" | "nodejs" | "javascript" | "typescript" => Some("nodejs"),
+        "python" | "python3" => Some("python3"),
+        "ruby" => Some("ruby"),
+        "bash" | "shell" => Some("bash"),
+        _ => None,
     }
+}
+
+fn validate_lambda_runtime(input: Option<&str>) -> String {
+    normalize_lambda_runtime_alias(input.unwrap_or("javascript"))
+        .unwrap_or("nodejs")
+        .to_string()
+}
+
+fn lambda_host_runtime_allowed(runtime: &str) -> bool {
+    env::var("LAMBDA_ALLOW_HOST_RUNTIMES")
+        .unwrap_or_else(|_| "nodejs".to_string())
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter_map(normalize_lambda_runtime_alias)
+        .any(|allowed| allowed == runtime)
 }
 
 fn json_string(value: &Value, key: &str) -> Option<String> {
@@ -2033,6 +2093,7 @@ async fn connect_postgres() -> Result<tokio_postgres::Client, String> {
         .ok_or_else(|| "postgres database URL not configured".to_string())?;
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    add_rds_root_certificates(&mut root_store)?;
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
@@ -2415,6 +2476,11 @@ fn cleaned_lambda_input(
     let idle_timeout_seconds = request.idle_timeout_seconds.unwrap_or(300).clamp(1, 3600);
     let max_run_ms = request.max_run_ms.unwrap_or(30_000).clamp(1_000, 300_000);
     let containerized = request.containerized.unwrap_or(false);
+    if !containerized && !lambda_host_runtime_allowed(&runtime) {
+        return Err(format!(
+            "{runtime} lambdas require containerized=true; host execution is disabled for this runtime"
+        ));
+    }
     let status = validate_lambda_status(request.status.as_deref());
     let labels = request.labels.clone().unwrap_or_else(|| json!([]));
     if !labels.is_array() {
@@ -2510,6 +2576,17 @@ async fn fetch_lambda_function_by_id(id: &str) -> Result<LambdaFunctionRow, Stri
         .await
         .map_err(|error| error.to_string())?;
     Ok(row_to_lambda_function(&row))
+}
+
+async fn fetch_lambda_function_by_identifier(
+    identifier: &str,
+) -> Result<LambdaFunctionRow, String> {
+    let identifier = identifier.trim();
+    if looks_like_uuid(identifier) {
+        fetch_lambda_function_by_id(identifier).await
+    } else {
+        fetch_lambda_function_by_slug(identifier).await
+    }
 }
 
 async fn insert_lambda_function_to_postgres(
@@ -2714,8 +2791,12 @@ ENTRYPOINT ["ruby", "/opt/dd-lambda/runner.rb"]
 "#
         ),
         "bash" => format!(
-            r#"FROM docker.io/library/node:22-alpine
-RUN apk add --no-cache bash \
+            r#"FROM docker.io/library/alpine:edge
+RUN apk add --no-cache \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  nodejs-current \
+  bash \
   && addgroup -S lambda \
   && adduser -S -G lambda -u 10001 lambda
 WORKDIR /opt/dd-lambda
@@ -2727,8 +2808,13 @@ ENTRYPOINT ["node", "--permission", "--allow-net", "--allow-child-process", "/op
 "#
         ),
         _ => format!(
-            r#"FROM docker.io/library/node:22-alpine
-RUN addgroup -S lambda && adduser -S -G lambda -u 10001 lambda
+            r#"FROM docker.io/library/alpine:edge
+RUN apk add --no-cache \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+  nodejs-current \
+  && addgroup -S lambda \
+  && adduser -S -G lambda -u 10001 lambda
 WORKDIR /opt/dd-lambda
 COPY runner.mjs ./runner.mjs
 COPY definition.json ./definition.json
@@ -2757,23 +2843,57 @@ fn copy_lambda_runner(
         .map_err(|error| format!("failed to copy lambda runner {}: {error}", source.display()))
 }
 
+fn harden_lambda_build_dir(path: &FsPath) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("failed to restrict lambda image context: {error}"))?;
+    }
+    Ok(())
+}
+
+fn write_lambda_build_file(path: &FsPath, content: impl AsRef<[u8]>) -> Result<(), String> {
+    fs::write(path, content).map_err(|error| {
+        format!(
+            "failed to write lambda image build file {}: {error}",
+            path.display()
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|error| {
+            format!(
+                "failed to restrict lambda image build file {}: {error}",
+                path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
 fn package_lambda_image_sync(function: &LambdaFunctionRow, image: &str) -> Result<(), String> {
     let runtime = validate_lambda_runtime(Some(&function.runtime));
     let build_root = lambda_image_build_root();
-    let context_dir = build_root.join(format!("{}-{}", function.slug, function.id));
+    fs::create_dir_all(&build_root)
+        .map_err(|error| format!("failed to create lambda image build root: {error}"))?;
+    harden_lambda_build_dir(&build_root)?;
+    let context_dir = build_root.join(format!("lambda-{}", function.id));
+    if context_dir.exists() {
+        fs::remove_dir_all(&context_dir)
+            .map_err(|error| format!("failed to reset lambda image context: {error}"))?;
+    }
     fs::create_dir_all(&context_dir)
         .map_err(|error| format!("failed to create lambda image context: {error}"))?;
+    harden_lambda_build_dir(&context_dir)?;
     copy_lambda_runner(&lambda_image_repo_root(), &context_dir, &runtime)?;
-    fs::write(
-        context_dir.join("definition.json"),
+    write_lambda_build_file(
+        &context_dir.join("definition.json"),
         serde_json::to_vec_pretty(function).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("failed to write lambda definition: {error}"))?;
-    fs::write(
-        context_dir.join("Dockerfile"),
+    )?;
+    write_lambda_build_file(
+        &context_dir.join("Dockerfile"),
         lambda_container_dockerfile(&runtime, function),
-    )
-    .map_err(|error| format!("failed to write lambda Dockerfile: {error}"))?;
+    )?;
 
     let namespace = lambda_image_build_namespace();
     let mut command = Command::new(lambda_image_build_nerdctl());
@@ -3522,6 +3642,31 @@ async fn lambda_functions(Query(query): Query<LambdasQuery>) -> impl IntoRespons
     }
 }
 
+async fn lambda_function(Path(identifier): Path<String>) -> Response {
+    record_request("GET", "/api/lambdas/functions/:identifier", StatusCode::OK);
+    if postgres_database_url().is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "postgres database URL is not configured" })),
+        )
+            .into_response();
+    }
+
+    match fetch_lambda_function_by_identifier(&identifier).await {
+        Ok(function) => {
+            Json(json!({ "ok": true, "source": "postgres", "function": function })).into_response()
+        }
+        Err(error) => {
+            eprintln!("lambda function fetch failed: {error}");
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "lambda function not found" })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn create_lambda_function(Json(request): Json<LambdaFunctionSaveRequest>) -> Response {
     record_request("POST", "/api/lambdas/functions", StatusCode::OK);
     if postgres_database_url().is_none() {
@@ -4105,7 +4250,10 @@ async fn main() {
             "/api/lambdas/functions",
             get(lambda_functions).post(create_lambda_function),
         )
-        .route("/api/lambdas/functions/:id", patch(update_lambda_function))
+        .route(
+            "/api/lambdas/functions/:id",
+            get(lambda_function).patch(update_lambda_function),
+        )
         .route("/api/agents/tasks/:task_id/events", get(agent_task_events))
         .route(
             "/api/agents/tasks/:task_id/feedback",

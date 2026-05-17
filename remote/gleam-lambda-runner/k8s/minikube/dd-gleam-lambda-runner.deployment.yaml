@@ -35,8 +35,10 @@ spec:
               value: '6291456'
             - name: LAMBDA_RESULT_MAX_BYTES
               value: '1048576'
+            - name: LAMBDA_ALLOW_HOST_RUNTIMES
+              value: nodejs
             - name: LAMBDA_PREWARM_RUNTIMES
-              value: nodejs,python3,ruby,bash
+              value: nodejs
             - name: LAMBDA_PREWARM_CONTAINER_RUNTIMES
               value: ''
           ports:

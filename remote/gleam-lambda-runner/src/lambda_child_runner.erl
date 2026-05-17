@@ -189,9 +189,17 @@ command_for_definition(FallbackCommand, DefinitionJson) ->
         true ->
             container_command(Runtime, DefinitionJson);
         false ->
-            case host_command(Runtime) of
-                {ok, Command} -> {ok, Command};
-                {error, _Reason} -> {ok, FallbackCommand}
+            case host_runtime_allowed(Runtime) of
+                true ->
+                    case host_command(Runtime) of
+                        {ok, Command} -> {ok, Command};
+                        {error, _Reason} -> {ok, FallbackCommand}
+                    end;
+                false ->
+                    {error, iolist_to_binary([
+                        "lambda runtime requires containerized=true for host execution: ",
+                        Runtime
+                    ])}
             end
     end.
 
@@ -206,6 +214,9 @@ host_command(<<"bash">>) ->
 host_command(Runtime) ->
     {error, iolist_to_binary(["unsupported lambda runtime: ", Runtime])}.
 
+host_runtime_allowed(Runtime) ->
+    lists:member(Runtime, csv_env("LAMBDA_ALLOW_HOST_RUNTIMES", <<"nodejs">>)).
+
 container_command(Runtime, DefinitionJson) ->
     BuildStatus = json_string_field(DefinitionJson, <<"containerBuildStatus">>),
     Image0 = case BuildStatus of
@@ -218,28 +229,68 @@ container_command(Runtime, DefinitionJson) ->
     end,
     case safe_container_image(Image) of
         true ->
-            Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
             Namespace = env_binary("LAMBDA_CONTAINER_NAMESPACE", <<"k8s.io">>),
             Network = env_binary("LAMBDA_CONTAINER_NETWORK", <<"bridge">>),
             Memory = env_binary("LAMBDA_CONTAINER_MEMORY", <<"256m">>),
             Cpus = env_binary("LAMBDA_CONTAINER_CPUS", <<"0.50">>),
-            {ok, iolist_to_binary([
-                shell_word(Nerdctl),
-                " -n ", shell_word(Namespace),
-                " run --rm -i --pull=never --read-only",
-                " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
-                " --network ", shell_word(Network),
-                " --user 10001:10001",
-                " --cap-drop ALL",
-                " --security-opt no-new-privileges",
-                " --pids-limit 64",
-                " --memory ", shell_word(Memory),
-                " --cpus ", shell_word(Cpus),
-                " ", shell_word(Image)
-            ])};
+            case env_binary("LAMBDA_CONTAINER_RUNNER", <<"nerdctl">>) of
+                <<"ctr">> ->
+                    Ctr = env_binary("LAMBDA_CONTAINER_CTR", <<"/usr/local/bin/ctr">>),
+                    MemoryBytes = env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"268435456">>),
+                    {ok, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime)};
+                _ ->
+                    Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
+                    {ok, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image)}
+            end;
         false ->
             {error, <<"containerImage contains unsupported characters">>}
     end.
+
+nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image) ->
+    iolist_to_binary([
+        shell_word(Nerdctl),
+        " -n ", shell_word(Namespace),
+        " run --rm -i --pull=never --read-only",
+        " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
+        " --network ", shell_word(Network),
+        " --user 10001:10001",
+        " --cap-drop ALL",
+        " --security-opt no-new-privileges",
+        " --pids-limit 64",
+        " --ulimit nofile=64:64",
+        " --memory ", shell_word(Memory),
+        " --cpus ", shell_word(Cpus),
+        " ", shell_word(Image)
+    ]).
+
+ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime) ->
+    ContainerId = iolist_to_binary(["dd-lambda-", Runtime, "-$(date +%s%N)-$$"]),
+    iolist_to_binary([
+        shell_word(Ctr),
+        " -n ", shell_word(Namespace),
+        " run --rm",
+        ctr_network_args(Network),
+        " --read-only",
+        " --mount type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=16m",
+        " --user 10001:10001",
+        ctr_cap_drop_args(),
+        " --seccomp",
+        " --memory-limit ", shell_word(MemoryBytes),
+        " --cpus ", shell_word(Cpus),
+        " ", shell_word(Image),
+        " ", ContainerId
+    ]).
+
+ctr_network_args(<<"none">>) -> "";
+ctr_network_args(<<"host">>) -> " --net-host";
+ctr_network_args(_Network) -> " --cni".
+
+ctr_cap_drop_args() ->
+    " --cap-drop CAP_AUDIT_WRITE --cap-drop CAP_CHOWN --cap-drop CAP_DAC_OVERRIDE"
+    " --cap-drop CAP_FOWNER --cap-drop CAP_FSETID --cap-drop CAP_KILL"
+    " --cap-drop CAP_MKNOD --cap-drop CAP_NET_BIND_SERVICE --cap-drop CAP_NET_RAW"
+    " --cap-drop CAP_SETFCAP --cap-drop CAP_SETGID --cap-drop CAP_SETPCAP"
+    " --cap-drop CAP_SETUID --cap-drop CAP_SYS_CHROOT".
 
 default_container_image(<<"nodejs">>) ->
     env_binary("LAMBDA_NODEJS_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-nodejs-runtime:dev">>);
@@ -443,7 +494,10 @@ ensure_table(Name) ->
     end.
 
 prewarm_workers() ->
-    HostRuntimes = csv_env("LAMBDA_PREWARM_RUNTIMES", <<"nodejs,python3,ruby,bash">>),
+    HostRuntimes = lists:filter(
+        fun host_runtime_allowed/1,
+        csv_env("LAMBDA_PREWARM_RUNTIMES", <<"nodejs">>)
+    ),
     lists:foreach(
         fun(Runtime) ->
             case host_command(Runtime) of
@@ -540,7 +594,13 @@ spawn_worker(Command, ReuseKey, IdleMs) ->
     end.
 
 worker_start(Parent, Command) ->
-    try open_port({spawn, binary_to_list(Command)}, [binary, exit_status, use_stdio]) of
+    ShellCommand = "exec " ++ binary_to_list(Command),
+    try open_port({spawn_executable, "/bin/sh"}, [
+        binary,
+        exit_status,
+        use_stdio,
+        {args, ["-c", ShellCommand]}
+    ]) of
         Port ->
             Parent ! {self(), started},
             worker_loop(Port)

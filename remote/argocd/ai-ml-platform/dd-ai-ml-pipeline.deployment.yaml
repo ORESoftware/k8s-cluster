@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ai-ml-pipeline
+  namespace: ai-ml
+  labels:
+    app: dd-ai-ml-pipeline
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-ai-ml-pipeline
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-16-ai-ml-pipeline'
+      labels:
+        app: dd-ai-ml-pipeline
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: dd-ai-ml-pipeline
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: ai-ml-pipeline
+          image: docker.io/library/python:3.12-slim
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/ai-ml-pipeline
+              exec python3 -u src/dd_ai_ml_pipeline.py
+          env:
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: '1'
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8099'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: ML_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: ML_RAW_TELEMETRY_SUBJECT
+              value: dd.remote.telemetry.raw
+            - name: ML_QUEUE_GROUP
+              value: dd-ai-ml-pipeline
+            - name: ML_FEATURE_SUBJECT
+              value: dd.remote.ml.features
+            - name: ML_MDP_TELEMETRY_SUBJECT
+              value: dd.remote.telemetry.mdp
+            - name: ML_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: ML_MIN_SAMPLES_FOR_ZSCORE
+              value: '4'
+            - name: ML_EWMA_ALPHA
+              value: '0.22'
+            - name: ML_MAX_TRACKED_SERIES
+              value: '4096'
+            - name: ML_MAX_TRANSITION_KEYS
+              value: '2048'
+            - name: ML_MAX_PUBLISH_BYTES
+              value: '524288'
+          ports:
+            - name: http
+              containerPort: 8099
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}

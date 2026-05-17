@@ -4,12 +4,18 @@ This directory holds code that **cannot run on Vercel** because it needs somethi
 serverless model doesn't give us: a persistent filesystem, a long-lived process, the ability to
 spawn child processes that outlive an HTTP request, or all three.
 
-Today there are two key runtime services:
+Today there are several key runtime services:
 
 - [`dev-server/`](./dev-server/) — Node worker/API runtime for task dispatch, streaming, and agent
   execution
 - [`web-home-rs/`](./web-home-rs/) — Rust public web layer for `/` + `/home`
 - [`rest-api-rs/`](./rest-api-rs/) — Rust REST API boundary for RDS/Postgres-backed agent task data
+- [`build-server-rs/`](./build-server-rs/) — Rust CI/CD server for authenticated repo image builds
+  and controlled Kubernetes deploys
+- [`contract-service-rs/`](./contract-service-rs/) — Rust Solana contract gateway for validated
+  instruction envelopes, signed transaction simulation, and NATS validation results.
+- [`ai-ml-pipeline/`](./ai-ml-pipeline/) — Python3 online feature pipeline for telemetry analysis
+  and MDP-ready AI/ML signals.
 
 Future entries (a long-running queue worker, a stateful LLM evaluator, a headless browser farm,
 etc.) would live as siblings.
@@ -22,6 +28,12 @@ There are also runtime siblings for queueing, scheduling, and optimization:
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
 - [`mdp-optimizer-rs/`](./mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
+
+The AI/ML platform seed layer lives in
+[`argocd/ai-ml-platform/`](./argocd/ai-ml-platform/) and is managed by the
+`dd-ai-ml-platform` ArgoCD Application. It installs the Python feature pipeline and a cluster
+catalog for Dagster, Airflow, MLflow, dbt, Kafka, Spark, Metaflow, LlamaIndex, Qdrant, and Airbyte.
+The heavier tools have separate Argo CD Application manifests in [`argocd/apps/`](./argocd/apps/).
 
 The baseline Kubernetes runtime bundle lives in
 [`argocd/dd-next-runtime/`](./argocd/dd-next-runtime/) and is managed by the
@@ -107,6 +119,7 @@ being tuned:
 - Public web deployment behind the gateway: `dd-remote-web-home`
 - Internal/public JSON API deployment behind the gateway: `dd-remote-rest-api`
 - Worker dispatch broker behind the gateway: `dd-agent-worker-broker`
+- Authenticated build/deploy server behind the gateway: `dd-build-server`
 - Bootstrap Node.js coding-agent task manager behind the gateway: `dd-dev-server-api`
 - Public telemetry UI behind the gateway: `http://54.91.17.58/telemetry/` (Grafana, requires the
   configured dd gateway auth header)
@@ -118,6 +131,7 @@ being tuned:
   - `https://54.91.17.58/api/agents/tasks` (Rust REST API snapshot, public during bootstrap)
   - `https://54.91.17.58/api/agent-worker/threads/<threadId>/tasks` (Rust worker broker, requires
     `Auth`)
+  - `https://54.91.17.58/builds` (Rust build server, requires `Auth`)
   - `http://54.91.17.58/prometheus/` (Prometheus, requires `Auth`)
   - `http://54.91.17.58/nats/` (NATS monitor, requires `Auth`)
   - `http://54.91.17.58/nats-metrics/metrics` (NATS exporter, requires `Auth`)

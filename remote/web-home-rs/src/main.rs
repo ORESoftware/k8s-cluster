@@ -211,7 +211,7 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
   <body>
     <main class="shell">
       <h1>dd remote service directory</h1>
-      <p>Public entrypoint for the EC2 Kubernetes runtime. <code>/</code>, <code>/home</code>, <code>/agents/tasks</code>, <code>/agents/threads</code>, <code>/api/agents/tasks</code>, and <code>/webrtc/</code> are open. Authenticated entries include <code>/lambdas/functions</code>, <code>/lambdas/invoke/&lt;function-id&gt;</code>, and <code>/scrape</code>; ops paths stay behind internal gateway access.</p>
+      <p>Public entrypoint for the EC2 Kubernetes runtime. <code>/</code>, <code>/home</code>, <code>/agents/tasks</code>, <code>/agents/threads</code>, <code>/api/agents/tasks</code>, and <code>/webrtc/</code> are open. Authenticated entries include <code>/lambdas/functions</code>, <code>/lambdas/invoke/&lt;function-id&gt;</code>, <code>/scrape</code>, and <code>/builds</code>; ops paths stay behind internal gateway access.</p>
       <div class="grid">
         <section class="panel">
           <span class="label">Web Deployment</span>
@@ -247,6 +247,30 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
               <td><code>dd-web-scraper:8097</code></td>
               <td><span class="pill warn">server auth</span></td>
               <td>Long-running Fastify scraper deployment with <code>SCRAPER_PARSER_WORKERS=2</code>, browser strategies, DOM strategies, native fetch, Cheerio, and Browserless support.</td>
+            </tr>
+            <tr>
+              <td><code>dd-build-server</code></td>
+              <td><code>dd-build-server:8100</code></td>
+              <td><span class="pill warn">server auth</span></td>
+              <td>Rust CI/CD server that clones repos, builds images with <code>nerdctl -n k8s.io build</code>, and applies allowlisted manifests or kustomize overlays with <code>kubectl</code>.</td>
+            </tr>
+            <tr>
+              <td><code>dd-ai-ml-pipeline</code></td>
+              <td><code>dd-ai-ml-pipeline.ai-ml:8099</code></td>
+              <td><span class="pill warn">server auth</span></td>
+              <td>Python3 online feature pipeline for telemetry risk scoring, anomaly detection, transition hints, and MDP-ready events on <code>dd.remote.telemetry.mdp</code>.</td>
+            </tr>
+            <tr>
+              <td><code>dd-des-simulator</code></td>
+              <td><code>dd-des-simulator:8099</code></td>
+              <td><span class="pill">public</span></td>
+              <td>Rust DES simulator with declared <code>des.v1</code> schema, validation endpoint, async job status, and NATS result publishing.</td>
+            </tr>
+            <tr>
+              <td><code>dd-contract-service</code></td>
+              <td><code>dd-contract-service:8101</code></td>
+              <td><span class="pill warn">server auth</span></td>
+              <td>Rust Solana contract gateway for <code>solana.contract.v1</code> validation, signed transaction simulation, metrics, and NATS validation results.</td>
             </tr>
             <tr>
               <td><code>dd-gleam-lambda-runner</code></td>
@@ -336,10 +360,34 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
                 <td>Async value-iteration, Q-value, policy, belief-state, and telemetry-risk optimizer. It subscribes to NATS optimization and telemetry jobs, then publishes results/events back to the runtime queue.</td>
               </tr>
               <tr>
+                <td><span class="path-links"><a href="/des/"><code>/des/</code></a><a href="/des/healthz"><code>/des/healthz</code></a><a href="/des/metrics"><code>/des/metrics</code></a><a href="/des/model/schema"><code>/des/model/schema</code></a><a href="/des/model/example"><code>/des/model/example</code></a><a href="/des/validate"><code>POST /des/validate</code></a><a href="/des/simulate"><code>POST /des/simulate</code></a><code>dd.remote.des.simulate</code></span></td>
+                <td>Rust discrete event simulator</td>
+                <td><span class="pill">public</span></td>
+                <td>Async DES job runner with declared <code>des.v1</code> model schema, strict model validation, in-memory job status, resource-capacity simulation, metrics, and NATS result publishing.</td>
+              </tr>
+              <tr>
+                <td><span class="path-links"><a href="/contracts/"><code>/contracts/</code></a><a href="/contracts/healthz"><code>/contracts/healthz</code></a><a href="/contracts/metrics"><code>/contracts/metrics</code></a><a href="/contracts/schema"><code>/contracts/schema</code></a><a href="/contracts/example"><code>/contracts/example</code></a><a href="/contracts/validate"><code>POST /contracts/validate</code></a><a href="/contracts/simulate"><code>POST /contracts/simulate</code></a><code>dd.remote.contracts.solana.validate</code></span></td>
+                <td>Rust Solana contract service</td>
+                <td><span class="pill warn">server auth</span></td>
+                <td>Validates <code>solana.contract.v1</code> instruction envelopes, proxies signed simulation through Solana JSON-RPC, keeps raw send disabled by default, and publishes NATS validation results.</td>
+              </tr>
+              <tr>
+                <td><span class="path-links"><a href="/ml/"><code>/ml/</code></a><a href="/ml/healthz"><code>/ml/healthz</code></a><a href="/ml/metrics"><code>/ml/metrics</code></a><a href="/ml/status"><code>/ml/status</code></a><a href="/ml/analyze"><code>POST /ml/analyze</code></a><a href="/ml/ingest"><code>POST /ml/ingest</code></a><code>dd.remote.telemetry.raw</code><code>dd.remote.ml.features</code></span></td>
+                <td>Python AI/ML feature pipeline</td>
+                <td><span class="pill warn">server auth</span></td>
+                <td>Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests for the Rust optimizer.</td>
+              </tr>
+              <tr>
                 <td><span class="path-links"><a href="/scrape"><code>POST /scrape</code></a><a href="/scrape/strategies"><code>/scrape/strategies</code></a><a href="/scrape/healthz"><code>/scrape/healthz</code></a><a href="/scrape/metrics"><code>/scrape/metrics</code></a></span></td>
                 <td>dd-web-scraper Fastify deployment</td>
                 <td><span class="pill warn">server auth</span></td>
                 <td>Long-running strategy router for native fetch, Cheerio, JSDOM, LinkeDOM, Playwright, Puppeteer, and Browserless scraping. Private cluster targets are blocked by default.</td>
+              </tr>
+              <tr>
+                <td><span class="path-links"><a href="/builds"><code>POST /builds</code></a><a href="/builds/example-job"><code>/builds/&lt;jobId&gt;</code></a><a href="/builds/example-job/logs"><code>/builds/&lt;jobId&gt;/logs</code></a></span></td>
+                <td>dd-build-server Rust CI/CD deployment</td>
+                <td><span class="pill warn">server auth</span></td>
+                <td>Authenticated repo build queue. It builds into the node-local containerd namespace and deploys only requested repo-relative manifests in allowlisted namespaces.</td>
               </tr>
               <tr>
                 <td><span class="path-links"><a href="/telemetry/"><code>/telemetry/</code></a></span></td>
@@ -1224,6 +1272,69 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return `/dd-thread/${shortId(threadId).toLowerCase()}/terminal?threadId=${encodeURIComponent(threadId)}`;
       }
 
+      const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      function normalizeUuid(value) {
+        return String(value || "").trim().toLowerCase();
+      }
+
+      function isUuid(value) {
+        return UUID_PATTERN.test(normalizeUuid(value));
+      }
+
+      function readUuidInput(id, label, options = {}) {
+        const input = $(id);
+        let value = normalizeUuid(input.value);
+        if (!value && options.generate) {
+          value = makeUuid();
+          input.value = value;
+        }
+        if (!value && options.allowEmpty) {
+          input.setCustomValidity("");
+          return "";
+        }
+        if (!isUuid(value)) {
+          input.setCustomValidity(`${label} must be a UUID`);
+          input.reportValidity?.();
+          setStatus(`${label} must be a UUID`, true);
+          return null;
+        }
+        input.value = value;
+        input.setCustomValidity("");
+        return value;
+      }
+
+      function queryUuid(params, name) {
+        const value = normalizeUuid(params.get(name));
+        return isUuid(value) ? value : null;
+      }
+
+      function trustedTerminalUrl(threadId, candidate) {
+        const fallback = terminalUrl(threadId);
+        if (!candidate) return fallback;
+        try {
+          const parsed = new URL(String(candidate), window.location.origin);
+          const expectedPath = `/dd-thread/${shortId(threadId).toLowerCase()}/terminal`;
+          const returnedThreadId = normalizeUuid(parsed.searchParams.get("threadId"));
+          if (parsed.origin !== window.location.origin || parsed.pathname !== expectedPath || returnedThreadId !== normalizeUuid(threadId)) {
+            throw new Error("unexpected terminal URL");
+          }
+          return `${parsed.pathname}${parsed.search}`;
+        } catch {
+          renderError("ignored unsafe terminal URL from control response");
+          return fallback;
+        }
+      }
+
+      function terminalUrlFromControlResponse(threadId, body) {
+        try {
+          const parsed = JSON.parse(body);
+          return trustedTerminalUrl(threadId, parsed.terminalUrl);
+        } catch {
+          return terminalUrl(threadId);
+        }
+      }
+
       function setWorkspaceLayout(mode) {
         const workspace = $("thread-workspace");
         workspace.classList.remove("control-wide", "lower-wide");
@@ -1907,8 +2018,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.tasks = data.tasks || [];
         $("snapshot-meta").textContent = `${state.threads.length} threads · ${state.tasks.length} tasks · ${data.source || "unknown"}`;
         const params = new URLSearchParams(window.location.search);
-        const requestedThread = params.get("thread");
-        const requestedTask = params.get("task");
+        const requestedThread = queryUuid(params, "thread");
+        const requestedTask = queryUuid(params, "task");
         if (requestedThread) {
           state.selectedThreadId = requestedThread;
         }
@@ -1926,13 +2037,14 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       async function dispatchPrompt() {
-        const threadId = $("thread-id").value.trim() || makeUuid();
-        const taskId = $("task-id").value.trim() || makeUuid();
+        const threadId = readUuidInput("thread-id", "thread UUID", { generate: true });
+        const taskId = readUuidInput("task-id", "task UUID", { generate: true });
         const prompt = $("prompt").value.trim();
         const provider = $("provider").value;
         const repoValidation = validateCurrentRepoUrl();
         const repo = repoValidation.repo;
         const baseBranch = currentBaseBranch();
+        if (!threadId || !taskId) return;
         if (!prompt) {
           setStatus("prompt is required", true);
           return;
@@ -2016,13 +2128,14 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       async function threadControl(action) {
-        const threadId = $("thread-id").value.trim();
-        if (!threadId) {
+        if (!$("thread-id").value.trim()) {
           setStatus("thread id is required", true);
           return;
         }
-        const taskId = $("task-id").value.trim() || makeUuid();
-        $("task-id").value = taskId;
+        const threadId = readUuidInput("thread-id", "thread UUID");
+        if (threadId === null) return;
+        const taskId = readUuidInput("task-id", "task UUID", { generate: true });
+        if (!taskId) return;
         const routeActions = {
           delete: "hard-delete",
           merge: "merge-upstream",
@@ -2086,13 +2199,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           setStatus(`${routeAction} accepted`);
           let terminalTargetUrl = null;
           if (routeAction === "terminal") {
-            terminalTargetUrl = terminalUrl(threadId);
-            try {
-              const parsed = JSON.parse(body);
-              if (parsed.terminalUrl) terminalTargetUrl = parsed.terminalUrl;
-            } catch {
-              /* fall back to deterministic gateway URL */
-            }
+            terminalTargetUrl = terminalUrlFromControlResponse(threadId, body);
           }
           await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${String(error)}`));
           if (terminalTargetUrl) openInlineTerminal(terminalTargetUrl);
@@ -2138,16 +2245,23 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         replaceSelectionUrl(state.selectedThreadId, null);
         clearStream("new task ready");
       });
-      $("thread-id").addEventListener("input", updateThreadMode);
+      $("thread-id").addEventListener("input", () => {
+        $("thread-id").setCustomValidity("");
+        updateThreadMode();
+      });
       $("thread-id").addEventListener("change", () => {
-        state.selectedThreadId = $("thread-id").value.trim();
+        const threadId = readUuidInput("thread-id", "thread UUID", { allowEmpty: true });
+        if (threadId === null) return;
+        state.selectedThreadId = threadId || null;
         replaceSelectionUrl(state.selectedThreadId, state.selectedThreadId ? state.selectedTaskId : null);
         updateSelectionHeader();
         renderThreads();
         renderTaskList();
       });
       $("task-id").addEventListener("change", () => {
-        state.selectedTaskId = $("task-id").value.trim();
+        const taskId = readUuidInput("task-id", "task UUID", { allowEmpty: true });
+        if (taskId === null) return;
+        state.selectedTaskId = taskId || null;
         replaceSelectionUrl(state.selectedThreadId, state.selectedTaskId);
       });
       $("send").addEventListener("click", () => dispatchPrompt().catch((error) => renderError(`dispatch error: ${String(error)}`)));
@@ -3457,6 +3571,7 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
         ruby: "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
         bash: "env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs",
       };
+      const hostAllowedRuntimes = new Set(["nodejs"]);
       const defaultCommand = entryCommands.nodejs;
       const state = {
         functions: [],
@@ -3485,6 +3600,13 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
 
       function syncEntryCommand() {
         $("entry-command").value = entryCommands[normalizeRuntime($("runtime").value)] || defaultCommand;
+      }
+
+      function syncContainerPolicy() {
+        const requiresContainer = !hostAllowedRuntimes.has(normalizeRuntime($("runtime").value));
+        $("containerized").disabled = requiresContainer;
+        $("containerized").title = requiresContainer ? "This runtime requires container execution." : "";
+        if (requiresContainer) $("containerized").checked = true;
       }
 
       function normalizeSlug(value) {
@@ -3555,6 +3677,7 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
         $("max-run").value = fn?.maxRunMs || 30000;
         syncEntryCommand();
         $("containerized").checked = Boolean(fn?.containerized);
+        syncContainerPolicy();
         $("container-image").value = fn?.containerImage || "";
         $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
         $("description").value = fn?.description || "";
@@ -3705,6 +3828,7 @@ const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
       });
       $("runtime").addEventListener("change", () => {
         syncEntryCommand();
+        syncContainerPolicy();
         if (!selectedFunction() && !$("function-body").value.trim()) {
           $("function-body").value = defaultFunctionBody($("runtime").value);
         }

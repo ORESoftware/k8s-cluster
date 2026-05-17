@@ -20,6 +20,12 @@ spec:
         - name: gleamlang-server
           image: dd-gleamlang-server:dev
           imagePullPolicy: IfNotPresent
+          env:
+            - name: GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
           ports:
             - name: http
               containerPort: 8081

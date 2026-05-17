@@ -6,10 +6,14 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-remote-auth` (Rust PIN auth service that sets the gateway `dd_auth` cookie)
 - `dd-remote-rest-api` (Rust RDS/Postgres REST API for agent task data)
 - `dd-agent-worker-broker` (Rust worker-dispatch broker for NATS-first, direct-if-awake handoff)
+- `dd-build-server` (Rust CI/CD build server for repo image builds and controlled k8s deploys)
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
 - `dd-remote-queue-consumer` (Rust NATS shadow consumer that prepares UUID-bound thread workers)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
+- `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
+- `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
+- `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
   `/status`, `/agents`, `/healthz`)
 - `dd-remote-gateway` (public k8s path splitter on host ports 80 and 443)
@@ -28,10 +32,19 @@ Gateway path map:
 - `/api/agents/tasks` -> `dd-remote-rest-api:8082`
 - `/api/agents/threads/<uuid>/prepare` -> `dd-remote-rest-api:8082` (internal auth required)
 - `POST /api/agent-worker/threads/<uuid>/tasks` -> `dd-agent-worker-broker:8098`
+- `/builds`, `/builds/<jobId>`, `/builds/<jobId>/logs` -> `dd-build-server:8100`
+  (internal auth required)
 - `/lambdas/functions` -> `dd-remote-web-home:8080`
 - `/api/lambdas/functions` -> `dd-remote-rest-api:8082`
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
 - `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` -> `dd-webrtc-signaling:8095`
+- `/des/`, `/des/model/schema`, `/des/model/example`, `POST /des/validate`,
+  `POST /des/simulate`, `/des/simulations/<jobId>` -> `dd-des-simulator:8099`
+- `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
+  `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
+  (internal auth required)
+- `/ml/`, `/ml/healthz`, `/ml/metrics`, `/ml/status`, `POST /ml/analyze`, `POST /ml/ingest` ->
+  `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
@@ -214,6 +227,21 @@ first route, `POST /api/agent-worker/threads/<threadId>/tasks`, publishes the ta
 emits the wakeup subject, direct-posts to the deterministic Node.js worker only when that worker is
 already healthy, and otherwise scales the worker Deployment to `1` while returning `202 queued`.
 
+## Build server
+
+`dd-build-server` is a Rust CI/CD control surface for cluster-local builds. It accepts authenticated
+`POST /builds` requests, clones a repo, builds an image with `nerdctl -n k8s.io build`, and can
+apply either a manifest path or kustomize overlay with `kubectl`. Jobs are queued in-process with
+`BUILD_SERVER_MAX_CONCURRENT_BUILDS=1`; logs are capped at `BUILD_SERVER_MAX_LOG_BYTES=4194304`
+under `/var/lib/dd-build-server/jobs`.
+
+Deploys are intentionally constrained: the request can only choose `deploy.kind` values
+`kustomize`, `manifest`, or `none`, paths must stay inside the cloned repo, and target namespaces
+must be listed in `BUILD_SERVER_ALLOWED_NAMESPACES` (`default` in the Argo runtime manifest).
+Image pushes are disabled unless `BUILD_SERVER_PUSH_ENABLED=true`. The deployment mounts the EC2
+containerd socket, `/usr/local/bin/nerdctl`, `/usr/bin/kubectl`, and uses the `dd-build-server`
+ServiceAccount with a namespace-scoped deployer Role.
+
 ## Lambda function runner
 
 `/lambdas/functions` is served by the Rust web UI and uses the Rust REST API for CRUD against the
@@ -232,6 +260,38 @@ The runtime also includes `dd-mdp-optimizer`, a Rust MDP/POMDP/RL optimization s
 queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.telemetry.mdp` for app/infra telemetry snapshots, then publishes results to
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.
+
+## Solana contract service
+
+`dd-contract-service` runs `remote/contract-service-rs` as a Rust Solana contract gateway. It serves
+`/contracts/healthz`, `/contracts/metrics`, `/contracts/status`, `/contracts/schema`,
+`/contracts/example`, `POST /contracts/validate`, `POST /contracts/simulate`, and
+`POST /contracts/send`. The service validates `solana.contract.v1` instruction envelopes, checks
+base58 public keys and bounded instruction data, can call Solana JSON-RPC `simulateTransaction`
+through `SOLANA_RPC_URL`, and blocks `sendTransaction` unless `SOLANA_SEND_ENABLED=true`.
+
+The deployment queue-subscribes to `dd.remote.contracts.solana.validate` with queue group
+`dd-contract-service`, publishes validation results to `dd.remote.contracts.solana.results`, and
+emits compact lifecycle events on `dd.remote.events`.
+
+## AI/ML feature pipeline
+
+`dd-ai-ml-pipeline` runs `remote/ai-ml-pipeline` as a long-lived Python3 service in the `ai-ml`
+namespace. It accepts raw telemetry through `POST /ml/analyze`, `POST /ml/ingest`, or the
+`dd.remote.telemetry.raw` NATS subject. The online model turns metrics into normalized features,
+EWMA baselines, z-score anomaly scores, state/risk summaries, action-impact hints, and transition
+estimates. Gateway traffic forwards the internal `X-Server-Auth` header, and the service requires
+the mirrored `SERVER_AUTH_SECRET` in the `ai-ml` namespace for all non-probe HTTP routes.
+
+When traffic uses `POST /ml/ingest` or NATS input, the service publishes:
+
+- feature events to `dd.remote.ml.features`
+- MDP-ready telemetry to `dd.remote.telemetry.mdp`
+- compact runtime events to `dd.remote.events`
+
+The heavier open-source platform choices live in `remote/argocd/ai-ml-platform` and the matching
+Argo CD application manifests: Dagster, Airflow, MLflow, dbt, Kafka through Strimzi, Spark,
+Metaflow, LlamaIndex, Qdrant, and Airbyte.
 
 ## Web scraper service
 

@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-dagster
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://dagster-io.github.io/helm
+    chart: dagster
+    targetRevision: 1.13.3
+    helm:
+      values: |
+        dagsterDaemon:
+          enabled: true
+        dagsterWebserver:
+          replicaCount: 1
+        dagster-user-deployments:
+          enabled: false
+        postgresql:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-ml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

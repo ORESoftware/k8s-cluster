@@ -26,12 +26,17 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /dd remote service directory/);
   assert.match(
     home,
-    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, and <code>\/scrape<\/code>; ops paths stay behind internal gateway access\./,
+    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, <code>\/scrape<\/code>, and <code>\/builds<\/code>; ops paths stay behind internal gateway access\./,
   );
   assert.match(home, /<h2>Deployments<\/h2>/);
   assert.match(home, /<code>dd-web-scraper<\/code>/);
   assert.match(home, /<code>dd-web-scraper:8097<\/code>/);
   assert.match(home, /SCRAPER_PARSER_WORKERS=2/);
+  assert.match(home, /<code>dd-build-server<\/code>/);
+  assert.match(home, /<code>dd-build-server:8100<\/code>/);
+  assert.match(home, /Rust CI\/CD server/);
+  assert.match(home, /href="\/builds"/);
+  assert.match(home, /\/builds\/&lt;jobId&gt;\/logs/);
   assert.match(home, /<code>dd-gleam-lambda-runner<\/code>/);
   assert.match(home, /<code>dd-gleam-lambda-runner:8083<\/code>/);
   assert.match(home, /dd-gleam-lambda-runner-secrets/);
@@ -139,6 +144,15 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   const scraperService = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-web-scraper.service.yaml',
+  );
+  const buildServerDeployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml',
+  );
+  const buildServerService = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-build-server.service.yaml',
+  );
+  const buildServerRbac = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-build-server-rbac.yaml',
   );
   const lambdaDeployment = await readRepoFile(
     'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
@@ -275,6 +289,14 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /location \/scrape\/[\s\S]*dd-web-scraper\.default\.svc\.cluster\.local:8097/,
   );
+  assert.match(
+    gateway,
+    /location = \/builds[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-build-server\.default\.svc\.cluster\.local:8100/,
+  );
+  assert.match(
+    gateway,
+    /location \/builds\/[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-build-server\.default\.svc\.cluster\.local:8100/,
+  );
   assert.match(gateway, /location = \/reaper[\s\S]*return 302 \/reaper\//);
   assert.match(gateway, /location\s+\/reaper\//);
   assert.match(gateway, /location = \/cron[\s\S]*return 302 \/cron\//);
@@ -303,6 +325,9 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(kustomization, /dd-webrtc-signaling\.service\.yaml/);
   assert.match(kustomization, /dd-web-scraper\.deployment\.yaml/);
   assert.match(kustomization, /dd-web-scraper\.service\.yaml/);
+  assert.match(kustomization, /dd-build-server-rbac\.yaml/);
+  assert.match(kustomization, /dd-build-server\.deployment\.yaml/);
+  assert.match(kustomization, /dd-build-server\.service\.yaml/);
   assert.match(webrtcDeployment, /name:\s*dd-webrtc-signaling/);
   assert.match(webrtcDeployment, /cd \/opt\/dd-next-1\/remote\/webrtc-signaling-rs/);
   assert.match(webrtcDeployment, /containerPort:\s*8095/);
@@ -313,6 +338,20 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(scraperDeployment, /containerPort:\s*8097/);
   assert.match(scraperService, /name:\s*dd-web-scraper/);
   assert.match(scraperService, /port:\s*8097/);
+  assert.match(buildServerDeployment, /name:\s*dd-build-server/);
+  assert.match(buildServerDeployment, /serviceAccountName:\s*dd-build-server/);
+  assert.match(buildServerDeployment, /cd \/opt\/dd-next-1\/remote\/build-server-rs/);
+  assert.match(buildServerDeployment, /containerPort:\s*8100/);
+  assert.match(buildServerDeployment, /BUILD_SERVER_ALLOWED_NAMESPACES[\s\S]*value:\s*default/);
+  assert.match(buildServerDeployment, /BUILD_SERVER_PUSH_ENABLED[\s\S]*value:\s*'false'/);
+  assert.match(buildServerDeployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
+  assert.match(buildServerDeployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
+  assert.match(buildServerDeployment, /mountPath:\s*\/usr\/bin\/kubectl/);
+  assert.match(buildServerService, /name:\s*dd-build-server/);
+  assert.match(buildServerService, /port:\s*8100/);
+  assert.match(buildServerRbac, /kind:\s*ServiceAccount[\s\S]*name:\s*dd-build-server/);
+  assert.match(buildServerRbac, /resources: \[daemonsets, deployments, replicasets, statefulsets\]/);
+  assert.match(buildServerRbac, /resources: \[ingresses, networkpolicies\]/);
   assert.match(lambdaDeployment, /name:\s*dd-gleam-lambda-runner/);
   assert.match(lambdaDeployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
   assert.match(lambdaDeployment, /containerPort:\s*8083/);
@@ -525,15 +564,15 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   );
   assert.match(
     refreshWorkflow,
-    /kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
+    /sudo -u ec2-user -H bash -lc '\\''cd \/home\/ec2-user\/codes\/dd\/dd-next-1 && kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
   );
   assert.match(
     refreshWorkflow,
-    /kubectl -n argocd get application\/dd-next-runtime/,
+    /sudo -u ec2-user -H bash -lc '\\''kubectl -n argocd get application\/dd-next-runtime/,
   );
   assert.match(
     refreshWorkflow,
-    /kubectl -n argocd annotate application\/dd-next-runtime argocd\.argoproj\.io\/refresh=hard --overwrite/,
+    /sudo -u ec2-user -H bash -lc '\\''kubectl -n argocd annotate application\/dd-next-runtime argocd\.argoproj\.io\/refresh=hard --overwrite/,
   );
   assert.match(
     refreshWorkflow,
@@ -728,7 +767,13 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.task-stream-grid\.stream-wide \{[\s\S]*grid-template-columns: minmax\(0, 0\.62fr\) minmax\(0, 1\.38fr\);/);
   assert.match(server, /function setWorkspaceLayout\(mode\) \{/);
   assert.match(server, /function setThreadUiMode\(modeName\) \{/);
+  assert.match(server, /const UUID_PATTERN = \/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/i;/);
+  assert.match(server, /function readUuidInput\(id, label, options = \{\}\) \{/);
+  assert.match(server, /const requestedThread = queryUuid\(params, "thread"\)/);
+  assert.match(server, /const threadId = readUuidInput\("thread-id", "thread UUID", \{ generate: true \}\)/);
+  assert.match(server, /class="main mode-empty control-wide"/);
   assert.match(server, /\.main\.mode-new #terminal-thread[\s\S]*display: none;/);
+  assert.match(server, /\$\("send"\)\.textContent = modeName === "new" \? "Create thread & send"/);
   assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", handleControlPanelClick\)/);
   assert.match(server, /function setTaskStreamLayout\(mode\) \{/);
   assert.match(server, /function handleLowerPanelClick\(event, mode\) \{/);
@@ -809,6 +854,12 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /iframe id="terminal-frame" title="Thread worker terminal"/);
   assert.match(server, /function openInlineTerminal\(targetUrl\) \{/);
   assert.match(server, /\$\("terminal-frame"\)\.src = targetUrl;/);
+  assert.match(server, /function trustedTerminalUrl\(threadId, candidate\) \{/);
+  assert.match(server, /parsed\.origin !== window\.location\.origin \|\| parsed\.pathname !== expectedPath \|\| returnedThreadId !== normalizeUuid\(threadId\)/);
+  assert.match(server, /ignored unsafe terminal URL from control response/);
+  assert.match(server, /terminalTargetUrl = terminalUrlFromControlResponse\(threadId, body\)/);
+  assert.match(server, /clearStream\("waking terminal"\)/);
+  assert.match(server, /Waking the selected worker and opening its shell inside the response panel/);
   assert.match(server, /if \(terminalTargetUrl\) openInlineTerminal\(terminalTargetUrl\);/);
   assert.doesNotMatch(threadsJs, /window\.open\(/);
   assert.doesNotMatch(threadsJs, /terminalWindow/);
@@ -986,6 +1037,8 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
   assert.match(restServer, /struct ThreadControlRequest/);
   assert.match(restServer, /validate_thread_control_signal/);
   assert.match(restServer, /"control payload kind must be thread-control"/);
+  assert.match(restServer, /"threadId must be a UUID"/);
+  assert.match(restServer, /"taskId must be a UUID"/);
   assert.match(server, /confirm: "Scale this thread runtime to zero replicas\?"/);
   assert.match(server, /confirm: "Archive this thread runtime\?"/);
   assert.match(server, /confirm: "Commit current worker changes and push this thread branch\?"/);

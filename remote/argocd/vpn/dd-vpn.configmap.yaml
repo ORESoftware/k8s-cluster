@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-vpn-config
+  namespace: vpn
+  labels:
+    app.kubernetes.io/name: dd-vpn
+    app.kubernetes.io/part-of: dd-remote-dev
+data:
+  # The admin UI stays ClusterIP-only; INSECURE=true allows that internal HTTP hop.
+  HOST: "0.0.0.0"
+  PORT: "51821"
+  INSECURE: "true"
+  DISABLE_IPV6: "true"
+
+  # v15 unattended setup. These values are used only on first boot, before
+  # /etc/wireguard/wg-easy.db exists on the persistent volume.
+  INIT_ENABLED: "true"
+  INIT_HOST: "54.91.17.58"
+  INIT_PORT: "51820"
+  INIT_DNS: "10.96.0.10,1.1.1.1"
+  INIT_ALLOWED_IPS: "10.8.0.0/24,10.96.0.0/12,10.244.0.0/16"
+

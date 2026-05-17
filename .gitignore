@@ -48,6 +48,7 @@ kubeconfig.*
 # TLS / SSH / Certificates
 # ──────────────────────────────────────────────
 *.pem
+!remote/rest-api-rs/certs/rds-us-east-1-bundle.pem
 *.key
 *.p12
 *.pfx

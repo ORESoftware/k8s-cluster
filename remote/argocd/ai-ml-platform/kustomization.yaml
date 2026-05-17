@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - dd-ai-ml-serviceaccount.yaml
+  - dd-ai-ml-agent-secrets.externalsecret.yaml
+  - dd-ai-ml-tool-catalog.configmap.yaml
+  - dd-ai-ml-python-workflow-requirements.configmap.yaml
+  - dd-ai-ml-pipeline.deployment.yaml
+  - dd-ai-ml-pipeline.service.yaml
+  - dd-ai-ml-pipeline.networkpolicy.yaml

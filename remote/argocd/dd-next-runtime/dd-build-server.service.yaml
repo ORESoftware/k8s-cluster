@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-build-server
+  namespace: default
+  labels:
+    app: dd-build-server
+spec:
+  selector:
+    app: dd-build-server
+  ports:
+    - name: http
+      port: 8100
+      targetPort: http
