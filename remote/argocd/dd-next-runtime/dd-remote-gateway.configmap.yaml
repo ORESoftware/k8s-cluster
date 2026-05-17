@@ -257,7 +257,9 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Bastion-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_pass http://dd-bastion.vpn.svc.cluster.local:8111/;
+        set $dd_bastion_upstream dd-bastion.vpn.svc.cluster.local:8111;
+        rewrite ^/bastion/?(.*)$ /$1 break;
+        proxy_pass http://$dd_bastion_upstream;
       }
 
       location = /telemetry {

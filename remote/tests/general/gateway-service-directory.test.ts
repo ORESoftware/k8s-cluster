@@ -251,7 +251,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(gateway, /location = \/bastion[\s\S]*return 302 \/bastion\/profile/);
   assert.match(
     gateway,
-    /location\s+\/bastion\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header X-Bastion-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-bastion\.vpn\.svc\.cluster\.local:8111\//,
+    /location\s+\/bastion\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header X-Bastion-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*set \$dd_bastion_upstream dd-bastion\.vpn\.svc\.cluster\.local:8111[\s\S]*rewrite \^\/bastion\/\?\(\.\*\)\$ \/\$1 break[\s\S]*proxy_pass http:\/\/\$dd_bastion_upstream/,
   );
   assert.match(
     gateway,
