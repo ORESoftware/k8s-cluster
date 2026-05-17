@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-bastion
+  namespace: vpn
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/component: access-broker
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/component: access-broker
+  ports:
+    - name: http
+      port: 8111
+      targetPort: http
+      protocol: TCP

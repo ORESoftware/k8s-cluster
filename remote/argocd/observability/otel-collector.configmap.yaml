@@ -75,6 +75,12 @@ data:
               static_configs:
                 - targets:
                     - dd-contract-service.default.svc.cluster.local:8101
+            - job_name: dd-trading-server
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-trading-server.default.svc.cluster.local:8103
             - job_name: dd-ai-ml-pipeline
               scrape_interval: 10s
               metrics_path: /metrics
@@ -93,6 +99,12 @@ data:
               static_configs:
                 - targets:
                     - dd-build-server.default.svc.cluster.local:8100
+            - job_name: dd-container-pool
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-container-pool.default.svc.cluster.local:8102
             - job_name: dd-nats
               scrape_interval: 10s
               metrics_path: /metrics

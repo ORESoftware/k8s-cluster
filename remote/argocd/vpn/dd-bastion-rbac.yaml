@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-bastion
+  namespace: vpn
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/part-of: dd-remote-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-bastion-access-broker
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/part-of: dd-remote-dev
+rules:
+  - apiGroups: ['']
+    resources:
+      - pods/exec
+    verbs:
+      - create
+  - apiGroups: ['']
+    resources:
+      - namespaces
+      - pods
+      - services
+      - endpoints
+      - persistentvolumeclaims
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [apps]
+    resources:
+      - deployments
+      - daemonsets
+      - replicasets
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [batch]
+    resources:
+      - jobs
+      - cronjobs
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [networking.k8s.io]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-bastion-access-broker
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/part-of: dd-remote-dev
+subjects:
+  - kind: ServiceAccount
+    name: dd-bastion
+    namespace: vpn
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-bastion-access-broker

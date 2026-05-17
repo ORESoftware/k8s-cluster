@@ -26,7 +26,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /dd remote service directory/);
   assert.match(
     home,
-    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, <code>\/scrape<\/code>, and <code>\/builds<\/code>; ops paths stay behind internal gateway access\./,
+    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, <code>\/scrape<\/code>, <code>\/trading<\/code>, <code>\/container-pools<\/code>, <code>\/bastion<\/code>, and <code>\/builds<\/code>; ops paths stay behind internal gateway access\./,
   );
   assert.match(home, /<h2>Deployments<\/h2>/);
   assert.match(home, /<code>dd-web-scraper<\/code>/);
@@ -35,6 +35,20 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /<code>dd-build-server<\/code>/);
   assert.match(home, /<code>dd-build-server:8100<\/code>/);
   assert.match(home, /Rust CI\/CD server/);
+  assert.match(home, /<code>dd-vpn<\/code>/);
+  assert.match(home, /<code>dd-live-mutex<\/code>/);
+  assert.match(home, /<code>dd-bastion<\/code>/);
+  assert.match(home, /<code>dd-redis-cache<\/code>/);
+  assert.match(home, /<code>dd-live-mutex-loadtest-node<\/code>/);
+  assert.match(home, /<code>dd-container-pool<\/code>/);
+  assert.match(home, /<h2>Live containers<\/h2>/);
+  assert.match(home, /\/bastion\/runtime\/deployments/);
+  assert.match(home, /home-terminal-frame/);
+  assert.match(home, /Open bastion exec terminal/);
+  assert.match(home, /const safeBastionTerminalUrl = \(value\) =>/);
+  assert.match(home, /url\.pathname !== "\/bastion\/terminal"/);
+  assert.match(home, /ignored unsafe bastion terminal URL/);
+  assert.match(home, /const safeTerminalUrl = safeBastionTerminalUrl\(container\.terminalUrl\)/);
   assert.match(home, /href="\/builds"/);
   assert.match(home, /\/builds\/&lt;jobId&gt;\/logs/);
   assert.match(home, /<code>dd-gleam-lambda-runner<\/code>/);
@@ -77,6 +91,9 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /href="\/auth\?return=\/home"/);
   assert.match(home, /Rust PIN auth service/);
   assert.match(home, /dd_auth/);
+  assert.match(home, /href="\/bastion\/runtime\/deployments"/);
+  assert.match(home, /Rust bastion\/jumphost access broker/);
+  assert.match(home, /allowlisted browser exec terminals/);
   assert.match(home, /option value="echo" \{ "echo" \}/);
   assert.match(home, /Queue Consumer/);
   assert.match(home, /Rust NATS shadow preparer \(dd-remote-queue-consumer\)/);
@@ -230,6 +247,11 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(
     gateway,
     /location\s+\/api\/agents\/[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+  );
+  assert.match(gateway, /location = \/bastion[\s\S]*return 302 \/bastion\/profile/);
+  assert.match(
+    gateway,
+    /location\s+\/bastion\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header X-Bastion-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-bastion\.vpn\.svc\.cluster\.local:8111\//,
   );
   assert.match(
     gateway,
@@ -1015,6 +1037,11 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
     /route: `\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/terminal`/,
   );
   assert.match(server, /const threadTerminalUrl = \(threadId\) => `\$\{threadIngressPrefix\(threadId\)\}\/terminal\?threadId=\$\{encodeURIComponent\(threadId\)\}`/);
+  assert.match(server, /const trustedThreadTerminalUrl = \(threadId, candidate\) => \{/);
+  assert.match(server, /parsed\.origin !== window\.location\.origin \|\| parsed\.pathname !== expectedPath \|\| returnedThreadId !== normalizeThreadId\(threadId\)/);
+  assert.match(server, /ignored unsafe terminal URL from control response/);
+  assert.match(server, /const threadTerminalUrlFromControlResponse = \(threadId, body\) => \{/);
+  assert.match(server, /const targetUrl = threadTerminalUrlFromControlResponse\(threadId, textBody\)/);
   assert.match(server, /kind: "thread-control"/);
   assert.match(server, /action: config\.action/);
   assert.match(server, /openTaskWebSocket\(threadId, taskId\)/);
@@ -1232,6 +1259,7 @@ test('node worker opens draft PRs only through explicit control action', async (
 
 test('node worker exposes manual commit and terminal controls for pinned threads', async () => {
   const server = await readRepoFile('remote/dev-server/src/server.ts');
+  const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
 
   assert.match(server, /POST \/thread\/make-commit/);
   assert.match(server, /GET  \/terminal/);
@@ -1243,6 +1271,10 @@ test('node worker exposes manual commit and terminal controls for pinned threads
   assert.match(server, /async function makeCommitForThread/);
   assert.match(server, /\['commit', '--no-verify', '-m', manualCommitMessage/);
   assert.match(server, /\['push', '--no-verify', '--set-upstream', 'origin', session\.branch\]/);
+  assert.match(server, /@xterm\/xterm/);
+  assert.match(server, /TERMINAL_SCRIPT_BIN/);
+  assert.match(server, /transport: usePty \? 'pty-script' : 'pipe-fallback'/);
   assert.match(server, /type: 'terminal-output'/);
-  assert.match(server, /spawn\(shell, \['-i'\]/);
+  assert.match(server, /spawn\(scriptBin, \['-q', '-f', '-e', '-c', terminalShellCommand\(shell\), '\/dev\/null'\]/);
+  assert.match(dockerfile, /util-linux/);
 });

@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-bastion
+  namespace: vpn
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/component: access-broker
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dd-bastion
+      app.kubernetes.io/component: access-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dd-bastion
+        app.kubernetes.io/component: access-broker
+        app.kubernetes.io/part-of: dd-remote-dev
+    spec:
+      serviceAccountName: dd-bastion
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: bastion
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/bastion-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8111'
+            - name: CARGO_HOME
+              value: /tmp/cargo-home
+            - name: CARGO_TARGET_DIR
+              value: /tmp/dd-bastion-target
+            - name: BASTION_PUBLIC_BASE_URL
+              value: http://dd-bastion.vpn.svc.cluster.local:8111
+            - name: BASTION_WIREGUARD_ENDPOINT
+              value: 54.91.17.58:51820
+            - name: BASTION_VPN_CIDR
+              value: 10.8.0.0/24
+            - name: BASTION_SERVICE_CIDR
+              value: 10.96.0.0/12
+            - name: BASTION_POD_CIDR
+              value: 10.244.0.0/16
+            - name: BASTION_DNS
+              value: 10.96.0.10
+            - name: BASTION_KUBE_API_SERVER
+              value: https://kubernetes.default.svc
+            - name: BASTION_KUBECONFIG_ENABLED
+              value: 'true'
+            - name: BASTION_INCLUDE_SERVICEACCOUNT_TOKEN
+              value: 'true'
+            - name: BASTION_KUBECTL_BIN
+              value: /usr/bin/kubectl
+            - name: BASTION_SCRIPT_BIN
+              value: /usr/bin/script
+            - name: BASTION_TERMINAL_ENABLED
+              value: 'true'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-bastion-secrets
+                  key: SERVER_AUTH_SECRET
+          ports:
+            - name: http
+              containerPort: 8111
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: kubectl-bin
+              mountPath: /usr/bin/kubectl
+              readOnly: true
+            - name: script-bin
+              mountPath: /usr/bin/script
+              readOnly: true
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}
+        - name: kubectl-bin
+          hostPath:
+            path: /usr/bin/kubectl
+            type: File
+        - name: script-bin
+          hostPath:
+            path: /usr/bin/script
+            type: File

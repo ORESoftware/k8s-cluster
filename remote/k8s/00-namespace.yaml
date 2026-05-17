@@ -7,5 +7,6 @@ metadata:
   name: dd-dev
   labels:
     app.kubernetes.io/part-of: dd-remote-dev
+    pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/warn: baseline

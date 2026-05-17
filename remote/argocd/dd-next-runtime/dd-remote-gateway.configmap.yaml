@@ -179,6 +179,49 @@ data:
         proxy_pass http://dd-agent-worker-broker.default.svc.cluster.local:8098;
       }
 
+      location = /container-pools {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|POST)$) {
+          return 405;
+        }
+        client_max_body_size 2m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 30;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-container-pool.default.svc.cluster.local:8102/pools;
+      }
+
+      location /container-pools/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method !~ ^(GET|POST)$) {
+          return 405;
+        }
+        client_max_body_size 2m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 30;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        rewrite ^/container-pools/?(.*)$ /pools/$1 break;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-container-pool.default.svc.cluster.local:8102;
+      }
+
       location /api/agents/ {
         proxy_http_version 1.1;
         proxy_buffering off;
@@ -189,6 +232,32 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
+      }
+
+      location = /bastion {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /bastion/profile;
+      }
+
+      location /bastion/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 30;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Bastion-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-bastion.vpn.svc.cluster.local:8111/;
       }
 
       location = /telemetry {
@@ -408,6 +477,29 @@ data:
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://dd-ai-ml-pipeline.ai-ml.svc.cluster.local:8099/;
+      }
+
+      location = /trading {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /trading/;
+      }
+
+      location /trading/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-trading-server.default.svc.cluster.local:8103/;
       }
 
       location = /scrape {

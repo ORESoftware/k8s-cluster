@@ -70,3 +70,7 @@ slow-consumer metrics on one dashboard.
 JetStream data currently uses the EC2 host path `/var/lib/dd/nats`, which is
 fine for the current single-node cluster. Before moving to a multi-node cluster,
 replace that host path with a real Kubernetes storage class or managed volume.
+For HA, run 3 NATS pods, each with its own PVC, and set important streams to
+replication 3. For the current single replica, remember the tradeoff: if the
+node or disk dies, `DD_REMOTE_TASKS` can be lost unless we also run JetStream
+backups.

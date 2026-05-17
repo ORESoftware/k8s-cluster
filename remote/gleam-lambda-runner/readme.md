@@ -8,6 +8,24 @@ optional non-root containers.
 - `POST /invoke/:function_id` forwards one request envelope to a child process.
 - `POST /destroy/:reuse_key` closes a cached child process.
 
+The runner also starts an in-process NATS singleton when `NATS_URL` is configured. The Gleam module
+`gleam_lambda_runner/nats.gleam` owns the app-facing interface and delegates the raw TCP protocol to
+`lambda_nats.erl` inside the same BEAM VM. It subscribes to lambda invocation messages, invokes the
+same child runner used by HTTP, and publishes invocation results back to NATS:
+
+| Env | Default |
+| --- | --- |
+| `NATS_URL` | unset, disables NATS |
+| `NATS_LAMBDA_INVOKE_SUBJECT` | `dd.remote.lambdas.invoke.*` |
+| `NATS_LAMBDA_QUEUE_GROUP` | `dd-gleam-lambda-runner` |
+| `NATS_LAMBDA_RESULT_SUBJECT` | `dd.remote.lambdas.results` |
+| `NATS_LAMBDA_FUNCTIONS_SUBJECT` | `dd.remote.lambdas.functions` |
+
+Invocation messages can either target a function through the subject suffix
+(`dd.remote.lambdas.invoke.<function-id-or-slug>`) or include `functionId`, `function_id`, `slug`,
+or `id` in the JSON payload. The request body passed to the lambda is the message `payload` field,
+then `request`, then the full message as a fallback.
+
 The Rust REST API is responsible for CRUD/read models over Postgres. Invocation traffic goes
 directly through the load balancer/gateway to this Gleam service. The BEAM runner loads the active
 function definition from Postgres by immutable function UUID, then maps the function runtime to a

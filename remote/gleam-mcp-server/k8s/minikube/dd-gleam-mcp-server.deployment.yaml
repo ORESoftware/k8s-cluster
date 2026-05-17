@@ -17,11 +17,19 @@ spec:
       labels:
         app: dd-gleam-mcp-server
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: gleam-mcp-server
           image: dd-gleam-mcp-server:dev
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: http
               containerPort: 8090

@@ -27,6 +27,13 @@ spec:
         - name: idle-reaper
           image: REPLACE_ME_ECR_URI/dd-idle-reaper:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: REAPER_SWEEP_URL
               value: https://REPLACE_ME_VERCEL_HOST/api/admin/remote-dev/reaper/sweep

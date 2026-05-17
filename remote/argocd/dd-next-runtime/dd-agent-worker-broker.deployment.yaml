@@ -25,6 +25,10 @@ spec:
         - name: agent-worker-broker
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc

@@ -5,11 +5,13 @@ Small Gleam + OTP websocket service with a supervised runtime:
 - child 1: `broadcaster` actor (ticks every 2s and emits JSON payloads)
 - child 2: `mist` HTTP/websocket server
 
-On EC2, the Kubernetes deployment also runs a `nats-bridge` sidecar. The sidecar keeps a TCP
-connection to NATS (`dd.remote.events`), then POSTs each task event over localhost TCP to Gleam
-`POST /broadcast`. Gleam broadcasts the payload to connected browser websockets. The bridge and
-HTTP server both require `GLEAM_BROADCAST_SECRET`, sourced from `dd-gleamlang-server-secrets`,
-before the internal broadcast endpoint accepts events.
+The Kubernetes deployments also run a `nats-bridge` sidecar. The sidecar uses the singleton
+`nats-client.mjs` connection to read NATS task events (`dd.remote.events`) and POST them over
+localhost TCP to Gleam `POST /broadcast`. Gleam broadcasts the payload to connected browser
+websockets. The same sidecar exposes a localhost-only `POST /publish` endpoint so WebSocket client
+messages can be written back to NATS on `dd.remote.websocket.events`. The bridge and HTTP server
+both require `GLEAM_BROADCAST_SECRET`, sourced from `dd-gleamlang-server-secrets`, before internal
+fanout or publish endpoints accept events.
 
 The server exposes:
 
@@ -20,6 +22,7 @@ The server exposes:
   NATS-bridged task events, and WebSocket client messages
 - `GET /ws` -> websocket stream (`{"type":"tick","sequence":...}`)
 - `POST /broadcast` -> internal localhost fanout endpoint for the NATS bridge
+- sidecar `POST http://127.0.0.1:8083/publish` -> internal localhost NATS publish endpoint
 
 ## Project layout
 
@@ -28,6 +31,7 @@ remote/gleamlang-server/
 ├── gleam.toml
 ├── Dockerfile
 ├── nats-bridge.mjs
+├── nats-client.mjs
 └── src/
     ├── gleamlang_server.gleam
     └── gleamlang_server/

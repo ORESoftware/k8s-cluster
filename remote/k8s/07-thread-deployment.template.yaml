@@ -49,6 +49,13 @@ spec:
         - name: dev-server
           image: REPLACE_ME_ECR_URI/dd-dev-server:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 8080
               name: http

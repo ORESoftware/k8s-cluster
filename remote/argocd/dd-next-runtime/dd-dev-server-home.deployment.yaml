@@ -17,6 +17,7 @@ spec:
       labels:
         app: dd-dev-server-api
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       initContainers:
         - name: workspace-permissions
@@ -33,9 +34,15 @@ spec:
           image: docker.io/library/dd-dev-server:dev
           imagePullPolicy: IfNotPresent
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: OTEL_SERVICE_NAME
               value: dd-dev-server-api

@@ -15,6 +15,9 @@ const port = 8081
 @external(erlang, "gleamlang_server_env", "getenv")
 fn env_get(name: String) -> Result(String, Nil)
 
+@external(erlang, "gleamlang_server_env", "publish_nats")
+fn nats_publish(payload: String) -> Result(Nil, Nil)
+
 type WsState {
   WsState(
     tick_subject: process.Subject(broadcaster.StreamMessage),
@@ -91,8 +94,9 @@ fn ws_handler(
       mist.continue(state)
     }
 
-    mist.Text(_) -> {
+    mist.Text(payload) -> {
       process.send(state.broadcaster_subject, broadcaster.RecordWsMessage)
+      let _ = nats_publish(payload)
       let assert Ok(_) =
         mist.send_text_frame(
           conn,

@@ -193,6 +193,71 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
         color: var(--warn);
         background: rgba(251, 191, 36, 0.08);
       }}
+      .service-actions {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        align-items: center;
+      }}
+      button {{
+        border: 1px solid rgba(94, 234, 212, 0.34);
+        border-radius: 6px;
+        background: rgba(94, 234, 212, 0.09);
+        color: var(--text);
+        padding: 6px 9px;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }}
+      button:hover,
+      button:focus-visible {{
+        border-color: rgba(94, 234, 212, 0.72);
+        outline: none;
+      }}
+      button:disabled {{
+        cursor: not-allowed;
+        opacity: 0.55;
+      }}
+      .live-toolbar {{
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }}
+      .live-toolbar h2 {{
+        margin-bottom: 0;
+      }}
+      .container-cell {{
+        display: grid;
+        gap: 8px;
+      }}
+      .container-item {{
+        display: grid;
+        gap: 5px;
+      }}
+      .terminal-dock {{
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }}
+      .terminal-dock[hidden] {{
+        display: none;
+      }}
+      .terminal-head {{
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }}
+      .terminal-frame {{
+        width: 100%;
+        height: 460px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #05080d;
+      }}
       ol {{
         margin: 8px 0 0;
         padding-left: 22px;
@@ -211,7 +276,7 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
   <body>
     <main class="shell">
       <h1>dd remote service directory</h1>
-      <p>Public entrypoint for the EC2 Kubernetes runtime. <code>/</code>, <code>/home</code>, <code>/agents/tasks</code>, <code>/agents/threads</code>, <code>/api/agents/tasks</code>, and <code>/webrtc/</code> are open. Authenticated entries include <code>/lambdas/functions</code>, <code>/lambdas/invoke/&lt;function-id&gt;</code>, <code>/scrape</code>, and <code>/builds</code>; ops paths stay behind internal gateway access.</p>
+      <p>Public entrypoint for the EC2 Kubernetes runtime. <code>/</code>, <code>/home</code>, <code>/agents/tasks</code>, <code>/agents/threads</code>, <code>/api/agents/tasks</code>, and <code>/webrtc/</code> are open. Authenticated entries include <code>/lambdas/functions</code>, <code>/lambdas/invoke/&lt;function-id&gt;</code>, <code>/scrape</code>, <code>/trading</code>, <code>/container-pools</code>, <code>/bastion</code>, and <code>/builds</code>; ops paths stay behind internal gateway access.</p>
       <div class="grid">
         <section class="panel">
           <span class="label">Web Deployment</span>
@@ -273,6 +338,48 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
               <td>Rust Solana contract gateway for <code>solana.contract.v1</code> validation, signed transaction simulation, metrics, and NATS validation results.</td>
             </tr>
             <tr>
+              <td><code>dd-vpn</code></td>
+              <td><code>dd-vpn-ui.vpn:51821</code></td>
+              <td><span class="pill warn">vpn/private</span></td>
+              <td>WireGuard wg-easy VPN server and private admin UI for split-tunnel access to the cluster service and pod CIDRs.</td>
+            </tr>
+            <tr>
+              <td><code>dd-live-mutex</code></td>
+              <td><code>dd-live-mutex:6970</code></td>
+              <td><span class="pill warn">cluster local</span></td>
+              <td>Singleton live-mutex broker deployment for TCP lock coordination.</td>
+            </tr>
+            <tr>
+              <td><code>dd-bastion</code></td>
+              <td><code>dd-bastion.vpn:8111</code></td>
+              <td><span class="pill warn">server auth</span></td>
+              <td>Rust bastion/jumphost access broker for VPN profile, kubeconfig export, managed deployment inventory, and browser exec terminals.</td>
+            </tr>
+            <tr>
+              <td><code>dd-redis-cache</code></td>
+              <td><code>dd-redis-cache:6379</code></td>
+              <td><span class="pill warn">cluster local</span></td>
+              <td>Ephemeral Redis cache deployment with bounded memory and Redis health probes.</td>
+            </tr>
+            <tr>
+              <td><code>dd-live-mutex-loadtest-node</code></td>
+              <td><code>deployment only</code></td>
+              <td><span class="pill warn">internal</span></td>
+              <td>Node.js live-mutex load generator targeting <code>dd-live-mutex.default.svc.cluster.local:6970</code>.</td>
+            </tr>
+            <tr>
+              <td><code>dd-trading-server</code></td>
+              <td><code>dd-trading-server:8103</code></td>
+              <td><span class="pill warn">server auth</span></td>
+              <td>Rust trading decision service for <code>trading.decision.v1</code> scoring, scraper and AI/ML signals, MDP/POMDP policy hints, risk gates, and NATS order intents.</td>
+            </tr>
+            <tr>
+              <td><code>dd-container-pool</code></td>
+              <td><code>dd-container-pool:8102</code></td>
+              <td><span class="pill warn">server auth</span></td>
+              <td>Rust warm container pool service that loads runtime pool config from Postgres and starts local containerd workers through <code>nerdctl</code>.</td>
+            </tr>
+            <tr>
               <td><code>dd-gleam-lambda-runner</code></td>
               <td><code>dd-gleam-lambda-runner:8083</code></td>
               <td><span class="pill warn">server auth</span></td>
@@ -280,6 +387,41 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
             </tr>
           </tbody>
         </table>
+      </section>
+      <section class="band">
+        <div class="live-toolbar">
+          <div>
+            <h2>Live containers</h2>
+            <p id="live-containers-status">loading managed deployment pods</p>
+          </div>
+          <button id="live-containers-refresh" type="button">Refresh</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 20%">Deployment</th>
+              <th style="width: 14%">Namespace</th>
+              <th style="width: 23%">Pod</th>
+              <th>Containers</th>
+              <th style="width: 13%">Terminal</th>
+            </tr>
+          </thead>
+          <tbody id="live-containers-body">
+            <tr>
+              <td colspan="5" class="muted">Loading live container inventory from <code>/bastion/runtime/deployments</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div id="home-terminal" class="terminal-dock" hidden="hidden">
+          <div class="terminal-head">
+            <div>
+              <h2>Container terminal</h2>
+              <p id="home-terminal-caption">bastion exec session</p>
+            </div>
+            <button id="home-terminal-close" type="button">Close</button>
+          </div>
+          <iframe id="home-terminal-frame" class="terminal-frame" title="Bastion container terminal"></iframe>
+        </div>
       </section>
       <section class="band">
         <h2>Paths</h2>
@@ -322,6 +464,12 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
                 <td>Rust PIN auth service</td>
                 <td><span class="pill">public</span></td>
                 <td>Sets the temporary <code>dd_auth</code> cookie after PIN auth. The gateway accepts that cookie instead of requiring browsers to send the legacy <code>Auth</code> header.</td>
+              </tr>
+              <tr>
+                <td><span class="path-links"><a href="/bastion/runtime/deployments"><code>/bastion/runtime/deployments</code></a><a href="/bastion/profile"><code>/bastion/profile</code></a><code>/bastion/terminal</code></span></td>
+                <td>Rust bastion/jumphost access broker</td>
+                <td><span class="pill warn">server auth</span></td>
+                <td>Same-origin gateway access to the bastion inventory and allowlisted browser exec terminals. Service container terminals run through the bastion instead of directly from the public web UI.</td>
               </tr>
               <tr>
                 <td><span class="path-links"><code>dd.remote.thread.*.tasks</code><a href="/api/agents/threads/example-thread-id/prepare"><code>POST /api/agents/threads/&lt;uuid&gt;/prepare</code></a></span></td>
@@ -378,6 +526,12 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
                 <td>Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests for the Rust optimizer.</td>
               </tr>
               <tr>
+                <td><span class="path-links"><a href="/trading/"><code>/trading/</code></a><a href="/trading/healthz"><code>/trading/healthz</code></a><a href="/trading/metrics"><code>/trading/metrics</code></a><a href="/trading/schema"><code>/trading/schema</code></a><a href="/trading/example"><code>/trading/example</code></a><a href="/trading/decide"><code>POST /trading/decide</code></a><code>dd.remote.trading.signals</code><code>dd.remote.trading.order_intents</code></span></td>
+                <td>Rust trading decision service</td>
+                <td><span class="pill warn">server auth</span></td>
+                <td>Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions. It emits paper/live order intents only; no exchange executor is embedded.</td>
+              </tr>
+              <tr>
                 <td><span class="path-links"><a href="/scrape"><code>POST /scrape</code></a><a href="/scrape/strategies"><code>/scrape/strategies</code></a><a href="/scrape/healthz"><code>/scrape/healthz</code></a><a href="/scrape/metrics"><code>/scrape/metrics</code></a></span></td>
                 <td>dd-web-scraper Fastify deployment</td>
                 <td><span class="pill warn">server auth</span></td>
@@ -427,6 +581,171 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
         </ol>
       </section>
     </main>
+    <script>
+      (() => {{
+        const body = document.getElementById("live-containers-body");
+        const status = document.getElementById("live-containers-status");
+        const refresh = document.getElementById("live-containers-refresh");
+        const dock = document.getElementById("home-terminal");
+        const frame = document.getElementById("home-terminal-frame");
+        const caption = document.getElementById("home-terminal-caption");
+        const close = document.getElementById("home-terminal-close");
+        const text = (value) => document.createTextNode(value == null || value === "" ? "none" : String(value));
+        const cell = (child) => {{
+          const td = document.createElement("td");
+          if (typeof child === "string") td.appendChild(text(child));
+          else td.appendChild(child);
+          return td;
+        }};
+        const code = (value) => {{
+          const el = document.createElement("code");
+          el.textContent = value == null || value === "" ? "none" : String(value);
+          return el;
+        }};
+        const pill = (value, warn) => {{
+          const el = document.createElement("span");
+          el.className = warn ? "pill warn" : "pill";
+          el.textContent = value;
+          return el;
+        }};
+        const shortContainerId = (value) => String(value || "").replace(/^\w+:\/\//, "").slice(0, 18);
+        const stateText = (container) => {{
+          const state = container?.state || {{}};
+          if (state.running) return "running";
+          if (state.waiting) return "waiting " + (state.waiting.reason || "unknown");
+          if (state.terminated) return "terminated " + (state.terminated.reason || "unknown");
+          return "unknown";
+        }};
+        const safeBastionTerminalUrl = (value) => {{
+          try {{
+            const url = new URL(String(value || ""), window.location.origin);
+            if (url.origin !== window.location.origin || url.pathname !== "/bastion/terminal") return "";
+            for (const key of ["namespace", "deployment", "pod", "container"]) {{
+              if (!url.searchParams.get(key)) return "";
+            }}
+            return `${{url.pathname}}${{url.search}}`;
+          }} catch {{
+            return "";
+          }}
+        }};
+        const openTerminal = (url, label) => {{
+          const targetUrl = safeBastionTerminalUrl(url);
+          if (!targetUrl) {{
+            status.textContent = "ignored unsafe bastion terminal URL";
+            return;
+          }}
+          caption.textContent = label;
+          frame.src = targetUrl;
+          dock.hidden = false;
+          dock.scrollIntoView({{ behavior: "smooth", block: "start" }});
+        }};
+        const renderEmpty = (message) => {{
+          body.textContent = "";
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 5;
+          td.className = "muted";
+          td.textContent = message;
+          tr.appendChild(td);
+          body.appendChild(tr);
+        }};
+        const render = (data) => {{
+          body.textContent = "";
+          let rowCount = 0;
+          for (const deployment of data.deployments || []) {{
+            const pods = deployment.pods || [];
+            if (!pods.length) {{
+              const tr = document.createElement("tr");
+              tr.append(
+                cell(deployment.deployment),
+                cell(deployment.namespace),
+                cell("no pods"),
+                cell((deployment.errors || []).join("; ") || "deployment has no selected pods"),
+                cell("none")
+              );
+              body.appendChild(tr);
+              rowCount += 1;
+              continue;
+            }}
+            for (const pod of pods) {{
+              const containers = pod.containers || [];
+              const containerCell = document.createElement("div");
+              containerCell.className = "container-cell";
+              const actions = document.createElement("div");
+              actions.className = "service-actions";
+              for (const container of containers) {{
+                const item = document.createElement("div");
+                item.className = "container-item";
+                const meta = document.createElement("span");
+                meta.append(code(container.name));
+                meta.append(" ");
+                meta.append(pill(stateText(container), !container.ready));
+                meta.append(" restarts ");
+                meta.append(code(container.restartCount || 0));
+                item.appendChild(meta);
+                if (container.containerId) {{
+                  const idLine = document.createElement("span");
+                  idLine.className = "muted";
+                  idLine.append("id ");
+                  idLine.append(code(shortContainerId(container.containerId)));
+                  item.appendChild(idLine);
+                }}
+                containerCell.appendChild(item);
+                const safeTerminalUrl = safeBastionTerminalUrl(container.terminalUrl);
+                const button = document.createElement("button");
+                button.type = "button";
+                button.textContent = "Terminal";
+                button.disabled = !safeTerminalUrl || !data.terminalEnabled;
+                button.title = button.disabled ? "terminal unavailable" : "Open bastion exec terminal";
+                button.addEventListener("click", () => openTerminal(safeTerminalUrl, deployment.namespace + "/" + pod.name + "/" + container.name));
+                actions.appendChild(button);
+              }}
+              const podCell = document.createElement("div");
+              podCell.className = "container-cell";
+              podCell.append(code(pod.name));
+              podCell.append(pill(pod.phase || "unknown", pod.phase !== "Running"));
+              const tr = document.createElement("tr");
+              tr.append(
+                cell(deployment.deployment),
+                cell(deployment.namespace),
+                cell(podCell),
+                cell(containerCell),
+                cell(actions)
+              );
+              body.appendChild(tr);
+              rowCount += 1;
+            }}
+          }}
+          if (!rowCount) renderEmpty("No managed deployment pods returned.");
+          status.textContent = (data.deployments || []).length + " managed deployments · " + (data.terminalEnabled ? "terminal enabled" : "terminal disabled");
+        }};
+        const load = async () => {{
+          status.textContent = "loading managed deployment pods";
+          refresh.disabled = true;
+          try {{
+            const response = await fetch("/bastion/runtime/deployments", {{ cache: "no-store", credentials: "same-origin" }});
+            if (response.status === 401) {{
+              renderEmpty("Sign in through /auth?return=/home to load live containers and bastion terminals.");
+              status.textContent = "auth required";
+              return;
+            }}
+            if (!response.ok) throw new Error("runtime inventory failed " + response.status);
+            render(await response.json());
+          }} catch (error) {{
+            renderEmpty(String(error));
+            status.textContent = "live container inventory unavailable";
+          }} finally {{
+            refresh.disabled = false;
+          }}
+        }};
+        refresh.addEventListener("click", load);
+        close.addEventListener("click", () => {{
+          frame.src = "about:blank";
+          dock.hidden = true;
+        }});
+        load();
+      }})();
+    </script>
   </body>
 </html>
 "#,
@@ -2495,6 +2814,31 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       const threadShort = (threadId) => String(threadId || "").replace(/[^a-z0-9]/gi, "").slice(0, 12).toLowerCase();
       const threadIngressPrefix = (threadId) => `/dd-thread/${threadShort(threadId)}`;
       const threadTerminalUrl = (threadId) => `${threadIngressPrefix(threadId)}/terminal?threadId=${encodeURIComponent(threadId)}`;
+      const normalizeThreadId = (threadId) => String(threadId || "").trim().toLowerCase();
+      const trustedThreadTerminalUrl = (threadId, candidate) => {
+        const fallback = threadTerminalUrl(threadId);
+        if (!candidate) return fallback;
+        try {
+          const parsed = new URL(String(candidate), window.location.origin);
+          const expectedPath = `${threadIngressPrefix(threadId)}/terminal`;
+          const returnedThreadId = normalizeThreadId(parsed.searchParams.get("threadId"));
+          if (parsed.origin !== window.location.origin || parsed.pathname !== expectedPath || returnedThreadId !== normalizeThreadId(threadId)) {
+            throw new Error("unexpected terminal URL");
+          }
+          return `${parsed.pathname}${parsed.search}`;
+        } catch {
+          appendStreamLine("ignored unsafe terminal URL from control response");
+          return fallback;
+        }
+      };
+      const threadTerminalUrlFromControlResponse = (threadId, body) => {
+        try {
+          const parsed = JSON.parse(body);
+          return trustedThreadTerminalUrl(threadId, parsed.terminalUrl);
+        } catch {
+          return threadTerminalUrl(threadId);
+        }
+      };
       let activeStream = null;
       let activeWs = null;
       const workerSockets = new Map();
@@ -3030,13 +3374,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         }
         appendStreamLine(`${config.label} accepted ${textBody.slice(0, 500)}`);
         if (config.action === "terminal") {
-          let targetUrl = threadTerminalUrl(threadId);
-          try {
-            const parsed = JSON.parse(textBody);
-            if (parsed.terminalUrl) targetUrl = parsed.terminalUrl;
-          } catch {
-            /* fall back to deterministic gateway URL */
-          }
+          const targetUrl = threadTerminalUrlFromControlResponse(threadId, textBody);
           if (terminalWindow) terminalWindow.location.href = targetUrl;
           else window.open(targetUrl, "_blank");
         }

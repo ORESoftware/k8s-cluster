@@ -100,3 +100,27 @@ test('argo applications point to both websocket loadtest deployments', async () 
     'gleam app should source gleam loadtest kustomization',
   );
 });
+
+test('websocket loadtest clients include container-pool smoke mode', async () => {
+  const rustCargo = await readRepoFile('remote/ws-loadtest-rs/Cargo.toml');
+  const rustSource = await readRepoFile('remote/ws-loadtest-rs/src/main.rs');
+  const rustReadme = await readRepoFile('remote/ws-loadtest-rs/README.md');
+  const gleamClient = await readRepoFile(
+    'remote/gleamlang-ws-loadtest/src/gleamlang_ws_loadtest/client.mjs',
+  );
+  const gleamReadme = await readRepoFile('remote/gleamlang-ws-loadtest/README.md');
+
+  assert.match(rustCargo, /reqwest/);
+  assert.match(rustCargo, /serde_json/);
+  assert.match(rustSource, /CONTAINER_POOL_URL/);
+  assert.match(rustSource, /run_container_pool_smoke/);
+  assert.match(rustSource, /CONTAINER_POOL_POOL"\)\.unwrap_or_else\(\|_\| "rust"/);
+  assert.match(rustSource, /"echoKey": echo_key/);
+  assert.match(rustSource, /pointer\("\/body\/echoKey"\)/);
+  assert.match(rustReadme, /Container pool smoke mode/);
+  assert.match(gleamClient, /runContainerPoolSmoke/);
+  assert.match(gleamClient, /CONTAINER_POOL_POOL \|\| "gleamlang"/);
+  assert.match(gleamClient, /crypto|randomUUID/);
+  assert.match(gleamClient, /echoKey/);
+  assert.match(gleamReadme, /Container pool smoke mode/);
+});

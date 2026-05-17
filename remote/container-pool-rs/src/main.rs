@@ -1,0 +1,1652 @@
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    env,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+use axum::{
+    extract::{DefaultBodyLimit, Path, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use futures_util::StreamExt;
+use reqwest::header::{HeaderName, HeaderValue};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use tokio::{
+    process::Command,
+    sync::Mutex,
+    time::{sleep, timeout},
+};
+
+const SERVICE_NAME: &str = "dd-container-pool";
+const DEFAULT_PORT: u16 = 8102;
+const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_NATS_PAYLOAD_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Clone)]
+struct AppState {
+    config: Arc<ServiceConfig>,
+    registry: Arc<Mutex<PoolRegistry>>,
+    http: reqwest::Client,
+    nats: Option<async_nats::Client>,
+    metrics: Arc<Metrics>,
+}
+
+#[derive(Clone)]
+struct ServiceConfig {
+    nerdctl_bin: String,
+    containerd_namespace: String,
+    network: String,
+    pull_policy: Option<String>,
+    database_url: Option<String>,
+    app_config_key: String,
+    app_config_scope: String,
+    nats_url: Option<String>,
+    nats_subject: String,
+    nats_result_subject: String,
+    config_refresh: Duration,
+    reconcile_interval: Duration,
+    command_timeout: Duration,
+    container_start_timeout: Duration,
+    port_start: u16,
+    port_end: u16,
+    cleanup_on_start: bool,
+    server_auth_secret: Option<String>,
+}
+
+#[derive(Default)]
+struct Metrics {
+    http_requests_total: AtomicU64,
+    dispatch_total: AtomicU64,
+    dispatch_failures_total: AtomicU64,
+    nats_messages_total: AtomicU64,
+    nats_failures_total: AtomicU64,
+    containers_started_total: AtomicU64,
+    containers_removed_total: AtomicU64,
+    config_refresh_total: AtomicU64,
+    config_refresh_failures_total: AtomicU64,
+}
+
+#[derive(Default)]
+struct PoolRegistry {
+    configs: HashMap<String, PoolConfig>,
+    slug_to_id: HashMap<String, String>,
+    containers: HashMap<String, WarmContainer>,
+    next_port: u16,
+    last_config_error: Option<String>,
+    last_config_refresh_ms: Option<u128>,
+}
+
+#[derive(Debug, Clone)]
+struct PoolConfig {
+    id: String,
+    slug: String,
+    display_name: String,
+    image: String,
+    command: Vec<String>,
+    env: BTreeMap<String, String>,
+    request_path: String,
+    container_port: u16,
+    min_warm: usize,
+    max_warm: usize,
+    max_concurrency_per_container: usize,
+    request_timeout: Duration,
+    idle_ttl: Duration,
+    nats_subject: Option<String>,
+    labels: Value,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum ContainerStatus {
+    Starting,
+    Idle,
+    Busy,
+    Draining,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WarmContainer {
+    name: String,
+    pool_id: String,
+    pool_slug: String,
+    port: u16,
+    status: ContainerStatus,
+    in_flight: usize,
+    launched_at_ms: u128,
+    last_used_at_ms: u128,
+    request_count: u64,
+    failure_count: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DispatchRequest {
+    request_id: Option<String>,
+    pool_id: Option<String>,
+    pool_slug: Option<String>,
+    path: Option<String>,
+    headers: Option<BTreeMap<String, String>>,
+    payload: Option<Value>,
+    body: Option<Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DispatchResponse {
+    ok: bool,
+    request_id: String,
+    pool_id: String,
+    pool_slug: String,
+    container_name: String,
+    container_port: u16,
+    target_url: String,
+    status: u16,
+    body: Value,
+    elapsed_ms: u128,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HealthResponse {
+    ok: bool,
+    service: &'static str,
+    postgres_configured: bool,
+    nats_configured: bool,
+    auth_configured: bool,
+    pool_count: usize,
+    warm_container_count: usize,
+    last_config_refresh_ms: Option<u128>,
+    last_config_error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolsResponse {
+    ok: bool,
+    generated_at_ms: u128,
+    pools: Vec<PoolSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PoolSummary {
+    id: String,
+    slug: String,
+    display_name: String,
+    image: String,
+    request_path: String,
+    container_port: u16,
+    min_warm: usize,
+    max_warm: usize,
+    max_concurrency_per_container: usize,
+    request_timeout_ms: u64,
+    idle_ttl_seconds: u64,
+    nats_subject: Option<String>,
+    env_keys: Vec<String>,
+    labels: Value,
+    active_containers: usize,
+    idle_containers: usize,
+    busy_containers: usize,
+    containers: Vec<WarmContainer>,
+}
+
+#[derive(Debug, Clone)]
+struct ContainerLease {
+    pool: PoolConfig,
+    container: WarmContainer,
+}
+
+fn first_env(keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        env::var(key)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn env_value(key: &str, fallback: &str) -> String {
+    first_env(&[key]).unwrap_or_else(|| fallback.to_string())
+}
+
+fn env_bool(key: &str, fallback: bool) -> bool {
+    first_env(&[key])
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(fallback)
+}
+
+fn env_u64(key: &str, fallback: u64) -> u64 {
+    first_env(&[key])
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(fallback)
+}
+
+fn env_u16(key: &str, fallback: u16) -> u16 {
+    first_env(&[key])
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(fallback)
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+fn service_config_from_env() -> ServiceConfig {
+    let port_start = env_u16("CONTAINER_POOL_PORT_START", 12_000);
+    let port_end = env_u16("CONTAINER_POOL_PORT_END", 12_999).max(port_start);
+    ServiceConfig {
+        nerdctl_bin: env_value("CONTAINER_POOL_NERDCTL_BIN", "/usr/local/bin/nerdctl"),
+        containerd_namespace: env_value("CONTAINER_POOL_CONTAINERD_NAMESPACE", "k8s.io"),
+        network: env_value("CONTAINER_POOL_NETWORK", "host"),
+        pull_policy: first_env(&["CONTAINER_POOL_PULL_POLICY"]),
+        database_url: first_env(&[
+            "CONTAINER_POOL_DATABASE_URL",
+            "AGENT_TASKS_RDS_DATABASE_URL",
+            "RDS_DATABASE_URL",
+            "DATABASE_URL",
+        ]),
+        app_config_key: env_value(
+            "CONTAINER_POOL_APP_CONFIG_KEY",
+            "container-pool.runtime-pools.v1",
+        ),
+        app_config_scope: env_value("CONTAINER_POOL_APP_CONFIG_SCOPE", "default"),
+        nats_url: first_env(&["NATS_URL"]),
+        nats_subject: env_value(
+            "CONTAINER_POOL_NATS_SUBJECT",
+            "dd.remote.container_pool.requests",
+        ),
+        nats_result_subject: env_value(
+            "CONTAINER_POOL_NATS_RESULT_SUBJECT",
+            "dd.remote.container_pool.results",
+        ),
+        config_refresh: Duration::from_secs(env_u64("CONTAINER_POOL_CONFIG_REFRESH_SECONDS", 30)),
+        reconcile_interval: Duration::from_secs(env_u64("CONTAINER_POOL_RECONCILE_SECONDS", 10)),
+        command_timeout: Duration::from_secs(env_u64("CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS", 30)),
+        container_start_timeout: Duration::from_secs(env_u64(
+            "CONTAINER_POOL_START_TIMEOUT_SECONDS",
+            15,
+        )),
+        port_start,
+        port_end,
+        cleanup_on_start: env_bool("CONTAINER_POOL_CLEANUP_ON_START", true),
+        server_auth_secret: first_env(&[
+            "CONTAINER_POOL_AUTH_SECRET",
+            "SERVER_AUTH_SECRET",
+            "REMOTE_DEV_SERVER_SECRET",
+        ]),
+    }
+}
+
+fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
+    headers
+        .get("x-server-auth")
+        .or_else(|| headers.get("x-container-pool-auth"))
+        .or_else(|| headers.get("x-agent-auth"))
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == secret)
+}
+
+fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
+    let Some(secret) = state.config.server_auth_secret.as_deref() else {
+        return Err(json_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVER_AUTH_SECRET is not configured",
+        ));
+    };
+    if request_is_authorized(headers, secret) {
+        Ok(())
+    } else {
+        Err(json_error(StatusCode::UNAUTHORIZED, "unauthorized"))
+    }
+}
+
+fn json_error(status: StatusCode, message: &str) -> Response {
+    (status, Json(json!({ "ok": false, "error": message }))).into_response()
+}
+
+fn safe_slug(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 120
+        && bytes[0].is_ascii_lowercase()
+        && bytes[bytes.len() - 1].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+fn safe_env_key(input: &str) -> bool {
+    let mut chars = input.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+fn string_vec_from_json(value: Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn json_string_field(value: &Value, camel_key: &str, snake_key: &str) -> Option<String> {
+    value
+        .get(camel_key)
+        .or_else(|| value.get(snake_key))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn json_u64_field(value: &Value, camel_key: &str, snake_key: &str) -> Option<u64> {
+    value
+        .get(camel_key)
+        .or_else(|| value.get(snake_key))
+        .and_then(Value::as_u64)
+}
+
+fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
+    let slug = json_string_field(value, "slug", "slug")
+        .ok_or_else(|| "container pool config is missing slug".to_string())?;
+    if !safe_slug(&slug) {
+        return Err(format!("invalid app_config container pool slug: {slug}"));
+    }
+    let image = json_string_field(value, "image", "image")
+        .ok_or_else(|| format!("container pool {slug} is missing image"))?;
+    if image.len() > 512 {
+        return Err(format!("container pool {slug} image exceeds 512 bytes"));
+    }
+    let min_warm = json_u64_field(value, "minWarm", "min_warm")
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(1)
+        .min(64);
+    let max_warm = json_u64_field(value, "maxWarm", "max_warm")
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(min_warm.max(1))
+        .max(min_warm)
+        .min(128);
+    let request_path = json_string_field(value, "requestPath", "request_path")
+        .filter(|path| path.starts_with('/') && path.len() <= 256)
+        .unwrap_or_else(|| "/invoke".to_string());
+    Ok(PoolConfig {
+        id: json_string_field(value, "id", "id").unwrap_or_else(|| slug.clone()),
+        slug: slug.clone(),
+        display_name: json_string_field(value, "displayName", "display_name")
+            .unwrap_or_else(|| slug.clone()),
+        image,
+        command: string_vec_from_json(value.get("command").cloned().unwrap_or_else(|| json!([]))),
+        env: env_map_from_json(value.get("env").cloned().unwrap_or_else(|| json!({}))),
+        request_path,
+        container_port: json_u64_field(value, "containerPort", "container_port")
+            .and_then(|value| u16::try_from(value).ok())
+            .unwrap_or(8080),
+        min_warm,
+        max_warm,
+        max_concurrency_per_container: json_u64_field(
+            value,
+            "maxConcurrencyPerContainer",
+            "max_concurrency_per_container",
+        )
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(1)
+        .clamp(1, 128),
+        request_timeout: Duration::from_millis(
+            json_u64_field(value, "requestTimeoutMs", "request_timeout_ms")
+                .unwrap_or(30_000)
+                .clamp(100, 900_000),
+        ),
+        idle_ttl: Duration::from_secs(
+            json_u64_field(value, "idleTtlSeconds", "idle_ttl_seconds")
+                .unwrap_or(900)
+                .clamp(10, 86_400),
+        ),
+        nats_subject: json_string_field(value, "natsSubject", "nats_subject"),
+        labels: value.get("labels").cloned().unwrap_or_else(|| json!([])),
+    })
+}
+
+fn pool_configs_from_app_config_value(value: Value) -> Result<Vec<PoolConfig>, String> {
+    let pools = value
+        .get("pools")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "container pool app_config value must contain a pools array".to_string())?;
+    pools.iter().map(pool_config_from_json).collect()
+}
+
+fn env_map_from_json(value: Value) -> BTreeMap<String, String> {
+    value
+        .as_object()
+        .map(|object| {
+            object
+                .iter()
+                .filter(|(key, _)| safe_env_key(key))
+                .map(|(key, value)| {
+                    let value = value
+                        .as_str()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| value.to_string());
+                    (key.to_string(), value)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn row_string(row: &tokio_postgres::Row, column: &str) -> String {
+    row.try_get::<_, String>(column).unwrap_or_default()
+}
+
+fn row_opt_string(row: &tokio_postgres::Row, column: &str) -> Option<String> {
+    row.try_get::<_, Option<String>>(column)
+        .ok()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn row_i32(row: &tokio_postgres::Row, column: &str, fallback: i32) -> i32 {
+    row.try_get::<_, i32>(column).unwrap_or(fallback)
+}
+
+fn row_value(row: &tokio_postgres::Row, column: &str, fallback: Value) -> Value {
+    row.try_get::<_, Value>(column).unwrap_or(fallback)
+}
+
+fn duration_millis_u64(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn clamp_i32_to_usize(value: i32, fallback: usize, min: usize, max: usize) -> usize {
+    usize::try_from(value)
+        .ok()
+        .filter(|value| *value >= min)
+        .unwrap_or(fallback)
+        .min(max)
+}
+
+fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
+    let id = row_string(row, "id");
+    let slug = row_string(row, "slug");
+    if !safe_slug(&slug) {
+        return Err(format!("invalid container pool slug: {slug}"));
+    }
+    let image = row_string(row, "image");
+    if image.trim().is_empty() || image.len() > 512 {
+        return Err(format!("container pool {slug} has invalid image"));
+    }
+
+    let min_warm = clamp_i32_to_usize(row_i32(row, "min_warm", 1), 1, 0, 64);
+    let max_warm =
+        clamp_i32_to_usize(row_i32(row, "max_warm", 1), min_warm.max(1), 1, 128).max(min_warm);
+    let request_timeout_ms = row_i32(row, "request_timeout_ms", 30_000).clamp(100, 900_000);
+    let idle_ttl_seconds = row_i32(row, "idle_ttl_seconds", 900).clamp(10, 86_400);
+    let container_port = row_i32(row, "container_port", 8080).clamp(1, u16::MAX as i32) as u16;
+    let max_concurrency_per_container =
+        clamp_i32_to_usize(row_i32(row, "max_concurrency_per_container", 1), 1, 1, 128);
+    let request_path = row_opt_string(row, "request_path").unwrap_or_else(|| "/invoke".to_string());
+    if !request_path.starts_with('/') || request_path.len() > 256 {
+        return Err(format!("container pool {slug} has invalid request_path"));
+    }
+
+    Ok(PoolConfig {
+        id,
+        slug,
+        display_name: row_opt_string(row, "display_name").unwrap_or_else(|| image.clone()),
+        image,
+        command: string_vec_from_json(row_value(row, "command", json!([]))),
+        env: env_map_from_json(row_value(row, "env", json!({}))),
+        request_path,
+        container_port,
+        min_warm,
+        max_warm,
+        max_concurrency_per_container,
+        request_timeout: Duration::from_millis(request_timeout_ms as u64),
+        idle_ttl: Duration::from_secs(idle_ttl_seconds as u64),
+        nats_subject: row_opt_string(row, "nats_subject"),
+        labels: row_value(row, "labels", json!([])),
+    })
+}
+
+async fn connect_postgres(config: &ServiceConfig) -> Result<tokio_postgres::Client, String> {
+    let database_url = config
+        .database_url
+        .as_deref()
+        .ok_or_else(|| "container pool database URL is not configured".to_string())?;
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
+    let (client, connection) = tokio_postgres::connect(database_url, tls)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            eprintln!("container pool postgres connection error: {error}");
+        }
+    });
+    Ok(client)
+}
+
+async fn fetch_pool_configs_from_postgres(
+    config: &ServiceConfig,
+) -> Result<Vec<PoolConfig>, String> {
+    let client = connect_postgres(config).await?;
+    match fetch_pool_configs_from_app_config(&client, config).await {
+        Ok(Some(configs)) => return Ok(configs),
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!(
+                "container pool app_config lookup failed, falling back to container_pool_configs: {error}"
+            );
+        }
+    }
+    fetch_pool_configs_from_table(&client).await
+}
+
+async fn fetch_pool_configs_from_app_config(
+    client: &tokio_postgres::Client,
+    config: &ServiceConfig,
+) -> Result<Option<Vec<PoolConfig>>, String> {
+    let rows = client
+        .query(
+            r#"
+            select value
+            from app_config
+            where scope = $1
+              and key = $2
+              and status = 'active'
+              and is_soft_deleted = false
+            order by updated_at desc
+            limit 1
+            "#,
+            &[&config.app_config_scope, &config.app_config_key],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    let Some(row) = rows.first() else {
+        return Ok(None);
+    };
+    let value = row_value(row, "value", json!({}));
+    let configs = pool_configs_from_app_config_value(value)?;
+    Ok(Some(configs))
+}
+
+async fn fetch_pool_configs_from_table(
+    client: &tokio_postgres::Client,
+) -> Result<Vec<PoolConfig>, String> {
+    let rows = client
+        .query(
+            r#"
+            select
+              id::text as id,
+              slug,
+              display_name,
+              image,
+              command,
+              env,
+              request_path,
+              container_port,
+              min_warm,
+              max_warm,
+              max_concurrency_per_container,
+              request_timeout_ms,
+              idle_ttl_seconds,
+              nats_subject,
+              labels
+            from container_pool_configs
+            where status = 'active'
+              and is_soft_deleted = false
+            order by slug asc
+            "#,
+            &[],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut configs = Vec::with_capacity(rows.len());
+    for row in rows {
+        configs.push(row_to_pool_config(&row)?);
+    }
+    Ok(configs)
+}
+
+fn fallback_pool_configs_from_env() -> Result<Vec<PoolConfig>, String> {
+    let Some(raw) = first_env(&["CONTAINER_POOL_CONFIG_JSON"]) else {
+        return Ok(Vec::new());
+    };
+    let value = serde_json::from_str::<Value>(&raw).map_err(|error| error.to_string())?;
+    let items = value
+        .as_array()
+        .ok_or_else(|| "CONTAINER_POOL_CONFIG_JSON must be a JSON array".to_string())?;
+    let mut configs = Vec::with_capacity(items.len());
+    for item in items {
+        configs.push(pool_config_from_json(item)?);
+    }
+    Ok(configs)
+}
+
+async fn fetch_pool_configs(config: &ServiceConfig) -> Result<Vec<PoolConfig>, String> {
+    if config.database_url.is_some() {
+        fetch_pool_configs_from_postgres(config).await
+    } else {
+        fallback_pool_configs_from_env()
+    }
+}
+
+async fn refresh_pool_configs(state: &AppState) -> Result<(), String> {
+    let configs = fetch_pool_configs(&state.config).await?;
+    let mut next_configs = HashMap::new();
+    let mut next_slugs = HashMap::new();
+    for config in configs {
+        next_slugs.insert(config.slug.clone(), config.id.clone());
+        next_configs.insert(config.id.clone(), config);
+    }
+
+    let removed_names = {
+        let mut registry = state.registry.lock().await;
+        let removed_pool_ids = registry
+            .configs
+            .keys()
+            .filter(|pool_id| !next_configs.contains_key(*pool_id))
+            .cloned()
+            .collect::<HashSet<_>>();
+        let removed_names = registry
+            .containers
+            .values()
+            .filter(|container| removed_pool_ids.contains(&container.pool_id))
+            .map(|container| container.name.clone())
+            .collect::<Vec<_>>();
+        for name in &removed_names {
+            registry.containers.remove(name);
+        }
+        registry.configs = next_configs;
+        registry.slug_to_id = next_slugs;
+        if registry.next_port == 0 {
+            registry.next_port = state.config.port_start;
+        }
+        registry.last_config_error = None;
+        registry.last_config_refresh_ms = Some(now_ms());
+        removed_names
+    };
+
+    state
+        .metrics
+        .config_refresh_total
+        .fetch_add(1, Ordering::Relaxed);
+    for name in removed_names {
+        if let Err(error) = remove_container(state, &name).await {
+            eprintln!("failed to remove container for deleted pool {name}: {error}");
+        }
+    }
+    Ok(())
+}
+
+async fn record_config_error(state: &AppState, error: String) {
+    state
+        .metrics
+        .config_refresh_failures_total
+        .fetch_add(1, Ordering::Relaxed);
+    let mut registry = state.registry.lock().await;
+    registry.last_config_error = Some(error);
+}
+
+async fn allocate_container_slot(
+    state: &AppState,
+    pool_id: &str,
+) -> Result<(PoolConfig, WarmContainer), String> {
+    let mut registry = state.registry.lock().await;
+    let pool = registry
+        .configs
+        .get(pool_id)
+        .cloned()
+        .ok_or_else(|| format!("unknown container pool: {pool_id}"))?;
+    let active = registry
+        .containers
+        .values()
+        .filter(|container| container.pool_id == pool.id)
+        .count();
+    if active >= pool.max_warm {
+        return Err(format!(
+            "container pool {} is at max capacity ({})",
+            pool.slug, pool.max_warm
+        ));
+    }
+
+    let used_ports = registry
+        .containers
+        .values()
+        .map(|container| container.port)
+        .collect::<HashSet<_>>();
+    let mut port = registry.next_port.max(state.config.port_start);
+    let mut scanned = 0u32;
+    while used_ports.contains(&port) {
+        port = if port >= state.config.port_end {
+            state.config.port_start
+        } else {
+            port + 1
+        };
+        scanned += 1;
+        if scanned > u32::from(state.config.port_end - state.config.port_start) + 1 {
+            return Err("container pool port range is exhausted".to_string());
+        }
+    }
+    registry.next_port = if port >= state.config.port_end {
+        state.config.port_start
+    } else {
+        port + 1
+    };
+
+    let name = format!(
+        "dd-pool-{}-{}-{}",
+        pool.slug,
+        port,
+        now_ms() % 1_000_000_000
+    );
+    let now = now_ms();
+    let container = WarmContainer {
+        name: name.clone(),
+        pool_id: pool.id.clone(),
+        pool_slug: pool.slug.clone(),
+        port,
+        status: ContainerStatus::Starting,
+        in_flight: 0,
+        launched_at_ms: now,
+        last_used_at_ms: now,
+        request_count: 0,
+        failure_count: 0,
+    };
+    registry.containers.insert(name, container.clone());
+    Ok((pool, container))
+}
+
+async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmContainer, String> {
+    let (pool, mut container) = allocate_container_slot(state, pool_id).await?;
+    let mut args = vec![
+        "-n".to_string(),
+        state.config.containerd_namespace.clone(),
+        "run".to_string(),
+        "-d".to_string(),
+        "--name".to_string(),
+        container.name.clone(),
+        "--label".to_string(),
+        "dd.container-pool.managed=true".to_string(),
+        "--label".to_string(),
+        format!("dd.container-pool.pool={}", pool.slug),
+        "--label".to_string(),
+        format!("dd.container-pool.pool-id={}", pool.id),
+        "--label".to_string(),
+        format!("dd.container-pool.service={SERVICE_NAME}"),
+    ];
+    if let Some(pull_policy) = state.config.pull_policy.as_deref() {
+        args.push("--pull".to_string());
+        args.push(pull_policy.to_string());
+    }
+
+    if state.config.network == "host" {
+        args.push("--network".to_string());
+        args.push("host".to_string());
+        args.push("--env".to_string());
+        args.push(format!("PORT={}", container.port));
+    } else {
+        args.push("--network".to_string());
+        args.push(state.config.network.clone());
+        args.push("--publish".to_string());
+        args.push(format!(
+            "127.0.0.1:{}:{}",
+            container.port, pool.container_port
+        ));
+        args.push("--env".to_string());
+        args.push(format!("PORT={}", pool.container_port));
+    }
+
+    for (key, value) in &pool.env {
+        args.push("--env".to_string());
+        args.push(format!("{key}={value}"));
+    }
+    args.push(pool.image.clone());
+    args.extend(pool.command.clone());
+
+    match run_command(
+        &state.config.nerdctl_bin,
+        &args,
+        state.config.command_timeout,
+    )
+    .await
+    {
+        Ok(_) => {
+            if let Err(error) = wait_container_ready(state, &pool, &container).await {
+                let mut registry = state.registry.lock().await;
+                registry.containers.remove(&container.name);
+                drop(registry);
+                if let Err(remove_error) = remove_container(state, &container.name).await {
+                    eprintln!(
+                        "failed to remove unready warm container {}: {remove_error}",
+                        container.name
+                    );
+                }
+                return Err(error);
+            }
+            state
+                .metrics
+                .containers_started_total
+                .fetch_add(1, Ordering::Relaxed);
+            container.status = ContainerStatus::Idle;
+            let mut registry = state.registry.lock().await;
+            if let Some(stored) = registry.containers.get_mut(&container.name) {
+                stored.status = ContainerStatus::Idle;
+            }
+            Ok(container)
+        }
+        Err(error) => {
+            let mut registry = state.registry.lock().await;
+            registry.containers.remove(&container.name);
+            Err(error)
+        }
+    }
+}
+
+async fn wait_container_ready(
+    state: &AppState,
+    pool: &PoolConfig,
+    container: &WarmContainer,
+) -> Result<(), String> {
+    let url = target_url(pool, container, "/healthz");
+    let started = tokio::time::Instant::now();
+    loop {
+        match timeout(Duration::from_millis(800), state.http.get(&url).send()).await {
+            Ok(Ok(response)) if response.status().is_success() => return Ok(()),
+            Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {}
+        }
+        if started.elapsed() > state.config.container_start_timeout {
+            return Err(format!(
+                "container {} readiness timed out at {url}",
+                container.name
+            ));
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+}
+
+async fn remove_container(state: &AppState, name: &str) -> Result<(), String> {
+    let args = vec![
+        "-n".to_string(),
+        state.config.containerd_namespace.clone(),
+        "rm".to_string(),
+        "-f".to_string(),
+        name.to_string(),
+    ];
+    run_command(
+        &state.config.nerdctl_bin,
+        &args,
+        state.config.command_timeout,
+    )
+    .await?;
+    state
+        .metrics
+        .containers_removed_total
+        .fetch_add(1, Ordering::Relaxed);
+    Ok(())
+}
+
+async fn cleanup_managed_containers_on_start(state: &AppState) -> Result<(), String> {
+    if !state.config.cleanup_on_start {
+        return Ok(());
+    }
+    let list_args = vec![
+        "-n".to_string(),
+        state.config.containerd_namespace.clone(),
+        "ps".to_string(),
+        "-a".to_string(),
+        "-q".to_string(),
+        "--filter".to_string(),
+        "label=dd.container-pool.managed=true".to_string(),
+    ];
+    let output = run_command(
+        &state.config.nerdctl_bin,
+        &list_args,
+        state.config.command_timeout,
+    )
+    .await?;
+    for id in output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if let Err(error) = remove_container(state, id).await {
+            eprintln!("failed to remove stale managed container {id}: {error}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_command(
+    program: &str,
+    args: &[String],
+    command_timeout: Duration,
+) -> Result<String, String> {
+    let output = timeout(command_timeout, Command::new(program).args(args).output())
+        .await
+        .map_err(|_| format!("{program} timed out after {}s", command_timeout.as_secs()))?
+        .map_err(|error| format!("{program} failed to start: {error}"))?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr)
+        .chars()
+        .take(2000)
+        .collect::<String>();
+    Err(format!(
+        "{program} exited with {}: {stderr}",
+        output.status.code().unwrap_or(-1)
+    ))
+}
+
+async fn reconcile_pool(state: &AppState, pool_id: &str) -> Result<(), String> {
+    loop {
+        let deficit = {
+            let registry = state.registry.lock().await;
+            let Some(pool) = registry.configs.get(pool_id) else {
+                return Ok(());
+            };
+            let active = registry
+                .containers
+                .values()
+                .filter(|container| container.pool_id == pool.id)
+                .count();
+            pool.min_warm.saturating_sub(active)
+        };
+        if deficit == 0 {
+            break;
+        }
+        start_one_for_pool(state, pool_id).await?;
+    }
+    Ok(())
+}
+
+async fn reconcile_all(state: &AppState) {
+    let pool_ids = {
+        let registry = state.registry.lock().await;
+        registry.configs.keys().cloned().collect::<Vec<_>>()
+    };
+    for pool_id in pool_ids {
+        if let Err(error) = reconcile_pool(state, &pool_id).await {
+            eprintln!("container pool reconcile failed for {pool_id}: {error}");
+        }
+    }
+
+    let stale = {
+        let mut registry = state.registry.lock().await;
+        let mut per_pool_count = HashMap::<String, usize>::new();
+        for container in registry.containers.values() {
+            *per_pool_count.entry(container.pool_id.clone()).or_default() += 1;
+        }
+        let now = now_ms();
+        let mut stale = Vec::new();
+        let mut names = registry.containers.keys().cloned().collect::<Vec<_>>();
+        names.sort();
+        for name in names {
+            let Some(container) = registry.containers.get(&name) else {
+                continue;
+            };
+            if container.status == ContainerStatus::Busy || container.in_flight > 0 {
+                continue;
+            }
+            let Some(pool) = registry.configs.get(&container.pool_id) else {
+                stale.push(name.clone());
+                continue;
+            };
+            let count = per_pool_count.get(&container.pool_id).copied().unwrap_or(0);
+            let idle_for = Duration::from_millis((now - container.last_used_at_ms) as u64);
+            if count > pool.max_warm || (count > pool.min_warm && idle_for > pool.idle_ttl) {
+                stale.push(name.clone());
+                if let Some(value) = per_pool_count.get_mut(&container.pool_id) {
+                    *value = value.saturating_sub(1);
+                }
+            }
+        }
+        for name in &stale {
+            if let Some(container) = registry.containers.get_mut(name) {
+                container.status = ContainerStatus::Draining;
+            }
+            registry.containers.remove(name);
+        }
+        stale
+    };
+    for name in stale {
+        if let Err(error) = remove_container(state, &name).await {
+            eprintln!("failed to remove stale warm container {name}: {error}");
+        }
+    }
+}
+
+fn pool_id_from_selector(registry: &PoolRegistry, selector: &str) -> Option<String> {
+    if registry.configs.contains_key(selector) {
+        Some(selector.to_string())
+    } else {
+        registry.slug_to_id.get(selector).cloned()
+    }
+}
+
+async fn lease_container(state: &AppState, selector: &str) -> Result<ContainerLease, String> {
+    let pool_id = {
+        let registry = state.registry.lock().await;
+        pool_id_from_selector(&registry, selector)
+            .ok_or_else(|| format!("unknown container pool: {selector}"))?
+    };
+
+    for _ in 0..2 {
+        let maybe_lease = {
+            let mut registry = state.registry.lock().await;
+            let pool = registry
+                .configs
+                .get(&pool_id)
+                .cloned()
+                .ok_or_else(|| format!("unknown container pool: {selector}"))?;
+            let candidate_name = registry
+                .containers
+                .values()
+                .filter(|container| container.pool_id == pool.id)
+                .filter(|container| container.in_flight < pool.max_concurrency_per_container)
+                .min_by_key(|container| (container.in_flight, container.last_used_at_ms))
+                .map(|container| container.name.clone());
+            candidate_name.and_then(|name| {
+                let container = registry.containers.get_mut(&name)?;
+                container.in_flight += 1;
+                container.status = ContainerStatus::Busy;
+                container.request_count += 1;
+                container.last_used_at_ms = now_ms();
+                Some(ContainerLease {
+                    pool,
+                    container: container.clone(),
+                })
+            })
+        };
+        if let Some(lease) = maybe_lease {
+            return Ok(lease);
+        }
+        start_one_for_pool(state, &pool_id).await?;
+    }
+
+    Err(format!("no warm container available for pool {selector}"))
+}
+
+async fn release_container(state: &AppState, container_name: &str, failed: bool) {
+    let mut registry = state.registry.lock().await;
+    if let Some(container) = registry.containers.get_mut(container_name) {
+        container.in_flight = container.in_flight.saturating_sub(1);
+        if failed {
+            container.failure_count += 1;
+        }
+        container.status = if container.in_flight == 0 {
+            ContainerStatus::Idle
+        } else {
+            ContainerStatus::Busy
+        };
+        container.last_used_at_ms = now_ms();
+    }
+}
+
+fn safe_dispatch_path(path: Option<&str>, fallback: &str) -> Result<String, String> {
+    let path = path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback);
+    if !path.starts_with('/') || path.contains("://") || path.len() > 256 {
+        return Err("dispatch path must be a local absolute path".to_string());
+    }
+    Ok(path.to_string())
+}
+
+fn dispatch_body(request: &DispatchRequest) -> Value {
+    request
+        .payload
+        .clone()
+        .or_else(|| request.body.clone())
+        .unwrap_or_else(|| json!({}))
+}
+
+fn request_id_from_request(request: &DispatchRequest) -> String {
+    request
+        .request_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("container-pool-request")
+        .chars()
+        .take(128)
+        .collect()
+}
+
+fn target_url(pool: &PoolConfig, container: &WarmContainer, path: &str) -> String {
+    let port = if path.is_empty() {
+        pool.container_port
+    } else {
+        container.port
+    };
+    format!("http://127.0.0.1:{port}{path}")
+}
+
+fn apply_forward_headers(
+    mut builder: reqwest::RequestBuilder,
+    headers: Option<&BTreeMap<String, String>>,
+) -> reqwest::RequestBuilder {
+    let Some(headers) = headers else {
+        return builder;
+    };
+    for (key, value) in headers {
+        let lower = key.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "authorization" | "cookie" | "host" | "x-server-auth" | "x-agent-auth"
+        ) {
+            continue;
+        }
+        let Ok(name) = HeaderName::from_bytes(key.as_bytes()) else {
+            continue;
+        };
+        let Ok(value) = HeaderValue::from_str(value) else {
+            continue;
+        };
+        builder = builder.header(name, value);
+    }
+    builder
+}
+
+async fn dispatch_to_pool(
+    state: &AppState,
+    selector: &str,
+    request: DispatchRequest,
+) -> Result<DispatchResponse, String> {
+    let started = now_ms();
+    let lease = lease_container(state, selector).await?;
+    let path = safe_dispatch_path(request.path.as_deref(), &lease.pool.request_path)?;
+    let url = target_url(&lease.pool, &lease.container, &path);
+    let body = dispatch_body(&request);
+    let request_id = request_id_from_request(&request);
+
+    let send = apply_forward_headers(state.http.post(&url), request.headers.as_ref()).json(&body);
+    let response = timeout(lease.pool.request_timeout, send.send()).await;
+    let result = match response {
+        Ok(Ok(response)) => {
+            let status = response.status();
+            let bytes = response.bytes().await.map_err(|error| error.to_string())?;
+            let body = serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
+                json!({
+                    "text": String::from_utf8_lossy(&bytes).chars().take(256 * 1024).collect::<String>()
+                })
+            });
+            Ok(DispatchResponse {
+                ok: status.is_success(),
+                request_id,
+                pool_id: lease.pool.id.clone(),
+                pool_slug: lease.pool.slug.clone(),
+                container_name: lease.container.name.clone(),
+                container_port: lease.container.port,
+                target_url: url,
+                status: status.as_u16(),
+                body,
+                elapsed_ms: now_ms().saturating_sub(started),
+            })
+        }
+        Ok(Err(error)) => Err(error.to_string()),
+        Err(_) => Err(format!(
+            "container dispatch timed out after {}ms",
+            duration_millis_u64(lease.pool.request_timeout)
+        )),
+    };
+
+    let failed = result.as_ref().map(|response| !response.ok).unwrap_or(true);
+    release_container(state, &lease.container.name, failed).await;
+    if failed {
+        state
+            .metrics
+            .dispatch_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+    } else {
+        state.metrics.dispatch_total.fetch_add(1, Ordering::Relaxed);
+    }
+    result
+}
+
+fn pool_selector_from_request(
+    request: &DispatchRequest,
+    subject: Option<&str>,
+    state: &PoolRegistry,
+) -> Option<String> {
+    request
+        .pool_id
+        .as_deref()
+        .or(request.pool_slug.as_deref())
+        .map(ToString::to_string)
+        .or_else(|| {
+            subject.and_then(|subject| {
+                state
+                    .configs
+                    .values()
+                    .find(|config| config.nats_subject.as_deref() == Some(subject))
+                    .map(|config| config.id.clone())
+            })
+        })
+}
+
+fn pool_summary(config: &PoolConfig, containers: Vec<WarmContainer>) -> PoolSummary {
+    let idle_containers = containers
+        .iter()
+        .filter(|container| container.status == ContainerStatus::Idle)
+        .count();
+    let busy_containers = containers
+        .iter()
+        .filter(|container| container.status == ContainerStatus::Busy)
+        .count();
+    PoolSummary {
+        id: config.id.clone(),
+        slug: config.slug.clone(),
+        display_name: config.display_name.clone(),
+        image: config.image.clone(),
+        request_path: config.request_path.clone(),
+        container_port: config.container_port,
+        min_warm: config.min_warm,
+        max_warm: config.max_warm,
+        max_concurrency_per_container: config.max_concurrency_per_container,
+        request_timeout_ms: duration_millis_u64(config.request_timeout),
+        idle_ttl_seconds: config.idle_ttl.as_secs(),
+        nats_subject: config.nats_subject.clone(),
+        env_keys: config.env.keys().cloned().collect(),
+        labels: config.labels.clone(),
+        active_containers: containers.len(),
+        idle_containers,
+        busy_containers,
+        containers,
+    }
+}
+
+async fn pool_summaries(state: &AppState) -> Vec<PoolSummary> {
+    let registry = state.registry.lock().await;
+    let mut pools = registry
+        .configs
+        .values()
+        .map(|config| {
+            let mut containers = registry
+                .containers
+                .values()
+                .filter(|container| container.pool_id == config.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            containers.sort_by(|a, b| a.name.cmp(&b.name));
+            pool_summary(config, containers)
+        })
+        .collect::<Vec<_>>();
+    pools.sort_by(|a, b| a.slug.cmp(&b.slug));
+    pools
+}
+
+async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
+    let registry = state.registry.lock().await;
+    Json(HealthResponse {
+        ok: true,
+        service: SERVICE_NAME,
+        postgres_configured: state.config.database_url.is_some(),
+        nats_configured: state.nats.is_some(),
+        auth_configured: state.config.server_auth_secret.is_some(),
+        pool_count: registry.configs.len(),
+        warm_container_count: registry.containers.len(),
+        last_config_refresh_ms: registry.last_config_refresh_ms,
+        last_config_error: registry.last_config_error.clone(),
+    })
+}
+
+async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let registry = state.registry.lock().await;
+    let warm = registry.containers.len();
+    let idle = registry
+        .containers
+        .values()
+        .filter(|container| container.status == ContainerStatus::Idle)
+        .count();
+    let busy = registry
+        .containers
+        .values()
+        .filter(|container| container.status == ContainerStatus::Busy)
+        .count();
+    let body = format!(
+        "# HELP dd_container_pool_http_requests_total HTTP requests observed by dd-container-pool.\n\
+         # TYPE dd_container_pool_http_requests_total counter\n\
+         dd_container_pool_http_requests_total {}\n\
+         # HELP dd_container_pool_dispatch_total Successful container pool dispatches.\n\
+         # TYPE dd_container_pool_dispatch_total counter\n\
+         dd_container_pool_dispatch_total {}\n\
+         # HELP dd_container_pool_dispatch_failures_total Failed container pool dispatches.\n\
+         # TYPE dd_container_pool_dispatch_failures_total counter\n\
+         dd_container_pool_dispatch_failures_total {}\n\
+         # HELP dd_container_pool_nats_messages_total NATS messages received by the pool service.\n\
+         # TYPE dd_container_pool_nats_messages_total counter\n\
+         dd_container_pool_nats_messages_total {}\n\
+         # HELP dd_container_pool_nats_failures_total NATS dispatch failures.\n\
+         # TYPE dd_container_pool_nats_failures_total counter\n\
+         dd_container_pool_nats_failures_total {}\n\
+         # HELP dd_container_pool_containers_started_total Warm containers started.\n\
+         # TYPE dd_container_pool_containers_started_total counter\n\
+         dd_container_pool_containers_started_total {}\n\
+         # HELP dd_container_pool_containers_removed_total Warm containers removed.\n\
+         # TYPE dd_container_pool_containers_removed_total counter\n\
+         dd_container_pool_containers_removed_total {}\n\
+         # HELP dd_container_pool_config_refresh_total Successful config refreshes.\n\
+         # TYPE dd_container_pool_config_refresh_total counter\n\
+         dd_container_pool_config_refresh_total {}\n\
+         # HELP dd_container_pool_config_refresh_failures_total Failed config refreshes.\n\
+         # TYPE dd_container_pool_config_refresh_failures_total counter\n\
+         dd_container_pool_config_refresh_failures_total {}\n\
+         # HELP dd_container_pool_warm_containers Current known warm containers.\n\
+         # TYPE dd_container_pool_warm_containers gauge\n\
+         dd_container_pool_warm_containers {}\n\
+         dd_container_pool_idle_containers {}\n\
+         dd_container_pool_busy_containers {}\n",
+        state.metrics.http_requests_total.load(Ordering::Relaxed),
+        state.metrics.dispatch_total.load(Ordering::Relaxed),
+        state.metrics.dispatch_failures_total.load(Ordering::Relaxed),
+        state.metrics.nats_messages_total.load(Ordering::Relaxed),
+        state.metrics.nats_failures_total.load(Ordering::Relaxed),
+        state.metrics.containers_started_total.load(Ordering::Relaxed),
+        state.metrics.containers_removed_total.load(Ordering::Relaxed),
+        state.metrics.config_refresh_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .config_refresh_failures_total
+            .load(Ordering::Relaxed),
+        warm,
+        idle,
+        busy
+    );
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
+        body,
+    )
+}
+
+async fn list_pools(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    Json(PoolsResponse {
+        ok: true,
+        generated_at_ms: now_ms(),
+        pools: pool_summaries(&state).await,
+    })
+    .into_response()
+}
+
+async fn get_pool(
+    State(state): State<AppState>,
+    Path(pool): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    let summaries = pool_summaries(&state).await;
+    if let Some(summary) = summaries
+        .into_iter()
+        .find(|summary| summary.id == pool || summary.slug == pool)
+    {
+        Json(json!({ "ok": true, "pool": summary })).into_response()
+    } else {
+        json_error(StatusCode::NOT_FOUND, "unknown container pool")
+    }
+}
+
+async fn warm_pool(
+    State(state): State<AppState>,
+    Path(pool): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    let pool_id = {
+        let registry = state.registry.lock().await;
+        match pool_id_from_selector(&registry, &pool) {
+            Some(pool_id) => pool_id,
+            None => return json_error(StatusCode::NOT_FOUND, "unknown container pool"),
+        }
+    };
+    match reconcile_pool(&state, &pool_id).await {
+        Ok(()) => Json(json!({ "ok": true, "pool": pool, "pools": pool_summaries(&state).await }))
+            .into_response(),
+        Err(error) => json_error(StatusCode::BAD_GATEWAY, &error),
+    }
+}
+
+async fn dispatch_pool(
+    State(state): State<AppState>,
+    Path(pool): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<DispatchRequest>,
+) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+    match dispatch_to_pool(&state, &pool, request).await {
+        Ok(response) => {
+            let status = StatusCode::from_u16(response.status).unwrap_or(StatusCode::OK);
+            (status, Json(response)).into_response()
+        }
+        Err(error) => json_error(StatusCode::BAD_GATEWAY, &error),
+    }
+}
+
+async fn run_config_refresh_loop(state: AppState) {
+    loop {
+        if let Err(error) = refresh_pool_configs(&state).await {
+            eprintln!("container pool config refresh failed: {error}");
+            record_config_error(&state, error).await;
+        }
+        reconcile_all(&state).await;
+        sleep(state.config.config_refresh).await;
+    }
+}
+
+async fn run_reconcile_loop(state: AppState) {
+    loop {
+        reconcile_all(&state).await;
+        sleep(state.config.reconcile_interval).await;
+    }
+}
+
+async fn run_nats_loop(state: AppState) {
+    let Some(client) = state.nats.clone() else {
+        return;
+    };
+    let mut subscriber = match client.subscribe(state.config.nats_subject.clone()).await {
+        Ok(subscriber) => subscriber,
+        Err(error) => {
+            eprintln!("container pool nats subscribe failed: {error}");
+            return;
+        }
+    };
+    while let Some(message) = subscriber.next().await {
+        state
+            .metrics
+            .nats_messages_total
+            .fetch_add(1, Ordering::Relaxed);
+        if message.payload.len() > MAX_NATS_PAYLOAD_BYTES {
+            state
+                .metrics
+                .nats_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+        let request = match serde_json::from_slice::<DispatchRequest>(&message.payload) {
+            Ok(request) => request,
+            Err(error) => {
+                eprintln!("container pool invalid nats request: {error}");
+                state
+                    .metrics
+                    .nats_failures_total
+                    .fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+        };
+        let selector = {
+            let registry = state.registry.lock().await;
+            pool_selector_from_request(&request, Some(message.subject.as_ref()), &registry)
+        };
+        let Some(selector) = selector else {
+            eprintln!("container pool nats request missing pool selector");
+            state
+                .metrics
+                .nats_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            continue;
+        };
+        let response = match dispatch_to_pool(&state, &selector, request).await {
+            Ok(response) => json!(response),
+            Err(error) => {
+                state
+                    .metrics
+                    .nats_failures_total
+                    .fetch_add(1, Ordering::Relaxed);
+                json!({ "ok": false, "error": error, "generatedAtMs": now_ms() })
+            }
+        };
+        let Ok(payload) = serde_json::to_vec(&response) else {
+            continue;
+        };
+        if let Some(reply) = message.reply {
+            if let Err(error) = client.publish(reply, payload.into()).await {
+                eprintln!("container pool nats reply failed: {error}");
+            }
+        } else if let Err(error) = client
+            .publish(state.config.nats_result_subject.clone(), payload.into())
+            .await
+        {
+            eprintln!("container pool nats result publish failed: {error}");
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let config = Arc::new(service_config_from_env());
+    let registry = Arc::new(Mutex::new(PoolRegistry {
+        next_port: config.port_start,
+        ..PoolRegistry::default()
+    }));
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(900))
+        .build()?;
+    let nats = match config.nats_url.as_deref() {
+        Some(url) => match async_nats::connect(url).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("container pool nats connect failed: {error}");
+                None
+            }
+        },
+        None => None,
+    };
+    let state = AppState {
+        config,
+        registry,
+        http,
+        nats,
+        metrics: Arc::new(Metrics::default()),
+    };
+
+    println!(
+        "{SERVICE_NAME} starting: nerdctl={} namespace={} network={} db_configured={} nats_subject={}",
+        state.config.nerdctl_bin,
+        state.config.containerd_namespace,
+        state.config.network,
+        state.config.database_url.is_some(),
+        state.config.nats_subject
+    );
+
+    if let Err(error) = cleanup_managed_containers_on_start(&state).await {
+        eprintln!("container pool startup cleanup failed: {error}");
+    }
+    if let Err(error) = refresh_pool_configs(&state).await {
+        eprintln!("container pool initial config refresh failed: {error}");
+        record_config_error(&state, error).await;
+    }
+    reconcile_all(&state).await;
+
+    tokio::spawn(run_config_refresh_loop(state.clone()));
+    tokio::spawn(run_reconcile_loop(state.clone()));
+    tokio::spawn(run_nats_loop(state.clone()));
+
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .route("/metrics", get(metrics))
+        .route("/pools", get(list_pools))
+        .route("/pools/:pool", get(get_pool))
+        .route("/pools/:pool/warm", post(warm_pool))
+        .route("/pools/:pool/dispatch", post(dispatch_pool))
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .with_state(state.clone());
+
+    let host = env_value("HOST", "0.0.0.0");
+    let port = env_u16("PORT", DEFAULT_PORT);
+    let addr: SocketAddr = format!("{host}:{port}").parse()?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    println!("{SERVICE_NAME} listening on {addr}");
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async {
+            if let Err(error) = tokio::signal::ctrl_c().await {
+                eprintln!("shutdown signal error: {error}");
+            }
+        })
+        .await?;
+    Ok(())
+}

@@ -20,6 +20,19 @@ Default behavior:
 - `RAMP_DELAY_MS` (default `1`)
 - `REPORT_INTERVAL_SECONDS` (default `10`)
 
+## Container pool smoke mode
+
+Set `CONTAINER_POOL_URL` to switch from WebSocket load generation to a single container-pool smoke
+request. This mode posts one UUID-like `echoKey` to the selected pool and exits after verifying the
+container response echoed it back.
+
+- `CONTAINER_POOL_URL` (example: `http://dd-container-pool.default.svc.cluster.local:8102`)
+- `CONTAINER_POOL_ROUTE_PREFIX` (default `/pools`; use `/container-pools` through the gateway)
+- `CONTAINER_POOL_POOL` (default `rust`)
+- `CONTAINER_POOL_AUTH_SECRET` (optional, sent as `X-Server-Auth`)
+- `CONTAINER_POOL_ECHO_KEY` (optional; generated when omitted)
+- `CONTAINER_POOL_TIMEOUT_SECONDS` (default `30`)
+
 ## Build and run
 
 ```bash

@@ -57,10 +57,6 @@ rules:
   - apiGroups: [apps]
     resources: [deployments/scale]
     verbs: [get, patch, update]
-  # Manage the per-thread shared-host ingress routes created on dispatch.
-  - apiGroups: [networking.k8s.io]
-    resources: [ingresses]
-    verbs: [get, list, watch, create, delete, patch, update]
   # Read configmap + secret refs (needed for envFrom resolution checks).
   - apiGroups: ['']
     resources: [configmaps, secrets]

@@ -19,11 +19,16 @@ spec:
       labels:
         app: dd-remote-gateway
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: gateway
           image: docker.io/library/nginx:1.27-alpine
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: DD_REMOTE_GATEWAY_AUTH_VALUE
               valueFrom:

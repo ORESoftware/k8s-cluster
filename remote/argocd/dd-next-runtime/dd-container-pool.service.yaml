@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-container-pool
+  namespace: default
+  labels:
+    app: dd-container-pool
+spec:
+  selector:
+    app: dd-container-pool
+  ports:
+    - name: http
+      port: 8102
+      targetPort: http

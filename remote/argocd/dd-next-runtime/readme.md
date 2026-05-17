@@ -6,16 +6,20 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-remote-auth` (Rust PIN auth service that sets the gateway `dd_auth` cookie)
 - `dd-remote-rest-api` (Rust RDS/Postgres REST API for agent task data)
 - `dd-agent-worker-broker` (Rust worker-dispatch broker for NATS-first, direct-if-awake handoff)
+- `dd-container-pool` (Rust Postgres-configured warm container pool over HTTP or NATS)
 - `dd-build-server` (Rust CI/CD build server for repo image builds and controlled k8s deploys)
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
 - `dd-remote-queue-consumer` (Rust NATS shadow consumer that prepares UUID-bound thread workers)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
+- `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
 - `dd-contract-service` (Rust Solana contract gateway for `solana.contract.v1` validation)
+- `dd-trading-server` (Rust trading decision service for `trading.decision.v1` risk-gated order intents)
 - `dd-dev-server-api` (bootstrap Node.js coding-agent task manager for `/tasks`, `/stream`,
   `/status`, `/agents`, `/healthz`)
+- `dd-redis-cache` (cluster-local Redis cache for low-latency ephemeral runtime state)
 - `dd-remote-gateway` (public k8s path splitter on host ports 80 and 443)
 - `dd-idle-reaper` (Rust scheduler for idle sweeps and the 90-minute cluster doctor task)
 
@@ -23,6 +27,25 @@ The ArgoCD application for this bundle is
 `remote/argocd/apps/dd-next-runtime.application.yaml`. Keep Kubernetes object changes in Git and
 let Argo sync them; the manual GitHub Actions workflow only refreshes the current node-local
 `dd-remote-web-home:dev` image while that image still lives in EC2 containerd instead of a registry.
+
+## Live-Mutex broker
+
+`dd-live-mutex` runs the upstream Docker Hub broker image documented by
+`ORESoftware/live-mutex`: `docker.io/oresoftware/live-mutex-broker:latest`. The Deployment keeps
+`imagePullPolicy: Always` so a restart pulls the current upstream `latest` tag.
+
+The broker is exposed only inside the cluster at `dd-live-mutex.default.svc.cluster.local:6970`.
+Live-Mutex is a single-source-of-truth broker, so this workload intentionally stays at
+`replicas: 1` with `strategy: Recreate`; Kubernetes kills the existing pod before creating a
+replacement during rollouts instead of temporarily running two brokers.
+
+## Redis cache
+
+`dd-redis-cache` runs an in-cluster Redis cache at
+`dd-redis-cache.default.svc.cluster.local:6379`. It is intentionally ephemeral: append-only files
+and snapshot saves are disabled, and Redis evicts keys with `allkeys-lru` after the configured
+`256mb` maxmemory ceiling. Keep durable state in Postgres or the service-specific source of truth;
+use this service only for hot runtime cache entries that can be rebuilt.
 
 Gateway path map:
 
@@ -32,6 +55,9 @@ Gateway path map:
 - `/api/agents/tasks` -> `dd-remote-rest-api:8082`
 - `/api/agents/threads/<uuid>/prepare` -> `dd-remote-rest-api:8082` (internal auth required)
 - `POST /api/agent-worker/threads/<uuid>/tasks` -> `dd-agent-worker-broker:8098`
+- `/container-pools`, `/container-pools/<pool>`,
+  `POST /container-pools/<pool>/dispatch` -> `dd-container-pool:8102`
+  (internal auth required)
 - `/builds`, `/builds/<jobId>`, `/builds/<jobId>/logs` -> `dd-build-server:8100`
   (internal auth required)
 - `/lambdas/functions` -> `dd-remote-web-home:8080`
@@ -45,6 +71,8 @@ Gateway path map:
   (internal auth required)
 - `/ml/`, `/ml/healthz`, `/ml/metrics`, `/ml/status`, `POST /ml/analyze`, `POST /ml/ingest` ->
   `dd-ai-ml-pipeline.ai-ml:8099` (internal auth required)
+- `/trading/`, `/trading/schema`, `/trading/example`, `POST /trading/decide` ->
+  `dd-trading-server:8103` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
@@ -141,6 +169,12 @@ Use `dd-remote-rest-api-secrets` for RDS-specific values:
 - `AGENT_TASKS_RDS_DATABASE_URL`
 - `RDS_DATABASE_URL`
 
+`dd-trading-server` also reads `RDS_DATABASE_URL`/`AGENT_TASKS_RDS_DATABASE_URL` so it can load
+broker/platform metadata from the generic `app_config` row `default/trading.platforms.v1`. Seed
+that row with `remote/databases/pg/seeds/trading-platform-app-config.sql`. Broker API credentials
+and account IDs should stay in `dd-trading-broker-secrets`; the RDS row stores only platform
+metadata and secret key names.
+
 Use `dd-gleam-lambda-runner-secrets` for independent lambda runtime values:
 
 - `LAMBDA_DATABASE_URL`
@@ -226,6 +260,34 @@ until the queue path is promoted from shadow mode.
 first route, `POST /api/agent-worker/threads/<threadId>/tasks`, publishes the task to JetStream,
 emits the wakeup subject, direct-posts to the deterministic Node.js worker only when that worker is
 already healthy, and otherwise scales the worker Deployment to `1` while returning `202 queued`.
+
+## Container pool
+
+`dd-container-pool` is a Rust control surface for generic warm workers that do not need the
+thread-affine Kubernetes Deployment shape. It reads the `app_config` row
+`scope=default`, `key=container-pool.runtime-pools.v1` from Postgres, falls back to active
+`container_pool_configs` rows, starts local containerd containers through `nerdctl -n k8s.io run -d`,
+and keeps each pool between `min_warm` and `max_warm`. The EC2 deployment runs privileged with
+`hostNetwork: true`, the containerd socket, `/var/lib/containerd`, and `/usr/local/bin/nerdctl`
+mounted so the manager can reach warm workers on `127.0.0.1:<allocatedPort>`.
+
+Dispatch can use authenticated HTTP:
+
+- `GET /container-pools`
+- `POST /container-pools/<pool>/warm`
+- `POST /container-pools/<pool>/dispatch`
+
+or NATS requests on `dd.remote.container_pool.*.requests`. A NATS request may include `poolSlug` or
+`poolId`; otherwise the service matches the message subject to the pool's configured
+`nats_subject`. Replies use the NATS reply inbox when present and otherwise publish to
+`dd.remote.container_pool.results`.
+
+The generic Postgres config contract is documented in
+`remote/databases/pg/tables/app-config-table.sql`, and the default runtime pool seed is
+`remote/databases/pg/seeds/container-pool-app-config.sql`. The seed points at multi-stage runtime
+images under `remote/container-pool-rs/runtime-images` for `nodejs`, `rust`, `golang`, `python3`,
+`dart`, `gleamlang`, and `erlang`. Dispatch requests never supply a shell command; image, command,
+env, request path, warm size, timeout, and NATS subject all come from trusted database config.
 
 ## Build server
 

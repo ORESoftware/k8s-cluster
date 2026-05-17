@@ -1,0 +1,139 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-trading-server
+  namespace: default
+  labels:
+    app: dd-trading-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-trading-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-17-trading-server'
+      labels:
+        app: dd-trading-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: trading-server
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/trading-server-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8103'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: TRADING_MODE
+              value: paper
+            - name: TRADING_ALLOW_LIVE_ORDERS
+              value: 'false'
+            - name: TRADING_ALLOW_UNAUTHENTICATED
+              value: 'false'
+            - name: TRADING_ALLOW_SHORT
+              value: 'false'
+            - name: TRADING_APP_CONFIG_SCOPE
+              value: default
+            - name: TRADING_APP_CONFIG_KEY
+              value: trading.platforms.v1
+            - name: TRADING_CONFIG_REFRESH_SECONDS
+              value: '30'
+            - name: TRADING_MAX_ORDER_NOTIONAL
+              value: '5000'
+            - name: TRADING_MAX_POSITION_NOTIONAL
+              value: '25000'
+            - name: TRADING_MAX_SYMBOL_EXPOSURE_PCT
+              value: '0.2'
+            - name: TRADING_MIN_CONFIDENCE
+              value: '0.55'
+            - name: TRADING_MAX_RISK_SCORE
+              value: '0.72'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: SCRAPER_BASE_URL
+              value: http://dd-web-scraper.default.svc.cluster.local:8097
+            - name: ML_PIPELINE_BASE_URL
+              value: http://dd-ai-ml-pipeline.ai-ml.svc.cluster.local:8099
+            - name: MDP_OPTIMIZER_BASE_URL
+              value: http://dd-mdp-optimizer.default.svc.cluster.local:8096
+            - name: TRADING_SIGNAL_SUBJECT
+              value: dd.remote.trading.signals
+            - name: TRADING_QUEUE_GROUP
+              value: dd-trading-server
+            - name: TRADING_DECISION_SUBJECT
+              value: dd.remote.trading.decisions
+            - name: TRADING_ORDER_INTENT_SUBJECT
+              value: dd.remote.trading.order_intents
+            - name: TRADING_EVENT_SUBJECT
+              value: dd.remote.events
+          envFrom:
+            - secretRef:
+                name: dd-agent-secrets
+                optional: true
+            - secretRef:
+                name: dd-remote-rest-api-secrets
+                optional: true
+            - secretRef:
+                name: dd-trading-broker-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8103
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

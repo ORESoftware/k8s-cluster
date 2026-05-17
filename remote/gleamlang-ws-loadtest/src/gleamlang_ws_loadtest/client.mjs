@@ -1,4 +1,6 @@
 import WebSocket from "ws";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
 
 const DEFAULT_WS_URL = "ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws";
 
@@ -10,6 +12,14 @@ function parsePositiveInt(name, fallback) {
 }
 
 export function run() {
+  if (process.env.CONTAINER_POOL_URL) {
+    runContainerPoolSmoke().catch((error) => {
+      console.error(`gleamlang-container-pool-smoke failed: ${error?.stack || error}`);
+      process.exitCode = 1;
+    });
+    return;
+  }
+
   const targetWsUrl = process.env.TARGET_WS_URL || DEFAULT_WS_URL;
   const clientCount = parsePositiveInt("CLIENT_COUNT", 5_000);
   const holdSeconds = parsePositiveInt("HOLD_SECONDS", 300);
@@ -91,4 +101,59 @@ export function run() {
       `gleamlang-ws-loadtest report attempted=${attempted} connected=${connected} failed=${failed} open=${open} messages=${messages}`,
     );
   }, reportIntervalSeconds * 1000);
+}
+
+function containerPoolDispatchUrl() {
+  const baseUrl = process.env.CONTAINER_POOL_URL.replace(/\/+$/, "");
+  const routePrefix = process.env.CONTAINER_POOL_ROUTE_PREFIX || "/pools";
+  const pool = process.env.CONTAINER_POOL_POOL || "gleamlang";
+  return `${baseUrl}${routePrefix}/${encodeURIComponent(pool)}/dispatch`;
+}
+
+async function runContainerPoolSmoke() {
+  const timeoutMs = parsePositiveInt("CONTAINER_POOL_TIMEOUT_MS", 30_000);
+  const echoKey = process.env.CONTAINER_POOL_ECHO_KEY || randomUUID();
+  const url = containerPoolDispatchUrl();
+  const headers = {
+    "content-type": "application/json",
+  };
+  if (process.env.CONTAINER_POOL_AUTH_SECRET) {
+    headers["x-server-auth"] = process.env.CONTAINER_POOL_AUTH_SECRET;
+  }
+
+  console.log(
+    `gleamlang-container-pool-smoke starting url=${url} echo_key=${echoKey} timeout_ms=${timeoutMs}`,
+  );
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        requestId: echoKey,
+        payload: {
+          echoKey,
+          client: "gleamlang-ws-loadtest",
+        },
+      }),
+    });
+    const body = await response.json();
+    const returnedKey = body?.body?.echoKey ?? body?.body?.request?.echoKey;
+    if (!response.ok || returnedKey !== echoKey) {
+      throw new Error(
+        `unexpected container-pool response status=${response.status} returned_key=${returnedKey} body=${JSON.stringify(body)}`,
+      );
+    }
+    console.log(
+      `gleamlang-container-pool-smoke ok pool=${body.poolSlug} container=${body.containerName} echo_key=${returnedKey}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  run();
 }

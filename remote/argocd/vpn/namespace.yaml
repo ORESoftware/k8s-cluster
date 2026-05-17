@@ -5,4 +5,5 @@ metadata:
   labels:
     app.kubernetes.io/name: dd-vpn
     app.kubernetes.io/part-of: dd-remote-dev
-
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

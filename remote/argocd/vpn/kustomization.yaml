@@ -10,4 +10,8 @@ resources:
   - dd-vpn.deployment.yaml
   - dd-vpn-ui.service.yaml
   - dd-vpn.networkpolicy.yaml
-
+  - dd-bastion-rbac.yaml
+  - dd-bastion-secrets.externalsecret.yaml
+  - dd-bastion.deployment.yaml
+  - dd-bastion.service.yaml
+  - dd-bastion.networkpolicy.yaml

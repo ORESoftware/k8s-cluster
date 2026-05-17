@@ -1,12 +1,23 @@
-import net from 'node:net';
+import { createServer } from 'node:http';
+
+import { getNatsClient } from './nats-client.mjs';
 
 const natsUrl = process.env.NATS_URL ?? 'nats://dd-nats.messaging.svc.cluster.local:4222';
-const subject = process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events';
+const readSubject =
+  process.env.NATS_READ_SUBJECT ?? process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events';
+const publishSubject = process.env.NATS_PUBLISH_SUBJECT ?? 'dd.remote.websocket.events';
 const broadcastUrl = process.env.GLEAM_BROADCAST_URL ?? 'http://127.0.0.1:8081/broadcast';
 const broadcastSecret = requiredEnv('GLEAM_BROADCAST_SECRET');
+const bridgePort = numberEnv('NATS_BRIDGE_HTTP_PORT', 8083);
+const maxBodyBytes = numberEnv('NATS_BRIDGE_MAX_BODY_BYTES', 1_048_576);
 
-let buffer = '';
-let reconnectTimer = null;
+const nats = getNatsClient({ url: natsUrl, logger: console });
+nats.subscribe(readSubject, (payload) => {
+  void broadcast(payload);
+});
+console.info(`[nats-bridge] subscribed ${readSubject}`);
+
+startPublishServer();
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -16,76 +27,11 @@ function requiredEnv(name) {
   return value;
 }
 
-function parseNatsUrl(raw) {
-  const url = new URL(raw);
-  return {
-    host: url.hostname,
-    port: url.port ? Number(url.port) : 4222,
-  };
-}
-
-function connect() {
-  const target = parseNatsUrl(natsUrl);
-  const socket = net.createConnection(target, () => {
-    socket.write(
-      'CONNECT {"verbose":false,"pedantic":false,"lang":"node","version":"dd-gleam-nats-bridge"}\r\n',
-    );
-    socket.write(`SUB ${subject} 1\r\n`);
-    console.info(`[nats-bridge] subscribed ${subject}`);
-  });
-
-  socket.on('data', (chunk) => {
-    buffer += chunk.toString('utf8');
-    drain(socket);
-  });
-  socket.on('error', (error) => {
-    console.warn(`[nats-bridge] ${error.message}`);
-  });
-  socket.on('close', () => {
-    scheduleReconnect();
-  });
-}
-
-function drain(socket) {
-  for (;;) {
-    if (buffer.startsWith('PING')) {
-      socket.write('PONG\r\n');
-      buffer = buffer.slice('PING\r\n'.length);
-      continue;
-    }
-
-    if (buffer.startsWith('MSG ')) {
-      const headerEnd = buffer.indexOf('\r\n');
-      if (headerEnd === -1) {
-        return;
-      }
-      const header = buffer.slice(0, headerEnd).split(/\s+/);
-      const byteCount = Number(header[header.length - 1]);
-      if (!Number.isFinite(byteCount)) {
-        buffer = buffer.slice(headerEnd + 2);
-        continue;
-      }
-      const payloadStart = headerEnd + 2;
-      const frameEnd = payloadStart + byteCount + 2;
-      if (buffer.length < frameEnd) {
-        return;
-      }
-      const payload = buffer.slice(payloadStart, payloadStart + byteCount);
-      buffer = buffer.slice(frameEnd);
-      void broadcast(payload);
-      continue;
-    }
-
-    const lineEnd = buffer.indexOf('\r\n');
-    if (lineEnd === -1) {
-      return;
-    }
-    const line = buffer.slice(0, lineEnd);
-    buffer = buffer.slice(lineEnd + 2);
-    if (line.startsWith('-ERR')) {
-      console.warn(`[nats-bridge] ${line}`);
-    }
-  }
+function numberEnv(name, fallback) {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 async function broadcast(payload) {
@@ -108,14 +54,90 @@ async function broadcast(payload) {
   }
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer) {
-    return;
-  }
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, 1000);
+function startPublishServer() {
+  const server = createServer((request, response) => {
+    void handlePublishRequest(request, response);
+  });
+  server.listen(bridgePort, '127.0.0.1', () => {
+    console.info(
+      `[nats-bridge] publish endpoint listening on 127.0.0.1:${bridgePort}/publish`,
+    );
+  });
 }
 
-connect();
+async function handlePublishRequest(request, response) {
+  const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+
+  if (request.method === 'GET' && url.pathname === '/healthz') {
+    respond(response, 200, { ok: true, readSubject, publishSubject });
+    return;
+  }
+
+  if (request.method !== 'POST' || url.pathname !== '/publish') {
+    respond(response, 404, { error: 'not-found' });
+    return;
+  }
+
+  if (headerValue(request.headers['x-dd-internal-auth']) !== broadcastSecret) {
+    respond(response, 401, { error: 'unauthorized' });
+    return;
+  }
+
+  const subject =
+    headerValue(request.headers['x-nats-subject']) ??
+    url.searchParams.get('subject') ??
+    publishSubject;
+  if (!validSubject(subject)) {
+    respond(response, 400, { error: 'invalid-subject' });
+    return;
+  }
+
+  try {
+    const body = await readBody(request, maxBodyBytes);
+    nats.publish(subject, body);
+    respond(response, 202, { ok: true, subject });
+  } catch (error) {
+    const status =
+      typeof error === 'object' && error && 'status' in error ? error.status : 400;
+    respond(response, status, {
+      error: status === 413 ? 'body-too-large' : 'invalid-body',
+    });
+  }
+}
+
+function readBody(request, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+
+    request.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject({ status: 413 });
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+    request.on('error', () => {
+      reject({ status: 400 });
+    });
+  });
+}
+
+function respond(response, status, body) {
+  response.writeHead(status, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(body));
+}
+
+function headerValue(value) {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function validSubject(subject) {
+  return typeof subject === 'string' && /^[^\s]+$/.test(subject);
+}

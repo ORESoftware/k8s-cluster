@@ -51,12 +51,15 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   const httpServer = await readRepoFile(
     'remote/gleamlang-server/src/gleamlang_server/http_server.gleam',
   );
+  const env = await readRepoFile('remote/gleamlang-server/src/gleamlang_server_env.erl');
   const bridge = await readRepoFile('remote/gleamlang-server/nats-bridge.mjs');
+  const natsClient = await readRepoFile('remote/gleamlang-server/nats-client.mjs');
+  const dockerfile = await readRepoFile('remote/gleamlang-server/Dockerfile');
   const deployment = await readRepoFile(
     'remote/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
   );
   const minikubeDeployment = await readRepoFile(
-    'remote/gleamlang-server/k8s/dd-gleamlang-server.deployment.yaml',
+    'remote/gleamlang-server/k8s/minikube/dd-gleamlang-server.deployment.yaml',
   );
 
   assert.match(broadcaster, /BroadcastJson\(payload: String\)/);
@@ -65,19 +68,44 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(httpServer, /mist\.read_body\(req, 1_048_576\)/);
   assert.match(httpServer, /broadcaster\.BroadcastJson\(payload\)/);
   assert.match(httpServer, /env_get\("GLEAM_BROADCAST_SECRET"\)/);
-  assert.match(bridge, /net\.createConnection/);
-  assert.match(bridge, /SUB \$\{subject\} 1/);
+  assert.match(httpServer, /nats_publish\(payload\)/);
+  assert.match(env, /publish_nats\/1/);
+  assert.match(env, /GLEAM_NATS_PUBLISH_URL/);
+  assert.match(env, /NATS_PUBLISH_SUBJECT/);
+  assert.match(env, /gen_tcp:connect\(Host, Port/);
+  assert.match(env, /"POST ", Path, " HTTP\/1\.1\\r\\n"/);
+  assert.doesNotMatch(env, /httpc:request\(post/);
+  assert.match(natsClient, /let singleton = null/);
+  assert.match(natsClient, /export function getNatsClient/);
+  assert.match(natsClient, /net\.createConnection/);
+  assert.match(natsClient, /SUB \$\{subscription\.subject\} \$\{sid\}/);
+  assert.match(natsClient, /PUB \$\{next\.subject\} \$\{next\.payload\.length\}/);
+  assert.match(natsClient, /PONG\\r\\n/);
+  assert.match(dockerfile, /apk add --no-cache nodejs/);
+  assert.match(bridge, /getNatsClient/);
+  assert.match(bridge, /NATS_READ_SUBJECT/);
+  assert.match(bridge, /NATS_PUBLISH_SUBJECT/);
+  assert.match(bridge, /createServer/);
+  assert.match(bridge, /url\.pathname !== '\/publish'/);
   assert.match(bridge, /http:\/\/127\.0\.0\.1:8081\/broadcast/);
   assert.match(bridge, /requiredEnv\('GLEAM_BROADCAST_SECRET'\)/);
   assert.doesNotMatch(bridge, /GLEAM_BROADCAST_SECRET \?\?/);
   assert.match(bridge, /'x-dd-internal-auth': broadcastSecret/);
+  assert.match(bridge, /nats\.publish\(subject, body\)/);
   assert.match(deployment, /name:\s*nats-bridge/);
+  assert.match(deployment, /GLEAM_NATS_PUBLISH_URL[\s\S]*127\.0\.0\.1:8083\/publish/);
+  assert.match(deployment, /NATS_READ_SUBJECT[\s\S]*dd\.remote\.events/);
   assert.match(deployment, /NATS_EVENT_SUBJECT[\s\S]*dd\.remote\.events/);
+  assert.match(deployment, /NATS_PUBLISH_SUBJECT[\s\S]*dd\.remote\.websocket\.events/);
   assert.match(deployment, /GLEAM_BROADCAST_URL[\s\S]*127\.0\.0\.1:8081\/broadcast/);
   assert.match(
     deployment,
     /name:\s*GLEAM_BROADCAST_SECRET[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*GLEAM_BROADCAST_SECRET/,
   );
+  assert.match(minikubeDeployment, /name:\s*nats-bridge/);
+  assert.match(minikubeDeployment, /exec node \/app\/nats-bridge\.mjs/);
+  assert.match(minikubeDeployment, /NATS_READ_SUBJECT[\s\S]*dd\.remote\.events/);
+  assert.match(minikubeDeployment, /NATS_PUBLISH_SUBJECT[\s\S]*dd\.remote\.websocket\.events/);
   assert.match(
     minikubeDeployment,
     /name:\s*GLEAM_BROADCAST_SECRET[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*GLEAM_BROADCAST_SECRET/,

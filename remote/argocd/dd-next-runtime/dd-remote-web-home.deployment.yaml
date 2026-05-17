@@ -19,15 +19,22 @@ spec:
       labels:
         app: dd-remote-web-home
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: remote-web-home
           image: docker.io/library/dd-remote-web-home:dev
           imagePullPolicy: IfNotPresent
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             runAsNonRoot: true
             runAsUser: 10001
             runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: HOST
               value: 0.0.0.0

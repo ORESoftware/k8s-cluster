@@ -15,11 +15,16 @@ spec:
       labels:
         app: dd-ws-loadtest-rs
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: loadtest
           image: docker.io/library/rust:1.82-bookworm
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc

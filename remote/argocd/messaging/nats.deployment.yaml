@@ -17,11 +17,16 @@ spec:
       labels:
         app: dd-nats
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
         - name: nats
           image: nats:2.11.17-alpine
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - nats-server
           args:
@@ -63,6 +68,13 @@ spec:
         - name: prometheus-exporter
           image: natsio/prometheus-nats-exporter:0.19.2
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           args:
             - -varz
             - -connz

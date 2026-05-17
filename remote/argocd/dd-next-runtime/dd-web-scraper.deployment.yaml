@@ -19,6 +19,7 @@ spec:
       labels:
         app: dd-web-scraper
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
         - name: web-scraper

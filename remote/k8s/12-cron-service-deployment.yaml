@@ -26,6 +26,10 @@ spec:
         - name: cron-service
           image: alpine:3.20
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/sh
             - -c

@@ -1,7 +1,10 @@
 use futures_util::{SinkExt, StreamExt};
+use serde_json::{json, Value};
 use std::env;
+use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -57,11 +60,93 @@ fn load_config() -> Config {
     }
 }
 
-async fn run_client(
-    client_id: usize,
-    config: Arc<Config>,
-    stats: Arc<Stats>,
-) -> ! {
+fn container_pool_dispatch_url() -> Option<String> {
+    let base_url = env::var("CONTAINER_POOL_URL").ok()?;
+    let route_prefix =
+        env::var("CONTAINER_POOL_ROUTE_PREFIX").unwrap_or_else(|_| "/pools".to_string());
+    let pool = env::var("CONTAINER_POOL_POOL").unwrap_or_else(|_| "rust".to_string());
+    Some(format!(
+        "{}{}/{}/dispatch",
+        base_url.trim_end_matches('/'),
+        route_prefix,
+        pool
+    ))
+}
+
+fn smoke_key() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = process::id() as u128;
+    let value = nanos ^ (pid << 64);
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        (value >> 96) as u32,
+        (value >> 80) as u16,
+        (value >> 64) as u16,
+        (value >> 48) as u16,
+        value & 0x0000_ffff_ffff_ffff_ffff
+    )
+}
+
+async fn run_container_pool_smoke() -> Result<(), String> {
+    let Some(url) = container_pool_dispatch_url() else {
+        return Ok(());
+    };
+    let echo_key = env::var("CONTAINER_POOL_ECHO_KEY").unwrap_or_else(|_| smoke_key());
+    let timeout_seconds = env_u64("CONTAINER_POOL_TIMEOUT_SECONDS", 30);
+    println!(
+        "ws-loadtest-rs container-pool-smoke starting url={} echo_key={} timeout_seconds={}",
+        url, echo_key, timeout_seconds
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_seconds))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut request = client.post(url).json(&json!({
+        "requestId": echo_key,
+        "payload": {
+            "echoKey": echo_key,
+            "client": "ws-loadtest-rs"
+        }
+    }));
+    if let Ok(secret) = env::var("CONTAINER_POOL_AUTH_SECRET") {
+        request = request.header("x-server-auth", secret);
+    }
+
+    let response = request.send().await.map_err(|error| error.to_string())?;
+    let status = response.status();
+    let body = response
+        .json::<Value>()
+        .await
+        .map_err(|error| error.to_string())?;
+    let returned_key = body
+        .pointer("/body/echoKey")
+        .or_else(|| body.pointer("/body/request/echoKey"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !status.is_success() || returned_key != echo_key {
+        return Err(format!(
+            "unexpected container-pool response status={} returned_key={} body={}",
+            status, returned_key, body
+        ));
+    }
+    println!(
+        "ws-loadtest-rs container-pool-smoke ok pool={} container={} echo_key={}",
+        body.pointer("/poolSlug")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        body.pointer("/containerName")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        returned_key
+    );
+    Ok(())
+}
+
+async fn run_client(client_id: usize, config: Arc<Config>, stats: Arc<Stats>) -> ! {
     let connect_timeout = Duration::from_secs(config.connect_timeout_seconds);
     let receive_timeout = Duration::from_secs(config.receive_timeout_seconds);
     let reconnect_delay = Duration::from_millis(config.reconnect_delay_ms);
@@ -131,6 +216,14 @@ async fn report_stats(config: Arc<Config>, stats: Arc<Stats>) -> ! {
 
 #[tokio::main]
 async fn main() {
+    if env::var("CONTAINER_POOL_URL").is_ok() {
+        if let Err(error) = run_container_pool_smoke().await {
+            eprintln!("ws-loadtest-rs container-pool-smoke failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let config = Arc::new(load_config());
     let stats = Arc::new(Stats::default());
 

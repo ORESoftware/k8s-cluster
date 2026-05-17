@@ -17,11 +17,16 @@ spec:
       labels:
         app: dd-gleam-mcp-server
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: gleam-mcp-server
           image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/sh
             - -lc

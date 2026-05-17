@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
+  - namespace.yaml
   - dd-remote-auth.deployment.yaml
   - dd-remote-auth.service.yaml
   - dd-dev-server-home.deployment.yaml
@@ -12,6 +13,9 @@ resources:
   - dd-agent-worker-broker-rbac.yaml
   - dd-agent-worker-broker.deployment.yaml
   - dd-agent-worker-broker.service.yaml
+  - dd-container-pool-rbac.yaml
+  - dd-container-pool.deployment.yaml
+  - dd-container-pool.service.yaml
   - dd-build-server-rbac.yaml
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
@@ -23,8 +27,12 @@ resources:
   - dd-des-simulator.service.yaml
   - dd-contract-service.deployment.yaml
   - dd-contract-service.service.yaml
+  - dd-trading-server.deployment.yaml
+  - dd-trading-server.service.yaml
   - dd-live-mutex.deployment.yaml
   - dd-live-mutex.service.yaml
+  - dd-redis-cache.deployment.yaml
+  - dd-redis-cache.service.yaml
   - dd-web-scraper.deployment.yaml
   - dd-web-scraper.service.yaml
   - dd-remote-web-home.deployment.yaml

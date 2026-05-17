@@ -14,10 +14,15 @@ spec:
       labels:
         app: dd-promtail
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: promtail
           image: grafana/promtail:3.2.1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           args:
             - -config.file=/etc/promtail/promtail.yaml
           ports:

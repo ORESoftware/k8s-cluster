@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-bastion-ingress
+  namespace: vpn
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/part-of: dd-remote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dd-bastion
+      app.kubernetes.io/component: access-broker
+  policyTypes:
+    - Ingress
+  ingress:
+    # The Service is ClusterIP-only. Keeping the port open inside the cluster
+    # avoids blocking kubelet health probes that originate from the node host IP.
+    - ports:
+        - protocol: TCP
+          port: 8111

@@ -1866,19 +1866,19 @@ function terminalPageHtml(threadId: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Thread terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
   <style>
     :root { color-scheme: dark; --bg: #0d1117; --panel: #111827; --line: #263244; --text: #e5edf7; --muted: #9aa7b7; --accent: #7dd3fc; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    main { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    main { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
     header { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #0f172a; }
     h1 { margin: 0; font-size: 16px; font-weight: 650; }
     #status { color: var(--muted); font-size: 13px; }
-    #output { width: 100%; height: 100%; min-height: 0; resize: none; border: 0; outline: 0; padding: 14px; background: #05080d; color: #d5f5e3; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
-    form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); background: var(--panel); }
-    input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; background: #0b1220; color: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    button { border: 1px solid #31536d; border-radius: 6px; padding: 9px 12px; background: #12324a; color: var(--text); font-weight: 650; cursor: pointer; }
-    button:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
+    #terminal { min-height: 0; padding: 10px; background: #05080d; }
+    #terminal .xterm { height: 100%; }
+    #terminal .xterm-viewport { overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -1887,75 +1887,95 @@ function terminalPageHtml(threadId: string): string {
       <h1>Thread terminal</h1>
       <span id="status">connecting</span>
     </header>
-    <textarea id="output" spellcheck="false" readonly></textarea>
-    <form id="command-form">
-      <input id="command" autocomplete="off" spellcheck="false" placeholder="command" disabled>
-      <button id="send" type="submit" disabled>Run</button>
-    </form>
+    <div id="terminal" aria-label="Thread worker terminal"></div>
   </main>
   <script>
     const threadId = ${encodedThreadId};
     const statusNode = document.getElementById("status");
-    const output = document.getElementById("output");
-    const form = document.getElementById("command-form");
-    const command = document.getElementById("command");
-    const send = document.getElementById("send");
+    const terminalNode = document.getElementById("terminal");
     let socket;
-    function append(value) {
-      output.value += value;
-      output.scrollTop = output.scrollHeight;
+    let term;
+    function write(value) {
+      if (term) term.write(String(value || ""));
     }
     function connect() {
+      if (!window.Terminal) {
+        statusNode.textContent = "terminal assets failed";
+        terminalNode.textContent = "Terminal assets failed to load.";
+        return;
+      }
+      term = new Terminal({
+        cursorBlink: true,
+        convertEol: true,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        fontSize: 13,
+        rows: 32,
+        scrollback: 5000,
+        theme: {
+          background: '#05080d',
+          foreground: '#d5f5e3',
+          cursor: '#7dd3fc',
+          selectionBackground: '#1f6feb66'
+        }
+      });
+      term.open(terminalNode);
+      term.focus();
       const url = new URL("terminal/ws", window.location.href);
       url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("threadId", threadId);
       socket = new WebSocket(url);
       socket.addEventListener("open", () => {
         statusNode.textContent = "connected";
-        command.disabled = false;
-        send.disabled = false;
-        command.focus();
+        term.onData((data) => {
+          if (!socket || socket.readyState !== WebSocket.OPEN) return;
+          socket.send(JSON.stringify({ type: "input", data }));
+        });
       });
       socket.addEventListener("message", (event) => {
         let message;
         try {
           message = JSON.parse(event.data);
         } catch {
-          append(String(event.data));
+          write(String(event.data));
           return;
         }
-        if (message.type === "terminal-output") append(String(message.data || ""));
+        if (message.type === "terminal-output") write(String(message.data || ""));
         if (message.type === "terminal-status") statusNode.textContent = String(message.status || "status");
         if (message.type === "terminal-error") {
           statusNode.textContent = "error";
-          append("\\n" + String(message.message || "terminal error") + "\\n");
+          write("\\r\\n" + String(message.message || "terminal error") + "\\r\\n");
         }
         if (message.type === "terminal-exit") {
           statusNode.textContent = "closed";
-          command.disabled = true;
-          send.disabled = true;
         }
       });
       socket.addEventListener("close", () => {
         statusNode.textContent = "closed";
-        command.disabled = true;
-        send.disabled = true;
       });
       socket.addEventListener("error", () => {
         statusNode.textContent = "connection error";
       });
     }
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (!socket || socket.readyState !== WebSocket.OPEN) return;
-      const value = command.value;
-      command.value = "";
-      socket.send(JSON.stringify({ type: "input", data: value + "\\n" }));
-    });
-    connect();
+    window.addEventListener("load", connect);
   </script>
 </body>
 </html>`;
+}
+
+async function executableAvailable(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function terminalShellCommand(shell: string): string {
+  const normalized = shell.trim();
+  if (normalized === 'bash' || normalized.endsWith('/bash')) return 'bash -i';
+  if (normalized === 'sh' || normalized.endsWith('/sh')) return 'sh -i';
+  return 'bash -i';
 }
 
 class TerminalWebSocketClient {
@@ -2001,16 +2021,32 @@ class TerminalWebSocketClient {
         atMs: Date.now(),
       });
       const shell = process.env.SHELL || '/bin/bash';
-      this.child = spawn(shell, ['-i'], {
-        cwd: session.workspacePath,
-        env: {
-          ...(process.env as Record<string, string>),
-          SHELL: shell,
-          TERM: process.env.TERM || 'xterm-256color',
-          PS1: '\\w $ ',
-        },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      const scriptBin = process.env.TERMINAL_SCRIPT_BIN || '/usr/bin/script';
+      const usePty = await executableAvailable(scriptBin);
+      const terminalEnv = {
+        ...(process.env as Record<string, string>),
+        SHELL: shell,
+        TERM: process.env.TERM || 'xterm-256color',
+        COLORTERM: process.env.COLORTERM || 'truecolor',
+        COLUMNS: process.env.COLUMNS || '120',
+        LINES: process.env.LINES || '32',
+        FORCE_COLOR: process.env.FORCE_COLOR || '1',
+        PS1: '\\w $ ',
+      };
+      const fallbackUsesBash = terminalShellCommand(shell).startsWith('bash');
+      const fallbackShell = fallbackUsesBash ? 'bash' : 'sh';
+      const fallbackArgs = fallbackUsesBash ? ['--noprofile', '--norc', '-i'] : ['-i'];
+      this.child = usePty
+        ? spawn(scriptBin, ['-q', '-f', '-e', '-c', terminalShellCommand(shell), '/dev/null'], {
+            cwd: session.workspacePath,
+            env: terminalEnv,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          })
+        : spawn(fallbackShell, fallbackArgs, {
+            cwd: session.workspacePath,
+            env: terminalEnv,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
       this.child.stdout?.on('data', (chunk: Buffer) => {
         this.sendOutput(chunk.toString('utf8'));
       });
@@ -2043,6 +2079,7 @@ class TerminalWebSocketClient {
         threadId: this.threadId,
         branch: session.branch,
         cwd: session.workspacePath,
+        transport: usePty ? 'pty-script' : 'pipe-fallback',
         atMs: Date.now(),
       });
     } catch (error) {

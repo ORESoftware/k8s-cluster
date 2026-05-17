@@ -17,10 +17,18 @@ spec:
       labels:
         app: dd-grafana
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: grafana
           image: grafana/grafana:11.3.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: GF_AUTH_ANONYMOUS_ENABLED
               value: "true"

@@ -15,10 +15,18 @@ spec:
       labels:
         app: dd-loki
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: loki
           image: grafana/loki:3.2.1
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           args:
             - -config.file=/etc/loki/loki.yaml
           ports:

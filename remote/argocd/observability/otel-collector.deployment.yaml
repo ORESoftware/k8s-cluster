@@ -17,10 +17,18 @@ spec:
       labels:
         app: dd-otel-collector
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:0.111.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           args:
             - --config=/etc/otelcol/collector.yaml
           ports:

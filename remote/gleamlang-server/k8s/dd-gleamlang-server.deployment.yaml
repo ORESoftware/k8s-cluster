@@ -15,11 +15,16 @@ spec:
       labels:
         app: dd-gleamlang-server
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: gleamlang-server
           image: docker.io/gleamlang/gleam:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/sh
             - -lc
@@ -37,6 +42,10 @@ spec:
                 secretKeyRef:
                   name: dd-gleamlang-server-secrets
                   key: GLEAM_BROADCAST_SECRET
+            - name: GLEAM_NATS_PUBLISH_URL
+              value: http://127.0.0.1:8083/publish
+            - name: NATS_PUBLISH_SUBJECT
+              value: dd.remote.websocket.events
           readinessProbe:
             httpGet:
               path: /healthz
@@ -66,6 +75,10 @@ spec:
         - name: nats-bridge
           image: docker.io/library/node:22-alpine
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/sh
             - -lc
@@ -76,8 +89,14 @@ spec:
           env:
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_READ_SUBJECT
+              value: dd.remote.events
             - name: NATS_EVENT_SUBJECT
               value: dd.remote.events
+            - name: NATS_PUBLISH_SUBJECT
+              value: dd.remote.websocket.events
+            - name: NATS_BRIDGE_HTTP_PORT
+              value: '8083'
             - name: GLEAM_BROADCAST_URL
               value: http://127.0.0.1:8081/broadcast
             - name: GLEAM_BROADCAST_SECRET

@@ -17,6 +17,7 @@ spec:
       labels:
         app: dd-gleam-lambda-runner
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
         - name: gleam-lambda-runner
@@ -51,6 +52,16 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8083'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_LAMBDA_INVOKE_SUBJECT
+              value: dd.remote.lambdas.invoke.*
+            - name: NATS_LAMBDA_QUEUE_GROUP
+              value: dd-gleam-lambda-runner
+            - name: NATS_LAMBDA_RESULT_SUBJECT
+              value: dd.remote.lambdas.results
+            - name: NATS_LAMBDA_FUNCTIONS_SUBJECT
+              value: dd.remote.lambdas.functions
             - name: LAMBDA_DATABASE_URL
               valueFrom:
                 secretKeyRef:

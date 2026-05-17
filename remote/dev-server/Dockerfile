@@ -59,10 +59,11 @@ FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 # gh:  open PRs from the agent
 # openssh-client: deploy key + ssh-keyscan
 # tini: reap zombie claude/git/pnpm children spawned by the server
+# util-linux: provides `script`, used to give the browser terminal a PTY
 # curl, jq: misc agent / healthcheck use
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg git openssh-client jq tini \
+      ca-certificates curl gnupg git openssh-client jq tini util-linux \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     | gpg --dearmor -o /etc/apt/keyrings/github-cli.gpg \

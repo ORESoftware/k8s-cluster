@@ -12,6 +12,8 @@ Rust public web layer for remote-dev.
 - exposes `GET /healthz` for web liveness
 - exposes `GET /metrics` for Prometheus/OpenTelemetry Collector scraping
 - links to the Rust PIN auth service at `/auth?return=/home`
+- loads live managed service Pods/containers from `/bastion/runtime/deployments`
+- opens managed service container terminals inline through `/bastion/terminal`
 
 Task dispatch / stream / cancel routing should use the per-thread Kubernetes Ingress path
 (`/dd-thread/<short>/...`). Node.js is not the UUID router; each Node.js worker container is pinned
@@ -26,6 +28,14 @@ Their browser JavaScript calls the public gateway routes `GET /api/agents/tasks?
 
 The REST API owns RDS/Postgres, Supabase fallback, and later NATS/Postgres event write paths. This
 keeps page rendering separate from data access without making the webserver a proxy.
+
+## Service directory
+
+`/home` lists the managed runtime deployments including Solana contracts, VPN, live-mutex, bastion,
+Redis, live-mutex load testing, trading, and the container pool. Its live containers table calls
+the authenticated bastion route `/bastion/runtime/deployments`; terminal buttons embed
+`/bastion/terminal?...` in the current page so service-container shells flow through the jumphost
+instead of the public homepage process.
 
 ## Auth Link
 

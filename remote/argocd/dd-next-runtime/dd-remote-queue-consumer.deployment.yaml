@@ -19,11 +19,16 @@ spec:
       labels:
         app: dd-remote-queue-consumer
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: queue-consumer
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc
