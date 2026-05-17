@@ -17,4 +17,3 @@ spec:
       port: 51821
       targetPort: http
       protocol: TCP
-

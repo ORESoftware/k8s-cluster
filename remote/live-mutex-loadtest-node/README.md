@@ -8,15 +8,16 @@ receives `POST /runs`.
 Default triggered load behavior:
 
 - starts `3` separate Node.js worker processes
-- opens `12` live-mutex clients per worker
-- targets `dd-live-mutex.default.svc.cluster.local:6970`
+- opens `12` lock clients per worker
+- targets `dd-live-mutex.default.svc.cluster.local:6970` and
+  `dd-redis-cache.default.svc.cluster.local:6379`
 - runs `1,000` aggregate lock/acquire/release cycles per second
 - spreads traffic over `5` distinct lock keys
 - keeps each lock for `0ms` before releasing it
 - logs aggregate throughput and latency every 10 seconds
 
-The lock cycle follows the upstream live-mutex README examples: create a `Client`, call
-`ensure()`, `acquire(key)`, and then `release(key, { id })`.
+The live-mutex cycle follows the upstream README examples: create a `Client`, call `ensure()`,
+`acquire(key)`, and then `release(key, { id })`.
 
 For Redis, the same scheduler and key set use `SET key token NX PX <ttl>` to acquire and a Lua
 compare-and-delete script to release only the matching token.
@@ -71,14 +72,5 @@ curl -sS http://127.0.0.1:8110/runs/active
 curl -sS http://127.0.0.1:8110/runs/last
 ```
 
-Use `"backend":"live-mutex"` or `"backend":"redis"` instead of `"mode":"compare"` to run a
-single backend.
-
-## Build
-
-```bash
-docker build -t dd-lock-loadtest-node:dev remote/live-mutex-loadtest-node
-docker run --rm \
-  -e BROKER_HOST=host.docker.internal \
-  dd-lock-loadtest-node:dev
-```
+Use `"backend":"live-mutex"` or `"backend":"redis"` instead of `"mode":"compare"` to run a single
+backend.
