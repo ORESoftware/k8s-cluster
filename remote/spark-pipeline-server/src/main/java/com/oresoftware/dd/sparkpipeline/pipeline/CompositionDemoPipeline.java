@@ -99,15 +99,15 @@ public final class CompositionDemoPipeline {
     final List<NeoWaterfallI.AsyncTask<Object, Throwable>> stages = new ArrayList<>();
 
     // -- Stage 1: configure -------------------------------------------------
-    stages.add(cb -> {
+    stages.add(c -> {
       rec.appendStage("composition.configure shardCount=" + shardCount);
-      cb.done(null, "config", "{\"shards\":" + shardCount + ",\"regions\":" + REGIONS.size() + "}");
+      c.success("config", "{\"shards\":" + shardCount + ",\"regions\":" + REGIONS.size() + "}");
     });
 
     // -- Stage 2: Asyncc.Times --------------------------------------------
     //    Generate shardCount synthetic Shard descriptors. Times runs the producer N times and
     //    collects the results into a List<String> (one shard JSON per element).
-    stages.add(cb -> {
+    stages.add(c -> {
       Asyncc.<String, Throwable>Times(shardCount,
           (NeoTimesI.ITimesr<String, Throwable>) (i, inner) -> {
             final String shard = "{\"id\":\"shard-" + i + "\",\"region\":\"" + REGIONS.get(i % REGIONS.size())
@@ -116,49 +116,49 @@ public final class CompositionDemoPipeline {
           },
           (err, shards) -> {
             if (err != null) {
-              cb.done(toThrowable(err));
+              c.fail(toThrowable(err));
               return;
             }
             rec.appendStage("composition.times produced=" + shards.size() + " shards");
-            cb.done(null, "shards", new ArrayList<>(shards));
+            c.success("shards", new ArrayList<>(shards));
           });
     });
 
     // -- Stage 3: Asyncc.Map (with nested Asyncc.Parallel) ----------------
     //    For each shard, fan out two simulated upstream lookups in parallel and merge their
     //    results into a single enriched shard JSON.
-    stages.add(cb -> {
-      final List<String> shards = readListOfString(cb, "shards");
+    stages.add(c -> {
+      final List<String> shards = readListOfString(c, "shards");
 
       Asyncc.<String, String, Throwable>Map(shards,
           (shard, inner) -> {
             // Nested Parallel — two upstream fetches per shard.
             Asyncc.<String, Throwable>Parallel(
-                p -> p.done(null, "schemaV=" + (shard.length() % 5)),
-                p -> p.done(null, "ownerV=team-" + Math.abs(shard.hashCode() % 7)),
+                p -> p.success("schemaV=" + (shard.length() % 5)),
+                p -> p.success("ownerV=team-" + Math.abs(shard.hashCode() % 7)),
                 (perr, pairs) -> {
                   if (perr != null) {
-                    inner.done(toThrowable(perr), null);
+                    inner.fail(toThrowable(perr));
                     return;
                   }
-                  inner.done(null, mergeJson(shard, "enrich", pairs.get(0) + ";" + pairs.get(1)));
+                  inner.success(mergeJson(shard, "enrich", pairs.get(0) + ";" + pairs.get(1)));
                 });
           },
           (err, enriched) -> {
             if (err != null) {
-              cb.done(toThrowable(err));
+              c.fail(toThrowable(err));
               return;
             }
             rec.appendStage("composition.map enriched=" + enriched.size() + " (each via Parallel of 2)");
-            cb.done(null, "enriched", new ArrayList<>(enriched));
+            c.success("enriched", new ArrayList<>(enriched));
           });
     });
 
     // -- Stage 4: Asyncc.FilterMap ----------------------------------------
     //    Drop any shard whose size field is divisible by 13 — synthetic validation rule.
     //    Returning null from the mapper signals "drop this element".
-    stages.add(cb -> {
-      final List<String> enriched = readListOfString(cb, "enriched");
+    stages.add(c -> {
+      final List<String> enriched = readListOfString(c, "enriched");
 
       Asyncc.<String, String, Throwable>FilterMap(enriched,
           (NeoFilterMapI.IMapper<String, String, Throwable>) (s, inner) -> {
@@ -169,42 +169,42 @@ public final class CompositionDemoPipeline {
               // IAsyncCallback.done(E, T) — both match `done(null, null)`.
               inner.done(null, (String) null);
             } else {
-              inner.done(null, s);
+              inner.success(s);
             }
           },
           (err, kept) -> {
             if (err != null) {
-              cb.done(toThrowable(err));
+              c.fail(toThrowable(err));
               return;
             }
             rec.appendStage("composition.filterMap kept=" + kept.size() + " of " + enriched.size());
-            cb.done(null, "kept", new ArrayList<>(kept));
+            c.success("kept", new ArrayList<>(kept));
           });
     });
 
     // -- Stage 5: Asyncc.GroupBy ------------------------------------------
     //    Bucket the surviving shards by their region field.
-    stages.add(cb -> {
-      final List<String> kept = readListOfString(cb, "kept");
+    stages.add(c -> {
+      final List<String> kept = readListOfString(c, "kept");
 
       Asyncc.<String, String, Throwable>GroupBy(kept,
           (NeoGroupByI.IMapper<String, Throwable>) (s, inner) -> inner.done(null, extractStringField(s, "region", "unknown")),
           (err, byRegion) -> {
             if (err != null) {
-              cb.done(toThrowable(err));
+              c.fail(toThrowable(err));
               return;
             }
             rec.appendStage("composition.groupBy regions=" + byRegion.keySet());
             // The waterfall map only holds Object values; cast through an intermediate copy.
-            cb.done(null, "byRegion", new HashMap<>(byRegion));
+            c.success("byRegion", new HashMap<>(byRegion));
           });
     });
 
     // -- Stage 6: Asyncc.Each ---------------------------------------------
     //    Fire-and-forget per region: log how many shards are in each bucket. Real pipelines
     //    would publish per-region events here.
-    stages.add(cb -> {
-      final Map<String, List<String>> byRegion = readMapOfRegionToList(cb, "byRegion");
+    stages.add(c -> {
+      final Map<String, List<String>> byRegion = readMapOfRegionToList(c, "byRegion");
       final Set<String> regions = byRegion.keySet();
 
       Asyncc.<String, Throwable>Each(regions,
@@ -214,18 +214,18 @@ public final class CompositionDemoPipeline {
           },
           err -> {
             if (err != null) {
-              cb.done(toThrowable(err));
+              c.fail(toThrowable(err));
               return;
             }
-            cb.done(null, "regionsLogged", regions.size());
+            c.success("regionsLogged", regions.size());
           });
     });
 
     // -- Stage 7: Asyncc.Race ---------------------------------------------
     //    Two scoring strategies sprint to produce a number. Fast-path completes after a tiny
     //    sleep; careful-path completes after a larger sleep. Whichever lands first wins.
-    stages.add(cb -> {
-      final Map<String, List<String>> byRegion = readMapOfRegionToList(cb, "byRegion");
+    stages.add(c -> {
+      final Map<String, List<String>> byRegion = readMapOfRegionToList(c, "byRegion");
 
       final List<NeoRaceIfc.AsyncTask<String, Throwable>> racers = List.of(
           inner -> sleepThenDone(inner, 5, "fastPath:count=" + byRegion.size()),
@@ -233,18 +233,18 @@ public final class CompositionDemoPipeline {
 
       Asyncc.<String, String, Throwable>Race(racers, (err, winner) -> {
         if (err != null) {
-          cb.done(toThrowable(err));
+          c.fail(toThrowable(err));
           return;
         }
         rec.appendStage("composition.race winner=" + winner);
-        cb.done(null, "raceWinner", String.valueOf(winner));
+        c.success("raceWinner", String.valueOf(winner));
       });
     });
 
     // -- Stage 8: Asyncc.Reduce -------------------------------------------
     //    Sum the per-bucket counts into a total. The reducer is "acc + |bucket|".
-    stages.add(cb -> {
-      final Map<String, List<String>> byRegion = readMapOfRegionToList(cb, "byRegion");
+    stages.add(c -> {
+      final Map<String, List<String>> byRegion = readMapOfRegionToList(c, "byRegion");
       final List<Integer> bucketSizes = new ArrayList<>();
       for (final List<String> bucket : byRegion.values()) {
         bucketSizes.add(bucket.size());
@@ -254,27 +254,27 @@ public final class CompositionDemoPipeline {
           (NeoReduceI.IReducer<Integer, Integer, Throwable>) (acc, next, inner) -> inner.done(null, acc + next),
           (err, total) -> {
             if (err != null) {
-              cb.done(toThrowable(err));
+              c.fail(toThrowable(err));
               return;
             }
             rec.appendStage("composition.reduce total=" + total);
-            cb.done(null, "aggregateTotal", total);
+            c.success("aggregateTotal", total);
           });
     });
 
     // -- Stage 9: Asyncc.Inject -------------------------------------------
     //    Build the final manifest from named prior outputs. Inject's task body uses
-    //    cb.get("name") to read other (already-completed) named outputs from the
+    //    c.get("name") to read other (already-completed) named outputs from the
     //    pre-populated map. We seed that map by hand from the waterfall's accumulated
     //    state, then run Inject for the final assembly.
-    stages.add(cb -> {
+    stages.add(c -> {
       final Map<String, NeoInject.Task<String, Throwable>> dag = new LinkedHashMap<>();
 
       dag.put("raceWinner",
-          new NeoInject.Task<>(inner -> inner.done(null, (String) cb.get("raceWinner"))));
+          new NeoInject.Task<>(inner -> inner.done(null, (String) c.get("raceWinner"))));
 
       dag.put("aggregateTotal",
-          new NeoInject.Task<>(inner -> inner.done(null, "total=" + cb.get("aggregateTotal"))));
+          new NeoInject.Task<>(inner -> inner.done(null, "total=" + c.get("aggregateTotal"))));
 
       dag.put("manifest",
           new NeoInject.Task<>("raceWinner", "aggregateTotal",
@@ -287,11 +287,11 @@ public final class CompositionDemoPipeline {
 
       Asyncc.<String, Throwable>Inject(dag, (err, results) -> {
         if (err != null) {
-          cb.done(toThrowable(err));
+          c.fail(toThrowable(err));
           return;
         }
         rec.appendStage("composition.inject manifest=" + results.get("manifest"));
-        cb.done(null, "manifest", (String) results.get("manifest"));
+        c.success("manifest", (String) results.get("manifest"));
       });
     });
 
@@ -299,16 +299,16 @@ public final class CompositionDemoPipeline {
     //    Serialises updates to a process-wide AtomicInteger across concurrent demo jobs.
     //    NeoLock is an async mutex: acquire schedules a callback (not blocking the worker
     //    thread), and the Unlock token can be released from any thread.
-    stages.add(cb -> {
+    stages.add(c -> {
       SharedLocks.PUBLICATION_LOCK.acquire((lockErr, unlock) -> {
         if (lockErr != null) {
-          cb.done(toThrowable(lockErr));
+          c.fail(toThrowable(lockErr));
           return;
         }
         try {
           final int count = PUBLICATION_COUNT.incrementAndGet();
           rec.appendStage("composition.neoLock publicationCount=" + count);
-          cb.done(null, "publicationCount", count);
+          c.success("publicationCount", count);
         } finally {
           unlock.releaseLock();
         }
