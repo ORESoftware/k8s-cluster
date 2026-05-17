@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gcs-kafka
+  namespace: default
+  labels:
+    app: gcs-kafka
+spec:
+  type: ClusterIP
+  selector:
+    app: gcs-kafka
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka
+    - name: controller
+      port: 9093
+      targetPort: controller
