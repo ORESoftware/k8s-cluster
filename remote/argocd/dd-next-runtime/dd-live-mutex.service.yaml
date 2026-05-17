@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-live-mutex
+  namespace: default
+  labels:
+    app: dd-live-mutex
+spec:
+  selector:
+    app: dd-live-mutex
+  ports:
+    - name: lmx
+      port: 6970
+      targetPort: lmx

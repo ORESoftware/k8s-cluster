@@ -23,6 +23,8 @@ resources:
   - dd-des-simulator.service.yaml
   - dd-contract-service.deployment.yaml
   - dd-contract-service.service.yaml
+  - dd-live-mutex.deployment.yaml
+  - dd-live-mutex.service.yaml
   - dd-web-scraper.deployment.yaml
   - dd-web-scraper.service.yaml
   - dd-remote-web-home.deployment.yaml

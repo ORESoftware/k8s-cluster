@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-live-mutex
+  namespace: default
+  labels:
+    app: dd-live-mutex
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-live-mutex
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-17-live-mutex'
+      labels:
+        app: dd-live-mutex
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: live-mutex
+          image: docker.io/oresoftware/live-mutex-broker:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: lmx
+              containerPort: 6970
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            tcpSocket:
+              port: lmx
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: lmx
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            tcpSocket:
+              port: lmx
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
