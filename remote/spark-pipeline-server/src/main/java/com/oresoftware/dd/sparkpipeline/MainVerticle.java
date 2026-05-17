@@ -1,8 +1,10 @@
 package com.oresoftware.dd.sparkpipeline;
 
+import com.oresoftware.dd.sparkpipeline.db.PgDb;
 import com.oresoftware.dd.sparkpipeline.handlers.HealthHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.JobStatusHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.ListJobsHandler;
+import com.oresoftware.dd.sparkpipeline.handlers.ListReposHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.MetricsHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.SubmitJobHandler;
 import com.oresoftware.dd.sparkpipeline.pipeline.JobService;
@@ -35,14 +37,19 @@ public final class MainVerticle extends AbstractVerticle {
   private static final String ENV_HTTP_PORT = "HTTP_PORT";
 
   private final JobService jobService;
+  private final PgDb pg;
 
   /**
-   * Constructed with a pre-built {@link JobService} so a single instance is shared across all
-   * deployed replicas of this verticle (Vert.x deploys multiple instances of a verticle, one per
-   * event loop, when {@code setInstances} &gt; 1).
+   * Constructed with a pre-built {@link JobService} and an optional {@link PgDb} so a single
+   * instance of each is shared across all deployed replicas of this verticle (Vert.x deploys
+   * multiple instances of a verticle, one per event loop, when {@code setInstances} &gt; 1).
+   *
+   * @param pg may be {@code null} when {@code RDS_DATABASE_URL} is unset; DB-backed endpoints
+   *           respond 503 in that case.
    */
-  public MainVerticle(final JobService jobService) {
+  public MainVerticle(final JobService jobService, final PgDb pg) {
     this.jobService = jobService;
+    this.pg = pg;
   }
 
   @Override
@@ -61,6 +68,7 @@ public final class MainVerticle extends AbstractVerticle {
     router.post("/v1/jobs").handler(new SubmitJobHandler(jobService));
     router.get("/v1/jobs").handler(new ListJobsHandler(jobService));
     router.get("/v1/jobs/:id").handler(new JobStatusHandler(jobService));
+    router.get("/v1/repos").handler(new ListReposHandler(vertx, pg));
 
     router.errorHandler(500, ctx -> {
       log.error("Unhandled error on {}: {}", ctx.request().path(), ctx.failure() == null ? "n/a" : ctx.failure().toString(), ctx.failure());

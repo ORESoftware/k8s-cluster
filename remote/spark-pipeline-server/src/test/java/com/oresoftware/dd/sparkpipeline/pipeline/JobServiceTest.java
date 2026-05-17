@@ -25,7 +25,9 @@ class JobServiceTest {
   @BeforeEach
   void setUp() {
     vertx = Vertx.vertx();
-    svc = new JobService(vertx);
+    // null PgDb is the documented behaviour for tests / dev environments without Postgres;
+    // SPARK_SUBMIT prechecks skip the repo lookup but the rest of the pipeline still runs.
+    svc = new JobService(vertx, null);
   }
 
   @AfterEach

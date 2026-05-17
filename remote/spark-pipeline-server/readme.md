@@ -34,16 +34,54 @@ For server-wide concurrency control (so we never run more than
 an `org.ores.async.NeoQueue`, which is the non-blocking equivalent of a worker
 pool.
 
+## Postgres access via the pg-defs jOOQ Tables
+
+The service uses [jOOQ](https://www.jooq.org/) for type-safe SQL against the
+canonical `dd_pg_defs` database. Column and table references come from the
+generated bindings at
+[`remote/libs/pg-defs/generated/jvm/jooq/src/main/java/dd/pgdefs/jooq/Tables.java`](../libs/pg-defs/generated/jvm/jooq/src/main/java/dd/pgdefs/jooq/Tables.java),
+which is added to this module's source set via `build-helper-maven-plugin` in
+`pom.xml` (no separate Maven install needed — the source is compiled in-place,
+so regenerating `pg-defs` automatically refreshes this service's view).
+
+Schema changes therefore fail the build instead of crashing at runtime: drop
+a column from `schema/schema.sql`, regenerate, and the next `mvn compile`
+points at the broken `Tables.KNOWN_GIT_REPOS_FOO` reference.
+
+The runtime wiring lives in `db/PgDb.java`:
+
+* HikariCP pool, sized via `PG_POOL_SIZE` (default 8).
+* Connection string from `RDS_DATABASE_URL` — accepts either JDBC
+  (`jdbc:postgresql://...`) or libpq (`postgres://user:pw@host/db`) form,
+  matching what the other dd-* services consume.
+* Optional: if `RDS_DATABASE_URL` is unset the pool is never opened, the
+  service still boots, and DB-backed endpoints respond `503`.
+
+### Postgres-backed endpoints
+
+| Method | Path        | Backed by                                       |
+| ------ | ----------- | ----------------------------------------------- |
+| GET    | `/v1/repos` | `select * from known_git_repos` (non-soft-deleted, newest first, limit 500). |
+
+### Postgres-aware jobs
+
+`SPARK_SUBMIT` accepts a `params.repoId` UUID. When set, the parallel
+precheck fan-out adds a 4th task that does a typed jOOQ lookup against
+`Tables.KNOWN_GIT_REPOS_*` to resolve the repo URL + default branch and
+appends them to the job's stage log. Missing rows / invalid UUIDs degrade
+to `repo_unresolved` without failing the job.
+
 ## HTTP API
 
-| Method | Path             | Purpose                              |
-| ------ | ---------------- | ------------------------------------ |
-| GET    | `/healthz`       | Liveness probe.                      |
-| GET    | `/readyz`        | Readiness probe.                     |
-| GET    | `/metrics`       | Prometheus scrape endpoint.          |
-| POST   | `/v1/jobs`       | Submit a new pipeline job.           |
-| GET    | `/v1/jobs`       | List all jobs known to this server.  |
-| GET    | `/v1/jobs/{id}`  | Fetch a single job's state.          |
+| Method | Path             | Purpose                                              |
+| ------ | ---------------- | ---------------------------------------------------- |
+| GET    | `/healthz`       | Liveness probe.                                      |
+| GET    | `/readyz`        | Readiness probe.                                     |
+| GET    | `/metrics`       | Prometheus scrape endpoint.                          |
+| POST   | `/v1/jobs`       | Submit a new pipeline job.                           |
+| GET    | `/v1/jobs`       | List all jobs known to this server.                  |
+| GET    | `/v1/jobs/{id}`  | Fetch a single job's state.                          |
+| GET    | `/v1/repos`      | List `known_git_repos` rows (requires Postgres).     |
 
 ### Submit example
 
@@ -55,12 +93,16 @@ curl -s -X POST http://localhost:8085/v1/jobs \
 
 ## Environment variables
 
-| Var                          | Default     | Description                                  |
-| ---------------------------- | ----------- | -------------------------------------------- |
-| `HTTP_HOST`                  | `0.0.0.0`   | Bind address.                                |
-| `HTTP_PORT`                  | `8085`      | Bind port.                                   |
-| `PIPELINE_MAX_CONCURRENT`    | `4`         | NeoQueue concurrency (server-wide).          |
-| `JAVA_OPTS`                  | G1, 70% RAM | Standard JVM tuning.                         |
+| Var                       | Default     | Description                                                       |
+| ------------------------- | ----------- | ----------------------------------------------------------------- |
+| `HTTP_HOST`               | `0.0.0.0`   | Bind address.                                                     |
+| `HTTP_PORT`               | `8085`      | Bind port.                                                        |
+| `PIPELINE_MAX_CONCURRENT` | `4`         | NeoQueue concurrency (server-wide).                               |
+| `JAVA_OPTS`               | G1, 70% RAM | Standard JVM tuning.                                              |
+| `RDS_DATABASE_URL`        | _(unset)_   | Postgres URL (libpq or JDBC). If unset, DB endpoints return 503.  |
+| `RDS_DATABASE_USER`       | _(from URL)_| Override Hikari user when URL has no embedded credentials.        |
+| `RDS_DATABASE_PASSWORD`   | _(from URL)_| Override Hikari password when URL has no embedded credentials.    |
+| `PG_POOL_SIZE`            | `8`         | HikariCP `maximumPoolSize`.                                       |
 
 ## Local build
 

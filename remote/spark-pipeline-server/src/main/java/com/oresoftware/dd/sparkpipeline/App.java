@@ -1,5 +1,6 @@
 package com.oresoftware.dd.sparkpipeline;
 
+import com.oresoftware.dd.sparkpipeline.db.PgDb;
 import com.oresoftware.dd.sparkpipeline.pipeline.JobService;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
@@ -8,6 +9,8 @@ import io.vertx.micrometer.MicrometerMetricsOptions;
 import io.vertx.micrometer.VertxPrometheusOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Optional;
 
 /**
  * Process entry point for the dd-spark-pipeline-server.
@@ -34,15 +37,21 @@ public final class App {
 
     final Vertx vertx = Vertx.vertx(vertxOptions);
 
+    // PgDb is optional: if RDS_DATABASE_URL is unset, fromEnv() returns empty and DB-backed
+    // endpoints respond 503 instead of crash-looping. Shared across MainVerticle replicas so
+    // we only open one HikariCP pool per process.
+    final Optional<PgDb> pg = PgDb.fromEnv();
+
     // JobService owns the in-memory job state and the NeoQueue. It is shared across all
     // MainVerticle replicas so that POST/GET requests routed to different event loops still see
-    // the same set of jobs.
-    final JobService jobService = new JobService(vertx);
+    // the same set of jobs. JobService consults Postgres (via the pg-defs jOOQ Tables) for
+    // metadata lookups during SPARK_SUBMIT prechecks.
+    final JobService jobService = new JobService(vertx, pg.orElse(null));
 
     final DeploymentOptions opts = new DeploymentOptions()
         .setInstances(Math.max(1, Runtime.getRuntime().availableProcessors()));
 
-    vertx.deployVerticle(() -> new MainVerticle(jobService), opts).onComplete(ar -> {
+    vertx.deployVerticle(() -> new MainVerticle(jobService, pg.orElse(null)), opts).onComplete(ar -> {
       if (ar.succeeded()) {
         log.info("dd-spark-pipeline-server deployed verticles, deployment id={}", ar.result());
       } else {
@@ -55,6 +64,7 @@ public final class App {
     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
       log.info("dd-spark-pipeline-server shutting down");
       jobService.shutdown();
+      pg.ifPresent(PgDb::close);
       vertx.close();
     }, "shutdown-hook"));
   }

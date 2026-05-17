@@ -1,13 +1,23 @@
 # --- build stage -------------------------------------------------------------
 FROM docker.io/library/maven:3.9.9-eclipse-temurin-17 AS build
 
+# The build expects the k8s-cluster repo root as its build context (so it can reach
+# remote/libs/pg-defs/generated/jvm/jooq for the jOOQ Tables source set). Build the image with:
+#
+#     docker build -f remote/spark-pipeline-server/Dockerfile -t dd-spark-pipeline-server:dev .
+#
+# from the k8s-cluster repo root.
 WORKDIR /workspace
 
-# Copy the POM first so Maven can warm the dependency cache as a separate layer.
-COPY remote/spark-pipeline-server/pom.xml ./pom.xml
+# Copy the POM and the generated pg-defs jOOQ sources first, so dependency resolution warms a
+# distinct layer that can be reused across source-only changes.
+COPY remote/spark-pipeline-server/pom.xml ./remote/spark-pipeline-server/pom.xml
+COPY remote/libs/pg-defs/generated/jvm/jooq ./remote/libs/pg-defs/generated/jvm/jooq
+
+WORKDIR /workspace/remote/spark-pipeline-server
 RUN mvn -B -e -DskipTests dependency:go-offline || true
 
-# Copy sources and build the shaded jar.
+# Copy spark-pipeline-server sources and build the shaded jar.
 COPY remote/spark-pipeline-server/src ./src
 RUN mvn -B -e -DskipTests package
 
@@ -17,7 +27,7 @@ FROM docker.io/library/eclipse-temurin:17-jre
 RUN groupadd --system pipeline && useradd --system --gid pipeline --uid 10001 pipeline
 
 WORKDIR /opt/dd-spark-pipeline-server
-COPY --from=build /workspace/target/dd-spark-pipeline-server.jar /opt/dd-spark-pipeline-server/app.jar
+COPY --from=build /workspace/remote/spark-pipeline-server/target/dd-spark-pipeline-server.jar /opt/dd-spark-pipeline-server/app.jar
 
 USER 10001:10001
 
