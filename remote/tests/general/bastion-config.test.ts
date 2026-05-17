@@ -99,6 +99,8 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   assert.match(deployment, /name:\s*dd-bastion/);
   assert.match(deployment, /serviceAccountName:\s*dd-bastion/);
   assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/bastion-rs/);
+  assert.match(deployment, /export PATH=\/usr\/local\/cargo\/bin/);
+  assert.match(deployment, /PATH[\s\S]*\/usr\/local\/cargo\/bin/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8111'/);
   assert.match(deployment, /CARGO_HOME[\s\S]*\/tmp\/cargo-home/);
   assert.match(deployment, /CARGO_TARGET_DIR[\s\S]*\/tmp\/dd-bastion-target/);
