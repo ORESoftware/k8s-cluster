@@ -39,7 +39,7 @@
         <hikaricp.version>5.1.0</hikaricp.version>
 
         <!--
-          v0.2.1 of async-java/async.java served via JitPack. Brings:
+          v0.2.4 of async-java/async.java served via JitPack. Cumulative history:
             - PR #8  : daemon-thread NeoQueue executor, NeoLock thread-safety, modernised
                        pom, Central Portal publishing, JitPack, LICENSE, Loom-aware readme.
             - PR #9  : CounterLimit lost-update race fix (Asyncc.Parallel hung after a
@@ -48,13 +48,19 @@
                        message drop in WS load tests).
             - v0.2.1 : NeoReduce defensive fireFinalCallback routing + MisuseTest
                        (12 adversarial / user-misuse scenarios pinned).
+            - v0.2.2 : NeoParallel/NeoMap slot-write-before-counter-increment fix,
+                       Unlock made public.
+            - v0.2.4 : ArrayList resize-race fix in Asyncc.Parallel(List, callback);
+                       c.success(v) / c.fail(e) default methods on IAsyncCallback;
+                       WrapErrFirst.wrap(...) adapter; substantial Javadoc rewrite;
+                       JDK floor raised from 11 to 17 (matches our build).
 
-          When io.github.async-java:async-java:0.2.1 lands on Maven Central, switch
+          When io.github.async-java:async-java:0.2.4 lands on Maven Central, switch
           this property to that stable coordinate. Until then the JitPack
-          `com.github.async-java:async.java:v0.2.1` coordinate is the authoritative
+          `com.github.async-java:async.java:v0.2.4` coordinate is the authoritative
           release artifact.
         -->
-        <async-java.version>v0.2.2</async-java.version>
+        <async-java.version>v0.2.4</async-java.version>
 
         <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
     </properties>
