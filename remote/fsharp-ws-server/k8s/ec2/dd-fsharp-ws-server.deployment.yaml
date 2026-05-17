@@ -29,7 +29,11 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           command:
-            - /bin/sh
+            # bash explicitly: the dotnet/sdk:10.0 image is Debian-based and
+            # ships dash as `/bin/sh`, which doesn't support `set -o pipefail`.
+            # akka-ws-server happens to work with /bin/sh only because the
+            # eclipse-temurin base symlinks /bin/sh -> bash.
+            - /bin/bash
             - -lc
           args:
             - |
