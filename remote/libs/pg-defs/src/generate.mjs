@@ -1841,7 +1841,6 @@ function renderGleamToml() {
     '',
     '[dependencies]',
     'gleam_stdlib = ">= 0.68.0 and < 2.0.0"',
-    'pog = ">= 4.1.0 and < 5.0.0"',
   ].join('\n')}\n`;
 }
 

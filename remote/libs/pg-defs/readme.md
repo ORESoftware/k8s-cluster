@@ -50,7 +50,7 @@ node src/diff.mjs --parse-only
 - Go: GORM models and Bun models.
 - Dart: runtime models, validators, JSON helpers, and SQL constants.
 - Rust: `sqlx`-friendly structs, Diesel schema/models, and SeaORM entities.
-- Gleam: `pog`-friendly SQL constants, typed records, enum parsers, and validators.
+- Gleam: dependency-light SQL constants, typed records, enum parsers, and validators.
 - Erlang: `pgo`-style SQL constants and enum validators.
 
 Each service should depend on this library through a local file dependency or copy the generated
