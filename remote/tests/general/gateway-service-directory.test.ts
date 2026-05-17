@@ -188,6 +188,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     /map "\$dd_gateway_header_auth_ok:\$dd_gateway_cookie_auth_ok" \$dd_gateway_auth_ok/,
   );
   assert.match(gateway, /map \$dd_gateway_auth_ok \$dd_gateway_auth_header/);
+  assert.match(gateway, /map \$dd_gateway_auth_ok \$dd_dev_server_auth_header/);
   assert.match(gateway, /map \$http_accept \$dd_gateway_accepts_html/);
   assert.match(gateway, /default\s+0/);
   assert.match(gateway, /default\.conf\.template/);
