@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-16-scrape-proxy'
+        dd.dev/telemetry-revision: '2026-05-16-runtime-routes'
       labels:
         app: dd-remote-gateway
     spec:
