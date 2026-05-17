@@ -253,6 +253,7 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   assert.match(ec2Deployment, /bash/);
   assert.match(ec2Deployment, /gcompat/);
   assert.match(ec2Deployment, /libc6-compat/);
+  assert.match(ec2Deployment, /rebar3/);
   assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
   assert.match(ec2Deployment, /gleam deps download/);
   assert.match(ec2Deployment, /containerPort:\s*8083/);

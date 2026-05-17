@@ -40,6 +40,7 @@ spec:
                 bash \
                 gcompat \
                 libc6-compat \
+                rebar3 \
                 postgresql-client >/tmp/dd-lambda-runner-apk.log 2>&1; then
                 cat /tmp/dd-lambda-runner-apk.log
                 exit 1
