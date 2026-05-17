@@ -15,34 +15,26 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-17-redis-cache'
+        dd.dev/telemetry-revision: '2026-05-17-redis-cache-hardened'
       labels:
         app: dd-redis-cache
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
       terminationGracePeriodSeconds: 30
       containers:
         - name: redis
-          image: redis:7.4-alpine
+          image: redis:7.4.9-alpine
           imagePullPolicy: IfNotPresent
-          args:
+          command:
             - redis-server
-            - --bind
-            - 0.0.0.0
-            - --protected-mode
-            - 'no'
-            - --appendonly
-            - 'no'
-            - --save
-            - ''
-            - --maxmemory
-            - 256mb
-            - --maxmemory-policy
-            - allkeys-lru
-            - --tcp-keepalive
-            - '60'
+          args:
+            - /usr/local/etc/redis/redis.conf
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 999
             runAsGroup: 999
@@ -90,3 +82,21 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /usr/local/etc/redis
+              readOnly: true
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: dd-redis-cache-config
+        - name: data
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

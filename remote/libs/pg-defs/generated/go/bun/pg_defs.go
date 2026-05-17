@@ -16,6 +16,117 @@ import (
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 
+const AppConfigTable = "app_config"
+const AppConfigSelectSQL = `select
+      id::text as id,
+      scope,
+      key,
+      value,
+      version,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from app_config`
+
+var AppConfigStatusValues = []string{"active", "paused", "archived"}
+
+type AppConfigBun struct {
+	bun.BaseModel `bun:"table:app_config"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Scope string `bun:"scope,type:varchar(120),default:'default'" json:"scope"`
+	Key string `bun:"key,type:varchar(200)" json:"key"`
+	Value json.RawMessage `bun:"value,type:jsonb" json:"value"`
+	Version int32 `bun:"version,type:integer,default:1" json:"version"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	Labels json.RawMessage `bun:"labels,type:jsonb,default:'[]'::jsonb" json:"labels"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value AppConfigBun) Validate() error {
+	if !validateRawJSON(value.Value) { return errors.New("app_config.value must be valid JSON") }
+	if !containsString(AppConfigStatusValues, value.Status) { return errors.New("unsupported app_config.status") }
+	if !validateRawJSON(value.Labels) { return errors.New("app_config.labels must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("app_config.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolConfigsTable = "container_pool_configs"
+const ContainerPoolConfigsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      image,
+      command,
+      env,
+      request_path,
+      health_path,
+      container_port,
+      min_warm,
+      max_warm,
+      max_concurrency_per_container,
+      request_timeout_ms,
+      idle_ttl_seconds,
+      nats_subject,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_configs`
+
+var ContainerPoolConfigsStatusValues = []string{"active", "paused", "archived"}
+
+type ContainerPoolConfigsBun struct {
+	bun.BaseModel `bun:"table:container_pool_configs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
+	Image string `bun:"image,type:text" json:"image"`
+	Command json.RawMessage `bun:"command,type:jsonb,default:'[]'::jsonb" json:"command"`
+	Env json.RawMessage `bun:"env,type:jsonb,default:'{}'::jsonb" json:"env"`
+	RequestPath string `bun:"request_path,type:varchar(256),default:'/invoke'" json:"requestPath"`
+	HealthPath string `bun:"health_path,type:varchar(256),default:'/healthz'" json:"healthPath"`
+	ContainerPort int32 `bun:"container_port,type:integer,default:8080" json:"containerPort"`
+	MinWarm int32 `bun:"min_warm,type:integer,default:1" json:"minWarm"`
+	MaxWarm int32 `bun:"max_warm,type:integer,default:2" json:"maxWarm"`
+	MaxConcurrencyPerContainer int32 `bun:"max_concurrency_per_container,type:integer,default:1" json:"maxConcurrencyPerContainer"`
+	RequestTimeoutMs int32 `bun:"request_timeout_ms,type:integer,default:30000" json:"requestTimeoutMs"`
+	IdleTtlSeconds int32 `bun:"idle_ttl_seconds,type:integer,default:900" json:"idleTtlSeconds"`
+	NatsSubject *string `bun:"nats_subject,type:text,nullzero" json:"natsSubject,omitempty"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	Labels json.RawMessage `bun:"labels,type:jsonb,default:'[]'::jsonb" json:"labels"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value ContainerPoolConfigsBun) Validate() error {
+	if !slugPattern.MatchString(value.Slug) { return errors.New("container_pool_configs.slug must be a lowercase slug") }
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("container_pool_configs.display_name exceeds 200 bytes") }
+	if !validateRawJSON(value.Command) { return errors.New("container_pool_configs.command must be valid JSON") }
+	if !validateRawJSON(value.Env) { return errors.New("container_pool_configs.env must be valid JSON") }
+	if !containsString(ContainerPoolConfigsStatusValues, value.Status) { return errors.New("unsupported container_pool_configs.status") }
+	if !validateRawJSON(value.Labels) { return errors.New("container_pool_configs.labels must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("container_pool_configs.meta_data must be valid JSON") }
+	return nil
+}
+
 const KnownGitRepoTable = "known_git_repos"
 const KnownGitRepoSelectSQL = `select
       id::text as id,

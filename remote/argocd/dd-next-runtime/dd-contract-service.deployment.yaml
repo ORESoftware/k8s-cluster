@@ -27,6 +27,10 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           command:
@@ -36,7 +40,9 @@ spec:
             - |
               set -euo pipefail
               cd /opt/dd-next-1/remote/contract-service-rs
-              exec /usr/local/cargo/bin/cargo run --release
+              export CARGO_HOME=/var/cache/dd-contract-service/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-contract-service/target
+              exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: HOST
               value: 0.0.0.0
@@ -48,7 +54,11 @@ spec:
               value: https://api.devnet.solana.com
             - name: SOLANA_RPC_TIMEOUT_SECONDS
               value: '20'
+            - name: SOLANA_ALLOW_PRIVATE_RPC
+              value: 'false'
             - name: SOLANA_SEND_ENABLED
+              value: 'false'
+            - name: SOLANA_ALLOW_SKIP_PREFLIGHT
               value: 'false'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
@@ -93,8 +103,17 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-contract-service
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

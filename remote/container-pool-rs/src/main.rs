@@ -56,6 +56,10 @@ struct ServiceConfig {
     reconcile_interval: Duration,
     command_timeout: Duration,
     container_start_timeout: Duration,
+    health_check_interval: Duration,
+    health_check_timeout: Duration,
+    unhealthy_grace: Duration,
+    unhealthy_failure_threshold: u64,
     port_start: u16,
     port_end: u16,
     cleanup_on_start: bool,
@@ -71,8 +75,11 @@ struct Metrics {
     nats_failures_total: AtomicU64,
     containers_started_total: AtomicU64,
     containers_removed_total: AtomicU64,
+    containers_unhealthy_total: AtomicU64,
     config_refresh_total: AtomicU64,
     config_refresh_failures_total: AtomicU64,
+    container_health_checks_total: AtomicU64,
+    container_health_check_failures_total: AtomicU64,
 }
 
 #[derive(Default)]
@@ -94,6 +101,7 @@ struct PoolConfig {
     command: Vec<String>,
     env: BTreeMap<String, String>,
     request_path: String,
+    health_path: String,
     container_port: u16,
     min_warm: usize,
     max_warm: usize,
@@ -111,6 +119,7 @@ enum ContainerStatus {
     Idle,
     Busy,
     Draining,
+    Unhealthy,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -124,6 +133,10 @@ struct WarmContainer {
     in_flight: usize,
     launched_at_ms: u128,
     last_used_at_ms: u128,
+    last_health_at_ms: Option<u128>,
+    last_healthy_at_ms: Option<u128>,
+    health_failure_count: u64,
+    last_health_error: Option<String>,
     request_count: u64,
     failure_count: u64,
 }
@@ -185,6 +198,7 @@ struct PoolSummary {
     display_name: String,
     image: String,
     request_path: String,
+    health_path: String,
     container_port: u16,
     min_warm: usize,
     max_warm: usize,
@@ -197,6 +211,7 @@ struct PoolSummary {
     active_containers: usize,
     idle_containers: usize,
     busy_containers: usize,
+    unhealthy_containers: usize,
     containers: Vec<WarmContainer>,
 }
 
@@ -286,6 +301,17 @@ fn service_config_from_env() -> ServiceConfig {
             "CONTAINER_POOL_START_TIMEOUT_SECONDS",
             15,
         )),
+        health_check_interval: Duration::from_secs(env_u64(
+            "CONTAINER_POOL_HEALTH_CHECK_SECONDS",
+            10,
+        )),
+        health_check_timeout: Duration::from_millis(env_u64(
+            "CONTAINER_POOL_HEALTH_TIMEOUT_MS",
+            1_000,
+        )),
+        unhealthy_grace: Duration::from_secs(env_u64("CONTAINER_POOL_UNHEALTHY_GRACE_SECONDS", 5)),
+        unhealthy_failure_threshold: env_u64("CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD", 2)
+            .clamp(1, 10),
         port_start,
         port_end,
         cleanup_on_start: env_bool("CONTAINER_POOL_CLEANUP_ON_START", true),
@@ -344,6 +370,10 @@ fn safe_env_key(input: &str) -> bool {
         && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
+fn safe_local_path(input: &str) -> bool {
+    input.starts_with('/') && !input.contains("://") && input.len() <= 256
+}
+
 fn string_vec_from_json(value: Value) -> Vec<String> {
     value
         .as_array()
@@ -397,8 +427,11 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
         .max(min_warm)
         .min(128);
     let request_path = json_string_field(value, "requestPath", "request_path")
-        .filter(|path| path.starts_with('/') && path.len() <= 256)
+        .filter(|path| safe_local_path(path))
         .unwrap_or_else(|| "/invoke".to_string());
+    let health_path = json_string_field(value, "healthPath", "health_path")
+        .filter(|path| safe_local_path(path))
+        .unwrap_or_else(|| "/healthz".to_string());
     Ok(PoolConfig {
         id: json_string_field(value, "id", "id").unwrap_or_else(|| slug.clone()),
         slug: slug.clone(),
@@ -408,6 +441,7 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
         command: string_vec_from_json(value.get("command").cloned().unwrap_or_else(|| json!([]))),
         env: env_map_from_json(value.get("env").cloned().unwrap_or_else(|| json!({}))),
         request_path,
+        health_path,
         container_port: json_u64_field(value, "containerPort", "container_port")
             .and_then(|value| u16::try_from(value).ok())
             .unwrap_or(8080),
@@ -514,8 +548,12 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
     let max_concurrency_per_container =
         clamp_i32_to_usize(row_i32(row, "max_concurrency_per_container", 1), 1, 1, 128);
     let request_path = row_opt_string(row, "request_path").unwrap_or_else(|| "/invoke".to_string());
-    if !request_path.starts_with('/') || request_path.len() > 256 {
+    if !safe_local_path(&request_path) {
         return Err(format!("container pool {slug} has invalid request_path"));
+    }
+    let health_path = row_opt_string(row, "health_path").unwrap_or_else(|| "/healthz".to_string());
+    if !safe_local_path(&health_path) {
+        return Err(format!("container pool {slug} has invalid health_path"));
     }
 
     Ok(PoolConfig {
@@ -526,6 +564,7 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         command: string_vec_from_json(row_value(row, "command", json!([]))),
         env: env_map_from_json(row_value(row, "env", json!({}))),
         request_path,
+        health_path,
         container_port,
         min_warm,
         max_warm,
@@ -618,6 +657,7 @@ async fn fetch_pool_configs_from_table(
               command,
               env,
               request_path,
+              health_path,
               container_port,
               min_warm,
               max_warm,
@@ -785,6 +825,10 @@ async fn allocate_container_slot(
         in_flight: 0,
         launched_at_ms: now,
         last_used_at_ms: now,
+        last_health_at_ms: None,
+        last_healthy_at_ms: None,
+        health_failure_count: 0,
+        last_health_error: None,
         request_count: 0,
         failure_count: 0,
     };
@@ -832,7 +876,41 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         args.push(format!("PORT={}", pool.container_port));
     }
 
-    for (key, value) in &pool.env {
+    let mut container_env = pool.env.clone();
+    container_env
+        .entry("DD_POOL_ID".to_string())
+        .or_insert_with(|| pool.id.clone());
+    container_env
+        .entry("DD_POOL_SLUG".to_string())
+        .or_insert_with(|| pool.slug.clone());
+    container_env
+        .entry("DD_POOL_CONTAINER_NAME".to_string())
+        .or_insert_with(|| container.name.clone());
+    container_env
+        .entry("DD_POOL_MANAGER".to_string())
+        .or_insert_with(|| SERVICE_NAME.to_string());
+    container_env
+        .entry("DD_POOL_REQUEST_PATH".to_string())
+        .or_insert_with(|| pool.request_path.clone());
+    container_env
+        .entry("DD_POOL_HEALTH_PATH".to_string())
+        .or_insert_with(|| pool.health_path.clone());
+    container_env
+        .entry("DD_POOL_CONTAINER_PORT".to_string())
+        .or_insert_with(|| pool.container_port.to_string());
+    if let Some(nats_url) = state.config.nats_url.as_deref() {
+        container_env
+            .entry("NATS_URL".to_string())
+            .or_insert_with(|| nats_url.to_string());
+        container_env
+            .entry("DD_POOL_NATS_EVENT_SUBJECT".to_string())
+            .or_insert_with(|| format!("dd.remote.container_pool.{}.events", pool.slug));
+        container_env
+            .entry("DD_POOL_NATS_HEARTBEAT_SUBJECT".to_string())
+            .or_insert_with(|| format!("dd.remote.container_pool.{}.heartbeats", pool.slug));
+    }
+
+    for (key, value) in &container_env {
         args.push("--env".to_string());
         args.push(format!("{key}={value}"));
     }
@@ -867,6 +945,10 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
             let mut registry = state.registry.lock().await;
             if let Some(stored) = registry.containers.get_mut(&container.name) {
                 stored.status = ContainerStatus::Idle;
+                stored.last_health_at_ms = Some(now_ms());
+                stored.last_healthy_at_ms = Some(now_ms());
+                stored.health_failure_count = 0;
+                stored.last_health_error = None;
             }
             Ok(container)
         }
@@ -883,7 +965,7 @@ async fn wait_container_ready(
     pool: &PoolConfig,
     container: &WarmContainer,
 ) -> Result<(), String> {
-    let url = target_url(pool, container, "/healthz");
+    let url = target_url(container, &pool.health_path);
     let started = tokio::time::Instant::now();
     loop {
         match timeout(Duration::from_millis(800), state.http.get(&url).send()).await {
@@ -974,6 +1056,177 @@ async fn run_command(
     ))
 }
 
+async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
+    let args = vec![
+        "-n".to_string(),
+        state.config.containerd_namespace.clone(),
+        "inspect".to_string(),
+        name.to_string(),
+    ];
+    let output = match run_command(
+        &state.config.nerdctl_bin,
+        &args,
+        state.config.command_timeout,
+    )
+    .await
+    {
+        Ok(output) => output,
+        Err(error) => {
+            let lower = error.to_ascii_lowercase();
+            if lower.contains("not found") || lower.contains("no such") {
+                return Ok(false);
+            }
+            return Err(error);
+        }
+    };
+    let value = serde_json::from_str::<Value>(&output).map_err(|error| error.to_string())?;
+    let Some(container) = value
+        .as_array()
+        .and_then(|items| items.first())
+        .or(Some(&value))
+    else {
+        return Ok(false);
+    };
+    if let Some(running) = container
+        .pointer("/State/Running")
+        .and_then(Value::as_bool)
+        .or_else(|| container.pointer("/State/running").and_then(Value::as_bool))
+    {
+        return Ok(running);
+    }
+    let status = container
+        .pointer("/State/Status")
+        .or_else(|| container.pointer("/State/status"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    Ok(status.eq_ignore_ascii_case("running"))
+}
+
+async fn probe_container_health(
+    state: &AppState,
+    pool: &PoolConfig,
+    container: &WarmContainer,
+) -> Result<(), String> {
+    state
+        .metrics
+        .container_health_checks_total
+        .fetch_add(1, Ordering::Relaxed);
+    if !inspect_container_running(state, &container.name).await? {
+        return Err("container is not running".to_string());
+    }
+    let url = target_url(container, &pool.health_path);
+    match timeout(
+        state.config.health_check_timeout,
+        state.http.get(&url).send(),
+    )
+    .await
+    {
+        Ok(Ok(response)) if response.status().is_success() => Ok(()),
+        Ok(Ok(response)) => Err(format!("health check returned {}", response.status())),
+        Ok(Err(error)) => Err(error.to_string()),
+        Err(_) => Err(format!(
+            "health check timed out after {}ms",
+            duration_millis_u64(state.config.health_check_timeout)
+        )),
+    }
+}
+
+async fn retire_container(state: &AppState, name: &str, reason: &str) {
+    let removed = {
+        let mut registry = state.registry.lock().await;
+        if let Some(container) = registry.containers.get_mut(name) {
+            container.status = ContainerStatus::Unhealthy;
+            container.last_health_at_ms = Some(now_ms());
+            container.last_health_error = Some(reason.chars().take(512).collect());
+        }
+        registry.containers.remove(name).is_some()
+    };
+    if removed {
+        state
+            .metrics
+            .containers_unhealthy_total
+            .fetch_add(1, Ordering::Relaxed);
+        if let Err(error) = remove_container(state, name).await {
+            eprintln!("failed to remove unhealthy warm container {name}: {error}");
+        }
+    }
+}
+
+async fn prune_unhealthy_containers(state: &AppState) {
+    let now = now_ms();
+    let candidates = {
+        let registry = state.registry.lock().await;
+        registry
+            .containers
+            .values()
+            .filter(|container| container.in_flight == 0)
+            .filter(|container| {
+                !matches!(
+                    container.status,
+                    ContainerStatus::Starting | ContainerStatus::Draining
+                )
+            })
+            .filter(|container| {
+                container
+                    .last_health_at_ms
+                    .map(|last| {
+                        Duration::from_millis(now.saturating_sub(last) as u64)
+                            >= state.config.health_check_interval
+                    })
+                    .unwrap_or(true)
+            })
+            .filter_map(|container| {
+                registry
+                    .configs
+                    .get(&container.pool_id)
+                    .cloned()
+                    .map(|pool| (pool, container.clone()))
+            })
+            .collect::<Vec<_>>()
+    };
+
+    for (pool, container) in candidates {
+        let checked_at = now_ms();
+        match probe_container_health(state, &pool, &container).await {
+            Ok(()) => {
+                let mut registry = state.registry.lock().await;
+                if let Some(stored) = registry.containers.get_mut(&container.name) {
+                    stored.status = ContainerStatus::Idle;
+                    stored.last_health_at_ms = Some(checked_at);
+                    stored.last_healthy_at_ms = Some(checked_at);
+                    stored.health_failure_count = 0;
+                    stored.last_health_error = None;
+                }
+            }
+            Err(error) => {
+                state
+                    .metrics
+                    .container_health_check_failures_total
+                    .fetch_add(1, Ordering::Relaxed);
+                let should_retire = {
+                    let mut registry = state.registry.lock().await;
+                    let Some(stored) = registry.containers.get_mut(&container.name) else {
+                        continue;
+                    };
+                    stored.last_health_at_ms = Some(checked_at);
+                    stored.health_failure_count = stored.health_failure_count.saturating_add(1);
+                    stored.last_health_error = Some(error.chars().take(512).collect());
+                    stored.status = ContainerStatus::Unhealthy;
+                    let age = Duration::from_millis(
+                        checked_at.saturating_sub(stored.launched_at_ms) as u64,
+                    );
+                    stored.in_flight == 0
+                        && age >= state.config.unhealthy_grace
+                        && stored.health_failure_count >= state.config.unhealthy_failure_threshold
+                };
+                if should_retire {
+                    retire_container(state, &container.name, "health check failed").await;
+                }
+            }
+        }
+    }
+}
+
 async fn reconcile_pool(state: &AppState, pool_id: &str) -> Result<(), String> {
     loop {
         let deficit = {
@@ -986,7 +1239,25 @@ async fn reconcile_pool(state: &AppState, pool_id: &str) -> Result<(), String> {
                 .values()
                 .filter(|container| container.pool_id == pool.id)
                 .count();
-            pool.min_warm.saturating_sub(active)
+            let available_capacity = registry
+                .containers
+                .values()
+                .filter(|container| container.pool_id == pool.id)
+                .filter(|container| {
+                    !matches!(
+                        container.status,
+                        ContainerStatus::Starting
+                            | ContainerStatus::Draining
+                            | ContainerStatus::Unhealthy
+                    )
+                })
+                .map(|container| {
+                    pool.max_concurrency_per_container
+                        .saturating_sub(container.in_flight)
+                })
+                .sum::<usize>();
+            let capacity_deficit = pool.min_warm.saturating_sub(available_capacity);
+            capacity_deficit.min(pool.max_warm.saturating_sub(active))
         };
         if deficit == 0 {
             break;
@@ -997,6 +1268,8 @@ async fn reconcile_pool(state: &AppState, pool_id: &str) -> Result<(), String> {
 }
 
 async fn reconcile_all(state: &AppState) {
+    prune_unhealthy_containers(state).await;
+
     let pool_ids = {
         let registry = state.registry.lock().await;
         registry.configs.keys().cloned().collect::<Vec<_>>()
@@ -1079,6 +1352,14 @@ async fn lease_container(state: &AppState, selector: &str) -> Result<ContainerLe
                 .containers
                 .values()
                 .filter(|container| container.pool_id == pool.id)
+                .filter(|container| {
+                    !matches!(
+                        container.status,
+                        ContainerStatus::Starting
+                            | ContainerStatus::Draining
+                            | ContainerStatus::Unhealthy
+                    )
+                })
                 .filter(|container| container.in_flight < pool.max_concurrency_per_container)
                 .min_by_key(|container| (container.in_flight, container.last_used_at_ms))
                 .map(|container| container.name.clone());
@@ -1124,7 +1405,7 @@ fn safe_dispatch_path(path: Option<&str>, fallback: &str) -> Result<String, Stri
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or(fallback);
-    if !path.starts_with('/') || path.contains("://") || path.len() > 256 {
+    if !safe_local_path(path) {
         return Err("dispatch path must be a local absolute path".to_string());
     }
     Ok(path.to_string())
@@ -1150,13 +1431,8 @@ fn request_id_from_request(request: &DispatchRequest) -> String {
         .collect()
 }
 
-fn target_url(pool: &PoolConfig, container: &WarmContainer, path: &str) -> String {
-    let port = if path.is_empty() {
-        pool.container_port
-    } else {
-        container.port
-    };
-    format!("http://127.0.0.1:{port}{path}")
+fn target_url(container: &WarmContainer, path: &str) -> String {
+    format!("http://127.0.0.1:{}{path}", container.port)
 }
 
 fn apply_forward_headers(
@@ -1192,44 +1468,82 @@ async fn dispatch_to_pool(
 ) -> Result<DispatchResponse, String> {
     let started = now_ms();
     let lease = lease_container(state, selector).await?;
-    let path = safe_dispatch_path(request.path.as_deref(), &lease.pool.request_path)?;
-    let url = target_url(&lease.pool, &lease.container, &path);
+    let path = match safe_dispatch_path(request.path.as_deref(), &lease.pool.request_path) {
+        Ok(path) => path,
+        Err(error) => {
+            release_container(state, &lease.container.name, true).await;
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            return Err(error);
+        }
+    };
+    let url = target_url(&lease.container, &path);
     let body = dispatch_body(&request);
     let request_id = request_id_from_request(&request);
+    let backfill_state = state.clone();
+    let backfill_pool_id = lease.pool.id.clone();
+    tokio::spawn(async move {
+        if let Err(error) = reconcile_pool(&backfill_state, &backfill_pool_id).await {
+            eprintln!("container pool backfill failed for {backfill_pool_id}: {error}");
+        }
+    });
 
     let send = apply_forward_headers(state.http.post(&url), request.headers.as_ref()).json(&body);
     let response = timeout(lease.pool.request_timeout, send.send()).await;
+    let mut retire_reason = None::<String>;
     let result = match response {
         Ok(Ok(response)) => {
             let status = response.status();
-            let bytes = response.bytes().await.map_err(|error| error.to_string())?;
-            let body = serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
-                json!({
-                    "text": String::from_utf8_lossy(&bytes).chars().take(256 * 1024).collect::<String>()
-                })
-            });
-            Ok(DispatchResponse {
-                ok: status.is_success(),
-                request_id,
-                pool_id: lease.pool.id.clone(),
-                pool_slug: lease.pool.slug.clone(),
-                container_name: lease.container.name.clone(),
-                container_port: lease.container.port,
-                target_url: url,
-                status: status.as_u16(),
-                body,
-                elapsed_ms: now_ms().saturating_sub(started),
-            })
+            match response.bytes().await {
+                Ok(bytes) => {
+                    let body = serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|_| {
+                        json!({
+                            "text": String::from_utf8_lossy(&bytes).chars().take(256 * 1024).collect::<String>()
+                        })
+                    });
+                    Ok(DispatchResponse {
+                        ok: status.is_success(),
+                        request_id,
+                        pool_id: lease.pool.id.clone(),
+                        pool_slug: lease.pool.slug.clone(),
+                        container_name: lease.container.name.clone(),
+                        container_port: lease.container.port,
+                        target_url: url,
+                        status: status.as_u16(),
+                        body,
+                        elapsed_ms: now_ms().saturating_sub(started),
+                    })
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    retire_reason = Some(message.clone());
+                    Err(message)
+                }
+            }
         }
-        Ok(Err(error)) => Err(error.to_string()),
-        Err(_) => Err(format!(
-            "container dispatch timed out after {}ms",
-            duration_millis_u64(lease.pool.request_timeout)
-        )),
+        Ok(Err(error)) => {
+            let message = error.to_string();
+            retire_reason = Some(message.clone());
+            Err(message)
+        }
+        Err(_) => {
+            let message = format!(
+                "container dispatch timed out after {}ms",
+                duration_millis_u64(lease.pool.request_timeout)
+            );
+            retire_reason = Some(message.clone());
+            Err(message)
+        }
     };
 
     let failed = result.as_ref().map(|response| !response.ok).unwrap_or(true);
-    release_container(state, &lease.container.name, failed).await;
+    if let Some(reason) = retire_reason.as_deref() {
+        retire_container(state, &lease.container.name, reason).await;
+    } else {
+        release_container(state, &lease.container.name, failed).await;
+    }
     if failed {
         state
             .metrics
@@ -1237,6 +1551,15 @@ async fn dispatch_to_pool(
             .fetch_add(1, Ordering::Relaxed);
     } else {
         state.metrics.dispatch_total.fetch_add(1, Ordering::Relaxed);
+    }
+    if retire_reason.is_some() {
+        let refill_state = state.clone();
+        let refill_pool_id = lease.pool.id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = reconcile_pool(&refill_state, &refill_pool_id).await {
+                eprintln!("container pool refill failed for {refill_pool_id}: {error}");
+            }
+        });
     }
     result
 }
@@ -1271,12 +1594,17 @@ fn pool_summary(config: &PoolConfig, containers: Vec<WarmContainer>) -> PoolSumm
         .iter()
         .filter(|container| container.status == ContainerStatus::Busy)
         .count();
+    let unhealthy_containers = containers
+        .iter()
+        .filter(|container| container.status == ContainerStatus::Unhealthy)
+        .count();
     PoolSummary {
         id: config.id.clone(),
         slug: config.slug.clone(),
         display_name: config.display_name.clone(),
         image: config.image.clone(),
         request_path: config.request_path.clone(),
+        health_path: config.health_path.clone(),
         container_port: config.container_port,
         min_warm: config.min_warm,
         max_warm: config.max_warm,
@@ -1289,6 +1617,7 @@ fn pool_summary(config: &PoolConfig, containers: Vec<WarmContainer>) -> PoolSumm
         active_containers: containers.len(),
         idle_containers,
         busy_containers,
+        unhealthy_containers,
         containers,
     }
 }
@@ -1341,6 +1670,11 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         .values()
         .filter(|container| container.status == ContainerStatus::Busy)
         .count();
+    let unhealthy = registry
+        .containers
+        .values()
+        .filter(|container| container.status == ContainerStatus::Unhealthy)
+        .count();
     let body = format!(
         "# HELP dd_container_pool_http_requests_total HTTP requests observed by dd-container-pool.\n\
          # TYPE dd_container_pool_http_requests_total counter\n\
@@ -1363,17 +1697,27 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
          # HELP dd_container_pool_containers_removed_total Warm containers removed.\n\
          # TYPE dd_container_pool_containers_removed_total counter\n\
          dd_container_pool_containers_removed_total {}\n\
+         # HELP dd_container_pool_containers_unhealthy_total Warm containers retired as unhealthy.\n\
+         # TYPE dd_container_pool_containers_unhealthy_total counter\n\
+         dd_container_pool_containers_unhealthy_total {}\n\
          # HELP dd_container_pool_config_refresh_total Successful config refreshes.\n\
          # TYPE dd_container_pool_config_refresh_total counter\n\
          dd_container_pool_config_refresh_total {}\n\
          # HELP dd_container_pool_config_refresh_failures_total Failed config refreshes.\n\
          # TYPE dd_container_pool_config_refresh_failures_total counter\n\
          dd_container_pool_config_refresh_failures_total {}\n\
+         # HELP dd_container_pool_container_health_checks_total Container health checks attempted.\n\
+         # TYPE dd_container_pool_container_health_checks_total counter\n\
+         dd_container_pool_container_health_checks_total {}\n\
+         # HELP dd_container_pool_container_health_check_failures_total Container health checks failed.\n\
+         # TYPE dd_container_pool_container_health_check_failures_total counter\n\
+         dd_container_pool_container_health_check_failures_total {}\n\
          # HELP dd_container_pool_warm_containers Current known warm containers.\n\
          # TYPE dd_container_pool_warm_containers gauge\n\
          dd_container_pool_warm_containers {}\n\
          dd_container_pool_idle_containers {}\n\
-         dd_container_pool_busy_containers {}\n",
+         dd_container_pool_busy_containers {}\n\
+         dd_container_pool_unhealthy_containers {}\n",
         state.metrics.http_requests_total.load(Ordering::Relaxed),
         state.metrics.dispatch_total.load(Ordering::Relaxed),
         state.metrics.dispatch_failures_total.load(Ordering::Relaxed),
@@ -1381,14 +1725,27 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         state.metrics.nats_failures_total.load(Ordering::Relaxed),
         state.metrics.containers_started_total.load(Ordering::Relaxed),
         state.metrics.containers_removed_total.load(Ordering::Relaxed),
+        state
+            .metrics
+            .containers_unhealthy_total
+            .load(Ordering::Relaxed),
         state.metrics.config_refresh_total.load(Ordering::Relaxed),
         state
             .metrics
             .config_refresh_failures_total
             .load(Ordering::Relaxed),
+        state
+            .metrics
+            .container_health_checks_total
+            .load(Ordering::Relaxed),
+        state
+            .metrics
+            .container_health_check_failures_total
+            .load(Ordering::Relaxed),
         warm,
         idle,
-        busy
+        busy,
+        unhealthy
     );
     (
         [(

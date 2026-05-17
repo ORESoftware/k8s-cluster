@@ -1,5 +1,6 @@
 -- Seed/update the default warm container pool config in RDS Postgres.
--- Apply after `remote/databases/pg/tables/app-config-table.sql`.
+-- Apply after the shared schema in `remote/libs/pg-defs/schema/schema.sql`
+-- (single source of truth for the `app_config` table this seed writes into).
 
 insert into app_config (scope, key, value, version, status, labels, meta_data)
 values (
@@ -8,6 +9,24 @@ values (
   '{
     "version": 1,
     "description": "Warm container pool definitions consumed by dd-container-pool.",
+    "runtimeContract": {
+      "defaultRequestPath": "/invoke",
+      "defaultHealthPath": "/healthz",
+      "defaultContainerPort": 8080,
+      "managerInjectedEnv": [
+        "PORT",
+        "DD_POOL_ID",
+        "DD_POOL_SLUG",
+        "DD_POOL_CONTAINER_NAME",
+        "DD_POOL_REQUEST_PATH",
+        "DD_POOL_HEALTH_PATH",
+        "NATS_URL",
+        "DD_POOL_NATS_EVENT_SUBJECT",
+        "DD_POOL_NATS_HEARTBEAT_SUBJECT"
+      ],
+      "natsEventPattern": "dd.remote.container_pool.<poolSlug>.events",
+      "natsHeartbeatPattern": "dd.remote.container_pool.<poolSlug>.heartbeats"
+    },
     "baseImages": [
       {
         "runtime": "nodejs",
@@ -63,6 +82,7 @@ values (
           "DD_POOL_HANDLER": "node /opt/dd-container-pool/handlers/nodejs-handler.mjs"
         },
         "requestPath": "/invoke",
+        "healthPath": "/healthz",
         "containerPort": 8080,
         "minWarm": 1,
         "maxWarm": 3,
@@ -82,6 +102,7 @@ values (
           "DD_POOL_HANDLER": "/usr/local/bin/dd-pool-rust-handler"
         },
         "requestPath": "/invoke",
+        "healthPath": "/healthz",
         "containerPort": 8080,
         "minWarm": 1,
         "maxWarm": 2,
@@ -101,6 +122,7 @@ values (
           "DD_POOL_HANDLER": "/usr/local/bin/dd-pool-golang-handler"
         },
         "requestPath": "/invoke",
+        "healthPath": "/healthz",
         "containerPort": 8080,
         "minWarm": 1,
         "maxWarm": 2,
@@ -120,6 +142,7 @@ values (
           "DD_POOL_HANDLER": "python3 /opt/dd-container-pool/handlers/python3_handler.py"
         },
         "requestPath": "/invoke",
+        "healthPath": "/healthz",
         "containerPort": 8080,
         "minWarm": 1,
         "maxWarm": 3,
@@ -139,6 +162,7 @@ values (
           "DD_POOL_HANDLER": "/usr/local/bin/dd-pool-dart-handler"
         },
         "requestPath": "/invoke",
+        "healthPath": "/healthz",
         "containerPort": 8080,
         "minWarm": 1,
         "maxWarm": 2,
@@ -158,6 +182,7 @@ values (
           "DD_POOL_HANDLER": "escript /opt/dd-container-pool/handlers/erlang-handler.escript"
         },
         "requestPath": "/invoke",
+        "healthPath": "/healthz",
         "containerPort": 8080,
         "minWarm": 1,
         "maxWarm": 2,
@@ -177,6 +202,7 @@ values (
           "DD_POOL_HANDLER": "escript /opt/dd-container-pool/handlers/erlang-handler.escript"
         },
         "requestPath": "/invoke",
+        "healthPath": "/healthz",
         "containerPort": 8080,
         "minWarm": 1,
         "maxWarm": 2,

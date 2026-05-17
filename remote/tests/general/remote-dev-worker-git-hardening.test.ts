@@ -49,11 +49,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /\['ls-remote', '--heads', 'origin', branch\]/);
   assert.match(server, /\['fetch', '--quiet', 'origin', config\.baseBranch\]/);
   assert.match(server, /\['fetch', '--quiet', 'origin', session\.branch\]/);
-  assert.match(
-    server,
-    /hasRemoteBranch \? `origin\/\$\{session\.branch\}` : `origin\/\$\{config\.baseBranch\}`/,
-  );
+  assert.match(server, /let switchSource = `origin\/\$\{config\.baseBranch\}`/);
+  assert.match(server, /switchSource = 'FETCH_HEAD'/);
   assert.match(server, /'switch',[\s\S]*'--discard-changes',[\s\S]*'-C',[\s\S]*session\.branch,/);
+  assert.match(server, /'switch',[\s\S]*session\.branch,[\s\S]*switchSource/);
   assert.match(server, /\['merge', '--no-edit', `origin\/\$\{config\.baseBranch\}`\]/);
   assert.match(server, /\['push', '--no-verify', '--set-upstream', 'origin', session\.branch\]/);
   assert.match(server, /\['install', '--frozen-lockfile'\]/);

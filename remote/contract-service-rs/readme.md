@@ -5,7 +5,7 @@ Rust Solana contract gateway for the remote runtime.
 The service does not store private keys and does not sign transactions. It validates declared
 contract instruction envelopes, exposes a Solana-aware schema/example API, can simulate signed
 transactions through a configured Solana JSON-RPC endpoint, and blocks `sendTransaction` unless
-`SOLANA_SEND_ENABLED=true` is set explicitly.
+`SOLANA_SEND_ENABLED=true` is set explicitly with a separate `CONTRACT_SEND_AUTH_SECRET`.
 
 ## HTTP API
 
@@ -16,7 +16,20 @@ transactions through a configured Solana JSON-RPC endpoint, and blocks `sendTran
 - `GET /example` - minimal validation example.
 - `POST /validate` - validates a contract instruction envelope and returns a deterministic digest.
 - `POST /simulate` - calls Solana JSON-RPC `simulateTransaction` for a signed base64/base58 transaction.
-- `POST /send` - calls Solana JSON-RPC `sendTransaction` only when `SOLANA_SEND_ENABLED=true`.
+- `POST /send` - calls Solana JSON-RPC `sendTransaction` only when `SOLANA_SEND_ENABLED=true` and
+  the caller sends a matching `x-contract-send-auth` header.
+
+## Hardening Contract
+
+- Request `cluster` must match the configured `SOLANA_CLUSTER`; requests cannot relabel devnet RPC
+  traffic as mainnet, or the reverse.
+- `SOLANA_RPC_URL` must be HTTPS and must not point at localhost, private IPs, `.local`, or
+  `.cluster.local` hosts unless `SOLANA_ALLOW_PRIVATE_RPC=true`.
+- `sendTransaction` requires both `SOLANA_SEND_ENABLED=true` and `CONTRACT_SEND_AUTH_SECRET`.
+- `skipPreflight` is rejected unless `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
+- `simulateTransaction` rejects `sigVerify=true` with `replaceRecentBlockhash=true`.
+- The deployment mounts the source checkout read-only and sends Cargo build/cache output to
+  disposable `emptyDir` volumes.
 
 ## NATS API
 

@@ -10,16 +10,11 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: dd-bastion-access-broker
+  name: dd-bastion-readonly
   labels:
     app.kubernetes.io/name: dd-bastion
     app.kubernetes.io/part-of: dd-remote-dev
 rules:
-  - apiGroups: ['']
-    resources:
-      - pods/exec
-    verbs:
-      - create
   - apiGroups: ['']
     resources:
       - namespaces
@@ -62,7 +57,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: dd-bastion-access-broker
+  name: dd-bastion-readonly
   labels:
     app.kubernetes.io/name: dd-bastion
     app.kubernetes.io/part-of: dd-remote-dev
@@ -73,4 +68,4 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: dd-bastion-access-broker
+  name: dd-bastion-readonly

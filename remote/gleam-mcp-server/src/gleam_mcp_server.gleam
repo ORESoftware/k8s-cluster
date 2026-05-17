@@ -4,9 +4,12 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision
 import gleam_mcp_server/http_server
 import gleam_mcp_server/metrics
+import gleam_mcp_server/pg_contract
 
 pub fn main() -> Nil {
   let metrics_name = process.new_name(prefix: "dd_gleam_mcp_metrics")
+
+  let _ = pg_contract.app_config_table()
 
   let assert Ok(_started) =
     supervisor.new(supervisor.OneForOne)

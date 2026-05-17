@@ -37,6 +37,11 @@ test('python ai/ml pipeline turns telemetry into MDP-ready feature events', asyn
   assert.match(source, /POST \/ingest/);
   assert.match(source, /POST \/analyze/);
   assert.match(source, /POST \/mdp\/features/);
+  assert.match(source, /GET \/readyz/);
+  assert.match(source, /ML_DEAD_LETTER_SUBJECT/);
+  assert.match(source, /dd\.remote\.ml\.deadletter/);
+  assert.match(source, /wait_for_nats_pong/);
+  assert.match(source, /publish_dead_letter/);
   assert.match(source, /SERVER_AUTH_SECRET is required unless ML_ALLOW_UNAUTHENTICATED=true/);
   assert.match(source, /compare_digest/);
   assert.match(source, /MAX_TELEMETRY_WINDOW_MS/);
@@ -62,6 +67,9 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   const requirements = await readRepoFile(
     'remote/argocd/ai-ml-platform/dd-ai-ml-python-workflow-requirements.configmap.yaml',
   );
+  const dataContracts = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-ai-ml-data-contracts.configmap.yaml',
+  );
   const externalSecret = await readRepoFile(
     'remote/argocd/ai-ml-platform/dd-ai-ml-agent-secrets.externalsecret.yaml',
   );
@@ -85,6 +93,7 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(kustomization, /dd-ai-ml-tool-catalog\.configmap\.yaml/);
   assert.match(kustomization, /dd-ai-ml-python-workflow-requirements\.configmap\.yaml/);
   assert.match(kustomization, /dd-ai-ml-agent-secrets\.externalsecret\.yaml/);
+  assert.match(kustomization, /dd-ai-ml-data-contracts\.configmap\.yaml/);
   assert.match(kustomization, /dd-ai-ml-serviceaccount\.yaml/);
   assert.match(kustomization, /dd-ai-ml-pipeline\.deployment\.yaml/);
   assert.match(kustomization, /dd-ai-ml-pipeline\.service\.yaml/);
@@ -108,6 +117,10 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(requirements, /dbt-core/);
   assert.match(requirements, /metaflow/);
   assert.match(requirements, /llama-index/);
+  assert.match(dataContracts, /telemetry-ingest\.schema\.json/);
+  assert.match(dataContracts, /mdp-telemetry\.schema\.json/);
+  assert.match(dataContracts, /dd\.remote\.ml\.deadletter/);
+  assert.match(dataContracts, /"maximum": 86400000/);
 
   assert.match(deployment, /name:\s*dd-ai-ml-pipeline/);
   assert.match(deployment, /namespace:\s*ai-ml/);
@@ -123,12 +136,14 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(deployment, /ML_FEATURE_SUBJECT[\s\S]*dd\.remote\.ml\.features/);
   assert.match(deployment, /ML_MDP_TELEMETRY_SUBJECT[\s\S]*dd\.remote\.telemetry\.mdp/);
   assert.match(deployment, /ML_EVENT_SUBJECT[\s\S]*dd\.remote\.events/);
+  assert.match(deployment, /ML_DEAD_LETTER_SUBJECT[\s\S]*dd\.remote\.ml\.deadletter/);
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
   assert.match(deployment, /runAsNonRoot:\s*true/);
   assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(deployment, /mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/);
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(service, /name:\s*dd-ai-ml-pipeline/);
   assert.match(service, /namespace:\s*ai-ml/);
   assert.match(service, /port:\s*8099/);

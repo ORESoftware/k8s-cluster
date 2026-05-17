@@ -50,6 +50,7 @@ init() ->
         result_subject => env_binary("NATS_LAMBDA_RESULT_SUBJECT", <<"dd.remote.lambdas.results">>),
         functions_subject => env_binary("NATS_LAMBDA_FUNCTIONS_SUBJECT", <<"dd.remote.lambdas.functions">>),
         reconnect_ms => env_int("NATS_LAMBDA_RECONNECT_MS", 1000),
+        max_payload_bytes => env_int("NATS_LAMBDA_MAX_PAYLOAD_BYTES", 5242880),
         buffer => <<>>
     },
     connect(State).
@@ -126,6 +127,9 @@ drain(State = #{socket := Socket, buffer := Buffer}) ->
         <<"MSG ", _/binary>> ->
             case drain_message(State) of
                 {continue, NextState} -> drain(NextState);
+                close ->
+                    catch gen_tcp:close(Socket),
+                    connect(maps:remove(socket, State#{buffer => <<>>}));
                 wait -> loop(State)
             end;
         _ ->
@@ -149,16 +153,25 @@ drain_message(State = #{buffer := Buffer}) ->
             Parts = binary:split(Header, <<" ">>, [global]),
             case parse_msg_header(Parts) of
                 {ok, Subject, ReplyTo, ByteCount} ->
-                    PayloadStart = HeaderEnd + 2,
-                    FrameEnd = PayloadStart + ByteCount + 2,
-                    case byte_size(Buffer) >= FrameEnd of
+                    case ByteCount > maps:get(max_payload_bytes, State) of
                         true ->
-                            Payload = binary:part(Buffer, PayloadStart, ByteCount),
-                            Rest = binary:part(Buffer, FrameEnd, byte_size(Buffer) - FrameEnd),
-                            spawn(fun() -> handle_message(State, Subject, ReplyTo, Payload) end),
-                            {continue, State#{buffer => Rest}};
+                            io:format(
+                                "lambda nats dropping oversized message subject=~s bytes=~p~n",
+                                [Subject, ByteCount]
+                            ),
+                            close;
                         false ->
-                            wait
+                            PayloadStart = HeaderEnd + 2,
+                            FrameEnd = PayloadStart + ByteCount + 2,
+                            case byte_size(Buffer) >= FrameEnd of
+                                true ->
+                                    Payload = binary:part(Buffer, PayloadStart, ByteCount),
+                                    Rest = binary:part(Buffer, FrameEnd, byte_size(Buffer) - FrameEnd),
+                                    spawn(fun() -> handle_message(State, Subject, ReplyTo, Payload) end),
+                                    {continue, State#{buffer => Rest}};
+                                false ->
+                                    wait
+                            end
                     end;
                 error ->
                     Rest = binary:part(Buffer, HeaderEnd + 2, byte_size(Buffer) - HeaderEnd - 2),
@@ -438,7 +451,8 @@ json_escape(Value0) ->
     Slash = binary:replace(Value, <<"\\">>, <<"\\\\">>, [global]),
     Quote = binary:replace(Slash, <<"\"">>, <<"\\\"">>, [global]),
     Newline = binary:replace(Quote, <<"\n">>, <<"\\n">>, [global]),
-    binary:replace(Newline, <<"\r">>, <<"\\r">>, [global]).
+    Return = binary:replace(Newline, <<"\r">>, <<"\\r">>, [global]),
+    binary:replace(Return, <<"\t">>, <<"\\t">>, [global]).
 
 to_binary(Value) when is_binary(Value) ->
     Value;

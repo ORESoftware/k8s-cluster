@@ -6,6 +6,7 @@ resources:
   - dd-vpn.serviceaccount.yaml
   - dd-vpn.configmap.yaml
   - dd-vpn-secrets.externalsecret.yaml
+  - dd-vpn.pv.yaml
   - dd-vpn.pvc.yaml
   - dd-vpn.deployment.yaml
   - dd-vpn-ui.service.yaml

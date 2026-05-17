@@ -26,6 +26,7 @@ const MODEL_SCHEMA_VERSION: &str = "des.v1";
 const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 512 * 1024;
 const MAX_RETAINED_JOBS: usize = 512;
+const MAX_ACTIVE_JOBS: u64 = 8;
 const MAX_TOKEN_LEN: usize = 96;
 const MAX_REQUEST_ID_LEN: usize = 128;
 const MAX_EVENT_TYPES: usize = 128;
@@ -345,6 +346,27 @@ struct SimulationConfig {
     until: f64,
     max_events: usize,
     trace: bool,
+}
+
+#[derive(Debug)]
+enum StartJobError {
+    Invalid(String),
+    Busy(String),
+}
+
+impl StartJobError {
+    fn message(&self) -> &str {
+        match self {
+            StartJobError::Invalid(message) | StartJobError::Busy(message) => message,
+        }
+    }
+
+    fn status_code(&self) -> StatusCode {
+        match self {
+            StartJobError::Invalid(_) => StatusCode::BAD_REQUEST,
+            StartJobError::Busy(_) => StatusCode::TOO_MANY_REQUESTS,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -999,6 +1021,227 @@ fn example_request() -> Value {
     })
 }
 
+fn fibonacci_example_request() -> Value {
+    let event_types = (0..=8)
+        .map(|index| json!({ "name": format!("fib{index}") }))
+        .collect::<Vec<_>>();
+    let mut transitions = Vec::new();
+    for index in 0..=6 {
+        transitions.push(json!({
+            "name": format!("fib{index}.advance-one"),
+            "from": format!("fib{index}"),
+            "to": format!("fib{}", index + 1),
+            "delay": { "distribution": "fixed", "value": 1 },
+            "attributes": {
+                "control": "advance-one",
+                "sourceIndex": index
+            }
+        }));
+        transitions.push(json!({
+            "name": format!("fib{index}.advance-two"),
+            "from": format!("fib{index}"),
+            "to": format!("fib{}", index + 2),
+            "delay": { "distribution": "fixed", "value": 2 },
+            "attributes": {
+                "control": "advance-two",
+                "sourceIndex": index
+            }
+        }));
+    }
+    transitions.push(json!({
+        "name": "fib7.advance-one",
+        "from": "fib7",
+        "to": "fib8",
+        "delay": { "distribution": "fixed", "value": 1 },
+        "attributes": {
+            "control": "advance-one",
+            "sourceIndex": 7
+        }
+    }));
+    let metrics = (0..=8)
+        .map(|index| {
+            json!({
+                "name": format!("fib{index}_count"),
+                "eventType": format!("fib{index}"),
+                "kind": "count"
+            })
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "requestId": "fibonacci-control-demo",
+        "model": {
+            "schemaVersion": MODEL_SCHEMA_VERSION,
+            "name": "fibonacci-discrete-control",
+            "timeUnit": "step",
+            "startTime": 0,
+            "seed": 13,
+            "eventTypes": event_types,
+            "initialEvents": [
+                {
+                    "at": 0,
+                    "eventType": "fib0",
+                    "entityId": "sequence-root",
+                    "attributes": { "index": 0 }
+                }
+            ],
+            "transitions": transitions,
+            "metrics": metrics
+        },
+        "options": {
+            "until": 12,
+            "maxEvents": 200,
+            "trace": true
+        }
+    })
+}
+
+fn temperature_control_example_request() -> Value {
+    json!({
+        "requestId": "temperature-control-demo",
+        "model": {
+            "schemaVersion": MODEL_SCHEMA_VERSION,
+            "name": "temperature-bang-bang-control",
+            "timeUnit": "seconds",
+            "startTime": 0,
+            "seed": 21,
+            "eventTypes": [
+                { "name": "sampleCold" },
+                { "name": "commandHeat" },
+                { "name": "sampleComfort" },
+                { "name": "commandHold" },
+                { "name": "sampleHot" },
+                { "name": "commandCool" }
+            ],
+            "resources": [
+                { "name": "heater", "capacity": 1 },
+                { "name": "cooler", "capacity": 1 }
+            ],
+            "initialEvents": [
+                {
+                    "at": 0,
+                    "eventType": "sampleCold",
+                    "entityId": "zone-a",
+                    "attributes": { "temperatureC": 18, "setpointC": 22 }
+                }
+            ],
+            "transitions": [
+                {
+                    "name": "cold.control-heat",
+                    "from": "sampleCold",
+                    "to": "commandHeat",
+                    "delay": { "distribution": "fixed", "value": 0 },
+                    "limit": 2,
+                    "attributes": { "controllerState": "heating" }
+                },
+                {
+                    "name": "heat.plant-response",
+                    "from": "commandHeat",
+                    "to": "sampleComfort",
+                    "delay": { "distribution": "fixed", "value": 0 },
+                    "resource": {
+                        "name": "heater",
+                        "units": 1,
+                        "duration": { "distribution": "fixed", "value": 4 }
+                    },
+                    "limit": 2,
+                    "attributes": { "temperatureC": 22, "controllerState": "comfort" }
+                },
+                {
+                    "name": "comfort.control-hold",
+                    "from": "sampleComfort",
+                    "to": "commandHold",
+                    "delay": { "distribution": "fixed", "value": 0 },
+                    "limit": 3,
+                    "attributes": { "controllerState": "holding" }
+                },
+                {
+                    "name": "hold.disturb-hot",
+                    "from": "commandHold",
+                    "to": "sampleHot",
+                    "delay": { "distribution": "fixed", "value": 5 },
+                    "limit": 2,
+                    "attributes": { "temperatureC": 25, "disturbance": "solar-gain" }
+                },
+                {
+                    "name": "hot.control-cool",
+                    "from": "sampleHot",
+                    "to": "commandCool",
+                    "delay": { "distribution": "fixed", "value": 0 },
+                    "limit": 2,
+                    "attributes": { "controllerState": "cooling" }
+                },
+                {
+                    "name": "cool.plant-response",
+                    "from": "commandCool",
+                    "to": "sampleComfort",
+                    "delay": { "distribution": "fixed", "value": 0 },
+                    "resource": {
+                        "name": "cooler",
+                        "units": 1,
+                        "duration": { "distribution": "fixed", "value": 3 }
+                    },
+                    "limit": 2,
+                    "attributes": { "temperatureC": 22, "controllerState": "comfort" }
+                },
+                {
+                    "name": "hold.disturb-cold",
+                    "from": "commandHold",
+                    "to": "sampleCold",
+                    "delay": { "distribution": "fixed", "value": 7 },
+                    "limit": 1,
+                    "attributes": { "temperatureC": 18, "disturbance": "door-open" }
+                }
+            ],
+            "metrics": [
+                { "name": "heat_commands", "eventType": "commandHeat", "kind": "count" },
+                { "name": "cool_commands", "eventType": "commandCool", "kind": "count" },
+                { "name": "comfort_samples", "eventType": "sampleComfort", "kind": "count" }
+            ]
+        },
+        "options": {
+            "until": 30,
+            "maxEvents": 100,
+            "trace": true
+        }
+    })
+}
+
+fn examples_index() -> Value {
+    json!({
+        "ok": true,
+        "schemaVersion": MODEL_SCHEMA_VERSION,
+        "examples": [
+            {
+                "name": "clinic",
+                "description": "Queueing DES with bounded nurse and exam-room resources.",
+                "url": "/model/examples/clinic"
+            },
+            {
+                "name": "fibonacci",
+                "description": "Deterministic branching DES where discrete advance controls produce Fibonacci event counts.",
+                "url": "/model/examples/fibonacci"
+            },
+            {
+                "name": "temperature-control",
+                "description": "Bang-bang temperature controller with discrete heat, hold, and cool commands.",
+                "url": "/model/examples/temperature-control"
+            }
+        ]
+    })
+}
+
+fn example_request_by_name(name: &str) -> Option<Value> {
+    match name {
+        "clinic" | "clinic-intake" | "default" => Some(example_request()),
+        "fibonacci" | "fibonacci-control" => Some(fibonacci_example_request()),
+        "temperature" | "temperature-control" | "bang-bang-temperature-control" => {
+            Some(temperature_control_example_request())
+        }
+        _ => None,
+    }
+}
+
 fn request_identifier(request: &SimulationRequest, job_id: &str) -> String {
     request
         .request_id
@@ -1336,20 +1579,36 @@ fn next_job_id(state: &AppState) -> String {
     format!("des-{}-{sequence}", now_ms())
 }
 
+fn reserve_active_job_slot(state: &AppState) -> Result<(), StartJobError> {
+    state
+        .metrics
+        .jobs_running
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |running| {
+            (running < MAX_ACTIVE_JOBS).then_some(running + 1)
+        })
+        .map(|_| ())
+        .map_err(|running| {
+            StartJobError::Busy(format!(
+                "too many active DES jobs; maxActiveJobs={MAX_ACTIVE_JOBS} running={running}"
+            ))
+        })
+}
+
 fn start_simulation_job(
     state: AppState,
     request: SimulationRequest,
     source: &str,
-) -> Result<SimulationAcceptedResponse, String> {
+) -> Result<SimulationAcceptedResponse, StartJobError> {
     let validation = validate_simulation_request(&request);
     if !validation.ok {
         state
             .metrics
             .validation_errors_total
             .fetch_add(1, Ordering::Relaxed);
-        return Err(validation.errors.join("; "));
+        return Err(StartJobError::Invalid(validation.errors.join("; ")));
     }
 
+    reserve_active_job_slot(&state)?;
     let job_id = next_job_id(&state);
     let request_id = request_identifier(&request, &job_id);
     let snapshot = insert_pending_job(
@@ -1362,7 +1621,6 @@ fn start_simulation_job(
         .metrics
         .jobs_started_total
         .fetch_add(1, Ordering::Relaxed);
-    state.metrics.jobs_running.fetch_add(1, Ordering::Relaxed);
 
     let worker_state = state.clone();
     let worker_job_id = job_id.clone();
@@ -1441,6 +1699,8 @@ async fn root() -> impl IntoResponse {
             "metrics": "GET /metrics",
             "schema": "GET /model/schema",
             "example": "GET /model/example",
+            "examples": "GET /model/examples",
+            "namedExample": "GET /model/examples/:name",
             "validate": "POST /validate",
             "simulate": "POST /simulate",
             "jobStatus": "GET /simulations/:jobId"
@@ -1471,6 +1731,26 @@ async fn example_http() -> impl IntoResponse {
     Json(example_request())
 }
 
+async fn examples_http() -> impl IntoResponse {
+    Json(examples_index())
+}
+
+async fn named_example_http(Path(name): Path<String>) -> Response {
+    match example_request_by_name(&name) {
+        Some(example) => Json(example).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "ok": false,
+                "schemaVersion": MODEL_SCHEMA_VERSION,
+                "error": format!("unknown DES example {name}"),
+                "examples": examples_index()["examples"].clone()
+            })),
+        )
+            .into_response(),
+    }
+}
+
 async fn simulate_http(
     State(state): State<AppState>,
     Json(request): Json<SimulationRequest>,
@@ -1481,11 +1761,11 @@ async fn simulate_http(
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             (
-                StatusCode::BAD_REQUEST,
+                error.status_code(),
                 Json(json!({
                     "ok": false,
                     "schemaVersion": MODEL_SCHEMA_VERSION,
-                    "error": error
+                    "error": error.message()
                 })),
             )
                 .into_response()
@@ -1551,6 +1831,9 @@ async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_des_simulator_jobs_running Current in-process simulation jobs.\n\
          # TYPE dd_des_simulator_jobs_running gauge\n\
          dd_des_simulator_jobs_running {}\n\
+         # HELP dd_des_simulator_max_active_jobs Configured active simulation job limit.\n\
+         # TYPE dd_des_simulator_max_active_jobs gauge\n\
+         dd_des_simulator_max_active_jobs {}\n\
          # HELP dd_des_simulator_errors_total Runtime, validation, or queue errors.\n\
          # TYPE dd_des_simulator_errors_total counter\n\
          dd_des_simulator_errors_total {}\n\
@@ -1569,6 +1852,7 @@ async fn metrics(State(state): State<AppState>) -> Response {
         state.metrics.jobs_completed_total.load(Ordering::Relaxed),
         state.metrics.jobs_failed_total.load(Ordering::Relaxed),
         state.metrics.jobs_running.load(Ordering::Relaxed),
+        MAX_ACTIVE_JOBS,
         state.metrics.errors_total.load(Ordering::Relaxed),
         state
             .metrics
@@ -1621,7 +1905,10 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             Ok(request) => {
                 if let Err(error) = start_simulation_job(state.clone(), request, "nats") {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    eprintln!("des simulator rejected nats simulation: {error}");
+                    eprintln!(
+                        "des simulator rejected nats simulation: {}",
+                        error.message()
+                    );
                 }
             }
             Err(error) => {
@@ -1661,6 +1948,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/metrics", get(metrics))
         .route("/model/schema", get(schema_http))
         .route("/model/example", get(example_http))
+        .route("/model/examples", get(examples_http))
+        .route("/model/examples/:name", get(named_example_http))
         .route("/validate", post(validate_with_metrics))
         .route("/simulate", post(simulate_http))
         .route("/simulations/:job_id", get(job_status))
@@ -1761,6 +2050,14 @@ mod tests {
             .count
     }
 
+    fn resource_summary<'a>(result: &'a SimulationResult, name: &str) -> &'a ResourceSummary {
+        result
+            .resources
+            .iter()
+            .find(|entry| entry.name == name)
+            .unwrap_or_else(|| panic!("missing resource summary {name}"))
+    }
+
     #[test]
     fn validates_declared_model_format() {
         let validation = validate_simulation_request(&request());
@@ -1825,6 +2122,73 @@ mod tests {
         assert_eq!(event_count(&result, "arrival"), 2);
         assert_eq!(event_count(&result, "done"), 0);
         assert_eq!(result.generated_events, 0);
+    }
+
+    #[test]
+    fn fibonacci_example_runs_as_discrete_control_sequence() {
+        let request = serde_json::from_value::<SimulationRequest>(fibonacci_example_request())
+            .expect("example should deserialize");
+        let validation = validate_simulation_request(&request);
+        assert!(validation.ok, "{:?}", validation.errors);
+
+        let result = simulate(request, "fib-job".to_string()).expect("simulation succeeds");
+        let expected_counts = [
+            ("fib0", 1),
+            ("fib1", 1),
+            ("fib2", 2),
+            ("fib3", 3),
+            ("fib4", 5),
+            ("fib5", 8),
+            ("fib6", 13),
+            ("fib7", 21),
+            ("fib8", 34),
+        ];
+
+        assert_eq!(result.processed_events, 88);
+        assert_eq!(result.generated_events, 87);
+        assert!(!result.truncated);
+        for (event_type, count) in expected_counts {
+            assert_eq!(event_count(&result, event_type), count);
+        }
+        assert_eq!(
+            result
+                .metric_values
+                .iter()
+                .find(|metric| metric.name == "fib8_count")
+                .expect("fib8 metric")
+                .value,
+            34.0
+        );
+    }
+
+    #[test]
+    fn temperature_control_example_runs_heat_hold_cool_events() {
+        let request =
+            serde_json::from_value::<SimulationRequest>(temperature_control_example_request())
+                .expect("example should deserialize");
+        let validation = validate_simulation_request(&request);
+        assert!(validation.ok, "{:?}", validation.errors);
+
+        let result = simulate(request, "temp-job".to_string()).expect("simulation succeeds");
+
+        assert_eq!(event_count(&result, "sampleCold"), 2);
+        assert_eq!(event_count(&result, "commandHeat"), 2);
+        assert_eq!(event_count(&result, "sampleComfort"), 4);
+        assert_eq!(event_count(&result, "commandHold"), 3);
+        assert_eq!(event_count(&result, "sampleHot"), 2);
+        assert_eq!(event_count(&result, "commandCool"), 2);
+        assert_eq!(resource_summary(&result, "heater").allocations, 2);
+        assert_eq!(resource_summary(&result, "cooler").allocations, 2);
+        assert_eq!(
+            result
+                .metric_values
+                .iter()
+                .find(|metric| metric.name == "comfort_samples")
+                .expect("comfort metric")
+                .value,
+            4.0
+        );
+        assert!(!result.truncated);
     }
 
     #[test]

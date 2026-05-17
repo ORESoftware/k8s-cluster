@@ -171,6 +171,9 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   const buildServerRbac = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-build-server-rbac.yaml',
   );
+  const buildServerNetworkPolicy = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml',
+  );
   const lambdaDeployment = await readRepoFile(
     'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
   );
@@ -188,6 +191,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     /map "\$dd_gateway_header_auth_ok:\$dd_gateway_cookie_auth_ok" \$dd_gateway_auth_ok/,
   );
   assert.match(gateway, /map \$dd_gateway_auth_ok \$dd_gateway_auth_header/);
+  assert.match(gateway, /map \$dd_gateway_auth_ok \$dd_dev_server_auth_header/);
   assert.match(gateway, /map \$http_accept \$dd_gateway_accepts_html/);
   assert.match(gateway, /default\s+0/);
   assert.match(gateway, /default\.conf\.template/);
@@ -246,12 +250,24 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   assert.match(
     gateway,
-    /location\s+\/api\/agents\/[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+    /location\s+\/api\/agents\/[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
   );
   assert.match(gateway, /location = \/bastion[\s\S]*return 302 \/bastion\/profile/);
   assert.match(
     gateway,
     /location\s+\/bastion\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header X-Bastion-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*set \$dd_bastion_upstream dd-bastion\.vpn\.svc\.cluster\.local:8111[\s\S]*rewrite \^\/bastion\/\?\(\.\*\)\$ \/\$1 break[\s\S]*proxy_pass http:\/\/\$dd_bastion_upstream/,
+  );
+  assert.match(
+    gateway,
+    /location\s+\/tasks[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*dd-dev-server-api\.default\.svc\.cluster\.local:8080/,
+  );
+  assert.match(
+    gateway,
+    /location\s+\/status[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*dd-dev-server-api\.default\.svc\.cluster\.local:8080/,
+  );
+  assert.match(
+    gateway,
+    /location\s+\/stream\/[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*dd-dev-server-api\.default\.svc\.cluster\.local:8080/,
   );
   assert.match(
     gateway,
@@ -350,6 +366,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(kustomization, /dd-build-server-rbac\.yaml/);
   assert.match(kustomization, /dd-build-server\.deployment\.yaml/);
   assert.match(kustomization, /dd-build-server\.service\.yaml/);
+  assert.match(kustomization, /dd-build-server\.networkpolicy\.yaml/);
   assert.match(webrtcDeployment, /name:\s*dd-webrtc-signaling/);
   assert.match(webrtcDeployment, /cd \/opt\/dd-next-1\/remote\/webrtc-signaling-rs/);
   assert.match(webrtcDeployment, /containerPort:\s*8095/);
@@ -364,16 +381,28 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(buildServerDeployment, /serviceAccountName:\s*dd-build-server/);
   assert.match(buildServerDeployment, /cd \/opt\/dd-next-1\/remote\/build-server-rs/);
   assert.match(buildServerDeployment, /containerPort:\s*8100/);
+  assert.match(
+    buildServerDeployment,
+    /BUILD_SERVER_ALLOWED_IMAGE_PREFIXES[\s\S]*710156900967\.dkr\.ecr\.us-east-1\.amazonaws\.com\//,
+  );
   assert.match(buildServerDeployment, /BUILD_SERVER_ALLOWED_NAMESPACES[\s\S]*value:\s*default/);
-  assert.match(buildServerDeployment, /BUILD_SERVER_PUSH_ENABLED[\s\S]*value:\s*'false'/);
+  assert.match(buildServerDeployment, /BUILD_SERVER_PUSH_ENABLED[\s\S]*value:\s*'true'/);
+  assert.match(buildServerDeployment, /BUILD_SERVER_ECR_LOGIN_ENABLED[\s\S]*value:\s*'true'/);
+  assert.match(buildServerDeployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(buildServerDeployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
   assert.match(buildServerDeployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
   assert.match(buildServerDeployment, /mountPath:\s*\/usr\/bin\/kubectl/);
   assert.match(buildServerService, /name:\s*dd-build-server/);
   assert.match(buildServerService, /port:\s*8100/);
   assert.match(buildServerRbac, /kind:\s*ServiceAccount[\s\S]*name:\s*dd-build-server/);
-  assert.match(buildServerRbac, /resources: \[daemonsets, deployments, replicasets, statefulsets\]/);
-  assert.match(buildServerRbac, /resources: \[ingresses, networkpolicies\]/);
+  assert.match(buildServerRbac, /resources: \[deployments\]/);
+  assert.match(buildServerRbac, /resources: \[ingresses\]/);
+  assert.doesNotMatch(buildServerRbac, /resources: \[secrets\]/);
+  assert.doesNotMatch(buildServerRbac, /serviceaccounts/);
+  assert.doesNotMatch(buildServerRbac, /daemonsets/);
+  assert.match(buildServerNetworkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(buildServerNetworkPolicy, /app:\s*dd-build-server/);
+  assert.match(buildServerNetworkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(lambdaDeployment, /name:\s*dd-gleam-lambda-runner/);
   assert.match(lambdaDeployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
   assert.match(lambdaDeployment, /containerPort:\s*8083/);

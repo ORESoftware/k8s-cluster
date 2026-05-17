@@ -11,22 +11,22 @@ metadata:
   namespace: default
 rules:
   - apiGroups: ['']
-    resources: [configmaps, events, persistentvolumeclaims, pods, serviceaccounts, services]
+    resources: [configmaps, services]
     verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [get, list, watch]
   - apiGroups: [apps]
-    resources: [daemonsets, deployments, replicasets, statefulsets]
+    resources: [deployments]
     verbs: [get, list, watch, create, patch, update, delete]
   - apiGroups: [apps]
     resources: [deployments/scale]
     verbs: [get, patch, update]
-  - apiGroups: [batch]
-    resources: [cronjobs, jobs]
-    verbs: [get, list, watch, create, patch, update, delete]
   - apiGroups: [autoscaling]
     resources: [horizontalpodautoscalers]
     verbs: [get, list, watch, create, patch, update, delete]
   - apiGroups: [networking.k8s.io]
-    resources: [ingresses, networkpolicies]
+    resources: [ingresses]
     verbs: [get, list, watch, create, patch, update, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

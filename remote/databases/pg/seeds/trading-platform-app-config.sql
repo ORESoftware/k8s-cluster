@@ -1,5 +1,6 @@
 -- Seed/update default algorithmic trading platform config in RDS Postgres.
--- Apply after `remote/databases/pg/tables/app-config-table.sql`.
+-- Apply after the shared schema in `remote/libs/pg-defs/schema/schema.sql`
+-- (single source of truth for the `app_config` table this seed writes into).
 --
 -- This stores broker/platform metadata only. API keys, account IDs, refresh tokens,
 -- and gateway credentials stay in Kubernetes/AWS Secrets Manager.
@@ -121,7 +122,7 @@ values (
         "status": "active",
         "supportsPaper": true,
         "supportsLive": true,
-        "assetClasses": ["crypto", "prediction-markets"],
+        "assetClasses": ["crypto"],
         "orderTypes": ["market", "limit"],
         "baseUrls": {
           "paper": "https://api.sandbox.gemini.com",

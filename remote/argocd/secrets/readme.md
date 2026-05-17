@@ -21,19 +21,20 @@ Required AWS secret names:
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets` if MCP write tools are
   enabled
 
-The cluster also needs a bootstrap Kubernetes secret named `dd-aws-secrets-manager-auth` in
-namespace `default` with:
+The `dd-aws-secrets-manager` store uses the External Secrets controller pod's default AWS
+credential chain. On EC2 this means the node instance role must allow
+`secretsmanager:GetSecretValue`, `secretsmanager:DescribeSecret`, and
+`secretsmanager:ListSecretVersionIds` on `arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*`.
 
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
+`dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the Gleam lambda runner
+consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda
+definitions by UUID without inheriting the REST API secret bundle.
 
-`dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the
-Gleam lambda runner consumes that key through an explicit `secretKeyRef` so
-function invocation can look up lambda definitions by UUID without inheriting
-the REST API secret bundle.
-
-Prefer replacing that static bootstrap key with an EC2 instance profile or IRSA equivalent once the
-cluster identity path is settled.
+`dd/remote-dev/agent-secrets` may also include `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and
+`AWS_SESSION_TOKEN` for `dd-build-server` ECR pushes. Prefer short-lived credentials or a dedicated
+role limited to `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`,
+`ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, and
+`ecr:PutImage` on the build repositories.
 
 ## Updating Values
 

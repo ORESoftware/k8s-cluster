@@ -1,0 +1,116 @@
+name: pg-defs generated bindings drift
+
+on:
+  pull_request:
+    paths:
+      - 'remote/libs/pg-defs/**'
+      - 'remote/databases/pg/**'
+      - 'remote/gleam-lambda-runner/**'
+      - 'remote/gleam-mcp-server/**'
+      - 'remote/gleamlang-server/**'
+      - 'remote/tests/general/pg-defs-bindings.test.ts'
+      - 'remote/tests/general/pg-sql-centralized.test.ts'
+      - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
+      - '.github/workflows/pg-defs-check.yml'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'remote/libs/pg-defs/**'
+      - 'remote/databases/pg/**'
+      - 'remote/gleam-lambda-runner/**'
+      - 'remote/gleam-mcp-server/**'
+      - 'remote/gleamlang-server/**'
+      - 'remote/tests/general/pg-defs-bindings.test.ts'
+      - 'remote/tests/general/pg-sql-centralized.test.ts'
+      - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
+      - '.github/workflows/pg-defs-check.yml'
+
+jobs:
+  check:
+    name: node src/generate.mjs --check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The generator is dependency-light (Node stdlib only), so no `npm
+      # install` is needed. Running `--check` re-runs the generator in memory
+      # and compares against the committed `generated/` files; if any file
+      # would change, the job fails and prints the stale path(s) so the
+      # author can run `node remote/libs/pg-defs/src/generate.mjs` locally
+      # and commit the diff.
+      - name: Verify generated bindings are in sync with schema.sql
+        run: node remote/libs/pg-defs/src/generate.mjs --check
+
+      - name: Print SQL DDL for review on stale runs
+        if: failure()
+        run: node remote/libs/pg-defs/src/generate.mjs --print-sql
+
+      # Enforce the "exactly two homes for .sql" rule: every table DDL must
+      # live in remote/libs/pg-defs/schema/schema.sql and every fixture in
+      # remote/databases/pg/seeds/. See remote/databases/pg/seeds/readme.md.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install tsx (remote/tests)
+        run: pnpm install --frozen-lockfile=false
+        working-directory: remote/tests
+
+      - name: Enforce SQL file centralization
+        run: pnpm run test:cli:pg-sql-centralized
+        working-directory: remote/tests
+
+      - name: Verify generated bindings are still consumed by every service
+        run: pnpm run test:cli:pg-defs-bindings
+        working-directory: remote/tests
+
+  gleam-wiring:
+    name: gleam test (dd_pg_defs + every consumer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      # Pin Erlang/OTP and Gleam to the same major as the runtime images in
+      # remote/gleam-*/Dockerfile (ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine).
+      # If you bump the runtime image, bump these here too.
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          gleam-version: '1.16.0'
+          rebar3-version: '3'
+
+      - name: Install tsx (remote/tests)
+        run: pnpm install --frozen-lockfile=false
+        working-directory: remote/tests
+
+      # Drives `gleam test` in: the dd_pg_defs package itself,
+      # dd-gleam-lambda-runner, dd-gleam-mcp-server, and dd-gleamlang-server.
+      # Also asserts each consumer's manifest.toml records dd_pg_defs as a
+      # local path-dep and that build/dev/erlang/dd_pg_defs/ is populated
+      # after the build (so silent dep drops never reach production).
+      - name: Verify Gleam services compile + test against dd_pg_defs
+        run: pnpm run test:cli:gleam-pg-defs-wiring
+        working-directory: remote/tests

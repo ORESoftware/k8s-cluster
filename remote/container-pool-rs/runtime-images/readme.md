@@ -18,8 +18,16 @@ nerdctl -n k8s.io build -f runtime-images/erlang.Dockerfile -t docker.io/library
 
 Each image exposes a small HTTP worker on `PORT` with:
 
-- `GET /healthz`
-- `POST /invoke`
+- `GET $DD_POOL_HEALTH_PATH` (default `/healthz`)
+- `POST $DD_POOL_REQUEST_PATH` (default `/invoke`)
 
 The worker executes the trusted `DD_POOL_HANDLER` configured in the image or app config. Dispatch
 requests supply JSON payloads only; they do not choose shell commands.
+
+When `NATS_URL` is injected by the manager, the common worker publishes:
+
+- `started` and `request.*` events to `DD_POOL_NATS_EVENT_SUBJECT`
+- periodic `heartbeat` events to `DD_POOL_NATS_HEARTBEAT_SUBJECT`
+
+The default subject convention is `dd.remote.container_pool.<poolSlug>.events` and
+`dd.remote.container_pool.<poolSlug>.heartbeats`.

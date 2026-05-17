@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     error::Error,
     net::SocketAddr,
@@ -248,6 +248,23 @@ struct OrderIntent {
     generated_at_ms: u128,
 }
 
+struct CandidateOrderContext<'a> {
+    request_id: &'a str,
+    symbol: &'a str,
+    platform: Option<&'a TradingPlatform>,
+    action: &'a str,
+    price: Option<f64>,
+    limits: &'a RiskLimits,
+    request: &'a DecisionRequest,
+    config: &'a Config,
+    confidence: f64,
+}
+
+enum AuthFailure {
+    MissingSecret,
+    Unauthorized,
+}
+
 fn env_value(key: &str, fallback: &str) -> String {
     env::var(key)
         .ok()
@@ -405,6 +422,49 @@ fn validate_label(value: &str, label: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_credential_key(value: &str, label: &str) -> Result<(), String> {
+    validate_label(value, label)?;
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return Err(format!("{label} must not be empty"));
+    };
+    if !first.is_ascii_uppercase() {
+        return Err(format!("{label} must start with an uppercase ASCII letter"));
+    }
+    if !std::iter::once(first)
+        .chain(chars)
+        .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+    {
+        return Err(format!(
+            "{label} may contain only uppercase ASCII letters, numbers, and '_'"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_local_or_https_url(value: &str, label: &str) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if trimmed.len() > 512 {
+        return Err(format!("{label} must be at most 512 bytes"));
+    }
+    if trimmed.chars().any(|ch| ch.is_control()) {
+        return Err(format!("{label} must not contain control characters"));
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("https://")
+        || lower.starts_with("http://localhost")
+        || lower.starts_with("http://127.0.0.1")
+        || lower.starts_with("http://[::1]")
+    {
+        Ok(())
+    } else {
+        Err(format!("{label} must be https or a localhost URL"))
+    }
+}
+
 fn safe_slug(input: &str) -> bool {
     let bytes = input.as_bytes();
     !bytes.is_empty()
@@ -499,6 +559,22 @@ fn platform_from_json(value: &Value) -> Result<TradingPlatform, String> {
             "trading platform {slug} must list at least one credential key"
         ));
     }
+    for key in &credential_keys {
+        validate_credential_key(key, &format!("platform.{slug}.credentialKeys"))?;
+    }
+    let account_ref_key = json_string_field(value, "accountRefKey", "account_ref_key");
+    if let Some(key) = account_ref_key.as_ref() {
+        validate_credential_key(key, &format!("platform.{slug}.accountRefKey"))?;
+    }
+    let base_urls = json_string_map(value.get("baseUrls").or_else(|| value.get("base_urls")));
+    for (mode, url) in &base_urls {
+        if !safe_slug(mode) {
+            return Err(format!(
+                "trading platform {slug} baseUrls key must be a safe slug: {mode}"
+            ));
+        }
+        validate_local_or_https_url(url, &format!("platform.{slug}.baseUrls.{mode}"))?;
+    }
     Ok(TradingPlatform {
         slug,
         display_name,
@@ -512,10 +588,10 @@ fn platform_from_json(value: &Value) -> Result<TradingPlatform, String> {
                 .or_else(|| value.get("asset_classes")),
         ),
         order_types: json_string_vec(value.get("orderTypes").or_else(|| value.get("order_types"))),
-        base_urls: json_string_map(value.get("baseUrls").or_else(|| value.get("base_urls"))),
+        base_urls,
         credential_secret,
         credential_keys,
-        account_ref_key: json_string_field(value, "accountRefKey", "account_ref_key"),
+        account_ref_key,
         labels: json_string_vec(value.get("labels")),
         meta_data: value
             .get("metaData")
@@ -537,7 +613,23 @@ fn platform_config_from_app_config_value(value: Value) -> Result<TradingPlatform
     if platforms.is_empty() {
         return Err("trading app_config platforms array must not be empty".to_string());
     }
+    let mut seen_slugs = BTreeSet::new();
+    for platform in &platforms {
+        if !seen_slugs.insert(platform.slug.as_str()) {
+            return Err(format!(
+                "trading app_config contains duplicate platform slug {}",
+                platform.slug
+            ));
+        }
+    }
     let default_platform = json_string_field(&value, "defaultPlatform", "default_platform");
+    if let Some(default_platform) = default_platform.as_ref() {
+        if !seen_slugs.contains(default_platform.as_str()) {
+            return Err(format!(
+                "trading app_config defaultPlatform {default_platform} is not defined"
+            ));
+        }
+    }
     Ok(TradingPlatformConfig {
         platforms,
         default_platform,
@@ -629,7 +721,7 @@ fn default_platform_config() -> TradingPlatformConfig {
                 "status": "active",
                 "supportsPaper": true,
                 "supportsLive": true,
-                "assetClasses": ["crypto", "prediction-markets"],
+                "assetClasses": ["crypto"],
                 "orderTypes": ["market", "limit"],
                 "baseUrls": { "paper": "https://api.sandbox.gemini.com", "live": "https://api.gemini.com" },
                 "credentialSecret": "dd-trading-broker-secrets",
@@ -825,21 +917,70 @@ fn finite_positive_optional(value: Option<f64>, label: &str) -> Result<Option<f6
     }
 }
 
+fn finite_nonnegative_optional(value: Option<f64>, label: &str) -> Result<Option<f64>, String> {
+    match finite_optional(value, label)? {
+        Some(value) if value >= 0.0 => Ok(Some(value)),
+        Some(_) => Err(format!("{label} must be non-negative")),
+        None => Ok(None),
+    }
+}
+
+fn finite_range_optional(
+    value: Option<f64>,
+    label: &str,
+    min: f64,
+    max: f64,
+) -> Result<Option<f64>, String> {
+    match finite_optional(value, label)? {
+        Some(value) if value >= min && value <= max => Ok(Some(value)),
+        Some(_) => Err(format!("{label} must be between {min:.2} and {max:.2}")),
+        None => Ok(None),
+    }
+}
+
+fn conservative_cap(default: Option<f64>, override_value: Option<f64>) -> Option<f64> {
+    match (default, override_value) {
+        (Some(default), Some(override_value)) => Some(default.min(override_value)),
+        (Some(default), None) => Some(default),
+        (None, Some(override_value)) => Some(override_value),
+        (None, None) => None,
+    }
+}
+
+fn conservative_floor(default: Option<f64>, override_value: Option<f64>) -> Option<f64> {
+    match (default, override_value) {
+        (Some(default), Some(override_value)) => Some(default.max(override_value)),
+        (Some(default), None) => Some(default),
+        (None, Some(override_value)) => Some(override_value),
+        (None, None) => None,
+    }
+}
+
 fn merge_limits(defaults: &RiskLimits, overrides: Option<RiskLimits>) -> RiskLimits {
     let Some(overrides) = overrides else {
         return defaults.clone();
     };
     RiskLimits {
-        max_order_notional: overrides.max_order_notional.or(defaults.max_order_notional),
-        max_position_notional: overrides
-            .max_position_notional
-            .or(defaults.max_position_notional),
-        max_symbol_exposure_pct: overrides
-            .max_symbol_exposure_pct
-            .or(defaults.max_symbol_exposure_pct),
-        min_confidence: overrides.min_confidence.or(defaults.min_confidence),
-        max_risk_score: overrides.max_risk_score.or(defaults.max_risk_score),
-        allow_short: overrides.allow_short.or(defaults.allow_short),
+        max_order_notional: conservative_cap(
+            defaults.max_order_notional,
+            overrides.max_order_notional,
+        ),
+        max_position_notional: conservative_cap(
+            defaults.max_position_notional,
+            overrides.max_position_notional,
+        ),
+        max_symbol_exposure_pct: conservative_cap(
+            defaults.max_symbol_exposure_pct,
+            overrides.max_symbol_exposure_pct,
+        ),
+        min_confidence: conservative_floor(defaults.min_confidence, overrides.min_confidence),
+        max_risk_score: conservative_cap(defaults.max_risk_score, overrides.max_risk_score),
+        allow_short: match (defaults.allow_short, overrides.allow_short) {
+            (Some(default), Some(override_value)) => Some(default && override_value),
+            (Some(default), None) => Some(default),
+            (None, Some(override_value)) => Some(override_value),
+            (None, None) => None,
+        },
     }
 }
 
@@ -880,8 +1021,13 @@ fn validate_request(request: &DecisionRequest, limits: &RiskLimits) -> Result<Ve
         finite_positive_optional(market.last_price, "market.lastPrice")?;
         finite_positive_optional(market.bid, "market.bid")?;
         finite_positive_optional(market.ask, "market.ask")?;
+        if let (Some(bid), Some(ask)) = (market.bid, market.ask) {
+            if bid > ask {
+                return Err("market.bid must be less than or equal to market.ask".to_string());
+            }
+        }
         finite_positive_optional(market.day_volume, "market.dayVolume")?;
-        finite_optional(market.realized_volatility, "market.realizedVolatility")?;
+        finite_nonnegative_optional(market.realized_volatility, "market.realizedVolatility")?;
         if let Some(prices) = market.prices.as_ref() {
             if prices.len() > MAX_PRICE_POINTS {
                 return Err(format!(
@@ -903,11 +1049,11 @@ fn validate_request(request: &DecisionRequest, limits: &RiskLimits) -> Result<Ve
             ));
         }
         for signal in signals {
-            if !signal.sentiment.is_finite() {
-                return Err("webSignals sentiment must be finite".to_string());
+            if !signal.sentiment.is_finite() || signal.sentiment < -1.0 || signal.sentiment > 1.0 {
+                return Err("webSignals sentiment must be between -1.00 and 1.00".to_string());
             }
-            finite_optional(signal.confidence, "webSignals.confidence")?;
-            finite_optional(signal.relevance, "webSignals.relevance")?;
+            finite_range_optional(signal.confidence, "webSignals.confidence", 0.0, 1.0)?;
+            finite_range_optional(signal.relevance, "webSignals.relevance", 0.0, 1.0)?;
         }
     }
 
@@ -919,18 +1065,18 @@ fn validate_request(request: &DecisionRequest, limits: &RiskLimits) -> Result<Ve
         }
         for feature in features {
             validate_label(&feature.name, "mlFeatures.name")?;
-            if !feature.value.is_finite() {
-                return Err("mlFeatures.value must be finite".to_string());
+            if !feature.value.is_finite() || feature.value < -1.0 || feature.value > 1.0 {
+                return Err("mlFeatures.value must be between -1.00 and 1.00".to_string());
             }
-            finite_optional(feature.weight, "mlFeatures.weight")?;
+            finite_range_optional(feature.weight, "mlFeatures.weight", 0.0, 10.0)?;
         }
     }
 
     if let Some(policy) = request.mdp_policy.as_ref() {
         validate_label(&policy.action, "mdpPolicy.action")?;
-        finite_optional(policy.confidence, "mdpPolicy.confidence")?;
+        finite_range_optional(policy.confidence, "mdpPolicy.confidence", 0.0, 1.0)?;
         finite_optional(policy.value, "mdpPolicy.value")?;
-        finite_optional(policy.risk, "mdpPolicy.risk")?;
+        finite_range_optional(policy.risk, "mdpPolicy.risk", 0.0, 1.0)?;
     }
 
     finite_positive_optional(limits.max_order_notional, "constraints.maxOrderNotional")?;
@@ -938,12 +1084,14 @@ fn validate_request(request: &DecisionRequest, limits: &RiskLimits) -> Result<Ve
         limits.max_position_notional,
         "constraints.maxPositionNotional",
     )?;
-    finite_positive_optional(
+    finite_range_optional(
         limits.max_symbol_exposure_pct,
         "constraints.maxSymbolExposurePct",
+        0.0,
+        1.0,
     )?;
-    finite_optional(limits.min_confidence, "constraints.minConfidence")?;
-    finite_optional(limits.max_risk_score, "constraints.maxRiskScore")?;
+    finite_range_optional(limits.min_confidence, "constraints.minConfidence", 0.0, 1.0)?;
+    finite_range_optional(limits.max_risk_score, "constraints.maxRiskScore", 0.0, 1.0)?;
 
     let mut warnings = Vec::new();
     if request.market.is_none() {
@@ -1140,17 +1288,18 @@ fn safety_check(name: &str, ok: bool, severity: &str, message: String) -> Safety
     }
 }
 
-fn build_candidate_order(
-    request_id: &str,
-    symbol: &str,
-    platform: Option<&TradingPlatform>,
-    action: &str,
-    price: Option<f64>,
-    limits: &RiskLimits,
-    request: &DecisionRequest,
-    config: &Config,
-    confidence: f64,
-) -> Option<OrderIntent> {
+fn build_candidate_order(context: CandidateOrderContext<'_>) -> Option<OrderIntent> {
+    let CandidateOrderContext {
+        request_id,
+        symbol,
+        platform,
+        action,
+        price,
+        limits,
+        request,
+        config,
+        confidence,
+    } = context;
     if action == "hold" {
         return None;
     }
@@ -1346,17 +1495,17 @@ fn evaluate_decision(
         request.target_platform.as_deref(),
         &config.trading_mode,
     );
-    let candidate_order = build_candidate_order(
-        &request_id,
-        &symbol,
-        selected_platform.as_ref(),
-        &recommended_action,
+    let candidate_order = build_candidate_order(CandidateOrderContext {
+        request_id: &request_id,
+        symbol: &symbol,
+        platform: selected_platform.as_ref(),
+        action: &recommended_action,
         price,
-        &limits,
-        &request,
+        limits: &limits,
+        request: &request,
         config,
         confidence,
-    );
+    });
 
     let min_confidence = limits.min_confidence.unwrap_or(0.55);
     let max_risk = limits.max_risk_score.unwrap_or(0.72);
@@ -1538,7 +1687,7 @@ fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
         .any(|value| constant_time_equals(value, secret))
 }
 
-fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
+fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure> {
     let Some(secret) = state.config.server_auth_secret.as_deref() else {
         if state.config.allow_unauthenticated {
             return Ok(());
@@ -1547,14 +1696,7 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
             .metrics
             .auth_failures_total
             .fetch_add(1, Ordering::Relaxed);
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "ok": false,
-                "error": "SERVER_AUTH_SECRET is not configured"
-            })),
-        )
-            .into_response());
+        return Err(AuthFailure::MissingSecret);
     };
 
     if request_is_authorized(headers, secret) {
@@ -1564,7 +1706,21 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
             .metrics
             .auth_failures_total
             .fetch_add(1, Ordering::Relaxed);
-        Err((
+        Err(AuthFailure::Unauthorized)
+    }
+}
+
+fn auth_failure_response(failure: AuthFailure) -> Response {
+    match failure {
+        AuthFailure::MissingSecret => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "ok": false,
+                "error": "SERVER_AUTH_SECRET is not configured"
+            })),
+        )
+            .into_response(),
+        AuthFailure::Unauthorized => (
             StatusCode::UNAUTHORIZED,
             Json(json!({
                 "ok": false,
@@ -1572,12 +1728,34 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
                 "errMessage": "missing required trading server auth header"
             })),
         )
-            .into_response())
+            .into_response(),
     }
+}
+
+fn public_platform_descriptors(platforms: &[TradingPlatform]) -> Vec<Value> {
+    platforms
+        .iter()
+        .map(|platform| {
+            json!({
+                "slug": &platform.slug,
+                "displayName": &platform.display_name,
+                "provider": &platform.provider,
+                "status": &platform.status,
+                "supportsPaper": platform.supports_paper,
+                "supportsLive": platform.supports_live,
+                "assetClasses": &platform.asset_classes,
+                "orderTypes": &platform.order_types,
+                "baseUrls": &platform.base_urls,
+                "labels": &platform.labels,
+                "metaData": &platform.meta_data
+            })
+        })
+        .collect()
 }
 
 fn service_descriptor(state: &AppState) -> serde_json::Value {
     let platforms = platform_snapshot(state);
+    let public_platforms = public_platform_descriptors(&platforms.platforms);
     json!({
         "ok": true,
         "service": SERVICE_NAME,
@@ -1590,6 +1768,7 @@ fn service_descriptor(state: &AppState) -> serde_json::Value {
             "example": "GET /example",
             "decide": "POST /decide",
             "healthz": "GET /healthz",
+            "readyz": "GET /readyz",
             "metrics": "GET /metrics"
         },
         "upstreams": {
@@ -1609,11 +1788,11 @@ fn service_descriptor(state: &AppState) -> serde_json::Value {
             "scope": &state.config.app_config_scope,
             "key": &state.config.app_config_key,
             "refreshSeconds": state.config.config_refresh.as_secs(),
-            "defaultPlatform": platforms.default_platform,
+            "defaultPlatform": platforms.default_platform.as_deref(),
             "lastConfigRefreshMs": platforms.last_config_refresh_ms,
-            "lastConfigError": platforms.last_config_error
+            "lastConfigError": platforms.last_config_error.as_deref()
         },
-        "tradingPlatforms": platforms.platforms,
+        "tradingPlatforms": public_platforms,
         "safety": {
             "liveTradingRequires": "TRADING_MODE=live and TRADING_ALLOW_LIVE_ORDERS=true",
             "executor": "not implemented; this service emits order intents only",
@@ -1811,6 +1990,29 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
     }))
 }
 
+async fn readyz(State(state): State<AppState>) -> Response {
+    let platforms = platform_snapshot(&state);
+    let ready = !platforms.platforms.is_empty() && platforms.last_config_error.is_none();
+    let status = if ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "ok": ready,
+            "service": SERVICE_NAME,
+            "mode": &state.config.trading_mode,
+            "platformCount": platforms.platforms.len(),
+            "lastConfigRefreshMs": platforms.last_config_refresh_ms,
+            "lastConfigError": platforms.last_config_error,
+            "atMs": now_ms(),
+        })),
+    )
+        .into_response()
+}
+
 async fn schema() -> impl IntoResponse {
     Json(schema_descriptor())
 }
@@ -1884,8 +2086,8 @@ async fn decide_http(
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    if let Err(response) = require_auth(&headers, &state) {
-        return response;
+    if let Err(failure) = require_auth(&headers, &state) {
+        return auth_failure_response(failure);
     }
 
     let platforms = platform_snapshot(&state);
@@ -2029,6 +2231,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let app = Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .route("/schema", get(schema))
         .route("/example", get(example))
@@ -2208,5 +2411,128 @@ mod tests {
             .safety_checks
             .iter()
             .any(|check| check.name == "shortingPolicy" && !check.ok));
+    }
+
+    #[test]
+    fn request_constraints_cannot_loosen_server_defaults() {
+        let mut request = positive_request();
+        request.constraints = Some(RiskLimits {
+            max_order_notional: Some(100_000.0),
+            max_position_notional: Some(1_000_000.0),
+            max_symbol_exposure_pct: Some(1.0),
+            min_confidence: Some(0.0),
+            max_risk_score: Some(1.0),
+            allow_short: Some(true),
+        });
+
+        let platforms = default_platform_config();
+        let response =
+            evaluate_decision(&test_config("paper"), &platforms, request).expect("decision ok");
+
+        let intent = response.order_intent.expect("paper order intent");
+        assert!(intent.notional <= 1_000.0);
+    }
+
+    #[test]
+    fn request_constraints_cannot_enable_shorting_when_server_disallows() {
+        let mut request = positive_request();
+        request.web_signals.as_mut().unwrap()[0].sentiment = -0.9;
+        request.ml_features.as_mut().unwrap()[0].value = -0.8;
+        request.mdp_policy.as_mut().unwrap().action = "sell".to_string();
+        request.portfolio.as_mut().unwrap().current_position = Some(0.0);
+        request.constraints = Some(RiskLimits {
+            max_order_notional: Some(100_000.0),
+            max_position_notional: Some(1_000_000.0),
+            max_symbol_exposure_pct: Some(1.0),
+            min_confidence: Some(0.0),
+            max_risk_score: Some(1.0),
+            allow_short: Some(true),
+        });
+
+        let platforms = default_platform_config();
+        let response =
+            evaluate_decision(&test_config("paper"), &platforms, request).expect("decision ok");
+
+        assert_eq!(response.recommended_action, "sell");
+        assert_eq!(response.final_action, "hold");
+        assert!(response
+            .safety_checks
+            .iter()
+            .any(|check| check.name == "shortingPolicy" && !check.ok));
+    }
+
+    #[test]
+    fn invalid_market_and_signal_inputs_are_rejected() {
+        let platforms = default_platform_config();
+
+        let mut bad_sentiment = positive_request();
+        bad_sentiment.web_signals.as_mut().unwrap()[0].sentiment = 1.5;
+        let error = evaluate_decision(&test_config("paper"), &platforms, bad_sentiment)
+            .expect_err("out of range sentiment should fail validation");
+        assert!(error.contains("webSignals sentiment"));
+
+        let mut crossed_market = positive_request();
+        crossed_market.market.as_mut().unwrap().bid = Some(111.0);
+        crossed_market.market.as_mut().unwrap().ask = Some(110.0);
+        let error = evaluate_decision(&test_config("paper"), &platforms, crossed_market)
+            .expect_err("crossed bid/ask should fail validation");
+        assert!(error.contains("market.bid"));
+    }
+
+    #[test]
+    fn platform_config_rejects_duplicate_slugs_and_invalid_defaults() {
+        let platform = json!({
+            "slug": "dup-platform",
+            "displayName": "Dup Platform",
+            "provider": "dup",
+            "status": "active",
+            "supportsPaper": true,
+            "supportsLive": false,
+            "assetClasses": ["equities"],
+            "orderTypes": ["limit"],
+            "baseUrls": { "paper": "https://example.com" },
+            "credentialKeys": ["DUP_API_KEY"]
+        });
+        let duplicate = platform_config_from_app_config_value(json!({
+            "defaultPlatform": "dup-platform",
+            "platforms": [platform.clone(), platform]
+        }))
+        .expect_err("duplicate platform slugs should fail");
+        assert!(duplicate.contains("duplicate platform slug"));
+
+        let missing_default = platform_config_from_app_config_value(json!({
+            "defaultPlatform": "missing-platform",
+            "platforms": [{
+                "slug": "real-platform",
+                "displayName": "Real Platform",
+                "provider": "real",
+                "status": "active",
+                "supportsPaper": true,
+                "supportsLive": false,
+                "assetClasses": ["equities"],
+                "orderTypes": ["limit"],
+                "baseUrls": { "paper": "https://example.com" },
+                "credentialKeys": ["REAL_API_KEY"]
+            }]
+        }))
+        .expect_err("missing default should fail");
+        assert!(missing_default.contains("defaultPlatform"));
+    }
+
+    #[test]
+    fn service_descriptor_redacts_credential_references() {
+        let state = AppState {
+            config: Arc::new(test_config("paper")),
+            platform_config: Arc::new(RwLock::new(default_platform_config())),
+            nats: None,
+            metrics: Arc::new(Metrics::default()),
+        };
+        let descriptor = service_descriptor(&state);
+        let descriptor_text = descriptor.to_string();
+
+        assert!(descriptor["tradingPlatforms"].is_array());
+        assert!(!descriptor_text.contains("credentialKeys"));
+        assert!(!descriptor_text.contains("credentialSecret"));
+        assert!(!descriptor_text.contains("IBKR_ACCOUNT_ID"));
     }
 }

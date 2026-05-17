@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-ai-ml-data-contracts
+  namespace: ai-ml
+  labels:
+    app: dd-ai-ml-platform
+data:
+  telemetry-ingest.schema.json: |
+    {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://dd.local/schemas/telemetry-ingest.schema.json",
+      "title": "DD AI/ML telemetry ingest",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "service": { "type": "string", "minLength": 1, "maxLength": 96 },
+        "scope": { "enum": ["app", "infra", "mixed", "application", "infrastructure", "platform", "data"] },
+        "windowMs": { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 96 },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "number" },
+              {
+                "type": "object",
+                "required": ["value"],
+                "additionalProperties": true,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 96 },
+                  "value": { "type": "number" },
+                  "service": { "type": "string", "minLength": 1, "maxLength": 96 },
+                  "layer": { "enum": ["app", "infra", "mixed", "application", "infrastructure", "platform", "data"] },
+                  "baseline": { "type": "number" },
+                  "target": { "type": "number" },
+                  "warning": { "type": "number" },
+                  "critical": { "type": "number" },
+                  "weight": { "type": "number", "minimum": 0, "maximum": 100 },
+                  "higherIsBetter": { "type": "boolean" }
+                }
+              }
+            ]
+          }
+        },
+        "signals": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/signal" }
+        }
+      },
+      "anyOf": [
+        { "required": ["metrics"] },
+        { "required": ["signals"] }
+      ],
+      "$defs": {
+        "signal": {
+          "type": "object",
+          "required": ["name", "value"],
+          "additionalProperties": true,
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 96 },
+            "value": { "type": "number" },
+            "service": { "type": "string", "minLength": 1, "maxLength": 96 },
+            "layer": { "enum": ["app", "infra", "mixed", "application", "infrastructure", "platform", "data"] },
+            "baseline": { "type": "number" },
+            "target": { "type": "number" },
+            "warning": { "type": "number" },
+            "critical": { "type": "number" },
+            "weight": { "type": "number", "minimum": 0, "maximum": 100 },
+            "higherIsBetter": { "type": "boolean" },
+            "actionImpacts": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "required": ["action", "delta"],
+                "additionalProperties": false,
+                "properties": {
+                  "action": { "type": "string", "pattern": "^[a-zA-Z0-9_.:-]+$" },
+                  "delta": { "type": "number", "minimum": -1, "maximum": 1 },
+                  "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  mdp-telemetry.schema.json: |
+    {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://dd.local/schemas/mdp-telemetry.schema.json",
+      "title": "DD MDP telemetry learning request",
+      "type": "object",
+      "required": ["requestId", "scope", "signals", "actions"],
+      "additionalProperties": true,
+      "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scope": { "enum": ["app", "infra", "mixed"] },
+        "windowMs": { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        "signals": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "telemetry-ingest.schema.json#/$defs/signal" }
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "type": "string", "pattern": "^[a-z0-9_.:-]+$" }
+        },
+        "gamma": { "type": "number", "minimum": 0, "exclusiveMaximum": 1 },
+        "tolerance": { "type": "number", "exclusiveMinimum": 0 },
+        "maxIterations": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+      }
+    }
+  subjects.json: |
+    {
+      "rawTelemetry": "dd.remote.telemetry.raw",
+      "features": "dd.remote.ml.features",
+      "mdpTelemetry": "dd.remote.telemetry.mdp",
+      "deadLetter": "dd.remote.ml.deadletter",
+      "runtimeEvents": "dd.remote.events"
+    }

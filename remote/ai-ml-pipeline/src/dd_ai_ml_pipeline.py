@@ -283,6 +283,9 @@ class Config:
     event_subject: str = field(
         default_factory=lambda: env_value("ML_EVENT_SUBJECT", "dd.remote.events")
     )
+    dead_letter_subject: str = field(
+        default_factory=lambda: env_value("ML_DEAD_LETTER_SUBJECT", "dd.remote.ml.deadletter")
+    )
     min_samples_for_zscore: int = field(
         default_factory=lambda: read_int_env("ML_MIN_SAMPLES_FOR_ZSCORE", 4, 1, 10_000)
     )
@@ -305,6 +308,7 @@ class Config:
         validate_nats_name(self.feature_subject, "ML_FEATURE_SUBJECT")
         validate_nats_name(self.mdp_subject, "ML_MDP_TELEMETRY_SUBJECT")
         validate_nats_name(self.event_subject, "ML_EVENT_SUBJECT")
+        validate_nats_name(self.dead_letter_subject, "ML_DEAD_LETTER_SUBJECT")
 
 
 class Metrics:
@@ -318,9 +322,11 @@ class Metrics:
             "features_total": 0,
             "nats_messages_total": 0,
             "nats_publish_errors_total": 0,
+            "dead_letters_total": 0,
             "published_features_total": 0,
             "published_mdp_total": 0,
             "published_events_total": 0,
+            "published_dead_letters_total": 0,
             "auth_failures_total": 0,
             "dropped_series_total": 0,
             "dropped_transitions_total": 0,
@@ -358,6 +364,9 @@ class Metrics:
             "# HELP dd_ai_ml_pipeline_nats_publish_errors_total NATS publish failures.",
             "# TYPE dd_ai_ml_pipeline_nats_publish_errors_total counter",
             f"dd_ai_ml_pipeline_nats_publish_errors_total {values['nats_publish_errors_total']}",
+            "# HELP dd_ai_ml_pipeline_dead_letters_total Rejected NATS telemetry messages.",
+            "# TYPE dd_ai_ml_pipeline_dead_letters_total counter",
+            f"dd_ai_ml_pipeline_dead_letters_total {values['dead_letters_total']}",
             "# HELP dd_ai_ml_pipeline_published_messages_total Published pipeline messages by subject role.",
             "# TYPE dd_ai_ml_pipeline_published_messages_total counter",
             'dd_ai_ml_pipeline_published_messages_total{role="features"} '
@@ -366,6 +375,8 @@ class Metrics:
             f"{values['published_mdp_total']}",
             'dd_ai_ml_pipeline_published_messages_total{role="events"} '
             f"{values['published_events_total']}",
+            'dd_ai_ml_pipeline_published_messages_total{role="dead-letter"} '
+            f"{values['published_dead_letters_total']}",
             "# HELP dd_ai_ml_pipeline_auth_failures_total Rejected HTTP requests with missing or invalid auth.",
             "# TYPE dd_ai_ml_pipeline_auth_failures_total counter",
             f"dd_ai_ml_pipeline_auth_failures_total {values['auth_failures_total']}",
@@ -778,6 +789,22 @@ def nats_connect(target: NatsTarget) -> socket.socket:
     return sock
 
 
+def wait_for_nats_pong(stream: Any, sock: socket.socket) -> None:
+    while True:
+        line = stream.readline()
+        if not line:
+            raise OSError("nats connection closed before PONG")
+        if line.startswith(b"PING"):
+            sock.sendall(b"PONG\r\n")
+            continue
+        if line.startswith(b"-ERR"):
+            raise OSError(line.decode("utf-8", "replace").strip())
+        if line.startswith(b"INFO") or line.startswith(b"+OK"):
+            continue
+        if line.startswith(b"PONG"):
+            return
+
+
 class NatsPublisher:
     def __init__(self, config: Config, metrics: Metrics) -> None:
         self.config = config
@@ -797,8 +824,11 @@ class NatsPublisher:
             return False
         try:
             with nats_connect(target) as sock:
+                stream = sock.makefile("rb")
+                wait_for_nats_pong(stream, sock)
                 command = f"PUB {subject} {len(body)}\r\n".encode()
                 sock.sendall(command + body + b"\r\nPING\r\n")
+                wait_for_nats_pong(stream, sock)
             return True
         except OSError as error:
             self.metrics.inc("nats_publish_errors_total")
@@ -825,6 +855,7 @@ class PipelineApp:
                 "mdpFeatures": "POST /mdp/features",
                 "status": "GET /status",
                 "healthz": "GET /healthz",
+                "readyz": "GET /readyz",
                 "metrics": "GET /metrics",
             },
             "dataFlow": [
@@ -841,8 +872,20 @@ class PipelineApp:
                 "featureSubject": self.config.feature_subject,
                 "mdpTelemetrySubject": self.config.mdp_subject,
                 "eventSubject": self.config.event_subject,
+                "deadLetterSubject": self.config.dead_letter_subject,
             },
             "authRequired": bool(self.config.server_auth_secret),
+        }
+
+    def readiness(self) -> dict[str, Any]:
+        auth_ready = bool(self.config.server_auth_secret) or self.config.allow_unauthenticated
+        nats_ready = parse_nats_url(self.config.nats_url) is not None
+        return {
+            "ok": auth_ready and nats_ready,
+            "service": SERVICE_NAME,
+            "authReady": auth_ready,
+            "natsConfigured": nats_ready,
+            "generatedAtMs": now_ms(),
         }
 
     def status(self) -> dict[str, Any]:
@@ -907,6 +950,19 @@ class PipelineApp:
                 self.metrics.inc("published_events_total")
         return result
 
+    def publish_dead_letter(self, reason: str, error: str, byte_length: int) -> None:
+        self.metrics.inc("dead_letters_total")
+        payload = {
+            "type": "ml.pipeline.dead-letter",
+            "service": SERVICE_NAME,
+            "reason": reason,
+            "error": error[:300],
+            "byteLength": byte_length,
+            "generatedAtMs": now_ms(),
+        }
+        if self.publisher.publish_json(self.config.dead_letter_subject, payload):
+            self.metrics.inc("published_dead_letters_total")
+
     def start_nats_consumer(self) -> None:
         if parse_nats_url(self.config.nats_url) is None:
             print("ai/ml pipeline nats loop disabled: NATS_URL is not configured", flush=True)
@@ -954,6 +1010,7 @@ class PipelineApp:
                 if size > MAX_BODY_BYTES:
                     stream.read(size + 2)
                     self.metrics.inc("errors_total")
+                    self.publish_dead_letter("oversize-nats-message", "payload exceeded ML_MAX_BODY_BYTES", size)
                     print(f"rejected oversize nats telemetry payload bytes={size}", flush=True)
                     continue
                 body = stream.read(size)
@@ -964,6 +1021,7 @@ class PipelineApp:
                     self.analyze(payload, source="nats", publish=True)
                 except Exception as error:  # noqa: BLE001 - reject one bad message, keep loop alive
                     self.metrics.inc("errors_total")
+                    self.publish_dead_letter("invalid-nats-message", str(error), len(body))
                     print(f"invalid nats telemetry message: {error}", flush=True)
 
 
@@ -994,6 +1052,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, self.server.app.descriptor())
         elif path == "/healthz":
             self._json(HTTPStatus.OK, {"ok": True, "service": SERVICE_NAME})
+        elif path == "/readyz":
+            readiness = self.server.app.readiness()
+            status = HTTPStatus.OK if readiness["ok"] else HTTPStatus.SERVICE_UNAVAILABLE
+            self._json(status, readiness)
         elif path == "/status":
             if not self._is_authorized():
                 return

@@ -15,27 +15,39 @@ desired number of warm containers with `nerdctl`, and exposes both HTTP and NATS
   `poolSlug` or `poolId`; if omitted, the service can infer the pool from the configured
   `natsSubject`.
 
+The reconciler keeps at least `min_warm` available request slots, not merely `min_warm` running
+processes. If a singleton pool has one warm worker and that worker is leased, the service starts a
+replacement in the background up to `max_warm`. Idle surplus containers are removed after
+`idle_ttl_seconds`.
+
+Warm workers are health checked on the configured `health_path` (default `/healthz`). The manager
+also verifies the container is still running through `nerdctl inspect`; failed health checks mark the
+container unhealthy, retire it after the configured threshold, and reconcile the pool back to its
+available-capacity floor.
+
 Protected HTTP routes require `SERVER_AUTH_SECRET` through `X-Server-Auth`,
 `X-Container-Pool-Auth`, or `X-Agent-Auth`. The gateway injects `X-Server-Auth` for
 `/container-pools`.
 
 ## Postgres contract
 
-The generic app config table shape lives at `remote/databases/pg/tables/app-config-table.sql`.
-Seed the default runtime pools with `remote/databases/pg/seeds/container-pool-app-config.sql`.
-The service reads:
+The generic app config table shape is the `app_config` block in
+`remote/libs/pg-defs/schema/schema.sql` (the single source of truth for every shared
+table). Seed the default runtime pools with
+`remote/databases/pg/seeds/container-pool-app-config.sql`. The service reads:
 
 - `CONTAINER_POOL_APP_CONFIG_SCOPE`, default `default`
 - `CONTAINER_POOL_APP_CONFIG_KEY`, default `container-pool.runtime-pools.v1`
 
-The dedicated fallback table shape lives at
-`remote/databases/pg/tables/container-pool-configs-table.sql`. Pool entries in either source use:
+The dedicated fallback table shape is the `container_pool_configs` block in
+`remote/libs/pg-defs/schema/schema.sql`. Pool entries in either source use:
 
 - `slug`: stable pool selector used by HTTP and NATS requests.
 - `image`: trusted local or registry image for warm containers.
 - `command`: optional JSON array appended after the image in `nerdctl run`.
 - `env`: JSON object injected as container environment variables.
 - `request_path`: default HTTP path inside the worker, usually `/invoke`.
+- `health_path`: worker health endpoint, usually `/healthz`.
 - `container_port`: container listener port when not using host networking.
 - `min_warm` and `max_warm`: reconciliation floor and ceiling.
 - `request_timeout_ms`: per-dispatch timeout.
@@ -74,6 +86,21 @@ By default the manager calls `/usr/local/bin/nerdctl -n k8s.io run -d`, allocate
 `CONTAINER_POOL_PORT_START..CONTAINER_POOL_PORT_END`, and posts to `127.0.0.1:<allocatedPort>`.
 `CONTAINER_POOL_NETWORK=host` is the default for the EC2 runtime; workers should listen on the
 injected `PORT` value.
+
+## Worker contract
+
+Every managed worker image should implement this convention:
+
+- Listen on `0.0.0.0:$PORT`; the pool manager allocates `PORT` per warm container.
+- Serve `GET $DD_POOL_HEALTH_PATH` and return 2xx when ready. Default: `/healthz`.
+- Serve `POST $DD_POOL_REQUEST_PATH` and accept a JSON request envelope. Default: `/invoke`.
+- Echo/debug workers should return the submitted `echoKey` or `key` for smoke testing.
+- If `NATS_URL` is injected, publish lifecycle events to `DD_POOL_NATS_EVENT_SUBJECT` and
+  heartbeats to `DD_POOL_NATS_HEARTBEAT_SUBJECT`.
+
+The bundled runtime images use a common Python HTTP shim that implements `/healthz`, `/invoke`,
+optional NATS `started`/`heartbeat`/`request.*` messages, and hands request bodies to the trusted
+runtime-specific handler configured by `DD_POOL_HANDLER`.
 
 This service is intentionally a container-pool control plane, not a shell execution API. It never
 accepts arbitrary commands from dispatch requests; process shape comes from trusted Postgres config.

@@ -69,6 +69,16 @@ spec:
               value: '10'
             - name: CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS
               value: '30'
+            - name: CONTAINER_POOL_START_TIMEOUT_SECONDS
+              value: '20'
+            - name: CONTAINER_POOL_HEALTH_CHECK_SECONDS
+              value: '10'
+            - name: CONTAINER_POOL_HEALTH_TIMEOUT_MS
+              value: '1000'
+            - name: CONTAINER_POOL_UNHEALTHY_GRACE_SECONDS
+              value: '5'
+            - name: CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD
+              value: '2'
             - name: CONTAINER_POOL_CLEANUP_ON_START
               value: 'true'
             - name: SERVER_AUTH_SECRET

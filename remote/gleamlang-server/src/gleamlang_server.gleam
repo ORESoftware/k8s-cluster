@@ -4,11 +4,14 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision
 import gleamlang_server/broadcaster
 import gleamlang_server/http_server
+import gleamlang_server/pg_contract
 
 const tick_interval_ms = 2000
 
 pub fn main() -> Nil {
   let broker_name = process.new_name(prefix: "dd_gleamlang_broker")
+
+  let _ = pg_contract.app_config_table()
 
   let assert Ok(_started) =
     supervisor.new(supervisor.OneForOne)

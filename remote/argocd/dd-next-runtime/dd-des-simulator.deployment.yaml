@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-16-des-simulator'
+        dd.dev/telemetry-revision: '2026-05-17-des-hardened-examples'
       labels:
         app: dd-des-simulator
     spec:
@@ -27,6 +27,13 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           command:
@@ -52,6 +59,12 @@ spec:
               value: dd.remote.des.results
             - name: DES_EVENT_SUBJECT
               value: dd.remote.events
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/des-target
           ports:
             - name: http
               containerPort: 8099
@@ -85,8 +98,13 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: tmp
+          emptyDir: {}

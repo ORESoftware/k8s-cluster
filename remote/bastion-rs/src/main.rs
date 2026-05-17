@@ -11,7 +11,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Query, State,
     },
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -153,6 +153,7 @@ struct HealthResponse {
     service: &'static str,
     auth_configured: bool,
     kubeconfig_enabled: bool,
+    terminal_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -278,16 +279,31 @@ fn config_from_env() -> Config {
         dns: env_value("BASTION_DNS", "10.96.0.10"),
         kube_api_server: env_value("BASTION_KUBE_API_SERVER", "https://kubernetes.default.svc"),
         kube_cluster_name: env_value("BASTION_KUBE_CLUSTER_NAME", "dd-remote-dev"),
-        kube_context_name: env_value("BASTION_KUBE_CONTEXT_NAME", "dd-vpn-access-broker"),
-        kube_user_name: env_value("BASTION_KUBE_USER_NAME", "dd-bastion-access-broker"),
+        kube_context_name: env_value("BASTION_KUBE_CONTEXT_NAME", "dd-vpn-readonly"),
+        kube_user_name: env_value("BASTION_KUBE_USER_NAME", "dd-bastion-readonly"),
         ca_path: env_value("BASTION_KUBE_CA_PATH", DEFAULT_CA_PATH),
         token_path: env_value("BASTION_KUBE_TOKEN_PATH", DEFAULT_TOKEN_PATH),
         kubectl_bin: env_value("BASTION_KUBECTL_BIN", "/usr/bin/kubectl"),
         script_bin: env_value("BASTION_SCRIPT_BIN", "/usr/bin/script"),
         kubeconfig_enabled: env_bool("BASTION_KUBECONFIG_ENABLED", true),
         include_serviceaccount_token: env_bool("BASTION_INCLUDE_SERVICEACCOUNT_TOKEN", true),
-        terminal_enabled: env_bool("BASTION_TERMINAL_ENABLED", true),
+        terminal_enabled: env_bool("BASTION_TERMINAL_ENABLED", false),
     }
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let max_len = left.len().max(right.len());
+    let mut diff = left.len() ^ right.len();
+
+    for index in 0..max_len {
+        let left_byte = *left.get(index).unwrap_or(&0);
+        let right_byte = *right.get(index).unwrap_or(&0);
+        diff |= usize::from(left_byte ^ right_byte);
+    }
+
+    diff == 0
 }
 
 fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
@@ -296,13 +312,13 @@ fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
         .or_else(|| headers.get("x-server-auth"))
         .or_else(|| headers.get("auth"))
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == secret);
+        .is_some_and(|value| constant_time_eq(value, secret));
 
     let bearer_matches = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .is_some_and(|value| value == secret);
+        .is_some_and(|value| constant_time_eq(value, secret));
 
     direct_header_matches || bearer_matches
 }
@@ -355,7 +371,7 @@ fn access_profile(config: &Config) -> AccessProfile {
             pod_cidr: config.pod_cidr.clone(),
             kubeconfig_endpoint: format!("{base}/kubeconfig"),
             kubeconfig_mode: if config.include_serviceaccount_token {
-                "access-broker service account token".to_string()
+                "read-only service account token".to_string()
             } else {
                 "template without token".to_string()
             },
@@ -381,8 +397,12 @@ fn access_profile(config: &Config) -> AccessProfile {
                 .to_string(),
             "The generated kubeconfig is intentionally read-only and does not include Kubernetes Secrets access."
                 .to_string(),
-            "Exec terminals are restricted to the managed deployment allowlist and require pods/exec RBAC."
-                .to_string(),
+            if config.terminal_enabled {
+                "Exec terminals are enabled and restricted to the managed deployment allowlist."
+                    .to_string()
+            } else {
+                "Exec terminals are disabled in the hardened default deployment.".to_string()
+            },
         ],
     }
 }
@@ -393,6 +413,7 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         service: SERVICE_NAME,
         auth_configured: state.config.server_auth_secret.is_some(),
         kubeconfig_enabled: state.config.kubeconfig_enabled,
+        terminal_enabled: state.config.terminal_enabled,
     })
 }
 
@@ -483,6 +504,13 @@ users:
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/yaml; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
     );
     Ok(response)
 }
@@ -594,6 +622,7 @@ fn summarize_pod(pod: &Value, deployment_name: &str, terminal_base: &str) -> Val
                 && !deployment_name.is_empty()
                 && !pod_name.is_empty()
                 && !name.is_empty()
+                && !terminal_base.is_empty()
             {
                 format!(
                     "{terminal_base}?namespace={namespace}&deployment={deployment_name}&pod={pod_name}&container={name}"
@@ -738,7 +767,11 @@ async fn runtime_deployments(
     headers: HeaderMap,
 ) -> Result<Json<RuntimeDeploymentsResponse>, Response> {
     require_auth(&headers, &state)?;
-    let terminal_base = "/bastion/terminal";
+    let terminal_base = if state.config.terminal_enabled {
+        "/bastion/terminal"
+    } else {
+        ""
+    };
     let mut deployments = Vec::with_capacity(MANAGED_DEPLOYMENTS.len());
     let mut errors = Vec::new();
 

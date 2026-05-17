@@ -33,6 +33,10 @@ spec:
           args:
             - |
               set -eu
+              if ! apk add --no-cache postgresql-client >/tmp/dd-gleamlang-apk.log 2>&1; then
+                cat /tmp/dd-gleamlang-apk.log
+                exit 1
+              fi
               cd /opt/dd-next-1/remote/gleamlang-server
               gleam clean || true
               gleam deps download
@@ -50,6 +54,22 @@ spec:
               value: http://127.0.0.1:8083/publish
             - name: NATS_PUBLISH_SUBJECT
               value: dd.remote.websocket.events
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-gleamlang-server-secrets
+                optional: true
           readinessProbe:
             httpGet:
               path: /healthz

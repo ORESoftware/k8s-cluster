@@ -19,6 +19,7 @@ resources:
   - dd-build-server-rbac.yaml
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
+  - dd-build-server.networkpolicy.yaml
   - dd-remote-queue-consumer.deployment.yaml
   - dd-remote-queue-consumer.scaledobject.yaml
   - dd-mdp-optimizer.deployment.yaml
@@ -31,7 +32,9 @@ resources:
   - dd-trading-server.service.yaml
   - dd-live-mutex.deployment.yaml
   - dd-live-mutex.service.yaml
+  - dd-redis-cache.configmap.yaml
   - dd-redis-cache.deployment.yaml
+  - dd-redis-cache.networkpolicy.yaml
   - dd-redis-cache.service.yaml
   - dd-web-scraper.deployment.yaml
   - dd-web-scraper.service.yaml

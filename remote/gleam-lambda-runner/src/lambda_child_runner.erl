@@ -22,12 +22,16 @@ invoke(Command0, Identifier0, Payload0, IdleMs0, TimeoutMs0) ->
                 {ok, Command} ->
                     Runtime = runtime_from_definition(DefinitionJson),
                     Containerized = json_bool_field(DefinitionJson, <<"containerized">>, false),
-                    WorkerKey = worker_key(Identifier, DefinitionJson, Runtime, Containerized),
-                    IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
-                    TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
-                    Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
-                    bump(invocations_total, 1),
-                    invoke_worker(Command, WorkerKey, Payload, IdleMs, TimeoutMs);
+                    case worker_key(Identifier, DefinitionJson, Runtime, Containerized) of
+                        {ok, WorkerKey} ->
+                            IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
+                            TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
+                            Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
+                            bump(invocations_total, 1),
+                            invoke_worker(Command, WorkerKey, Payload, IdleMs, TimeoutMs);
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
                 {error, Reason} ->
                     {error, Reason}
             end;
@@ -185,23 +189,31 @@ identifier_where_clause(slug, Identifier) ->
 
 command_for_definition(FallbackCommand, DefinitionJson) ->
     Runtime = runtime_from_definition(DefinitionJson),
-    case json_bool_field(DefinitionJson, <<"containerized">>, false) of
-        true ->
-            container_command(Runtime, DefinitionJson);
+    case supported_runtime(Runtime) of
         false ->
-            case host_runtime_allowed(Runtime) of
+            {error, iolist_to_binary(["unsupported lambda runtime: ", Runtime])};
+        true ->
+            case json_bool_field(DefinitionJson, <<"containerized">>, false) of
                 true ->
-                    case host_command(Runtime) of
-                        {ok, Command} -> {ok, Command};
-                        {error, _Reason} -> {ok, FallbackCommand}
-                    end;
+                    container_command(Runtime, DefinitionJson);
                 false ->
-                    {error, iolist_to_binary([
-                        "lambda runtime requires containerized=true for host execution: ",
-                        Runtime
-                    ])}
+                    case host_runtime_allowed(Runtime) of
+                        true ->
+                            case host_command(Runtime) of
+                                {ok, Command} -> {ok, Command};
+                                {error, _Reason} -> {ok, FallbackCommand}
+                            end;
+                        false ->
+                            {error, iolist_to_binary([
+                                "lambda runtime requires containerized=true for host execution: ",
+                                Runtime
+                            ])}
+                    end
             end
     end.
+
+supported_runtime(Runtime) ->
+    lists:member(Runtime, [<<"nodejs">>, <<"python3">>, <<"ruby">>, <<"bash">>]).
 
 host_command(<<"nodejs">>) ->
     {ok, <<"env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs">>};
@@ -301,17 +313,20 @@ default_container_image(<<"ruby">>) ->
 default_container_image(<<"bash">>) ->
     env_binary("LAMBDA_BASH_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-bash-runtime:dev">>);
 default_container_image(_Runtime) ->
-    env_binary("LAMBDA_NODEJS_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-nodejs-runtime:dev">>).
+    <<>>.
 
 worker_key(Identifier, DefinitionJson, Runtime, Containerized) ->
     case json_string_field(DefinitionJson, <<"reuseKey">>) of
         <<>> ->
-            case Containerized of
+            {ok, case Containerized of
                 true -> iolist_to_binary(["pool:container:", Runtime]);
                 false -> iolist_to_binary(["pool:host:", Runtime])
-            end;
+            end};
         ReuseKey ->
-            iolist_to_binary(["function:", Identifier, ":", ReuseKey])
+            case safe_reuse_key(ReuseKey) of
+                true -> {ok, iolist_to_binary(["function:", Identifier, ":", ReuseKey])};
+                false -> {error, <<"reuseKey contains unsupported characters">>}
+            end
     end.
 
 idle_ms_from_definition(DefinitionJson, Fallback) ->
@@ -340,7 +355,8 @@ canonical_runtime(<<"python3">>) -> <<"python3">>;
 canonical_runtime(<<"shell">>) -> <<"bash">>;
 canonical_runtime(<<"bash">>) -> <<"bash">>;
 canonical_runtime(<<"ruby">>) -> <<"ruby">>;
-canonical_runtime(_Runtime) -> <<"nodejs">>.
+canonical_runtime(<<>>) -> <<"nodejs">>;
+canonical_runtime(Runtime) -> Runtime.
 
 run_psql(Psql, DatabaseUrl, Sql) ->
     Port = open_port({spawn_executable, Psql}, [
@@ -752,8 +768,11 @@ normalize_json_payload(Value) ->
 
 json_escape(Value0) ->
     Value = to_binary(Value0),
-    EscapedSlash = binary:replace(Value, <<"\\">>, <<"\\\\">>, [global]),
-    binary:replace(EscapedSlash, <<"\"">>, <<"\\\"">>, [global]).
+    Slash = binary:replace(Value, <<"\\">>, <<"\\\\">>, [global]),
+    Quote = binary:replace(Slash, <<"\"">>, <<"\\\"">>, [global]),
+    Newline = binary:replace(Quote, <<"\n">>, <<"\\n">>, [global]),
+    Return = binary:replace(Newline, <<"\r">>, <<"\\r">>, [global]),
+    binary:replace(Return, <<"\t">>, <<"\\t">>, [global]).
 
 json_string_field(Json0, Field0) ->
     Json = to_binary(Json0),
@@ -816,6 +835,9 @@ csv_env(Name, Default) ->
 
 safe_container_image(Image) ->
     re:run(Image, "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,511}$", [{capture, none}]) =:= match.
+
+safe_reuse_key(ReuseKey) ->
+    re:run(ReuseKey, "^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$", [{capture, none}]) =:= match.
 
 shell_word(Value0) ->
     Value = to_binary(Value0),

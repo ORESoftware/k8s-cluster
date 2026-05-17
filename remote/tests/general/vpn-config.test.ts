@@ -27,6 +27,8 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   const externalSecret = await readRepoFile(
     'remote/argocd/vpn/dd-vpn-secrets.externalsecret.yaml',
   );
+  const persistentVolume = await readRepoFile('remote/argocd/vpn/dd-vpn.pv.yaml');
+  const persistentVolumeClaim = await readRepoFile('remote/argocd/vpn/dd-vpn.pvc.yaml');
   const deployment = await readRepoFile('remote/argocd/vpn/dd-vpn.deployment.yaml');
   const service = await readRepoFile('remote/argocd/vpn/dd-vpn-ui.service.yaml');
   const networkPolicy = await readRepoFile('remote/argocd/vpn/dd-vpn.networkpolicy.yaml');
@@ -42,6 +44,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
     'dd-vpn.serviceaccount.yaml',
     'dd-vpn.configmap.yaml',
     'dd-vpn-secrets.externalsecret.yaml',
+    'dd-vpn.pv.yaml',
     'dd-vpn.pvc.yaml',
     'dd-vpn.deployment.yaml',
     'dd-vpn-ui.service.yaml',
@@ -60,6 +63,21 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   assert.match(externalSecret, /kind:\s*ExternalSecret/);
   assert.match(externalSecret, /name:\s*dd-vpn-secrets/);
   assert.match(externalSecret, /key:\s*dd\/remote-dev\/vpn-secrets/);
+  assert.match(externalSecret, /property:\s*INIT_USERNAME/);
+  assert.match(externalSecret, /property:\s*INIT_PASSWORD/);
+  assert.doesNotMatch(externalSecret, /dataFrom:/);
+  assert.match(externalSecret, /deletionPolicy:\s*Retain/);
+  assert.match(externalSecret, /conversionStrategy:\s*Default/);
+  assert.match(externalSecret, /decodingStrategy:\s*None/);
+  assert.match(externalSecret, /metadataPolicy:\s*None/);
+
+  assert.match(persistentVolume, /kind:\s*PersistentVolume/);
+  assert.match(persistentVolume, /name:\s*dd-vpn-config/);
+  assert.match(persistentVolume, /storageClassName:\s*dd-vpn-hostpath/);
+  assert.match(persistentVolume, /persistentVolumeReclaimPolicy:\s*Retain/);
+  assert.match(persistentVolume, /claimRef:[\s\S]*namespace:\s*vpn[\s\S]*name:\s*dd-vpn-config/);
+  assert.match(persistentVolume, /path:\s*\/home\/ec2-user\/dd-vpn-config/);
+  assert.match(persistentVolumeClaim, /storageClassName:\s*dd-vpn-hostpath/);
 
   assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
   assert.match(deployment, /image:\s*ghcr\.io\/wg-easy\/wg-easy:15/);
@@ -68,6 +86,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   assert.match(deployment, /privileged:\s*true/);
   assert.match(deployment, /NET_ADMIN/);
   assert.match(deployment, /SYS_MODULE/);
+  assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /hostPort:\s*51820/);
   assert.match(deployment, /protocol:\s*UDP/);
   assert.match(deployment, /mountPath:\s*\/etc\/wireguard/);

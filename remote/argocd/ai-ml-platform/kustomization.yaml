@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - dd-ai-ml-serviceaccount.yaml
   - dd-ai-ml-agent-secrets.externalsecret.yaml
+  - dd-ai-ml-data-contracts.configmap.yaml
   - dd-ai-ml-tool-catalog.configmap.yaml
   - dd-ai-ml-python-workflow-requirements.configmap.yaml
   - dd-ai-ml-pipeline.deployment.yaml

@@ -24,12 +24,13 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   const cargoToml = await readRepoFile('remote/container-pool-rs/Cargo.toml');
   const source = await readRepoFile('remote/container-pool-rs/src/main.rs');
   const readme = await readRepoFile('remote/container-pool-rs/readme.md');
-  const appConfigTableSql = await readRepoFile('remote/databases/pg/tables/app-config-table.sql');
+  // schema/schema.sql is the single source of truth for every shared table
+  // (app_config + container_pool_configs + lambda_functions + agent_remote_dev_*),
+  // and drives every adapter under remote/libs/pg-defs/generated/. Per-table
+  // DDL files were retired in favor of this single contract.
+  const schemaSql = await readRepoFile('remote/libs/pg-defs/schema/schema.sql');
   const appConfigSeedSql = await readRepoFile(
     'remote/databases/pg/seeds/container-pool-app-config.sql',
-  );
-  const tableSql = await readRepoFile(
-    'remote/databases/pg/tables/container-pool-configs-table.sql',
   );
 
   assert.match(cargoToml, /name = "dd-container-pool"/);
@@ -46,6 +47,8 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /CONTAINER_POOL_CONFIG_JSON/);
   assert.match(source, /CONTAINER_POOL_NATS_SUBJECT/);
   assert.match(source, /CONTAINER_POOL_START_TIMEOUT_SECONDS/);
+  assert.match(source, /CONTAINER_POOL_HEALTH_CHECK_SECONDS/);
+  assert.match(source, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD/);
   assert.match(source, /dd\.remote\.container_pool\.requests/);
   assert.match(source, /dd\.remote\.container_pool\.results/);
   assert.match(source, /route\("\/pools\/:pool\/dispatch", post\(dispatch_pool\)\)/);
@@ -55,21 +58,32 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /Command::new\(program\)\.args\(args\)\.output\(\)/);
   assert.match(source, /"run"\.to_string\(\)/);
   assert.match(source, /wait_container_ready/);
+  assert.match(source, /inspect_container_running/);
+  assert.match(source, /probe_container_health/);
+  assert.match(source, /retire_container/);
+  assert.match(source, /prune_unhealthy_containers/);
   assert.match(source, /"--network"\.to_string\(\)/);
   assert.match(source, /"--label"\.to_string\(\)/);
   assert.match(source, /dd\.container-pool\.managed=true/);
   assert.match(source, /max_concurrency_per_container/);
+  assert.match(source, /available_capacity/);
   assert.match(source, /dd_container_pool_dispatch_total/);
+  assert.match(source, /dd_container_pool_container_health_checks_total/);
   assert.doesNotMatch(source, /\/bin\/bash/);
   assert.match(readme, /reads active pool definitions from Postgres/);
+  assert.match(readme, /keeps at least `min_warm` available request slots/);
+  assert.match(readme, /Warm workers are health checked/);
+  assert.match(readme, /Worker contract/);
   assert.match(readme, /app_config/);
   assert.match(readme, /NATS requests on `CONTAINER_POOL_NATS_SUBJECT`/);
   assert.match(readme, /never\s+accepts arbitrary commands from dispatch requests/);
-  assert.match(appConfigTableSql, /create table if not exists app_config/);
-  assert.match(appConfigTableSql, /key varchar\(200\) not null/);
-  assert.match(appConfigTableSql, /value jsonb not null/);
-  assert.match(appConfigTableSql, /app_config_scope_key_uq/);
+  assert.match(schemaSql, /create table if not exists app_config/);
+  assert.match(schemaSql, /key varchar\(200\) not null/);
+  assert.match(schemaSql, /value jsonb not null/);
+  assert.match(schemaSql, /app_config_scope_key_uq/);
   assert.match(appConfigSeedSql, /container-pool\.runtime-pools\.v1/);
+  assert.match(appConfigSeedSql, /"runtimeContract": \{/);
+  assert.match(appConfigSeedSql, /"defaultHealthPath": "\/healthz"/);
   assert.match(appConfigSeedSql, /"baseImages": \[/);
   assert.match(appConfigSeedSql, /"dockerfile": "remote\/container-pool-rs\/runtime-images\/nodejs\.Dockerfile"/);
   assert.match(appConfigSeedSql, /dd-container-pool-nodejs-runtime:dev/);
@@ -80,14 +94,18 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(appConfigSeedSql, /dd-container-pool-gleamlang-runtime:dev/);
   assert.match(appConfigSeedSql, /dd-container-pool-erlang-runtime:dev/);
   assert.match(appConfigSeedSql, /on conflict \(scope, key\) do update/);
-  assert.match(tableSql, /create table if not exists container_pool_configs/);
-  assert.match(tableSql, /slug varchar\(120\) not null/);
-  assert.match(tableSql, /image text not null/);
-  assert.match(tableSql, /command jsonb not null default '\[\]'::jsonb/);
-  assert.match(tableSql, /env jsonb not null default '\{\}'::jsonb/);
-  assert.match(tableSql, /min_warm integer not null default 1/);
-  assert.match(tableSql, /max_warm integer not null default 2/);
-  assert.match(tableSql, /nats_subject text/);
+  assert.match(schemaSql, /create table if not exists container_pool_configs/);
+  // schema.sql uses the `default X not null` ordering; per-table dupes used
+  // `not null default X`. Both are semantically identical; the regexes below
+  // match the canonical schema.sql form.
+  assert.match(schemaSql, /slug varchar\(120\) not null/);
+  assert.match(schemaSql, /image text not null/);
+  assert.match(schemaSql, /command jsonb default '\[\]'::jsonb not null/);
+  assert.match(schemaSql, /env jsonb default '\{\}'::jsonb not null/);
+  assert.match(schemaSql, /min_warm integer default 1 not null/);
+  assert.match(schemaSql, /max_warm integer default 2 not null/);
+  assert.match(schemaSql, /health_path varchar\(256\) default '\/healthz' not null/);
+  assert.match(schemaSql, /nats_subject text/);
 });
 
 test('container pool is deployed through Argo, gateway, and metrics scraping', async () => {
@@ -125,6 +143,9 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   );
   assert.match(deployment, /CONTAINER_POOL_NETWORK[\s\S]*value:\s*host/);
   assert.match(deployment, /CONTAINER_POOL_PORT_START[\s\S]*value:\s*'12000'/);
+  assert.match(deployment, /CONTAINER_POOL_HEALTH_CHECK_SECONDS[\s\S]*value:\s*'10'/);
+  assert.match(deployment, /CONTAINER_POOL_HEALTH_TIMEOUT_MS[\s\S]*value:\s*'1000'/);
+  assert.match(deployment, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD[\s\S]*value:\s*'2'/);
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /dd-remote-rest-api-secrets/);
   assert.match(deployment, /dd-container-pool-secrets/);
@@ -179,15 +200,22 @@ test('container pool runtime base images cover the supported language pools', as
 
   assert.match(worker, /ThreadingHTTPServer/);
   assert.match(worker, /DD_POOL_HANDLER/);
+  assert.match(worker, /DD_POOL_REQUEST_PATH/);
+  assert.match(worker, /DD_POOL_HEALTH_PATH/);
+  assert.match(worker, /DD_POOL_NATS_HEARTBEAT_SUBJECT/);
+  assert.match(worker, /publish_nats/);
   assert.match(worker, /echo_key = request_payload\.get\("echoKey"\)/);
   assert.match(worker, /def do_POST\(self\):/);
-  assert.match(worker, /self\.path != "\/invoke"/);
+  assert.match(worker, /path != REQUEST_PATH/);
   assert.match(worker, /subprocess\.run/);
   assert.match(shim, /Development-only nerdctl shim/);
   assert.match(shim, /"--publish"/);
+  assert.match(shim, /handle_inspect/);
+  assert.match(shim, /"Running": running/);
   assert.match(shim, /published_host_port/);
   assert.match(runtimeReadme, /nodejs/);
   assert.match(runtimeReadme, /gleamlang/);
+  assert.match(runtimeReadme, /DD_POOL_NATS_HEARTBEAT_SUBJECT/);
 
   for (const [runtime, dockerfile] of dockerfiles) {
     assert.match(dockerfile, / AS /, `${runtime} image should be multi-stage`);

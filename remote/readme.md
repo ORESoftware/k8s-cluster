@@ -139,9 +139,8 @@ being tuned:
   - `https://54.91.17.58/api/agent-worker/threads/<threadId>/tasks` (Rust worker broker, requires
     `Auth`)
   - `https://54.91.17.58/container-pools` (Rust container pool control surface, requires `Auth`)
-  - `https://54.91.17.58/bastion/runtime/deployments` and
-    `https://54.91.17.58/bastion/terminal` (Rust `dd-bastion` access broker inventory and
-    allowlisted browser exec terminals, requires `Auth`)
+  - `https://54.91.17.58/bastion/runtime/deployments` (Rust `dd-bastion` access broker inventory,
+    requires `Auth`; browser terminal routes are disabled by default)
   - `https://54.91.17.58/builds` (Rust build server, requires `Auth`)
   - `http://54.91.17.58/prometheus/` (Prometheus, requires `Auth`)
   - `http://54.91.17.58/nats/` (NATS monitor, requires `Auth`)
@@ -194,7 +193,9 @@ flow is:
    Kubernetes secrets `dd-agent-secrets`, `dd-remote-rest-api-secrets`, and
    `dd-idle-reaper-secret`.
 4. Deployments consume those Kubernetes secrets with `envFrom` or `secretKeyRef`; worker pods
-   inherit model-provider keys through `dd-agent-secrets`.
+   inherit model-provider keys through `dd-agent-secrets`. `dd-build-server` also reads optional
+   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` keys from
+   `dd-agent-secrets` when it needs to push images to ECR.
 
 For now, updates can be done from AWS Console or CLI by editing the AWS Secrets Manager JSON. A
 good admin UI would be a small authenticated page that calls a server-side AWS SDK endpoint to
@@ -230,7 +231,7 @@ The current secret groups are:
 
 | AWS secret                         | Kubernetes secret             | Consumers                                                                         |
 | ---------------------------------- | ----------------------------- | --------------------------------------------------------------------------------- |
-| `dd/remote-dev/agent-secrets`      | `dd-agent-secrets`            | Node.js coding-agent task workers and warm worker templates.                      |
+| `dd/remote-dev/agent-secrets`      | `dd-agent-secrets`            | Node.js coding-agent task workers, warm worker templates, and optional build-server ECR push credentials. |
 | `dd/remote-dev/rest-api-secrets`   | `dd-remote-rest-api-secrets`  | Rust REST API / lifecycle service.                                                |
 | `dd/remote-dev/idle-reaper-secret` | `dd-idle-reaper-secret`       | Rust idle reaper and cron service.                                                |
 | `dd/remote-dev/mcp-secrets`        | `dd-gleam-mcp-server-secrets` | Future write-capable MCP tools only; the first MCP service should stay read-only. |

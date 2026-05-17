@@ -331,7 +331,7 @@ kubectl exec "$pg_name" -n default -- pg_isready -U postgres -d postgres >/dev/n
 
 {
   echo 'create extension if not exists pgcrypto;'
-  cat "$repo/remote/databases/pg/tables/lambda-functions-table.sql"
+  cat "$repo/remote/libs/pg-defs/schema/schema.sql"
   cat "$work/seed.sql"
 } | kubectl exec -i "$pg_name" -n default -- psql -U postgres -d postgres -v ON_ERROR_STOP=1 >/dev/null
 
@@ -361,7 +361,7 @@ spec:
             exit 1
           fi
           cd /opt/dd-next-1/remote/gleam-lambda-runner
-          gleam deps download
+          gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
           exec gleam run
       env:
         - name: LAMBDA_DATABASE_URL
@@ -593,7 +593,7 @@ test(
           archivePath,
           'remote/gleam-lambda-runner',
           'remote/libs/pg-defs/generated/gleam',
-          'remote/databases/pg/tables/lambda-functions-table.sql',
+          'remote/libs/pg-defs/schema/schema.sql',
         ],
         { cwd: repoRoot, timeout: 60_000 },
       );

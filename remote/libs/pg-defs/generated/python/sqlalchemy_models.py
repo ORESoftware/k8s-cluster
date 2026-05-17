@@ -17,6 +17,192 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 class Base(DeclarativeBase):
     pass
 
+AppConfigStatus = Literal["active", "paused", "archived"]
+
+class AppConfig(Base):
+    __tablename__ = "app_config"
+    __table_args__ = (
+        CheckConstraint("scope ~ '^[A-Za-z0-9._/-]{1,120}$'", name="app_config_scope_format_chk"),
+        CheckConstraint("key ~ '^[A-Za-z0-9._:/-]{1,200}$'", name="app_config_key_format_chk"),
+        CheckConstraint("jsonb_typeof(value) = 'object'", name="app_config_value_object_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="app_config_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="app_config_meta_object_chk"),
+        CheckConstraint("version > 0", name="app_config_version_chk"),
+        CheckConstraint("status in ('active', 'paused', 'archived')", name="app_config_status_chk"),
+        Index("app_config_scope_key_uq", "scope", "key", unique=True),
+        Index("app_config_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
+        Index("app_config_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("app_config_labels_gin_idx", "labels", postgresql_using="gin"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    scope: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'default'"))
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    value: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    version: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class AppConfigRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    scope: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._/-]{1,120}$")
+    key: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
+    value: dict[str, Any]
+    version: int
+    status: AppConfigStatus
+    labels: list[Any]
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class AppConfigInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    scope: str | None = Field("default", max_length=120, pattern="^[A-Za-z0-9._/-]{1,120}$")
+    key: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
+    value: dict[str, Any]
+    version: int | None = 1
+    status: AppConfigStatus | None = "active"
+    labels: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+ContainerPoolConfigsStatus = Literal["active", "paused", "archived"]
+
+class ContainerPoolConfigs(Base):
+    __tablename__ = "container_pool_configs"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'", name="container_pool_configs_slug_format_chk"),
+        CheckConstraint("octet_length(image) between 1 and 512", name="container_pool_configs_image_size_chk"),
+        CheckConstraint("octet_length(display_name) <= 200", name="container_pool_configs_display_name_size_chk"),
+        CheckConstraint("jsonb_typeof(command) = 'array'", name="container_pool_configs_command_array_chk"),
+        CheckConstraint("jsonb_typeof(env) = 'object'", name="container_pool_configs_env_object_chk"),
+        CheckConstraint("request_path ~ '^/[A-Za-z0-9._~!$&''()*+,;=:@%/-]{0,255}$'", name="container_pool_configs_request_path_chk"),
+        CheckConstraint("health_path ~ '^/[A-Za-z0-9._~!$&''()*+,;=:@%/-]{0,255}$'", name="container_pool_configs_health_path_chk"),
+        CheckConstraint("container_port between 1 and 65535", name="container_pool_configs_container_port_chk"),
+        CheckConstraint("min_warm between 0 and 64", name="container_pool_configs_min_warm_chk"),
+        CheckConstraint("max_warm between 1 and 128 and max_warm >= min_warm", name="container_pool_configs_max_warm_chk"),
+        CheckConstraint("max_concurrency_per_container between 1 and 128", name="container_pool_configs_concurrency_chk"),
+        CheckConstraint("request_timeout_ms between 100 and 900000", name="container_pool_configs_timeout_chk"),
+        CheckConstraint("idle_ttl_seconds between 10 and 86400", name="container_pool_configs_idle_ttl_chk"),
+        CheckConstraint("nats_subject is null or octet_length(nats_subject) <= 256", name="container_pool_configs_nats_subject_size_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="container_pool_configs_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="container_pool_configs_meta_object_chk"),
+        CheckConstraint("status in ('active', 'paused', 'archived')", name="container_pool_configs_status_chk"),
+        Index("container_pool_configs_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("container_pool_configs_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
+        Index("container_pool_configs_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("container_pool_configs_labels_gin_idx", "labels", postgresql_using="gin"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    image: Mapped[str] = mapped_column(Text(), nullable=False)
+    command: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    env: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    request_path: Mapped[str] = mapped_column(String(256), nullable=False, server_default=text("'/invoke'"))
+    health_path: Mapped[str] = mapped_column(String(256), nullable=False, server_default=text("'/healthz'"))
+    container_port: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("8080"))
+    min_warm: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    max_warm: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("2"))
+    max_concurrency_per_container: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    request_timeout_ms: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("30000"))
+    idle_ttl_seconds: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("900"))
+    nats_subject: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class ContainerPoolConfigsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    displayName: str = Field(..., max_length=200)
+    image: str
+    command: list[Any]
+    env: dict[str, Any]
+    requestPath: str = Field(..., max_length=256)
+    healthPath: str = Field(..., max_length=256)
+    containerPort: int
+    minWarm: int
+    maxWarm: int
+    maxConcurrencyPerContainer: int
+    requestTimeoutMs: int
+    idleTtlSeconds: int
+    natsSubject: str | None = None
+    status: ContainerPoolConfigsStatus
+    labels: list[Any]
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("container_pool_configs.display_name exceeds 200 bytes")
+        return value
+
+class ContainerPoolConfigsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    displayName: str = Field(..., max_length=200)
+    image: str
+    command: list[Any] | None = Field(default_factory=list)
+    env: dict[str, Any] | None = Field(default_factory=dict)
+    requestPath: str | None = Field("/invoke", max_length=256)
+    healthPath: str | None = Field("/healthz", max_length=256)
+    containerPort: int | None = 8080
+    minWarm: int | None = 1
+    maxWarm: int | None = 2
+    maxConcurrencyPerContainer: int | None = 1
+    requestTimeoutMs: int | None = 30000
+    idleTtlSeconds: int | None = 900
+    natsSubject: str | None = None
+    status: ContainerPoolConfigsStatus | None = "active"
+    labels: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("container_pool_configs.display_name exceeds 200 bytes")
+        return value
+
 KnownGitRepoProvider = Literal["github", "gitlab", "bitbucket", "generic"]
 KnownGitRepoStatus = Literal["active", "paused", "archived"]
 

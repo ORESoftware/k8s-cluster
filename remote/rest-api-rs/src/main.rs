@@ -5,7 +5,7 @@ use std::{
     env, fs,
     io::BufReader,
     net::SocketAddr,
-    path::{Path as FsPath, PathBuf},
+    path::{Component, Path as FsPath, PathBuf},
     process::Command,
     sync::Mutex,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -1993,10 +1993,11 @@ fn normalize_lambda_runtime_alias(input: &str) -> Option<&'static str> {
     }
 }
 
-fn validate_lambda_runtime(input: Option<&str>) -> String {
-    normalize_lambda_runtime_alias(input.unwrap_or("javascript"))
-        .unwrap_or("nodejs")
-        .to_string()
+fn validate_lambda_runtime(input: Option<&str>) -> Result<String, String> {
+    let value = input.unwrap_or("javascript");
+    normalize_lambda_runtime_alias(value)
+        .map(ToString::to_string)
+        .ok_or_else(|| "runtime must be one of nodejs, python3, ruby, or bash".to_string())
 }
 
 fn lambda_host_runtime_allowed(runtime: &str) -> bool {
@@ -2007,6 +2008,29 @@ fn lambda_host_runtime_allowed(runtime: &str) -> bool {
         .filter(|value| !value.is_empty())
         .filter_map(normalize_lambda_runtime_alias)
         .any(|allowed| allowed == runtime)
+}
+
+fn validate_lambda_reuse_key(value: Option<&str>) -> Result<Option<String>, String> {
+    let Some(reuse_key) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if reuse_key.len() > 120 {
+        return Err("reuseKey must be 120 characters or fewer".to_string());
+    }
+    if !reuse_key
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | ':' | '-'))
+        || !reuse_key
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_alphanumeric())
+    {
+        return Err(
+            "reuseKey may contain only ASCII letters, numbers, '.', '_', ':', and '-' and must start with a letter or number"
+                .to_string(),
+        );
+    }
+    Ok(Some(reuse_key.to_string()))
 }
 
 fn json_string(value: &Value, key: &str) -> Option<String> {
@@ -2465,14 +2489,9 @@ fn cleaned_lambda_input(
         .map(str::trim)
         .unwrap_or_default()
         .to_string();
-    let runtime = validate_lambda_runtime(request.runtime.as_deref());
+    let runtime = validate_lambda_runtime(request.runtime.as_deref())?;
     let entry_command = validate_lambda_entry_command(request.entry_command.as_deref(), &runtime)?;
-    let reuse_key = request
-        .reuse_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string);
+    let reuse_key = validate_lambda_reuse_key(request.reuse_key.as_deref())?;
     let idle_timeout_seconds = request.idle_timeout_seconds.unwrap_or(300).clamp(1, 3600);
     let max_run_ms = request.max_run_ms.unwrap_or(30_000).clamp(1_000, 300_000);
     let containerized = request.containerized.unwrap_or(false);
@@ -2739,6 +2758,22 @@ fn lambda_image_build_root() -> PathBuf {
     )
 }
 
+fn validate_lambda_image_build_root(path: &FsPath) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err("lambda image build root must be an absolute path".to_string());
+    }
+    if path.parent().is_none() {
+        return Err("lambda image build root must not be filesystem root".to_string());
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
+    {
+        return Err("lambda image build root must not contain . or .. path components".to_string());
+    }
+    Ok(())
+}
+
 fn lambda_image_repo_root() -> PathBuf {
     PathBuf::from(
         env::var("LAMBDA_IMAGE_REPO_ROOT").unwrap_or_else(|_| "/opt/dd-next-1".to_string()),
@@ -2872,11 +2907,11 @@ fn write_lambda_build_file(path: &FsPath, content: impl AsRef<[u8]>) -> Result<(
 }
 
 fn package_lambda_image_sync(function: &LambdaFunctionRow, image: &str) -> Result<(), String> {
-    let runtime = validate_lambda_runtime(Some(&function.runtime));
+    let runtime = validate_lambda_runtime(Some(&function.runtime))?;
     let build_root = lambda_image_build_root();
+    validate_lambda_image_build_root(&build_root)?;
     fs::create_dir_all(&build_root)
         .map_err(|error| format!("failed to create lambda image build root: {error}"))?;
-    harden_lambda_build_dir(&build_root)?;
     let context_dir = build_root.join(format!("lambda-{}", function.id));
     if context_dir.exists() {
         fs::remove_dir_all(&context_dir)

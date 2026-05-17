@@ -317,7 +317,7 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
               <td><code>dd-build-server</code></td>
               <td><code>dd-build-server:8100</code></td>
               <td><span class="pill warn">server auth</span></td>
-              <td>Rust CI/CD server that clones repos, builds images with <code>nerdctl -n k8s.io build</code>, and applies allowlisted manifests or kustomize overlays with <code>kubectl</code>.</td>
+              <td>Rust CI/CD server that clones allowlisted repos, builds allowlisted ECR images with <code>nerdctl -n k8s.io build</code>, pushes through ECR login, and applies constrained manifests with <code>kubectl</code>.</td>
             </tr>
             <tr>
               <td><code>dd-ai-ml-pipeline</code></td>
@@ -541,7 +541,7 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
                 <td><span class="path-links"><a href="/builds"><code>POST /builds</code></a><a href="/builds/example-job"><code>/builds/&lt;jobId&gt;</code></a><a href="/builds/example-job/logs"><code>/builds/&lt;jobId&gt;/logs</code></a></span></td>
                 <td>dd-build-server Rust CI/CD deployment</td>
                 <td><span class="pill warn">server auth</span></td>
-                <td>Authenticated repo build queue. It builds into the node-local containerd namespace and deploys only requested repo-relative manifests in allowlisted namespaces.</td>
+                <td>Authenticated repo build queue. Jobs are <code>build-server.v1</code> JSON, push only to allowlisted ECR prefixes, and deploy only repo-relative manifests in allowlisted namespaces.</td>
               </tr>
               <tr>
                 <td><span class="path-links"><a href="/telemetry/"><code>/telemetry/</code></a></span></td>

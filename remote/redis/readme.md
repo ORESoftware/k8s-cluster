@@ -7,6 +7,8 @@
 - no RDB snapshots
 - no PVC or host data volume
 - bounded memory with `allkeys-lru` eviction
+- command restrictions through a mounted Redis ACL file
+- NetworkPolicy ingress only from pods labeled `dd.dev/redis-cache-client: 'true'`
 
 The in-cluster address is `dd-redis-cache.default.svc.cluster.local:6379`.
 

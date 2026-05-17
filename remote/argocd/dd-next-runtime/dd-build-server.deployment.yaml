@@ -25,15 +25,32 @@ spec:
         - name: build-server
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc
           args:
             - |
               set -euo pipefail
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-build-server-target
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               cd /opt/dd-next-1/remote/build-server-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/dd-build-server-target
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -48,23 +65,51 @@ spec:
               value: /usr/bin/kubectl
             - name: BUILD_SERVER_CONTAINERD_NAMESPACE
               value: k8s.io
+            - name: BUILD_SERVER_ALLOWED_REPO_PREFIXES
+              value: https://github.com/,git@github.com:,ssh://git@github.com/
+            - name: BUILD_SERVER_ALLOWED_IMAGE_PREFIXES
+              value: 710156900967.dkr.ecr.us-east-1.amazonaws.com/
             - name: BUILD_SERVER_ALLOWED_NAMESPACES
               value: default
             - name: BUILD_SERVER_DEPLOY_ENABLED
               value: 'true'
             - name: BUILD_SERVER_PUSH_ENABLED
-              value: 'false'
+              value: 'true'
+            - name: BUILD_SERVER_ECR_LOGIN_ENABLED
+              value: 'true'
             - name: BUILD_SERVER_MAX_CONCURRENT_BUILDS
               value: '1'
             - name: BUILD_SERVER_JOB_TIMEOUT_SECONDS
               value: '1800'
             - name: BUILD_SERVER_MAX_LOG_BYTES
               value: '4194304'
+            - name: AWS_REGION
+              value: us-east-1
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AWS_SESSION_TOKEN
+                  optional: true
           ports:
             - name: http
               containerPort: 8100
@@ -98,8 +143,11 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
             - name: build-work
               mountPath: /var/lib/dd-build-server
+            - name: tmp
+              mountPath: /tmp
             - name: containerd-sock
               mountPath: /run/containerd/containerd.sock
             - name: nerdctl-bin
@@ -117,6 +165,8 @@ spec:
           hostPath:
             path: /var/lib/dd-build-server
             type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}
         - name: containerd-sock
           hostPath:
             path: /run/containerd/containerd.sock

@@ -5,6 +5,210 @@
 
 import 'dart:convert';
 
+const appConfigTable = "app_config";
+const appConfigSelectSql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config";
+
+const appConfigStatusValues = <String>["active", "paused", "archived"];
+
+class AppConfigRow {
+  const AppConfigRow({
+    required this.id,
+    required this.scope,
+    required this.key,
+    required this.value,
+    required this.version,
+    required this.status,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String scope;
+  final String key;
+  final Map<String, Object?> value;
+  final int version;
+  final String status;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory AppConfigRow.fromJson(Map<String, Object?> json) {
+    return AppConfigRow(
+      id: _readRequiredString(json, "id"),
+      scope: _readRequiredString(json, "scope"),
+      key: _readRequiredString(json, "key"),
+      value: _readRequiredObject(json, "value"),
+      version: _readRequiredInt(json, "version"),
+      status: _readRequiredString(json, "status"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "scope": scope,
+    "key": key,
+    "value": value,
+    "version": version,
+    "status": status,
+    "labels": labels,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!appConfigStatusValues.contains(status)) {
+      errors.add("unsupported app_config.status");
+    }
+    return errors;
+  }
+}
+
+const containerPoolConfigsTable = "container_pool_configs";
+const containerPoolConfigsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs";
+
+const containerPoolConfigsStatusValues = <String>["active", "paused", "archived"];
+
+class ContainerPoolConfigsRow {
+  const ContainerPoolConfigsRow({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.image,
+    required this.command,
+    required this.env,
+    required this.requestPath,
+    required this.healthPath,
+    required this.containerPort,
+    required this.minWarm,
+    required this.maxWarm,
+    required this.maxConcurrencyPerContainer,
+    required this.requestTimeoutMs,
+    required this.idleTtlSeconds,
+    this.natsSubject,
+    required this.status,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String displayName;
+  final String image;
+  final List<Object?> command;
+  final Map<String, Object?> env;
+  final String requestPath;
+  final String healthPath;
+  final int containerPort;
+  final int minWarm;
+  final int maxWarm;
+  final int maxConcurrencyPerContainer;
+  final int requestTimeoutMs;
+  final int idleTtlSeconds;
+  final String? natsSubject;
+  final String status;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory ContainerPoolConfigsRow.fromJson(Map<String, Object?> json) {
+    return ContainerPoolConfigsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      displayName: _readRequiredString(json, "displayName"),
+      image: _readRequiredString(json, "image"),
+      command: _readRequiredArray(json, "command"),
+      env: _readRequiredObject(json, "env"),
+      requestPath: _readRequiredString(json, "requestPath"),
+      healthPath: _readRequiredString(json, "healthPath"),
+      containerPort: _readRequiredInt(json, "containerPort"),
+      minWarm: _readRequiredInt(json, "minWarm"),
+      maxWarm: _readRequiredInt(json, "maxWarm"),
+      maxConcurrencyPerContainer: _readRequiredInt(json, "maxConcurrencyPerContainer"),
+      requestTimeoutMs: _readRequiredInt(json, "requestTimeoutMs"),
+      idleTtlSeconds: _readRequiredInt(json, "idleTtlSeconds"),
+      natsSubject: _readOptionalString(json, "natsSubject"),
+      status: _readRequiredString(json, "status"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "image": image,
+    "command": command,
+    "env": env,
+    "requestPath": requestPath,
+    "healthPath": healthPath,
+    "containerPort": containerPort,
+    "minWarm": minWarm,
+    "maxWarm": maxWarm,
+    "maxConcurrencyPerContainer": maxConcurrencyPerContainer,
+    "requestTimeoutMs": requestTimeoutMs,
+    "idleTtlSeconds": idleTtlSeconds,
+    "natsSubject": natsSubject,
+    "status": status,
+    "labels": labels,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r"^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$").hasMatch(slug)) {
+      errors.add("container_pool_configs.slug must be a lowercase slug");
+    }
+    if (utf8.encode(displayName).length > 200) {
+      errors.add("container_pool_configs.display_name exceeds 200 bytes");
+    }
+    if (!containerPoolConfigsStatusValues.contains(status)) {
+      errors.add("unsupported container_pool_configs.status");
+    }
+    return errors;
+  }
+}
+
 const knownGitRepoTable = "known_git_repos";
 const knownGitRepoSelectSql = "select\n      id::text as id,\n      repo_url,\n      display_name,\n      provider,\n      default_branch,\n      status,\n      to_char(last_verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_verified_at,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from known_git_repos";
 

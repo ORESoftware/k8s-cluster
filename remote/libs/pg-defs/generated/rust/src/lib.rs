@@ -5,6 +5,290 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub const APP_CONFIG_TABLE: &str = "app_config";
+pub const APP_CONFIG_COLUMNS: &[&str] = &["id", "scope", "key", "value", "version", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const APP_CONFIG_SELECT_SQL: &str = r###"select
+      id::text as id,
+      scope,
+      key,
+      value,
+      version,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from app_config"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppConfigStatus {
+    Active,
+    Paused,
+    Archived,
+}
+
+impl AppConfigStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for AppConfigStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AppConfigRow {
+    pub id: String,
+    pub scope: String,
+    pub key: String,
+    pub value: Value,
+    pub version: i32,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppConfigInsert {
+    pub id: Option<String>,
+    pub scope: Option<String>,
+    pub key: Option<String>,
+    pub value: Option<Value>,
+    pub version: Option<i32>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_app_config_row(value: &AppConfigRow) -> Result<(), String> {
+    validate_string_length("app_config.scope", &value.scope, None, Some(120))?;
+    validate_string_length("app_config.key", &value.key, None, Some(200))?;
+    if !(&value.value).is_object() { return Err("app_config.value must be a JSON object".to_string()); }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported app_config.status: {}", &value.status)); }
+    if !(&value.labels).is_array() { return Err("app_config.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("app_config.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_app_config_insert(value: &AppConfigInsert) -> Result<(), String> {
+    if let Some(value) = &value.scope {
+        validate_string_length("app_config.scope", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.key {
+        validate_string_length("app_config.key", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.value {
+        if !(value).is_object() { return Err("app_config.value must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported app_config.status: {}", value)); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("app_config.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("app_config.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const CONTAINER_POOL_CONFIGS_TABLE: &str = "container_pool_configs";
+pub const CONTAINER_POOL_CONFIGS_COLUMNS: &[&str] = &["id", "slug", "display_name", "image", "command", "env", "request_path", "health_path", "container_port", "min_warm", "max_warm", "max_concurrency_per_container", "request_timeout_ms", "idle_ttl_seconds", "nats_subject", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const CONTAINER_POOL_CONFIGS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      display_name,
+      image,
+      command,
+      env,
+      request_path,
+      health_path,
+      container_port,
+      min_warm,
+      max_warm,
+      max_concurrency_per_container,
+      request_timeout_ms,
+      idle_ttl_seconds,
+      nats_subject,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_configs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolConfigsStatus {
+    Active,
+    Paused,
+    Archived,
+}
+
+impl ContainerPoolConfigsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolConfigsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolConfigsRow {
+    pub id: String,
+    pub slug: String,
+    pub display_name: String,
+    pub image: String,
+    pub command: Value,
+    pub env: Value,
+    pub request_path: String,
+    pub health_path: String,
+    pub container_port: i32,
+    pub min_warm: i32,
+    pub max_warm: i32,
+    pub max_concurrency_per_container: i32,
+    pub request_timeout_ms: i32,
+    pub idle_ttl_seconds: i32,
+    pub nats_subject: Option<String>,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolConfigsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub image: Option<String>,
+    pub command: Option<Value>,
+    pub env: Option<Value>,
+    pub request_path: Option<String>,
+    pub health_path: Option<String>,
+    pub container_port: Option<i32>,
+    pub min_warm: Option<i32>,
+    pub max_warm: Option<i32>,
+    pub max_concurrency_per_container: Option<i32>,
+    pub request_timeout_ms: Option<i32>,
+    pub idle_ttl_seconds: Option<i32>,
+    pub nats_subject: Option<String>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_container_pool_configs_row(value: &ContainerPoolConfigsRow) -> Result<(), String> {
+    validate_slug("container_pool_configs.slug", &value.slug)?;
+    validate_string_length("container_pool_configs.display_name", &value.display_name, None, Some(200))?;
+    if (&value.display_name).as_bytes().len() > 200 { return Err("container_pool_configs.display_name exceeds 200 bytes".to_string()); }
+    if !(&value.command).is_array() { return Err("container_pool_configs.command must be a JSON array".to_string()); }
+    if !(&value.env).is_object() { return Err("container_pool_configs.env must be a JSON object".to_string()); }
+    validate_string_length("container_pool_configs.request_path", &value.request_path, None, Some(256))?;
+    validate_string_length("container_pool_configs.health_path", &value.health_path, None, Some(256))?;
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported container_pool_configs.status: {}", &value.status)); }
+    if !(&value.labels).is_array() { return Err("container_pool_configs.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("container_pool_configs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_container_pool_configs_insert(value: &ContainerPoolConfigsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_slug("container_pool_configs.slug", value)?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("container_pool_configs.display_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("container_pool_configs.display_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.command {
+        if !(value).is_array() { return Err("container_pool_configs.command must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.env {
+        if !(value).is_object() { return Err("container_pool_configs.env must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.request_path {
+        validate_string_length("container_pool_configs.request_path", value, None, Some(256))?;
+    }
+    if let Some(value) = &value.health_path {
+        validate_string_length("container_pool_configs.health_path", value, None, Some(256))?;
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_configs.status: {}", value)); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("container_pool_configs.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("container_pool_configs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const KNOWN_GIT_REPOS_TABLE: &str = "known_git_repos";
 pub const KNOWN_GIT_REPOS_COLUMNS: &[&str] = &["id", "repo_url", "display_name", "provider", "default_branch", "status", "last_verified_at", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const KNOWN_GIT_REPOS_SELECT_SQL: &str = r###"select

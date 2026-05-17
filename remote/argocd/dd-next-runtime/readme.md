@@ -49,6 +49,13 @@ and snapshot saves are disabled, and Redis evicts keys with `allkeys-lru` after 
 `256mb` maxmemory ceiling. Keep durable state in Postgres or the service-specific source of truth;
 use this service only for hot runtime cache entries that can be rebuilt.
 
+The cache is network-isolated by `dd-redis-cache.networkpolicy.yaml`. In-namespace clients must opt
+in with the pod label `dd.dev/redis-cache-client: 'true'` before they can connect to TCP `6379`.
+Redis runs as UID/GID `999`, with no service-account token, a read-only root filesystem, dropped
+Linux capabilities, `RuntimeDefault` seccomp, and writable `emptyDir` mounts only for `/data` and
+`/tmp`. The ACL file keeps the unauthenticated default user for cluster-local cache ergonomics, but
+blocks administrative, dangerous, scripting, module, persistence, and bulk-key commands.
+
 Gateway path map:
 
 - `/`, `/home` -> `dd-remote-web-home:8080`
@@ -284,8 +291,9 @@ or NATS requests on `dd.remote.container_pool.*.requests`. A NATS request may in
 `nats_subject`. Replies use the NATS reply inbox when present and otherwise publish to
 `dd.remote.container_pool.results`.
 
-The generic Postgres config contract is documented in
-`remote/databases/pg/tables/app-config-table.sql`, and the default runtime pool seed is
+The generic Postgres config contract is the shared `app_config` block in
+`remote/libs/pg-defs/schema/schema.sql` (the single source of truth for every shared
+table). The default runtime pool seed is
 `remote/databases/pg/seeds/container-pool-app-config.sql`. The seed points at multi-stage runtime
 images under `remote/container-pool-rs/runtime-images` for `nodejs`, `rust`, `golang`, `python3`,
 `dart`, `gleamlang`, and `erlang`. Dispatch requests never supply a shell command; image, command,
@@ -302,9 +310,18 @@ under `/var/lib/dd-build-server/jobs`.
 Deploys are intentionally constrained: the request can only choose `deploy.kind` values
 `kustomize`, `manifest`, or `none`, paths must stay inside the cloned repo, and target namespaces
 must be listed in `BUILD_SERVER_ALLOWED_NAMESPACES` (`default` in the Argo runtime manifest).
-Image pushes are disabled unless `BUILD_SERVER_PUSH_ENABLED=true`. The deployment mounts the EC2
-containerd socket, `/usr/local/bin/nerdctl`, `/usr/bin/kubectl`, and uses the `dd-build-server`
-ServiceAccount with a namespace-scoped deployer Role.
+Images must include an explicit tag or digest and must match `BUILD_SERVER_ALLOWED_IMAGE_PREFIXES`
+(`710156900967.dkr.ecr.us-east-1.amazonaws.com/` in the Argo runtime manifest). ECR pushes are
+enabled with `BUILD_SERVER_PUSH_ENABLED=true` and `BUILD_SERVER_ECR_LOGIN_ENABLED=true`; the service
+uses env-provided AWS credentials from `dd-agent-secrets` to request an ECR authorization token,
+then runs `nerdctl login --password-stdin` before `nerdctl push`.
+
+The deployment mounts the EC2 containerd socket, `/usr/local/bin/nerdctl`, `/usr/bin/kubectl`, and
+uses the `dd-build-server` ServiceAccount with a namespace-scoped deployer Role. RBAC is deliberately
+narrow: no write access to Secrets, Pods, ServiceAccounts, Jobs, DaemonSets, StatefulSets, or
+NetworkPolicies. It can still create Deployments, so treat repo deploy manifests as trusted code;
+untrusted repos need a separate empty namespace plus admission controls that block secret mounts,
+hostPath, privileged pods, and service-account token automounting.
 
 ## Lambda function runner
 
@@ -332,7 +349,10 @@ queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `/contracts/example`, `POST /contracts/validate`, `POST /contracts/simulate`, and
 `POST /contracts/send`. The service validates `solana.contract.v1` instruction envelopes, checks
 base58 public keys and bounded instruction data, can call Solana JSON-RPC `simulateTransaction`
-through `SOLANA_RPC_URL`, and blocks `sendTransaction` unless `SOLANA_SEND_ENABLED=true`.
+through `SOLANA_RPC_URL`, and blocks `sendTransaction` unless `SOLANA_SEND_ENABLED=true` plus
+`CONTRACT_SEND_AUTH_SECRET` are configured. Request `cluster` must match the configured
+`SOLANA_CLUSTER`, private RPC URLs require `SOLANA_ALLOW_PRIVATE_RPC=true`, and `skipPreflight`
+requires `SOLANA_ALLOW_SKIP_PREFLIGHT=true`.
 
 The deployment queue-subscribes to `dd.remote.contracts.solana.validate` with queue group
 `dd-contract-service`, publishes validation results to `dd.remote.contracts.solana.results`, and
@@ -352,6 +372,7 @@ When traffic uses `POST /ml/ingest` or NATS input, the service publishes:
 - feature events to `dd.remote.ml.features`
 - MDP-ready telemetry to `dd.remote.telemetry.mdp`
 - compact runtime events to `dd.remote.events`
+- rejected NATS message summaries to `dd.remote.ml.deadletter`
 
 The heavier open-source platform choices live in `remote/argocd/ai-ml-platform` and the matching
 Argo CD application manifests: Dagster, Airflow, MLflow, dbt, Kafka through Strimzi, Spark,

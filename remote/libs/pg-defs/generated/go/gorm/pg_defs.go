@@ -16,6 +16,119 @@ import (
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 
+const AppConfigTable = "app_config"
+const AppConfigSelectSQL = `select
+      id::text as id,
+      scope,
+      key,
+      value,
+      version,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from app_config`
+
+var AppConfigStatusValues = []string{"active", "paused", "archived"}
+
+type AppConfigGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Scope string `gorm:"column:scope;type:varchar(120);default:'default';not null" json:"scope"`
+	Key string `gorm:"column:key;type:varchar(200);not null" json:"key"`
+	Value datatypes.JSON `gorm:"column:value;type:jsonb;not null" json:"value"`
+	Version int32 `gorm:"column:version;type:integer;default:1;not null" json:"version"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;default:'[]'::jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (AppConfigGorm) TableName() string { return AppConfigTable }
+
+func (value AppConfigGorm) Validate() error {
+	if !validateJSONString(value.Value) { return errors.New("app_config.value must be valid JSON") }
+	if !containsString(AppConfigStatusValues, value.Status) { return errors.New("unsupported app_config.status") }
+	if !validateJSONString(value.Labels) { return errors.New("app_config.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("app_config.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolConfigsTable = "container_pool_configs"
+const ContainerPoolConfigsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      image,
+      command,
+      env,
+      request_path,
+      health_path,
+      container_port,
+      min_warm,
+      max_warm,
+      max_concurrency_per_container,
+      request_timeout_ms,
+      idle_ttl_seconds,
+      nats_subject,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_configs`
+
+var ContainerPoolConfigsStatusValues = []string{"active", "paused", "archived"}
+
+type ContainerPoolConfigsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(120);not null" json:"slug"`
+	DisplayName string `gorm:"column:display_name;type:varchar(200);not null" json:"displayName"`
+	Image string `gorm:"column:image;type:text;not null" json:"image"`
+	Command datatypes.JSON `gorm:"column:command;type:jsonb;default:'[]'::jsonb;not null" json:"command"`
+	Env datatypes.JSON `gorm:"column:env;type:jsonb;default:'{}'::jsonb;not null" json:"env"`
+	RequestPath string `gorm:"column:request_path;type:varchar(256);default:'/invoke';not null" json:"requestPath"`
+	HealthPath string `gorm:"column:health_path;type:varchar(256);default:'/healthz';not null" json:"healthPath"`
+	ContainerPort int32 `gorm:"column:container_port;type:integer;default:8080;not null" json:"containerPort"`
+	MinWarm int32 `gorm:"column:min_warm;type:integer;default:1;not null" json:"minWarm"`
+	MaxWarm int32 `gorm:"column:max_warm;type:integer;default:2;not null" json:"maxWarm"`
+	MaxConcurrencyPerContainer int32 `gorm:"column:max_concurrency_per_container;type:integer;default:1;not null" json:"maxConcurrencyPerContainer"`
+	RequestTimeoutMs int32 `gorm:"column:request_timeout_ms;type:integer;default:30000;not null" json:"requestTimeoutMs"`
+	IdleTtlSeconds int32 `gorm:"column:idle_ttl_seconds;type:integer;default:900;not null" json:"idleTtlSeconds"`
+	NatsSubject *string `gorm:"column:nats_subject;type:text" json:"natsSubject,omitempty"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;default:'[]'::jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (ContainerPoolConfigsGorm) TableName() string { return ContainerPoolConfigsTable }
+
+func (value ContainerPoolConfigsGorm) Validate() error {
+	if !slugPattern.MatchString(value.Slug) { return errors.New("container_pool_configs.slug must be a lowercase slug") }
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("container_pool_configs.display_name exceeds 200 bytes") }
+	if !validateJSONString(value.Command) { return errors.New("container_pool_configs.command must be valid JSON") }
+	if !validateJSONString(value.Env) { return errors.New("container_pool_configs.env must be valid JSON") }
+	if !containsString(ContainerPoolConfigsStatusValues, value.Status) { return errors.New("unsupported container_pool_configs.status") }
+	if !validateJSONString(value.Labels) { return errors.New("container_pool_configs.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("container_pool_configs.meta_data must be valid JSON") }
+	return nil
+}
+
 const KnownGitRepoTable = "known_git_repos"
 const KnownGitRepoSelectSQL = `select
       id::text as id,

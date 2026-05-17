@@ -65,6 +65,7 @@ spec:
               containerPort: 51821
               protocol: TCP
           securityContext:
+            allowPrivilegeEscalation: false
             capabilities:
               drop:
                 - ALL

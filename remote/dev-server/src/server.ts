@@ -442,10 +442,12 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
   });
 
   const hasRemoteBranch = await remoteBranchExists(session.branch);
+  let switchSource = `origin/${config.baseBranch}`;
   if (hasRemoteBranch) {
     await shCapture('git', ['fetch', '--quiet', 'origin', session.branch], config.workspaceRepo, {
       timeoutMs: TIMEOUT_GIT_NETWORK,
     });
+    switchSource = 'FETCH_HEAD';
   }
 
   await shCapture(
@@ -455,7 +457,7 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
       '--discard-changes',
       '-C',
       session.branch,
-      hasRemoteBranch ? `origin/${session.branch}` : `origin/${config.baseBranch}`,
+      switchSource,
     ],
     config.workspaceRepo,
     { timeoutMs: TIMEOUT_GIT_QUICK },

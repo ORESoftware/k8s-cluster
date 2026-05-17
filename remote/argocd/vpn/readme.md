@@ -33,16 +33,17 @@ operators reach through WireGuard or the gateway-proxied `/bastion/...` paths:
 
 - `GET /healthz` - unauthenticated health check.
 - `GET /profile` or `/config` - VPN endpoint, DNS, service CIDR, pod CIDR, and cluster API info.
-- `GET /kubeconfig` - kubeconfig using the `dd-bastion` service account token.
+- `GET /kubeconfig` - read-only kubeconfig using the `dd-bastion` service account token.
 - `GET /runtime/deployments` - live managed Deployment, Pod, and container inventory.
-- `GET /terminal` and `/terminal/ws` - allowlisted browser terminal sessions using `kubectl exec`
-  through the bastion service.
 
 Protected routes accept `X-Bastion-Auth`, `X-Server-Auth`, `Auth`, or `Authorization: Bearer ...`
 with `SERVER_AUTH_SECRET`. The generated kubeconfig is bound to
-`ClusterRole/dd-bastion-access-broker`; it intentionally does not grant Kubernetes Secret access,
-patch/update/delete verbs, or general pod creation. The only create verb is limited to `pods/exec`
-for the allowlisted browser terminal.
+`ClusterRole/dd-bastion-readonly`; it intentionally does not grant Kubernetes Secret access,
+patch/update/delete verbs, general pod creation, or `pods/exec`.
+
+The browser terminal code path is compiled into the Rust service, but terminal access is disabled
+by default in the Kubernetes deployment and the shipped RBAC does not grant `pods/exec`. Enable it
+only after a separate review of the exact pod allowlist and operational need.
 
 ## Secret setup
 
@@ -114,6 +115,4 @@ use Terraform or another AWS IaC path if the goal is a real AWS VPC.
 
 “Bastion host” and “jump host” are used here as the same operational concept: a hardened hop for
 private cluster access. This implementation keeps the hop as a narrow access broker by default; add
-SSH only if there is a concrete workflow that requires full host shell access. For service
-containers, prefer the allowlisted browser terminal so exec access stays scoped to known
-deployments.
+SSH or browser terminal access only if there is a concrete workflow that requires shell access.

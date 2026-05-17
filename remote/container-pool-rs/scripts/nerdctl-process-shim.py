@@ -129,6 +129,37 @@ def handle_rm(args):
     return 0
 
 
+def handle_inspect(args):
+    if not args:
+        print("missing container name", file=sys.stderr)
+        return 2
+    state = load_state()
+    inspected = []
+    changed = False
+    for name in args:
+        record = state.get(name)
+        if not record:
+            print(f"no such container: {name}", file=sys.stderr)
+            return 1
+        running = alive(record["pid"])
+        if not running:
+            state.pop(name, None)
+            changed = True
+        inspected.append(
+            {
+                "Name": name,
+                "State": {
+                    "Running": running,
+                    "Status": "running" if running else "exited",
+                },
+            }
+        )
+    if changed:
+        save_state(state)
+    print(json.dumps(inspected))
+    return 0
+
+
 def main():
     args = strip_namespace(sys.argv[1:])
     if not args:
@@ -141,6 +172,8 @@ def main():
         return handle_run(rest)
     if command == "rm":
         return handle_rm(rest)
+    if command == "inspect":
+        return handle_inspect(rest)
     print(f"unsupported command: {command}", file=sys.stderr)
     return 2
 

@@ -10,7 +10,8 @@ orders to an exchange.
 ## Endpoints
 
 - `GET /` - service descriptor with upstream service URLs, NATS subjects, and safety mode.
-- `GET /healthz` - health probe.
+- `GET /healthz` - liveness probe.
+- `GET /readyz` - readiness probe that fails when platform config is missing or stale.
 - `GET /metrics` - Prometheus text metrics.
 - `GET /schema` - request/response contract summary for `trading.decision.v1`.
 - `GET /example` - sample decision request.
@@ -49,7 +50,8 @@ Platform metadata is loaded from the generic RDS `app_config` table using
 
 The app-config row stores endpoint/profile metadata and Kubernetes secret key names only. Raw API
 tokens, account IDs, and gateway URLs belong in `dd-trading-broker-secrets` or the existing AWS
-Secrets Manager path that syncs into Kubernetes.
+Secrets Manager path that syncs into Kubernetes; this decision pod does not mount those broker
+secrets.
 
 The service can subscribe to `dd.remote.trading.signals` and publish decisions/intents without
 going through HTTP. A future executor should consume order intents and enforce its own risk checks
@@ -64,7 +66,8 @@ The decision engine uses simple bounded scoring today:
 - recent market momentum
 - MDP/POMDP policy hints
 
-Safety gates can force `hold` even when the model recommends `buy` or `sell`: missing/paused
+Per-request `constraints` can only tighten the server defaults. Safety gates can force `hold` even
+when the model recommends `buy` or `sell`: missing/paused
 platform config, unsupported paper/live mode, disabled mode, live gate off, low confidence, high
 risk score, missing price, shorting disallowed, or exposure limits. Live mode still only emits an
 intent; it never calls an exchange API.

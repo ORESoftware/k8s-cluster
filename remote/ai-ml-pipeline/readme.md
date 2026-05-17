@@ -17,6 +17,7 @@ optimizer.
 ## Endpoints
 
 - `GET /healthz`
+- `GET /readyz`
 - `GET /metrics`
 - `GET /status` - requires `X-Server-Auth` or `Auth`
 - `POST /analyze` - score telemetry without publishing
@@ -51,6 +52,7 @@ curl -s http://localhost:8099/analyze \
 - `ML_FEATURE_SUBJECT=dd.remote.ml.features`
 - `ML_MDP_TELEMETRY_SUBJECT=dd.remote.telemetry.mdp`
 - `ML_EVENT_SUBJECT=dd.remote.events`
+- `ML_DEAD_LETTER_SUBJECT=dd.remote.ml.deadletter`
 
 ## Runtime model
 
@@ -65,7 +67,13 @@ The first model is an online statistical model rather than a heavyweight batch-t
 
 The in-memory model has bounded cardinality through `ML_MAX_TRACKED_SERIES` and
 `ML_MAX_TRANSITION_KEYS`, validates telemetry windows and signal weights before publishing to the
-MDP optimizer, redacts credentials from status output, and rejects oversized NATS publishes.
+MDP optimizer, redacts credentials from status output, waits for NATS flush acknowledgements, rejects
+oversized NATS publishes, and sends malformed NATS messages to `dd.remote.ml.deadletter` without
+copying raw payload content.
+
+The Kubernetes bundle also carries JSON schemas for the raw ingest and MDP telemetry shapes in
+`dd-ai-ml-data-contracts`, so Dagster/Airflow/Spark jobs can generate the same contract the online
+service expects.
 
 That gives the cluster a real data pipeline today, while leaving room for MLflow-registered models,
 Dagster/Airflow jobs, Spark features, or LlamaIndex retrieval steps to replace individual scoring

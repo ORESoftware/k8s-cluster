@@ -6,6 +6,7 @@ This bundle installs the lightweight always-on pieces:
 
 - `ai-ml` namespace
 - `dd-ai-ml-tool-catalog` ConfigMap describing the selected open-source stack
+- `dd-ai-ml-data-contracts` ConfigMap with raw telemetry, MDP telemetry, and subject-map contracts
 - `dd-ai-ml-pipeline`, a Python3 online feature pipeline that bridges telemetry into the existing
   Rust MDP/POMDP/RL optimizer
 - an `ExternalSecret` that mirrors `dd/remote-dev/agent-secrets` into the `ai-ml` namespace for

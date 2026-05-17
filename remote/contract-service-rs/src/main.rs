@@ -1,7 +1,7 @@
 use std::{
     env,
     error::Error,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -11,7 +11,7 @@ use std::{
 
 use axum::{
     extract::{DefaultBodyLimit, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -36,6 +36,8 @@ const DEFAULT_COMPUTE_UNITS: u32 = 200_000;
 const MAX_COMPUTE_UNITS_PER_INSTRUCTION: u32 = 1_400_000;
 const MAX_TRANSACTION_COMPUTE_UNITS: u64 = 1_400_000;
 const MAX_SEND_RETRIES: usize = 20;
+const DEFAULT_COMMITMENT: &str = "confirmed";
+const SEND_AUTH_HEADER: &str = "x-contract-send-auth";
 
 #[derive(Clone)]
 struct AppState {
@@ -43,6 +45,8 @@ struct AppState {
     solana_rpc_url: String,
     default_cluster: String,
     send_enabled: bool,
+    send_auth_secret: Option<String>,
+    allow_skip_preflight: bool,
     nats: Option<async_nats::Client>,
     result_subject: String,
     event_subject: String,
@@ -168,6 +172,13 @@ fn env_u64(key: &str, fallback: u64) -> u64 {
         .unwrap_or(fallback)
 }
 
+fn env_secret(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -181,6 +192,33 @@ fn request_id(input: Option<&String>, prefix: &str) -> String {
         .filter(|value| !value.is_empty())
         .unwrap_or(prefix)
         .to_string()
+}
+
+fn validate_request_id(input: Option<&String>, errors: &mut Vec<String>) {
+    let Some(value) = input else {
+        return;
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        errors.push("requestId must not be empty when provided".to_string());
+        return;
+    }
+    if trimmed.len() != value.len() {
+        errors.push("requestId must not contain leading or trailing whitespace".to_string());
+    }
+    if trimmed.len() > MAX_REQUEST_ID_LEN {
+        errors.push(format!(
+            "requestId must be at most {MAX_REQUEST_ID_LEN} bytes"
+        ));
+    }
+    if !trimmed
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
+    {
+        errors.push(
+            "requestId may contain only ASCII letters, numbers, '.', '_', '-', and ':'".to_string(),
+        );
+    }
 }
 
 fn normalize_cluster(input: Option<&str>, fallback: &str) -> Result<String, String> {
@@ -197,6 +235,19 @@ fn normalize_cluster(input: Option<&str>, fallback: &str) -> Result<String, Stri
     }
 }
 
+fn normalize_request_cluster(
+    input: Option<&str>,
+    configured_cluster: &str,
+) -> Result<String, String> {
+    let cluster = normalize_cluster(input, configured_cluster)?;
+    if cluster != configured_cluster {
+        return Err(format!(
+            "cluster must match configured SOLANA_CLUSTER ({configured_cluster}), got {cluster}"
+        ));
+    }
+    Ok(cluster)
+}
+
 fn normalize_commitment(input: Option<&str>) -> Result<Option<String>, String> {
     let Some(value) = input.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
@@ -208,6 +259,10 @@ fn normalize_commitment(input: Option<&str>) -> Result<Option<String>, String> {
             "commitment must be processed, confirmed, or finalized: {value}"
         )),
     }
+}
+
+fn normalize_commitment_or_default(input: Option<&str>) -> Result<String, String> {
+    Ok(normalize_commitment(input)?.unwrap_or_else(|| DEFAULT_COMMITMENT.to_string()))
 }
 
 fn normalize_encoding(input: Option<&str>) -> Result<&'static str, String> {
@@ -246,6 +301,11 @@ fn validate_pubkey(value: &str, label: &str) -> Result<(), String> {
     if trimmed.is_empty() {
         return Err(format!("{label} must not be empty"));
     }
+    if trimmed.len() != value.len() {
+        return Err(format!(
+            "{label} must not contain leading or trailing whitespace"
+        ));
+    }
     let decoded = bs58::decode(trimmed)
         .into_vec()
         .map_err(|error| format!("{label} must be valid base58: {error}"))?;
@@ -256,6 +316,114 @@ fn validate_pubkey(value: &str, label: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+fn sensitive_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let mut diff = left.len() ^ right.len();
+    let max_len = left.len().max(right.len());
+    for index in 0..max_len {
+        let left_byte = left.get(index).copied().unwrap_or(0);
+        let right_byte = right.get(index).copied().unwrap_or(0);
+        diff |= usize::from(left_byte ^ right_byte);
+    }
+    diff == 0
+}
+
+fn authorize_send(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, &'static str)> {
+    let Some(secret) = &state.send_auth_secret else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "transaction sending is not configured with CONTRACT_SEND_AUTH_SECRET",
+        ));
+    };
+    let Some(value) = headers
+        .get(SEND_AUTH_HEADER)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "missing x-contract-send-auth header",
+        ));
+    };
+    if !sensitive_eq(value.trim(), secret) {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "invalid x-contract-send-auth header",
+        ));
+    }
+    Ok(())
+}
+
+fn config_error(message: impl Into<String>) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, message.into())
+}
+
+fn validate_solana_rpc_url(raw: &str, allow_private_rpc: bool) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(raw)
+        .map_err(|error| format!("SOLANA_RPC_URL must be an absolute URL: {error}"))?;
+    match parsed.scheme() {
+        "https" => {}
+        "http" if allow_private_rpc => {}
+        "http" => {
+            return Err(
+                "SOLANA_RPC_URL must use https unless SOLANA_ALLOW_PRIVATE_RPC=true".to_string(),
+            )
+        }
+        scheme => {
+            return Err(format!(
+                "SOLANA_RPC_URL scheme must be https or http, got {scheme}"
+            ))
+        }
+    }
+
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("SOLANA_RPC_URL must not include credentials".to_string());
+    }
+    let Some(host) = parsed.host_str() else {
+        return Err("SOLANA_RPC_URL must include a host".to_string());
+    };
+
+    if !allow_private_rpc {
+        let host_lower = host.to_ascii_lowercase();
+        if matches!(
+            host_lower.as_str(),
+            "localhost" | "metadata.google.internal"
+        ) || host_lower.ends_with(".local")
+            || host_lower.ends_with(".cluster.local")
+        {
+            return Err(
+                "SOLANA_RPC_URL points at a private host; set SOLANA_ALLOW_PRIVATE_RPC=true to allow it"
+                    .to_string(),
+            );
+        }
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            let private_ip = match ip {
+                IpAddr::V4(address) => {
+                    address.is_private()
+                        || address.is_loopback()
+                        || address.is_link_local()
+                        || address.is_broadcast()
+                        || address.is_unspecified()
+                }
+                IpAddr::V6(address) => {
+                    address.is_loopback()
+                        || address.is_unspecified()
+                        || address.is_unique_local()
+                        || address.is_unicast_link_local()
+                }
+            };
+            if private_ip {
+                return Err(
+                    "SOLANA_RPC_URL points at a private IP; set SOLANA_ALLOW_PRIVATE_RPC=true to allow it"
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    Ok(parsed.to_string())
 }
 
 fn decode_instruction_data(instruction: &ContractInstructionInput) -> Result<usize, String> {
@@ -312,15 +480,9 @@ fn validate_contract_request(
         ));
     }
 
-    if let Some(id) = &request.request_id {
-        if id.len() > MAX_REQUEST_ID_LEN {
-            errors.push(format!(
-                "requestId must be at most {MAX_REQUEST_ID_LEN} bytes"
-            ));
-        }
-    }
+    validate_request_id(request.request_id.as_ref(), &mut errors);
 
-    let cluster = match normalize_cluster(request.cluster.as_deref(), default_cluster) {
+    let cluster = match normalize_request_cluster(request.cluster.as_deref(), default_cluster) {
         Ok(cluster) => cluster,
         Err(error) => {
             errors.push(error);
@@ -477,6 +639,12 @@ fn validate_contract_request(
 fn validate_signed_transaction(
     request: &TransactionRpcRequest,
 ) -> Result<(&'static str, usize), String> {
+    let mut errors = Vec::new();
+    validate_request_id(request.request_id.as_ref(), &mut errors);
+    if !errors.is_empty() {
+        return Err(errors.join("; "));
+    }
+
     let encoding = normalize_encoding(request.encoding.as_deref())?;
     let payload = request.transaction.trim();
     if payload.is_empty() {
@@ -507,16 +675,24 @@ fn simulate_params(
 ) -> Result<Value, String> {
     let mut config = Map::new();
     config.insert("encoding".to_string(), json!(encoding));
-    if let Some(commitment) = normalize_commitment(request.commitment.as_deref())? {
-        config.insert("commitment".to_string(), json!(commitment));
-    }
     config.insert(
-        "sigVerify".to_string(),
-        json!(request.sig_verify.unwrap_or(false)),
+        "commitment".to_string(),
+        json!(normalize_commitment_or_default(
+            request.commitment.as_deref()
+        )?),
     );
+    let sig_verify = request.sig_verify.unwrap_or(false);
+    let replace_recent_blockhash = request.replace_recent_blockhash.unwrap_or(false);
+    if sig_verify && replace_recent_blockhash {
+        return Err(
+            "sigVerify and replaceRecentBlockhash cannot both be true because blockhash replacement invalidates signatures"
+                .to_string(),
+        );
+    }
+    config.insert("sigVerify".to_string(), json!(sig_verify));
     config.insert(
         "replaceRecentBlockhash".to_string(),
-        json!(request.replace_recent_blockhash.unwrap_or(false)),
+        json!(replace_recent_blockhash),
     );
     if let Some(min_context_slot) = request.min_context_slot {
         config.insert("minContextSlot".to_string(), json!(min_context_slot));
@@ -524,22 +700,33 @@ fn simulate_params(
     Ok(json!([request.transaction.trim(), Value::Object(config)]))
 }
 
-fn send_params(request: &TransactionRpcRequest, encoding: &'static str) -> Result<Value, String> {
+fn send_params(
+    request: &TransactionRpcRequest,
+    encoding: &'static str,
+    allow_skip_preflight: bool,
+) -> Result<Value, String> {
     let max_retries = request.max_retries.unwrap_or(3);
     if max_retries > MAX_SEND_RETRIES {
         return Err(format!("maxRetries must be at most {MAX_SEND_RETRIES}"));
     }
+    let skip_preflight = request.skip_preflight.unwrap_or(false);
+    if skip_preflight && !allow_skip_preflight {
+        return Err(
+            "skipPreflight is disabled by policy; set SOLANA_ALLOW_SKIP_PREFLIGHT=true to permit it"
+                .to_string(),
+        );
+    }
 
     let mut config = Map::new();
     config.insert("encoding".to_string(), json!(encoding));
-    config.insert(
-        "skipPreflight".to_string(),
-        json!(request.skip_preflight.unwrap_or(false)),
-    );
+    config.insert("skipPreflight".to_string(), json!(skip_preflight));
     config.insert("maxRetries".to_string(), json!(max_retries));
-    if let Some(commitment) = normalize_commitment(request.commitment.as_deref())? {
-        config.insert("preflightCommitment".to_string(), json!(commitment));
-    }
+    config.insert(
+        "preflightCommitment".to_string(),
+        json!(normalize_commitment_or_default(
+            request.commitment.as_deref()
+        )?),
+    );
     if let Some(min_context_slot) = request.min_context_slot {
         config.insert("minContextSlot".to_string(), json!(min_context_slot));
     }
@@ -565,19 +752,39 @@ async fn solana_rpc(state: &AppState, method: &str, params: Value) -> Result<Val
         .json(&payload)
         .send()
         .await
-        .map_err(|error| format!("solana rpc request failed: {error}"))?;
+        .map_err(|error| {
+            eprintln!("solana rpc {method} request failed: {error}");
+            "solana rpc request failed".to_string()
+        })?;
 
     let status = response.status();
-    let body = response
-        .json::<Value>()
-        .await
-        .map_err(|error| format!("solana rpc response was not json: {error}"))?;
+    let body = response.text().await.map_err(|error| {
+        eprintln!("solana rpc {method} response read failed: {error}");
+        "solana rpc response read failed".to_string()
+    })?;
+    let body = serde_json::from_str::<Value>(&body).map_err(|error| {
+        eprintln!("solana rpc {method} response was not json: {error}");
+        "solana rpc response was not json".to_string()
+    })?;
 
     if !status.is_success() {
-        return Err(format!("solana rpc returned HTTP {status}: {body}"));
+        eprintln!("solana rpc {method} returned HTTP {status}");
+        return Err(format!("solana rpc returned HTTP {status}"));
     }
     if let Some(error) = body.get("error") {
-        return Err(format!("solana rpc {method} returned error: {error}"));
+        let code = error
+            .get("code")
+            .and_then(Value::as_i64)
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        let message = error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("upstream rpc error");
+        eprintln!("solana rpc {method} returned error code={code} message={message}");
+        return Err(format!(
+            "solana rpc {method} returned error code={code}: {message}"
+        ));
     }
 
     Ok(body.get("result").cloned().unwrap_or(body))
@@ -599,6 +806,7 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
         "schemaVersion": SCHEMA_VERSION,
         "cluster": state.default_cluster,
         "sendEnabled": state.send_enabled,
+        "skipPreflightAllowed": state.allow_skip_preflight,
         "routes": {
             "health": "/healthz",
             "metrics": "/metrics",
@@ -627,7 +835,8 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         "chain": "solana",
         "cluster": state.default_cluster,
         "rpcConfigured": !state.solana_rpc_url.trim().is_empty(),
-        "sendEnabled": state.send_enabled
+        "sendEnabled": state.send_enabled,
+        "skipPreflightAllowed": state.allow_skip_preflight
     }))
 }
 
@@ -724,15 +933,16 @@ async fn simulate_http(
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
 
-    let cluster = match normalize_cluster(request.cluster.as_deref(), &state.default_cluster) {
-        Ok(cluster) => cluster,
-        Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
-        }
-    };
+    let cluster =
+        match normalize_request_cluster(request.cluster.as_deref(), &state.default_cluster) {
+            Ok(cluster) => cluster,
+            Err(error) => {
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    json!({ "ok": false, "error": error }),
+                )
+            }
+        };
     let (encoding, decoded_bytes) = match validate_signed_transaction(&request) {
         Ok(validated) => validated,
         Err(error) => {
@@ -785,6 +995,7 @@ async fn simulate_http(
 }
 
 async fn send_http(
+    headers: HeaderMap,
     State(state): State<AppState>,
     Json(request): Json<TransactionRpcRequest>,
 ) -> Response {
@@ -809,15 +1020,32 @@ async fn send_http(
         );
     }
 
-    let cluster = match normalize_cluster(request.cluster.as_deref(), &state.default_cluster) {
-        Ok(cluster) => cluster,
-        Err(error) => {
-            return json_response(
-                StatusCode::BAD_REQUEST,
-                json!({ "ok": false, "error": error }),
-            )
-        }
-    };
+    if let Err((status, error)) = authorize_send(&headers, &state) {
+        state
+            .metrics
+            .send_blocked_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            status,
+            json!({
+                "ok": false,
+                "requestId": request_id(request.request_id.as_ref(), "contract-send"),
+                "error": error,
+                "generatedAtMs": now_ms()
+            }),
+        );
+    }
+
+    let cluster =
+        match normalize_request_cluster(request.cluster.as_deref(), &state.default_cluster) {
+            Ok(cluster) => cluster,
+            Err(error) => {
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    json!({ "ok": false, "error": error }),
+                )
+            }
+        };
     let (encoding, decoded_bytes) = match validate_signed_transaction(&request) {
         Ok(validated) => validated,
         Err(error) => {
@@ -827,7 +1055,7 @@ async fn send_http(
             )
         }
     };
-    let params = match send_params(&request, encoding) {
+    let params = match send_params(&request, encoding, state.allow_skip_preflight) {
         Ok(params) => params,
         Err(error) => {
             return json_response(
@@ -998,6 +1226,135 @@ fn contract_example() -> Value {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
+
+    fn sample_contract_request() -> ContractRequest {
+        ContractRequest {
+            schema_version: SCHEMA_VERSION.to_string(),
+            request_id: Some("contract-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            program_id: SYSTEM_PROGRAM.to_string(),
+            payer: Some(SYSTEM_PROGRAM.to_string()),
+            recent_blockhash: Some(SYSTEM_PROGRAM.to_string()),
+            commitment: Some("confirmed".to_string()),
+            memo: Some("example".to_string()),
+            instructions: vec![ContractInstructionInput {
+                name: "system-transfer-shape".to_string(),
+                program_id: None,
+                accounts: vec![AccountMetaInput {
+                    pubkey: SYSTEM_PROGRAM.to_string(),
+                    is_signer: Some(true),
+                    is_writable: Some(true),
+                    label: Some("from".to_string()),
+                }],
+                data_base64: Some("AQID".to_string()),
+                data_base58: None,
+                compute_units: Some(DEFAULT_COMPUTE_UNITS),
+            }],
+        }
+    }
+
+    #[test]
+    fn contract_validation_rejects_cluster_drift() {
+        let mut request = sample_contract_request();
+        request.cluster = Some("mainnet-beta".to_string());
+
+        let errors = validate_contract_request(&request, "devnet").expect_err("must reject drift");
+
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("cluster must match configured SOLANA_CLUSTER")));
+    }
+
+    #[test]
+    fn request_ids_are_restricted() {
+        let mut request = sample_contract_request();
+        request.request_id = Some("bad id\n".to_string());
+
+        let errors = validate_contract_request(&request, "devnet").expect_err("must reject id");
+
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("requestId may contain only ASCII")));
+    }
+
+    #[test]
+    fn rpc_url_policy_blocks_private_http_by_default() {
+        assert!(validate_solana_rpc_url("https://api.devnet.solana.com", false).is_ok());
+        assert!(validate_solana_rpc_url("http://127.0.0.1:8899", false).is_err());
+        assert!(validate_solana_rpc_url("http://127.0.0.1:8899", true).is_ok());
+        assert!(validate_solana_rpc_url("https://user:pass@example.com", false).is_err());
+    }
+
+    #[test]
+    fn simulate_rejects_signature_verify_with_blockhash_replacement() {
+        let request = TransactionRpcRequest {
+            request_id: Some("simulate-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            transaction: general_purpose::STANDARD.encode([1_u8, 2, 3]),
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            sig_verify: Some(true),
+            replace_recent_blockhash: Some(true),
+            skip_preflight: None,
+            max_retries: None,
+            min_context_slot: None,
+        };
+
+        let error = simulate_params(&request, "base64").expect_err("must reject invalid combo");
+
+        assert!(error.contains("sigVerify and replaceRecentBlockhash cannot both be true"));
+    }
+
+    #[test]
+    fn send_params_blocks_skip_preflight_by_default() {
+        let request = TransactionRpcRequest {
+            request_id: Some("send-demo".to_string()),
+            cluster: Some("devnet".to_string()),
+            transaction: general_purpose::STANDARD.encode([1_u8, 2, 3]),
+            encoding: Some("base64".to_string()),
+            commitment: None,
+            sig_verify: None,
+            replace_recent_blockhash: None,
+            skip_preflight: Some(true),
+            max_retries: Some(3),
+            min_context_slot: None,
+        };
+
+        let error = send_params(&request, "base64", false).expect_err("must block skip");
+
+        assert!(error.contains("skipPreflight is disabled by policy"));
+        assert!(send_params(&request, "base64", true).is_ok());
+    }
+
+    #[test]
+    fn send_auth_requires_matching_header() {
+        let state = AppState {
+            rpc_client: reqwest::Client::new(),
+            solana_rpc_url: "https://api.devnet.solana.com".to_string(),
+            default_cluster: "devnet".to_string(),
+            send_enabled: true,
+            send_auth_secret: Some("secret".to_string()),
+            allow_skip_preflight: false,
+            nats: None,
+            result_subject: "results".to_string(),
+            event_subject: "events".to_string(),
+            metrics: Arc::new(Metrics::default()),
+        };
+        let mut headers = HeaderMap::new();
+
+        assert!(authorize_send(&headers, &state).is_err());
+        headers.insert(SEND_AUTH_HEADER, "secret".parse().unwrap());
+        assert!(authorize_send(&headers, &state).is_ok());
+        headers.insert(SEND_AUTH_HEADER, "wrong".parse().unwrap());
+        assert!(authorize_send(&headers, &state).is_err());
+    }
+}
+
 async fn publish_contract_result(state: &AppState, payload: Value) {
     let Some(nats) = &state.nats else {
         return;
@@ -1127,10 +1484,23 @@ async fn shutdown_signal() {
 async fn main() -> Result<(), Box<dyn Error>> {
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8101");
-    let default_cluster = normalize_cluster(Some(&env_value("SOLANA_CLUSTER", "devnet")), "devnet")
-        .unwrap_or_else(|_| "devnet".to_string());
-    let solana_rpc_url = env_value("SOLANA_RPC_URL", "https://api.devnet.solana.com");
+    let configured_cluster = env_value("SOLANA_CLUSTER", "devnet");
+    let default_cluster =
+        normalize_cluster(Some(&configured_cluster), "devnet").map_err(config_error)?;
+    let allow_private_rpc = env_bool("SOLANA_ALLOW_PRIVATE_RPC", false);
+    let solana_rpc_url = validate_solana_rpc_url(
+        &env_value("SOLANA_RPC_URL", "https://api.devnet.solana.com"),
+        allow_private_rpc,
+    )
+    .map_err(config_error)?;
     let send_enabled = env_bool("SOLANA_SEND_ENABLED", false);
+    let send_auth_secret = env_secret("CONTRACT_SEND_AUTH_SECRET");
+    if send_enabled && send_auth_secret.is_none() {
+        return Err(
+            config_error("SOLANA_SEND_ENABLED=true requires CONTRACT_SEND_AUTH_SECRET").into(),
+        );
+    }
+    let allow_skip_preflight = env_bool("SOLANA_ALLOW_SKIP_PREFLIGHT", false);
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
     let result_subject = env_value(
         "CONTRACT_RESULT_SUBJECT",
@@ -1167,6 +1537,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         solana_rpc_url,
         default_cluster,
         send_enabled,
+        send_auth_secret,
+        allow_skip_preflight,
         nats,
         result_subject,
         event_subject,

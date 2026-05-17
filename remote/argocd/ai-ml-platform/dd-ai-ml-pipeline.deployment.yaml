@@ -74,6 +74,8 @@ spec:
               value: dd.remote.telemetry.mdp
             - name: ML_EVENT_SUBJECT
               value: dd.remote.events
+            - name: ML_DEAD_LETTER_SUBJECT
+              value: dd.remote.ml.deadletter
             - name: ML_MIN_SAMPLES_FOR_ZSCORE
               value: '4'
             - name: ML_EWMA_ALPHA
@@ -102,7 +104,7 @@ spec:
             failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3

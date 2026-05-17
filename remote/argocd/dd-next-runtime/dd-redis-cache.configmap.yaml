@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-redis-cache-config
+  namespace: default
+  labels:
+    app: dd-redis-cache
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    protected-mode no
+    port 6379
+    dir /data
+
+    appendonly no
+    save ""
+
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+    tcp-keepalive 60
+
+    aclfile /usr/local/etc/redis/users.acl
+    loglevel notice
+  users.acl: |
+    user default on nopass ~* &* +@all -@admin -@dangerous -eval -evalsha -script -function -module -config -shutdown -save -bgsave -flushall -flushdb -keys -restore -migrate

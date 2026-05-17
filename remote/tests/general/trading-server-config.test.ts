@@ -27,7 +27,8 @@ test('rust trading server scores signals and emits gated order intents', async (
   const appConfigSeed = await readRepoFile(
     'remote/databases/pg/seeds/trading-platform-app-config.sql',
   );
-  const appConfigTable = await readRepoFile('remote/databases/pg/tables/app-config-table.sql');
+  // Single source of truth for shared table DDL; per-table dupes were retired.
+  const appConfigTable = await readRepoFile('remote/libs/pg-defs/schema/schema.sql');
 
   assert.match(cargo, /name\s*=\s*"dd-trading-server"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
@@ -44,6 +45,10 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /from app_config/);
   assert.match(source, /fetch_platform_config_from_app_config/);
   assert.match(source, /refresh_platform_config/);
+  assert.match(source, /fn conservative_cap/);
+  assert.match(source, /fn conservative_floor/);
+  assert.match(source, /fn readyz/);
+  assert.match(source, /public_platform_descriptors/);
   assert.match(source, /dd_trading_server_config_refresh_total/);
   assert.match(source, /target_platform/);
   assert.match(source, /platformConfigured/);
@@ -66,13 +71,16 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /dd_trading_server_order_intents_total/);
   assert.match(source, /\.route\("\/schema", get\(schema\)\)/);
   assert.match(source, /\.route\("\/example", get\(example\)\)/);
+  assert.match(source, /\.route\("\/readyz", get\(readyz\)\)/);
   assert.match(source, /\.route\("\/decide", post\(decide_http\)\)/);
 
   assert.match(readme, /orchestrator, not an exchange executor/);
   assert.match(readme, /`POST \/decide`/);
+  assert.match(readme, /`GET \/readyz`/);
   assert.match(readme, /TRADING_MODE=paper/);
   assert.match(readme, /TRADING_ALLOW_LIVE_ORDERS=false/);
   assert.match(readme, /trading-platform-app-config\.sql/);
+  assert.match(readme, /constraints` can only tighten/);
   assert.match(readme, /interactive-brokers/);
   assert.match(readme, /alpaca/);
   assert.match(readme, /tradier/);
@@ -126,7 +134,7 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   assert.match(deployment, /TRADING_APP_CONFIG_KEY[\s\S]*value:\s*trading\.platforms\.v1/);
   assert.match(deployment, /TRADING_CONFIG_REFRESH_SECONDS[\s\S]*value:\s*'30'/);
   assert.match(deployment, /dd-remote-rest-api-secrets/);
-  assert.match(deployment, /dd-trading-broker-secrets/);
+  assert.doesNotMatch(deployment, /secretRef:\s*\n\s*name:\s*dd-trading-broker-secrets/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
   assert.match(deployment, /SCRAPER_BASE_URL[\s\S]*dd-web-scraper\.default\.svc\.cluster\.local:8097/);
   assert.match(deployment, /ML_PIPELINE_BASE_URL[\s\S]*dd-ai-ml-pipeline\.ai-ml\.svc\.cluster\.local:8099/);
@@ -134,7 +142,7 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   assert.match(deployment, /TRADING_SIGNAL_SUBJECT[\s\S]*dd\.remote\.trading\.signals/);
   assert.match(deployment, /TRADING_ORDER_INTENT_SUBJECT[\s\S]*dd\.remote\.trading\.order_intents/);
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
-  assert.match(deployment, /readinessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path: \/readyz[\s\S]*port: http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
   assert.match(service, /name:\s*dd-trading-server/);
   assert.match(service, /port:\s*8103/);

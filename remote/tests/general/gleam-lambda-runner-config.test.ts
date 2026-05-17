@@ -58,7 +58,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   const restApiDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-rest-api.deployment.yaml',
   );
-  const tableSql = await readRepoFile('remote/databases/pg/tables/lambda-functions-table.sql');
+  // Single source of truth for shared table DDL; per-table dupes were retired.
+  const tableSql = await readRepoFile('remote/libs/pg-defs/schema/schema.sql');
   const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
   const manifest = await readRepoFile('remote/gleam-lambda-runner/manifest.toml');
   const dockerfile = await readRepoFile('remote/gleam-lambda-runner/Dockerfile');
@@ -120,6 +121,9 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(lambdaNats, /lambda_child_runner:invoke/);
   assert.match(lambdaNats, /send_pub\(Socket, Subject, Payload\)/);
   assert.match(lambdaNats, /"PUB "/);
+  assert.match(lambdaNats, /NATS_LAMBDA_MAX_PAYLOAD_BYTES/);
+  assert.match(lambdaNats, /dropping oversized message/);
+  assert.match(lambdaNats, /<<"\\\\t">>/);
   assert.match(childProcess, /@external\(erlang, "lambda_child_runner", "invoke"\)/);
   assert.match(erlPort, /ShellCommand = "exec " \+\+ binary_to_list\(Command\)/);
   assert.match(erlPort, /open_port\(\{spawn_executable, "\/bin\/sh"\}/);
@@ -130,6 +134,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /'gleam_lambda_runner@pg_contract':lambda_functions_select_sql\(\)/);
   assert.match(erlPort, /id = '", Identifier, "'/);
   assert.match(erlPort, /command_for_definition/);
+  assert.match(erlPort, /supported_runtime\(Runtime\)/);
+  assert.match(erlPort, /unsupported lambda runtime/);
   assert.match(erlPort, /host_command\(<<"python3">>\)/);
   assert.match(erlPort, /host_command\(<<"ruby">>\)/);
   assert.match(erlPort, /host_command\(<<"bash">>\)/);
@@ -139,6 +145,9 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /container_command/);
   assert.match(erlPort, /LAMBDA_CONTAINER_RUNNER/);
   assert.match(erlPort, /ctr_container_command/);
+  assert.match(erlPort, /safe_reuse_key/);
+  assert.match(erlPort, /reuseKey contains unsupported characters/);
+  assert.match(erlPort, /<<"\\\\t">>/);
   assert.match(erlPort, /--mount type=tmpfs,dst=\/tmp,options=rw:noexec:nosuid:size=16m/);
   assert.match(erlPort, /--cap-drop CAP_NET_RAW/);
   assert.match(erlPort, /--read-only/);
@@ -172,6 +181,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(restApi, /get\(lambda_functions\)\.post\(create_lambda_function\)/);
   assert.match(restApi, /patch\(update_lambda_function\)/);
   assert.match(restApi, /validate_lambda_runtime/);
+  assert.match(restApi, /runtime must be one of nodejs, python3, ruby, or bash/);
+  assert.match(restApi, /validate_lambda_reuse_key/);
+  assert.match(restApi, /reuseKey may contain only ASCII letters/);
+  assert.match(restApi, /validate_lambda_image_build_root/);
+  assert.match(restApi, /lambda image build root must not contain \. or \.\. path components/);
   assert.match(restApi, /"nodejs"/);
   assert.match(restApi, /"python3"/);
   assert.match(restApi, /"ruby"/);
@@ -218,12 +232,15 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   );
   assert.match(externalSecrets, /name:\s*dd-gleam-lambda-runner-secrets/);
   assert.match(externalSecrets, /key:\s*dd\/remote-dev\/lambda-runner-secrets/);
-  assert.match(tableSql, /Do not apply this file directly/);
+  // schema.sql is the canonical contract for every shared table; regexes
+  // match its `default X not null` ordering (per-table dupes that used
+  // `not null default X` were retired in favor of this single file).
+  assert.match(tableSql, /Do not apply it directly to a shared database/);
   assert.match(tableSql, /create table if not exists lambda_functions/);
-  assert.match(tableSql, /entry_command text not null default/);
+  assert.match(tableSql, /entry_command text default '[^']+' not null/);
   assert.match(tableSql, /lambda_functions_body_size_chk/);
   assert.match(tableSql, /lambda_functions_entry_command_chk/);
-  assert.match(tableSql, /containerized boolean not null default false/);
+  assert.match(tableSql, /containerized boolean default false not null/);
   assert.match(tableSql, /container_build_status/);
   assert.match(tableSql, /runtime in \('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell'\)/);
 });
@@ -253,8 +270,12 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   assert.match(ec2Deployment, /bash/);
   assert.match(ec2Deployment, /gcompat/);
   assert.match(ec2Deployment, /libc6-compat/);
+  assert.match(ec2Deployment, /rebar3/);
   assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
   assert.match(ec2Deployment, /gleam deps download/);
+  assert.match(ec2Deployment, /gleam build/);
+  assert.match(ec2Deployment, /hpack\.app/);
+  assert.match(ec2Deployment, /erlc -o build\/dev\/erlang\/hpack\/ebin/);
   assert.match(ec2Deployment, /containerPort:\s*8083/);
   assert.match(ec2Deployment, /requests:[\s\S]*memory:\s*512Mi/);
   assert.match(ec2Deployment, /limits:[\s\S]*memory:\s*4Gi/);
