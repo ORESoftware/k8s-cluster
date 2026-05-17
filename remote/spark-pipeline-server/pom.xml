@@ -50,7 +50,7 @@
           io.github.async-java:async-java:0.2.0 publishes to Maven Central, switch to
           that stable coordinate.
         -->
-        <async-java.version>dd55f5a</async-java.version>
+        <async-java.version>f823320</async-java.version>
 
         <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
     </properties>

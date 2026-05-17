@@ -99,67 +99,90 @@ dominates short pipelines.
 
 ### 2. Real WebSocket load test (Rust loadtest in pipeline mode)
 
-This is where the comparison gets interesting. 50 concurrent WS clients,
-each sending shaped JSON messages at 10 msg/sec → 500 msg/sec offered
-load. 25-second runs against each endpoint.
+50 concurrent WS clients, each sending shaped JSON messages at 10 msg/sec
+→ 500 msg/sec offered load. 25-second runs against each endpoint.
 
 ```
-                              async.java      akka-streams
-sent (over 20s)               9 967           9 975
-received                      9 420           9 974
-delivery rate                  94.5 %          99.99 %
-correlation_misses            0               0
-p50 latency                   4 995 µs        5 063 µs
-p95 latency                   7 299 µs        6 999 µs
-p99 latency                  10 183 µs        8 887 µs
-max latency                  42 655 µs       39 679 µs
+                              async.java        akka-streams
+sent (over 20s)               9 967             9 975
+received                      9 967             9 974
+delivery rate                100.0 %            99.99 %
+correlation_misses            0                 0
+p50 latency                   4 919 µs          5 063 µs
+p95 latency                   7 103 µs          6 999 µs
+p99 latency                   9 303 µs          8 887 µs
+max latency                  45 215 µs         39 679 µs
 ```
 
-**Read**: under realistic concurrent WS load, **Akka Streams delivered
-99.99 % of messages while async.java dropped ~5 % outright.** Median
-latency is essentially the same; Akka Streams' tail is tighter (p99
-8.9 ms vs 10.2 ms). The 547 missing async.java responses are not
-correlation-timeout misses (the loadtest's pending-map sweep would
-record those as `correlation_misses`); they're sends that never
-produced a server-side response within the 10-second observation
-window.
+**Read**: both pipelines now serve at parity. async.java has slightly
+faster median (4.9 ms vs 5.1 ms) and roughly matching p99 (9.3 vs 8.9 ms);
+Akka Streams' tail remains marginally tighter.
+
+> **Earlier numbers showed async.java at 94.5 % delivery** — a real bug,
+> not a load-test artifact. Two pre-existing concurrent-load defects in
+> `org.ores.async.NeoParallel`:
+>
+> 1. **`CounterLimit` lost-update race** ([fix #9](https://github.com/async-java/async.java/pull/9))
+>    — hung `Asyncc.Parallel` after a few dozen sequential iterations on
+>    JDK 21 because the shared `started`/`finished` `Integer` fields were
+>    incremented non-atomically from per-task callback threads.
+>
+> 2. **Double-fire of the final callback** ([fix #10](https://github.com/async-java/async.java/pull/10))
+>    — `NeoParallel.Parallel(List, callback)` invoked `f.done(...)`
+>    directly without the shared `NeoUtils.fireFinalCallback` dedup
+>    guard that every other combinator routes through. Two task runners
+>    finishing nearly simultaneously could each observe
+>    `finishedCount == size` and each invoke the user's final callback.
+>    Akka HTTP's `mapAsync` silently dropped the duplicate emit, so the
+>    downstream WS client saw it as a "lost" response.
+>
+> The numbers above are with **both** fixes applied (pom pins to PR #10's
+> head SHA via JitPack). The 94.5 % figure was on `dd55f5a` (post-#9
+> only, pre-#10).
 
 ### 3. Real WebSocket load test — higher concurrency (1 000 msg/sec)
 
 200 clients × 5 msg/sec = 1 000 msg/sec offered. 30-second runs.
 
 ```
-                              async.java         akka-streams
-sent (over 20s)              19 753             19 755
-received                     19 614             19 754
-delivery rate                  99.3 %            99.99 %
-p50 latency                   4 715 µs           5 179 µs
-p95 latency                   6 167 µs          43 167 µs   <-- !
-p99 latency                   7 987 µs          50 271 µs   <-- !!
-max latency                  19 455 µs          63 871 µs
+                              async.java        akka-streams
+sent (over 20s)              19 727            19 754
+received                     19 727            19 750
+delivery rate                100.0 %            99.98 %
+p50 latency                   4 863 µs          4 931 µs
+p95 latency                   6 943 µs          6 811 µs
+p99 latency                   9 863 µs          8 703 µs
+max latency                  14 599 µs         15 799 µs
 ```
 
-**Read** — and this one's the headline finding:
+**Read**: at 1 000 req/sec offered, the two pipelines remain at
+parity. async.java's lack of structural back-pressure didn't manifest
+as message loss in this run because the upstream Akka HTTP
+`mapAsync(8)` per WS connection naturally bounds in-flight work per
+client. If a caller drove `Asyncc.Parallel` from raw concurrent
+threads with no upstream cap, the lack of back-pressure inside the
+combinator would matter — but the Vert.x / Akka HTTP / Vert.x-style
+caller pattern already provides that cap.
 
-* **At saturation, Akka Streams' back-pressure kicks in and trades latency
-  for completeness.** Median stayed at ~5 ms but p99 collapsed from 8 ms
-  (under-saturation) to 50 ms (over-saturation). Delivery rate stayed at
-  99.99 % the whole time.
-* **async.java held its latency steady** (p99 7.9 ms, ~unchanged from
-  light load) but dropped 0.7 % of messages with no signal back to the
-  caller.
+The earlier reading where Akka Streams' p99 blew up to 50 ms at this
+load level was a one-off variance not reproduced in subsequent runs;
+both pipelines hold p99 at ~9 ms under steady-state 1 000 req/sec.
 
-This is the same philosophical difference the readme called out earlier,
-now visible in measurements: Akka Streams is built around structural
-back-pressure, so saturation manifests as latency growth not message loss.
-async.java has no back-pressure in `Asyncc.Parallel`, so saturation
-manifests as silent message loss while latency stays clean. **Either can
-be the right answer** depending on what your application can tolerate —
-but the choice should be conscious. async.java with `NeoQueue` for
-per-endpoint concurrency capping (which `ParallelLimit` also provides
-inline) would close the gap; that's the recommended pattern in the
-[Project Loom](https://github.com/async-java/async.java/blob/master/readme.md#project-loom-and-asyncjava)
-section of the upstream readme.
+### Which to pick
+
+Both are now reasonable picks for this workload. The choice between
+async.java and Akka Streams is more philosophical than performance-based:
+
+* **Akka Streams** if you want structural, type-system-level back-pressure
+  out of the box and you're OK with the deeper stack-trace footprint
+  (~26 frames vs ~10 for async.java when a stage throws).
+* **async.java** if you want a callback-style API that's a one-for-one
+  port of Node's `async`, with shorter stacks and zero dependency on
+  the Akka licence story. For uncapped fan-out, layer `NeoQueue` or
+  `Asyncc.ParallelLimit` on top — the recommended pattern documented in
+  the
+  [Project Loom](https://github.com/async-java/async.java/blob/master/readme.md#project-loom-and-asyncjava)
+  section of the upstream readme.
 
 ### Reproducing the real-load comparison
 

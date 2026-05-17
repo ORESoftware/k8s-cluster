@@ -56,7 +56,7 @@
           io.github.async-java:async-java:0.2.0 publishes to Maven Central, switch
           to that stable coordinate.
         -->
-        <async-java.version>dd55f5a</async-java.version>
+        <async-java.version>f823320</async-java.version>
         <jackson.version>2.17.2</jackson.version>
         <logback.version>1.5.6</logback.version>
         <slf4j.version>2.0.13</slf4j.version>
