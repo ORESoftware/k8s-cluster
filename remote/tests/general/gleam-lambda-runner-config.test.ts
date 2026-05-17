@@ -71,6 +71,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(gleamToml, /name = "gleam_lambda_runner"/);
   assert.match(gleamToml, /dd_pg_defs = \{ path = "\.\.\/libs\/pg-defs\/generated\/gleam" \}/);
   assert.match(manifest, /name = "dd_pg_defs"[\s\S]*source = "local"[\s\S]*path = "\.\.\/libs\/pg-defs\/generated\/gleam"/);
+  assert.match(gleamToml, /opentelemetry_api = ">= 1\.5\.0 and < 2\.0\.0"/);
+  assert.match(manifest, /opentelemetry_api = \{ version = ">= 1\.5\.0 and < 2\.0\.0" \}/);
   assert.match(dockerfile, /COPY remote\/libs\/pg-defs\/generated\/gleam \.\/remote\/libs\/pg-defs\/generated\/gleam/);
   assert.match(dockerfile, /COPY remote\/gleam-lambda-runner\/src \.\/remote\/gleam-lambda-runner\/src/);
   assert.match(dockerfile, /python3/);

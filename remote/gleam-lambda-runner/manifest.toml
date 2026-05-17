@@ -31,3 +31,4 @@ gleam_otp = { version = ">= 1.2.0 and < 2.0.0" }
 gleam_stdlib = { version = ">= 0.68.0 and < 2.0.0" }
 gleeunit = { version = ">= 1.0.0 and < 2.0.0" }
 mist = { version = ">= 6.0.0 and < 7.0.0" }
+opentelemetry_api = { version = ">= 1.5.0 and < 2.0.0" }
