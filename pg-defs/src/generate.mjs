@@ -1834,6 +1834,11 @@ function rustDbType(column) {
 }
 
 function renderGleamToml() {
+  // gleeunit is needed so `gleam test` can run the smoke tests under
+  // `generated/gleam/test/`. Without this block the dev tooling has to
+  // re-add gleeunit on every regen, which silently breaks CI's
+  // `gleam-pg-defs-wiring` check the next time someone runs
+  // `node remote/libs/pg-defs/src/generate.mjs`.
   return `${[
     'name = "dd_pg_defs"',
     'version = "0.1.0"',
@@ -1841,6 +1846,9 @@ function renderGleamToml() {
     '',
     '[dependencies]',
     'gleam_stdlib = ">= 0.68.0 and < 2.0.0"',
+    '',
+    '[dev-dependencies]',
+    'gleeunit = ">= 1.0.0 and < 2.0.0"',
   ].join('\n')}\n`;
 }
 

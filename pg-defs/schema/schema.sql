@@ -54,6 +54,7 @@ create table if not exists container_pool_configs (
   command jsonb default '[]'::jsonb not null,
   env jsonb default '{}'::jsonb not null,
   request_path varchar(256) default '/invoke' not null,
+  health_path varchar(256) default '/healthz' not null,
   container_port integer default 8080 not null,
   min_warm integer default 1 not null,
   max_warm integer default 2 not null,
@@ -81,6 +82,8 @@ create table if not exists container_pool_configs (
     check (jsonb_typeof(env) = 'object'),
   constraint container_pool_configs_request_path_chk
     check (request_path ~ '^/[A-Za-z0-9._~!$&''()*+,;=:@%/-]{0,255}$'),
+  constraint container_pool_configs_health_path_chk
+    check (health_path ~ '^/[A-Za-z0-9._~!$&''()*+,;=:@%/-]{0,255}$'),
   constraint container_pool_configs_container_port_chk
     check (container_port between 1 and 65535),
   constraint container_pool_configs_min_warm_chk

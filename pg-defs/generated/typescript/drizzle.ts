@@ -11,6 +11,192 @@ const byteLength = (value: string) => textEncoder.encode(value).length;
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const jsonArraySchema = z.array(z.unknown());
 
+export const appConfigStatusValues = ["active","paused","archived"] as const;
+export const appConfigStatusSchema = z.enum(appConfigStatusValues);
+export type AppConfigStatus = z.infer<typeof appConfigStatusSchema>;
+
+export const appConfig = pgTable(
+  "app_config",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    scope: varchar("scope", { length: 120 }).default(sql`'default'`).notNull(),
+    key: varchar("key", { length: 200 }).notNull(),
+    value: jsonb("value").notNull(),
+    version: integer("version").default(sql`1`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    appConfigScopeFormatChk: check("app_config_scope_format_chk", sql.raw("scope ~ '^[A-Za-z0-9._/-]{1,120}$'")),
+    appConfigKeyFormatChk: check("app_config_key_format_chk", sql.raw("key ~ '^[A-Za-z0-9._:/-]{1,200}$'")),
+    appConfigValueObjectChk: check("app_config_value_object_chk", sql.raw("jsonb_typeof(value) = 'object'")),
+    appConfigLabelsArrayChk: check("app_config_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    appConfigMetaObjectChk: check("app_config_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    appConfigVersionChk: check("app_config_version_chk", sql.raw("version > 0")),
+    appConfigStatusChk: check("app_config_status_chk", sql.raw("status in ('active', 'paused', 'archived')")),
+    appConfigScopeKeyUq: uniqueIndex("app_config_scope_key_uq").on(table.scope, table.key),
+    appConfigStatusIdx: index("app_config_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
+    appConfigUpdatedAtIdx: index("app_config_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    appConfigLabelsGinIdx: index("app_config_labels_gin_idx").using("gin", table.labels),
+  }),
+);
+
+export const appConfigRowSchema = z.object({
+  id: z.string().uuid(),
+  scope: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._/-]{1,120}$")),
+  key: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  value: jsonObjectSchema,
+  version: z.number().int(),
+  status: appConfigStatusSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const appConfigInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  scope: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._/-]{1,120}$")).optional().default("default"),
+  key: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  value: jsonObjectSchema,
+  version: z.number().int().optional().default(1),
+  status: appConfigStatusSchema.optional().default("active"),
+  labels: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const appConfigUpdateSchema = appConfigInsertSchema.partial();
+export type AppConfigRow = z.infer<typeof appConfigRowSchema>;
+export type AppConfigInsert = z.infer<typeof appConfigInsertSchema>;
+export type AppConfigUpdate = z.infer<typeof appConfigUpdateSchema>;
+
+export const containerPoolConfigsStatusValues = ["active","paused","archived"] as const;
+export const containerPoolConfigsStatusSchema = z.enum(containerPoolConfigsStatusValues);
+export type ContainerPoolConfigsStatus = z.infer<typeof containerPoolConfigsStatusSchema>;
+
+export const containerPoolConfigs = pgTable(
+  "container_pool_configs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    displayName: varchar("display_name", { length: 200 }).notNull(),
+    image: text("image").notNull(),
+    command: jsonb("command").default(sql`'[]'::jsonb`).notNull(),
+    env: jsonb("env").default(sql`'{}'::jsonb`).notNull(),
+    requestPath: varchar("request_path", { length: 256 }).default(sql`'/invoke'`).notNull(),
+    healthPath: varchar("health_path", { length: 256 }).default(sql`'/healthz'`).notNull(),
+    containerPort: integer("container_port").default(sql`8080`).notNull(),
+    minWarm: integer("min_warm").default(sql`1`).notNull(),
+    maxWarm: integer("max_warm").default(sql`2`).notNull(),
+    maxConcurrencyPerContainer: integer("max_concurrency_per_container").default(sql`1`).notNull(),
+    requestTimeoutMs: integer("request_timeout_ms").default(sql`30000`).notNull(),
+    idleTtlSeconds: integer("idle_ttl_seconds").default(sql`900`).notNull(),
+    natsSubject: text("nats_subject"),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    containerPoolConfigsSlugFormatChk: check("container_pool_configs_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'")),
+    containerPoolConfigsImageSizeChk: check("container_pool_configs_image_size_chk", sql.raw("octet_length(image) between 1 and 512")),
+    containerPoolConfigsDisplayNameSizeChk: check("container_pool_configs_display_name_size_chk", sql.raw("octet_length(display_name) <= 200")),
+    containerPoolConfigsCommandArrayChk: check("container_pool_configs_command_array_chk", sql.raw("jsonb_typeof(command) = 'array'")),
+    containerPoolConfigsEnvObjectChk: check("container_pool_configs_env_object_chk", sql.raw("jsonb_typeof(env) = 'object'")),
+    containerPoolConfigsRequestPathChk: check("container_pool_configs_request_path_chk", sql.raw("request_path ~ '^/[A-Za-z0-9._~!$&''()*+,;=:@%/-]{0,255}$'")),
+    containerPoolConfigsHealthPathChk: check("container_pool_configs_health_path_chk", sql.raw("health_path ~ '^/[A-Za-z0-9._~!$&''()*+,;=:@%/-]{0,255}$'")),
+    containerPoolConfigsContainerPortChk: check("container_pool_configs_container_port_chk", sql.raw("container_port between 1 and 65535")),
+    containerPoolConfigsMinWarmChk: check("container_pool_configs_min_warm_chk", sql.raw("min_warm between 0 and 64")),
+    containerPoolConfigsMaxWarmChk: check("container_pool_configs_max_warm_chk", sql.raw("max_warm between 1 and 128 and max_warm >= min_warm")),
+    containerPoolConfigsConcurrencyChk: check("container_pool_configs_concurrency_chk", sql.raw("max_concurrency_per_container between 1 and 128")),
+    containerPoolConfigsTimeoutChk: check("container_pool_configs_timeout_chk", sql.raw("request_timeout_ms between 100 and 900000")),
+    containerPoolConfigsIdleTtlChk: check("container_pool_configs_idle_ttl_chk", sql.raw("idle_ttl_seconds between 10 and 86400")),
+    containerPoolConfigsNatsSubjectSizeChk: check("container_pool_configs_nats_subject_size_chk", sql.raw("nats_subject is null or octet_length(nats_subject) <= 256")),
+    containerPoolConfigsLabelsArrayChk: check("container_pool_configs_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    containerPoolConfigsMetaObjectChk: check("container_pool_configs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    containerPoolConfigsStatusChk: check("container_pool_configs_status_chk", sql.raw("status in ('active', 'paused', 'archived')")),
+    containerPoolConfigsSlugActiveUq: uniqueIndex("container_pool_configs_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
+    containerPoolConfigsStatusIdx: index("container_pool_configs_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
+    containerPoolConfigsUpdatedAtIdx: index("container_pool_configs_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    containerPoolConfigsLabelsGinIdx: index("container_pool_configs_labels_gin_idx").using("gin", table.labels),
+  }),
+);
+
+export const containerPoolConfigsRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  image: z.string(),
+  command: jsonArraySchema,
+  env: jsonObjectSchema,
+  requestPath: z.string().max(256),
+  healthPath: z.string().max(256),
+  containerPort: z.number().int(),
+  minWarm: z.number().int(),
+  maxWarm: z.number().int(),
+  maxConcurrencyPerContainer: z.number().int(),
+  requestTimeoutMs: z.number().int(),
+  idleTtlSeconds: z.number().int(),
+  natsSubject: z.string().nullable(),
+  status: containerPoolConfigsStatusSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const containerPoolConfigsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  image: z.string(),
+  command: jsonArraySchema.optional().default([]),
+  env: jsonObjectSchema.optional().default({}),
+  requestPath: z.string().max(256).optional().default("/invoke"),
+  healthPath: z.string().max(256).optional().default("/healthz"),
+  containerPort: z.number().int().optional().default(8080),
+  minWarm: z.number().int().optional().default(1),
+  maxWarm: z.number().int().optional().default(2),
+  maxConcurrencyPerContainer: z.number().int().optional().default(1),
+  requestTimeoutMs: z.number().int().optional().default(30000),
+  idleTtlSeconds: z.number().int().optional().default(900),
+  natsSubject: z.string().nullable().optional(),
+  status: containerPoolConfigsStatusSchema.optional().default("active"),
+  labels: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const containerPoolConfigsUpdateSchema = containerPoolConfigsInsertSchema.partial();
+export type ContainerPoolConfigsRow = z.infer<typeof containerPoolConfigsRowSchema>;
+export type ContainerPoolConfigsInsert = z.infer<typeof containerPoolConfigsInsertSchema>;
+export type ContainerPoolConfigsUpdate = z.infer<typeof containerPoolConfigsUpdateSchema>;
+
 export const knownGitRepoProviderValues = ["github","gitlab","bitbucket","generic"] as const;
 export const knownGitRepoProviderSchema = z.enum(knownGitRepoProviderValues);
 export type KnownGitRepoProvider = z.infer<typeof knownGitRepoProviderSchema>;

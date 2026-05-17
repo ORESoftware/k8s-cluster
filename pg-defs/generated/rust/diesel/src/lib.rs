@@ -10,6 +10,146 @@ use uuid::Uuid;
 
 diesel::table! {
     use diesel::sql_types::*;
+    app_config (id) {
+        id -> Uuid,
+        scope -> Varchar,
+        key -> Varchar,
+        value -> Jsonb,
+        version -> Int4,
+        status -> Varchar,
+        labels -> Jsonb,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = app_config)]
+pub struct AppConfigDieselRow {
+    pub id: Uuid,
+    pub scope: String,
+    pub key: String,
+    pub value: Value,
+    pub version: i32,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = app_config)]
+pub struct AppConfigDieselInsert {
+    pub id: Option<Uuid>,
+    pub scope: Option<String>,
+    pub key: Option<String>,
+    pub value: Option<Value>,
+    pub version: Option<i32>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    container_pool_configs (id) {
+        id -> Uuid,
+        slug -> Varchar,
+        display_name -> Varchar,
+        image -> Text,
+        command -> Jsonb,
+        env -> Jsonb,
+        request_path -> Varchar,
+        health_path -> Varchar,
+        container_port -> Int4,
+        min_warm -> Int4,
+        max_warm -> Int4,
+        max_concurrency_per_container -> Int4,
+        request_timeout_ms -> Int4,
+        idle_ttl_seconds -> Int4,
+        nats_subject -> Nullable<Text>,
+        status -> Varchar,
+        labels -> Jsonb,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_configs)]
+pub struct ContainerPoolConfigsDieselRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub display_name: String,
+    pub image: String,
+    pub command: Value,
+    pub env: Value,
+    pub request_path: String,
+    pub health_path: String,
+    pub container_port: i32,
+    pub min_warm: i32,
+    pub max_warm: i32,
+    pub max_concurrency_per_container: i32,
+    pub request_timeout_ms: i32,
+    pub idle_ttl_seconds: i32,
+    pub nats_subject: Option<String>,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_configs)]
+pub struct ContainerPoolConfigsDieselInsert {
+    pub id: Option<Uuid>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub image: Option<String>,
+    pub command: Option<Value>,
+    pub env: Option<Value>,
+    pub request_path: Option<String>,
+    pub health_path: Option<String>,
+    pub container_port: Option<i32>,
+    pub min_warm: Option<i32>,
+    pub max_warm: Option<i32>,
+    pub max_concurrency_per_container: Option<i32>,
+    pub request_timeout_ms: Option<i32>,
+    pub idle_ttl_seconds: Option<i32>,
+    pub nats_subject: Option<String>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     known_git_repos (id) {
         id -> Uuid,
         repo_url -> Text,

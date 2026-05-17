@@ -3,7 +3,77 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1]).
+-export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1]).
+
+app_config_table() -> <<"app_config">>.
+
+app_config_columns() -> [<<"id">>, <<"scope">>, <<"key">>, <<"value">>, <<"version">>, <<"status">>, <<"labels">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+app_config_select_sql() -> <<"select
+      id::text as id,
+      scope,
+      key,
+      value::text as value_json,
+      version,
+      status,
+      labels::text as labels_json,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from app_config">>.
+
+app_config_status_values() -> [<<"active">>, <<"paused">>, <<"archived">>].
+
+validate_app_config_status(Value) when is_binary(Value) ->
+    case lists:member(Value, app_config_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported app_config.status: "/binary, Value/binary>>}
+    end;
+validate_app_config_status(Value) when is_list(Value) ->
+    validate_app_config_status(unicode:characters_to_binary(Value)).
+
+container_pool_configs_table() -> <<"container_pool_configs">>.
+
+container_pool_configs_columns() -> [<<"id">>, <<"slug">>, <<"display_name">>, <<"image">>, <<"command">>, <<"env">>, <<"request_path">>, <<"health_path">>, <<"container_port">>, <<"min_warm">>, <<"max_warm">>, <<"max_concurrency_per_container">>, <<"request_timeout_ms">>, <<"idle_ttl_seconds">>, <<"nats_subject">>, <<"status">>, <<"labels">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+container_pool_configs_select_sql() -> <<"select
+      id::text as id,
+      slug,
+      display_name,
+      image,
+      command::text as command_json,
+      env::text as env_json,
+      request_path,
+      health_path,
+      container_port,
+      min_warm,
+      max_warm,
+      max_concurrency_per_container,
+      request_timeout_ms,
+      idle_ttl_seconds,
+      nats_subject,
+      status,
+      labels::text as labels_json,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_configs">>.
+
+container_pool_configs_status_values() -> [<<"active">>, <<"paused">>, <<"archived">>].
+
+validate_container_pool_configs_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_configs_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_configs.status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_configs_status(Value) when is_list(Value) ->
+    validate_container_pool_configs_status(unicode:characters_to_binary(Value)).
 
 known_git_repos_table() -> <<"known_git_repos">>.
 

@@ -4,6 +4,130 @@
 // MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 import { Column, Entity, Index, PrimaryColumn, PrimaryGeneratedColumn } from "typeorm";
 
+@Index("app_config_scope_key_uq", ["scope", "key"], { unique: true })
+@Index("app_config_status_idx", ["status"], { where: "is_soft_deleted = false" })
+// app_config_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// app_config_labels_gin_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "app_config" })
+export class AppConfigEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "scope", type: "varchar", length: 120, default: () => "'default'" })
+  scope!: string;
+
+  @Column({ name: "key", type: "varchar", length: 200 })
+  key!: string;
+
+  @Column({ name: "value", type: "jsonb" })
+  value!: Record<string, unknown>;
+
+  @Column({ name: "version", type: "integer", default: () => "1" })
+  version!: number;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "labels", type: "jsonb", default: () => "'[]'::jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("container_pool_configs_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
+@Index("container_pool_configs_status_idx", ["status"], { where: "is_soft_deleted = false" })
+// container_pool_configs_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// container_pool_configs_labels_gin_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "container_pool_configs" })
+export class ContainerPoolConfigsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 120 })
+  slug!: string;
+
+  @Column({ name: "display_name", type: "varchar", length: 200 })
+  displayName!: string;
+
+  @Column({ name: "image", type: "text" })
+  image!: string;
+
+  @Column({ name: "command", type: "jsonb", default: () => "'[]'::jsonb" })
+  command!: unknown[];
+
+  @Column({ name: "env", type: "jsonb", default: () => "'{}'::jsonb" })
+  env!: Record<string, unknown>;
+
+  @Column({ name: "request_path", type: "varchar", length: 256, default: () => "'/invoke'" })
+  requestPath!: string;
+
+  @Column({ name: "health_path", type: "varchar", length: 256, default: () => "'/healthz'" })
+  healthPath!: string;
+
+  @Column({ name: "container_port", type: "integer", default: () => "8080" })
+  containerPort!: number;
+
+  @Column({ name: "min_warm", type: "integer", default: () => "1" })
+  minWarm!: number;
+
+  @Column({ name: "max_warm", type: "integer", default: () => "2" })
+  maxWarm!: number;
+
+  @Column({ name: "max_concurrency_per_container", type: "integer", default: () => "1" })
+  maxConcurrencyPerContainer!: number;
+
+  @Column({ name: "request_timeout_ms", type: "integer", default: () => "30000" })
+  requestTimeoutMs!: number;
+
+  @Column({ name: "idle_ttl_seconds", type: "integer", default: () => "900" })
+  idleTtlSeconds!: number;
+
+  @Column({ name: "nats_subject", type: "text", nullable: true })
+  natsSubject!: string | null;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "labels", type: "jsonb", default: () => "'[]'::jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
 @Index("known_git_repos_repo_url_active_uq", ["repoUrl"], { unique: true, where: "is_soft_deleted = false" })
 @Index("known_git_repos_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // known_git_repos_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

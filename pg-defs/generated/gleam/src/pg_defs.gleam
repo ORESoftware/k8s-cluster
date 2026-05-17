@@ -6,6 +6,134 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/string
 
+pub const app_config_table = "app_config"
+pub const app_config_select_sql = "select\n      id::text as id,\n      scope,\n      key,\n      value::text as value_json,\n      version,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from app_config"
+
+pub type AppConfigStatus {
+  AppConfigStatusActive
+  AppConfigStatusPaused
+  AppConfigStatusArchived
+}
+
+pub fn app_config_status_to_string(value: AppConfigStatus) -> String {
+  case value {
+    AppConfigStatusActive -> "active"
+    AppConfigStatusPaused -> "paused"
+    AppConfigStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_app_config_status(value: String) -> Result(AppConfigStatus, String) {
+  case value {
+    "active" -> Ok(AppConfigStatusActive)
+    "paused" -> Ok(AppConfigStatusPaused)
+    "archived" -> Ok(AppConfigStatusArchived)
+    _ -> Error("unsupported app_config.status: " <> value)
+  }
+}
+
+pub type AppConfigRow {
+  AppConfigRow(
+    id: String,
+    scope: String,
+    key: String,
+    value_json: String,
+    version: Int,
+    status: String,
+    labels_json: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_app_config_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("app_config.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_app_config_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported app_config.status: " <> value)
+  }
+}
+
+pub const container_pool_configs_table = "container_pool_configs"
+pub const container_pool_configs_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      image,\n      command::text as command_json,\n      env::text as env_json,\n      request_path,\n      health_path,\n      container_port,\n      min_warm,\n      max_warm,\n      max_concurrency_per_container,\n      request_timeout_ms,\n      idle_ttl_seconds,\n      nats_subject,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_configs"
+
+pub type ContainerPoolConfigsStatus {
+  ContainerPoolConfigsStatusActive
+  ContainerPoolConfigsStatusPaused
+  ContainerPoolConfigsStatusArchived
+}
+
+pub fn container_pool_configs_status_to_string(value: ContainerPoolConfigsStatus) -> String {
+  case value {
+    ContainerPoolConfigsStatusActive -> "active"
+    ContainerPoolConfigsStatusPaused -> "paused"
+    ContainerPoolConfigsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_container_pool_configs_status(value: String) -> Result(ContainerPoolConfigsStatus, String) {
+  case value {
+    "active" -> Ok(ContainerPoolConfigsStatusActive)
+    "paused" -> Ok(ContainerPoolConfigsStatusPaused)
+    "archived" -> Ok(ContainerPoolConfigsStatusArchived)
+    _ -> Error("unsupported container_pool_configs.status: " <> value)
+  }
+}
+
+pub type ContainerPoolConfigsRow {
+  ContainerPoolConfigsRow(
+    id: String,
+    slug: String,
+    display_name: String,
+    image: String,
+    command_json: String,
+    env_json: String,
+    request_path: String,
+    health_path: String,
+    container_port: Int,
+    min_warm: Int,
+    max_warm: Int,
+    max_concurrency_per_container: Int,
+    request_timeout_ms: Int,
+    idle_ttl_seconds: Int,
+    nats_subject: Option(String),
+    status: String,
+    labels_json: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_container_pool_configs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("container_pool_configs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_container_pool_configs_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_configs.status: " <> value)
+  }
+}
+
 pub const known_git_repos_table = "known_git_repos"
 pub const known_git_repos_select_sql = "select\n      id::text as id,\n      repo_url,\n      display_name,\n      provider,\n      default_branch,\n      status,\n      to_char(last_verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_verified_at,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from known_git_repos"
 

@@ -12,6 +12,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model AppConfig {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scope String @default("default") @db.VarChar(120)
+  key String @db.VarChar(200)
+  value Json
+  version Int @default(1)
+  status String @default("active") @db.VarChar(32)
+  labels Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([scope, key], map: "app_config_scope_key_uq")
+  // app_config_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // app_config_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // app_config_labels_gin_idx is defined in schema.sql because Prisma cannot fully model gin partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("app_config")
+}
+
+model ContainerPoolConfigs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(120)
+  displayName String @map("display_name") @db.VarChar(200)
+  image String @db.Text
+  command Json @default("[]")
+  env Json @default("{}")
+  requestPath String @map("request_path") @default("/invoke") @db.VarChar(256)
+  healthPath String @map("health_path") @default("/healthz") @db.VarChar(256)
+  containerPort Int @map("container_port") @default(8080)
+  minWarm Int @map("min_warm") @default(1)
+  maxWarm Int @map("max_warm") @default(2)
+  maxConcurrencyPerContainer Int @map("max_concurrency_per_container") @default(1)
+  requestTimeoutMs Int @map("request_timeout_ms") @default(30000)
+  idleTtlSeconds Int @map("idle_ttl_seconds") @default(900)
+  natsSubject String? @map("nats_subject") @db.Text
+  status String @default("active") @db.VarChar(32)
+  labels Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // container_pool_configs_slug_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // container_pool_configs_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // container_pool_configs_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // container_pool_configs_labels_gin_idx is defined in schema.sql because Prisma cannot fully model gin partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("container_pool_configs")
+}
+
 model KnownGitRepo {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   repoUrl String @map("repo_url") @db.Text

@@ -6,6 +6,86 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "app_config")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub scope: String,
+    pub key: String,
+    pub value: Json,
+    pub version: i32,
+    pub status: String,
+    pub labels: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "container_pool_configs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: String,
+    pub image: String,
+    pub command: Json,
+    pub env: Json,
+    #[sea_orm(column_name = "request_path")]
+    pub request_path: String,
+    #[sea_orm(column_name = "health_path")]
+    pub health_path: String,
+    #[sea_orm(column_name = "container_port")]
+    pub container_port: i32,
+    #[sea_orm(column_name = "min_warm")]
+    pub min_warm: i32,
+    #[sea_orm(column_name = "max_warm")]
+    pub max_warm: i32,
+    #[sea_orm(column_name = "max_concurrency_per_container")]
+    pub max_concurrency_per_container: i32,
+    #[sea_orm(column_name = "request_timeout_ms")]
+    pub request_timeout_ms: i32,
+    #[sea_orm(column_name = "idle_ttl_seconds")]
+    pub idle_ttl_seconds: i32,
+    #[sea_orm(column_name = "nats_subject")]
+    pub nats_subject: Option<String>,
+    pub status: String,
+    pub labels: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "known_git_repos")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
