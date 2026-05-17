@@ -188,7 +188,10 @@ test('gateway, observability, and homepage expose the ai/ml pipeline', async () 
 
   assert.match(gateway, /location = \/ml[\s\S]*return 302 \/ml\//);
   assert.match(gateway, /location \/ml\/[\s\S]*X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"/);
-  assert.match(gateway, /location \/ml\/[\s\S]*dd-ai-ml-pipeline\.ai-ml\.svc\.cluster\.local:8099\//);
+  assert.match(
+    gateway,
+    /location \/ml\/[\s\S]*set \$dd_ml_pipeline_upstream dd-ai-ml-pipeline\.ai-ml\.svc\.cluster\.local:8099[\s\S]*rewrite \^\/ml\/\?\(\.\*\)\$ \/\$1 break[\s\S]*proxy_pass http:\/\/\$dd_ml_pipeline_upstream/,
+  );
   assert.match(
     prometheus,
     /job_name:\s*dd-ai-ml-pipeline[\s\S]*dd-ai-ml-pipeline\.ai-ml\.svc\.cluster\.local:8099/,
