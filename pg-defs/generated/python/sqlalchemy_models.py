@@ -56,7 +56,7 @@ class AppConfigRow(BaseModel):
     scope: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._/-]{1,120}$")
     key: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
     value: dict[str, Any]
-    version: int
+    version: int = Field(..., ge=1)
     status: AppConfigStatus
     labels: list[Any]
     metaData: dict[str, Any]
@@ -73,7 +73,7 @@ class AppConfigInsert(BaseModel):
     scope: str | None = Field("default", max_length=120, pattern="^[A-Za-z0-9._/-]{1,120}$")
     key: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
     value: dict[str, Any]
-    version: int | None = 1
+    version: int | None = Field(1, ge=1)
     status: AppConfigStatus | None = "active"
     labels: list[Any] | None = Field(default_factory=list)
     metaData: dict[str, Any] | None = Field(default_factory=dict)
@@ -144,14 +144,14 @@ class ContainerPoolConfigsRow(BaseModel):
     image: str
     command: list[Any]
     env: dict[str, Any]
-    requestPath: str = Field(..., max_length=256)
-    healthPath: str = Field(..., max_length=256)
-    containerPort: int
-    minWarm: int
-    maxWarm: int
-    maxConcurrencyPerContainer: int
-    requestTimeoutMs: int
-    idleTtlSeconds: int
+    requestPath: str = Field(..., max_length=256, pattern="^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$")
+    healthPath: str = Field(..., max_length=256, pattern="^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$")
+    containerPort: int = Field(..., ge=1, le=65535)
+    minWarm: int = Field(..., ge=0, le=64)
+    maxWarm: int = Field(..., ge=1, le=128)
+    maxConcurrencyPerContainer: int = Field(..., ge=1, le=128)
+    requestTimeoutMs: int = Field(..., ge=100, le=900000)
+    idleTtlSeconds: int = Field(..., ge=10, le=86400)
     natsSubject: str | None = None
     status: ContainerPoolConfigsStatus
     labels: list[Any]
@@ -169,6 +169,20 @@ class ContainerPoolConfigsRow(BaseModel):
             raise ValueError("container_pool_configs.display_name exceeds 200 bytes")
         return value
 
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_configs.image exceeds 512 bytes")
+        return value
+
+    @field_validator("natsSubject")
+    @classmethod
+    def validate_nats_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 256:
+            raise ValueError("container_pool_configs.nats_subject exceeds 256 bytes")
+        return value
+
 class ContainerPoolConfigsInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -178,14 +192,14 @@ class ContainerPoolConfigsInsert(BaseModel):
     image: str
     command: list[Any] | None = Field(default_factory=list)
     env: dict[str, Any] | None = Field(default_factory=dict)
-    requestPath: str | None = Field("/invoke", max_length=256)
-    healthPath: str | None = Field("/healthz", max_length=256)
-    containerPort: int | None = 8080
-    minWarm: int | None = 1
-    maxWarm: int | None = 2
-    maxConcurrencyPerContainer: int | None = 1
-    requestTimeoutMs: int | None = 30000
-    idleTtlSeconds: int | None = 900
+    requestPath: str | None = Field("/invoke", max_length=256, pattern="^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$")
+    healthPath: str | None = Field("/healthz", max_length=256, pattern="^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$")
+    containerPort: int | None = Field(8080, ge=1, le=65535)
+    minWarm: int | None = Field(1, ge=0, le=64)
+    maxWarm: int | None = Field(2, ge=1, le=128)
+    maxConcurrencyPerContainer: int | None = Field(1, ge=1, le=128)
+    requestTimeoutMs: int | None = Field(30000, ge=100, le=900000)
+    idleTtlSeconds: int | None = Field(900, ge=10, le=86400)
     natsSubject: str | None = None
     status: ContainerPoolConfigsStatus | None = "active"
     labels: list[Any] | None = Field(default_factory=list)
@@ -201,6 +215,20 @@ class ContainerPoolConfigsInsert(BaseModel):
     def validate_display_name(cls, value):
         if value is not None and len(value.encode("utf-8")) > 200:
             raise ValueError("container_pool_configs.display_name exceeds 200 bytes")
+        return value
+
+    @field_validator("image")
+    @classmethod
+    def validate_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_configs.image exceeds 512 bytes")
+        return value
+
+    @field_validator("natsSubject")
+    @classmethod
+    def validate_nats_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 256:
+            raise ValueError("container_pool_configs.nats_subject exceeds 256 bytes")
         return value
 
 KnownGitRepoProvider = Literal["github", "gitlab", "bitbucket", "generic"]
@@ -389,6 +417,8 @@ class AgentRemoteDevThreadInsert(BaseModel):
         return value
 
 AgentRemoteDevTaskStatus = Literal["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"]
+AgentRemoteDevTaskPrState = Literal["draft", "open", "closed", "merged"]
+AgentRemoteDevTaskExitReason = Literal["completed", "cancelled", "failed"]
 
 class AgentRemoteDevTask(Base):
     __tablename__ = "agent_remote_dev_tasks"
@@ -438,8 +468,8 @@ class AgentRemoteDevTaskRow(BaseModel):
     status: AgentRemoteDevTaskStatus
     branch: str | None = Field(None, max_length=200)
     prUrl: str | None = None
-    prState: str | None = Field(None, max_length=32)
-    exitReason: str | None = Field(None, max_length=32)
+    prState: AgentRemoteDevTaskPrState | None = None
+    exitReason: AgentRemoteDevTaskExitReason | None = None
     errorMessage: str | None = None
     lastEventSeq: int
     meta: dict[str, Any]
@@ -469,8 +499,8 @@ class AgentRemoteDevTaskInsert(BaseModel):
     status: AgentRemoteDevTaskStatus | None = "queued"
     branch: str | None = Field(None, max_length=200)
     prUrl: str | None = None
-    prState: str | None = Field(None, max_length=32)
-    exitReason: str | None = Field(None, max_length=32)
+    prState: AgentRemoteDevTaskPrState | None = None
+    exitReason: AgentRemoteDevTaskExitReason | None = None
     errorMessage: str | None = None
     lastEventSeq: int | None = -1
     meta: dict[str, Any] | None = Field(default_factory=dict)
@@ -756,11 +786,32 @@ class LambdaFunctionRow(BaseModel):
     createdBy: UUID | None = None
     updatedBy: UUID | None = None
 
+    @field_validator("entryCommand")
+    @classmethod
+    def validate_entry_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_functions.entry_command exceeds 512 bytes")
+        return value
+
     @field_validator("functionBody")
     @classmethod
     def validate_function_body(cls, value):
         if value is not None and len(value.encode("utf-8")) > 262144:
             raise ValueError("lambda_functions.function_body exceeds 262144 bytes")
+        return value
+
+    @field_validator("containerImage")
+    @classmethod
+    def validate_container_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_functions.container_image exceeds 512 bytes")
+        return value
+
+    @field_validator("containerBuildError")
+    @classmethod
+    def validate_container_build_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
         return value
 
 class LambdaFunctionInsert(BaseModel):
@@ -792,9 +843,30 @@ class LambdaFunctionInsert(BaseModel):
     createdBy: UUID | None = None
     updatedBy: UUID | None = None
 
+    @field_validator("entryCommand")
+    @classmethod
+    def validate_entry_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_functions.entry_command exceeds 512 bytes")
+        return value
+
     @field_validator("functionBody")
     @classmethod
     def validate_function_body(cls, value):
         if value is not None and len(value.encode("utf-8")) > 262144:
             raise ValueError("lambda_functions.function_body exceeds 262144 bytes")
+        return value
+
+    @field_validator("containerImage")
+    @classmethod
+    def validate_container_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_functions.container_image exceeds 512 bytes")
+        return value
+
+    @field_validator("containerBuildError")
+    @classmethod
+    def validate_container_build_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
         return value

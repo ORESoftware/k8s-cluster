@@ -77,6 +77,15 @@ class AppConfigRow {
 
   List<String> validate() {
     final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._/-]{1,120}$').hasMatch(scope)) {
+      errors.add("app_config.scope does not match the required pattern");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,200}$').hasMatch(key)) {
+      errors.add("app_config.key does not match the required pattern");
+    }
+    if (version < 1) {
+      errors.add("app_config.version is below the minimum");
+    }
     if (!appConfigStatusValues.contains(status)) {
       errors.add("unsupported app_config.status");
     }
@@ -196,11 +205,62 @@ class ContainerPoolConfigsRow {
 
   List<String> validate() {
     final errors = <String>[];
-    if (!RegExp(r"^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$").hasMatch(slug)) {
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$').hasMatch(slug)) {
       errors.add("container_pool_configs.slug must be a lowercase slug");
     }
     if (utf8.encode(displayName).length > 200) {
       errors.add("container_pool_configs.display_name exceeds 200 bytes");
+    }
+    if (utf8.encode(image).length > 512) {
+      errors.add("container_pool_configs.image exceeds 512 bytes");
+    }
+    if (utf8.encode(image).length < 1) {
+      errors.add("container_pool_configs.image is below 1 bytes");
+    }
+    if (!RegExp(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$").hasMatch(requestPath)) {
+      errors.add("container_pool_configs.request_path does not match the required pattern");
+    }
+    if (!RegExp(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$").hasMatch(healthPath)) {
+      errors.add("container_pool_configs.health_path does not match the required pattern");
+    }
+    if (containerPort < 1) {
+      errors.add("container_pool_configs.container_port is below the minimum");
+    }
+    if (containerPort > 65535) {
+      errors.add("container_pool_configs.container_port is above the maximum");
+    }
+    if (minWarm < 0) {
+      errors.add("container_pool_configs.min_warm is below the minimum");
+    }
+    if (minWarm > 64) {
+      errors.add("container_pool_configs.min_warm is above the maximum");
+    }
+    if (maxWarm < 1) {
+      errors.add("container_pool_configs.max_warm is below the minimum");
+    }
+    if (maxWarm > 128) {
+      errors.add("container_pool_configs.max_warm is above the maximum");
+    }
+    if (maxConcurrencyPerContainer < 1) {
+      errors.add("container_pool_configs.max_concurrency_per_container is below the minimum");
+    }
+    if (maxConcurrencyPerContainer > 128) {
+      errors.add("container_pool_configs.max_concurrency_per_container is above the maximum");
+    }
+    if (requestTimeoutMs < 100) {
+      errors.add("container_pool_configs.request_timeout_ms is below the minimum");
+    }
+    if (requestTimeoutMs > 900000) {
+      errors.add("container_pool_configs.request_timeout_ms is above the maximum");
+    }
+    if (idleTtlSeconds < 10) {
+      errors.add("container_pool_configs.idle_ttl_seconds is below the minimum");
+    }
+    if (idleTtlSeconds > 86400) {
+      errors.add("container_pool_configs.idle_ttl_seconds is above the maximum");
+    }
+    if (natsSubject != null && utf8.encode(natsSubject!).length > 256) {
+      errors.add("container_pool_configs.nats_subject exceeds 256 bytes");
     }
     if (!containerPoolConfigsStatusValues.contains(status)) {
       errors.add("unsupported container_pool_configs.status");
@@ -282,6 +342,9 @@ class KnownGitRepoRow {
 
   List<String> validate() {
     final errors = <String>[];
+    if (!RegExp(r'^(git@|ssh://|https://).+').hasMatch(repoUrl)) {
+      errors.add("known_git_repos.repo_url does not match the required pattern");
+    }
     if (utf8.encode(repoUrl).length > 2048) {
       errors.add("known_git_repos.repo_url exceeds 2048 bytes");
     }
@@ -290,6 +353,9 @@ class KnownGitRepoRow {
     }
     if (!knownGitRepoProviderValues.contains(provider)) {
       errors.add("unsupported known_git_repos.provider");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._/-]{1,120}$').hasMatch(defaultBranch)) {
+      errors.add("known_git_repos.default_branch does not match the required pattern");
     }
     if (!knownGitRepoStatusValues.contains(status)) {
       errors.add("unsupported known_git_repos.status");
@@ -371,8 +437,14 @@ class AgentRemoteDevThreadRow {
     if (utf8.encode(title).length > 500) {
       errors.add("agent_remote_dev_threads.title exceeds 500 bytes");
     }
+    if (!RegExp(r'^(git@|ssh://|https://).+').hasMatch(repo)) {
+      errors.add("agent_remote_dev_threads.repo does not match the required pattern");
+    }
     if (utf8.encode(repo).length > 2048) {
       errors.add("agent_remote_dev_threads.repo exceeds 2048 bytes");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._/-]{1,120}$').hasMatch(baseBranch)) {
+      errors.add("agent_remote_dev_threads.base_branch does not match the required pattern");
     }
     return errors;
   }
@@ -382,6 +454,8 @@ const agentRemoteDevTaskTable = "agent_remote_dev_tasks";
 const agentRemoteDevTaskSelectSql = "select\n      id::text as id,\n      thread_id::text as thread_id,\n      user_id::text as user_id,\n      docker_task_id::text as docker_task_id,\n      prompt,\n      status,\n      branch,\n      pr_url,\n      pr_state,\n      exit_reason,\n      error_message,\n      last_event_seq,\n      meta::text as meta_json,\n      is_soft_deleted,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_tasks";
 
 const agentRemoteDevTaskStatusValues = <String>["queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"];
+const agentRemoteDevTaskPrStateValues = <String>["draft", "open", "closed", "merged"];
+const agentRemoteDevTaskExitReasonValues = <String>["completed", "cancelled", "failed"];
 
 class AgentRemoteDevTaskRow {
   const AgentRemoteDevTaskRow({
@@ -484,6 +558,12 @@ class AgentRemoteDevTaskRow {
     if (!agentRemoteDevTaskStatusValues.contains(status)) {
       errors.add("unsupported agent_remote_dev_tasks.status");
     }
+    if (prState != null && !agentRemoteDevTaskPrStateValues.contains(prState!)) {
+      errors.add("unsupported agent_remote_dev_tasks.pr_state");
+    }
+    if (exitReason != null && !agentRemoteDevTaskExitReasonValues.contains(exitReason!)) {
+      errors.add("unsupported agent_remote_dev_tasks.exit_reason");
+    }
     return errors;
   }
 }
@@ -530,6 +610,9 @@ class AgentRemoteDevEventRow {
 
   List<String> validate() {
     final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(eventKind)) {
+      errors.add("agent_remote_dev_events.event_kind does not match the required pattern");
+    }
     return errors;
   }
 }
@@ -807,11 +890,17 @@ class LambdaFunctionRow {
 
   List<String> validate() {
     final errors = <String>[];
-    if (!RegExp(r"^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$").hasMatch(slug)) {
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$').hasMatch(slug)) {
       errors.add("lambda_functions.slug must be a lowercase slug");
     }
     if (!lambdaFunctionRuntimeValues.contains(runtime)) {
       errors.add("unsupported lambda_functions.runtime");
+    }
+    if (utf8.encode(entryCommand).length > 512) {
+      errors.add("lambda_functions.entry_command exceeds 512 bytes");
+    }
+    if (utf8.encode(entryCommand).length < 1) {
+      errors.add("lambda_functions.entry_command is below 1 bytes");
     }
     if (utf8.encode(functionBody).length > 262144) {
       errors.add("lambda_functions.function_body exceeds 262144 bytes");
@@ -828,8 +917,14 @@ class LambdaFunctionRow {
     if (maxRunMs > 300000) {
       errors.add("lambda_functions.max_run_ms is above the maximum");
     }
+    if (containerImage != null && utf8.encode(containerImage!).length > 512) {
+      errors.add("lambda_functions.container_image exceeds 512 bytes");
+    }
     if (!lambdaFunctionContainerBuildStatusValues.contains(containerBuildStatus)) {
       errors.add("unsupported lambda_functions.container_build_status");
+    }
+    if (containerBuildError != null && utf8.encode(containerBuildError!).length > 8192) {
+      errors.add("lambda_functions.container_build_error exceeds 8192 bytes");
     }
     if (!lambdaFunctionStatusValues.contains(status)) {
       errors.add("unsupported lambda_functions.status");

@@ -14,7 +14,17 @@ import (
 	"gorm.io/datatypes"
 )
 
-var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var appConfigScopePattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
+var appConfigKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+var containerPoolConfigsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
+var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
+var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
+var knownGitRepoRepoUrlPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
+var knownGitRepoDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
+var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
+var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
+var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -54,7 +64,10 @@ type AppConfigGorm struct {
 func (AppConfigGorm) TableName() string { return AppConfigTable }
 
 func (value AppConfigGorm) Validate() error {
+	if !appConfigScopePattern.MatchString(value.Scope) { return errors.New("app_config.scope does not match the required pattern") }
+	if !appConfigKeyPattern.MatchString(value.Key) { return errors.New("app_config.key does not match the required pattern") }
 	if !validateJSONString(value.Value) { return errors.New("app_config.value must be valid JSON") }
+	if value.Version < 1 { return errors.New("app_config.version is below the minimum") }
 	if !containsString(AppConfigStatusValues, value.Status) { return errors.New("unsupported app_config.status") }
 	if !validateJSONString(value.Labels) { return errors.New("app_config.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("app_config.meta_data must be valid JSON") }
@@ -119,10 +132,29 @@ type ContainerPoolConfigsGorm struct {
 func (ContainerPoolConfigsGorm) TableName() string { return ContainerPoolConfigsTable }
 
 func (value ContainerPoolConfigsGorm) Validate() error {
-	if !slugPattern.MatchString(value.Slug) { return errors.New("container_pool_configs.slug must be a lowercase slug") }
+	if !containerPoolConfigsSlugPattern.MatchString(value.Slug) { return errors.New("container_pool_configs.slug does not match the required pattern") }
 	if len([]byte(value.DisplayName)) > 200 { return errors.New("container_pool_configs.display_name exceeds 200 bytes") }
+	if len([]byte(value.Image)) > 512 { return errors.New("container_pool_configs.image exceeds 512 bytes") }
+	if len([]byte(value.Image)) < 1 { return errors.New("container_pool_configs.image is below 1 bytes") }
 	if !validateJSONString(value.Command) { return errors.New("container_pool_configs.command must be valid JSON") }
 	if !validateJSONString(value.Env) { return errors.New("container_pool_configs.env must be valid JSON") }
+	if !containerPoolConfigsRequestPathPattern.MatchString(value.RequestPath) { return errors.New("container_pool_configs.request_path does not match the required pattern") }
+	if !containerPoolConfigsHealthPathPattern.MatchString(value.HealthPath) { return errors.New("container_pool_configs.health_path does not match the required pattern") }
+	if value.ContainerPort < 1 { return errors.New("container_pool_configs.container_port is below the minimum") }
+	if value.ContainerPort > 65535 { return errors.New("container_pool_configs.container_port is above the maximum") }
+	if value.MinWarm < 0 { return errors.New("container_pool_configs.min_warm is below the minimum") }
+	if value.MinWarm > 64 { return errors.New("container_pool_configs.min_warm is above the maximum") }
+	if value.MaxWarm < 1 { return errors.New("container_pool_configs.max_warm is below the minimum") }
+	if value.MaxWarm > 128 { return errors.New("container_pool_configs.max_warm is above the maximum") }
+	if value.MaxConcurrencyPerContainer < 1 { return errors.New("container_pool_configs.max_concurrency_per_container is below the minimum") }
+	if value.MaxConcurrencyPerContainer > 128 { return errors.New("container_pool_configs.max_concurrency_per_container is above the maximum") }
+	if value.RequestTimeoutMs < 100 { return errors.New("container_pool_configs.request_timeout_ms is below the minimum") }
+	if value.RequestTimeoutMs > 900000 { return errors.New("container_pool_configs.request_timeout_ms is above the maximum") }
+	if value.IdleTtlSeconds < 10 { return errors.New("container_pool_configs.idle_ttl_seconds is below the minimum") }
+	if value.IdleTtlSeconds > 86400 { return errors.New("container_pool_configs.idle_ttl_seconds is above the maximum") }
+	if value.NatsSubject != nil {
+		if len([]byte(*value.NatsSubject)) > 256 { return errors.New("container_pool_configs.nats_subject exceeds 256 bytes") }
+	}
 	if !containsString(ContainerPoolConfigsStatusValues, value.Status) { return errors.New("unsupported container_pool_configs.status") }
 	if !validateJSONString(value.Labels) { return errors.New("container_pool_configs.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("container_pool_configs.meta_data must be valid JSON") }
@@ -168,9 +200,11 @@ type KnownGitRepoGorm struct {
 func (KnownGitRepoGorm) TableName() string { return KnownGitRepoTable }
 
 func (value KnownGitRepoGorm) Validate() error {
+	if !knownGitRepoRepoUrlPattern.MatchString(value.RepoUrl) { return errors.New("known_git_repos.repo_url does not match the required pattern") }
 	if len([]byte(value.RepoUrl)) > 2048 { return errors.New("known_git_repos.repo_url exceeds 2048 bytes") }
 	if len([]byte(value.DisplayName)) > 200 { return errors.New("known_git_repos.display_name exceeds 200 bytes") }
 	if !containsString(KnownGitRepoProviderValues, value.Provider) { return errors.New("unsupported known_git_repos.provider") }
+	if !knownGitRepoDefaultBranchPattern.MatchString(value.DefaultBranch) { return errors.New("known_git_repos.default_branch does not match the required pattern") }
 	if !containsString(KnownGitRepoStatusValues, value.Status) { return errors.New("unsupported known_git_repos.status") }
 	if !validateJSONString(value.MetaData) { return errors.New("known_git_repos.meta_data must be valid JSON") }
 	return nil
@@ -213,7 +247,9 @@ func (AgentRemoteDevThreadGorm) TableName() string { return AgentRemoteDevThread
 
 func (value AgentRemoteDevThreadGorm) Validate() error {
 	if len([]byte(value.Title)) > 500 { return errors.New("agent_remote_dev_threads.title exceeds 500 bytes") }
+	if !agentRemoteDevThreadRepoPattern.MatchString(value.Repo) { return errors.New("agent_remote_dev_threads.repo does not match the required pattern") }
 	if len([]byte(value.Repo)) > 2048 { return errors.New("agent_remote_dev_threads.repo exceeds 2048 bytes") }
+	if !agentRemoteDevThreadBaseBranchPattern.MatchString(value.BaseBranch) { return errors.New("agent_remote_dev_threads.base_branch does not match the required pattern") }
 	if !validateJSONString(value.Meta) { return errors.New("agent_remote_dev_threads.meta must be valid JSON") }
 	return nil
 }
@@ -243,6 +279,8 @@ const AgentRemoteDevTaskSelectSQL = `select
     from agent_remote_dev_tasks`
 
 var AgentRemoteDevTaskStatusValues = []string{"queued", "running", "streaming", "pushed", "pr_open", "pr_merged", "pr_closed", "done", "failed", "cancelled"}
+var AgentRemoteDevTaskPrStateValues = []string{"draft", "open", "closed", "merged"}
+var AgentRemoteDevTaskExitReasonValues = []string{"completed", "cancelled", "failed"}
 
 type AgentRemoteDevTaskGorm struct {
 	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey" json:"id"`
@@ -272,6 +310,12 @@ func (AgentRemoteDevTaskGorm) TableName() string { return AgentRemoteDevTaskTabl
 func (value AgentRemoteDevTaskGorm) Validate() error {
 	if len([]byte(value.Prompt)) > 1048576 { return errors.New("agent_remote_dev_tasks.prompt exceeds 1048576 bytes") }
 	if !containsString(AgentRemoteDevTaskStatusValues, value.Status) { return errors.New("unsupported agent_remote_dev_tasks.status") }
+	if value.PrState != nil {
+		if !containsString(AgentRemoteDevTaskPrStateValues, *value.PrState) { return errors.New("unsupported agent_remote_dev_tasks.pr_state") }
+	}
+	if value.ExitReason != nil {
+		if !containsString(AgentRemoteDevTaskExitReasonValues, *value.ExitReason) { return errors.New("unsupported agent_remote_dev_tasks.exit_reason") }
+	}
 	if !validateJSONString(value.Meta) { return errors.New("agent_remote_dev_tasks.meta must be valid JSON") }
 	return nil
 }
@@ -298,6 +342,7 @@ type AgentRemoteDevEventGorm struct {
 func (AgentRemoteDevEventGorm) TableName() string { return AgentRemoteDevEventTable }
 
 func (value AgentRemoteDevEventGorm) Validate() error {
+	if !agentRemoteDevEventEventKindPattern.MatchString(value.EventKind) { return errors.New("agent_remote_dev_events.event_kind does not match the required pattern") }
 	if !validateJSONString(value.Payload) { return errors.New("agent_remote_dev_events.payload must be valid JSON") }
 	return nil
 }
@@ -446,14 +491,22 @@ type LambdaFunctionGorm struct {
 func (LambdaFunctionGorm) TableName() string { return LambdaFunctionTable }
 
 func (value LambdaFunctionGorm) Validate() error {
-	if !slugPattern.MatchString(value.Slug) { return errors.New("lambda_functions.slug must be a lowercase slug") }
+	if !lambdaFunctionSlugPattern.MatchString(value.Slug) { return errors.New("lambda_functions.slug does not match the required pattern") }
 	if !containsString(LambdaFunctionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_functions.runtime") }
+	if len([]byte(value.EntryCommand)) > 512 { return errors.New("lambda_functions.entry_command exceeds 512 bytes") }
+	if len([]byte(value.EntryCommand)) < 1 { return errors.New("lambda_functions.entry_command is below 1 bytes") }
 	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_functions.function_body exceeds 262144 bytes") }
 	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_functions.idle_timeout_seconds is below the minimum") }
 	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_functions.idle_timeout_seconds is above the maximum") }
 	if value.MaxRunMs < 1000 { return errors.New("lambda_functions.max_run_ms is below the minimum") }
 	if value.MaxRunMs > 300000 { return errors.New("lambda_functions.max_run_ms is above the maximum") }
+	if value.ContainerImage != nil {
+		if len([]byte(*value.ContainerImage)) > 512 { return errors.New("lambda_functions.container_image exceeds 512 bytes") }
+	}
 	if !containsString(LambdaFunctionContainerBuildStatusValues, value.ContainerBuildStatus) { return errors.New("unsupported lambda_functions.container_build_status") }
+	if value.ContainerBuildError != nil {
+		if len([]byte(*value.ContainerBuildError)) > 8192 { return errors.New("lambda_functions.container_build_error exceeds 8192 bytes") }
+	}
 	if !containsString(LambdaFunctionStatusValues, value.Status) { return errors.New("unsupported lambda_functions.status") }
 	if !validateJSONString(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateJSONString(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
