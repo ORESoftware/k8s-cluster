@@ -12,8 +12,10 @@
 //// server itself generates: membership changes and kicks.
 
 import gleam/json
+import gleam/option.{type Option, None, Some}
 import gleamlang_presence_server/groups.{
-  type ConvId, type MembershipChange, type UserId, AddedToConv, RemovedFromConv,
+  type ConvId, type DeviceId, type MembershipChange, type UserId, AddedToConv,
+  RemovedFromConv,
 }
 
 /// JSON-encode a `MembershipChanged(conv_id, change)` event for the wire.
@@ -69,6 +71,42 @@ pub fn encode_kick(reason: String) -> String {
 pub fn encode_re_registered() -> String {
   json.object([
     #("type", json.string("re-registered")),
+  ])
+  |> json.to_string
+}
+
+/// `hello` handshake frame, sent by the server immediately after a ws
+/// upgrade so the client can confirm the scope the server interpreted
+/// and (in a load-balanced cluster) which node it landed on.
+///
+/// User-scoped ws:
+///   {"type":"hello","scope":"user","user":"<id>",
+///    "conv":null,"device":<id|null>,"node":"<beam_node>"}
+///
+/// Conv-scoped ws:
+///   {"type":"hello","scope":"conv","user":"<id>","conv":"<id>",
+///    "device":<id|null>,"node":"<beam_node>"}
+///
+/// `device` and `conv` are present in the object but set to `null` when
+/// not applicable; this keeps the client parser branchless (no missing-
+/// field handling).
+pub fn encode_hello(
+  user_id user_id: UserId,
+  conv_id conv_id: Option(ConvId),
+  device_id device_id: Option(DeviceId),
+  node node: String,
+) -> String {
+  let scope = case conv_id {
+    Some(_) -> "conv"
+    None -> "user"
+  }
+  json.object([
+    #("type", json.string("hello")),
+    #("scope", json.string(scope)),
+    #("user", json.string(user_id)),
+    #("conv", json.nullable(conv_id, of: json.string)),
+    #("device", json.nullable(device_id, of: json.string)),
+    #("node", json.string(node)),
   ])
   |> json.to_string
 }

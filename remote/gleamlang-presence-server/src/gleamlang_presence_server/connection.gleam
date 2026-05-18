@@ -26,6 +26,7 @@
 ////   - We re-create ETS rows, re-join the same `pg` groups, and re-arm
 ////     the monitor against the new registry pid.
 
+import gleam/erlang/atom
 import gleam/erlang/process.{type Selector, type Subject}
 import gleam/option.{type Option, None, Some}
 import mist.{
@@ -41,6 +42,9 @@ import gleamlang_presence_server/groups.{
 import gleamlang_presence_server/pg_groups
 import gleamlang_presence_server/registry.{type Registry}
 import gleamlang_presence_server/wire
+
+@external(erlang, "erlang", "node")
+fn erlang_node() -> atom.Atom
 
 /// What kind of websocket this connection is. A single device opens one
 /// `UserScope` ws plus one `ConvScope` ws per active conversation.
@@ -67,10 +71,17 @@ pub fn make_on_init(
   registry: Registry(ConnMsg, ConnGroup),
   conversations: Conversations,
 ) -> fn(WebsocketConnection) -> #(ConnState, Option(Selector(ConnMsg))) {
-  fn(_ws_conn) {
+  fn(ws_conn) {
     let self = process.new_subject()
 
     register_for_scope(registry, scope, self)
+
+    // Hello handshake: tell the client which scope the server
+    // interpreted and which BEAM node accepted the upgrade. Useful for
+    // load-balanced setups where the client otherwise doesn't know
+    // which pod it landed on. Best-effort — if the send fails the ws
+    // will close on its own.
+    let _ = mist.send_text_frame(ws_conn, hello_frame(scope))
 
     let state =
       ConnState(
@@ -83,6 +94,26 @@ pub fn make_on_init(
     let selector = build_selector(self, registry)
 
     #(state, Some(selector))
+  }
+}
+
+fn hello_frame(scope: ConnScope) -> String {
+  let node = erlang_node() |> atom.to_string
+  case scope {
+    UserScope(user_id, device_id) ->
+      wire.encode_hello(
+        user_id: user_id,
+        conv_id: None,
+        device_id: device_id,
+        node: node,
+      )
+    ConvScope(user_id, conv_id, device_id) ->
+      wire.encode_hello(
+        user_id: user_id,
+        conv_id: Some(conv_id),
+        device_id: device_id,
+        node: node,
+      )
   }
 }
 

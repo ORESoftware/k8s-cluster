@@ -1,18 +1,23 @@
 //// mist HTTP / websocket server.
 ////
 //// Routes:
-////   GET    /                                  Help text.
-////   GET    /healthz                           JSON health check.
-////   GET    /nodes                             Plain text list of connected BEAM peers.
-////   GET    /ws?user=<id>                      Upgrade to a user-scoped ws.
-////   GET    /ws?user=<id>&conv=<id>            Upgrade to a conv-scoped ws (must be a member).
-////                                             Both variants accept optional `&device=<id>`.
-////   POST   /conv/<conv_id>/members/<user_id>  Add user to conv (PG + cache + cluster broadcast).
-////   DELETE /conv/<conv_id>/members/<user_id>  Remove user from conv.
-////   GET    /conv/<conv_id>/members            List members (PG-backed).
-////   POST   /conv/<conv_id>/broadcast          Body is broadcast to every conv-scoped
-////                                             ws of every current member, on every node, in
-////                                             O(peer nodes) cross-node sends.
+////   GET    /                                            Help text.
+////   GET    /healthz                                     JSON health check.
+////   GET    /nodes                                       Plain text list of connected BEAM peers.
+////   GET    /ws?user=<id>                                Upgrade to a user-scoped ws.
+////   GET    /ws?user=<id>&conv=<id>                      Upgrade to a conv-scoped ws (must be a member).
+////                                                       Both variants accept optional `&device=<id>`.
+////   POST   /conv/<conv_id>/members/<user_id>            Add user to conv (PG + cache + cluster broadcast).
+////   DELETE /conv/<conv_id>/members/<user_id>            Remove user from conv.
+////   GET    /conv/<conv_id>/members                      List members (PG-backed).
+////   POST   /conv/<conv_id>/broadcast                    Body is broadcast to every conv-scoped
+////                                                       ws of every current member, on every node, in
+////                                                       O(peer nodes) cross-node sends.
+////   POST   /user/<user_id>/broadcast                    Body is broadcast to every user-scoped ws
+////                                                       of `<user_id>` on every node.
+////   POST   /user/<user_id>/devices/<device_id>/logout   Closes every ws (user- and conv-scoped) of
+////                                                       this device of this user, cluster-wide.
+////                                                       Body is the optional reason (default: "logout").
 
 import gleam/bit_array
 import gleam/bytes_tree
@@ -33,7 +38,8 @@ import gleamlang_presence_server/connection.{type ConnScope, ConvScope, UserScop
 import gleamlang_presence_server/conversations.{type Conversations}
 import gleamlang_presence_server/fanout.{type Fanout}
 import gleamlang_presence_server/groups.{
-  type ConnGroup, type ConnMsg, type DeviceId, ByConv, Outbound,
+  type ConnGroup, type ConnMsg, type DeviceId, ByConv, ByUser, ByUserDevice,
+  Kick, Outbound,
 }
 import gleamlang_presence_server/nats_transport.{type Nats}
 import gleamlang_presence_server/registry.{type Registry}
@@ -127,7 +133,63 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
       }
     }
 
+    Post, ["user", user_id, "broadcast"] -> {
+      case mist.read_body(req, 1024 * 64) {
+        Ok(req_with_body) -> {
+          let payload =
+            req_with_body.body
+            |> bit_array.to_string
+            |> result.unwrap("")
+          // Per-user system message: fans out to every user-scoped ws
+          // of this user on every node. Conv-scoped ws's of the same
+          // user are NOT addressed by this — for that, send to each
+          // conv via /conv/<id>/broadcast. NATS mirroring left to a
+          // follow-up if/when external subscribers need it.
+          fanout.broadcast(
+            deps.fanout,
+            deps.registry,
+            ByUser(user_id),
+            Outbound(payload),
+          )
+          ok_text("user-broadcast queued for " <> user_id)
+        }
+        Error(_) -> bad_request("could not read body")
+      }
+    }
+
+    Post, ["user", user_id, "devices", device_id, "logout"] -> {
+      // Device-targeted kick: closes every ws (user-scoped AND conv-
+      // scoped) belonging to this device of this user, cluster-wide.
+      // The connection's `Kick` handler sends a JSON
+      // `{"type":"kick","reason":"<reason>"}` frame and stops the ws.
+      // Body is the optional reason (defaults to "logout").
+      let reason = case mist.read_body(req, 1024) {
+        Ok(req_with_body) ->
+          req_with_body.body
+          |> bit_array.to_string
+          |> result.unwrap("")
+          |> default_if_blank("logout")
+        Error(_) -> "logout"
+      }
+      fanout.broadcast(
+        deps.fanout,
+        deps.registry,
+        ByUserDevice(user_id, device_id),
+        Kick(reason),
+      )
+      ok_text(
+        "logout queued for user=" <> user_id <> " device=" <> device_id,
+      )
+    }
+
     _, _ -> not_found()
+  }
+}
+
+fn default_if_blank(s: String, default: String) -> String {
+  case s {
+    "" -> default
+    _ -> s
   }
 }
 
@@ -251,6 +313,10 @@ fn help() -> Response(ResponseData) {
       "POST   /conv/<id>/broadcast              body broadcast cluster-wide\n",
       "                                         to every conv-scoped ws of every member\n",
       "                                         via local ETS + fanout relay\n",
+      "POST   /user/<id>/broadcast              body broadcast to every user-scoped\n",
+      "                                         ws of <id> on every node\n",
+      "POST   /user/<u>/devices/<d>/logout      close every ws of one device of one user\n",
+      "                                         (body = optional kick reason)\n",
     ])
     |> string_tree.to_string
   response.new(200)

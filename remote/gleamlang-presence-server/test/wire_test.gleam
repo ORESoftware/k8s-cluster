@@ -9,6 +9,8 @@ import gleam/dict
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
+import gleam/option.{None, Some}
+import gleam/string
 import gleeunit/should
 import gleamlang_presence_server/groups.{AddedToConv, RemovedFromConv}
 import gleamlang_presence_server/wire
@@ -61,10 +63,51 @@ pub fn encoders_round_trip_through_json_parse_test() -> Nil {
     wire.encode_membership_changed("c", RemovedFromConv),
     wire.encode_kick("any"),
     wire.encode_re_registered(),
+    wire.encode_hello(
+      user_id: "alice",
+      conv_id: None,
+      device_id: None,
+      node: "presence@p0",
+    ),
   ]
   list.each(outputs, fn(s) {
     json.parse(s, decode.dynamic) |> should.be_ok |> ignore
   })
+}
+
+pub fn hello_user_scope_has_null_conv_and_device_test() -> Nil {
+  let body =
+    wire.encode_hello(
+      user_id: "alice",
+      conv_id: None,
+      device_id: None,
+      node: "presence@p0",
+    )
+  let pairs = parse_object(body)
+  string_field(pairs, "type") |> should.equal("hello")
+  string_field(pairs, "scope") |> should.equal("user")
+  string_field(pairs, "user") |> should.equal("alice")
+  string_field(pairs, "node") |> should.equal("presence@p0")
+  // `conv` and `device` are present and null (not missing) so the
+  // client parser can stay branchless. Check the raw string rather
+  // than relying on a particular dynamic-null decoder shape.
+  contains(body, "\"conv\":null") |> should.be_true
+  contains(body, "\"device\":null") |> should.be_true
+}
+
+pub fn hello_conv_scope_includes_conv_and_device_test() -> Nil {
+  let body =
+    wire.encode_hello(
+      user_id: "alice",
+      conv_id: Some("conv-1"),
+      device_id: Some("dev-7"),
+      node: "presence@p2",
+    )
+  let pairs = parse_object(body)
+  string_field(pairs, "scope") |> should.equal("conv")
+  string_field(pairs, "conv") |> should.equal("conv-1")
+  string_field(pairs, "device") |> should.equal("dev-7")
+  string_field(pairs, "node") |> should.equal("presence@p2")
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -90,6 +133,10 @@ fn string_array_field(pairs: Pairs, key: String) -> List(String) {
   let assert Ok(value) = dict.get(pairs, key)
   decode.run(value, decode.list(decode.string))
   |> should.be_ok
+}
+
+fn contains(haystack: String, needle: String) -> Bool {
+  string.contains(does: haystack, contain: needle)
 }
 
 fn ignore(_anything: a) -> Nil {
