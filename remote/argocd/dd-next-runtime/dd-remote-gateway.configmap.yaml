@@ -368,6 +368,32 @@ data:
         proxy_pass http://dd-gleamlang-server.default.svc.cluster.local:8081/;
       }
 
+      # /fsws — dd-fsharp-ws-server (F# + ASP.NET Core, port 8087). Same
+      # access posture as /gleam/ and /webrtc/ (no auth required) since the
+      # service is a public-facing pipeline-comparison demo. WS upgrade is
+      # supported so /fsws/ws/rx and /fsws/ws/async work end-to-end.
+      location = /fsws {
+        return 302 /fsws/;
+      }
+
+      location /fsws/ {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        # WS endpoints (/ws/rx, /ws/async) need a long idle timeout; keep
+        # the same 3600s ceiling /gcs/ws/ uses so a load-test client can
+        # hold a session open for the full hold window.
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Trailing slash on proxy_pass strips the /fsws/ prefix, so the
+        # upstream sees /, /healthz, /livez, /ws/rx, /ws/async, etc.
+        proxy_pass http://dd-fsharp-ws-server.default.svc.cluster.local:8087/;
+      }
+
       location = /mcp {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
