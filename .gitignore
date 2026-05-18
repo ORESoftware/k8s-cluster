@@ -85,3 +85,7 @@ credentials.json
 token.json
 service-account*.json
 *-credentials.json
+
+# temp folders
+tmp
+temp
