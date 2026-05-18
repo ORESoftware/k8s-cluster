@@ -10,3 +10,7 @@ resources:
   - gcs-kafka.service.yaml
   - gcs.deployment.yaml
   - gcs.service.yaml
+  - gcs-headless.service.yaml
+  - gcs-router.configmap.yaml
+  - gcs-router.deployment.yaml
+  - gcs-router.service.yaml

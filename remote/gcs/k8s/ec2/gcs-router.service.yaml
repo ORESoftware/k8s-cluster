@@ -1,0 +1,18 @@
+# ClusterIP Service in front of gcs-router. Consumed by
+# dd-remote-gateway (which proxies /gcs/ws/ to this Service).
+apiVersion: v1
+kind: Service
+metadata:
+  name: gcs-router
+  namespace: default
+  labels:
+    app: gcs-router
+spec:
+  type: ClusterIP
+  selector:
+    app: gcs-router
+  ports:
+    - name: ws
+      port: 3001
+      targetPort: ws
+      protocol: TCP

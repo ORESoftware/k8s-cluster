@@ -438,17 +438,37 @@ data:
         proxy_pass http://gcs.default.svc.cluster.local:3000;
       }
 
+      # /gcs/ws/* — WebSocket traffic to chat.vibe. Routed through the
+      # dedicated gcs-router proxy instead of straight to the gcs
+      # Service, so that:
+      #
+      #   - /gcs/ws/conv/<convId>      gets consistent-hash pinned to a
+      #                                single gcs pod (enables the in-pod
+      #                                fan-out optimization in
+      #                                writeToConvTopic).
+      #   - /gcs/ws/user/<userId>      goes to the least-loaded pod.
+      #   - /gcs/ws/device/<deviceId>  goes to the least-loaded pod.
+      #   - /gcs/ws/<anything else>    goes to the least-loaded pod.
+      #
+      # All path-family decisions are made inside gcs-router; the
+      # gateway just forwards the WS upgrade with the path intact (minus
+      # the /gcs/ws prefix). See remote/gcs/k8s/ec2/gcs-router.configmap.yaml.
+      #
+      # proxy_read/send_timeout: 3600s here matches gcs-router's own
+      # timeouts. 900s (pre-change) would have closed long-running chat
+      # sessions after 15 minutes of inactivity.
       location /gcs/ws/ {
         proxy_http_version 1.1;
-        proxy_read_timeout 900;
-        proxy_send_timeout 900;
+        proxy_buffering off;
+        proxy_read_timeout 3600;
+        proxy_send_timeout 3600;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         rewrite ^/gcs/ws/?(.*)$ /$1 break;
-        proxy_pass http://gcs.default.svc.cluster.local:3001;
+        proxy_pass http://gcs-router.default.svc.cluster.local:3001;
       }
 
       location = /webrtc {

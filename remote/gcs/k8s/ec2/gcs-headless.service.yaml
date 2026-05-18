@@ -1,0 +1,42 @@
+# Headless Service for direct pod-IP DNS resolution of gcs pods.
+#
+# Unlike the regular `gcs` ClusterIP Service (which load-balances at L4
+# via iptables/IPVS, hiding pod identity), this Service has
+# clusterIP: None, so DNS lookups against
+#
+#   gcs-headless.default.svc.cluster.local
+#
+# return ONE A record per backing pod. That is exactly what gcs-router
+# needs to do real consistent hashing across pods: it has to talk to a
+# specific pod, not to whichever pod the Service load-balancer happens
+# to pick for the connection.
+#
+# Current state (Phase 1 = 1 gcs pod): DNS returns 1 A record; the
+# router's `hash` directive degenerates to "route everything to that
+# one pod", which is correct.
+#
+# When scaling to N pods (Phase 2): combine this with a StatefulSet
+# (gcs-0, gcs-1, ...) so pod identity is stable across restarts and the
+# hash ring doesn't reshuffle on rolling deploys. See readme.md.
+#
+# This Service is INTERNAL-ONLY. External + REST traffic continues to
+# use the normal `gcs` Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: gcs-headless
+  namespace: default
+  labels:
+    app: gcs
+    role: headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    app: gcs
+  ports:
+    - name: ws
+      port: 3001
+      targetPort: ws
+      protocol: TCP

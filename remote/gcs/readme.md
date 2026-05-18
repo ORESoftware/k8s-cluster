@@ -53,7 +53,59 @@ The EC2 gateway routes:
 - `/gcs/health` -> REST health check
 - `/gcs/ws-health` -> WebSocket listener health check
 - `/gcs/api/...` -> REST API with `/gcs/api` rewritten to `/chat`
-- `/gcs/ws/...` -> WebSocket service
+- `/gcs/ws/...` -> WebSocket service (via `gcs-router`)
+
+### WebSocket path scheme
+
+WebSocket connections go through `dd-remote-gateway` -> `gcs-router` ->
+`gcs` pods. `gcs-router` decides which pod to land on based on the path:
+
+| Path                              | Pool          | Algorithm                  | Why                                                                                                          |
+| --------------------------------- | ------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `/gcs/ws/conv/<convId>[/...]`     | `gcs_conv`    | `hash $request_uri consistent` | All WS for the same conv pin to the same gcs pod, so `writeToConvTopic` can fan out in-memory (skip broker). |
+| `/gcs/ws/user/<userId>[/...]`     | `gcs_balanced`| `least_conn`               | User-topic conns don't share fan-out with other users — distribute by load.                                  |
+| `/gcs/ws/device/<deviceId>[/...]` | `gcs_balanced`| `least_conn`               | Same as user.                                                                                                |
+| `/gcs/ws/<anything else>`         | `gcs_balanced`| `least_conn`               | Catch-all. Includes legacy / unstructured paths.                                                             |
+
+The gcs server (`ServeHTTP` on port 3001) accepts WS upgrades on any
+path, so server-side it doesn't matter which path the client uses. The
+path is purely a routing hint for `gcs-router`.
+
+Response header: `gcs-router` adds `X-Gcs-Pool: conv-hash | least-conn`
+on every response so clients / browser devtools can see the routing
+decision.
+
+### Scaling `gcs` past 1 pod
+
+`gcs-router`'s upstreams point at the `gcs-headless` Service, which
+returns one A record per ready gcs pod. OSS NGINX only resolves
+upstream DNS at startup, so when you scale gcs from 1 -> N pods, do:
+
+```bash
+kubectl rollout restart deployment/gcs-router -n default
+```
+
+That picks up the new endpoint list. Existing WS connections stay on
+their current pod (the proxy can't migrate an upgraded WS); only new
+WS upgrades use the updated ring.
+
+Future-proof alternatives (when scale-events get frequent):
+
+1. Replace `gcs-router` with the same nginx image plus a sidecar that
+   periodically reloads on endpoint change (poll k8s API,
+   `nginx -s reload`).
+2. Switch the image to `openresty/openresty` and use
+   `balancer_by_lua_block` + `lua-resty-balancer` for true dynamic
+   peer updates.
+3. Replace `gcs-router` entirely with Envoy / Istio. Envoy's EDS picks
+   up endpoint changes from the k8s API in seconds, and the consistent-
+   hash policy is a one-line `DestinationRule`.
+
+### Scaling `gcs-router` itself
+
+`gcs-router` is stateless; once `gcs` is >= 2 replicas, bump
+`gcs-router` to >= 2 replicas too. The `gcs-router` Service round-robins
+between router pods (no stickiness needed at this layer).
 
 ## Deploy
 

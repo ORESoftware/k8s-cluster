@@ -1,0 +1,128 @@
+# gcs-router: WebSocket-aware reverse proxy for the gcs (chat.vibe)
+# fleet. See gcs-router.configmap.yaml for the full nginx.conf and
+# routing-rule rationale.
+#
+# Why a dedicated Deployment instead of folding into dd-remote-gateway:
+#
+#   - dd-remote-gateway is the public TLS-terminating, auth-gated edge.
+#     Co-locating gcs's pod-level routing logic there would couple two
+#     concerns that move at different cadences (auth/gateway config
+#     changes ~rarely; WS routing rules will be iterated on a lot as
+#     chat.vibe scales).
+#   - gcs-router needs to know individual gcs pod identities via the
+#     gcs-headless Service, which dd-remote-gateway does not.
+#   - Letting gcs-router live next to gcs makes it part of the gcs
+#     ArgoCD app (`remote/gcs/k8s/ec2/`), so a single git commit can
+#     ship correlated changes (e.g. add a path family in gcs's
+#     ServeHTTP + the matching router rule).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcs-router
+  namespace: default
+  labels:
+    app: gcs-router
+spec:
+  # 1 replica is fine while gcs itself is 1 replica. When you scale
+  # gcs out, the router is on the WS hot path, so bump this to >=2
+  # behind a Service. Router CPU/mem is tiny vs. gcs.
+  replicas: 1
+  strategy:
+    # WS is long-lived; RollingUpdate cleanly drains the old pod via
+    # terminationGracePeriodSeconds while the new one takes over.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gcs-router
+  template:
+    metadata:
+      labels:
+        app: gcs-router
+    spec:
+      automountServiceAccountToken: false
+      # Long enough for nginx -s quit to drain existing WS frames before
+      # the pod is killed. Matches dd-remote-gateway's 20s.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: nginx
+          # Same image as dd-remote-gateway for consistency. OSS NGINX
+          # >= 1.7.2 has consistent-hash; >= 1.5.10 has least_conn.
+          image: docker.io/library/nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              # NGINX wants to chown the cache dir on first run; the
+              # alpine image already handles that as non-root via the
+              # default entrypoint. We keep capabilities minimal.
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: ws
+              containerPort: 3001
+              protocol: TCP
+          resources:
+            # Small. NGINX is cheap; the gcs pods are doing the work.
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          # Run `nginx -s quit` on SIGTERM to drain in-flight connections
+          # gracefully (default SIGQUIT vs k8s SIGTERM mismatch). The
+          # nginx:alpine image already converts SIGTERM to fast-shutdown
+          # via its stop signal config, so this is belt-and-suspenders.
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - 'nginx -s quit || sleep 5'
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            # NGINX writes pid + temp files; make those locations writable
+            # without requiring root.
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: gcs-router-config
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+        - name: nginx-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
