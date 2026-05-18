@@ -6,9 +6,20 @@ metadata:
   labels:
     app: gcs
 spec:
-  replicas: 1
+  # 3 replicas to exercise the consistent-hash routing in gcs-router.
+  # At 1 replica the hash directive is a no-op (every conv lands on the
+  # only pod); at 3 replicas the path-based hash actually distributes
+  # convs across pods so we can test co-location.
+  replicas: 3
   strategy:
-    type: Recreate
+    # RollingUpdate now that we have >1 replica — a Recreate strategy at
+    # N>=2 would tear down every pod before starting the new ones,
+    # which is unnecessary downtime. With maxUnavailable=0 the rollout
+    # is zero-WS-drop (modulo individual pod restarts).
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: gcs

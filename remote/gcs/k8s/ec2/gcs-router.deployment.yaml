@@ -53,13 +53,17 @@ spec:
           image: docker.io/library/nginx:1.27-alpine
           imagePullPolicy: IfNotPresent
           securityContext:
+            # Matches dd-remote-gateway. We do NOT drop ALL capabilities
+            # because the official nginx:alpine image's
+            # /docker-entrypoint.d/ scripts chown /var/cache/nginx on
+            # startup (needs CAP_CHOWN). Dropping ALL caps makes the
+            # container CrashLoopBackOff with:
+            #   chown("/var/cache/nginx/client_temp", 101) failed
+            #   (1: Operation not permitted)
+            # The container still runs as the unprivileged nginx user
+            # (uid 101) by virtue of the image's USER directive +
+            # seccompProfile + allowPrivilegeEscalation: false.
             allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-              # NGINX wants to chown the cache dir on first run; the
-              # alpine image already handles that as non-root via the
-              # default entrypoint. We keep capabilities minimal.
             seccompProfile:
               type: RuntimeDefault
           ports:
