@@ -47,7 +47,11 @@ clients │  │ per conn proc│◄──►│ ByUser / ByConv│  │
 - **Conversations actor** — in-memory cache backed by Postgres, mesh-
   gossips membership events to peer nodes via `pg` for fast cache
   convergence when not running with a shared store. Emits
-  `MembershipChanged` to `ByUser` and `Kick` to `ByUserConv` on remove.
+  `MembershipChanged(_, AddedToConv(members))` (with the conv's current
+  member list inlined, so clients don't need a `GET
+  /conv/<id>/members` roundtrip) to `ByUser` on add, and
+  `MembershipChanged(_, RemovedFromConv)` to `ByUser` plus
+  `Kick("removed from conv …")` to `ByUserConv` on remove.
 - **Cluster discovery** — periodic loop that queries the k8s API for
   peer pods (or accepts a static `CLUSTER_PEERS` list for local dev),
   then calls `net_kernel:connect_node/1` for any new ones. The mesh
@@ -59,7 +63,7 @@ clients │  │ per conn proc│◄──►│ ByUser / ByConv│  │
 ```bash
 gleam run                                    # boots on :8081 with in-memory store
 curl localhost:8081/healthz
-python3 scripts/demo.py                      # runs the e2e demo (13 checks)
+python3 scripts/demo.py                      # runs the e2e demo (28 checks)
 ```
 
 ### Three-node local cluster
@@ -96,18 +100,39 @@ of one device.
 
 ## Routes
 
-| Method | Path                                      | Effect                                                  |
-|--------|-------------------------------------------|---------------------------------------------------------|
-| GET    | `/`                                       | Plain-text help.                                        |
-| GET    | `/healthz`                                | JSON health.                                            |
-| GET    | `/nodes`                                  | Self + connected BEAM peers.                            |
-| GET    | `/ws?user=<id>`                           | Open a **user-scoped** ws.                              |
-| GET    | `/ws?user=<id>&conv=<convId>`             | Open a **conv-scoped** ws. 403 if user isn't a member.  |
-| GET    | `/ws?...&device=<id>`                     | Optional on either variant; sets the device dimension.  |
-| POST   | `/conv/<id>/members/<user>`               | Add user to conv (durable + cluster broadcast).         |
-| DELETE | `/conv/<id>/members/<user>`               | Remove user from conv (kicks the user's conv-ws's).     |
-| GET    | `/conv/<id>/members`                      | List members.                                           |
-| POST   | `/conv/<id>/broadcast`                    | Body broadcast to every conv-scoped ws of every member. |
+| Method | Path                                              | Effect                                                                |
+|--------|---------------------------------------------------|-----------------------------------------------------------------------|
+| GET    | `/`                                               | Plain-text help.                                                      |
+| GET    | `/healthz`                                        | JSON health.                                                          |
+| GET    | `/nodes`                                          | Self + connected BEAM peers.                                          |
+| GET    | `/ws?user=<id>`                                   | Open a **user-scoped** ws.                                            |
+| GET    | `/ws?user=<id>&conv=<convId>`                     | Open a **conv-scoped** ws. 403 if user isn't a member.                |
+| GET    | `/ws?...&device=<id>`                             | Optional on either variant; sets the device dimension.                |
+| POST   | `/conv/<id>/members/<user>`                       | Add user to conv (durable + cluster broadcast).                       |
+| DELETE | `/conv/<id>/members/<user>`                       | Remove user from conv (kicks the user's conv-ws's).                   |
+| GET    | `/conv/<id>/members`                              | List members.                                                         |
+| POST   | `/conv/<id>/broadcast`                            | Body broadcast to every conv-scoped ws of every member.               |
+| POST   | `/user/<id>/broadcast`                            | Body broadcast to every user-scoped ws of `<id>` on every node.       |
+| POST   | `/user/<u>/devices/<d>/logout`                    | Close every ws (user- and conv-scoped) of one device of one user.     |
+
+## Wire format
+
+Every server-originated frame is a JSON object with a `type` discriminator:
+
+| `type`              | Sent when                                                          | Extra fields                                                            |
+|---------------------|--------------------------------------------------------------------|-------------------------------------------------------------------------|
+| `hello`             | Immediately after ws upgrade, on every ws.                         | `scope` (`user`\|`conv`), `user`, `conv`\|null, `device`\|null, `node`. |
+| `membership-changed`| User joined/left a conv (delivered on the user-scoped ws).         | `change` (`added`\|`removed`), `conv`, `members` (only on `added`).     |
+| `kick`              | Server is closing this ws (e.g. removed from conv, device logout). | `reason`.                                                               |
+| `re-registered`     | Registry actor crashed + restarted; we just re-joined.             | (none)                                                                  |
+
+Application payloads sent via `/conv/<id>/broadcast` or `/user/<id>/broadcast` are
+forwarded **verbatim**; clients distinguish them from system frames by checking
+the first non-whitespace byte (`{` + presence of a `type` field ⇒ system frame).
+
+The `hello` frame lets clients confirm what scope the server interpreted and
+which BEAM node accepted the upgrade — useful when sitting behind a k8s `Service`
+that hashes upgrades across pods.
 
 ## Environment
 

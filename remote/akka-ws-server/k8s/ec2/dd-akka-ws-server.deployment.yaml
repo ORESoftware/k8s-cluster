@@ -79,8 +79,11 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 200m
-              memory: 512Mi
+              # Single-node cluster is request-pressured. WS handler pod is mostly idle awaiting
+              # frames; trim baseline to 50m so it actually schedules. Burst budget (limits)
+              # stays at 2 CPUs.
+              cpu: 50m
+              memory: 384Mi
             limits:
               cpu: '2'
               memory: 1Gi

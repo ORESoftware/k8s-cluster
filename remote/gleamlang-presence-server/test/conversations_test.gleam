@@ -140,6 +140,13 @@ pub fn conv_only_subscribers_dont_get_membership_changed_test() -> Nil {
 
 fn setup() -> #(Registry(ConnMsg, ConnGroup), Conversations) {
   pg_groups.ensure_started()
+  // `conversations.start` registers under a globally-stable atom name
+  // (`dd_conversations_mesh`) — fine in production where the actor is
+  // started once per node, but a no-go when many test cases each spin
+  // up their own. Kill any prior owner so the next `actor.named` call
+  // can register fresh.
+  kill_named("dd_conversations_mesh")
+
   let tag = int.to_string(unique_int())
 
   let reg_name = fanout.stable_name("test_conv_reg_" <> tag)
@@ -161,6 +168,15 @@ fn setup() -> #(Registry(ConnMsg, ConnGroup), Conversations) {
     |> should.be_ok
   #(reg, convs_started.data)
 }
+
+/// Test-only helper implemented in `gleamlang_presence_server_ffi.erl`:
+/// kill the process registered under the given atom name (if any) and
+/// wait until the registration is released. We do this between cases
+/// because `conversations.start` registers under a stable atom
+/// (`dd_conversations_mesh`) which is unique-per-node in production
+/// but collides when many test cases each call `start`.
+@external(erlang, "gleamlang_presence_server_ffi", "kill_named")
+fn kill_named(name: String) -> Nil
 
 @external(erlang, "erlang", "unique_integer")
 fn unique_int_raw(opts: List(a)) -> Int

@@ -7,7 +7,8 @@
     pgo_config/5,
     pgo_config_from_url/1,
     shard_of/2,
-    self_node_binary/0
+    self_node_binary/0,
+    kill_named/1
 ]).
 
 %% Build a process Name (which is just an Erlang atom internally) from a
@@ -151,3 +152,23 @@ shard_of(ConvId, NShards) ->
 %% header and for log lines.
 self_node_binary() ->
     atom_to_binary(node(), utf8).
+
+%% Test-only helper: if `Name` is a registered process, kill it
+%% synchronously (process_flag(trap_exit) doesn't matter — we use
+%% `exit(Pid, kill)` which is uncatchable). Waits until the registration
+%% is released before returning so a subsequent `register/2` (or
+%% `actor.named`) under the same atom can succeed.
+kill_named(NameBin) ->
+    Name = binary_to_atom(NameBin, utf8),
+    case erlang:whereis(Name) of
+        undefined -> nil;
+        Pid when is_pid(Pid) ->
+            MRef = erlang:monitor(process, Pid),
+            erlang:exit(Pid, kill),
+            receive
+                {'DOWN', MRef, process, Pid, _} -> nil
+            after 1000 ->
+                erlang:demonitor(MRef, [flush]),
+                nil
+            end
+    end.

@@ -42,6 +42,9 @@ pub fn user_broadcast_only_reaches_by_user_subscribers_test() -> Nil {
   registry.register(reg, ByUserConv("alice", "c1"), alice_conv_ws)
   registry.register(reg, ByUserDevice("alice", "dev1"), alice_device_ws)
   registry.register(reg, ByUser("bob"), bob_user_ws)
+  // `registry.register` posts to the registry actor's mailbox. Wait
+  // for it to flush before broadcasting so ETS has the row.
+  wait_for_registered(reg, ByUser("alice"))
 
   fanout.broadcast(fan, reg, ByUser("alice"), Outbound("hello-alice"))
 
@@ -74,6 +77,8 @@ pub fn device_kick_reaches_only_that_device_test() -> Nil {
   // unique in practice but the group key is keyed on (user, device)
   // so this must NOT collide).
   registry.register(reg, ByUserDevice("bob", "dev1"), bob_dev1_ws)
+  wait_for_registered(reg, ByUserDevice("alice", "dev1"))
+  wait_for_registered(reg, ByUserDevice("bob", "dev1"))
 
   fanout.broadcast(
     fan,
@@ -102,6 +107,7 @@ pub fn user_broadcast_with_no_subscribers_is_a_noop_test() -> Nil {
   // second broadcast that DOES land and check it lands.
   let alice_user_ws = process.new_subject()
   registry.register(reg, ByUser("alice"), alice_user_ws)
+  wait_for_registered(reg, ByUser("alice"))
   fanout.broadcast(fan, reg, ByUser("alice"), Outbound("alive"))
   process.receive(alice_user_ws, 500)
   |> should.equal(Ok(Outbound("alive")))
@@ -132,6 +138,35 @@ fn expect_no_message(s: process.Subject(a), timeout_ms: Int) -> Nil {
   case process.receive(s, timeout_ms) {
     Ok(_) -> should.fail()
     Error(_) -> Nil
+  }
+}
+
+/// `registry.register` is an async send to the registry actor — the
+/// ETS row only exists after the actor processes the Register message.
+/// Spin-poll the registry until the group has at least one member, or
+/// time out after ~500ms.
+fn wait_for_registered(
+  reg: Registry(ConnMsg, ConnGroup),
+  group: ConnGroup,
+) -> Nil {
+  do_wait_for_registered(reg, group, 50)
+}
+
+fn do_wait_for_registered(
+  reg: Registry(ConnMsg, ConnGroup),
+  group: ConnGroup,
+  attempts: Int,
+) -> Nil {
+  case registry.members(reg, group) {
+    [_, ..] -> Nil
+    [] ->
+      case attempts {
+        0 -> should.fail()
+        n -> {
+          process.sleep(10)
+          do_wait_for_registered(reg, group, n - 1)
+        }
+      }
   }
 }
 

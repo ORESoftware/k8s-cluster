@@ -7,10 +7,29 @@ Connection topology
 A single logical "device" opens MULTIPLE websockets:
 
   * exactly one user-scoped ws  (/ws?user=<id>) — receives membership
-    notifications like "added-to <conv>" / "removed-from <conv>"; the
-    client uses these to decide when to open/close per-conv websockets.
+    notifications like `membership-changed` JSON envelopes; the client
+    uses these to decide when to open/close per-conv websockets.
   * one conv-scoped ws per active conversation
     (/ws?user=<id>&conv=<convId>) — receives the conv's broadcast frames.
+
+Both variants accept an optional `&device=<deviceId>` so device-targeted
+sends (e.g. "log out this device") can address every ws of one device.
+
+Every ws receives a `{"type":"hello", ...}` JSON envelope on open which
+this demo validates as part of its open routine.
+
+Scenarios covered
+-----------------
+  1. Conv broadcast lands on every member's conv-ws (cross-node).
+  2. Add-member fires `membership-changed` (with member list) on the
+     added user's user-ws.
+  3. Remove-member fires `membership-changed` (removed) on the user-ws
+     and a `kick` on every conv-ws of that user, then closes them.
+  4. Per-user broadcast lands on every user-ws of that user, NOT on
+     their conv-ws's, NOT on other users.
+  5. Device logout sends `kick` to every ws of one device (user-scoped
+     AND conv-scoped) and closes them; other devices of the same user
+     and other users are unaffected.
 
 For a single-node run, point this at a single base URL (default
 http://localhost:8181). For a 3-node local cluster, pass several URLs via
@@ -129,7 +148,12 @@ class Device:
         ws = WS(url, f"{self.label}/user")
         await ws.open()
         self.user_ws = ws
-        print(f"  • {self.label} ({self.user}@{self.base}) opened user-ws")
+        hello = await _consume_hello(ws)
+        assert hello.get("scope") == "user", hello
+        assert hello.get("user") == self.user, hello
+        assert hello.get("device") == self.device_id, hello
+        assert hello.get("conv") is None, hello
+        print(f"  • {self.label} ({self.user}@{self.base}) opened user-ws; hello.node={hello.get('node')}")
 
     async def open_conv(self, conv_id: str) -> None:
         url = (
@@ -139,7 +163,12 @@ class Device:
         ws = WS(url, f"{self.label}/{conv_id}")
         await ws.open()
         self.conv_ws[conv_id] = ws
-        print(f"  • {self.label} opened conv-ws for {conv_id}")
+        hello = await _consume_hello(ws)
+        assert hello.get("scope") == "conv", hello
+        assert hello.get("user") == self.user, hello
+        assert hello.get("conv") == conv_id, hello
+        assert hello.get("device") == self.device_id, hello
+        print(f"  • {self.label} opened conv-ws for {conv_id}; hello.node={hello.get('node')}")
 
     async def close_conv(self, conv_id: str) -> None:
         ws = self.conv_ws.pop(conv_id, None)
@@ -148,11 +177,31 @@ class Device:
             print(f"  • {self.label} closed conv-ws for {conv_id}")
 
     async def close(self) -> None:
-        if self.user_ws is not None:
+        if self.user_ws is not None and not self.user_ws._closed:
             await self.user_ws.close()
         for conv_id, ws in list(self.conv_ws.items()):
-            await ws.close()
+            if not ws._closed:
+                await ws.close()
         self.conv_ws.clear()
+
+
+async def _consume_hello(ws: WS, secs: float = 1.0) -> dict:
+    """Drain the JSON `hello` handshake frame that every ws receives on open."""
+    frame = await asyncio.wait_for(ws.queue.get(), timeout=secs)
+    parsed = json.loads(frame)
+    assert parsed.get("type") == "hello", parsed
+    return parsed
+
+
+async def expect_closed(ws: WS, secs: float = 1.0) -> bool:
+    deadline = time.monotonic() + secs
+    while time.monotonic() < deadline:
+        if ws._closed:
+            print(f"      OK   {ws.label} ws closed by server")
+            return True
+        await asyncio.sleep(0.05)
+    print(f"      MISS {ws.label} ws still open after {secs}s")
+    return False
 
 
 async def expect_contains(ws: WS, fragment: str, secs: float = 1.0) -> bool:
@@ -294,6 +343,54 @@ async def main(bases: list[str]) -> int:
     ok15 = await expect_silent(bob1_conv)
     ok16 = await expect_silent(bob2_conv)
 
+    # --- Scenario 4: per-user system broadcast lands only on user-ws's
+    # of that user, on every node. Conv-ws's of the same user are NOT
+    # addressed (this is "talk to the user", not "talk to a conv").
+    print(
+        "\n[scenario 4] POST /user/alice/broadcast 'sys-msg'; expect alice's two"
+        " user-ws's, NOT alice's conv-ws's, NOT other users"
+    )
+    print(f"  {_post(bases[0] + '/user/alice/broadcast', b'sys-msg')}")
+    ok17 = await expect_contains(alice1.user_ws, "sys-msg")
+    ok18 = await expect_contains(alice2.user_ws, "sys-msg")
+    ok19 = await expect_silent(alice1.conv_ws["conv-1"])
+    ok20 = await expect_silent(alice2.conv_ws["conv-1"])
+    ok21 = await expect_silent(carol.user_ws)
+
+    # --- Scenario 5: device-targeted logout. POSTing to
+    # /user/alice/devices/d1/logout sends a Kick to every ws of
+    # (alice, d1) — both her user-ws and her conv-ws on that device —
+    # and closes them. Her OTHER device (d2) is unaffected; other
+    # users are unaffected.
+    print(
+        "\n[scenario 5] POST /user/alice/devices/d1/logout; expect alice/d1"
+        " user-ws+conv-ws to receive kick and close; alice/d2 silent; carol silent"
+    )
+    alice1_user = alice1.user_ws
+    alice1_conv = alice1.conv_ws["conv-1"]
+    print(
+        f"  {_post(bases[0] + '/user/alice/devices/d1/logout', b'manual-logout')}"
+    )
+    ok22 = await expect_contains_all(
+        alice1_user, ['"type":"kick"', '"reason":"manual-logout"']
+    )
+    ok23 = await expect_contains_all(
+        alice1_conv, ['"type":"kick"', '"reason":"manual-logout"']
+    )
+    # Give the server a moment to close the ws's.
+    await asyncio.sleep(0.2)
+    ok24 = await expect_closed(alice1_user, secs=1.0)
+    ok25 = await expect_closed(alice1_conv, secs=1.0)
+    # alice's other device on dev2 keeps working.
+    ok26 = await expect_silent(alice2.user_ws)
+    ok27 = await expect_silent(alice2.conv_ws["conv-1"])
+    # carol unaffected.
+    ok28 = await expect_silent(carol.user_ws)
+    # Tidy up our records so the cleanup loop doesn't try to close them
+    # twice.
+    alice1.user_ws = None
+    alice1.conv_ws.pop("conv-1", None)
+
     print("\n[cleanup] closing devices")
     for d in devices:
         await d.close()
@@ -301,6 +398,8 @@ async def main(bases: list[str]) -> int:
     summary = [
         ok1, ok2, ok3, ok4, ok5, ok6, ok7, ok8,
         ok9, ok10, ok11, ok12, ok13, ok14, ok15, ok16,
+        ok17, ok18, ok19, ok20, ok21,
+        ok22, ok23, ok24, ok25, ok26, ok27, ok28,
     ]
     passed = sum(summary)
     print(f"\n=== {passed}/{len(summary)} checks passed ===")
