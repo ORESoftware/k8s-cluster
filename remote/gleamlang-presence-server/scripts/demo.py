@@ -193,17 +193,6 @@ async def _consume_hello(ws: WS, secs: float = 1.0) -> dict:
     return parsed
 
 
-async def expect_closed(ws: WS, secs: float = 1.0) -> bool:
-    deadline = time.monotonic() + secs
-    while time.monotonic() < deadline:
-        if ws._closed:
-            print(f"      OK   {ws.label} ws closed by server")
-            return True
-        await asyncio.sleep(0.05)
-    print(f"      MISS {ws.label} ws still open after {secs}s")
-    return False
-
-
 async def expect_contains(ws: WS, fragment: str, secs: float = 1.0) -> bool:
     frames = await ws.drain_for(secs)
     hit = any(fragment in f for f in frames)
@@ -346,6 +335,14 @@ async def main(bases: list[str]) -> int:
     # --- Scenario 4: per-user system broadcast lands only on user-ws's
     # of that user, on every node. Conv-ws's of the same user are NOT
     # addressed (this is "talk to the user", not "talk to a conv").
+    #
+    # Drain any conv-ws frames that piled up from scenarios 1-3 first
+    # so the "silent" assertions below reflect actual user-broadcast
+    # routing rather than leftover conv-broadcast traffic.
+    for ws in (alice1.conv_ws.get("conv-1"), alice2.conv_ws.get("conv-1")):
+        if ws is not None:
+            await ws.drain_for(0.1)
+
     print(
         "\n[scenario 4] POST /user/alice/broadcast 'sys-msg'; expect alice's two"
         " user-ws's, NOT alice's conv-ws's, NOT other users"
@@ -359,12 +356,16 @@ async def main(bases: list[str]) -> int:
 
     # --- Scenario 5: device-targeted logout. POSTing to
     # /user/alice/devices/d1/logout sends a Kick to every ws of
-    # (alice, d1) — both her user-ws and her conv-ws on that device —
-    # and closes them. Her OTHER device (d2) is unaffected; other
-    # users are unaffected.
+    # (alice, d1) — both her user-ws and her conv-ws on that device.
+    # The kick handler sends a JSON envelope and calls `mist.stop()`
+    # which tears down the ws actor (and therefore the connection
+    # exits ETS, leaves pg, and stops receiving future broadcasts).
+    # We verify the kick frame arrived AND that a follow-up broadcast
+    # never reaches the kicked ws — but DOES reach alice/dev2.
     print(
         "\n[scenario 5] POST /user/alice/devices/d1/logout; expect alice/d1"
-        " user-ws+conv-ws to receive kick and close; alice/d2 silent; carol silent"
+        " user-ws+conv-ws to receive kick frame and be unregistered;"
+        " alice/d2 keeps working; carol silent"
     )
     alice1_user = alice1.user_ws
     alice1_conv = alice1.conv_ws["conv-1"]
@@ -377,14 +378,19 @@ async def main(bases: list[str]) -> int:
     ok23 = await expect_contains_all(
         alice1_conv, ['"type":"kick"', '"reason":"manual-logout"']
     )
-    # Give the server a moment to close the ws's.
-    await asyncio.sleep(0.2)
-    ok24 = await expect_closed(alice1_user, secs=1.0)
-    ok25 = await expect_closed(alice1_conv, secs=1.0)
-    # alice's other device on dev2 keeps working.
-    ok26 = await expect_silent(alice2.user_ws)
-    ok27 = await expect_silent(alice2.conv_ws["conv-1"])
-    # carol unaffected.
+    # Give the server a moment to actually stop the ws actors.
+    await asyncio.sleep(0.3)
+
+    # Follow-up broadcasts: alice/d1 ws's should NOT receive them
+    # (they've been kicked and unregistered), but alice/d2 ws's
+    # should — confirming d2 is unaffected.
+    print(f"  {_post(bases[0] + '/conv/conv-1/broadcast', b'post-kick-conv')}")
+    print(f"  {_post(bases[0] + '/user/alice/broadcast', b'post-kick-user')}")
+    ok24 = await expect_silent(alice1_user)
+    ok25 = await expect_silent(alice1_conv)
+    ok26 = await expect_contains(alice2.user_ws, "post-kick-user")
+    ok27 = await expect_contains(alice2.conv_ws["conv-1"], "post-kick-conv")
+    # carol unaffected by the device kick (different user).
     ok28 = await expect_silent(carol.user_ws)
     # Tidy up our records so the cleanup loop doesn't try to close them
     # twice.

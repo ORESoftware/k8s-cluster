@@ -7,6 +7,14 @@ metadata:
     app: dd-akka-ws-server
 spec:
   replicas: 1
+  # Zero-surge rollout: don't start a new pod until the old one is fully gone. The single-node
+  # cluster doesn't have headroom to run two replicas during a deploy. Same shape as the
+  # gcs-router fix in commit 98f9ada.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-akka-ws-server
