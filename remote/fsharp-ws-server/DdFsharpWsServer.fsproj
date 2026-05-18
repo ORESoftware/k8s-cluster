@@ -33,6 +33,7 @@
     <Compile Include="PipelineStages.fs" />
     <Compile Include="RxPipeline.fs" />
     <Compile Include="AsyncPipeline.fs" />
+    <Compile Include="RxAdvanced.fs" />
     <Compile Include="BenchmarkRunner.fs" />
     <Compile Include="WsRoutes.fs" />
     <Compile Include="Program.fs" />

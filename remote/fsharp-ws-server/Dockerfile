@@ -17,6 +17,7 @@ RUN dotnet restore DdFsharpWsServer.fsproj
 COPY remote/fsharp-ws-server/PipelineStages.fs   ./PipelineStages.fs
 COPY remote/fsharp-ws-server/RxPipeline.fs       ./RxPipeline.fs
 COPY remote/fsharp-ws-server/AsyncPipeline.fs    ./AsyncPipeline.fs
+COPY remote/fsharp-ws-server/RxAdvanced.fs       ./RxAdvanced.fs
 COPY remote/fsharp-ws-server/BenchmarkRunner.fs  ./BenchmarkRunner.fs
 COPY remote/fsharp-ws-server/WsRoutes.fs         ./WsRoutes.fs
 COPY remote/fsharp-ws-server/Program.fs          ./Program.fs

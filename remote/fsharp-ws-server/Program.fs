@@ -55,13 +55,19 @@ let main args =
     wsOpts.KeepAliveInterval <- TimeSpan.FromSeconds 30.0
     app.UseWebSockets wsOpts |> ignore
 
-    app.MapGet("/",             toReqDelegate handleIndex)     |> ignore
-    app.MapGet("/healthz",      toReqDelegate handleHealth)    |> ignore
-    app.MapGet("/readyz",       toReqDelegate handleReady)     |> ignore
-    app.MapGet("/livez",        toReqDelegate handleLive)      |> ignore
-    app.MapGet("/v1/benchmark", toReqDelegate handleBenchmark) |> ignore
-    app.MapGet("/ws/rx",        toReqDelegate handleRx)        |> ignore
-    app.MapGet("/ws/async",     toReqDelegate handleAsync)     |> ignore
+    app.MapGet("/",                       toReqDelegate handleIndex)           |> ignore
+    app.MapGet("/healthz",                toReqDelegate handleHealth)          |> ignore
+    app.MapGet("/readyz",                 toReqDelegate handleReady)           |> ignore
+    app.MapGet("/livez",                  toReqDelegate handleLive)            |> ignore
+    app.MapGet("/v1/benchmark",           toReqDelegate handleBenchmark)       |> ignore
+    app.MapGet("/v1/rx-stats",            toReqDelegate handleRxStats)         |> ignore
+    app.MapGet("/v1/rx-stats/history",    toReqDelegate handleRxStatsHistory)  |> ignore
+    app.MapGet("/sse/rx-stats",           toReqDelegate handleRxStatsSse)      |> ignore
+    app.MapGet("/ws/rx",                  toReqDelegate handleRx)              |> ignore
+    app.MapGet("/ws/async",               toReqDelegate handleAsync)           |> ignore
+    app.MapGet("/ws/rx-stream",           toReqDelegate handleRxStream)        |> ignore
+    app.MapGet("/ws/rx-window",           toReqDelegate handleRxWindow)        |> ignore
+    app.MapGet("/ws/rx-throttle",         toReqDelegate handleRxThrottle)      |> ignore
 
     let logger =
         app.Services.GetRequiredService<ILoggerFactory>()

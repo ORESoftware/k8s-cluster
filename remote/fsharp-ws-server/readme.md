@@ -23,13 +23,49 @@ modification.
 
 ## Endpoints
 
+### Probes & metadata
+
+| Method | Path        | Purpose                                            |
+| ------ | ----------- | -------------------------------------------------- |
+| GET    | `/`         | Self-describing HTML landing page.                 |
+| GET    | `/healthz`  | Liveness probe (text).                             |
+| GET    | `/readyz`   | Readiness probe (text).                            |
+| GET    | `/livez`    | Liveness JSON blob (runtime, machine, uptime).     |
+
+### Per-message comparison (apples-to-apples benchmark targets)
+
 | Method | Path             | Purpose                                                                                |
 | ------ | ---------------- | -------------------------------------------------------------------------------------- |
-| GET    | `/healthz`       | Liveness probe.                                                                        |
-| GET    | `/readyz`        | Readiness probe.                                                                       |
-| GET    | `/ws/rx`         | WebSocket; each text frame runs through `RxPipeline` and the JSON result is sent back. |
-| GET    | `/ws/async`      | Same shape, `AsyncPipeline`.                                                           |
-| GET    | `/v1/benchmark`  | Runs both pipelines `BENCHMARK_ITERATIONS` times against the same payload and returns a JSON timing summary. |
+| WS     | `/ws/rx`         | Each text frame builds a fresh `Observable.Return → … → ToTask`. **Worst-case Rx**, deliberately picked for apples-to-apples comparison with Akka Streams / `async.java`. |
+| WS     | `/ws/async`      | Same work, native F# `task { }` + `Task.WhenAll`.                                      |
+| GET    | `/v1/benchmark`  | Runs both pipelines `BENCHMARK_ITERATIONS` times against the same payload, returns a JSON timing summary. |
+
+### Rx-native long-running pipelines
+
+These endpoints showcase what Rx.NET actually buys you when you commit to its
+model. The Subject + IObservable graph is **materialised once at connect** and
+lives for the lifetime of the socket, so there's no per-message graph
+allocation tax. They're not directly comparable to the per-message benchmark
+targets above — they exist to demonstrate Rx-native shapes that don't compose
+cleanly into a `string -> Task<string>` boundary.
+
+| Method | Path                | Purpose                                                                              |
+| ------ | ------------------- | ------------------------------------------------------------------------------------ |
+| WS     | `/ws/rx-stream`     | Long-running `Subject<string>`-fed pipeline. One reply per input, but the operator chain is built once. Replies can arrive out-of-order because `Observable.Start` on `TaskPoolScheduler` is unordered — that's the fan-out doing its job. |
+| WS     | `/ws/rx-window`     | Same input pipeline, but output goes through `Buffer(200ms, 16)` — one batched frame per window. Try this with `wscat`: send 5 frames quickly, get a single batch reply with `"count":5`. |
+| WS     | `/ws/rx-throttle`   | Same input pipeline, output `Throttle(50ms)` — flood the socket and you only get the latest reply once you pause for 50 ms. Classic keystroke-debounce shape. |
+
+### Live process telemetry (Rx `BehaviorSubject` + `ReplaySubject` + SSE)
+
+A 1 Hz ticker drives a `BehaviorSubject<StatsSnapshot>` (latest-cached) and a
+120-element `ReplaySubject<StatsSnapshot>` (rolling history). Counters are
+`Interlocked`-incremented from every WS connection.
+
+| Method | Path                       | Purpose                                                                |
+| ------ | -------------------------- | ---------------------------------------------------------------------- |
+| GET    | `/v1/rx-stats`             | Current snapshot — open connections, msgs/bytes in & out, uptime.      |
+| GET    | `/v1/rx-stats/history`     | Last ~120 snapshots, replayed synchronously off the `ReplaySubject`.   |
+| SSE    | `/sse/rx-stats`            | Server-Sent Events feed at 1 Hz. `curl -N` shows `data: {…}` per second. |
 
 ### The pipeline
 
@@ -173,5 +209,39 @@ For long-running Rx usage (one Observable graph per WS *connection*,
 the lifetime of the socket), the materialisation tax is paid once at connect
 and Rx.NET holds its tail latency just like the callback path. That pattern
 doesn't compose into a `string -> Task<string>` boundary, so it isn't what
-this benchmark measures — but it's the right call when the WS stream itself
-is the shape your business logic wants to react over.
+the `/v1/benchmark` endpoint measures — but it's the right call when the WS
+stream itself is the shape your business logic wants to react over. The
+`/ws/rx-stream`, `/ws/rx-window`, and `/ws/rx-throttle` endpoints exist
+specifically to demonstrate those shapes; see `RxAdvanced.fs`.
+
+## Quick demo of the Rx-native endpoints
+
+```bash
+# 1. Long-running pipeline. Note the reply ordering — `hog-3` may arrive
+#    before `hog-0` because the enrichment fan-out runs on the thread pool.
+wscat -c ws://localhost:8087/ws/rx-stream
+> {"id":"hog-0","payload":"a"}
+> {"id":"hog-1","payload":"b"}
+> {"id":"hog-2","payload":"c"}
+< {"ok":true,"result":{"id":"hog-2",...}}
+< {"ok":true,"result":{"id":"hog-0",...}}
+< {"ok":true,"result":{"id":"hog-1",...}}
+
+# 2. Time-windowed output. Send 5 frames fast, get one batched reply.
+wscat -c ws://localhost:8087/ws/rx-window
+> {"id":"a","payload":"1"}
+> {"id":"b","payload":"2"}
+> {"id":"c","payload":"3"}
+> {"id":"d","payload":"4"}
+> {"id":"e","payload":"5"}
+< {"window":"200ms|16","count":5,"items":[...]}
+
+# 3. Live SSE feed of the process counters.
+curl -N http://localhost:8087/sse/rx-stats
+event: hello
+data: connected
+
+data: {"openConnections":0,"messagesIn":15,...}
+
+data: {"openConnections":0,"messagesIn":15,...}
+```
