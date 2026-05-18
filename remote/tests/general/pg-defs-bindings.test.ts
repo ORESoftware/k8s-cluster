@@ -223,3 +223,21 @@ test('each gleam runtime secret has an ExternalSecret backing it', async () => {
     );
   }
 });
+
+test('presence LISTEN/NOTIFY deployment receives a narrow RDS URL secret', async () => {
+  const statefulSet = await readRepoFile(
+    'remote/gleamlang-presence-server/k8s/40-statefulset.yaml',
+  );
+  const externalSecret = await readRepoFile(
+    'remote/gleamlang-presence-server/k8s/25-postgres-externalsecret.yaml',
+  );
+
+  assert.match(statefulSet, /name:\s*PG_DATABASE_URL[\s\S]*name:\s*presence-pg[\s\S]*key:\s*url/);
+  assert.match(statefulSet, /name:\s*PRESENCE_NOTIFY_SHARDS[\s\S]*value:\s*"256"/);
+  assert.match(externalSecret, /kind:\s*ExternalSecret/);
+  assert.match(externalSecret, /name:\s*presence-pg/);
+  assert.match(externalSecret, /namespace:\s*presence/);
+  assert.match(externalSecret, /secretKey:\s*url/);
+  assert.match(externalSecret, /key:\s*dd\/remote-dev\/rest-api-secrets/);
+  assert.match(externalSecret, /property:\s*AGENT_TASKS_RDS_DATABASE_URL/);
+});

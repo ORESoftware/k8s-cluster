@@ -139,7 +139,8 @@ that hashes upgrades across pods.
 | Var                              | Default                 | Notes                                                    |
 |----------------------------------|-------------------------|----------------------------------------------------------|
 | `PORT`                           | `8081`                  | HTTP/WS listen port.                                     |
-| `PG_DATABASE_URL`                | (in-memory)             | If set, opens a pog pool; otherwise in-memory fallback.  |
+| `PG_DATABASE_URL`                | (in-memory)             | If set, opens a pog pool and enables sharded LISTEN/NOTIFY; otherwise in-memory fallback. |
+| `PRESENCE_NOTIFY_SHARDS`         | `256`                   | Must match Postgres `presence.notify_shards`; the schema default is 256. |
 | `CLUSTER_PEERS`                  | (empty)                 | Comma-separated full node names. Wins over k8s mode.     |
 | `CLUSTER_NAMESPACE`              | `default`               | k8s namespace for pod discovery.                         |
 | `CLUSTER_LABEL_SELECTOR`         | `app=presence`          | k8s label selector.                                      |
@@ -157,6 +158,7 @@ kubectl apply -f k8s/00-namespace.yaml
 kubectl apply -f k8s/10-rbac.yaml
 # edit k8s/20-secret-cookie.yaml first — replace placeholder
 kubectl apply -f k8s/20-secret-cookie.yaml
+kubectl apply -f k8s/25-postgres-externalsecret.yaml
 kubectl apply -f k8s/30-headless-service.yaml
 kubectl apply -f k8s/40-statefulset.yaml
 kubectl apply -f k8s/50-network-policy.yaml

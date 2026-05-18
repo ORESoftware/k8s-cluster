@@ -8,7 +8,7 @@ use crate::error::AppResult;
 
 use super::handler::{HandlerRegistry, JobContext};
 use super::service::compute_next_run;
-use super::types::{JobRunStatus, ScheduleKind};
+use super::types::ScheduleKind;
 
 /// The dispatcher loop. Spawn this once per pod; PG-level SKIP LOCKED makes
 /// running N pods safe — each due job is claimed exactly once per tick.
@@ -103,12 +103,13 @@ impl SchedulerRunner {
             let interval_seconds: Option<i32> = row.try_get("interval_seconds")?;
             let one_shot_at: Option<chrono::DateTime<Utc>> = row.try_get("one_shot_at")?;
             let timezone: String = row.try_get("timezone")?;
+            let timeout_seconds: i32 = row.try_get("timeout_seconds")?;
 
             self.dispatch_one(
                 job_id, tenant_id, kind, name, payload,
                 max_attempts, retry_backoff_secs,
                 sched_kind, cron_expr.as_deref(), interval_seconds,
-                one_shot_at, &timezone,
+                one_shot_at, &timezone, timeout_seconds,
             ).await;
         }
 
@@ -130,6 +131,7 @@ impl SchedulerRunner {
         interval_seconds: Option<i32>,
         one_shot_at: Option<chrono::DateTime<Utc>>,
         timezone: &str,
+        timeout_seconds: i32,
     ) {
         // Determine current attempt number from prior failed runs since last success.
         let attempt = self.next_attempt(job_id).await.unwrap_or(1);
@@ -164,7 +166,16 @@ impl SchedulerRunner {
                     attempt,
                     idempotency_key: idem_key.clone(),
                 };
-                h.run(&ctx).await
+                let timeout = Duration::from_secs(timeout_seconds.max(1) as u64);
+                match tokio::time::timeout(timeout, h.run(&ctx)).await {
+                    Ok(result) => result,
+                    Err(_) => Err(crate::error::AppError::Provider {
+                        provider: "scheduler".into(),
+                        message: format!(
+                            "job kind={kind} name={name} exceeded timeout_seconds={timeout_seconds}"
+                        ),
+                    }),
+                }
             }
         };
 
@@ -206,7 +217,9 @@ impl SchedulerRunner {
                            WHERE id = $1"#,
                     ).bind(job_id).bind(next).execute(&self.pool).await;
                 } else {
-                    let backoff = exponential_backoff(retry_backoff_secs, attempt);
+                    let backoff = e
+                        .retry_after_seconds()
+                        .unwrap_or_else(|| exponential_backoff(retry_backoff_secs, attempt) as i64);
                     let retry_at = Utc::now() + chrono::Duration::seconds(backoff as i64);
                     let _ = sqlx::query(
                         r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()

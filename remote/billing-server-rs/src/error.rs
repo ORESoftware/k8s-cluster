@@ -26,6 +26,13 @@ pub enum AppError {
     #[error("provider error ({provider}): {message}")]
     Provider { provider: String, message: String },
 
+    #[error("provider rate limited ({provider}): retry after {retry_after_seconds}s: {message}")]
+    ProviderRateLimited {
+        provider: String,
+        retry_after_seconds: i64,
+        message: String,
+    },
+
     #[error("crypto error: {0}")]
     Crypto(String),
 
@@ -44,6 +51,7 @@ struct ErrBody<'a> {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        let retry_after = self.retry_after_seconds();
         let (status, code) = match &self {
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
@@ -52,6 +60,9 @@ impl IntoResponse for AppError {
             AppError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             AppError::LedgerInvariant(_) => (StatusCode::UNPROCESSABLE_ENTITY, "ledger_invariant"),
             AppError::Provider { .. } => (StatusCode::BAD_GATEWAY, "provider_error"),
+            AppError::ProviderRateLimited { .. } => {
+                (StatusCode::TOO_MANY_REQUESTS, "provider_rate_limited")
+            }
             AppError::Crypto(_) => (StatusCode::INTERNAL_SERVER_ERROR, "crypto_error"),
             AppError::Database(err) => {
                 tracing::error!(error = %err, "database error");
@@ -63,7 +74,25 @@ impl IntoResponse for AppError {
             }
         };
 
-        (status, Json(ErrBody { error: code, message: self.to_string() })).into_response()
+        let mut response =
+            (status, Json(ErrBody { error: code, message: self.to_string() })).into_response();
+        if let Some(seconds) = retry_after {
+            if let Ok(value) = seconds.to_string().parse() {
+                response.headers_mut().insert(axum::http::header::RETRY_AFTER, value);
+            }
+        }
+        response
+    }
+}
+
+impl AppError {
+    pub fn retry_after_seconds(&self) -> Option<i64> {
+        match self {
+            AppError::ProviderRateLimited { retry_after_seconds, .. } => {
+                Some((*retry_after_seconds).clamp(1, 3600))
+            }
+            _ => None,
+        }
     }
 }
 

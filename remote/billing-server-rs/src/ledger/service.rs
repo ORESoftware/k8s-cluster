@@ -126,23 +126,38 @@ impl LedgerService {
             return Ok(existing);
         }
 
-        let tx_id = Uuid::new_v4();
-        sqlx::query(
+        let proposed_tx_id = Uuid::new_v4();
+        let inserted_tx_id = sqlx::query_scalar::<_, Uuid>(
             r#"
             INSERT INTO transactions
                 (id, tenant_id, shard_key, kind, idempotency_key, description, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+            RETURNING id
             "#,
         )
-        .bind(tx_id)
+        .bind(proposed_tx_id)
         .bind(draft.tenant_id)
         .bind(shard)
         .bind(&draft.kind)
         .bind(&draft.idempotency_key)
         .bind(&draft.description)
         .bind(&draft.metadata)
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await?;
+
+        let Some(tx_id) = inserted_tx_id else {
+            let existing: Uuid = sqlx::query_scalar(
+                r#"SELECT id FROM transactions
+                   WHERE tenant_id = $1 AND idempotency_key = $2"#,
+            )
+            .bind(draft.tenant_id)
+            .bind(&draft.idempotency_key)
+            .fetch_one(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            return Ok(existing);
+        };
 
         for p in &draft.postings {
             // Resolve account by code (per-tenant, per-currency unique).

@@ -29,6 +29,7 @@ pub struct ProviderConnection {
     pub expires_at: Option<DateTime<Utc>>,
     pub refreshed_at: Option<DateTime<Utc>>,
     pub last_sync_at: Option<DateTime<Utc>>,
+    pub last_sync_cursor: Option<String>,
     pub last_error: Option<String>,
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -83,7 +84,7 @@ impl ConnectionService {
                       auth_kind AS "auth_kind: ProviderAuthKind",
                       external_account_id, display_label,
                       status AS "status: ConnectionStatus", scopes,
-                      expires_at, refreshed_at, last_sync_at, last_error,
+                      expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                       metadata, created_at
             "#,
         )
@@ -138,7 +139,7 @@ impl ConnectionService {
                       auth_kind AS "auth_kind: ProviderAuthKind",
                       external_account_id, display_label,
                       status AS "status: ConnectionStatus", scopes,
-                      expires_at, refreshed_at, last_sync_at, last_error,
+                      expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                       metadata, created_at
             "#,
         )
@@ -194,7 +195,7 @@ impl ConnectionService {
                    auth_kind AS "auth_kind: ProviderAuthKind",
                    external_account_id, display_label,
                    status AS "status: ConnectionStatus", scopes,
-                   expires_at, refreshed_at, last_sync_at, last_error,
+                   expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections
             WHERE tenant_id = $1
@@ -229,17 +230,43 @@ impl ConnectionService {
         Ok(())
     }
 
-    pub async fn mark_synced(&self, connection_id: Uuid) -> AppResult<()> {
+    pub async fn mark_sync_failed(
+        &self,
+        connection_id: Uuid,
+        error: &str,
+    ) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE provider_connections
+            SET last_error = $2,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(connection_id)
+        .bind(error)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn mark_synced(
+        &self,
+        connection_id: Uuid,
+        next_cursor: Option<&str>,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE provider_connections
             SET last_sync_at = now(),
+                last_sync_cursor = COALESCE($2, last_sync_cursor),
                 last_error = NULL,
                 updated_at = now()
             WHERE id = $1
             "#,
         )
         .bind(connection_id)
+        .bind(next_cursor)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -256,7 +283,7 @@ impl ConnectionService {
                    auth_kind AS "auth_kind: ProviderAuthKind",
                    external_account_id, display_label,
                    status AS "status: ConnectionStatus", scopes,
-                   expires_at, refreshed_at, last_sync_at, last_error,
+                   expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections
             WHERE id = $1 AND tenant_id = $2
@@ -293,6 +320,7 @@ fn row_to_connection(row: &sqlx::postgres::PgRow) -> AppResult<ProviderConnectio
         expires_at: row.try_get("expires_at")?,
         refreshed_at: row.try_get("refreshed_at")?,
         last_sync_at: row.try_get("last_sync_at")?,
+        last_sync_cursor: row.try_get("last_sync_cursor")?,
         last_error: row.try_get("last_error")?,
         metadata: row.try_get("metadata")?,
         created_at: row.try_get("created_at")?,

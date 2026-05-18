@@ -11,6 +11,7 @@
 // Whenever the parser learns a new shape, please add a regression test below so silent breakage
 // in adapter codegen becomes a loud test failure instead.
 import { strict as assert } from "node:assert";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import { parseSchemaSql } from "./sql-contract.mjs";
@@ -161,4 +162,88 @@ test("parser preserves contract metadata across regenerations", () => {
   assert.equal(Array.isArray(table.checks), true);
   assert.equal(Array.isArray(table.indexes), true);
   assert.equal(Array.isArray(table.foreignKeys), true);
+});
+
+test("parser captures pg-def owned functions for live drift checks", () => {
+  const sql = `
+    create or replace function presence_notify_shards()
+    returns int
+    language plpgsql
+    stable
+    as $$
+    begin
+      return 256;
+    end;
+    $$;
+  `;
+  const schema = parseSchemaSql(sql);
+  assert.equal(schema.routines.length, 1);
+  const [routine] = schema.routines;
+  assert.equal(routine.name, "presence_notify_shards");
+  assert.equal(routine.identityArguments, "");
+  assert.equal(routine.returns, "int");
+  assert.equal(routine.language, "plpgsql");
+  assert.equal(routine.volatility, "stable");
+  assert.match(routine.bodySql, /return 256/);
+});
+
+test("parser captures pg-def owned triggers for LISTEN/NOTIFY drift checks", () => {
+  const sql = `
+    create trigger presence_conv_members_notify
+      after insert or update or delete on presence_conv_members
+      for each row
+      execute function notify_presence_member_change();
+  `;
+  const schema = parseSchemaSql(sql);
+  assert.equal(schema.triggers.length, 1);
+  const [trigger] = schema.triggers;
+  assert.equal(trigger.name, "presence_conv_members_notify");
+  assert.equal(trigger.tableName, "presence_conv_members");
+  assert.equal(trigger.timing, "after");
+  assert.deepEqual(trigger.events, ["delete", "insert", "update"]);
+  assert.equal(trigger.orientation, "row");
+  assert.equal(trigger.functionName, "notify_presence_member_change");
+});
+
+test("parser captures canonical presence LISTEN/NOTIFY functions and trigger", async () => {
+  const sql = await readFile(new URL("../schema/schema.sql", import.meta.url), "utf8");
+  const schema = parseSchemaSql(sql);
+
+  const routineNames = schema.routines
+    .map((routine) => routine.name)
+    .filter((name) =>
+      [
+        "presence_notify_shards",
+        "notify_presence_member_change",
+        "presence_shard_of",
+      ].includes(name),
+    )
+    .sort();
+  assert.deepEqual(routineNames, [
+    "notify_presence_member_change",
+    "presence_notify_shards",
+    "presence_shard_of",
+  ]);
+
+  const notifyRoutine = schema.routines.find(
+    (routine) => routine.name === "notify_presence_member_change",
+  );
+  assert.equal(notifyRoutine?.language, "plpgsql");
+  assert.equal(notifyRoutine?.volatility, "volatile");
+  assert.match(notifyRoutine?.bodySql ?? "", /perform\s+pg_notify\(v_channel,\s*v_payload\)/i);
+
+  const shardRoutine = schema.routines.find((routine) => routine.name === "presence_shard_of");
+  assert.equal(shardRoutine?.returns, "int");
+  assert.equal(shardRoutine?.language, "sql");
+  assert.equal(shardRoutine?.volatility, "stable");
+  assert.match(shardRoutine?.bodySql ?? "", /presence_notify_shards\(\)/);
+
+  const trigger = schema.triggers.find(
+    (item) => item.name === "presence_conv_members_notify",
+  );
+  assert.equal(trigger?.tableName, "presence_conv_members");
+  assert.equal(trigger?.timing, "after");
+  assert.deepEqual(trigger?.events, ["delete", "insert", "update"]);
+  assert.equal(trigger?.orientation, "row");
+  assert.equal(trigger?.functionName, "notify_presence_member_change");
 });

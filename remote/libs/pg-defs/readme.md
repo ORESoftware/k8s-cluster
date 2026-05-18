@@ -42,6 +42,15 @@ By default, diffs only report tables owned by `schema/schema.sql`. Use
 `--include-extra-tables` when you intentionally want an audit of unrelated public tables in a shared
 database.
 
+Connection lookup defaults to the shared remote RDS env names first:
+`AGENT_TASKS_RDS_DATABASE_URL`, `RDS_DATABASE_URL`, `DATABASE_URL`, then `PG_DATABASE_URL`. Pass
+`--database-url-env=NAME` when auditing a service-specific database.
+
+The live diff also checks pg-def owned routines and triggers, including the sharded
+`presence_conv_members` LISTEN/NOTIFY contract (`presence_notify_shards`,
+`notify_presence_member_change`, `presence_shard_of`, and `presence_conv_members_notify`). This is
+intentional: a table-only diff can miss the exact drift that breaks presence cache fan-out.
+
 For a parser-only sanity check that opens no database connection:
 
 ```sh

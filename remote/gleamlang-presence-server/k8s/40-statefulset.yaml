@@ -57,12 +57,14 @@ spec:
               value: "5000"
             - name: ERL_AFLAGS
               value: "-kernel inet_dist_listen_min 9100 inet_dist_listen_max 9100"
-            # Uncomment for real Postgres:
-            # - name: PG_DATABASE_URL
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: presence-pg
-            #       key: url
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: presence-pg
+                  key: url
+                  optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
           ports:
             - name: ws
               containerPort: 8081

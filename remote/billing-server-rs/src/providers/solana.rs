@@ -25,6 +25,7 @@
 //!   * For each new signature, `getTransaction` -> parse SPL token transfers
 //!     -> normalize to canonical posting -> write through LedgerService.
 
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -33,19 +34,38 @@ pub struct SolanaWalletCredential {
     pub pubkey_b58: String,
     /// SPL token mints the tenant has declared interest in tracking on this
     /// wallet. Defaults to ["USDC", "SOL"] if empty.
+    #[serde(default)]
     pub tracked_mints: Vec<String>,
 }
 
 /// Verify an ed25519 signature against a 32-byte Solana pubkey.
 ///
-/// TODO(real impl): use ed25519-dalek or the `solana-sdk` crate. We deliberately
-/// keep the heavy `solana-sdk` dep out of the scaffold to keep build times low;
-/// adding it is a one-line `cargo add` when the rest of the wallet-connect
-/// flow lands.
 pub fn verify_wallet_signature(
-    _pubkey_b58: &str,
-    _challenge: &str,
-    _signature_b58: &str,
+    pubkey_b58: &str,
+    challenge: &str,
+    signature_b58: &str,
 ) -> Result<(), String> {
-    Err("stub: implement ed25519 verification against pubkey".into())
+    if challenge.trim().is_empty() {
+        return Err("challenge must not be empty".into());
+    }
+
+    let pubkey = bs58::decode(pubkey_b58)
+        .into_vec()
+        .map_err(|e| format!("invalid Solana pubkey base58: {e}"))?;
+    let pubkey: [u8; 32] = pubkey
+        .try_into()
+        .map_err(|_| "Solana pubkey must decode to 32 bytes".to_string())?;
+
+    let signature = bs58::decode(signature_b58)
+        .into_vec()
+        .map_err(|e| format!("invalid Solana signature base58: {e}"))?;
+    let signature: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| "Solana signature must decode to 64 bytes".to_string())?;
+
+    let key = VerifyingKey::from_bytes(&pubkey)
+        .map_err(|e| format!("invalid ed25519 pubkey: {e}"))?;
+    let sig = Signature::from_bytes(&signature);
+    key.verify(challenge.as_bytes(), &sig)
+        .map_err(|_| "wallet signature did not verify challenge".to_string())
 }

@@ -6,9 +6,13 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::locks::{AcquireRequest, LockService, ReleaseRequest};
 use crate::providers::connection::ConnectionService;
-use crate::providers::ProviderKind;
+use crate::providers::solana::SolanaWalletCredential;
+use crate::providers::{ConnectionStatus, ProviderKind};
 use crate::scheduler::{JobContext, JobHandler, JobOutput};
 use crate::shard::Region;
+use crate::solana::SolanaClient;
+
+use super::rate_limit::ProviderRateLimiter;
 
 #[derive(Debug, Deserialize)]
 struct SyncPayload {
@@ -23,6 +27,8 @@ pub struct ConnectionSyncJob {
     pool: sqlx::PgPool,
     locks: LockService,
     connections: ConnectionService,
+    rate_limiter: ProviderRateLimiter,
+    solana: SolanaClient,
 }
 
 impl ConnectionSyncJob {
@@ -30,8 +36,10 @@ impl ConnectionSyncJob {
         pool: sqlx::PgPool,
         locks: LockService,
         connections: ConnectionService,
+        solana: SolanaClient,
     ) -> Self {
-        Self { pool, locks, connections }
+        let rate_limiter = ProviderRateLimiter::new(pool.clone());
+        Self { pool, locks, connections, rate_limiter, solana }
     }
 }
 
@@ -50,6 +58,13 @@ impl JobHandler for ConnectionSyncJob {
             .connections
             .get(tenant_id, payload.connection_id)
             .await?;
+
+        if conn.status != ConnectionStatus::Active {
+            return Err(AppError::BadRequest(format!(
+                "connection {} is not active (status={:?})",
+                conn.id, conn.status
+            )));
+        }
 
         // Acquire per-connection lease so concurrent triggers (webhook arrives
         // mid on-demand sync, etc.) don't double-sync the same window.
@@ -72,20 +87,46 @@ impl JobHandler for ConnectionSyncJob {
             )
             .await?;
 
-        // Per-provider sync. All stubbed today — return a "not-implemented"
-        // structured result so the contract is real but obvious.
-        let sync_result = match conn.provider {
-            ProviderKind::Stripe           => sync_stripe(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::Paypal           => sync_paypal(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::Braintree        => sync_braintree(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::CoinbaseCommerce => sync_coinbase(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::CoinbasePrime    => sync_coinbase(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::PlaidBank        => sync_plaid(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::SwiftWire        => sync_swift(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::AchDirect        => sync_ach(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::Wise             => sync_wise(&conn, payload.cursor.as_deref()).await,
-            ProviderKind::SolanaWallet     => sync_solana(&conn, payload.cursor.as_deref()).await,
-        };
+        let sync_result = async {
+            let reservation = self.rate_limiter.reserve(tenant_id, conn.provider).await?;
+            if !reservation.allowed {
+                return Err(AppError::ProviderRateLimited {
+                    provider: provider_tag(conn.provider).to_string(),
+                    retry_after_seconds: reservation.retry_after_seconds,
+                    message: format!(
+                        "sync budget exhausted; retry after {}s",
+                        reservation.retry_after_seconds
+                    ),
+                });
+            }
+
+            tracing::debug!(
+                tenant = %tenant_id,
+                connection_id = %conn.id,
+                provider = provider_tag(conn.provider),
+                remaining = reservation.remaining,
+                window_start = %reservation.window_start,
+                "reserved provider sync budget"
+            );
+
+            let cursor = payload.cursor.as_deref().or(conn.last_sync_cursor.as_deref());
+
+            // Per-provider sync. All stubbed today — return a structured
+            // result so the scheduler/retry/lease contract is real.
+            match conn.provider {
+                ProviderKind::Stripe           => sync_stripe(&conn, cursor).await,
+                ProviderKind::Paypal           => sync_paypal(&conn, cursor).await,
+                ProviderKind::Braintree        => sync_braintree(&conn, cursor).await,
+                ProviderKind::CoinbaseCommerce => sync_coinbase(&conn, cursor).await,
+                ProviderKind::CoinbasePrime    => sync_coinbase(&conn, cursor).await,
+                ProviderKind::PlaidBank        => sync_plaid(&conn, cursor).await,
+                ProviderKind::SwiftWire        => sync_swift(&conn, cursor).await,
+                ProviderKind::AchDirect        => sync_ach(&conn, cursor).await,
+                ProviderKind::Wise             => sync_wise(&conn, cursor).await,
+                ProviderKind::SolanaWallet     => sync_solana(&self.solana, &conn, cursor).await,
+            }
+        }
+        .await;
 
         // Always release the lease before returning.
         let _ = self
@@ -101,7 +142,9 @@ impl JobHandler for ConnectionSyncJob {
 
         match sync_result {
             Ok(summary) => {
-                self.connections.mark_synced(conn.id).await?;
+                self.connections
+                    .mark_synced(conn.id, summary.next_cursor.as_deref())
+                    .await?;
                 Ok(JobOutput::with_data(
                     summary.summary,
                     serde_json::json!({
@@ -114,12 +157,17 @@ impl JobHandler for ConnectionSyncJob {
                 ))
             }
             Err(e) => {
+                let is_rate_limited = matches!(e, AppError::ProviderRateLimited { .. });
                 let err = e.to_string();
-                let _ = self.connections.mark_failed(conn.id, &err).await;
-                Err(AppError::Provider {
-                    provider: provider_tag(conn.provider).to_string(),
-                    message: err,
-                })
+                let _ = self.connections.mark_sync_failed(conn.id, &err).await;
+                if is_rate_limited {
+                    Err(e)
+                } else {
+                    Err(AppError::Provider {
+                        provider: provider_tag(conn.provider).to_string(),
+                        message: err,
+                    })
+                }
             }
         }
     }
@@ -218,13 +266,63 @@ async fn sync_wise(
 }
 
 async fn sync_solana(
-    _conn: &ProviderConnection,
-    _cursor: Option<&str>,
+    solana: &SolanaClient,
+    conn: &ProviderConnection,
+    cursor: Option<&str>,
 ) -> AppResult<SyncSummary> {
     // Solana provider is read-only by design (observer model). The "sync"
     // here is reading recent USDC/SOL transactions for tracked wallets and
     // recording them in the ledger.
-    not_implemented("solana_read_only")
+    let wallet = solana_wallet_from_connection(conn)?;
+    let signatures = solana
+        .get_signatures_for_address(&wallet.pubkey_b58, None, cursor, 100)
+        .await?;
+    let next_cursor = signatures
+        .first()
+        .map(|info| info.signature.clone())
+        .or_else(|| cursor.map(str::to_string));
+
+    Ok(SyncSummary {
+        new_postings: 0,
+        events_processed: signatures.len() as i64,
+        next_cursor,
+        summary: format!(
+            "solana wallet {} finalized signatures scanned; SPL posting parser pending",
+            wallet.pubkey_b58
+        ),
+    })
+}
+
+fn solana_wallet_from_connection(
+    conn: &ProviderConnection,
+) -> AppResult<SolanaWalletCredential> {
+    if let Ok(wallet) = serde_json::from_value::<SolanaWalletCredential>(conn.metadata.clone()) {
+        validate_solana_pubkey(&wallet.pubkey_b58)?;
+        return Ok(wallet);
+    }
+
+    let pubkey_b58 = conn.external_account_id.clone().ok_or_else(|| {
+        AppError::BadRequest(
+            "solana_wallet connection requires metadata.pubkey_b58 or external_account_id".into(),
+        )
+    })?;
+    validate_solana_pubkey(&pubkey_b58)?;
+    Ok(SolanaWalletCredential {
+        pubkey_b58,
+        tracked_mints: vec!["USDC".into(), "SOL".into()],
+    })
+}
+
+fn validate_solana_pubkey(pubkey_b58: &str) -> AppResult<()> {
+    let bytes = bs58::decode(pubkey_b58).into_vec().map_err(|e| {
+        AppError::BadRequest(format!("invalid Solana wallet pubkey: {e}"))
+    })?;
+    if bytes.len() != 32 {
+        return Err(AppError::BadRequest(
+            "Solana wallet pubkey must decode to 32 bytes".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn not_implemented(provider: &str) -> AppResult<SyncSummary> {

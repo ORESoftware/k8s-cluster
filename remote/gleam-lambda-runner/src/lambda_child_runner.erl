@@ -1,6 +1,6 @@
 -module(lambda_child_runner).
 
--export([invoke/5, metrics/0, destroy/1]).
+-export([invoke/5, invoke_definition/6, metrics/0, destroy/1]).
 
 -define(SERVER, lambda_child_runner_manager).
 -define(WORKERS, lambda_child_runner_workers).
@@ -18,20 +18,50 @@ invoke(Command0, Identifier0, Payload0, IdleMs0, TimeoutMs0) ->
     reap_idle(now_ms()),
     case load_function_definition(Identifier) of
         {ok, DefinitionJson} ->
-            case command_for_definition(FallbackCommand, DefinitionJson) of
-                {ok, Command} ->
-                    Runtime = runtime_from_definition(DefinitionJson),
-                    Containerized = json_bool_field(DefinitionJson, <<"containerized">>, false),
-                    case worker_key(Identifier, DefinitionJson, Runtime, Containerized) of
-                        {ok, WorkerKey} ->
-                            IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
-                            TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
-                            Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
-                            bump(invocations_total, 1),
-                            invoke_worker(Command, WorkerKey, Payload, IdleMs, TimeoutMs);
-                        {error, Reason} ->
-                            {error, Reason}
-                    end;
+            invoke_loaded_definition(
+                FallbackCommand,
+                Identifier,
+                DefinitionJson,
+                RequestPayload,
+                IdleMs0,
+                TimeoutMs0
+            );
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+invoke_definition(Command0, Identifier0, DefinitionJson0, Payload0, IdleMs0, TimeoutMs0) ->
+    ensure_tables(),
+    FallbackCommand = to_binary(Command0),
+    Identifier = to_binary(Identifier0),
+    DefinitionJson = normalize_json_payload(to_binary(DefinitionJson0)),
+    RequestPayload0 = normalize_json_payload(to_binary(Payload0)),
+    RequestPayload = case RequestPayload0 of
+        <<>> -> <<"null">>;
+        _ -> RequestPayload0
+    end,
+    reap_idle(now_ms()),
+    invoke_loaded_definition(
+        FallbackCommand,
+        Identifier,
+        DefinitionJson,
+        RequestPayload,
+        IdleMs0,
+        TimeoutMs0
+    ).
+
+invoke_loaded_definition(FallbackCommand, Identifier, DefinitionJson, RequestPayload, IdleMs0, TimeoutMs0) ->
+    case command_for_definition(FallbackCommand, DefinitionJson) of
+        {ok, Command} ->
+            Runtime = runtime_from_definition(DefinitionJson),
+            Containerized = json_bool_field(DefinitionJson, <<"containerized">>, false),
+            case worker_key(Identifier, DefinitionJson, Runtime, Containerized) of
+                {ok, WorkerKey} ->
+                    IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
+                    TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
+                    Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
+                    bump(invocations_total, 1),
+                    invoke_worker(Command, WorkerKey, Payload, IdleMs, TimeoutMs);
                 {error, Reason} ->
                     {error, Reason}
             end;

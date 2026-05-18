@@ -26,5 +26,6 @@
 //! `sync_balance_transactions` lands incrementally.
 
 pub mod handler;
+pub mod rate_limit;
 
 pub use handler::ConnectionSyncJob;

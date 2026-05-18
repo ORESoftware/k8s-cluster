@@ -7,7 +7,7 @@
   "scripts": {
     "generate": "node src/generate.mjs",
     "check": "node src/generate.mjs --check",
-    "test": "node --test src/",
+    "test": "node --test \"src/**/*.test.mjs\"",
     "print:sql": "node src/generate.mjs --print-sql",
     "parse:sql": "node src/diff.mjs --parse-only",
     "diff": "node src/diff.mjs",

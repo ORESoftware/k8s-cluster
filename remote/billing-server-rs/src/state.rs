@@ -24,6 +24,7 @@ pub struct AppState {
     pub vendors: VendorService,
     pub connections: ConnectionService,
     pub locks: LockService,
+    pub solana_client: SolanaClient,
     pub anchor: Arc<AnchorService>,
     pub verifier: Arc<Verifier>,
     pub scheduler: Arc<crate::scheduler::SchedulerService>,
@@ -46,7 +47,7 @@ impl AppState {
 
         let solana_client = SolanaClient::new(&cfg);
         let anchor = Arc::new(AnchorService::new(pool.clone(), solana_client.clone()));
-        let verifier = Arc::new(Verifier::new(pool.clone(), solana_client));
+        let verifier = Arc::new(Verifier::new(pool.clone(), solana_client.clone()));
 
         Self {
             cfg,
@@ -58,6 +59,7 @@ impl AppState {
             vendors,
             connections,
             locks,
+            solana_client,
             anchor,
             verifier,
             scheduler,

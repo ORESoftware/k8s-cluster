@@ -165,11 +165,9 @@ pub fn stop(listen: PgListen) -> Nil {
 /// hash. Lets the conversations actor (and tests) reason about which
 /// channel a given conv will be NOTIFY'd on.
 pub fn shard_of(conv_id: String, n_shards: Int) -> Int {
-  // Mirrors postgres `abs(hashtext(...)::bigint) % n`. We delegate to the
-  // FFI because the Erlang implementation of `hashtext` isn't 1:1 with
-  // postgres, and we want exact agreement. The FFI implementation uses
-  // erlang:phash2 with a known compatible seed; if that drifts we can
-  // ask postgres directly via a one-off `select presence_shard_of(...)`.
+  // Mirrors postgres `presence_shard_of(uuid)`: strip hyphens, read the
+  // first 16 bits of the canonical UUID hex, then modulo the configured
+  // shard count. Keeping this deterministic avoids PG hashtext drift.
   shard_of_ffi(conv_id, n_shards)
 }
 
@@ -208,7 +206,10 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
             }
             Error(e) -> {
               io.println(
-                "pg_listen: LISTEN failed for " <> channel <> ": " <> string.inspect(e),
+                "pg_listen: LISTEN failed for "
+                <> channel
+                <> ": "
+                <> string.inspect(e),
               )
               state
             }
@@ -249,8 +250,7 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
     Raw(_channel, payload) -> {
       case decode_event(payload) {
         Ok(event) -> state.on_event(event)
-        Error(reason) ->
-          io.println("pg_listen: malformed payload: " <> reason)
+        Error(reason) -> io.println("pg_listen: malformed payload: " <> reason)
       }
       actor.continue(state)
     }
