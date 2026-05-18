@@ -599,6 +599,80 @@ func (value PresenceConvMembersGorm) Validate() error {
 	return nil
 }
 
+const PresenceUsersTable = "presence_users"
+const PresenceUsersSelectSQL = `select
+      id::text as id,
+      slug,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from presence_users`
+
+type PresenceUsersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey" json:"id"`
+	Slug string `gorm:"column:slug;type:text;not null" json:"slug"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (PresenceUsersGorm) TableName() string { return PresenceUsersTable }
+
+func (value PresenceUsersGorm) Validate() error {
+	return nil
+}
+
+const PresenceEventsTable = "presence_events"
+const PresenceEventsSelectSQL = `select
+      seq,
+      to_char(event_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as event_at,
+      op,
+      conv_id::text as conv_id,
+      user_id::text as user_id,
+      conv_slug,
+      user_slug,
+      conv_shard,
+      user_shard,
+      soft_deleted
+    from presence_events`
+
+var PresenceEventsOpValues = []string{"INSERT", "UPDATE", "DELETE"}
+
+type PresenceEventsGorm struct {
+	Seq int64 `gorm:"column:seq;type:bigserial;primaryKey" json:"seq"`
+	EventAt time.Time `gorm:"column:event_at;type:timestamptz;default:now();not null" json:"eventAt"`
+	Op string `gorm:"column:op;type:text;not null" json:"op"`
+	ConvId uuid.UUID `gorm:"column:conv_id;type:uuid;not null" json:"convId"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	ConvSlug string `gorm:"column:conv_slug;type:text;not null" json:"convSlug"`
+	UserSlug string `gorm:"column:user_slug;type:text;not null" json:"userSlug"`
+	ConvShard int32 `gorm:"column:conv_shard;type:integer;not null" json:"convShard"`
+	UserShard int32 `gorm:"column:user_shard;type:integer;not null" json:"userShard"`
+	SoftDeleted bool `gorm:"column:soft_deleted;type:boolean;default:false;not null" json:"softDeleted"`
+}
+
+func (PresenceEventsGorm) TableName() string { return PresenceEventsTable }
+
+func (value PresenceEventsGorm) Validate() error {
+	if !containsString(PresenceEventsOpValues, value.Op) { return errors.New("unsupported presence_events.op") }
+	return nil
+}
+
+const PresenceConsumerCheckpointsTable = "presence_consumer_checkpoints"
+const PresenceConsumerCheckpointsSelectSQL = `select
+      consumer_id,
+      last_seq,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from presence_consumer_checkpoints`
+
+type PresenceConsumerCheckpointsGorm struct {
+	ConsumerId string `gorm:"column:consumer_id;type:text;primaryKey" json:"consumerId"`
+	LastSeq int64 `gorm:"column:last_seq;type:bigint;default:0;not null" json:"lastSeq"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (PresenceConsumerCheckpointsGorm) TableName() string { return PresenceConsumerCheckpointsTable }
+
+func (value PresenceConsumerCheckpointsGorm) Validate() error {
+	return nil
+}
+
 func validateJSONString(value datatypes.JSON) bool {
 	if len(value) == 0 {
 		return true

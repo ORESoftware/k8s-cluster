@@ -265,3 +265,36 @@ model PresenceConvMembers {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("presence_conv_members")
 }
+
+model PresenceUsers {
+  id String @id @db.Uuid
+  slug String @db.Text
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([slug], map: "presence_users_slug_uq")
+  @@map("presence_users")
+}
+
+model PresenceEvents {
+  seq BigInt @id @default(autoincrement()) @db.BigInt
+  eventAt DateTime @map("event_at") @default(now()) @db.Timestamptz(6)
+  op String @db.Text
+  convId String @map("conv_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  convSlug String @map("conv_slug") @db.Text
+  userSlug String @map("user_slug") @db.Text
+  convShard Int @map("conv_shard")
+  userShard Int @map("user_shard")
+  softDeleted Boolean @map("soft_deleted") @default(false)
+  @@index([convShard, seq], map: "presence_events_conv_shard_seq_idx")
+  @@index([userShard, seq], map: "presence_events_user_shard_seq_idx")
+  @@index([eventAt], map: "presence_events_event_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("presence_events")
+}
+
+model PresenceConsumerCheckpoints {
+  consumerId String @map("consumer_id") @id @db.Text
+  lastSeq BigInt @map("last_seq") @default(0) @db.BigInt
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@map("presence_consumer_checkpoints")
+}

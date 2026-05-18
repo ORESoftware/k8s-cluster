@@ -1000,3 +1000,100 @@ class PresenceConvMembersInsert(BaseModel):
     updatedAt: datetime | None = None
     createdBy: UUID | None = None
     updatedBy: UUID | None = None
+
+class PresenceUsers(Base):
+    __tablename__ = "presence_users"
+    __table_args__ = (
+        Index("presence_users_slug_uq", "slug", unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    slug: Mapped[str] = mapped_column(Text(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class PresenceUsersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str
+    updatedAt: datetime
+
+class PresenceUsersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    slug: str
+    updatedAt: datetime | None = None
+
+PresenceEventsOp = Literal["INSERT", "UPDATE", "DELETE"]
+
+class PresenceEvents(Base):
+    __tablename__ = "presence_events"
+    __table_args__ = (
+        CheckConstraint("op in ('INSERT', 'UPDATE', 'DELETE')", name="presence_events_op_chk"),
+        Index("presence_events_conv_shard_seq_idx", "conv_shard", "seq"),
+        Index("presence_events_user_shard_seq_idx", "user_shard", "seq"),
+        Index("presence_events_event_at_idx", "event_at"),
+    )
+
+    seq: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    op: Mapped[str] = mapped_column(Text(), nullable=False)
+    conv_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    conv_slug: Mapped[str] = mapped_column(Text(), nullable=False)
+    user_slug: Mapped[str] = mapped_column(Text(), nullable=False)
+    conv_shard: Mapped[int] = mapped_column(Integer(), nullable=False)
+    user_shard: Mapped[int] = mapped_column(Integer(), nullable=False)
+    soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+
+class PresenceEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    seq: int
+    eventAt: datetime
+    op: PresenceEventsOp
+    convId: UUID
+    userId: UUID
+    convSlug: str
+    userSlug: str
+    convShard: int
+    userShard: int
+    softDeleted: bool
+
+class PresenceEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    seq: int
+    eventAt: datetime | None = None
+    op: PresenceEventsOp
+    convId: UUID
+    userId: UUID
+    convSlug: str
+    userSlug: str
+    convShard: int
+    userShard: int
+    softDeleted: bool | None = False
+
+class PresenceConsumerCheckpoints(Base):
+    __tablename__ = "presence_consumer_checkpoints"
+    __table_args__ = (
+    )
+
+    consumer_id: Mapped[str] = mapped_column(Text(), primary_key=True)
+    last_seq: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class PresenceConsumerCheckpointsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    consumerId: str
+    lastSeq: int
+    updatedAt: datetime
+
+class PresenceConsumerCheckpointsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    consumerId: str
+    lastSeq: int | None = 0
+    updatedAt: datetime | None = None

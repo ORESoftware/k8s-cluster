@@ -22,6 +22,9 @@ defmodule DdPgDefs do
     DdPgDefs.LambdaFunctions,
     DdPgDefs.PresenceConvs,
     DdPgDefs.PresenceConvMembers,
+    DdPgDefs.PresenceUsers,
+    DdPgDefs.PresenceEvents,
+    DdPgDefs.PresenceConsumerCheckpoints,
   ]
 
   @spec tables() :: [module()]
