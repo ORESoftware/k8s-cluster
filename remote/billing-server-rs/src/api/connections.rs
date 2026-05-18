@@ -4,9 +4,10 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::AppResult;
-use crate::providers::connection::{CreateConnection, ProviderConnection};
-use crate::scheduler::ScheduledJob;
+use crate::error::{AppError, AppResult};
+use crate::providers::connection::{CreateConnection, ProviderConnection, UpsertCredential};
+use crate::providers::ProviderAuthKind;
+use crate::scheduler::{CreateScheduledJob, ScheduleKind, ScheduledJob};
 use crate::state::AppState;
 
 pub async fn list(
@@ -81,4 +82,120 @@ pub async fn sync_now(
         job.id
     );
     Ok((StatusCode::ACCEPTED, Json(SyncNowResponse { job, runs_url })))
+}
+
+// --- API-key attach (Coinflow / Coinbase / Wise / any non-OAuth provider) --
+
+#[derive(Debug, Deserialize)]
+pub struct AttachApiKeyRequest {
+    /// Provider-specific credential payload, as JSON. The shape depends on
+    /// the provider (see each provider's `*Credential` struct, e.g.
+    /// `CoinflowCredential { api_key, merchant_id, environment,
+    /// webhook_validation_key }`). We seal these bytes as-is.
+    pub credential: serde_json::Value,
+    /// Optional: lets the caller stamp the connection with the merchant id
+    /// they just pasted, before sync ever runs.
+    pub external_account_id: Option<String>,
+    /// "production" | "sandbox" — recorded as connection metadata for ops
+    /// visibility; the provider's own credential payload is the actual
+    /// source of truth.
+    pub environment: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachApiKeyResponse {
+    pub connection_id: Uuid,
+    pub status: &'static str,
+    pub backstop_job_id: Uuid,
+}
+
+/// `POST /v1/tenants/{tenant_id}/connections/{connection_id}/attach-api-key`
+///
+/// For non-OAuth providers (Coinflow, Coinbase, Wise, etc.), the tenant
+/// pastes their API key + merchant id into our dashboard. We seal the
+/// provider-specific credential JSON, flip the connection to `active`,
+/// and auto-register the backstop sync job. Mirror of what the OAuth
+/// callback does for OAuth providers — same end state.
+pub async fn attach_api_key(
+    State(state): State<AppState>,
+    Path((tenant_id, connection_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<AttachApiKeyRequest>,
+) -> AppResult<(StatusCode, Json<AttachApiKeyResponse>)> {
+    let tenant = state.tenants.by_id(tenant_id).await?;
+    let region = tenant.region()?;
+
+    let conn = state.connections.get(tenant_id, connection_id).await?;
+
+    if conn.auth_kind != ProviderAuthKind::ApiKey {
+        return Err(AppError::BadRequest(format!(
+            "connection {connection_id} ({}) does not use api_key auth; \
+             use the OAuth flow instead",
+            conn.provider.tag()
+        )));
+    }
+
+    let plaintext = serde_json::to_vec(&req.credential).map_err(|e| AppError::BadRequest(
+        format!("credential must be a JSON object: {e}"),
+    ))?;
+
+    let _ = state
+        .connections
+        .attach_credential(
+            tenant_id,
+            connection_id,
+            UpsertCredential {
+                plaintext,
+                scopes: vec![],
+                expires_at: None,
+            },
+        )
+        .await?;
+
+    if let Some(ext) = req.external_account_id.as_deref() {
+        let _ = state.connections.set_external_account(connection_id, ext).await;
+    }
+
+    if let Some(env) = req.environment.as_deref() {
+        let _ = state
+            .connections
+            .merge_metadata(
+                connection_id,
+                serde_json::json!({ "environment": env }),
+            )
+            .await;
+    }
+
+    let backstop = state
+        .scheduler
+        .create(
+            Some(tenant_id),
+            Some(region),
+            CreateScheduledJob {
+                kind: "sync.connection".into(),
+                name: format!("backstop-conn-{}", connection_id),
+                schedule_kind: ScheduleKind::Interval,
+                cron_expr: None,
+                interval_seconds: Some(18_000),
+                one_shot_at: None,
+                timezone: "UTC".into(),
+                payload: serde_json::json!({
+                    "connection_id": connection_id,
+                    "trigger": "backstop"
+                }),
+                enabled: true,
+                max_attempts: 3,
+                retry_backoff_secs: 300,
+                timeout_seconds: 600,
+            },
+        )
+        .await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(AttachApiKeyResponse {
+            connection_id,
+            status: "active",
+            backstop_job_id: backstop.id,
+        }),
+    ))
 }

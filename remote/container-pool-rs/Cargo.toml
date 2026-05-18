@@ -6,6 +6,11 @@ edition = "2021"
 [dependencies]
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
+# Subscribe to the WAL gateway so pool config changes (either via
+# `app_config.trading.container_pools.*` or direct edits to
+# `container_pool_configs`) refresh pools within a second, instead of
+# waiting up to CONTAINER_POOL_CONFIG_REFRESH_SECONDS for the poll.
+dd-wal-consumer = { path = "../libs/wal-consumer-rs" }
 futures-util = "0.3"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }

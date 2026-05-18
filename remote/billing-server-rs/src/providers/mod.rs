@@ -15,10 +15,12 @@
 //! (sealing, replay, breaks, anchoring) is already in place.
 
 pub mod connection;
+pub mod oauth_common;
 pub mod stripe;
 pub mod paypal;
 pub mod braintree;
 pub mod coinbase;
+pub mod coinflow;
 pub mod plaid;
 pub mod swift;
 pub mod solana;
@@ -34,6 +36,7 @@ pub enum ProviderKind {
     Braintree,
     CoinbaseCommerce,
     CoinbasePrime,
+    Coinflow,
     PlaidBank,
     SwiftWire,
     AchDirect,
@@ -49,6 +52,7 @@ impl ProviderKind {
             Self::Braintree => "braintree",
             Self::CoinbaseCommerce => "coinbase_commerce",
             Self::CoinbasePrime => "coinbase_prime",
+            Self::Coinflow => "coinflow",
             Self::PlaidBank => "plaid_bank",
             Self::SwiftWire => "swift_wire",
             Self::AchDirect => "ach_direct",
@@ -60,7 +64,7 @@ impl ProviderKind {
     pub fn auth_kind(self) -> ProviderAuthKind {
         match self {
             Self::Stripe | Self::Paypal | Self::Braintree | Self::PlaidBank => ProviderAuthKind::OAuth2,
-            Self::CoinbaseCommerce | Self::CoinbasePrime | Self::Wise => ProviderAuthKind::ApiKey,
+            Self::CoinbaseCommerce | Self::CoinbasePrime | Self::Wise | Self::Coinflow => ProviderAuthKind::ApiKey,
             Self::SwiftWire | Self::AchDirect => ProviderAuthKind::BankCoordinates,
             Self::SolanaWallet => ProviderAuthKind::WalletPubkey,
         }

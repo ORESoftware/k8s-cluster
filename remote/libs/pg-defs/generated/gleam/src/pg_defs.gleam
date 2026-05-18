@@ -859,6 +859,100 @@ pub fn validate_presence_conv_members_status(value: String) -> Result(String, St
   }
 }
 
+pub const presence_users_table = "presence_users"
+pub const presence_users_select_sql = "select\n      id::text as id,\n      slug,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from presence_users"
+
+pub type PresenceUsersRow {
+  PresenceUsersRow(
+    id: String,
+    slug: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_presence_users_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("presence_users.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const presence_events_table = "presence_events"
+pub const presence_events_select_sql = "select\n      seq,\n      to_char(event_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as event_at,\n      op,\n      conv_id::text as conv_id,\n      user_id::text as user_id,\n      conv_slug,\n      user_slug,\n      conv_shard,\n      user_shard,\n      soft_deleted\n    from presence_events"
+
+pub type PresenceEventsOp {
+  PresenceEventsOpINSERT
+  PresenceEventsOpUPDATE
+  PresenceEventsOpDELETE
+}
+
+pub fn presence_events_op_to_string(value: PresenceEventsOp) -> String {
+  case value {
+    PresenceEventsOpINSERT -> "INSERT"
+    PresenceEventsOpUPDATE -> "UPDATE"
+    PresenceEventsOpDELETE -> "DELETE"
+  }
+}
+
+pub fn parse_presence_events_op(value: String) -> Result(PresenceEventsOp, String) {
+  case value {
+    "INSERT" -> Ok(PresenceEventsOpINSERT)
+    "UPDATE" -> Ok(PresenceEventsOpUPDATE)
+    "DELETE" -> Ok(PresenceEventsOpDELETE)
+    _ -> Error("unsupported presence_events.op: " <> value)
+  }
+}
+
+pub type PresenceEventsRow {
+  PresenceEventsRow(
+    seq: Int,
+    event_at: String,
+    op: String,
+    conv_id: String,
+    user_id: String,
+    conv_slug: String,
+    user_slug: String,
+    conv_shard: Int,
+    user_shard: Int,
+    soft_deleted: Bool,
+  )
+}
+
+pub fn validate_presence_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("presence_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_presence_events_op(value: String) -> Result(String, String) {
+  case list.contains(["INSERT", "UPDATE", "DELETE"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported presence_events.op: " <> value)
+  }
+}
+
+pub const presence_consumer_checkpoints_table = "presence_consumer_checkpoints"
+pub const presence_consumer_checkpoints_select_sql = "select\n      consumer_id,\n      last_seq,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from presence_consumer_checkpoints"
+
+pub type PresenceConsumerCheckpointsRow {
+  PresenceConsumerCheckpointsRow(
+    consumer_id: String,
+    last_seq: Int,
+    updated_at: String,
+  )
+}
+
+pub fn validate_presence_consumer_checkpoints_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("presence_consumer_checkpoints.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

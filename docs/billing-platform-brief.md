@@ -364,7 +364,107 @@ The client polls `runs_url` (or subscribes to a future "job completed"
 webhook) to see the sync result. The job typically completes within
 seconds; large backfills paginate via `cursor`.
 
-### 4. Notifications
+### 4. Provider integrations: what is real today
+
+| Provider | Auth model (real today) | Sync (poll path) | Webhooks | Notes |
+|---|---|---|---|---|
+| Stripe Connect | **OAuth** — `POST /oauth/token` | **Real** — `GET /balance_transactions` paginated, normalized to ledger postings (charge / refund / payout / payout_failure templates; unknown types → recon break) | Signature verification real (`Stripe-Signature` HMAC-SHA256), event normalizer is the same code path as the sync | Default backstop 5x/day |
+| **Coinflow** | **API key** — `POST /…/attach-api-key` (api_key + merchant_id + webhook_validation_key) | **Real** — `GET /api/merchant/webhooks` paginated with date window, normalized (cardPayment / cashAppPayment / achPayment / cryptoPayment / fee / refund / withdrawal / payout templates) | Signature verification real (HMAC-SHA256 with constant-time compare) | **VASP-licensed (Polish KRS:0001107350) — see "Regulatory leverage" below** |
+| PayPal Partner | **OAuth** — `POST /v1/oauth2/token` with HTTP Basic | Stubbed (next: `GET /v1/reporting/transactions`) | Stubbed | |
+| Braintree | **OAuth** — `POST /oauth/access_tokens` | Stubbed (next: GraphQL `searchTransactions`) | Stubbed | |
+| Plaid Link | **Public-token exchange** — `POST /item/public_token/exchange` plus `/link/token/create` to mint Link tokens | Stubbed (next: `POST /transactions/sync` with cursor) | Stubbed | |
+| Coinbase / Wise | Generic API-key path works (`attach-api-key`) | Stub | Stub | Same generic attach endpoint as Coinflow |
+| SWIFT / ACH / SolanaWallet | Bank coordinates / wallet pubkey paths stubbed | Stub | n/a | SolanaWallet stays observer-only |
+
+#### Regulatory leverage: why Coinflow specifically matters
+
+The original brief flagged a "regulatory cliff" between **record-keeping**
+(no licenses required, ship in weeks) and **money movement** (MSB licenses,
+2-3 years, millions of dollars). Coinflow lets us serve both worlds without
+crossing that cliff ourselves:
+
+- **Coinflow holds the VASP license** (Coinflow Sp.z.o.o., Polish KRS:0001107350).
+- **Tenants connect their Coinflow merchant account** to us via API key.
+- **We observe + record** every Coinflow pay-in, payout, refund, fee, and
+  crypto settlement in the ledger — same Model A posture as everything else.
+- **Money movement happens on Coinflow's license**, not ours.
+
+That means a B2B customer like `dancingdragons.cc` can: bill students via
+card / ACH / Cash App through Coinflow, pay coaches in crypto through
+Coinflow, and see a perfectly reconciled double-entry ledger in our system
+— without either of us needing to become an MSB or VASP.
+
+This generalizes: the new `attach-api-key` endpoint works for any
+similarly-shaped provider, so adding **Coinbase Commerce, Wise, Mercury,
+Bridge, or BVNK** is now hours of work, not weeks. The hard infrastructure
+(sealing, scheduler, lease, recon breaks, ledger normalization) is shared.
+
+#### Provider posting templates (canonical chart of accounts)
+
+The platform writes opinionated default account codes that every provider
+sync converges on. Tenants override these later via the (future)
+chart-of-accounts API.
+
+```
+clearing/stripe/<stripe_user_id>      asset    — funds in flight, charge → payout
+clearing/coinflow/<merchant_id>       asset    — funds in flight via Coinflow
+revenue/<provider>                    income   — gross customer charges
+expense/fees/<provider>               expense  — provider's processing fee
+expense/refunds/<provider>            expense  — refunds issued
+asset/bank/pending                    asset    — payouts in transit to operating bank
+```
+
+This is what lets `customer/billing-state` and `vendor/payable-state` give
+you a single answer per user even when the underlying money moved through
+multiple providers.
+
+**Endpoints by auth flow:**
+
+```
+# 1. OAuth redirect flow — Stripe, PayPal, Braintree
+GET  /v1/oauth/{provider}/start?tenant_id=<uuid>&return_to=<url>
+GET  /v1/oauth/{provider}/callback?code=...&state=...
+        → 200 { connection_id, status: "active", backstop_job_id, ... }
+
+# 2. Plaid Link flow — not OAuth, public_token exchange
+POST /v1/plaid/link-token       { tenant_id }                → { link_token }
+POST /v1/plaid/exchange         { tenant_id, public_token,
+                                  institution_id?, institution_name? }
+        → 200 { connection_id, status: "active", backstop_job_id, ... }
+
+# 3. API-key attach — Coinflow, Coinbase, Wise, any API-key provider
+POST /v1/tenants/{t}/connections
+        { provider: "coinflow", display_label, external_account_id? }
+        → 200 { id: <connection_id>, status: "pending", ... }
+POST /v1/tenants/{t}/connections/{connection_id}/attach-api-key
+        { credential: <provider-specific JSON>,
+          external_account_id?: "<merchant_id>",
+          environment?: "production" }
+        → 200 { connection_id, status: "active", backstop_job_id }
+
+# All three paths auto-register the backstop sync.connection job (5x/day).
+```
+
+**Webhook receivers:**
+
+```
+POST /v1/webhooks/stripe        (x-stripe-signature, HMAC-SHA256 — verified)
+POST /v1/webhooks/coinflow      (x-coinflow-signature, HMAC-SHA256 — verified, constant-time)
+POST /v1/webhooks/paypal        (paypal-transmission-sig — verification stubbed)
+POST /v1/webhooks/coinbase      (x-cc-webhook-signature — verification stubbed)
+POST /v1/webhooks/plaid         (plaid-verification        — verification stubbed)
+```
+
+**What "active" really means** after the callback returns:
+- Sealed credential is in `provider_connections.sealed_credential`
+- `external_account_id` is populated (e.g. Stripe `acct_…`)
+- A `sync.connection` scheduled job exists for this connection at
+  `interval_seconds=18000` (5x/day) — tenant can disable, change cadence,
+  or trigger on-demand at any time
+- The first `sync.connection` will execute on the next scheduler tick
+  (within 5 seconds)
+
+### 5. Notifications
 
 Rules + dispatches, evaluated by the `notifications.evaluate_rules` job.
 Built-in rule kinds:

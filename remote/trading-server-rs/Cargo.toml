@@ -6,6 +6,11 @@ edition = "2021"
 [dependencies]
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
+# Subscribes to the central WAL gateway's CDC stream so config changes
+# arrive sub-second instead of waiting up to TRADING_CONFIG_REFRESH_SECONDS
+# for the next poll. The poll loop is still on as a belt-and-braces
+# fallback (interval extended once CDC is enabled).
+dd-wal-consumer = { path = "../libs/wal-consumer-rs" }
 futures-util = "0.3"
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }

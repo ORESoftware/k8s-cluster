@@ -2058,6 +2058,118 @@ async fn run_reconcile_loop(state: AppState) {
     }
 }
 
+/// Subscribe to the WAL gateway and refresh the pool registry whenever:
+///   * the `app_config` row this server reads from changes (scope/key match), or
+///   * any row in `container_pool_configs` changes.
+///
+/// We don't try to be surgical (partial-apply just the changed pool). The
+/// existing `refresh_pool_configs` is cheap enough that a full reload is
+/// the simplest correct thing — the registry mutex already serializes
+/// readers against the swap.
+///
+/// The poll loop is still on as the fallback path. The CDC subscription
+/// just shortens the perceived edit-to-effect latency from O(refresh_secs)
+/// to O(WAL gateway poll interval) ≈ a few hundred ms.
+async fn run_cdc_refresh_subscription(state: AppState) {
+    let Some(nats) = state.nats.clone() else {
+        println!("container pool cdc subscription disabled: no NATS_URL configured");
+        return;
+    };
+    let jetstream = async_nats::jetstream::new(nats);
+    let app_config_scope = state.config.app_config_scope.clone();
+    let app_config_key = state.config.app_config_key.clone();
+    let stream_name = env_value("CONTAINER_POOL_CDC_STREAM", "CDC");
+
+    // Subscription 1 — app_config (filtered to the row we read from).
+    {
+        let task_state = state.clone();
+        let scope = app_config_scope.clone();
+        let key = app_config_key.clone();
+        let durable = format!(
+            "dd-container-pool-app-config-{}",
+            cdc_sanitize(&format!("{scope}.{key}"))
+        );
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream_name.clone())
+            .durable_name(durable.clone())
+            .filter_subject("cdc.public.app_config.>")
+            .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
+                let task_state = task_state.clone();
+                let scope = scope.clone();
+                let key = key.clone();
+                async move {
+                    let row_scope = change.column("scope").and_then(Value::as_str);
+                    let row_key = change.column("key").and_then(Value::as_str);
+                    if row_scope != Some(scope.as_str()) || row_key != Some(key.as_str()) {
+                        return;
+                    }
+                    cdc_trigger_refresh(&task_state, "app_config").await;
+                }
+            })
+            .await;
+        log_cdc_subscription_result(&durable, "cdc.public.app_config.>", result);
+    }
+
+    // Subscription 2 — container_pool_configs (no row filter, every change
+    // touches the registry).
+    {
+        let task_state = state.clone();
+        let durable = "dd-container-pool-table".to_string();
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream_name.clone())
+            .durable_name(durable.clone())
+            .filter_subject("cdc.public.container_pool_configs.>")
+            .start(&jetstream, move |_change: dd_wal_consumer::RowChange| {
+                let task_state = task_state.clone();
+                async move {
+                    cdc_trigger_refresh(&task_state, "container_pool_configs").await;
+                }
+            })
+            .await;
+        log_cdc_subscription_result(&durable, "cdc.public.container_pool_configs.>", result);
+    }
+}
+
+async fn cdc_trigger_refresh(state: &AppState, source: &str) {
+    if let Err(error) = refresh_pool_configs(state).await {
+        eprintln!("container pool CDC-driven refresh failed ({source}): {error}");
+        record_config_error(state, error).await;
+        return;
+    }
+    // Trigger a reconcile too so containers actually warm/cool in line
+    // with the new config without waiting for the regular reconcile tick.
+    reconcile_all(state).await;
+}
+
+fn cdc_sanitize(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
+fn log_cdc_subscription_result(
+    durable: &str,
+    subject: &str,
+    result: Result<tokio::task::JoinHandle<()>, dd_wal_consumer::Error>,
+) {
+    match result {
+        Ok(_join) => {
+            println!(
+                "container pool cdc subscription started: durable={durable} subject={subject}"
+            );
+        }
+        Err(error) => {
+            eprintln!(
+                "container pool cdc subscription failed to start ({error}); \
+                 falling back to poll-only refresh for {subject}"
+            );
+        }
+    }
+}
+
 async fn run_nats_loop(state: AppState) {
     let Some(client) = state.nats.clone() else {
         return;
@@ -2179,6 +2291,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::spawn(run_config_refresh_loop(state.clone()));
     tokio::spawn(run_reconcile_loop(state.clone()));
     tokio::spawn(run_nats_loop(state.clone()));
+    tokio::spawn(run_cdc_refresh_subscription(state.clone()));
 
     let app = Router::new()
         .route("/healthz", get(healthz))

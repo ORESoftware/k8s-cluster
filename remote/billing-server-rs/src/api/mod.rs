@@ -58,14 +58,23 @@ pub fn build_router(state: AppState) -> Router {
             "/v1/tenants/{tenant_id}/connections/{connection_id}/sync",
             post(connections::sync_now),
         )
+        // API-key attach (for non-OAuth providers: Coinflow, Coinbase, Wise, ...)
+        .route(
+            "/v1/tenants/{tenant_id}/connections/{connection_id}/attach-api-key",
+            post(connections::attach_api_key),
+        )
         // OAuth handshake
         .route("/v1/oauth/{provider}/start",    get(oauth::start))
         .route("/v1/oauth/{provider}/callback", get(oauth::callback))
+        // Plaid Link (not OAuth — frontend exchanges public_token via this route)
+        .route("/v1/plaid/link-token",          post(oauth::plaid_link_token))
+        .route("/v1/plaid/exchange",            post(oauth::plaid_exchange))
         // Webhooks (one endpoint per provider)
         .route("/v1/webhooks/stripe",   post(webhooks::stripe))
         .route("/v1/webhooks/paypal",   post(webhooks::paypal))
         .route("/v1/webhooks/coinbase", post(webhooks::coinbase))
         .route("/v1/webhooks/plaid",    post(webhooks::plaid))
+        .route("/v1/webhooks/coinflow", post(webhooks::coinflow))
         // Public verification (no auth required — that's the point)
         .route(
             "/v1/verify/tenants/{tenant_id}/postings/{id}",

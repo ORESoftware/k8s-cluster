@@ -229,6 +229,83 @@ impl ConnectionService {
         Ok(())
     }
 
+    /// Shallow-merge new keys into `metadata`. Used by sync handlers to
+    /// persist cursors (e.g. `stripe_balance_cursor`) and small bits of
+    /// non-secret state. Never use this for secret material — that belongs
+    /// in `sealed_credential`.
+    pub async fn merge_metadata(
+        &self,
+        connection_id: Uuid,
+        patch: serde_json::Value,
+    ) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE provider_connections
+            SET metadata = metadata || $2,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(connection_id)
+        .bind(&patch)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Update the connection's `external_account_id` (set when an OAuth
+    /// callback first reveals e.g. the Stripe `stripe_user_id`).
+    pub async fn set_external_account(
+        &self,
+        connection_id: Uuid,
+        external_account_id: &str,
+    ) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE provider_connections
+            SET external_account_id = $2,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(connection_id)
+        .bind(external_account_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Look up the (single) pending connection for a tenant + provider, or
+    /// fall back to most-recently-created of any status. Used by the OAuth
+    /// callback to attach freshly-issued credentials to the connection the
+    /// user just started.
+    pub async fn find_pending_for_oauth(
+        &self,
+        tenant_id: Uuid,
+        provider: ProviderKind,
+    ) -> AppResult<Option<ProviderConnection>> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, tenant_id, provider AS "provider: ProviderKind",
+                   auth_kind AS "auth_kind: ProviderAuthKind",
+                   external_account_id, display_label,
+                   status AS "status: ConnectionStatus", scopes,
+                   expires_at, refreshed_at, last_sync_at, last_error,
+                   metadata, created_at
+            FROM provider_connections
+            WHERE tenant_id = $1 AND provider = $2::provider_kind
+            ORDER BY (status = 'pending'::connection_status) DESC,
+                     created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(provider.tag())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.as_ref().map(row_to_connection).transpose()
+    }
+
     pub async fn mark_synced(&self, connection_id: Uuid) -> AppResult<()> {
         sqlx::query(
             r#"

@@ -1,4 +1,5 @@
 import gleam/erlang/process
+import gleam/int
 import gleam/io
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision
@@ -19,6 +20,11 @@ pub fn main() -> Nil {
     |> supervisor.add(http_server.supervised(metrics_name))
     |> supervisor.start
 
-  io.println("dd gleam MCP server listening on :8090")
+  io.println(
+    "dd gleam MCP server listening on "
+    <> http_server.bind_host()
+    <> ":"
+    <> int.to_string(http_server.bind_port()),
+  )
   process.sleep_forever()
 }

@@ -3,6 +3,10 @@
 // - Generated ORM/client files are adapters only; never treat them as migration authority.
 // - This script only generates reviewable SQL. Never run or apply migrations automatically.
 // - Wait for explicit user approval before any database write in any environment.
+// - COVERAGE GAP: tables, columns, CHECK constraints, and indexes are diffed. Functions and
+//   triggers (e.g. notify_presence_member_change, presence_conv_members_notify) are NOT — they
+//   must be verified manually via psql. The sql-contract parser silently skips
+//   `create or replace function` / `create trigger` statements today.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";

@@ -1657,6 +1657,163 @@ pub fn validate_presence_conv_members_insert(value: &PresenceConvMembersInsert) 
     Ok(())
 }
 
+pub const PRESENCE_USERS_TABLE: &str = "presence_users";
+pub const PRESENCE_USERS_COLUMNS: &[&str] = &["id", "slug", "updated_at"];
+pub const PRESENCE_USERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from presence_users"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceUsersRow {
+    pub id: String,
+    pub slug: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceUsersInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_presence_users_row(value: &PresenceUsersRow) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn validate_presence_users_insert(value: &PresenceUsersInsert) -> Result<(), String> {
+    Ok(())
+}
+
+pub const PRESENCE_EVENTS_TABLE: &str = "presence_events";
+pub const PRESENCE_EVENTS_COLUMNS: &[&str] = &["seq", "event_at", "op", "conv_id", "user_id", "conv_slug", "user_slug", "conv_shard", "user_shard", "soft_deleted"];
+pub const PRESENCE_EVENTS_SELECT_SQL: &str = r###"select
+      seq,
+      to_char(event_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as event_at,
+      op,
+      conv_id::text as conv_id,
+      user_id::text as user_id,
+      conv_slug,
+      user_slug,
+      conv_shard,
+      user_shard,
+      soft_deleted
+    from presence_events"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PresenceEventsOp {
+    INSERT,
+    UPDATE,
+    DELETE,
+}
+
+impl PresenceEventsOp {
+    pub const VALUES: &'static [&'static str] = &["INSERT", "UPDATE", "DELETE"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::INSERT => "INSERT",
+            Self::UPDATE => "UPDATE",
+            Self::DELETE => "DELETE",
+        }
+    }
+}
+
+impl TryFrom<&str> for PresenceEventsOp {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "INSERT" => Ok(Self::INSERT),
+            "UPDATE" => Ok(Self::UPDATE),
+            "DELETE" => Ok(Self::DELETE),
+            _ => Err(format!("unsupported op: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceEventsRow {
+    pub seq: i64,
+    pub event_at: String,
+    pub op: String,
+    pub conv_id: String,
+    pub user_id: String,
+    pub conv_slug: String,
+    pub user_slug: String,
+    pub conv_shard: i32,
+    pub user_shard: i32,
+    pub soft_deleted: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceEventsInsert {
+    pub seq: Option<i64>,
+    pub event_at: Option<String>,
+    pub op: Option<String>,
+    pub conv_id: Option<String>,
+    pub user_id: Option<String>,
+    pub conv_slug: Option<String>,
+    pub user_slug: Option<String>,
+    pub conv_shard: Option<i32>,
+    pub user_shard: Option<i32>,
+    pub soft_deleted: Option<bool>,
+}
+
+pub fn validate_presence_events_row(value: &PresenceEventsRow) -> Result<(), String> {
+    if !["INSERT", "UPDATE", "DELETE"].contains(&(&value.op).as_str()) { return Err(format!("unsupported presence_events.op: {}", &value.op)); }
+    Ok(())
+}
+
+pub fn validate_presence_events_insert(value: &PresenceEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.op {
+        if !["INSERT", "UPDATE", "DELETE"].contains(&(value).as_str()) { return Err(format!("unsupported presence_events.op: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const PRESENCE_CONSUMER_CHECKPOINTS_TABLE: &str = "presence_consumer_checkpoints";
+pub const PRESENCE_CONSUMER_CHECKPOINTS_COLUMNS: &[&str] = &["consumer_id", "last_seq", "updated_at"];
+pub const PRESENCE_CONSUMER_CHECKPOINTS_SELECT_SQL: &str = r###"select
+      consumer_id,
+      last_seq,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from presence_consumer_checkpoints"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceConsumerCheckpointsRow {
+    pub consumer_id: String,
+    pub last_seq: i64,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceConsumerCheckpointsInsert {
+    pub consumer_id: Option<String>,
+    pub last_seq: Option<i64>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_presence_consumer_checkpoints_row(value: &PresenceConsumerCheckpointsRow) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn validate_presence_consumer_checkpoints_insert(value: &PresenceConsumerCheckpointsInsert) -> Result<(), String> {
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

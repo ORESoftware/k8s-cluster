@@ -19,7 +19,7 @@ node src/generate.mjs --check
 Run the parser/generator self-tests (no DB connection, no file writes):
 
 ```sh
-node --test src/
+node --test src/*.test.mjs
 ```
 
 Print SQL DDL for review or declarative diff tooling:
@@ -41,6 +41,13 @@ explicit approval before any database write.
 By default, diffs only report tables owned by `schema/schema.sql`. Use
 `--include-extra-tables` when you intentionally want an audit of unrelated public tables in a shared
 database.
+
+> **Coverage gap.** `diff.mjs` compares tables, columns, CHECK constraints, and indexes, but **not**
+> functions or triggers. The `notify_presence_member_change()` trigger function and the
+> `presence_conv_members_notify` trigger that ship in `schema/schema.sql` are therefore invisible
+> to the diff — verify them out-of-band with `psql` (or `\df+ notify_presence_member_change` /
+> `\d+ presence_conv_members`) until that gap is closed. The SQL contract parser silently skips
+> `create or replace function` / `create trigger` statements today.
 
 For a parser-only sanity check that opens no database connection:
 

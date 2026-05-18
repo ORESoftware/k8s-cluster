@@ -385,6 +385,7 @@ version = "0.1.0"
 dependencies = [
  "async-nats",
  "axum",
+ "dd-wal-consumer",
  "futures-util",
  "rustls",
  "serde",
@@ -393,6 +394,17 @@ dependencies = [
  "tokio-postgres",
  "tokio-postgres-rustls",
  "webpki-roots",
+]
+
+[[package]]
+name = "dd-wal-consumer"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

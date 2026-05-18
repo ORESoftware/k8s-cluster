@@ -40,8 +40,14 @@ PG_DB="presence"
 NATS_CONTAINER="presence-local-nats"
 NATS_HOST_PORT=4222
 
+# The central CDC gateway streams from the shared pg-defs Postgres to the
+# JetStream `CDC` stream that every Rust service subscribes to (see
+# `remote/wal-gateway-rs` and `remote/libs/wal-consumer-rs`).
+GATEWAY_PORT=8104
+
 ENABLE_PG=0
 ENABLE_NATS=0
+ENABLE_GATEWAY=0
 
 mkdir -p "$DATA_DIR/logs" "$DATA_DIR/pids"
 
@@ -125,17 +131,40 @@ start_pg() {
     return
   fi
   echo "==> starting postgres container $PG_CONTAINER on :$PG_HOST_PORT"
+  # We need wal_level=logical AND the wal2json extension installed so
+  # pg_wal.gleam can attach a logical-replication slot with JSON output.
+  # The official `postgres:16` image is debian-based; the wal2json
+  # package lives in apt as `postgresql-16-wal2json`. We install it
+  # before the server is started by injecting into the image's standard
+  # `/docker-entrypoint-initdb.d/` initialization hook isn't reliable
+  # (it runs as the postgres user, not root). Simpler: pull the image,
+  # spawn a one-shot apt-get container to install the package, then start
+  # the real server with that volume.
+  #
+  # In practice the easiest reliable path is: start postgres, then run
+  # `apt-get install` inside the running container as root, then RELOAD
+  # — wal2json is a shared library extension so it doesn't require a
+  # restart to become available.
   docker run -d --rm --name "$PG_CONTAINER" \
     -e POSTGRES_PASSWORD="$PG_PASS" -e POSTGRES_DB="$PG_DB" \
-    -p "$PG_HOST_PORT":5432 postgres:16-alpine >/dev/null
+    -p "$PG_HOST_PORT":5432 \
+    postgres:16 \
+    postgres -c wal_level=logical -c max_replication_slots=10 \
+             -c max_wal_senders=10 -c max_slot_wal_keep_size=100MB \
+    >/dev/null
   # Wait for readiness.
-  for _ in {1..20}; do
+  for _ in {1..30}; do
     if docker exec -e PGPASSWORD="$PG_PASS" "$PG_CONTAINER" \
          pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null 2>&1; then
       break
     fi
     sleep 0.5
   done
+  echo "==> installing wal2json"
+  docker exec -u root "$PG_CONTAINER" sh -c \
+    "apt-get -qq update && apt-get -qq install -y postgresql-16-wal2json" \
+    >"$DATA_DIR/logs/pg-wal2json-install.log" 2>&1 || \
+    echo "    (apt install failed; pg_wal will run disabled — see logs)"
   echo "==> applying schema"
   docker cp ../libs/pg-defs/schema/schema.sql "$PG_CONTAINER":/schema.sql >/dev/null
   docker exec -e PGPASSWORD="$PG_PASS" "$PG_CONTAINER" \
@@ -148,10 +177,59 @@ start_nats() {
     echo "==> nats container $NATS_CONTAINER already running"
     return
   fi
-  echo "==> starting nats container $NATS_CONTAINER on :$NATS_HOST_PORT"
+  echo "==> starting nats container $NATS_CONTAINER on :$NATS_HOST_PORT (jetstream enabled)"
+  # `-js` turns on JetStream, which the wal-gateway uses for the durable
+  # `CDC` stream and every Rust consumer reads from via durable pull
+  # consumers. Without `-js` the gateway will refuse to start.
   docker run -d --rm --name "$NATS_CONTAINER" \
-    -p "$NATS_HOST_PORT":4222 nats:2-alpine >/dev/null
+    -p "$NATS_HOST_PORT":4222 nats:2-alpine -js >/dev/null
   sleep 1
+}
+
+start_gateway() {
+  # Run the central WAL→JetStream gateway against the local PG and NATS
+  # containers. Single process; the K8s deployment runs N replicas and
+  # the gateway internally leader-elects via a pg_advisory_lock, but for
+  # local dev one replica is plenty.
+  local gateway_dir="../wal-gateway-rs"
+  local pid_file="$DATA_DIR/pids/wal-gateway.pid"
+  local log_file="$DATA_DIR/logs/wal-gateway.log"
+  if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    echo "==> wal-gateway already running (pid $(cat "$pid_file"))"
+    return
+  fi
+  if [[ ! -d "$gateway_dir" ]]; then
+    echo "==> wal-gateway-rs not found at $gateway_dir; skipping"
+    return
+  fi
+  echo "==> building wal-gateway-rs (cargo build --release)"
+  (cd "$gateway_dir" && cargo build --release) \
+    >"$DATA_DIR/logs/wal-gateway-build.log" 2>&1 || {
+      echo "    (cargo build failed — see $DATA_DIR/logs/wal-gateway-build.log)"
+      return
+    }
+  echo "==> starting wal-gateway on :$GATEWAY_PORT"
+  env \
+    WAL_GATEWAY_DATABASE_URL="postgres://$PG_USER:$PG_PASS@127.0.0.1:$PG_HOST_PORT/$PG_DB?sslmode=disable" \
+    WAL_GATEWAY_NATS_URL="nats://127.0.0.1:$NATS_HOST_PORT" \
+    PORT="$GATEWAY_PORT" \
+    WAL_GATEWAY_POLL_MS=250 \
+    nohup "$gateway_dir/target/release/dd-wal-gateway" \
+      >"$log_file" 2>&1 &
+  echo $! > "$pid_file"
+  sleep 1
+}
+
+stop_gateway() {
+  local pid_file="$DATA_DIR/pids/wal-gateway.pid"
+  if [[ -f "$pid_file" ]]; then
+    local pid="$(cat "$pid_file")"
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "==> stopping wal-gateway (pid $pid)"
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pid_file"
+  fi
 }
 
 stop_sidecar() {
@@ -165,16 +243,18 @@ stop_sidecar() {
 cmd_up() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --with-pg)   ENABLE_PG=1   ;;
-      --with-nats) ENABLE_NATS=1 ;;
+      --with-pg)      ENABLE_PG=1      ;;
+      --with-nats)    ENABLE_NATS=1    ;;
+      --with-gateway) ENABLE_GATEWAY=1 ; ENABLE_PG=1 ; ENABLE_NATS=1 ;;
       *) echo "unknown flag: $1" >&2; exit 2 ;;
     esac
     shift
   done
 
   build_release
-  [[ "$ENABLE_PG"   == "1" ]] && start_pg
-  [[ "$ENABLE_NATS" == "1" ]] && start_nats
+  [[ "$ENABLE_PG"      == "1" ]] && start_pg
+  [[ "$ENABLE_NATS"    == "1" ]] && start_nats
+  [[ "$ENABLE_GATEWAY" == "1" ]] && start_gateway
 
   for idx in "${NODES[@]}"; do start_node "$idx"; done
   sleep 1.5
@@ -187,6 +267,9 @@ cmd_up() {
   fi
   if [[ "$ENABLE_NATS" == "1" ]]; then
     echo "    NATS: nats://127.0.0.1:$NATS_HOST_PORT"
+  fi
+  if [[ "$ENABLE_GATEWAY" == "1" ]]; then
+    echo "    CDC:  http://localhost:$GATEWAY_PORT     (subject prefix: cdc.>)"
   fi
   echo "    test:  python3 scripts/demo.py --bases http://localhost:8181 http://localhost:8182 http://localhost:8183"
 }
@@ -214,6 +297,7 @@ cmd_down() {
       kill "$pid" 2>/dev/null || true
     fi
   done
+  stop_gateway
   stop_sidecar "$PG_CONTAINER"
   stop_sidecar "$NATS_CONTAINER"
   echo "==> all nodes stopped"
@@ -229,7 +313,8 @@ case "${1:-up}" in
   tail) cmd_tail ;;
   status) cluster_status ;;
   *)
-    echo "usage: $0 {up [--with-pg] [--with-nats] | down | tail | status}" >&2
+    echo "usage: $0 {up [--with-pg] [--with-nats] [--with-gateway] | down | tail | status}" >&2
+    echo "  --with-gateway implies --with-pg --with-nats and starts wal-gateway-rs" >&2
     exit 2
     ;;
 esac

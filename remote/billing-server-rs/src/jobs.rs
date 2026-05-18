@@ -40,6 +40,8 @@ pub fn build_registry(state: &AppState) -> crate::scheduler::HandlerRegistry {
             "sync.connection",
             Arc::new(ConnectionSyncJob::new(
                 state.pool.clone(),
+                state.cfg.clone(),
+                state.ledger.clone(),
                 state.locks.clone(),
                 state.connections.clone(),
             )),

@@ -357,6 +357,11 @@ fn config_from_env() -> Config {
         ]),
         app_config_scope: env_value("TRADING_APP_CONFIG_SCOPE", "default"),
         app_config_key: env_value("TRADING_APP_CONFIG_KEY", "trading.platforms.v1"),
+        // The 30s default is now a belt-and-braces fallback: the primary
+        // refresh trigger is the WAL-gateway CDC stream subscription set
+        // up in `main()`, which lands sub-second on `app_config` writes.
+        // Operators with CDC fully wired can comfortably raise this to
+        // 5-15 minutes via TRADING_CONFIG_REFRESH_SECONDS.
         config_refresh: Duration::from_secs(env_u64("TRADING_CONFIG_REFRESH_SECONDS", 30)),
         scraper_base_url: env_value(
             "SCRAPER_BASE_URL",
@@ -899,6 +904,91 @@ async fn run_config_refresh_loop(state: AppState) {
             record_config_error(&state, error).await;
         }
     }
+}
+
+/// Subscribe to the WAL gateway's CDC stream and refresh the trading
+/// platform config the instant `app_config` changes are committed.
+///
+/// We deliberately keep the wider poll-based refresh loop alive: CDC can
+/// drop messages if JetStream is down or the consumer is far enough
+/// behind that the broker has aged messages out of the stream. The poll
+/// loop is the catch-up path.
+///
+/// The handler filters down to the specific scope+key tuple this server
+/// cares about (`trading.platforms.v1` by default) so unrelated
+/// `app_config` rows don't trigger refreshes — saves a Postgres query
+/// per noisy write.
+async fn run_cdc_refresh_subscription(state: AppState) {
+    let Some(nats) = state.nats.clone() else {
+        println!("trading server cdc subscription disabled: no NATS_URL configured");
+        return;
+    };
+    let jetstream = async_nats::jetstream::new(nats);
+    let scope = state.config.app_config_scope.clone();
+    let key = state.config.app_config_key.clone();
+    let label = format!(
+        "dd-trading-server-app-config-{}",
+        sanitize_for_durable_name(&format!("{scope}.{key}"))
+    );
+    let trigger_state = state.clone();
+    let builder = dd_wal_consumer::Subscription::builder()
+        .stream(env_value("TRADING_CDC_STREAM", "CDC"))
+        .durable_name(label.clone())
+        .filter_subject("cdc.public.app_config.>");
+    let start = builder
+        .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
+            let scope = scope.clone();
+            let key = key.clone();
+            let task_state = trigger_state.clone();
+            async move {
+                // The gateway sends every row in `app_config`. Skip rows
+                // for other scopes/keys entirely; this is what makes the
+                // CDC path cheap even when the table is busy with other
+                // services' configs.
+                let row_scope = change
+                    .column("scope")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                let row_key = change
+                    .column("key")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                if row_scope.as_deref() != Some(&scope) || row_key.as_deref() != Some(&key) {
+                    return;
+                }
+                if let Err(error) = refresh_platform_config(&task_state).await {
+                    eprintln!(
+                        "trading platform CDC-driven refresh failed (scope={scope} key={key}): \
+                         {error}"
+                    );
+                    record_config_error(&task_state, error).await;
+                }
+            }
+        })
+        .await;
+    match start {
+        Ok(_join) => {
+            println!(
+                "trading server cdc subscription started: durable={label} \
+                 subject=cdc.public.app_config.>"
+            );
+        }
+        Err(error) => {
+            eprintln!(
+                "trading server cdc subscription failed to start ({error}); \
+                 falling back to poll-only refresh"
+            );
+        }
+    }
+}
+
+fn sanitize_for_durable_name(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 fn finite_optional(value: Option<f64>, label: &str) -> Result<Option<f64>, String> {
@@ -2227,6 +2317,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
     tokio::spawn(run_config_refresh_loop(state.clone()));
     tokio::spawn(run_nats_loop(state.clone()));
+    tokio::spawn(run_cdc_refresh_subscription(state.clone()));
 
     let app = Router::new()
         .route("/", get(root))

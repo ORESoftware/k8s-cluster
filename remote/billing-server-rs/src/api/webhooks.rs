@@ -55,6 +55,14 @@ pub async fn plaid(
     record_event(&state, "plaid_bank", &headers, &body, "plaid-verification").await
 }
 
+pub async fn coinflow(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, "coinflow", &headers, &body, "x-coinflow-signature").await
+}
+
 async fn record_event(
     state: &AppState,
     provider_tag: &str,

@@ -647,6 +647,14 @@ fn nats_lambda_functions_subject() -> &'static str {
     "dd.remote.lambdas.functions"
 }
 
+fn nats_git_repos_changes_subject() -> &'static str {
+    "dd.remote.git-repos.changes"
+}
+
+fn cdc_stream_name() -> String {
+    first_env(&["REST_API_CDC_STREAM"]).unwrap_or_else(|| "CDC".to_string())
+}
+
 async fn publish_thread_runtime_event_to_nats(
     thread_id: &str,
     task_id: Option<&str>,
@@ -3355,6 +3363,128 @@ async fn publish_task_shadow_to_nats(
     Ok(())
 }
 
+/// Run the WAL-gateway CDC fan-out subscriptions. We turn row changes on
+/// `lambda_functions` and `known_git_repos` into NATS messages on the same
+/// subjects the REST handlers already publish to, so downstream consumers
+/// (e.g. `gleam-lambda-runner`) see every change regardless of whether the
+/// row was written through this service or via direct SQL / another service.
+///
+/// Why we keep the direct publish too: the REST handler still publishes
+/// immediately so the originating client gets sub-100ms feedback. The CDC
+/// path is the catch-net for everything else. Duplicate publishes are
+/// harmless — the consumer treats lambda updates as idempotent.
+async fn run_cdc_fanout_subscriptions() {
+    let nats = match async_nats::connect(nats_url()).await {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("dd-remote-rest-api cdc fanout disabled: nats connect failed: {error}");
+            return;
+        }
+    };
+    let jetstream = async_nats::jetstream::new(nats.clone());
+    let stream = cdc_stream_name();
+
+    // lambda_functions → dd.remote.lambdas.functions
+    {
+        let nats_for_handler = nats.clone();
+        let durable = "dd-remote-rest-api-lambdas".to_string();
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream.clone())
+            .durable_name(durable.clone())
+            .filter_subject("cdc.public.lambda_functions.>")
+            .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
+                let nats = nats_for_handler.clone();
+                async move {
+                    let payload = json!({
+                        "version": 1,
+                        "messageKind": "lambda.function.updated",
+                        "source": "wal-gateway",
+                        "action": change.op.as_str(),
+                        "functionId": change.column("id").cloned(),
+                        "slug": change.column("slug").cloned(),
+                        "status": change.column("status").cloned(),
+                        "lsn": change.lsn,
+                        "tsMs": change.ts_ms,
+                    });
+                    let bytes = match serde_json::to_vec(&payload) {
+                        Ok(b) => b,
+                        Err(error) => {
+                            eprintln!("cdc lambda fanout encode failed: {error}");
+                            return;
+                        }
+                    };
+                    if let Err(error) = nats
+                        .publish(nats_lambda_functions_subject(), bytes.into())
+                        .await
+                    {
+                        eprintln!("cdc lambda fanout publish failed: {error}");
+                    }
+                }
+            })
+            .await;
+        match result {
+            Ok(_) => println!(
+                "rest-api cdc subscription started: durable={durable} \
+                 subject=cdc.public.lambda_functions.> -> {}",
+                nats_lambda_functions_subject()
+            ),
+            Err(error) => eprintln!(
+                "rest-api cdc lambda subscription failed to start: {error}"
+            ),
+        }
+    }
+
+    // known_git_repos → dd.remote.git-repos.changes
+    {
+        let nats_for_handler = nats.clone();
+        let durable = "dd-remote-rest-api-git-repos".to_string();
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream.clone())
+            .durable_name(durable.clone())
+            .filter_subject("cdc.public.known_git_repos.>")
+            .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
+                let nats = nats_for_handler.clone();
+                async move {
+                    let payload = json!({
+                        "version": 1,
+                        "messageKind": "git-repo.changed",
+                        "source": "wal-gateway",
+                        "action": change.op.as_str(),
+                        "repoId": change.column("id").cloned(),
+                        "repoUrl": change.column("repo_url").cloned(),
+                        "status": change.column("status").cloned(),
+                        "lsn": change.lsn,
+                        "tsMs": change.ts_ms,
+                    });
+                    let bytes = match serde_json::to_vec(&payload) {
+                        Ok(b) => b,
+                        Err(error) => {
+                            eprintln!("cdc git-repo fanout encode failed: {error}");
+                            return;
+                        }
+                    };
+                    if let Err(error) = nats
+                        .publish(nats_git_repos_changes_subject(), bytes.into())
+                        .await
+                    {
+                        eprintln!("cdc git-repo fanout publish failed: {error}");
+                    }
+                }
+            })
+            .await;
+        match result {
+            Ok(_) => println!(
+                "rest-api cdc subscription started: durable={durable} \
+                 subject=cdc.public.known_git_repos.> -> {}",
+                nats_git_repos_changes_subject()
+            ),
+            Err(error) => eprintln!(
+                "rest-api cdc git-repo subscription failed to start: {error}"
+            ),
+        }
+    }
+}
+
 async fn publish_lambda_function_update_to_nats(
     action: &str,
     function: &LambdaFunctionRow,
@@ -4277,6 +4407,8 @@ async fn main() {
     // exercised every time the binary boots (so a broken local build
     // can't ship even if CI was skipped).
     pg_contract::assert_canonical_schema_matches_local_reads();
+
+    tokio::spawn(run_cdc_fanout_subscriptions());
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT")

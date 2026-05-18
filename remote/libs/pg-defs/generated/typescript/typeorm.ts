@@ -562,3 +562,67 @@ export class PresenceConvMembersEntity {
   updatedBy!: string | null;
 
 }
+
+@Index("presence_users_slug_uq", ["slug"], { unique: true })
+@Entity({ name: "presence_users" })
+export class PresenceUsersEntity {
+  @PrimaryColumn({ name: "id", type: "uuid" })
+  id!: string;
+
+  @Column({ name: "slug", type: "text" })
+  slug!: string;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("presence_events_conv_shard_seq_idx", ["convShard", "seq"])
+@Index("presence_events_user_shard_seq_idx", ["userShard", "seq"])
+@Index("presence_events_event_at_idx", ["eventAt"])
+@Entity({ name: "presence_events" })
+export class PresenceEventsEntity {
+  @PrimaryGeneratedColumn("increment", { name: "seq", type: "bigint" })
+  seq!: number;
+
+  @Column({ name: "event_at", type: "timestamptz", default: () => "now()" })
+  eventAt!: Date;
+
+  @Column({ name: "op", type: "text" })
+  op!: string;
+
+  @Column({ name: "conv_id", type: "uuid" })
+  convId!: string;
+
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "conv_slug", type: "text" })
+  convSlug!: string;
+
+  @Column({ name: "user_slug", type: "text" })
+  userSlug!: string;
+
+  @Column({ name: "conv_shard", type: "integer" })
+  convShard!: number;
+
+  @Column({ name: "user_shard", type: "integer" })
+  userShard!: number;
+
+  @Column({ name: "soft_deleted", type: "boolean", default: () => "false" })
+  softDeleted!: boolean;
+
+}
+
+@Entity({ name: "presence_consumer_checkpoints" })
+export class PresenceConsumerCheckpointsEntity {
+  @PrimaryColumn({ name: "consumer_id", type: "text" })
+  consumerId!: string;
+
+  @Column({ name: "last_seq", type: "bigint", default: () => "0" })
+  lastSeq!: number;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
