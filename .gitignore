@@ -89,3 +89,6 @@ service-account*.json
 # temp folders
 tmp
 temp
+
+# Local cluster-test runtime artifacts (Gleam presence server etc.)
+**/.cluster-local/
