@@ -75,9 +75,16 @@ class CompositionDemoPipelineTest {
           assertEquals(kept, Integer.parseInt(r.getString("aggregateTotal")),
               "Asyncc.Reduce aggregateTotal must equal the kept-shard count");
 
+          // v0.2.9: ConcatLimit flattens per-region publish events into one flat list.
+          // Total event count must equal the kept-shard count (one event per kept shard).
+          assertEquals(kept, (int) r.getInteger("publishEventsCount"),
+              "Asyncc.ConcatLimit must produce one publish event per kept shard");
+
           assertNotNull(r.getString("manifest"));
           assertTrue(r.getString("manifest").contains("\"winner\""),
               "Asyncc.Inject must include the raceWinner in the manifest");
+          assertTrue(r.getString("manifest").contains("events="),
+              "Inject must surface the ConcatLimit event count in the manifest");
 
           assertNotNull(r.getString("publicationCount"),
               "NeoLock-guarded publicationCount must be present");
@@ -102,6 +109,8 @@ class CompositionDemoPipelineTest {
               "Asyncc.Race ran");
           assertTrue(log.stream().anyMatch(s -> s.contains("composition.reduce")),
               "Asyncc.Reduce ran");
+          assertTrue(log.stream().anyMatch(s -> s.contains("composition.concatLimit")),
+              "Asyncc.ConcatLimit (v0.2.9 widening showcase) ran");
           assertTrue(log.stream().anyMatch(s -> s.contains("composition.inject")),
               "Asyncc.Inject ran");
           assertTrue(log.stream().anyMatch(s -> s.contains("composition.neoLock")),
