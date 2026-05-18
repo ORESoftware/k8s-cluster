@@ -267,12 +267,13 @@ fn channel_name(shard: Int) -> String {
 
 fn decode_notification(raw: Dynamic) -> Message {
   // pgo_notifications sends `{notification, ServerPid, Ref, Channel,
-  // Payload}` where Channel and Payload are binaries. We pick positions
-  // 4 (channel) and 5 (payload) — `select_record` already stripped the
-  // tag, so the tuple we see has 4 elements.
+  // Payload}` — a 5-tuple. `select_record` passes the full tuple to us
+  // (including the tag), so the 0-indexed positions are:
+  //   0: notification (tag)    1: ServerPid    2: Ref
+  //   3: Channel               4: Payload
   let pair_decoder = {
-    use channel <- decode.field(2, decode.string)
-    use payload <- decode.field(3, decode.string)
+    use channel <- decode.field(3, decode.string)
+    use payload <- decode.field(4, decode.string)
     decode.success(#(channel, payload))
   }
   case decode.run(raw, pair_decoder) {

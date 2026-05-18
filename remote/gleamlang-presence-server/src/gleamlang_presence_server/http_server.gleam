@@ -35,6 +35,7 @@ import gleamlang_presence_server/fanout.{type Fanout}
 import gleamlang_presence_server/groups.{
   type ConnGroup, type ConnMsg, type DeviceId, ByConv, Outbound,
 }
+import gleamlang_presence_server/nats_transport.{type Nats}
 import gleamlang_presence_server/registry.{type Registry}
 import gleamlang_presence_server/store.{type Store}
 
@@ -44,6 +45,11 @@ pub type Deps {
     conversations: Conversations,
     fanout: Fanout,
     store: Store,
+    /// Optional NATS handle. When present, conv broadcasts are mirrored
+    /// to `presence.broadcast.conv.<conv_id>`. Same-cluster receivers
+    /// drop the NATS copy (Source-Node header dedup) so locals don't
+    /// double-fire.
+    nats: Option(Nats),
   )
 }
 
@@ -103,6 +109,18 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
             ByConv(conv_id),
             Outbound(payload),
           )
+          // Mirror to NATS for cross-cluster / external subscribers.
+          // Same-cluster receivers drop on Source-Node match.
+          case deps.nats {
+            Some(nats) ->
+              nats_transport.publish(
+                nats,
+                subject: nats_transport.conv_subject(conv_id),
+                payload: bit_array.from_string(payload),
+                headers: [],
+              )
+            None -> Nil
+          }
           ok_text("broadcast queued for " <> conv_id)
         }
         Error(_) -> bad_request("could not read body")

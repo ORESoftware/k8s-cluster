@@ -183,7 +183,18 @@ pub fn add_member(
 ) -> Result(Nil, String) {
   case store.mode {
     Configured(conn) -> {
-      // Insert with `on conflict do nothing` so repeat adds are no-ops.
+      // Upsert the conv row first so the FK constraint on
+      // presence_conv_members is always satisfiable. Cheap because of
+      // the unique-active partial index on slug.
+      let conv_sql =
+        "insert into presence_convs(id, slug, display_name)
+         values ($1::uuid, $1::text, $1::text)
+         on conflict (id) do nothing"
+      let _ =
+        pog.query(conv_sql)
+        |> pog.parameter(pog.text(conv))
+        |> pog.execute(conn)
+
       let sql =
         "insert into presence_conv_members
           (conv_id, user_id, role, status, is_soft_deleted)

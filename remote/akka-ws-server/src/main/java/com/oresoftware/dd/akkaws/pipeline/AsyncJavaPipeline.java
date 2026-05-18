@@ -59,19 +59,23 @@ public final class AsyncJavaPipeline {
       // Fan out the two enrichment lookups in parallel on the supplied executor. We use
       // Asyncc.Parallel rather than ParallelLimit because there are only two tasks; for larger
       // fan-outs ParallelLimit / NeoQueue would put a cap on in-flight work.
-      final List<Asyncc.AsyncTask<String, Throwable>> lookups = List.of(
-          cb -> executor.submit(() -> {
+      //
+      // Type annotation uses the v0.2.8 `Asyncc.Task<T>` shorthand (= AsyncTask<T, Throwable>);
+      // Asyncc.Parallel's List parameter was widened to `List<? extends AsyncTask<T, E>>` in
+      // v0.2.8-rc2 so this flows in without an explicit cast.
+      final List<Asyncc.Task<String>> lookups = List.of(
+          c -> executor.submit(() -> {
             try {
-              cb.done(null, PipelineStages.enrichLookupA(validated));
+              c.success(PipelineStages.enrichLookupA(validated));
             } catch (Throwable t) {
-              cb.done(t, null);
+              c.fail(t);
             }
           }),
-          cb -> executor.submit(() -> {
+          c -> executor.submit(() -> {
             try {
-              cb.done(null, PipelineStages.enrichLookupB(validated));
+              c.success(PipelineStages.enrichLookupB(validated));
             } catch (Throwable t) {
-              cb.done(t, null);
+              c.fail(t);
             }
           }));
 

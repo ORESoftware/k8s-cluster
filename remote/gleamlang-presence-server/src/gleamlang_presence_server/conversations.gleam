@@ -73,6 +73,10 @@ pub type Message {
   /// Carries the trigger's `emitted_at` timestamp so we can dedup against
   /// the parallel pg-mesh delivery.
   IncomingPgEvent(event: PgEvent)
+  /// Late-bind the pg_listen handle. Set by main after both this actor
+  /// and the pg_listen actor have started. While None, the LISTEN path
+  /// is inactive and we rely on pg-mesh gossip.
+  AttachPgListen(pg_listen: option.Option(pg_listen.PgListen))
 }
 
 pub type PeerEchoKind {
@@ -100,6 +104,10 @@ type State {
     /// timestamp in monotonic ms. If we see the same logical event again
     /// within `dedup_window_ms`, we drop it. Sized by `gc_threshold`.
     last_dispatched_ms: Dict(#(ConvId, UserId, PeerEchoKind), Int),
+    /// Optional LISTEN/NOTIFY handle. When set, the actor calls
+    /// `pg_listen.subscribe(conv_id)` whenever it touches a new conv so
+    /// the dedicated pgo connection is LISTENing on the matching shard.
+    pg_listen: option.Option(pg_listen.PgListen),
   )
 }
 
@@ -141,6 +149,7 @@ pub fn start(
       registry: registry,
       fanout: fanout,
       last_dispatched_ms: dict.new(),
+      pg_listen: option.None,
     ))
     |> actor.selecting(selector)
     |> actor.returning(named)
@@ -214,9 +223,28 @@ pub fn hydrate(
   process.send(convs, Hydrate(user_id))
 }
 
+/// Late-bind the LISTEN/NOTIFY handle. Call this from `main` once
+/// `pg_listen.start` has succeeded — the conversations actor wires every
+/// touched conv into pg_listen so the dedicated pgo socket LISTENs on
+/// the matching shard.
+pub fn attach_pg_listen(
+  convs: Conversations,
+  pg_listen: pg_listen.PgListen,
+) -> Nil {
+  process.send(convs, AttachPgListen(option.Some(pg_listen)))
+}
+
+fn ensure_listen(state: State, conv_id: ConvId) -> Nil {
+  case state.pg_listen {
+    option.Some(pl) -> pg_listen.subscribe(pl, conv_id)
+    option.None -> Nil
+  }
+}
+
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
     AddMember(conv_id, user_id) -> {
+      ensure_listen(state, conv_id)
       let written = case store.add_member(state.store, conv_id, user_id) {
         Ok(_) -> True
         Error(_) -> False
@@ -241,18 +269,19 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
               conv_members: dict.insert(state.conv_members, conv_id, conv_set),
               user_convs: dict.insert(state.user_convs, user_id, user_set),
             )
-          // Embed the conv's full current member list so the user-ws's
-          // client can decide what to do without a follow-up GET on
-          // /conv/<id>/members.
           let members = set.to_list(conv_set)
           fanout.broadcast(
-            state.fanout,
-            state.registry,
+            new_state.fanout,
+            new_state.registry,
             ByUser(user_id),
             MembershipChanged(conv_id, AddedToConv(members)),
           )
           gossip_peers(AddedAt, conv_id, user_id)
-          actor.continue(new_state)
+          // Record this dispatch so a subsequent IncomingPgEvent from the
+          // matching PG NOTIFY (we just wrote to PG, so the trigger will
+          // also fire) is dropped by `should_dispatch`.
+          let final_state = record_dispatch(new_state, conv_id, user_id, AddedAt)
+          actor.continue(final_state)
         }
       }
     }
@@ -287,10 +316,6 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
             ByUser(user_id),
             MembershipChanged(conv_id, RemovedFromConv),
           )
-          // Defense-in-depth: close that user's conv-scoped ws's for
-          // this conv cluster-wide. The client should also close them
-          // on its own after seeing the MembershipChanged above, but
-          // we don't trust the client.
           fanout.broadcast(
             state.fanout,
             state.registry,
@@ -298,11 +323,13 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
             Kick("removed from conv " <> conv_id),
           )
           gossip_peers(RemovedAt, conv_id, user_id)
-          actor.continue(State(
-            ..state,
-            conv_members: conv_members,
-            user_convs: user_convs,
-          ))
+          let cached =
+            State(
+              ..state,
+              conv_members: conv_members,
+              user_convs: user_convs,
+            )
+          actor.continue(record_dispatch(cached, conv_id, user_id, RemovedAt))
         }
       }
     }
@@ -353,21 +380,17 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
     }
 
     PeerEcho(kind, conv_id, user_id) -> {
-      case should_dispatch(state, conv_id, user_id, kind) {
-        False -> actor.continue(state)
-        True ->
-          dispatch_peer_change(
-            record_dispatch(state, conv_id, user_id, kind),
-            kind,
-            conv_id,
-            user_id,
-          )
-      }
+      // Cluster-internal gossip from another node's conversations actor.
+      // The originating node ALREADY did the cluster-wide ws dispatch
+      // via `fanout.broadcast` — for us to dispatch again would double-
+      // fire every membership change. Just sync our cache.
+      actor.continue(apply_membership_change(state, kind, conv_id, user_id))
     }
 
     IncomingPgEvent(event) -> {
-      // Translate the LISTEN payload into the same PeerEcho semantics.
-      // Dedup against the parallel pg-mesh path via `last_dispatched_ms`.
+      // External PG write observed via LISTEN/NOTIFY. Nobody else dispatched
+      // for us, so we DO need to deliver to local ws's. Dedup against the
+      // pg-mesh path so a paired API+PG-NOTIFY combo only fires once.
       case pg_listen.semantic_kind(event) {
         option.None -> actor.continue(state)
         option.Some(pg_kind) -> {
@@ -376,21 +399,38 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
             KindRemoved -> RemovedAt
           }
           case should_dispatch(state, event.conv_id, event.user_id, kind) {
-            False -> actor.continue(state)
-            True ->
-              dispatch_peer_change(
-                record_dispatch(state, event.conv_id, event.user_id, kind),
+            False ->
+              // Already dispatched recently via another path. Still sync
+              // cache, in case this NOTIFY caught a state we missed.
+              actor.continue(apply_membership_change(
+                state,
                 kind,
                 event.conv_id,
                 event.user_id,
-              )
+              ))
+            True -> {
+              let recorded =
+                record_dispatch(state, event.conv_id, event.user_id, kind)
+              dispatch_peer_change(recorded, kind, event.conv_id, event.user_id)
+            }
           }
         }
       }
     }
 
+    AttachPgListen(pg_listen) -> {
+      let new_state = State(..state, pg_listen: pg_listen)
+      // Eagerly subscribe to shards for any conv currently in our cache,
+      // so existing conv connections benefit from LISTEN/NOTIFY too.
+      dict.each(new_state.conv_members, fn(conv_id, _) {
+        ensure_listen(new_state, conv_id)
+      })
+      actor.continue(new_state)
+    }
+
     Hydrate(user_id) -> {
       let from_pg = store.convs_of(state.store, user_id)
+      list.each(from_pg, fn(c) { ensure_listen(state, c) })
       let conv_members =
         list.fold(from_pg, state.conv_members, fn(acc, conv_id) {
           case dict.has_key(acc, conv_id) {
@@ -449,13 +489,16 @@ fn record_dispatch(
   }
 }
 
-fn dispatch_peer_change(
+/// Apply a membership change to the in-memory cache only — used by every
+/// path that needs to keep `conv_members` / `user_convs` in sync. Does
+/// NOT touch the registry or send websocket frames.
+fn apply_membership_change(
   state: State,
   kind: PeerEchoKind,
   conv_id: ConvId,
   user_id: UserId,
-) -> actor.Next(State, Message) {
-  let #(new_state, change) = case kind {
+) -> State {
+  case kind {
     AddedAt -> {
       let user_set =
         dict.get(state.user_convs, user_id)
@@ -465,13 +508,11 @@ fn dispatch_peer_change(
         dict.get(state.conv_members, conv_id)
         |> result.unwrap(set.new())
         |> set.insert(user_id)
-      let ns =
-        State(
-          ..state,
-          user_convs: dict.insert(state.user_convs, user_id, user_set),
-          conv_members: dict.insert(state.conv_members, conv_id, conv_set),
-        )
-      #(ns, AddedToConv(set.to_list(conv_set)))
+      State(
+        ..state,
+        user_convs: dict.insert(state.user_convs, user_id, user_set),
+        conv_members: dict.insert(state.conv_members, conv_id, conv_set),
+      )
     }
     RemovedAt -> {
       let user_set =
@@ -490,25 +531,39 @@ fn dispatch_peer_change(
         True -> dict.delete(state.conv_members, conv_id)
         False -> dict.insert(state.conv_members, conv_id, conv_set)
       }
-      let ns =
-        State(..state, user_convs: user_convs, conv_members: conv_members)
-      #(ns, RemovedFromConv)
+      State(..state, user_convs: user_convs, conv_members: conv_members)
     }
   }
-  // Dispatch the membership change to LOCAL user-scoped ws's of this
-  // user. The originating node already did the cluster-wide dispatch
-  // via fanout.broadcast, so this is local-only.
-  registry.dispatch_group(state.registry, ByUser(user_id), fn(subj) {
+}
+
+/// Apply a membership change AND fire local-only websocket dispatch.
+/// Used by `IncomingPgEvent` (LISTEN/NOTIFY from an external PG write)
+/// where no other pod did the dispatch for us.
+fn dispatch_peer_change(
+  state: State,
+  kind: PeerEchoKind,
+  conv_id: ConvId,
+  user_id: UserId,
+) -> actor.Next(State, Message) {
+  let new_state = apply_membership_change(state, kind, conv_id, user_id)
+  let change = case kind {
+    AddedAt -> {
+      let members =
+        dict.get(new_state.conv_members, conv_id)
+        |> result.unwrap(set.new())
+        |> set.to_list
+      AddedToConv(members)
+    }
+    RemovedAt -> RemovedFromConv
+  }
+  registry.dispatch_group(new_state.registry, ByUser(user_id), fn(subj) {
     process.send(subj, MembershipChanged(conv_id, change))
     Nil
   })
-  // On remove, also kick this user's local conv-scoped ws's for this
-  // conv — defense-in-depth on top of the cluster-wide kick that the
-  // originating node already did.
   case kind {
     RemovedAt ->
       registry.dispatch_group(
-        state.registry,
+        new_state.registry,
         ByUserConv(user_id, conv_id),
         fn(subj) {
           process.send(subj, Kick("removed from conv " <> conv_id))

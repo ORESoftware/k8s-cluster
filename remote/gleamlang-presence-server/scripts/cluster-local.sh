@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
-# Bring up a 3-node BEAM cluster on localhost. Each node binds to a
-# different HTTP port but all share the same Erlang cookie and form a
-# fully-connected distributed cluster via EPMD.
+# Bring up a 3-node BEAM cluster on localhost, plus (optionally) sidecar
+# Docker containers for Postgres and NATS so all four messaging layers
+# can be exercised end-to-end:
+#
+#   1. ETS registry (per-node)        — local typed sends
+#   2. Erlang `pg` + fanout relay     — within-cluster cross-pod fanout
+#   3. PG LISTEN/NOTIFY (sharded)     — DB-driven membership changes
+#   4. NATS                           — cross-cluster / external pub/sub
 #
 # Usage:
-#   ./scripts/cluster-local.sh up      # start node-0, node-1, node-2
-#   ./scripts/cluster-local.sh down    # kill everything we started
-#   ./scripts/cluster-local.sh tail    # tail all three logs at once
+#   ./scripts/cluster-local.sh up                    # 3 BEAM nodes, in-memory store, no NATS
+#   ./scripts/cluster-local.sh up --with-pg          # + PG container at :5439
+#   ./scripts/cluster-local.sh up --with-nats        # + NATS container at :4222
+#   ./scripts/cluster-local.sh up --with-pg --with-nats   # everything
+#   ./scripts/cluster-local.sh down                  # kill nodes + sidecars
+#   ./scripts/cluster-local.sh tail                  # tail all three logs at once
 #
 # The script writes pid files + logs into ./.cluster-local/ so re-runs are
 # idempotent (down won't kill someone else's beam.smp processes).
@@ -22,6 +30,18 @@ DATA_DIR=".cluster-local"
 COOKIE="cluster_local_cookie"
 NODES=(0 1 2)
 PORTS=(8181 8182 8183)
+
+PG_CONTAINER="presence-local-pg"
+PG_HOST_PORT=5439
+PG_USER="postgres"
+PG_PASS="postgres"
+PG_DB="presence"
+
+NATS_CONTAINER="presence-local-nats"
+NATS_HOST_PORT=4222
+
+ENABLE_PG=0
+ENABLE_NATS=0
 
 mkdir -p "$DATA_DIR/logs" "$DATA_DIR/pids"
 
@@ -61,6 +81,15 @@ start_node() {
     fi
   done
 
+  local extra_env=""
+  if [[ "$ENABLE_PG" == "1" ]]; then
+    extra_env="$extra_env PG_DATABASE_URL=postgres://$PG_USER:$PG_PASS@127.0.0.1:$PG_HOST_PORT/$PG_DB"
+  fi
+  if [[ "$ENABLE_NATS" == "1" ]]; then
+    extra_env="$extra_env NATS_URL=nats://127.0.0.1:$NATS_HOST_PORT"
+  fi
+
+  env $extra_env \
   PORT="$port" \
   ERL_AFLAGS="-name $node_name -setcookie $COOKIE -kernel inet_dist_listen_min $dist_port -kernel inet_dist_listen_max $dist_port" \
   CLUSTER_PEERS="$peers" \
@@ -90,14 +119,75 @@ cluster_status() {
   done
 }
 
+start_pg() {
+  if docker ps --format '{{.Names}}' | grep -q "^$PG_CONTAINER\$"; then
+    echo "==> postgres container $PG_CONTAINER already running"
+    return
+  fi
+  echo "==> starting postgres container $PG_CONTAINER on :$PG_HOST_PORT"
+  docker run -d --rm --name "$PG_CONTAINER" \
+    -e POSTGRES_PASSWORD="$PG_PASS" -e POSTGRES_DB="$PG_DB" \
+    -p "$PG_HOST_PORT":5432 postgres:16-alpine >/dev/null
+  # Wait for readiness.
+  for _ in {1..20}; do
+    if docker exec -e PGPASSWORD="$PG_PASS" "$PG_CONTAINER" \
+         pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+  echo "==> applying schema"
+  docker cp ../libs/pg-defs/schema/schema.sql "$PG_CONTAINER":/schema.sql >/dev/null
+  docker exec -e PGPASSWORD="$PG_PASS" "$PG_CONTAINER" \
+    psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -f /schema.sql \
+    >"$DATA_DIR/logs/pg-schema-apply.log" 2>&1 || true
+}
+
+start_nats() {
+  if docker ps --format '{{.Names}}' | grep -q "^$NATS_CONTAINER\$"; then
+    echo "==> nats container $NATS_CONTAINER already running"
+    return
+  fi
+  echo "==> starting nats container $NATS_CONTAINER on :$NATS_HOST_PORT"
+  docker run -d --rm --name "$NATS_CONTAINER" \
+    -p "$NATS_HOST_PORT":4222 nats:2-alpine >/dev/null
+  sleep 1
+}
+
+stop_sidecar() {
+  local name="$1"
+  if docker ps --format '{{.Names}}' | grep -q "^$name\$"; then
+    echo "==> stopping container $name"
+    docker stop "$name" >/dev/null 2>&1 || true
+  fi
+}
+
 cmd_up() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --with-pg)   ENABLE_PG=1   ;;
+      --with-nats) ENABLE_NATS=1 ;;
+      *) echo "unknown flag: $1" >&2; exit 2 ;;
+    esac
+    shift
+  done
+
   build_release
+  [[ "$ENABLE_PG"   == "1" ]] && start_pg
+  [[ "$ENABLE_NATS" == "1" ]] && start_nats
+
   for idx in "${NODES[@]}"; do start_node "$idx"; done
   sleep 1.5
   wait_for_cluster
   cluster_status
   echo
   echo "==> cluster ready. logs in $DATA_DIR/logs/, pids in $DATA_DIR/pids/"
+  if [[ "$ENABLE_PG" == "1" ]]; then
+    echo "    PG:   postgres://$PG_USER:$PG_PASS@127.0.0.1:$PG_HOST_PORT/$PG_DB"
+  fi
+  if [[ "$ENABLE_NATS" == "1" ]]; then
+    echo "    NATS: nats://127.0.0.1:$NATS_HOST_PORT"
+  fi
   echo "    test:  python3 scripts/demo.py --bases http://localhost:8181 http://localhost:8182 http://localhost:8183"
 }
 
@@ -124,6 +214,8 @@ cmd_down() {
       kill "$pid" 2>/dev/null || true
     fi
   done
+  stop_sidecar "$PG_CONTAINER"
+  stop_sidecar "$NATS_CONTAINER"
   echo "==> all nodes stopped"
 }
 
@@ -132,12 +224,12 @@ cmd_tail() {
 }
 
 case "${1:-up}" in
-  up) cmd_up ;;
+  up) shift; cmd_up "$@" ;;
   down) cmd_down ;;
   tail) cmd_tail ;;
   status) cluster_status ;;
   *)
-    echo "usage: $0 {up|down|tail|status}" >&2
+    echo "usage: $0 {up [--with-pg] [--with-nats] | down | tail | status}" >&2
     exit 2
     ;;
 esac

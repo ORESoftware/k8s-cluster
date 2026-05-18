@@ -605,9 +605,12 @@ declare
   v_channel text;
   v_payload text;
 begin
-  -- hashtext returns a signed int32; abs((-2^31)) = -2^31 in postgres
-  -- (integer overflow) so we cast via bigint first.
-  v_shard := (abs(hashtext(v_conv::text)::bigint) % v_shards)::int;
+  -- Use the first 16 bits of the conv_id UUID as the shard input.
+  -- The Erlang side mirrors this exactly via `dd_nats` / `pg_listen`'s
+  -- shard_of helper. Avoiding hashtext() keeps the algorithm portable
+  -- across BEAM and Postgres without re-implementing PG's internal hash.
+  v_shard := (('x' || substring(replace(v_conv::text, '-', ''), 1, 4))
+              ::bit(16)::int % v_shards);
   v_channel := 'presence_change_' || v_shard::text;
 
   v_payload := json_build_object(
@@ -641,5 +644,6 @@ returns int
 language sql
 stable
 as $$
-  select (abs(hashtext(p_conv_id::text)::bigint) % presence_notify_shards())::int;
+  select (('x' || substring(replace(p_conv_id::text, '-', ''), 1, 4))
+          ::bit(16)::int % presence_notify_shards());
 $$;

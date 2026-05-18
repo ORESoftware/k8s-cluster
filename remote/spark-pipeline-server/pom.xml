@@ -60,7 +60,7 @@
           `com.github.async-java:async.java:v0.2.4` coordinate is the authoritative
           release artifact.
         -->
-        <async-java.version>v0.2.8-rc1</async-java.version>
+        <async-java.version>v0.2.8-rc2</async-java.version>
 
         <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
     </properties>

@@ -14,6 +14,11 @@
 //// `group` here?" and `process.send`s `msg` to each. This is the standard
 //// Phoenix.PubSub pattern: one cross-node message per peer node, not one
 //// per subscriber.
+////
+//// NATS bridging is kept OUT of this module to avoid a circular import
+//// (the NATS transport reads `Outbound` / `ByConv` from this module's
+//// neighbour `groups`). Bridge the BEAM-cluster broadcast to NATS at
+//// the call site (e.g., `http_server.broadcast_to_conv`) instead.
 
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid}

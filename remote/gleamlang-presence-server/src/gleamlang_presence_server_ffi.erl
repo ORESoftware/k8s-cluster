@@ -115,16 +115,37 @@ pgo_config_from_url(Url) ->
             {error, ReasonBin}
     end.
 
-%% Compute the shard a conv_id maps to, in agreement with the Postgres
-%% `abs(hashtext(...)::bigint) % N`. Postgres `hashtext` uses Jenkins one-
-%% at-a-time. We can't easily reimplement it in pure Erlang for cross-
-%% compat, so for now we use erlang:phash2 and accept that the mapping
-%% only needs to be deterministic per-process — the LISTEN side asks PG
-%% directly which channel to subscribe via `presence_shard_of(uuid)` when
-%% precision matters. erlang:phash2 keeps it cheap and stable for the
-%% common case where we trust pg_listen to track its own subscriptions.
+%% Compute the shard a conv_id maps to. Must match Postgres' algorithm
+%% in `notify_presence_member_change()` (schema.sql) exactly — otherwise
+%% pg_listen subscribes to the wrong channel and misses NOTIFYs.
+%%
+%% Algorithm: take the first 16 bits of the canonical UUID hex form
+%% (after removing hyphens), interpret as an unsigned int, modulo N.
+%% Deterministic across PG / BEAM / any other client.
 shard_of(ConvId, NShards) ->
-    erlang:phash2(ConvId, NShards).
+    Bin = case ConvId of
+              B when is_binary(B) -> B;
+              L when is_list(L) -> list_to_binary(L)
+          end,
+    Hex = binary:replace(Bin, <<"-">>, <<>>, [global]),
+    case Hex of
+        <<H1, H2, H3, H4, _/binary>> ->
+            HexPrefix = <<H1, H2, H3, H4>>,
+            try binary_to_integer(HexPrefix, 16) of
+                Int -> Int rem NShards
+            catch
+                error:badarg ->
+                    %% Non-hex prefix (e.g., demo IDs like "conv-1").
+                    %% Fall back to phash2 so the listener doesn't crash.
+                    %% PG-side trigger will also bail (its substring/cast
+                    %% raises), so any cross-side disagreement here is
+                    %% moot — we simply never receive a notification for
+                    %% non-UUID conv_ids.
+                    erlang:phash2(ConvId, NShards)
+            end;
+        _ ->
+            erlang:phash2(ConvId, NShards)
+    end.
 
 %% Erlang short/long node name as a binary, for use as a NATS Source-Node
 %% header and for log lines.
