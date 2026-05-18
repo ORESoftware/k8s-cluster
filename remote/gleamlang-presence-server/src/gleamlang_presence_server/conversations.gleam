@@ -12,17 +12,23 @@
 ////     `user_convs`. When a join touches a conv we haven't seen, we load
 ////     its member list from Postgres into `conv_members`.
 ////   - Source of truth writes: `add_member` / `remove_member` go through
-////     Postgres first, then update the cache, then broadcast `JoinConv` /
-////     `LeaveConv` to the user's live connections cluster-wide via the
-////     fanout relay.
+////     Postgres first, then update the cache, then notify the user's live
+////     connections cluster-wide:
+////       * `MembershipChanged(_, AddedToConv | RemovedFromConv)` is fanned
+////         out on `ByUser(user_id)` so every device's user-scoped ws sees
+////         the change and can open/close its own conv-scoped ws;
+////       * on remove, an additional `Kick(_)` is fanned out on
+////         `ByUserConv(user_id, conv_id)` so the matching conv-scoped ws
+////         is closed server-side as a defense-in-depth.
 ////   - Eviction: when the last connection for a user leaves the node, we
 ////     drop that user's entry from `user_convs` (kept simple here; in
 ////     production you'd use weak references or periodic GC tied to ETS
 ////     registry size).
 ////
-//// The broadcasts are sent via `fanout.broadcast(_, ByUser(user_id), …)`
-//// which is the cluster-wide variant — so a `LeaveConv` is delivered to
-//// every device of the user regardless of which node they're on.
+//// The cluster-wide step uses `fanout.broadcast(_, group, …)` which
+//// delivers to every node that has a matching registration. Peer
+//// conversations actors are also gossiped via `pg` so their in-memory
+//// caches stay coherent without re-reading Postgres.
 
 import gleam/dict.{type Dict}
 import gleam/erlang/atom
@@ -34,7 +40,8 @@ import gleam/result
 import gleam/set.{type Set}
 import gleamlang_presence_server/fanout.{type Fanout}
 import gleamlang_presence_server/groups.{
-  type ConnGroup, type ConvId, type UserId, ByUser, JoinConv, LeaveConv,
+  type ConnGroup, type ConvId, type UserId, AddedToConv, ByUser, ByUserConv,
+  Kick, MembershipChanged, RemovedFromConv,
 }
 import gleamlang_presence_server/pg_groups
 import gleamlang_presence_server/registry.{type Registry}
@@ -215,7 +222,7 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
             state.fanout,
             state.registry,
             ByUser(user_id),
-            JoinConv(conv_id),
+            MembershipChanged(conv_id, AddedToConv),
           )
           gossip_peers(AddedAt, conv_id, user_id)
           actor.continue(new_state)
@@ -251,7 +258,17 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
             state.fanout,
             state.registry,
             ByUser(user_id),
-            LeaveConv(conv_id),
+            MembershipChanged(conv_id, RemovedFromConv),
+          )
+          // Defense-in-depth: close that user's conv-scoped ws's for
+          // this conv cluster-wide. The client should also close them
+          // on its own after seeing the MembershipChanged above, but
+          // we don't trust the client.
+          fanout.broadcast(
+            state.fanout,
+            state.registry,
+            ByUserConv(user_id, conv_id),
+            Kick("removed from conv " <> conv_id),
           )
           gossip_peers(RemovedAt, conv_id, user_id)
           actor.continue(State(
@@ -350,17 +367,33 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
           State(..state, user_convs: user_convs, conv_members: conv_members)
         }
       }
-      // Dispatch JoinConv/LeaveConv to LOCAL connections of this user.
-      // We use the local registry directly (not fanout.broadcast) — the
-      // originating node already did the cluster-wide dispatch.
-      let msg = case kind {
-        AddedAt -> JoinConv(conv_id)
-        RemovedAt -> LeaveConv(conv_id)
+      // Dispatch the membership change to LOCAL user-scoped ws's of
+      // this user. We use the local registry directly (not
+      // fanout.broadcast) — the originating node already did the
+      // cluster-wide dispatch.
+      let change = case kind {
+        AddedAt -> AddedToConv
+        RemovedAt -> RemovedFromConv
       }
       registry.dispatch_group(state.registry, ByUser(user_id), fn(subj) {
-        process.send(subj, msg)
+        process.send(subj, MembershipChanged(conv_id, change))
         Nil
       })
+      // On remove, also kick this user's local conv-scoped ws's for
+      // this conv — same defense-in-depth as the originating node did
+      // cluster-wide via fanout.
+      case kind {
+        RemovedAt ->
+          registry.dispatch_group(
+            state.registry,
+            ByUserConv(user_id, conv_id),
+            fn(subj) {
+              process.send(subj, Kick("removed from conv " <> conv_id))
+              Nil
+            },
+          )
+        AddedAt -> Nil
+      }
       actor.continue(new_state)
     }
 

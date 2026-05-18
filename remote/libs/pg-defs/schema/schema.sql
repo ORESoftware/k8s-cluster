@@ -513,3 +513,52 @@ create index if not exists presence_conv_members_updated_at_idx
 alter table if exists presence_conv_members
   add constraint presence_conv_members_conv_fk
   foreign key (conv_id) references presence_convs(id);
+
+-- ────────────────────────────────────────────────────────────────────────
+-- Presence membership change notifications via LISTEN/NOTIFY.
+--
+-- Every insert / update / delete on presence_conv_members fires
+-- pg_notify('presence_member_change', '{"op":...,"conv_id":...,
+-- "user_id":...,"soft_deleted":...,"emitted_at":...}'). The gleamlang-
+-- presence-server opens a dedicated pgo_notifications connection per pod
+-- and LISTENs on this channel; each notification updates the in-memory
+-- conversations cache and dispatches JoinConv/LeaveConv to local
+-- connections.
+--
+-- The conversations actor dedupes by (op, conv_id, user_id, emitted_at)
+-- inside a small time window so that LISTEN/NOTIFY and the pg-mesh
+-- gossip path (used as a fallback / belt-and-braces channel) can both
+-- fire safely without producing duplicate client frames.
+-- ────────────────────────────────────────────────────────────────────────
+
+create or replace function notify_presence_member_change()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_op text := tg_op;
+  v_conv uuid := coalesce(new.conv_id, old.conv_id);
+  v_user uuid := coalesce(new.user_id, old.user_id);
+  v_soft boolean := coalesce(new.is_soft_deleted, old.is_soft_deleted, false);
+  v_payload text;
+begin
+  v_payload := json_build_object(
+    'op',           v_op,
+    'conv_id',      v_conv,
+    'user_id',      v_user,
+    'soft_deleted', v_soft,
+    'emitted_at',   extract(epoch from clock_timestamp())
+  )::text;
+
+  -- NOTIFY payloads are capped at 8KB; ours is < 200 bytes so this is fine.
+  perform pg_notify('presence_member_change', v_payload);
+  return coalesce(new, old);
+end;
+$$;
+
+drop trigger if exists presence_conv_members_notify on presence_conv_members;
+
+create trigger presence_conv_members_notify
+  after insert or update or delete on presence_conv_members
+  for each row
+  execute function notify_presence_member_change();

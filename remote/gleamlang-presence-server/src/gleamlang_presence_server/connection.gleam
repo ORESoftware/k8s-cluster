@@ -1,44 +1,57 @@
 //// Glue between mist's websocket handler API and the rest of the
 //// presence service.
 ////
+//// Connection scope
+//// ----------------
+////
+//// A single device opens N+1 websockets to this server: one **user-
+//// scoped** ws (`/ws?user=<userId>`) plus one **conv-scoped** ws per
+//// active conversation (`/ws?user=<userId>&conv=<convId>`). Both
+//// variants optionally accept `&device=<deviceId>` so device-targeted
+//// sends can address every ws of one device of one user.
+////
 //// Each websocket runs in its own Erlang process. On init we:
 ////
 ////   1. Create a `Subject(ConnMsg)` that mist's selector delivers custom
 ////      messages to.
-////   2. Register that subject under `ByUser(user_id)` in the local ETS
-////      registry and join the same group in cluster-wide `pg`.
-////   3. Load the user's current conversations (via the conversations
-////      actor, which caches the read) and register/join each `ByConv`.
-////   4. Monitor the registry actor's PID so we can re-register if the
-////      supervisor restarts it (part (a) of the re-registration design).
+////   2. Register that subject under a single `ConnGroup` axis (or two,
+////      counting the optional `ByUserDevice` shadow registration):
+////      `ByUser` for user-scope, `ByConv` + `ByUserConv` for conv-scope.
+////   3. Monitor the registry actor's pid so we can re-register if the
+////      supervisor restarts it.
 ////
 //// Re-registration flow:
 ////   - Registry crashes → supervisor restarts it.
-////   - This connection's monitor fires → we receive a `Down` message.
-////   - We send `ReRegister` to ourselves; the handler re-creates ETS rows,
-////     re-joins pg, and re-arms the monitor against the new registry pid.
+////   - This connection's monitor fires → we receive a `ReRegister`.
+////   - We re-create ETS rows, re-join the same `pg` groups, and re-arm
+////     the monitor against the new registry pid.
 
 import gleam/erlang/process.{type Selector, type Subject}
-import gleam/list
-import gleam/option.{type Option, Some}
-import gleam/set.{type Set}
+import gleam/option.{type Option, None, Some}
 import mist.{
   type WebsocketConnection, type WebsocketMessage, Binary, Closed, Custom,
   Shutdown, Text,
 }
 import gleamlang_presence_server/conversations.{type Conversations}
 import gleamlang_presence_server/groups.{
-  type ConnGroup, type ConnMsg, type ConvId, type UserId, ByConv, ByUser,
-  JoinConv, LeaveConv, Outbound, ReRegister,
+  type ConnGroup, type ConnMsg, type ConvId, type DeviceId, type UserId,
+  AddedToConv, ByConv, ByUser, ByUserConv, ByUserDevice, Kick, MembershipChanged,
+  Outbound, ReRegister, RemovedFromConv,
 }
 import gleamlang_presence_server/pg_groups
 import gleamlang_presence_server/registry.{type Registry}
 
+/// What kind of websocket this connection is. A single device opens one
+/// `UserScope` ws plus one `ConvScope` ws per active conversation.
+pub type ConnScope {
+  UserScope(user_id: UserId, device_id: Option(DeviceId))
+  ConvScope(user_id: UserId, conv_id: ConvId, device_id: Option(DeviceId))
+}
+
 pub type ConnState {
   ConnState(
-    user_id: UserId,
+    scope: ConnScope,
     self_subject: Subject(ConnMsg),
-    current_convs: Set(ConvId),
     registry: Registry(ConnMsg, ConnGroup),
     conversations: Conversations,
   )
@@ -49,21 +62,19 @@ pub type ConnState {
 /// process — the subject, ETS rows, pg memberships, and the registry
 /// monitor all belong to that process.
 pub fn make_on_init(
-  user_id: UserId,
+  scope: ConnScope,
   registry: Registry(ConnMsg, ConnGroup),
   conversations: Conversations,
 ) -> fn(WebsocketConnection) -> #(ConnState, Option(Selector(ConnMsg))) {
   fn(_ws_conn) {
     let self = process.new_subject()
 
-    let convs = conversations.convs_of(conversations, user_id)
-    register_everything(registry, user_id, self, convs)
+    register_for_scope(registry, scope, self)
 
     let state =
       ConnState(
-        user_id: user_id,
+        scope: scope,
         self_subject: self,
-        current_convs: set.from_list(convs),
         registry: registry,
         conversations: conversations,
       )
@@ -74,20 +85,40 @@ pub fn make_on_init(
   }
 }
 
-fn register_everything(
+fn register_for_scope(
   registry: Registry(ConnMsg, ConnGroup),
-  user_id: UserId,
+  scope: ConnScope,
   self: Subject(ConnMsg),
-  convs: List(ConvId),
 ) -> Nil {
-  registry.register(registry, ByUser(user_id), self)
-  pg_groups.join(group: ByUser(user_id))
+  case scope {
+    UserScope(user_id, device_id) -> {
+      registry.register(registry, ByUser(user_id), self)
+      pg_groups.join(group: ByUser(user_id))
+      register_device_shadow(registry, self, user_id, device_id)
+    }
+    ConvScope(user_id, conv_id, device_id) -> {
+      registry.register(registry, ByConv(conv_id), self)
+      pg_groups.join(group: ByConv(conv_id))
+      registry.register(registry, ByUserConv(user_id, conv_id), self)
+      pg_groups.join(group: ByUserConv(user_id, conv_id))
+      register_device_shadow(registry, self, user_id, device_id)
+    }
+  }
+}
 
-  list.each(convs, fn(conv_id) {
-    registry.register(registry, ByConv(conv_id), self)
-    pg_groups.join(group: ByConv(conv_id))
-  })
-  Nil
+fn register_device_shadow(
+  registry: Registry(ConnMsg, ConnGroup),
+  self: Subject(ConnMsg),
+  user_id: UserId,
+  device_id: Option(DeviceId),
+) -> Nil {
+  case device_id {
+    Some(d) -> {
+      registry.register(registry, ByUserDevice(user_id, d), self)
+      pg_groups.join(group: ByUserDevice(user_id, d))
+    }
+    None -> Nil
+  }
 }
 
 fn build_selector(
@@ -119,11 +150,9 @@ pub fn handle(
 ) -> mist.Next(ConnState, ConnMsg) {
   case message {
     Text(text) -> {
+      let label = scope_label(state.scope)
       let _ =
-        mist.send_text_frame(
-          ws_conn,
-          "echo[" <> state.user_id <> "]: " <> text,
-        )
+        mist.send_text_frame(ws_conn, "echo[" <> label <> "]: " <> text)
       mist.continue(state)
     }
     Binary(_) -> mist.continue(state)
@@ -138,71 +167,62 @@ fn handle_custom(
   ws_conn: WebsocketConnection,
 ) -> mist.Next(ConnState, ConnMsg) {
   case msg {
-    Outbound(conv_id, payload) ->
-      case set.contains(state.current_convs, conv_id) {
-        False -> mist.continue(state)
-        True -> {
-          let frame =
-            "conv["
-            <> conv_id
-            <> "] -> "
-            <> state.user_id
-            <> ": "
-            <> payload
-          let _ = mist.send_text_frame(ws_conn, frame)
-          mist.continue(state)
-        }
-      }
-
-    JoinConv(conv_id) -> {
-      registry.register(state.registry, ByConv(conv_id), state.self_subject)
-      pg_groups.join(group: ByConv(conv_id))
-      let new_state =
-        ConnState(
-          ..state,
-          current_convs: set.insert(state.current_convs, conv_id),
-        )
-      let _ =
-        mist.send_text_frame(ws_conn, "system: joined " <> conv_id)
-      mist.continue(new_state)
+    Outbound(payload) -> {
+      let _ = mist.send_text_frame(ws_conn, payload)
+      mist.continue(state)
     }
 
-    LeaveConv(conv_id) -> {
-      registry.unregister(state.registry, ByConv(conv_id), state.self_subject)
-      pg_groups.leave(group: ByConv(conv_id))
-      let new_state =
-        ConnState(
-          ..state,
-          current_convs: set.delete(state.current_convs, conv_id),
-        )
-      let _ =
-        mist.send_text_frame(ws_conn, "system: left " <> conv_id)
-      mist.continue(new_state)
+    MembershipChanged(conv_id, change) ->
+      case state.scope {
+        UserScope(_, _) -> {
+          let verb = case change {
+            AddedToConv -> "added-to"
+            RemovedFromConv -> "removed-from"
+          }
+          let _ =
+            mist.send_text_frame(
+              ws_conn,
+              "system: " <> verb <> " " <> conv_id,
+            )
+          mist.continue(state)
+        }
+        // Conv-scoped ws shouldn't be subscribed to ByUser, but if a
+        // peer-gossip race delivers one anyway, drop quietly.
+        ConvScope(_, _, _) -> mist.continue(state)
+      }
+
+    Kick(reason) -> {
+      let _ = mist.send_text_frame(ws_conn, "system: kick: " <> reason)
+      mist.stop()
     }
 
     ReRegister -> {
-      // Re-hydrate from Postgres (the conversations actor caches it) and
-      // re-arm everything against the new registry pid.
-      conversations.hydrate(state.conversations, state.user_id)
-      let convs = conversations.convs_of(state.conversations, state.user_id)
-      register_everything(
-        state.registry,
-        state.user_id,
-        state.self_subject,
-        convs,
-      )
+      // Re-hydrate the conversations cache only for user-scoped ws;
+      // conv-scoped ws doesn't depend on the user's full conv list.
+      case state.scope {
+        UserScope(user_id, _) ->
+          conversations.hydrate(state.conversations, user_id)
+        ConvScope(_, _, _) -> Nil
+      }
+      register_for_scope(state.registry, state.scope, state.self_subject)
 
       let new_selector = build_selector(state.self_subject, state.registry)
-      let new_state =
-        ConnState(..state, current_convs: set.from_list(convs))
       let _ =
         mist.send_text_frame(
           ws_conn,
           "system: re-registered with new registry instance",
         )
-      mist.continue(new_state)
+      mist.continue(state)
       |> mist.with_selector(new_selector)
     }
+  }
+}
+
+fn scope_label(scope: ConnScope) -> String {
+  case scope {
+    UserScope(user_id, _) -> "user=" <> user_id
+    ConvScope(user_id, conv_id, _) ->
+      "user=" <> user_id <> ",conv=" <> conv_id
   }
 }
 

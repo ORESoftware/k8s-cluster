@@ -37,16 +37,20 @@ clients │  │ per conn proc│◄──►│ ByUser / ByConv│  │
         └──────────────────────────────────────────┘
 ```
 
-- **ETS group registry** (local, microsecond reads, typed `Subject` per row).
-- **Erlang `pg`** (cross-node PID membership, replicated, eventually consistent).
+- **ETS group registry** (local, microsecond reads, typed `Subject` per
+  row). Indexed on four `ConnGroup` axes: `ByUser`, `ByUserDevice`,
+  `ByConv`, `ByUserConv`.
+- **Erlang `pg`** (cross-node PID membership, replicated, eventually
+  consistent).
 - **Fanout relay** — one named process per node. Cluster-wide broadcasts
   send one envelope per peer node, not one per remote subscriber.
-- **Conversations actor** — in-memory cache backed by Postgres, mesh-gossips
-  membership events to peer nodes via `pg` for fast cache convergence when
-  not running with a shared store.
-- **Cluster discovery** — periodic loop that queries the k8s API for peer
-  pods (or accepts a static `CLUSTER_PEERS` list for local dev), then
-  calls `net_kernel:connect_node/1` for any new ones. The mesh
+- **Conversations actor** — in-memory cache backed by Postgres, mesh-
+  gossips membership events to peer nodes via `pg` for fast cache
+  convergence when not running with a shared store. Emits
+  `MembershipChanged` to `ByUser` and `Kick` to `ByUserConv` on remove.
+- **Cluster discovery** — periodic loop that queries the k8s API for
+  peer pods (or accepts a static `CLUSTER_PEERS` list for local dev),
+  then calls `net_kernel:connect_node/1` for any new ones. The mesh
   self-completes once any two nodes connect.
 
 ## Quick start
@@ -74,18 +78,36 @@ CLIENT_COUNT=500 HOLD_SECONDS=10 LOAD_MODE=hold \
   ./target/release/ws-loadtest-rs
 ```
 
+## Connection topology
+
+A single device opens MULTIPLE websockets to this server:
+
+- exactly one **user-scoped** ws (`/ws?user=<userId>`) which receives
+  membership-change notifications (`added-to <conv>` / `removed-from
+  <conv>`) so the client knows when to open or close per-conv
+  websockets;
+- one **conv-scoped** ws per active conversation
+  (`/ws?user=<userId>&conv=<convId>`) which receives that conv's
+  broadcast frames.
+
+Both variants accept an optional `&device=<deviceId>` query param so
+device-targeted sends (e.g. "log out this device") can address every ws
+of one device.
+
 ## Routes
 
-| Method | Path                                      | Effect                                            |
-|--------|-------------------------------------------|---------------------------------------------------|
-| GET    | `/`                                       | Plain-text help.                                  |
-| GET    | `/healthz`                                | JSON health.                                      |
-| GET    | `/nodes`                                  | Self + connected BEAM peers.                      |
-| GET    | `/ws?user=<id>`                           | WebSocket upgrade as user `<id>`.                 |
-| POST   | `/conv/<id>/members/<user>`               | Add user to conv (durable + cluster-broadcast).   |
-| DELETE | `/conv/<id>/members/<user>`               | Remove user from conv.                            |
-| GET    | `/conv/<id>/members`                      | List members.                                     |
-| POST   | `/conv/<id>/broadcast`                    | Body broadcast to every device of every member.   |
+| Method | Path                                      | Effect                                                  |
+|--------|-------------------------------------------|---------------------------------------------------------|
+| GET    | `/`                                       | Plain-text help.                                        |
+| GET    | `/healthz`                                | JSON health.                                            |
+| GET    | `/nodes`                                  | Self + connected BEAM peers.                            |
+| GET    | `/ws?user=<id>`                           | Open a **user-scoped** ws.                              |
+| GET    | `/ws?user=<id>&conv=<convId>`             | Open a **conv-scoped** ws. 403 if user isn't a member.  |
+| GET    | `/ws?...&device=<id>`                     | Optional on either variant; sets the device dimension.  |
+| POST   | `/conv/<id>/members/<user>`               | Add user to conv (durable + cluster broadcast).         |
+| DELETE | `/conv/<id>/members/<user>`               | Remove user from conv (kicks the user's conv-ws's).     |
+| GET    | `/conv/<id>/members`                      | List members.                                           |
+| POST   | `/conv/<id>/broadcast`                    | Body broadcast to every conv-scoped ws of every member. |
 
 ## Environment
 
