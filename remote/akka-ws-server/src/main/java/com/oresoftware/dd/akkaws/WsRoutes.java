@@ -15,8 +15,10 @@ import com.oresoftware.dd.akkaws.pipeline.AsyncJavaPipeline;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * HTTP route definitions.
@@ -24,6 +26,7 @@ import java.util.concurrent.CompletionStage;
  * <ul>
  *   <li>{@code GET /healthz}              — liveness probe.</li>
  *   <li>{@code GET /readyz}               — readiness probe.</li>
+ *   <li>{@code GET /metrics}              — Prometheus scrape endpoint.</li>
  *   <li>{@code GET /ws/asyncjava}         — WebSocket; each text frame runs through the
  *       async.java pipeline.</li>
  *   <li>{@code GET /ws/akkastreams}       — WebSocket; same pipeline, Akka Streams.</li>
@@ -40,6 +43,16 @@ public final class WsRoutes extends AllDirectives {
   private final AsyncJavaPipeline asyncJavaPipeline;
   private final AkkaStreamsPipeline akkaStreamsPipeline;
   private final BenchmarkRunner benchmark;
+  private final AtomicLong asyncJavaMessagesIn = new AtomicLong();
+  private final AtomicLong asyncJavaMessagesOut = new AtomicLong();
+  private final AtomicLong asyncJavaBytesIn = new AtomicLong();
+  private final AtomicLong asyncJavaBytesOut = new AtomicLong();
+  private final AtomicLong asyncJavaErrors = new AtomicLong();
+  private final AtomicLong akkaStreamsMessagesIn = new AtomicLong();
+  private final AtomicLong akkaStreamsMessagesOut = new AtomicLong();
+  private final AtomicLong akkaStreamsBytesIn = new AtomicLong();
+  private final AtomicLong akkaStreamsBytesOut = new AtomicLong();
+  private final AtomicLong akkaStreamsErrors = new AtomicLong();
 
   public WsRoutes(final ActorSystem<?> system,
                   final AsyncJavaPipeline asyncJavaPipeline,
@@ -54,6 +67,8 @@ public final class WsRoutes extends AllDirectives {
     return concat(
         path("healthz", () -> get(() -> complete("ok\n"))),
         path("readyz",  () -> get(() -> complete("ready\n"))),
+        path("metrics",
+            () -> get(() -> complete(HttpEntities.create(ContentTypes.TEXT_PLAIN_UTF8, metricsText())))),
         pathPrefix("ws", () -> concat(
             path("asyncjava",   () -> handleWebSocketMessages(asyncJavaWsFlow())),
             path("akkastreams", () -> handleWebSocketMessages(akkaStreamsWsFlow())))),
@@ -79,12 +94,7 @@ public final class WsRoutes extends AllDirectives {
     return Flow.<Message>create()
         .filter(Message::isText)
         .map(m -> m.asTextMessage().getStrictText())
-        .mapAsync(/* parallelism */ 8, inputFrame -> {
-          final CompletableFuture<String> done = asyncJavaPipeline.process(inputFrame);
-          return done
-              .thenApply(WsRoutes::okFrame)
-              .exceptionally(e -> errFrame("asyncjava", e));
-        })
+        .mapAsync(/* parallelism */ 8, this::processAsyncJavaFrame)
         .map(TextMessage::create);
   }
 
@@ -93,12 +103,91 @@ public final class WsRoutes extends AllDirectives {
     return Flow.<Message>create()
         .filter(Message::isText)
         .map(m -> m.asTextMessage().getStrictText())
-        .mapAsync(/* parallelism */ 8, inputFrame ->
-            akkaStreamsPipeline.process(inputFrame)
-                .toCompletableFuture()
-                .thenApply(WsRoutes::okFrame)
-                .exceptionally(e -> errFrame("akkastreams", e)))
+        .mapAsync(/* parallelism */ 8, this::processAkkaStreamsFrame)
         .map(TextMessage::create);
+  }
+
+  private CompletionStage<String> processAsyncJavaFrame(final String inputFrame) {
+    asyncJavaMessagesIn.incrementAndGet();
+    asyncJavaBytesIn.addAndGet(utf8Bytes(inputFrame));
+
+    final CompletableFuture<String> done = asyncJavaPipeline.process(inputFrame);
+    return done
+        .thenApply(body -> observeAsyncJavaOutput(okFrame(body)))
+        .exceptionally(e -> {
+          asyncJavaErrors.incrementAndGet();
+          return observeAsyncJavaOutput(errFrame("asyncjava", e));
+        });
+  }
+
+  private CompletionStage<String> processAkkaStreamsFrame(final String inputFrame) {
+    akkaStreamsMessagesIn.incrementAndGet();
+    akkaStreamsBytesIn.addAndGet(utf8Bytes(inputFrame));
+
+    return akkaStreamsPipeline.process(inputFrame)
+        .toCompletableFuture()
+        .thenApply(body -> observeAkkaStreamsOutput(okFrame(body)))
+        .exceptionally(e -> {
+          akkaStreamsErrors.incrementAndGet();
+          return observeAkkaStreamsOutput(errFrame("akkastreams", e));
+        });
+  }
+
+  private String observeAsyncJavaOutput(final String frame) {
+    asyncJavaMessagesOut.incrementAndGet();
+    asyncJavaBytesOut.addAndGet(utf8Bytes(frame));
+    return frame;
+  }
+
+  private String observeAkkaStreamsOutput(final String frame) {
+    akkaStreamsMessagesOut.incrementAndGet();
+    akkaStreamsBytesOut.addAndGet(utf8Bytes(frame));
+    return frame;
+  }
+
+  private String metricsText() {
+    final StringBuilder b = new StringBuilder(2048);
+    appendMetric(b, "dd_akka_ws_async_java_messages_in_total", "counter",
+        "Total text frames received by the async.java websocket pipeline.",
+        asyncJavaMessagesIn.get());
+    appendMetric(b, "dd_akka_ws_async_java_messages_out_total", "counter",
+        "Total text frames sent by the async.java websocket pipeline.",
+        asyncJavaMessagesOut.get());
+    appendMetric(b, "dd_akka_ws_async_java_bytes_in_total", "counter",
+        "Total text-frame bytes received by the async.java websocket pipeline.",
+        asyncJavaBytesIn.get());
+    appendMetric(b, "dd_akka_ws_async_java_bytes_out_total", "counter",
+        "Total text-frame bytes sent by the async.java websocket pipeline.",
+        asyncJavaBytesOut.get());
+    appendMetric(b, "dd_akka_ws_async_java_errors_total", "counter",
+        "Total async.java websocket pipeline errors converted to error frames.",
+        asyncJavaErrors.get());
+    appendMetric(b, "dd_akka_ws_akka_streams_messages_in_total", "counter",
+        "Total text frames received by the Akka Streams websocket pipeline.",
+        akkaStreamsMessagesIn.get());
+    appendMetric(b, "dd_akka_ws_akka_streams_messages_out_total", "counter",
+        "Total text frames sent by the Akka Streams websocket pipeline.",
+        akkaStreamsMessagesOut.get());
+    appendMetric(b, "dd_akka_ws_akka_streams_bytes_in_total", "counter",
+        "Total text-frame bytes received by the Akka Streams websocket pipeline.",
+        akkaStreamsBytesIn.get());
+    appendMetric(b, "dd_akka_ws_akka_streams_bytes_out_total", "counter",
+        "Total text-frame bytes sent by the Akka Streams websocket pipeline.",
+        akkaStreamsBytesOut.get());
+    appendMetric(b, "dd_akka_ws_akka_streams_errors_total", "counter",
+        "Total Akka Streams websocket pipeline errors converted to error frames.",
+        akkaStreamsErrors.get());
+    return b.toString();
+  }
+
+  private static void appendMetric(final StringBuilder b,
+                                   final String name,
+                                   final String metricType,
+                                   final String help,
+                                   final long value) {
+    b.append("# HELP ").append(name).append(' ').append(help).append('\n');
+    b.append("# TYPE ").append(name).append(' ').append(metricType).append('\n');
+    b.append(name).append(' ').append(value).append('\n');
   }
 
   private static String okFrame(final String body) {
@@ -115,6 +204,11 @@ public final class WsRoutes extends AllDirectives {
   private static String escape(final String s) {
     if (s == null) return "";
     return s.replace("\\", "\\\\").replace("\"", "\\\"");
+  }
+
+  private static long utf8Bytes(final String s) {
+    if (s == null) return 0L;
+    return s.getBytes(StandardCharsets.UTF_8).length;
   }
 
   private static int parsePositiveIntEnv(final String name, final int fallback) {

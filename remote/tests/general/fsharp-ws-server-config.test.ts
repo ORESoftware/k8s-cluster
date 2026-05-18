@@ -22,6 +22,7 @@ async function readRepoFile(relativePath: string): Promise<string> {
 
 test('fsharp websocket service is bounded, deployed, and guarded', async () => {
   const project = await readRepoFile('remote/fsharp-ws-server/DdFsharpWsServer.fsproj');
+  const program = await readRepoFile('remote/fsharp-ws-server/Program.fs');
   const routes = await readRepoFile('remote/fsharp-ws-server/WsRoutes.fs');
   const dockerfile = await readRepoFile('remote/fsharp-ws-server/Dockerfile');
   const readme = await readRepoFile('remote/fsharp-ws-server/readme.md');
@@ -47,7 +48,10 @@ test('fsharp websocket service is bounded, deployed, and guarded', async () => {
   assert.match(routes, /receiveTextFrame/);
   assert.match(routes, /parseBoundedPositiveIntEnv/);
   assert.match(routes, /handleRxBurst/);
+  assert.match(routes, /dd_fsharp_ws_messages_in_total/);
+  assert.match(program, /MapGet\("\/metrics"/);
   assert.match(readme, /\/ws\/rx-burst/);
+  assert.match(readme, /\/metrics/);
   assert.match(readme, /MAX_WS_TEXT_FRAME_BYTES/);
   assert.match(readme, /MAX_BENCHMARK_ITERATIONS/);
 

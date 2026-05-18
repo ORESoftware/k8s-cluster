@@ -26,6 +26,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health::healthz))
         .route("/readyz",  get(health::readyz))
+        .route("/metrics", get(health::metrics))
         // Tenants
         .route("/v1/tenants",         post(tenants::create))
         .route("/v1/tenants/{id}",    get(tenants::get_by_id))

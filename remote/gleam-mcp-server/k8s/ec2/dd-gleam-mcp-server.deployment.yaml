@@ -13,7 +13,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-05-15-mcp-v1"
+        dd.dev/telemetry-revision: "2026-05-18-mcp-observability"
       labels:
         app: dd-gleam-mcp-server
     spec:
@@ -54,6 +54,26 @@ spec:
                   name: dd-gleam-mcp-server-secrets
                   key: AGENT_TASKS_RDS_DATABASE_URL
                   optional: true
+            - name: MCP_PROMETHEUS_URL
+              value: http://dd-prometheus.observability.svc.cluster.local:9090
+            - name: MCP_LOKI_URL
+              value: http://dd-loki.observability.svc.cluster.local:3100
+            - name: MCP_GRAFANA_URL
+              value: http://dd-grafana.observability.svc.cluster.local:3000
+            - name: MCP_OTEL_COLLECTOR_URL
+              value: http://dd-otel-collector.observability.svc.cluster.local:8889
+            - name: MCP_TEMPO_URL
+              value: http://dd-tempo.observability.svc.cluster.local:3200
+            - name: MCP_JAEGER_URL
+              value: http://dd-jaeger.observability.svc.cluster.local:16686
+            - name: MCP_NATS_METRICS_URL
+              value: http://dd-nats.messaging.svc.cluster.local:7777
+            - name: MCP_OBS_HTTP_TIMEOUT_MS
+              value: "650"
+            - name: MCP_OBS_SNAPSHOT_TIMEOUT_MS
+              value: "1800"
+            - name: MCP_OBS_SNIPPET_BYTES
+              value: "768"
           envFrom:
             - secretRef:
                 name: dd-gleam-mcp-server-secrets

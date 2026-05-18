@@ -9,6 +9,7 @@ Node.js coding-agent workers, and the Gleam WebSocket service.
 - `GET /home` renders a small service page.
 - `GET /healthz` returns JSON health.
 - `GET /metrics` returns Prometheus text metrics.
+- `GET /observability` returns a bounded read-only snapshot of internal observability endpoints.
 - `GET /mcp` returns endpoint metadata.
 - `POST /mcp` accepts a minimal JSON-RPC MCP request.
 
@@ -17,6 +18,7 @@ The public gateway exposes these under:
 - `https://54.91.17.58/mcp/home`
 - `https://54.91.17.58/mcp/healthz`
 - `https://54.91.17.58/mcp/metrics`
+- `https://54.91.17.58/mcp/observability`
 - `https://54.91.17.58/mcp`
 
 Ops paths are currently protected by the temporary dd gateway auth header. Do not echo the
@@ -33,9 +35,10 @@ tools, add those keys to AWS Secrets Manager and expose them through External Se
 - Generated Kubernetes secrets: `dd-agent-secrets`, `dd-remote-rest-api-secrets`, and
   service-specific secrets as needed
 
-For MCP-specific credentials, create a new AWS secret such as `dd/remote-dev/mcp-secrets`, add a
-matching `ExternalSecret` manifest, and mount the generated Kubernetes secret into only the MCP
-deployment. Keep MCP tools read-only until the auth story is stronger.
+For MCP-specific credentials, keep using the dedicated AWS secret
+`dd/remote-dev/mcp-secrets`, the matching `ExternalSecret` manifest, and the generated Kubernetes
+secret mounted only into the MCP deployment. Keep MCP tools read-only until the auth story is
+stronger.
 
 An admin UI can manage these values safely if it never displays secret values: the browser submits
 a new value to an authenticated server route, that route writes a new AWS Secrets Manager version,
@@ -64,6 +67,10 @@ For MCP-specific credentials, use a dedicated AWS secret and Kubernetes secret:
 | Source                      | Generated target              | Deployment access                        |
 | --------------------------- | ----------------------------- | ---------------------------------------- |
 | `dd/remote-dev/mcp-secrets` | `dd-gleam-mcp-server-secrets` | Mounted only into `dd-gleam-mcp-server`. |
+
+The current MCP secret shape includes `RDS_DATABASE_URL` and `AGENT_TASKS_RDS_DATABASE_URL` so
+read-only MCP tools can inspect database-backed contract metadata without inheriting the broader
+REST API or agent secret bundles.
 
 Do not share the broad agent model-key secret with MCP unless the MCP tool truly needs to call
 model providers. Prefer per-service secrets so a compromised MCP pod cannot automatically inherit
@@ -100,6 +107,7 @@ The tools are intentionally read-only:
 - `cluster_status`
 - `service_directory`
 - `telemetry_targets`
+- `observability_snapshot`
 
 ## Telemetry
 
@@ -111,6 +119,23 @@ The service exports:
 The OpenTelemetry Collector scrapes `dd-gleam-mcp-server.default.svc.cluster.local:8090` and
 re-exports the metrics to Prometheus. Logs go to stdout, where promtail collects them for Loki.
 Grafana dashboard panels live in `remote/argocd/observability/grafana.dashboards.configmap.yaml`.
+
+The MCP server can also read the observability plane through internal service DNS without routing
+through the public gateway. The `observability_snapshot` tool and `GET /observability` probe:
+
+- Prometheus: readiness plus `up` query.
+- Loki: readiness plus labels API.
+- Grafana: health API.
+- OpenTelemetry Collector: collector-exported Prometheus metrics.
+- Tempo and Jaeger: trace backend readiness/query APIs.
+- NATS metrics exporter: Prometheus metrics endpoint.
+
+Deployment env vars keep those URLs explicit and overrideable: `MCP_PROMETHEUS_URL`,
+`MCP_LOKI_URL`, `MCP_GRAFANA_URL`, `MCP_OTEL_COLLECTOR_URL`, `MCP_TEMPO_URL`, `MCP_JAEGER_URL`, and
+`MCP_NATS_METRICS_URL`. The snapshot probes targets concurrently and is bounded by
+`MCP_OBS_HTTP_TIMEOUT_MS`, `MCP_OBS_SNAPSHOT_TIMEOUT_MS`, and `MCP_OBS_SNIPPET_BYTES`. Responses
+return only small body snippets so agents can diagnose telemetry reachability without turning MCP
+into a broad data exfiltration path.
 
 ## Kubernetes
 

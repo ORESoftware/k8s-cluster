@@ -1,12 +1,16 @@
 use std::{
     env, fs,
     net::SocketAddr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -18,6 +22,15 @@ use serde_json::json;
 struct AppState {
     config: Config,
     http: reqwest::Client,
+    metrics: Arc<Metrics>,
+}
+
+#[derive(Default)]
+struct Metrics {
+    http_requests_total: AtomicU64,
+    dispatch_requests_total: AtomicU64,
+    dispatch_failures_total: AtomicU64,
+    nats_publish_failures_total: AtomicU64,
 }
 
 #[derive(Clone)]
@@ -219,12 +232,64 @@ fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
 }
 
 async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
     Json(BrokerHealth {
         ok: true,
         service: "dd-agent-worker-broker",
         direct_dispatch_enabled: state.config.direct_dispatch_enabled,
         wake_on_dispatch: state.config.wake_on_dispatch,
     })
+}
+
+async fn metrics(State(state): State<AppState>) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    let body = format!(
+        concat!(
+            "# HELP dd_agent_worker_broker_build_info Agent worker broker build metadata.\n",
+            "# TYPE dd_agent_worker_broker_build_info gauge\n",
+            "dd_agent_worker_broker_build_info{{service=\"dd-agent-worker-broker\"}} 1\n",
+            "# HELP dd_agent_worker_broker_http_requests_total HTTP requests handled by the broker.\n",
+            "# TYPE dd_agent_worker_broker_http_requests_total counter\n",
+            "dd_agent_worker_broker_http_requests_total {}\n",
+            "# HELP dd_agent_worker_broker_dispatch_requests_total Task dispatch requests handled by the broker.\n",
+            "# TYPE dd_agent_worker_broker_dispatch_requests_total counter\n",
+            "dd_agent_worker_broker_dispatch_requests_total {}\n",
+            "# HELP dd_agent_worker_broker_dispatch_failures_total Task dispatch requests rejected or failed by the broker.\n",
+            "# TYPE dd_agent_worker_broker_dispatch_failures_total counter\n",
+            "dd_agent_worker_broker_dispatch_failures_total {}\n",
+            "# HELP dd_agent_worker_broker_nats_publish_failures_total NATS publish failures while dispatching tasks.\n",
+            "# TYPE dd_agent_worker_broker_nats_publish_failures_total counter\n",
+            "dd_agent_worker_broker_nats_publish_failures_total {}\n",
+            "# HELP dd_agent_worker_broker_direct_dispatch_enabled Direct worker dispatch setting.\n",
+            "# TYPE dd_agent_worker_broker_direct_dispatch_enabled gauge\n",
+            "dd_agent_worker_broker_direct_dispatch_enabled {}\n",
+            "# HELP dd_agent_worker_broker_wake_on_dispatch_enabled Worker wake-up setting.\n",
+            "# TYPE dd_agent_worker_broker_wake_on_dispatch_enabled gauge\n",
+            "dd_agent_worker_broker_wake_on_dispatch_enabled {}\n"
+        ),
+        state.metrics.http_requests_total.load(Ordering::Relaxed),
+        state.metrics.dispatch_requests_total.load(Ordering::Relaxed),
+        state.metrics.dispatch_failures_total.load(Ordering::Relaxed),
+        state.metrics.nats_publish_failures_total.load(Ordering::Relaxed),
+        u8::from(state.config.direct_dispatch_enabled),
+        u8::from(state.config.wake_on_dispatch)
+    );
+
+    (
+        StatusCode::OK,
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response()
 }
 
 async fn ensure_task_stream(config: &Config, client: async_nats::Client) -> Result<(), String> {
@@ -482,7 +547,19 @@ async fn dispatch_task(
     headers: HeaderMap,
     Json(request): Json<DispatchTaskRequest>,
 ) -> Response {
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .dispatch_requests_total
+        .fetch_add(1, Ordering::Relaxed);
     let Some(secret) = state.config.server_auth_secret.as_deref() else {
+        state
+            .metrics
+            .dispatch_failures_total
+            .fetch_add(1, Ordering::Relaxed);
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "SERVER_AUTH_SECRET is not configured" })),
@@ -490,6 +567,10 @@ async fn dispatch_task(
             .into_response();
     };
     if !request_is_authorized(&headers, secret) {
+        state
+            .metrics
+            .dispatch_failures_total
+            .fetch_add(1, Ordering::Relaxed);
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({
@@ -501,6 +582,10 @@ async fn dispatch_task(
     }
     if let Some(body_thread_id) = request.thread_id.as_deref() {
         if body_thread_id != thread_id {
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({ "error": "threadId path/body mismatch" })),
@@ -511,12 +596,20 @@ async fn dispatch_task(
     let repo = match required_repo(&request) {
         Ok(value) => value,
         Err(error) => {
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
             return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
         }
     };
     let base_branch = match requested_base_branch(&request) {
         Ok(value) => value,
         Err(error) => {
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
             return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
         }
     };
@@ -527,6 +620,14 @@ async fn dispatch_task(
     {
         Ok(value) => value,
         Err(error) => {
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .nats_publish_failures_total
+                .fetch_add(1, Ordering::Relaxed);
             return (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": "failed to publish agent task", "detail": error })),
@@ -594,10 +695,12 @@ async fn main() {
     let state = AppState {
         config,
         http: reqwest::Client::new(),
+        metrics: Arc::new(Metrics::default()),
     };
 
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/metrics", get(metrics))
         .route(
             "/api/agent-worker/threads/:thread_id/tasks",
             post(dispatch_task),

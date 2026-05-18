@@ -1,4 +1,8 @@
-use std::{env, net::SocketAddr};
+use std::{
+    env,
+    net::SocketAddr,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use axum::{
     extract::{Form, Query},
@@ -8,6 +12,10 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+
+static HTTP_REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static AUTH_SUCCESSES_TOTAL: AtomicU64 = AtomicU64::new(0);
+static AUTH_FAILURES_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Deserialize)]
 struct AuthQuery {
@@ -151,19 +159,23 @@ fn login_page(return_to: &str, error: Option<&str>) -> Html<String> {
 }
 
 async fn auth_form(Query(query): Query<AuthQuery>) -> impl IntoResponse {
+    HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
     let return_to = safe_return_to(query.return_to);
     login_page(&return_to, None)
 }
 
 async fn auth_submit(Form(form): Form<PinForm>) -> Response {
+    HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
     let return_to = safe_return_to(form.return_to);
     if form.pin.trim() != auth_pin() {
+        AUTH_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
         return (
             StatusCode::UNAUTHORIZED,
             login_page(&return_to, Some("Incorrect PIN")),
         )
             .into_response();
     }
+    AUTH_SUCCESSES_TOTAL.fetch_add(1, Ordering::Relaxed);
 
     let cookie = format!(
         "{}={}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax; Secure",
@@ -184,10 +196,44 @@ async fn auth_submit(Form(form): Form<PinForm>) -> Response {
 }
 
 async fn healthz() -> impl IntoResponse {
+    HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
     Json(HealthResponse {
         ok: true,
         service: "dd-remote-auth",
     })
+}
+
+async fn metrics() -> Response {
+    HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
+    let body = format!(
+        concat!(
+            "# HELP dd_remote_auth_build_info Remote auth build metadata.\n",
+            "# TYPE dd_remote_auth_build_info gauge\n",
+            "dd_remote_auth_build_info{{service=\"dd-remote-auth\"}} 1\n",
+            "# HELP dd_remote_auth_http_requests_total HTTP requests handled by remote auth.\n",
+            "# TYPE dd_remote_auth_http_requests_total counter\n",
+            "dd_remote_auth_http_requests_total {}\n",
+            "# HELP dd_remote_auth_successes_total Successful auth submissions.\n",
+            "# TYPE dd_remote_auth_successes_total counter\n",
+            "dd_remote_auth_successes_total {}\n",
+            "# HELP dd_remote_auth_failures_total Failed auth submissions.\n",
+            "# TYPE dd_remote_auth_failures_total counter\n",
+            "dd_remote_auth_failures_total {}\n"
+        ),
+        HTTP_REQUESTS_TOTAL.load(Ordering::Relaxed),
+        AUTH_SUCCESSES_TOTAL.load(Ordering::Relaxed),
+        AUTH_FAILURES_TOTAL.load(Ordering::Relaxed)
+    );
+
+    (
+        StatusCode::OK,
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response()
 }
 
 #[tokio::main]
@@ -203,7 +249,8 @@ async fn main() {
     let app = Router::new()
         .route("/auth", get(auth_form).post(auth_submit))
         .route("/auth/", get(auth_form).post(auth_submit))
-        .route("/healthz", get(healthz));
+        .route("/healthz", get(healthz))
+        .route("/metrics", get(metrics));
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

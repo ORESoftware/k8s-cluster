@@ -456,6 +456,53 @@ let handleRxStatsSse (ctx: HttpContext) : Task =
         | ex -> logger.LogWarning(ex, "sse[rx-stats] terminated")
     }
 
+let private promMetric (name: string) (metricType: string) (help: string) (value: string) : string =
+    sprintf "# HELP %s %s\n# TYPE %s %s\n%s %s\n" name help name metricType name value
+
+let private promIntMetric (name: string) (metricType: string) (help: string) (value: int64) : string =
+    promMetric name metricType help (value.ToString(System.Globalization.CultureInfo.InvariantCulture))
+
+let private promFloatMetric (name: string) (metricType: string) (help: string) (value: float) : string =
+    promMetric name metricType help (value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
+
+let handleMetrics (ctx: HttpContext) : Task =
+    let snap = RxStats.snapshot ()
+    let body =
+        [ promIntMetric
+              "dd_fsharp_ws_open_connections"
+              "gauge"
+              "Current open WebSocket connections handled by dd-fsharp-ws-server."
+              (int64 snap.openConnections)
+          promIntMetric
+              "dd_fsharp_ws_messages_in_total"
+              "counter"
+              "Total text frames received by dd-fsharp-ws-server."
+              snap.messagesIn
+          promIntMetric
+              "dd_fsharp_ws_messages_out_total"
+              "counter"
+              "Total text frames sent by dd-fsharp-ws-server."
+              snap.messagesOut
+          promIntMetric
+              "dd_fsharp_ws_bytes_in_total"
+              "counter"
+              "Total text-frame bytes received by dd-fsharp-ws-server."
+              snap.bytesIn
+          promIntMetric
+              "dd_fsharp_ws_bytes_out_total"
+              "counter"
+              "Total text-frame bytes sent by dd-fsharp-ws-server."
+              snap.bytesOut
+          promFloatMetric
+              "dd_fsharp_ws_uptime_seconds"
+              "gauge"
+              "Process uptime for dd-fsharp-ws-server."
+              (float snap.uptimeMs / 1000.0) ]
+        |> String.concat "\n"
+
+    ctx.Response.ContentType <- "text/plain; version=0.0.4; charset=utf-8"
+    ctx.Response.WriteAsync(body)
+
 let handleHealth (ctx: HttpContext) : Task =
     ctx.Response.WriteAsync("ok\n")
 

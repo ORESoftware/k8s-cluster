@@ -22,6 +22,8 @@ spec:
     metadata:
       labels:
         app: dd-akka-ws-server
+      annotations:
+        dd.dev/code-revision: '2026-05-18-telemetry'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -42,10 +44,8 @@ spec:
             - |
               set -euo pipefail
               cd /opt/dd-next-1/remote/akka-ws-server
-              if [ ! -f target/dd-akka-ws-server.jar ]; then
-                echo "Building dd-akka-ws-server with Maven..."
-                mvn -B -e -DskipTests package
-              fi
+              echo "Building dd-akka-ws-server with Maven..."
+              mvn -B -e -DskipTests package
               exec java $JAVA_OPTS -jar target/dd-akka-ws-server.jar
           env:
             - name: HTTP_HOST

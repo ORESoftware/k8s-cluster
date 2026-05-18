@@ -1,5 +1,6 @@
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Serialize;
 
@@ -39,4 +40,36 @@ pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBo
             }),
         ),
     }
+}
+
+pub async fn metrics(State(state): State<AppState>) -> Response {
+    let db_ready = match sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(_) => 1,
+        Err(_) => 0,
+    };
+    let body = format!(
+        concat!(
+            "# HELP dd_billing_server_build_info Billing server build metadata.\n",
+            "# TYPE dd_billing_server_build_info gauge\n",
+            "dd_billing_server_build_info{{service=\"dd-billing-server\",version=\"{}\"}} 1\n",
+            "# HELP dd_billing_server_ready Database readiness state.\n",
+            "# TYPE dd_billing_server_ready gauge\n",
+            "dd_billing_server_ready {}\n"
+        ),
+        env!("CARGO_PKG_VERSION"),
+        db_ready
+    );
+
+    (
+        StatusCode::OK,
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    )
+        .into_response()
 }

@@ -19,6 +19,8 @@ spec:
       app: dd-billing-server
   template:
     metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-18-observability'
       labels:
         app: dd-billing-server
     spec:

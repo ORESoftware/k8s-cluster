@@ -12,6 +12,8 @@ spec:
       app: dd-lock-loadtest-trigger
   template:
     metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-18-observability'
       labels:
         app: dd-lock-loadtest-trigger
     spec:

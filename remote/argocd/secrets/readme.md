@@ -18,8 +18,7 @@ Required AWS secret names:
 - `dd/remote-dev/rest-api-secrets` -> creates `dd-remote-rest-api-secrets`
 - `dd/remote-dev/lambda-runner-secrets` -> creates `dd-gleam-lambda-runner-secrets`
 - `dd/remote-dev/idle-reaper-secret` -> creates `dd-idle-reaper-secret`
-- `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets` if MCP write tools are
-  enabled
+- `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
 
 The `dd-aws-secrets-manager` store uses the External Secrets controller pod's default AWS
 credential chain. On EC2 this means the node instance role must allow
@@ -29,6 +28,11 @@ credential chain. On EC2 this means the node instance role must allow
 `dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the Gleam lambda runner
 consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda
 definitions by UUID without inheriting the REST API secret bundle.
+
+`dd/remote-dev/mcp-secrets` must include `RDS_DATABASE_URL` and
+`AGENT_TASKS_RDS_DATABASE_URL`; the Gleam MCP server consumes those keys through explicit
+`secretKeyRef`s so read-only MCP tools can inspect database-backed contracts without inheriting the
+broader REST API or agent secret bundles.
 
 ## Updating Values
 

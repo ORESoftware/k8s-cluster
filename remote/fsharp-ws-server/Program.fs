@@ -59,6 +59,7 @@ let main args =
     app.MapGet("/healthz",                toReqDelegate handleHealth)          |> ignore
     app.MapGet("/readyz",                 toReqDelegate handleReady)           |> ignore
     app.MapGet("/livez",                  toReqDelegate handleLive)            |> ignore
+    app.MapGet("/metrics",                toReqDelegate handleMetrics)         |> ignore
     app.MapGet("/v1/benchmark",           toReqDelegate handleBenchmark)       |> ignore
     app.MapGet("/v1/rx-stats",            toReqDelegate handleRxStats)         |> ignore
     app.MapGet("/v1/rx-stats/history",    toReqDelegate handleRxStatsHistory)  |> ignore

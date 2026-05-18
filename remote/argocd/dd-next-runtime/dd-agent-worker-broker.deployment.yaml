@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-16-agent-worker-broker'
+        dd.dev/telemetry-revision: '2026-05-18-observability'
       labels:
         app: dd-agent-worker-broker
     spec:

@@ -63,6 +63,11 @@ data:
         static_configs:
           - targets:
               - dd-gleam-lambda-runner.default.svc.cluster.local:8083
+      - job_name: dd-gleam-mcp-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-gleam-mcp-server.default.svc.cluster.local:8090
       - job_name: dd-web-scraper
         metrics_path: /metrics
         static_configs:
@@ -78,3 +83,53 @@ data:
         static_configs:
           - targets:
               - dd-container-pool.default.svc.cluster.local:8102
+      - job_name: dd-agent-worker-broker
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-agent-worker-broker.default.svc.cluster.local:8098
+      - job_name: dd-remote-auth
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-remote-auth.default.svc.cluster.local:8083
+      - job_name: dd-akka-ws-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-akka-ws-server.default.svc.cluster.local:8086
+      - job_name: dd-billing-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-billing-server.default.svc.cluster.local:80
+      - job_name: dd-formal-methods-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-formal-methods-server.default.svc.cluster.local:8110
+      - job_name: dd-formal-methods-service
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-formal-methods-service.default.svc.cluster.local:8111
+      - job_name: dd-fsharp-ws-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-fsharp-ws-server.default.svc.cluster.local:8087
+      - job_name: dd-lock-loadtest-trigger
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-lock-loadtest-trigger.default.svc.cluster.local:8110
+      - job_name: dd-spark-pipeline-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-spark-pipeline-server.default.svc.cluster.local:8085
+      - job_name: gcs-router
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - gcs-router.default.svc.cluster.local:9100

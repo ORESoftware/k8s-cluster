@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-17-formal-methods-service'
+        dd.dev/telemetry-revision: '2026-05-18-observability'
       labels:
         app: dd-formal-methods-service
     spec:

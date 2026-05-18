@@ -19,6 +19,7 @@ to the work itself.
 | ------ | ------------------- | ------------------------------------------------------------------------ |
 | GET    | `/healthz`          | Liveness probe.                                                          |
 | GET    | `/readyz`           | Readiness probe.                                                         |
+| GET    | `/metrics`          | Prometheus text metrics for the async.java and Akka Streams websocket flows. |
 | GET    | `/ws/asyncjava`     | WebSocket; each text frame runs through `AsyncJavaPipeline` and the JSON result is sent back. |
 | GET    | `/ws/akkastreams`   | Same shape, `AkkaStreamsPipeline`.                                       |
 | GET    | `/v1/benchmark`     | Runs both pipelines N times against the same payload and returns a JSON timing summary. |

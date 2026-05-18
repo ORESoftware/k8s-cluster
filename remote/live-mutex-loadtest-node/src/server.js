@@ -16,6 +16,8 @@ const maxLogLines = parsePositiveInteger('RUN_LOG_LINES', 200);
 let activeRun = null;
 let lastRun = null;
 let runCounter = 0;
+let completedRunsTotal = 0;
+let failedRunsTotal = 0;
 
 function writeJson(response, statusCode, body) {
   response.writeHead(statusCode, {
@@ -23,6 +25,14 @@ function writeJson(response, statusCode, body) {
     'cache-control': 'no-store',
   });
   response.end(`${JSON.stringify(body, null, 2)}\n`);
+}
+
+function writeText(response, statusCode, body) {
+  response.writeHead(statusCode, {
+    'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  response.end(body);
 }
 
 function collectBody(request) {
@@ -207,6 +217,10 @@ function startRun(body) {
     run.finishedAt = new Date().toISOString();
     run.exitCode = code;
     run.signal = signal;
+    completedRunsTotal += 1;
+    if (run.status === 'failed') {
+      failedRunsTotal += 1;
+    }
     lastRun = run;
     activeRun = null;
   });
@@ -217,8 +231,39 @@ function startRun(body) {
   return run;
 }
 
+function metricsText() {
+  const active = activeRun ? 1 : 0;
+  const lastFailed = lastRun && lastRun.status === 'failed' ? 1 : 0;
+  return [
+    '# HELP dd_lock_loadtest_trigger_build_info Lock load-test trigger build metadata.',
+    '# TYPE dd_lock_loadtest_trigger_build_info gauge',
+    'dd_lock_loadtest_trigger_build_info{service="dd-lock-loadtest-trigger"} 1',
+    '# HELP dd_lock_loadtest_trigger_runs_started_total Load-test runs started.',
+    '# TYPE dd_lock_loadtest_trigger_runs_started_total counter',
+    `dd_lock_loadtest_trigger_runs_started_total ${runCounter}`,
+    '# HELP dd_lock_loadtest_trigger_runs_completed_total Load-test runs completed.',
+    '# TYPE dd_lock_loadtest_trigger_runs_completed_total counter',
+    `dd_lock_loadtest_trigger_runs_completed_total ${completedRunsTotal}`,
+    '# HELP dd_lock_loadtest_trigger_runs_failed_total Load-test runs that exited unsuccessfully.',
+    '# TYPE dd_lock_loadtest_trigger_runs_failed_total counter',
+    `dd_lock_loadtest_trigger_runs_failed_total ${failedRunsTotal}`,
+    '# HELP dd_lock_loadtest_trigger_active_run Active load-test run state.',
+    '# TYPE dd_lock_loadtest_trigger_active_run gauge',
+    `dd_lock_loadtest_trigger_active_run ${active}`,
+    '# HELP dd_lock_loadtest_trigger_last_run_failed Last load-test run failed state.',
+    '# TYPE dd_lock_loadtest_trigger_last_run_failed gauge',
+    `dd_lock_loadtest_trigger_last_run_failed ${lastFailed}`,
+    '',
+  ].join('\n');
+}
+
 async function handleRequest(request, response) {
   const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+
+  if (request.method === 'GET' && url.pathname === '/metrics') {
+    writeText(response, 200, metricsText());
+    return;
+  }
 
   if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/healthz')) {
     writeJson(response, 200, {
@@ -230,6 +275,7 @@ async function handleRequest(request, response) {
         start: 'POST /runs',
         active: 'GET /runs/active',
         last: 'GET /runs/last',
+        metrics: 'GET /metrics',
       },
     });
     return;

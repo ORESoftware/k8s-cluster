@@ -14,6 +14,8 @@ spec:
       app: dd-remote-auth
   template:
     metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-18-observability'
       labels:
         app: dd-remote-auth
     spec:

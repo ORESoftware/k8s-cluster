@@ -11,6 +11,9 @@ import gleam/string
 import gleam_mcp_server/metrics
 import mist
 
+@external(erlang, "mcp_observability", "snapshot")
+fn observability_snapshot() -> String
+
 const host = "0.0.0.0"
 
 const port = 8090
@@ -35,6 +38,7 @@ fn route(
     Get, ["home"] -> home_page()
     Get, ["healthz"] -> healthz()
     Get, ["metrics"] -> metrics_response(metrics_name)
+    Get, ["observability"] -> observability_response()
     Get, ["mcp"] -> mcp_info()
     Post, ["mcp"] -> rpc(req, metrics_name)
     Post, [] -> rpc(req, metrics_name)
@@ -59,10 +63,10 @@ fn rpc(
 
     case method {
       "notifications/initialized" -> empty_response(202)
-      _ -> json_response(200, rpc_payload(method))
+      _ -> json_response(200, rpc_payload(method, body))
     }
   })
-  |> result.unwrap(json_response(400, json_rpc_error("parse error", -32700)))
+  |> result.unwrap(json_response(400, json_rpc_error("parse error", -32_700)))
 }
 
 fn method_from_body(body: String) -> String {
@@ -88,13 +92,13 @@ fn method_from_body(body: String) -> String {
   }
 }
 
-fn rpc_payload(method: String) -> String {
+fn rpc_payload(method: String, body: String) -> String {
   case method {
     "initialize" -> initialize_result()
     "tools/list" -> tools_list_result()
-    "tools/call" -> tools_call_result()
+    "tools/call" -> tools_call_result(body)
     "ping" -> "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"
-    _ -> json_rpc_error("method not found", -32601)
+    _ -> json_rpc_error("method not found", -32_601)
   }
 }
 
@@ -108,12 +112,32 @@ fn tools_list_result() -> String {
   "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":["
   <> "{\"name\":\"cluster_status\",\"title\":\"Cluster status\",\"description\":\"Return static service discovery details for the DD remote Kubernetes runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
   <> "{\"name\":\"service_directory\",\"title\":\"Service directory\",\"description\":\"List public and internal service paths exposed by the runtime gateway.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
-  <> "{\"name\":\"telemetry_targets\",\"title\":\"Telemetry targets\",\"description\":\"List Prometheus scrape targets and dashboard paths for this runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}}"
+  <> "{\"name\":\"telemetry_targets\",\"title\":\"Telemetry targets\",\"description\":\"List Prometheus scrape targets and dashboard paths for this runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"observability_snapshot\",\"title\":\"Observability snapshot\",\"description\":\"Read live internal observability endpoints for Prometheus, Loki, Grafana, OTEL Collector, Tempo, Jaeger, and NATS metrics.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}}"
   <> "]}}"
 }
 
-fn tools_call_result() -> String {
+fn tools_call_result(body: String) -> String {
+  case string.contains(body, "\"observability_snapshot\"") {
+    True -> observability_snapshot_result()
+    False -> {
+      case string.contains(body, "\"telemetry_targets\"") {
+        True -> observability_snapshot_result()
+        False -> cluster_status_result()
+      }
+    }
+  }
+}
+
+fn cluster_status_result() -> String {
   "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"dd-gleam-mcp-server is running in Kubernetes. Public gateway path: /mcp. Metrics path: /mcp/metrics. Grafana path: /telemetry/.\"}],\"structuredContent\":{\"service\":\"dd-gleam-mcp-server\",\"namespace\":\"default\",\"language\":\"gleam\",\"runtime\":\"beam\",\"gatewayPath\":\"/mcp\",\"metricsPath\":\"/mcp/metrics\",\"telemetry\":{\"prometheusJob\":\"dd-gleam-mcp-server\",\"grafanaDashboard\":\"dd-remote-dev-runtime\",\"lokiLabels\":{\"app\":\"dd-gleam-mcp-server\"}}}}}"
+}
+
+fn observability_snapshot_result() -> String {
+  let snapshot = observability_snapshot()
+  "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Read-only observability snapshot collected through internal Kubernetes service DNS.\"}],\"structuredContent\":{\"service\":\"dd-gleam-mcp-server\",\"observability\":"
+  <> snapshot
+  <> "}}}"
 }
 
 fn json_rpc_error(message: String, code: Int) -> String {
@@ -137,11 +161,23 @@ fn home_page() -> response.Response(mist.ResponseData) {
 }
 
 fn mcp_info() -> response.Response(mist.ResponseData) {
-  json_response(200, "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"protocolVersion\":\"" <> protocol_version <> "\",\"endpoint\":\"POST /mcp\",\"tools\":[\"cluster_status\",\"service_directory\",\"telemetry_targets\"]}")
+  json_response(
+    200,
+    "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"protocolVersion\":\""
+      <> protocol_version
+      <> "\",\"endpoint\":\"POST /mcp\",\"tools\":[\"cluster_status\",\"service_directory\",\"telemetry_targets\",\"observability_snapshot\"]}",
+  )
 }
 
 fn healthz() -> response.Response(mist.ResponseData) {
-  json_response(200, "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"mode\":\"mcp\"}")
+  json_response(
+    200,
+    "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"mode\":\"mcp\"}",
+  )
+}
+
+fn observability_response() -> response.Response(mist.ResponseData) {
+  json_response(200, observability_snapshot())
 }
 
 fn metrics_response(
@@ -164,27 +200,29 @@ fn metrics_response(
     "content-type",
     "text/plain; version=0.0.4; charset=utf-8",
   )
-  |> response.set_body(mist.Bytes(bytes_tree.from_string(
-    "# HELP dd_gleam_mcp_http_requests_total HTTP requests observed by the Gleam MCP server.\n"
-    <> "# TYPE dd_gleam_mcp_http_requests_total counter\n"
-    <> "dd_gleam_mcp_http_requests_total{service=\"dd-gleam-mcp-server\"} "
-    <> int.to_string(http_requests)
-    <> "\n# HELP dd_gleam_mcp_rpc_requests_total JSON-RPC requests observed by method.\n"
-    <> "# TYPE dd_gleam_mcp_rpc_requests_total counter\n"
-    <> "dd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"all\"} "
-    <> int.to_string(rpc_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"initialize\"} "
-    <> int.to_string(initialize_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/list\"} "
-    <> int.to_string(tools_list_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/call\"} "
-    <> int.to_string(tools_call_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"ping\"} "
-    <> int.to_string(ping_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"unknown\"} "
-    <> int.to_string(unknown_requests)
-    <> "\n",
-  )))
+  |> response.set_body(
+    mist.Bytes(bytes_tree.from_string(
+      "# HELP dd_gleam_mcp_http_requests_total HTTP requests observed by the Gleam MCP server.\n"
+      <> "# TYPE dd_gleam_mcp_http_requests_total counter\n"
+      <> "dd_gleam_mcp_http_requests_total{service=\"dd-gleam-mcp-server\"} "
+      <> int.to_string(http_requests)
+      <> "\n# HELP dd_gleam_mcp_rpc_requests_total JSON-RPC requests observed by method.\n"
+      <> "# TYPE dd_gleam_mcp_rpc_requests_total counter\n"
+      <> "dd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"all\"} "
+      <> int.to_string(rpc_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"initialize\"} "
+      <> int.to_string(initialize_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/list\"} "
+      <> int.to_string(tools_list_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/call\"} "
+      <> int.to_string(tools_call_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"ping\"} "
+      <> int.to_string(ping_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"unknown\"} "
+      <> int.to_string(unknown_requests)
+      <> "\n",
+    )),
+  )
 }
 
 fn json_response(

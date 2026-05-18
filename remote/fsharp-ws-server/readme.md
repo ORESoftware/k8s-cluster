@@ -31,6 +31,7 @@ modification.
 | GET    | `/healthz`  | Liveness probe (text).                             |
 | GET    | `/readyz`   | Readiness probe (text).                            |
 | GET    | `/livez`    | Liveness JSON blob (runtime, machine, uptime).     |
+| GET    | `/metrics`  | Prometheus text metrics for OTel/Prometheus scrape. |
 
 ### Per-message comparison (apples-to-apples benchmark targets)
 

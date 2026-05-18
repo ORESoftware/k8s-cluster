@@ -39,11 +39,103 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
 
   assert.match(collector, /dd-dev-server-api\.default\.svc\.cluster\.local:8080/);
   assert.match(collector, /dd-remote-web-home\.default\.svc\.cluster\.local:8080/);
+  assert.match(collector, /dd-remote-rest-api\.default\.svc\.cluster\.local:8082/);
   assert.match(collector, /dd-gleamlang-server\.default\.svc\.cluster\.local:8081/);
   assert.match(collector, /dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083/);
   assert.match(collector, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
+  assert.match(collector, /dd-webrtc-signaling\.default\.svc\.cluster\.local:8095/);
+  assert.match(collector, /dd-mdp-optimizer\.default\.svc\.cluster\.local:8096/);
+  assert.match(collector, /dd-des-simulator\.default\.svc\.cluster\.local:8099/);
+  assert.match(collector, /dd-contract-service\.default\.svc\.cluster\.local:8101/);
+  assert.match(collector, /dd-trading-server\.default\.svc\.cluster\.local:8103/);
+  assert.match(collector, /dd-ai-ml-pipeline\.ai-ml\.svc\.cluster\.local:8099/);
+  assert.match(collector, /dd-web-scraper\.default\.svc\.cluster\.local:8097/);
+  assert.match(collector, /dd-build-server\.default\.svc\.cluster\.local:8100/);
+  assert.match(collector, /dd-container-pool\.default\.svc\.cluster\.local:8102/);
+  assert.match(collector, /dd-akka-ws-server\.default\.svc\.cluster\.local:8086/);
+  assert.match(collector, /dd-fsharp-ws-server\.default\.svc\.cluster\.local:8087/);
+  assert.match(collector, /dd-spark-pipeline-server\.default\.svc\.cluster\.local:8085/);
+  assert.match(collector, /dd-formal-methods-server\.default\.svc\.cluster\.local:8110/);
+  assert.match(collector, /dd-agent-worker-broker\.default\.svc\.cluster\.local:8098/);
+  assert.match(collector, /dd-remote-auth\.default\.svc\.cluster\.local:8083/);
+  assert.match(collector, /dd-billing-server\.default\.svc\.cluster\.local:80/);
+  assert.match(collector, /dd-formal-methods-service\.default\.svc\.cluster\.local:8111/);
+  assert.match(collector, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
+  assert.match(collector, /gcs-router\.default\.svc\.cluster\.local:9100/);
+  assert.match(collector, /dd-nats\.messaging\.svc\.cluster\.local:7777/);
   assert.match(collector, /endpoint:\s*dd-tempo\.observability\.svc\.cluster\.local:4317/);
   assert.match(collector, /endpoint:\s*dd-jaeger\.observability\.svc\.cluster\.local:4317/);
+});
+
+test("prometheus and loki ingest through the collector and promtail fan-in", async () => {
+  const prometheus = await readRepoFile("remote/argocd/observability/prometheus.configmap.yaml");
+  const promtail = await readRepoFile("remote/argocd/observability/promtail.configmap.yaml");
+
+  assert.match(prometheus, /dd-otel-collector\.observability\.svc\.cluster\.local:8889/);
+  assert.match(prometheus, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
+  assert.match(prometheus, /dd-agent-worker-broker\.default\.svc\.cluster\.local:8098/);
+  assert.match(prometheus, /dd-remote-auth\.default\.svc\.cluster\.local:8083/);
+  assert.match(prometheus, /dd-billing-server\.default\.svc\.cluster\.local:80/);
+  assert.match(prometheus, /dd-formal-methods-service\.default\.svc\.cluster\.local:8111/);
+  assert.match(prometheus, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
+  assert.match(prometheus, /gcs-router\.default\.svc\.cluster\.local:9100/);
+  assert.match(promtail, /dd-loki\.observability\.svc\.cluster\.local:3100\/loki\/api\/v1\/push/);
+  assert.match(promtail, /__path__:\s*\/var\/log\/containers\/\*\.log/);
+  assert.match(promtail, /- cri:\s*\{\}/);
+});
+
+test("websocket comparison services expose prometheus metrics", async () => {
+  const akkaRoutes = await readRepoFile(
+    "remote/akka-ws-server/src/main/java/com/oresoftware/dd/akkaws/WsRoutes.java",
+  );
+  const fsharpProgram = await readRepoFile("remote/fsharp-ws-server/Program.fs");
+  const fsharpRoutes = await readRepoFile("remote/fsharp-ws-server/WsRoutes.fs");
+
+  assert.match(akkaRoutes, /path\("metrics"/);
+  assert.match(akkaRoutes, /dd_akka_ws_async_java_messages_in_total/);
+  assert.match(akkaRoutes, /dd_akka_ws_akka_streams_messages_in_total/);
+  assert.match(fsharpProgram, /MapGet\("\/metrics"/);
+  assert.match(fsharpRoutes, /dd_fsharp_ws_messages_in_total/);
+  assert.match(fsharpRoutes, /dd_fsharp_ws_uptime_seconds/);
+});
+
+test("supporting runtime services expose prometheus metrics", async () => {
+  const agentWorker = await readRepoFile("remote/agent-worker-broker-rs/src/main.rs");
+  const authServer = await readRepoFile("remote/auth-server-rs/src/main.rs");
+  const billingApi = await readRepoFile("remote/billing-server-rs/src/api/mod.rs");
+  const formalMethodsService = await readRepoFile(
+    "remote/formal-methods-service-rs/src/routes/mod.rs",
+  );
+  const lockLoadtest = await readRepoFile("remote/live-mutex-loadtest-node/src/server.js");
+  const agentWorkerDeployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-agent-worker-broker.deployment.yaml",
+  );
+  const authDeployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-auth.deployment.yaml",
+  );
+  const billingDeployment = await readRepoFile(
+    "remote/billing-server-rs/k8s/ec2/dd-billing-server.deployment.yaml",
+  );
+  const formalDeployment = await readRepoFile(
+    "remote/formal-methods-service-rs/k8s/ec2/dd-formal-methods-service.deployment.yaml",
+  );
+  const lockDeployment = await readRepoFile(
+    "remote/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.deployment.yaml",
+  );
+
+  assert.match(agentWorker, /\.route\("\/metrics", get\(metrics\)\)/);
+  assert.match(agentWorker, /dd_agent_worker_broker_http_requests_total/);
+  assert.match(authServer, /\.route\("\/metrics", get\(metrics\)\)/);
+  assert.match(authServer, /dd_remote_auth_http_requests_total/);
+  assert.match(billingApi, /\.route\("\/metrics", get\(health::metrics\)\)/);
+  assert.match(formalMethodsService, /\.route\("\/metrics", get\(health::metrics\)\)/);
+  assert.match(lockLoadtest, /url\.pathname === '\/metrics'/);
+  assert.match(lockLoadtest, /dd_lock_loadtest_trigger_runs_started_total/);
+  assert.match(agentWorkerDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
+  assert.match(authDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
+  assert.match(billingDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
+  assert.match(formalDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
+  assert.match(lockDeployment, /dd\.dev\/telemetry-revision:\s*'2026-05-18-observability'/);
 });
 
 test("public gateway exposes grafana under /telemetry", async () => {
