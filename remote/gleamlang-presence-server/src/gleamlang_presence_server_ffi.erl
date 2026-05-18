@@ -1,6 +1,14 @@
 -module(gleamlang_presence_server_ffi).
 
--export([stable_name/1, env/1, read_file_utf8/1]).
+-export([
+    stable_name/1,
+    env/1,
+    read_file_utf8/1,
+    pgo_config/5,
+    pgo_config_from_url/1,
+    shard_of/2,
+    self_node_binary/0
+]).
 
 %% Build a process Name (which is just an Erlang atom internally) from a
 %% known string. Unlike `gleam_erlang_ffi:new_name/1` this does NOT append
@@ -29,3 +37,96 @@ read_file_utf8(Path) ->
                 list_to_binary(io_lib:format("~p", [Reason])),
             {error, ReasonBin}
     end.
+
+%% Build a pgo:pool_config() map from explicit fields. The pgo library
+%% expects strings, not binaries, for the connection params.
+pgo_config(Host, Port, User, Password, Database) ->
+    #{host => binary_to_list(Host),
+      port => Port,
+      user => binary_to_list(User),
+      password => binary_to_list(Password),
+      database => binary_to_list(Database),
+      %% No idle pool needed for pgo_notifications — it owns its own
+      %% dedicated socket and we want it to live as long as the process.
+      pool_size => 1}.
+
+%% Parse a `postgres://[user[:pass]@]host[:port]/database` URL into a
+%% pgo:pool_config() map. Minimal parser — handles the common forms used
+%% by env vars (PG_DATABASE_URL). Returns {ok, Map} or {error, Reason}.
+pgo_config_from_url(Url) ->
+    UrlStr = binary_to_list(Url),
+    try
+        Scheme =
+            case lists:prefix("postgres://", UrlStr) of
+                true -> "postgres://";
+                false ->
+                    case lists:prefix("postgresql://", UrlStr) of
+                        true -> "postgresql://";
+                        false -> throw({bad_scheme, UrlStr})
+                    end
+            end,
+        Body = lists:nthtail(length(Scheme), UrlStr),
+        {Auth, HostPart} =
+            case string:split(Body, "@") of
+                [HostOnly] -> {"", HostOnly};
+                [A, H] -> {A, H};
+                _ -> throw(bad_auth)
+            end,
+        {User, Pass} =
+            case Auth of
+                "" -> {"", ""};
+                _ ->
+                    case string:split(Auth, ":") of
+                        [U] -> {U, ""};
+                        [U, P] -> {U, P}
+                    end
+            end,
+        {HostPort, DbPart} =
+            case string:split(HostPart, "/") of
+                [HP, D0] -> {HP, D0};
+                _ -> throw(bad_path)
+            end,
+        {Host, Port} =
+            case string:split(HostPort, ":") of
+                [HostOnly2] -> {HostOnly2, 5432};
+                [HostA, PStr] -> {HostA, list_to_integer(PStr)}
+            end,
+        %% Database may contain a query string. Drop it.
+        Database =
+            case string:split(DbPart, "?") of
+                [DOnly] -> DOnly;
+                [DBefore, _Q] -> DBefore
+            end,
+        Cfg = #{host => Host,
+                port => Port,
+                user => User,
+                password => Pass,
+                database => Database,
+                pool_size => 1},
+        {ok, Cfg}
+    catch
+        throw:Reason ->
+            ReasonBin =
+                list_to_binary(io_lib:format("invalid PG URL: ~p", [Reason])),
+            {error, ReasonBin};
+        Class:Reason:_St ->
+            ReasonBin =
+                list_to_binary(io_lib:format("~p:~p", [Class, Reason])),
+            {error, ReasonBin}
+    end.
+
+%% Compute the shard a conv_id maps to, in agreement with the Postgres
+%% `abs(hashtext(...)::bigint) % N`. Postgres `hashtext` uses Jenkins one-
+%% at-a-time. We can't easily reimplement it in pure Erlang for cross-
+%% compat, so for now we use erlang:phash2 and accept that the mapping
+%% only needs to be deterministic per-process — the LISTEN side asks PG
+%% directly which channel to subscribe via `presence_shard_of(uuid)` when
+%% precision matters. erlang:phash2 keeps it cheap and stable for the
+%% common case where we trust pg_listen to track its own subscriptions.
+shard_of(ConvId, NShards) ->
+    erlang:phash2(ConvId, NShards).
+
+%% Erlang short/long node name as a binary, for use as a NATS Source-Node
+%% header and for log lines.
+self_node_binary() ->
+    atom_to_binary(node(), utf8).

@@ -163,6 +163,16 @@ async def expect_contains(ws: WS, fragment: str, secs: float = 1.0) -> bool:
     return hit
 
 
+async def expect_contains_all(ws: WS, fragments: list[str], secs: float = 1.0) -> bool:
+    frames = await ws.drain_for(secs)
+    hit = any(all(fr in f for fr in fragments) for f in frames)
+    status = "OK " if hit else "MISS"
+    print(
+        f"      {status}  {ws.label} <- waiting for all of {fragments}  (saw {frames})"
+    )
+    return hit
+
+
 async def expect_silent(ws: WS, secs: float = 0.5) -> bool:
     frames = await ws.drain_for(secs)
     hit = len(frames) == 0
@@ -221,33 +231,57 @@ async def main(bases: list[str]) -> int:
     assert carol.user_ws is not None
 
     # --- Scenario 2: carol gets added to conv-1 mid-session. Her USER-ws
-    # receives "added-to conv-1". The demo (acting as the client) then
-    # opens her conv-1 ws and the next broadcast lands there.
+    # receives a "membership-changed" JSON envelope with `change:"added"`
+    # and the conv's full member list. The demo (acting as the client)
+    # then opens her conv-1 ws and the next broadcast lands there.
     print(
-        "\n[scenario 2] carol added to conv-1; user-ws sees 'added-to conv-1',"
-        " then conv-ws receives next broadcast"
+        "\n[scenario 2] carol added to conv-1; user-ws sees membership-changed JSON"
+        " (with members list), then conv-ws receives next broadcast"
     )
     print(f"  {_post(bases[0] + '/conv/conv-1/members/carol')}")
-    ok7 = await expect_contains(carol.user_ws, "added-to conv-1")
+    ok7 = await expect_contains_all(
+        carol.user_ws,
+        [
+            '"type":"membership-changed"',
+            '"change":"added"',
+            '"conv":"conv-1"',
+            '"alice"',
+            '"bob"',
+            '"carol"',
+        ],
+    )
 
     await carol.open_conv("conv-1")
     print(f"  {_post(bases[0] + '/conv/conv-1/broadcast', b'hello-2')}")
     ok8 = await expect_contains(carol.conv_ws["conv-1"], "hello-2")
 
-    # --- Scenario 3: bob removed from conv-1. Bob's USER-ws sees
-    # "removed-from conv-1". Bob's CONV-ws's receive the server-side
-    # Kick and close. Subsequent broadcast does not reach bob.
+    # --- Scenario 3: bob removed from conv-1. Bob's USER-ws sees a
+    # "membership-changed" JSON envelope with `change:"removed"`. Bob's
+    # CONV-ws's receive a "kick" JSON envelope and close. Subsequent
+    # broadcast does not reach bob.
     print(
-        "\n[scenario 3] bob removed from conv-1; user-ws sees 'removed-from',"
-        " conv-ws kicked. Next broadcast: alice+carol get it, bob silent"
+        "\n[scenario 3] bob removed from conv-1; user-ws sees membership-changed"
+        " removed, conv-ws gets kick. Next broadcast: alice+carol get it, bob silent"
     )
     bob1_conv = bob1.conv_ws["conv-1"]
     bob2_conv = bob2.conv_ws["conv-1"]
     print(f"  {_delete(bases[0] + '/conv/conv-1/members/bob')}")
-    ok9 = await expect_contains(bob1.user_ws, "removed-from conv-1")
-    ok10 = await expect_contains(bob2.user_ws, "removed-from conv-1")
-    ok11 = await expect_contains(bob1_conv, "kick")
-    ok12 = await expect_contains(bob2_conv, "kick")
+    ok9 = await expect_contains_all(
+        bob1.user_ws,
+        ['"type":"membership-changed"', '"change":"removed"', '"conv":"conv-1"'],
+    )
+    ok10 = await expect_contains_all(
+        bob2.user_ws,
+        ['"type":"membership-changed"', '"change":"removed"', '"conv":"conv-1"'],
+    )
+    ok11 = await expect_contains_all(
+        bob1_conv,
+        ['"type":"kick"', '"reason":"removed from conv conv-1"'],
+    )
+    ok12 = await expect_contains_all(
+        bob2_conv,
+        ['"type":"kick"', '"reason":"removed from conv conv-1"'],
+    )
 
     # Give the server a moment to actually close the conv-ws's.
     await asyncio.sleep(0.2)

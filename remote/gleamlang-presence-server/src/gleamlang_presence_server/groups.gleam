@@ -56,8 +56,14 @@ pub type ConnGroup {
 
 /// Membership-change direction, used by `MembershipChanged` events that
 /// fan out to the user's user-scoped websockets.
+///
+/// `AddedToConv` carries the conv's full current member list (including
+/// the just-added user) so the client can decide what to do without a
+/// follow-up `GET /conv/<id>/members` round-trip. `RemovedFromConv`
+/// carries no extra metadata — the user is being told they're out, and
+/// the client should just close any conv-scoped ws's it opened.
 pub type MembershipChange {
-  AddedToConv
+  AddedToConv(members: List(UserId))
   RemovedFromConv
 }
 

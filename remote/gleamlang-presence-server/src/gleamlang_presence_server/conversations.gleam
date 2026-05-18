@@ -34,6 +34,7 @@ import gleam/dict.{type Dict}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
+import gleam/option
 import gleam/otp/actor
 import gleam/otp/supervision
 import gleam/result
@@ -44,6 +45,9 @@ import gleamlang_presence_server/groups.{
   Kick, MembershipChanged, RemovedFromConv,
 }
 import gleamlang_presence_server/pg_groups
+import gleamlang_presence_server/pg_listen.{
+  type Event as PgEvent, KindAdded, KindRemoved,
+}
 import gleamlang_presence_server/registry.{type Registry}
 import gleamlang_presence_server/store.{type Store}
 
@@ -61,11 +65,14 @@ pub type Message {
   ConvsOf(user_id: UserId, reply: Subject(List(ConvId)))
   MembersOf(conv_id: ConvId, reply: Subject(List(UserId)))
   Hydrate(user_id: UserId)
-  /// Membership change received from a peer node. We process it the same
-  /// way as a local add/remove, except we do NOT re-broadcast (would loop).
-  /// We also skip the durable write on the peer side — the originating
-  /// node already wrote to Postgres (or its in-memory state).
+  /// Membership change received from a peer conversations actor over the
+  /// Erlang `pg` mesh path. Processed the same way as a local add/remove,
+  /// except we do NOT re-write or re-broadcast (would loop).
   PeerEcho(kind: PeerEchoKind, conv_id: ConvId, user_id: UserId)
+  /// Membership change observed via the Postgres LISTEN/NOTIFY path.
+  /// Carries the trigger's `emitted_at` timestamp so we can dedup against
+  /// the parallel pg-mesh delivery.
+  IncomingPgEvent(event: PgEvent)
 }
 
 pub type PeerEchoKind {
@@ -89,7 +96,22 @@ type State {
     store: Store,
     registry: Registry(groups.ConnMsg, ConnGroup),
     fanout: Fanout,
+    /// Dedup cache for `(conv_id, user_id, kind)` events: last dispatch
+    /// timestamp in monotonic ms. If we see the same logical event again
+    /// within `dedup_window_ms`, we drop it. Sized by `gc_threshold`.
+    last_dispatched_ms: Dict(#(ConvId, UserId, PeerEchoKind), Int),
   )
+}
+
+const dedup_window_ms: Int = 500
+
+const gc_threshold: Int = 4096
+
+@external(erlang, "erlang", "monotonic_time")
+fn erlang_monotonic_time(unit: atom.Atom) -> Int
+
+fn now_ms() -> Int {
+  erlang_monotonic_time(atom.create("millisecond"))
 }
 
 pub fn supervised(
@@ -118,6 +140,7 @@ pub fn start(
       store: store,
       registry: registry,
       fanout: fanout,
+      last_dispatched_ms: dict.new(),
     ))
     |> actor.selecting(selector)
     |> actor.returning(named)
@@ -218,11 +241,15 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
               conv_members: dict.insert(state.conv_members, conv_id, conv_set),
               user_convs: dict.insert(state.user_convs, user_id, user_set),
             )
+          // Embed the conv's full current member list so the user-ws's
+          // client can decide what to do without a follow-up GET on
+          // /conv/<id>/members.
+          let members = set.to_list(conv_set)
           fanout.broadcast(
             state.fanout,
             state.registry,
             ByUser(user_id),
-            MembershipChanged(conv_id, AddedToConv),
+            MembershipChanged(conv_id, AddedToConv(members)),
           )
           gossip_peers(AddedAt, conv_id, user_id)
           actor.continue(new_state)
@@ -326,81 +353,44 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
     }
 
     PeerEcho(kind, conv_id, user_id) -> {
-      // A peer node already wrote durably and broadcast to its own
-      // ByUser(_) connections. We only need to keep our local cache in
-      // sync and notify our own local connections so they (a) register
-      // under the right ByConv(_) group locally and (b) receive the
-      // future broadcasts to that conv.
-      let new_state = case kind {
-        AddedAt -> {
-          let user_set =
-            dict.get(state.user_convs, user_id)
-            |> result.unwrap(set.new())
-            |> set.insert(conv_id)
-          let conv_set =
-            dict.get(state.conv_members, conv_id)
-            |> result.unwrap(set.new())
-            |> set.insert(user_id)
-          State(
-            ..state,
-            user_convs: dict.insert(state.user_convs, user_id, user_set),
-            conv_members: dict.insert(state.conv_members, conv_id, conv_set),
+      case should_dispatch(state, conv_id, user_id, kind) {
+        False -> actor.continue(state)
+        True ->
+          dispatch_peer_change(
+            record_dispatch(state, conv_id, user_id, kind),
+            kind,
+            conv_id,
+            user_id,
           )
-        }
-        RemovedAt -> {
-          let user_set =
-            dict.get(state.user_convs, user_id)
-            |> result.unwrap(set.new())
-            |> set.delete(conv_id)
-          let conv_set =
-            dict.get(state.conv_members, conv_id)
-            |> result.unwrap(set.new())
-            |> set.delete(user_id)
-          let user_convs = case set.is_empty(user_set) {
-            True -> dict.delete(state.user_convs, user_id)
-            False -> dict.insert(state.user_convs, user_id, user_set)
+      }
+    }
+
+    IncomingPgEvent(event) -> {
+      // Translate the LISTEN payload into the same PeerEcho semantics.
+      // Dedup against the parallel pg-mesh path via `last_dispatched_ms`.
+      case pg_listen.semantic_kind(event) {
+        option.None -> actor.continue(state)
+        option.Some(pg_kind) -> {
+          let kind = case pg_kind {
+            KindAdded -> AddedAt
+            KindRemoved -> RemovedAt
           }
-          let conv_members = case set.is_empty(conv_set) {
-            True -> dict.delete(state.conv_members, conv_id)
-            False -> dict.insert(state.conv_members, conv_id, conv_set)
+          case should_dispatch(state, event.conv_id, event.user_id, kind) {
+            False -> actor.continue(state)
+            True ->
+              dispatch_peer_change(
+                record_dispatch(state, event.conv_id, event.user_id, kind),
+                kind,
+                event.conv_id,
+                event.user_id,
+              )
           }
-          State(..state, user_convs: user_convs, conv_members: conv_members)
         }
       }
-      // Dispatch the membership change to LOCAL user-scoped ws's of
-      // this user. We use the local registry directly (not
-      // fanout.broadcast) — the originating node already did the
-      // cluster-wide dispatch.
-      let change = case kind {
-        AddedAt -> AddedToConv
-        RemovedAt -> RemovedFromConv
-      }
-      registry.dispatch_group(state.registry, ByUser(user_id), fn(subj) {
-        process.send(subj, MembershipChanged(conv_id, change))
-        Nil
-      })
-      // On remove, also kick this user's local conv-scoped ws's for
-      // this conv — same defense-in-depth as the originating node did
-      // cluster-wide via fanout.
-      case kind {
-        RemovedAt ->
-          registry.dispatch_group(
-            state.registry,
-            ByUserConv(user_id, conv_id),
-            fn(subj) {
-              process.send(subj, Kick("removed from conv " <> conv_id))
-              Nil
-            },
-          )
-        AddedAt -> Nil
-      }
-      actor.continue(new_state)
     }
 
     Hydrate(user_id) -> {
       let from_pg = store.convs_of(state.store, user_id)
-      // Also hydrate each conv's member list so subsequent broadcasts have
-      // a populated cache.
       let conv_members =
         list.fold(from_pg, state.conv_members, fn(acc, conv_id) {
           case dict.has_key(acc, conv_id) {
@@ -424,4 +414,108 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       ))
     }
   }
+}
+
+fn should_dispatch(
+  state: State,
+  conv_id: ConvId,
+  user_id: UserId,
+  kind: PeerEchoKind,
+) -> Bool {
+  case dict.get(state.last_dispatched_ms, #(conv_id, user_id, kind)) {
+    Ok(t) -> now_ms() - t > dedup_window_ms
+    Error(_) -> True
+  }
+}
+
+fn record_dispatch(
+  state: State,
+  conv_id: ConvId,
+  user_id: UserId,
+  kind: PeerEchoKind,
+) -> State {
+  let updated =
+    dict.insert(state.last_dispatched_ms, #(conv_id, user_id, kind), now_ms())
+  // Cheap periodic GC: when the cache crosses the threshold, drop any
+  // entries older than the dedup window times 8 (so we don't churn).
+  case dict.size(updated) > gc_threshold {
+    False -> State(..state, last_dispatched_ms: updated)
+    True -> {
+      let cutoff = now_ms() - { dedup_window_ms * 8 }
+      let gced =
+        dict.filter(updated, fn(_key, t) { t > cutoff })
+      State(..state, last_dispatched_ms: gced)
+    }
+  }
+}
+
+fn dispatch_peer_change(
+  state: State,
+  kind: PeerEchoKind,
+  conv_id: ConvId,
+  user_id: UserId,
+) -> actor.Next(State, Message) {
+  let #(new_state, change) = case kind {
+    AddedAt -> {
+      let user_set =
+        dict.get(state.user_convs, user_id)
+        |> result.unwrap(set.new())
+        |> set.insert(conv_id)
+      let conv_set =
+        dict.get(state.conv_members, conv_id)
+        |> result.unwrap(set.new())
+        |> set.insert(user_id)
+      let ns =
+        State(
+          ..state,
+          user_convs: dict.insert(state.user_convs, user_id, user_set),
+          conv_members: dict.insert(state.conv_members, conv_id, conv_set),
+        )
+      #(ns, AddedToConv(set.to_list(conv_set)))
+    }
+    RemovedAt -> {
+      let user_set =
+        dict.get(state.user_convs, user_id)
+        |> result.unwrap(set.new())
+        |> set.delete(conv_id)
+      let conv_set =
+        dict.get(state.conv_members, conv_id)
+        |> result.unwrap(set.new())
+        |> set.delete(user_id)
+      let user_convs = case set.is_empty(user_set) {
+        True -> dict.delete(state.user_convs, user_id)
+        False -> dict.insert(state.user_convs, user_id, user_set)
+      }
+      let conv_members = case set.is_empty(conv_set) {
+        True -> dict.delete(state.conv_members, conv_id)
+        False -> dict.insert(state.conv_members, conv_id, conv_set)
+      }
+      let ns =
+        State(..state, user_convs: user_convs, conv_members: conv_members)
+      #(ns, RemovedFromConv)
+    }
+  }
+  // Dispatch the membership change to LOCAL user-scoped ws's of this
+  // user. The originating node already did the cluster-wide dispatch
+  // via fanout.broadcast, so this is local-only.
+  registry.dispatch_group(state.registry, ByUser(user_id), fn(subj) {
+    process.send(subj, MembershipChanged(conv_id, change))
+    Nil
+  })
+  // On remove, also kick this user's local conv-scoped ws's for this
+  // conv — defense-in-depth on top of the cluster-wide kick that the
+  // originating node already did.
+  case kind {
+    RemovedAt ->
+      registry.dispatch_group(
+        state.registry,
+        ByUserConv(user_id, conv_id),
+        fn(subj) {
+          process.send(subj, Kick("removed from conv " <> conv_id))
+          Nil
+        },
+      )
+    AddedAt -> Nil
+  }
+  actor.continue(new_state)
 }

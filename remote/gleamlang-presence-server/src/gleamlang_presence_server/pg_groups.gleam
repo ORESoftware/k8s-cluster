@@ -58,6 +58,15 @@ pub fn supervised() -> supervision.ChildSpecification(Pid) {
   })
 }
 
+/// Idempotent "start the scope if it isn't running yet". Used by tests
+/// (and any other code path that needs `join` / `leave` to work but
+/// doesn't have a supervisor handy). Safe to call multiple times — `pg`
+/// itself returns `{:already_started, Pid}` on subsequent calls.
+pub fn ensure_started() -> Nil {
+  let _ = pg_start_link(scope())
+  Nil
+}
+
 pub fn join(group group: group) -> Nil {
   let _ = pg_join_raw(scope(), group, process.self())
   Nil

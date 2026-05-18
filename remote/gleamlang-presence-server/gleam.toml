@@ -5,6 +5,7 @@ description = "Websocket presence service: ETS subject registry on each node, Er
 
 [dependencies]
 dd_pg_defs = { path = "../libs/pg-defs/generated/gleam" }
+enats = ">= 1.2.0 and < 2.0.0"
 gleam_stdlib = ">= 0.68.0 and < 2.0.0"
 gleam_erlang = ">= 1.3.0 and < 2.0.0"
 gleam_http = ">= 4.0.0 and < 5.0.0"

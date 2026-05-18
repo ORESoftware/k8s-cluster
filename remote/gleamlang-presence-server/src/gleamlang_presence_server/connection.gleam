@@ -35,11 +35,12 @@ import mist.{
 import gleamlang_presence_server/conversations.{type Conversations}
 import gleamlang_presence_server/groups.{
   type ConnGroup, type ConnMsg, type ConvId, type DeviceId, type UserId,
-  AddedToConv, ByConv, ByUser, ByUserConv, ByUserDevice, Kick, MembershipChanged,
-  Outbound, ReRegister, RemovedFromConv,
+  ByConv, ByUser, ByUserConv, ByUserDevice, Kick, MembershipChanged, Outbound,
+  ReRegister,
 }
 import gleamlang_presence_server/pg_groups
 import gleamlang_presence_server/registry.{type Registry}
+import gleamlang_presence_server/wire
 
 /// What kind of websocket this connection is. A single device opens one
 /// `UserScope` ws plus one `ConvScope` ws per active conversation.
@@ -85,7 +86,12 @@ pub fn make_on_init(
   }
 }
 
-fn register_for_scope(
+/// Register the subject in the local ETS registry and join the same
+/// keys in `pg` so cross-node fan-out reaches us too.
+///
+/// Public so tests can drive the registration directly. The runtime
+/// uses it via `make_on_init` (called inside the mist ws process).
+pub fn register_for_scope(
   registry: Registry(ConnMsg, ConnGroup),
   scope: ConnScope,
   self: Subject(ConnMsg),
@@ -175,14 +181,10 @@ fn handle_custom(
     MembershipChanged(conv_id, change) ->
       case state.scope {
         UserScope(_, _) -> {
-          let verb = case change {
-            AddedToConv -> "added-to"
-            RemovedFromConv -> "removed-from"
-          }
           let _ =
             mist.send_text_frame(
               ws_conn,
-              "system: " <> verb <> " " <> conv_id,
+              wire.encode_membership_changed(conv_id, change),
             )
           mist.continue(state)
         }
@@ -192,7 +194,7 @@ fn handle_custom(
       }
 
     Kick(reason) -> {
-      let _ = mist.send_text_frame(ws_conn, "system: kick: " <> reason)
+      let _ = mist.send_text_frame(ws_conn, wire.encode_kick(reason))
       mist.stop()
     }
 
@@ -207,11 +209,7 @@ fn handle_custom(
       register_for_scope(state.registry, state.scope, state.self_subject)
 
       let new_selector = build_selector(state.self_subject, state.registry)
-      let _ =
-        mist.send_text_frame(
-          ws_conn,
-          "system: re-registered with new registry instance",
-        )
+      let _ = mist.send_text_frame(ws_conn, wire.encode_re_registered())
       mist.continue(state)
       |> mist.with_selector(new_selector)
     }
