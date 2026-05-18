@@ -6,16 +6,22 @@ metadata:
   labels:
     app: gcs
 spec:
-  # 3 replicas to exercise the consistent-hash routing in gcs-router.
-  # At 1 replica the hash directive is a no-op (every conv lands on the
-  # only pod); at 3 replicas the path-based hash actually distributes
-  # convs across pods so we can test co-location.
-  replicas: 3
+  # NOTE: we WANT 3 replicas so the consistent-hash routing in
+  # gcs-router actually distributes convs across pods. At 1 replica
+  # the hash directive is a no-op (every conv lands on the only pod).
+  #
+  # Currently pinned to 1 because the single-node EC2 cluster is at
+  # 16/16 vCPU requested (every other workload is scheduled there
+  # too). To enable 3 replicas, either:
+  #   - scale the EKS-equivalent node (this is a kubeadm cluster on
+  #     one EC2 instance, so add a worker node)
+  #   - or shrink CPU requests of other workloads on this node
+  #
+  # See todos.md "scale gcs to N replicas".
+  replicas: 1
   strategy:
-    # RollingUpdate now that we have >1 replica — a Recreate strategy at
-    # N>=2 would tear down every pod before starting the new ones,
-    # which is unnecessary downtime. With maxUnavailable=0 the rollout
-    # is zero-WS-drop (modulo individual pod restarts).
+    # RollingUpdate so that when we eventually bump replicas the
+    # rollout is zero-WS-drop (modulo individual pod restarts).
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
