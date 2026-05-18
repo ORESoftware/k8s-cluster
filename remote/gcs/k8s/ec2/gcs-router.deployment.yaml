@@ -102,8 +102,10 @@ spec:
               cpu: 50m
               memory: 64Mi
             limits:
+              # 1Gi covers the initial `go build` (heavy peak), then steady
+              # state is well under 64Mi. 256Mi was OOMKilled mid-build.
               cpu: 500m
-              memory: 256Mi
+              memory: 1Gi
           startupProbe:
             httpGet:
               path: /healthz

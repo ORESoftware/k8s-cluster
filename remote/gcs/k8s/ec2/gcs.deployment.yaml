@@ -13,12 +13,16 @@ spec:
   # requests on other workloads on this node (see todos.md).
   replicas: 2
   strategy:
-    # RollingUpdate so that when we eventually bump replicas the
-    # rollout is zero-WS-drop (modulo individual pod restarts).
+    # On the single-node EC2 cluster we are CPU-bound; a surge pod
+    # cannot be scheduled (Insufficient cpu) and rollouts get stuck.
+    # Switch to zero-surge so the rollout kills a pod first, then
+    # adds the replacement onto the freed CPU. This briefly drops
+    # one pod from the ring (gcs-router will re-pin), which is fine
+    # in dev; revert to surge=1 once we have a second worker node.
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: gcs
