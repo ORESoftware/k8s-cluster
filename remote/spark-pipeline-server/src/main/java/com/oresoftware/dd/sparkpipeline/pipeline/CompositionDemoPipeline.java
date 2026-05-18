@@ -29,7 +29,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * The {@code COMPOSITION_DEMO} pipeline: a single coherent job that exercises 11 different
+ * The {@code COMPOSITION_DEMO} pipeline: a single coherent job that exercises 12 different
  * async.java combinators in composition. Each stage's intermediate output is recorded on the
  * {@link JobRecord} stage log so the runner can be debugged step-by-step from the HTTP
  * response.
@@ -55,20 +55,27 @@ import java.util.concurrent.atomic.AtomicInteger;
  *       strategies. Whichever completes first wins; the loser is silently discarded.</li>
  *   <li><strong>{@code Asyncc.Reduce}</strong> — fold the per-bucket counts into an
  *       aggregate total.</li>
+ *   <li><strong>{@code Asyncc.ConcatLimit}</strong> (added in v0.2.9 showcase) — for each
+ *       region bucket, generate a list of per-shard publish-event JSONs; then concat-flatten
+ *       all buckets' event lists, running up to 2 generator tasks concurrently. Uses the
+ *       v0.2.8 {@code Asyncc.Task<T>} Throwable-fixed shorthand directly — no
+ *       {@code <T, Throwable>} repetition and no defensive copy, thanks to the v0.2.9
+ *       {@code List<? extends AsyncTask<T, E>>} widening on the Concat family.</li>
  *   <li><strong>{@code Asyncc.Inject}</strong> — name-keyed DAG that builds the final
  *       manifest by reading prior stage outputs through {@code cb.get("name")}.</li>
  *   <li><strong>{@code NeoLock}</strong> — async mutex serialising updates to a shared
  *       cross-job publication counter (cross-cutting concern, not a Waterfall stage).</li>
  *   <li><strong>{@code NeoQueue}</strong> — server-wide concurrency cap, owned by
  *       {@link JobService} and applied above every job. Not invoked here but in scope for the
- *       "11 combinators in one pipeline" tally.</li>
+ *       "12 combinators in one pipeline" tally.</li>
  * </ol>
  *
- * <p>All eleven exercise different facets of async.java's composability surface: fan-out
+ * <p>All twelve exercise different facets of async.java's composability surface: fan-out
  * (Parallel, Map, Each), fan-in (Reduce, Inject), filtering (FilterMap), grouping (GroupBy),
  * sequential pipelining (Waterfall), retry / generation (Times), first-to-respond (Race),
- * mutex (NeoLock), and concurrency capping (NeoQueue). If any of these had a regression of
- * the type fixed by PRs #9 / #10 / #11 (NeoReduce defensive guard), a COMPOSITION_DEMO job
+ * bounded flat-fan-out (ConcatLimit), mutex (NeoLock), and concurrency capping (NeoQueue).
+ * If any of these had a regression of the type fixed by PRs #9 / #10 / #11 (NeoReduce
+ * defensive guard) or the v0.2.9 {@code NeoWhilst.RunMap} race, a COMPOSITION_DEMO job
  * would surface it under load.
  */
 public final class CompositionDemoPipeline {
@@ -262,7 +269,48 @@ public final class CompositionDemoPipeline {
           });
     });
 
-    // -- Stage 9: Asyncc.Inject -------------------------------------------
+    // -- Stage 9: Asyncc.ConcatLimit (v0.2.9 widening + Asyncc.Task<T> shorthand) --
+    //    For each region bucket, build a generator task that produces a List<String> of
+    //    per-shard "publish event" JSON strings. ConcatLimit runs up to 2 generators
+    //    concurrently and concatenates their output Lists into one flat List.
+    //
+    //    The `tasks` list below is typed `List<Asyncc.Task<List<String>>>` — the
+    //    Throwable-fixed shorthand introduced in v0.2.8-rc2. Before v0.2.9, passing this
+    //    list to `Asyncc.ConcatLimit` required either an explicit cast or a defensive
+    //    `new ArrayList<AsyncTask<...>>(tasks)` copy at the call site, because the public
+    //    Concat signature took the invariant `List<AsyncTask<T, E>>`. v0.2.9 widened all
+    //    nine Concat variants to `List<? extends AsyncTask<T, E>>` so the shorthand flows
+    //    in directly.
+    stages.add(c -> {
+      final Map<String, List<String>> byRegion = readMapOfRegionToList(c, "byRegion");
+
+      final List<Asyncc.Task<List<String>>> tasks = new ArrayList<>();
+      for (final Map.Entry<String, List<String>> e : byRegion.entrySet()) {
+        final String region = e.getKey();
+        final List<String> bucket = e.getValue();
+        tasks.add(inner -> {
+          final List<String> events = new ArrayList<>(bucket.size());
+          for (int i = 0; i < bucket.size(); i++) {
+            events.add("{\"region\":\"" + region + "\",\"event\":\"publish\",\"seq\":" + i + "}");
+          }
+          inner.success(events);
+        });
+      }
+
+      // Note: tasks flows in directly as `List<Asyncc.Task<List<String>>>` thanks to the
+      // v0.2.9 widening. No cast, no copy.
+      Asyncc.<List<String>, Throwable>ConcatLimit(2, tasks, (err, events) -> {
+        if (err != null) {
+          c.fail(toThrowable(err));
+          return;
+        }
+        rec.appendStage("composition.concatLimit events=" + events.size()
+            + " (across " + tasks.size() + " region buckets, max 2 concurrent)");
+        c.success("publishEvents", new ArrayList<>(events));
+      });
+    });
+
+    // -- Stage 10: Asyncc.Inject -------------------------------------------
     //    Build the final manifest from named prior outputs. Inject's task body uses
     //    c.get("name") to read other (already-completed) named outputs from the
     //    pre-populated map. We seed that map by hand from the waterfall's accumulated
@@ -276,13 +324,21 @@ public final class CompositionDemoPipeline {
       dag.put("aggregateTotal",
           new NeoInject.Task<>(inner -> inner.done(null, "total=" + c.get("aggregateTotal"))));
 
+      dag.put("publishEventCount",
+          new NeoInject.Task<>(inner -> {
+            final List<?> events = (List<?>) c.get("publishEvents");
+            inner.done(null, "events=" + (events == null ? 0 : events.size()));
+          }));
+
       dag.put("manifest",
-          new NeoInject.Task<>("raceWinner", "aggregateTotal",
+          new NeoInject.Task<>("raceWinner", "aggregateTotal", "publishEventCount",
               (NeoInjectI.IInjectable<String, Throwable>) inner -> {
                 final String raceWinner = inner.get("raceWinner");
                 final String aggregateTotal = inner.get("aggregateTotal");
+                final String publishEventCount = inner.get("publishEventCount");
                 inner.done(null,
-                    "{\"winner\":\"" + raceWinner + "\",\"" + aggregateTotal + "\"}");
+                    "{\"winner\":\"" + raceWinner + "\",\"" + aggregateTotal
+                        + "\",\"" + publishEventCount + "\"}");
               }));
 
       Asyncc.<String, Throwable>Inject(dag, (err, results) -> {
@@ -295,7 +351,7 @@ public final class CompositionDemoPipeline {
       });
     });
 
-    // -- Stage 10: NeoLock-guarded shared-state update -------------------
+    // -- Stage 11: NeoLock-guarded shared-state update -------------------
     //    Serialises updates to a process-wide AtomicInteger across concurrent demo jobs.
     //    NeoLock is an async mutex: acquire schedules a callback (not blocking the worker
     //    thread), and the Unlock token can be released from any thread.
@@ -340,6 +396,7 @@ public final class CompositionDemoPipeline {
     out.put("regionsLogged", String.valueOf(all.get("regionsLogged")));
     out.put("raceWinner", String.valueOf(all.get("raceWinner")));
     out.put("aggregateTotal", String.valueOf(all.get("aggregateTotal")));
+    out.put("publishEventsCount", ((List<?>) all.getOrDefault("publishEvents", List.of())).size());
     out.put("manifest", String.valueOf(all.get("manifest")));
     out.put("publicationCount", String.valueOf(all.get("publicationCount")));
     return out;
