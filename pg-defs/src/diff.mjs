@@ -15,6 +15,12 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const repoRoot = path.resolve(packageRoot, "..", "..", "..");
 const args = process.argv.slice(2);
 const env = argValue("--env") ?? "dev";
+const DEFAULT_DATABASE_URL_ENV_KEYS = [
+  "AGENT_TASKS_RDS_DATABASE_URL",
+  "RDS_DATABASE_URL",
+  "DATABASE_URL",
+  "PG_DATABASE_URL",
+];
 const includeExtraTables = args.includes("--include-extra-tables");
 const outDir = path.resolve(packageRoot, "tmp", "migrations", env);
 const outputPath = path.resolve(outDir, "pg-defs-diff.sql");
@@ -23,8 +29,18 @@ const { contract, sourceSql, schemaPath } = await loadSqlContract(packageRoot);
 
 if (args.includes("--parse-only")) {
   console.log(
-    `Parsed ${contract.tables.length} table(s) from ${path.relative(process.cwd(), schemaPath)}: ${contract.tables
+    `Parsed ${contract.tables.length} table(s), ${contract.routines.length} routine(s), and ${contract.triggers.length} trigger(s) from ${path.relative(process.cwd(), schemaPath)}: ${contract.tables
       .map((table) => `${table.name}(${table.columns.length} columns)`)
+      .join(", ")}`,
+  );
+  console.log(
+    `Parsed ${(contract.routines ?? []).length} routine(s): ${(contract.routines ?? [])
+      .map((routine) => routineSignature(routine))
+      .join(", ")}`,
+  );
+  console.log(
+    `Parsed ${(contract.triggers ?? []).length} trigger(s): ${(contract.triggers ?? [])
+      .map((trigger) => `${trigger.tableName}.${trigger.name}`)
       .join(", ")}`,
   );
   console.log("No database connection opened and no migration SQL written.");
@@ -99,7 +115,7 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
 
       const desiredType = columnTypeSql(column);
       const actualType = normalizeActualType(actualColumn);
-      if (desiredType !== actualType) {
+      if (!typesEquivalent(column, actualType)) {
         lines.push(`-- MANUAL REVIEW: type differs for ${table.name}.${column.name}.`);
         lines.push(`-- Desired: ${desiredType}`);
         lines.push(`-- Actual:  ${actualType}`);
@@ -118,7 +134,7 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
         changeCount += 1;
       }
 
-      if (!defaultsEquivalent(column.defaultSql, actualColumn.defaultSql)) {
+      if (!defaultsEquivalent(column, actualColumn.defaultSql)) {
         lines.push(`-- MANUAL REVIEW: default differs for ${table.name}.${column.name}.`);
         lines.push(`-- Desired default: ${column.defaultSql ?? "none"}`);
         lines.push(`-- Actual default:  ${actualColumn.defaultSql ?? "none"}`);
@@ -181,8 +197,46 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
     }
   }
 
+  for (const routine of contract.routines ?? []) {
+    const actualRoutine = actualSchema.routines.get(routineKey(routine));
+    if (!actualRoutine) {
+      lines.push(`-- Create missing function: ${routineSignature(routine)}`);
+      lines.push(ensureSemicolon(routine.createStatement));
+      lines.push("");
+      changeCount += 1;
+      continue;
+    }
+
+    if (!routineEquivalent(routine, actualRoutine)) {
+      lines.push(`-- Replace differing function: ${routineSignature(routine)}`);
+      lines.push(ensureSemicolon(routine.createStatement));
+      lines.push("");
+      changeCount += 1;
+    }
+  }
+
+  for (const trigger of contract.triggers ?? []) {
+    const actualTrigger = actualSchema.triggers.get(triggerKey(trigger));
+    if (!actualTrigger) {
+      lines.push(`-- Create missing trigger: ${trigger.tableName}.${trigger.name}`);
+      lines.push(dropTriggerSql(trigger));
+      lines.push(ensureSemicolon(trigger.createStatement));
+      lines.push("");
+      changeCount += 1;
+      continue;
+    }
+
+    if (!triggerEquivalent(trigger, actualTrigger)) {
+      lines.push(`-- Replace differing trigger: ${trigger.tableName}.${trigger.name}`);
+      lines.push(dropTriggerSql(trigger));
+      lines.push(ensureSemicolon(trigger.createStatement));
+      lines.push("");
+      changeCount += 1;
+    }
+  }
+
   if (changeCount === 0) {
-    lines.push("-- No schema differences detected for pg-defs-owned tables.");
+    lines.push("-- No schema differences detected for pg-defs-owned tables, routines, or triggers.");
     lines.push("");
   }
 
@@ -248,11 +302,48 @@ async function introspectDatabase(databaseUrl) {
           where nsp.nspname = 'public'
             and not ind.indisprimary
         ) i
+      ), '[]'::json),
+      'routines', coalesce((
+        select json_agg(row_to_json(r) order by r.routine_name, r.identity_arguments)
+        from (
+          select
+            proc.proname as routine_name,
+            pg_get_function_identity_arguments(proc.oid) as identity_arguments,
+            pg_get_function_result(proc.oid) as result_type,
+            lang.lanname as language,
+            case proc.provolatile
+              when 'i' then 'immutable'
+              when 's' then 'stable'
+              else 'volatile'
+            end as volatility,
+            proc.prosrc as body_sql
+          from pg_proc proc
+          join pg_namespace nsp on nsp.oid = proc.pronamespace
+          join pg_language lang on lang.oid = proc.prolang
+          where nsp.nspname = 'public'
+        ) r
+      ), '[]'::json),
+      'triggers', coalesce((
+        select json_agg(row_to_json(tg) order by tg.table_name, tg.trigger_name)
+        from (
+          select
+            event_object_table as table_name,
+            trigger_name,
+            lower(action_timing) as timing,
+            array_agg(lower(event_manipulation) order by lower(event_manipulation)) as events,
+            lower(action_orientation) as orientation,
+            action_statement
+          from information_schema.triggers
+          where trigger_schema = 'public'
+          group by event_object_table, trigger_name, action_timing, action_orientation, action_statement
+        ) tg
       ), '[]'::json)
     ) as schema_json;
   `);
 
   const tables = new Map();
+  const routines = new Map();
+  const triggers = new Map();
   for (const table of rows.tables) {
     tables.set(table.table_name, {
       name: table.table_name,
@@ -291,7 +382,33 @@ async function introspectDatabase(databaseUrl) {
     });
   }
 
-  return { tables };
+  for (const routine of rows.routines) {
+    const normalized = {
+      name: routine.routine_name,
+      identityArguments: normalizeRoutineArgs(routine.identity_arguments ?? ""),
+      returns: routine.result_type,
+      language: routine.language,
+      volatility: routine.volatility,
+      bodySql: routine.body_sql ?? "",
+    };
+    routines.set(routineKey(normalized), normalized);
+  }
+
+  for (const trigger of rows.triggers) {
+    const normalized = {
+      name: trigger.trigger_name,
+      tableName: trigger.table_name,
+      timing: trigger.timing,
+      events: trigger.events ?? [],
+      orientation: trigger.orientation,
+      functionName: triggerFunctionName(trigger.action_statement),
+      functionArguments: "",
+      actionStatement: trigger.action_statement,
+    };
+    triggers.set(triggerKey(normalized), normalized);
+  }
+
+  return { tables, routines, triggers };
 }
 
 async function queryJson(databaseUrl, sql) {
@@ -341,21 +458,26 @@ async function resolveDatabaseUrl() {
     return explicit;
   }
 
-  const envKey = argValue("--database-url-env") ?? "DATABASE_URL";
+  const explicitEnvKey = argValue("--database-url-env");
+  const envKeys = explicitEnvKey ? [explicitEnvKey] : DEFAULT_DATABASE_URL_ENV_KEYS;
   const envFile = await resolveEnvFile();
   if (envFile) {
     const envValues = parseEnvFile(await readFile(envFile, "utf8"));
-    if (envValues[envKey]) {
-      return envValues[envKey];
+    for (const envKey of envKeys) {
+      if (envValues[envKey]) {
+        return envValues[envKey];
+      }
     }
   }
 
-  if (process.env[envKey]) {
-    return process.env[envKey];
+  for (const envKey of envKeys) {
+    if (process.env[envKey]) {
+      return process.env[envKey];
+    }
   }
 
   throw new Error(
-    `No database URL found. Set ${envKey}, pass --database-url, or provide --env-file with ${envKey}.`,
+    `No database URL found. Set one of ${envKeys.join(", ")}, pass --database-url, or provide --env-file with one of those keys.`,
   );
 }
 
@@ -418,13 +540,21 @@ function normalizeActualType(column) {
   if (column.udtName === "int4") {
     return "integer";
   }
+  if (column.udtName === "int8") {
+    return "bigint";
+  }
   if (column.udtName === "bool") {
     return "boolean";
   }
   return column.udtName;
 }
 
-function defaultsEquivalent(desiredDefault, actualDefault) {
+function defaultsEquivalent(column, actualDefault) {
+  if ((column.sqlType === "bigserial" || column.sqlType === "serial") && isSequenceDefault(actualDefault)) {
+    return true;
+  }
+
+  const desiredDefault = column.defaultSql;
   if (!desiredDefault && !actualDefault) {
     return true;
   }
@@ -435,11 +565,21 @@ function defaultsEquivalent(desiredDefault, actualDefault) {
 }
 
 function normalizeDefault(value) {
-  return value
+  const normalized = value
     .replace(/::[\w\s.[\]"]+/g, "")
     .replace(/\bpublic\./g, "")
     .replace(/\s+/g, " ")
-    .trim()
+    .trim();
+  const unwrapped = stripOuterParens(normalized);
+  const numericString = unwrapped.match(/^'(-?\d+)'$/);
+  if (numericString) {
+    return numericString[1];
+  }
+  const booleanString = unwrapped.match(/^'(true|false)'$/i);
+  if (booleanString) {
+    return booleanString[1].toLowerCase();
+  }
+  return unwrapped
     .toLowerCase();
 }
 
@@ -448,8 +588,101 @@ function checkEquivalent(desired, actualDefinition) {
   return normalizeCheck(desired) === normalizeCheck(normalizedActual);
 }
 
+function routineEquivalent(desired, actual) {
+  return (
+    normalizeRoutineArgs(desired.identityArguments) === normalizeRoutineArgs(actual.identityArguments) &&
+    normalizePgType(desired.returns) === normalizePgType(actual.returns) &&
+    desired.language.toLowerCase() === actual.language.toLowerCase() &&
+    desired.volatility.toLowerCase() === actual.volatility.toLowerCase() &&
+    normalizeRoutineBody(desired.bodySql) === normalizeRoutineBody(actual.bodySql)
+  );
+}
+
+function triggerEquivalent(desired, actual) {
+  return (
+    desired.timing.toLowerCase() === actual.timing.toLowerCase() &&
+    normalizeStringList(desired.events).join(",") === normalizeStringList(actual.events).join(",") &&
+    desired.orientation.toLowerCase() === actual.orientation.toLowerCase() &&
+    desired.functionName.toLowerCase() === actual.functionName.toLowerCase()
+  );
+}
+
+function routineKey(routine) {
+  return `${routine.name}(${normalizeRoutineArgs(routine.identityArguments ?? routine.argumentsSql ?? "")})`;
+}
+
+function routineSignature(routine) {
+  return `${routine.name}(${routine.identityArguments ?? ""})`;
+}
+
+function triggerKey(trigger) {
+  return `${trigger.tableName}.${trigger.name}`;
+}
+
+function dropTriggerSql(trigger) {
+  return `drop trigger if exists ${quoteIdent(trigger.name)} on ${quoteIdent(trigger.tableName)};`;
+}
+
+function triggerFunctionName(actionStatement) {
+  const match = actionStatement.match(/\b(?:function|procedure)\s+("?[\w]+"?)\s*\(/i);
+  return match ? match[1].replace(/^"|"$/g, "") : actionStatement;
+}
+
+function normalizeRoutineArgs(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function normalizeStringList(value) {
+  return (value ?? []).map((item) => String(item).toLowerCase()).sort();
+}
+
+function normalizePgType(value) {
+  const normalized = String(value ?? "")
+    .replace(/\bpublic\./g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  switch (normalized) {
+    case "int":
+    case "int4":
+      return "integer";
+    case "bool":
+      return "boolean";
+    case "timestamp with time zone":
+      return "timestamptz";
+    default:
+      return normalized;
+  }
+}
+
+function normalizeRoutineBody(value) {
+  return String(value ?? "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .replace(/\bpublic\./g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function normalizeCheck(value) {
-  return value.replace(/\s+/g, " ").replace(/"/g, "").trim().toLowerCase();
+  let normalized = value
+    .replace(/^CHECK\s*/i, "")
+    .replace(/::(?:text|character varying|integer|bigint|boolean|jsonb|uuid|timestamp with time zone)\b/gi, "")
+    .replace(/::[\w.[\]"]+/g, "")
+    .replace(/"/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  normalized = stripOuterParens(normalized);
+  normalized = normalized.replace(/\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+  normalized = normalized.replace(
+    /([a-z_][\w]*)\s*=\s*any\s*\(\s*\(?array\[([^\]]+)\]\)?\s*\[\]\s*\)/gi,
+    "$1 in ($2)",
+  );
+  normalized = stripOuterParens(normalized);
+  return normalized.toLowerCase();
 }
 
 function columnTypeSql(column) {
@@ -457,6 +690,61 @@ function columnTypeSql(column) {
     return `varchar(${column.maxLength})`;
   }
   return column.sqlType;
+}
+
+function typesEquivalent(column, actualType) {
+  if (column.sqlType === "bigserial") {
+    return actualType === "bigint";
+  }
+  if (column.sqlType === "serial") {
+    return actualType === "integer";
+  }
+  return columnTypeSql(column) === actualType;
+}
+
+function isSequenceDefault(value) {
+  return typeof value === "string" && /^nextval\('/i.test(value.trim());
+}
+
+function stripOuterParens(value) {
+  let current = value.trim();
+  while (current.startsWith("(") && current.endsWith(")") && enclosesWholeExpression(current)) {
+    current = current.slice(1, -1).trim();
+  }
+  return current;
+}
+
+function enclosesWholeExpression(value) {
+  let depth = 0;
+  let singleQuoted = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    const next = value[index + 1];
+    if (char === "'") {
+      if (singleQuoted && next === "'") {
+        index += 1;
+        continue;
+      }
+      singleQuoted = !singleQuoted;
+      continue;
+    }
+    if (singleQuoted) {
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+    }
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0 && index < value.length - 1) {
+        return false;
+      }
+    }
+    if (depth < 0) {
+      return false;
+    }
+  }
+  return depth === 0;
 }
 
 function quoteIdent(value) {

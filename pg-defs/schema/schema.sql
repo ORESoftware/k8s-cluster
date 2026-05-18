@@ -525,7 +525,7 @@ alter table if exists presence_conv_members
 --
 -- Sharding strategy:
 --   For each membership change, compute
---       shard = abs(hashtext(conv_id::text)) % presence_notify_shards()
+--       shard = first_16_bits(canonical_uuid_hex(conv_id)) % presence_notify_shards()
 --   and pg_notify on channel `presence_change_<shard>`. The shard count
 --   is read from the GUC `presence.notify_shards` (default 256) so the
 --   value is part of the database's contract and pods don't have to guess.
@@ -635,7 +635,7 @@ create trigger presence_conv_members_notify
   execute function notify_presence_member_change();
 
 -- Helper exposed to clients (and to the BEAM service) so they can compute
--- the same shard locally without re-implementing the hash. Useful for
+-- the same shard locally without re-implementing the SQL expression. Useful for
 -- pg_listen.gleam — it asks Postgres which shard a conv belongs to and
 -- LISTENs on the matching channel.
 
