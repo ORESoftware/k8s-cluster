@@ -6,19 +6,12 @@ metadata:
   labels:
     app: gcs
 spec:
-  # NOTE: we WANT 3 replicas so the consistent-hash routing in
-  # gcs-router actually distributes convs across pods. At 1 replica
-  # the hash directive is a no-op (every conv lands on the only pod).
-  #
-  # Currently pinned to 1 because the single-node EC2 cluster is at
-  # 16/16 vCPU requested (every other workload is scheduled there
-  # too). To enable 3 replicas, either:
-  #   - scale the EKS-equivalent node (this is a kubeadm cluster on
-  #     one EC2 instance, so add a worker node)
-  #   - or shrink CPU requests of other workloads on this node
-  #
-  # See todos.md "scale gcs to N replicas".
-  replicas: 1
+  # 2 replicas to exercise consistent-hash routing in gcs-router.
+  # The single-node EC2 cluster is at 99% CPU (15850m / 16000m); the
+  # 100m request here uses the remaining headroom. Bumping to 3+
+  # requires either an additional worker node or shrinking CPU
+  # requests on other workloads on this node (see todos.md).
+  replicas: 2
   strategy:
     # RollingUpdate so that when we eventually bump replicas the
     # rollout is zero-WS-drop (modulo individual pod restarts).
