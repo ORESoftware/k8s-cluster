@@ -431,3 +431,85 @@ alter table if exists agent_remote_dev_artifacts
 alter table if exists agent_remote_dev_runtime_locks
   add constraint agent_remote_dev_runtime_locks_thread_fk
   foreign key (thread_id) references agent_remote_dev_threads(id);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Conversation presence: durable membership for the websocket presence
+-- service. The BEAM-side in-memory registry caches the subset of these rows
+-- relevant to connections currently on the local node and rebuilds itself
+-- from these tables after a process or node restart.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists presence_convs (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(120) not null,
+  display_name varchar(200) default '' not null,
+  status varchar(32) default 'active' not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint presence_convs_slug_format_chk
+    check (slug ~ '^[A-Za-z0-9._:/-]{1,120}$'),
+  constraint presence_convs_display_name_size_chk
+    check (octet_length(display_name) <= 200),
+  constraint presence_convs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint presence_convs_status_chk
+    check (status in ('active', 'paused', 'archived'))
+);
+
+create unique index if not exists presence_convs_slug_active_uq
+  on presence_convs (slug)
+  where is_soft_deleted = false;
+
+create index if not exists presence_convs_status_idx
+  on presence_convs (status)
+  where is_soft_deleted = false;
+
+create index if not exists presence_convs_updated_at_idx
+  on presence_convs (updated_at desc)
+  where is_soft_deleted = false;
+
+create table if not exists presence_conv_members (
+  id uuid primary key default gen_random_uuid(),
+  conv_id uuid not null,
+  user_id uuid not null,
+  role varchar(32) default 'member' not null,
+  status varchar(32) default 'active' not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  joined_at timestamptz default now() not null,
+  left_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint presence_conv_members_role_chk
+    check (role in ('owner', 'admin', 'member', 'guest', 'bot')),
+  constraint presence_conv_members_status_chk
+    check (status in ('active', 'muted', 'banned', 'archived')),
+  constraint presence_conv_members_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create unique index if not exists presence_conv_members_conv_user_active_uq
+  on presence_conv_members (conv_id, user_id)
+  where is_soft_deleted = false;
+
+create index if not exists presence_conv_members_user_id_idx
+  on presence_conv_members (user_id)
+  where is_soft_deleted = false;
+
+create index if not exists presence_conv_members_conv_id_idx
+  on presence_conv_members (conv_id)
+  where is_soft_deleted = false;
+
+create index if not exists presence_conv_members_updated_at_idx
+  on presence_conv_members (updated_at desc)
+  where is_soft_deleted = false;
+
+alter table if exists presence_conv_members
+  add constraint presence_conv_members_conv_fk
+  foreign key (conv_id) references presence_convs(id);

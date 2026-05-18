@@ -933,6 +933,162 @@ class LambdaFunctionRow {
   }
 }
 
+const presenceConvsTable = "presence_convs";
+const presenceConvsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from presence_convs";
+
+const presenceConvsStatusValues = <String>["active", "paused", "archived"];
+
+class PresenceConvsRow {
+  const PresenceConvsRow({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.status,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String displayName;
+  final String status;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory PresenceConvsRow.fromJson(Map<String, Object?> json) {
+    return PresenceConvsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      displayName: _readRequiredString(json, "displayName"),
+      status: _readRequiredString(json, "status"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "status": status,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,120}$').hasMatch(slug)) {
+      errors.add("presence_convs.slug does not match the required pattern");
+    }
+    if (utf8.encode(displayName).length > 200) {
+      errors.add("presence_convs.display_name exceeds 200 bytes");
+    }
+    if (!presenceConvsStatusValues.contains(status)) {
+      errors.add("unsupported presence_convs.status");
+    }
+    return errors;
+  }
+}
+
+const presenceConvMembersTable = "presence_conv_members";
+const presenceConvMembersSelectSql = "select\n      id::text as id,\n      conv_id::text as conv_id,\n      user_id::text as user_id,\n      role,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(left_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as left_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from presence_conv_members";
+
+const presenceConvMembersRoleValues = <String>["owner", "admin", "member", "guest", "bot"];
+const presenceConvMembersStatusValues = <String>["active", "muted", "banned", "archived"];
+
+class PresenceConvMembersRow {
+  const PresenceConvMembersRow({
+    required this.id,
+    required this.convId,
+    required this.userId,
+    required this.role,
+    required this.status,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.joinedAt,
+    this.leftAt,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String convId;
+  final String userId;
+  final String role;
+  final String status;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String joinedAt;
+  final String? leftAt;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory PresenceConvMembersRow.fromJson(Map<String, Object?> json) {
+    return PresenceConvMembersRow(
+      id: _readRequiredString(json, "id"),
+      convId: _readRequiredString(json, "convId"),
+      userId: _readRequiredString(json, "userId"),
+      role: _readRequiredString(json, "role"),
+      status: _readRequiredString(json, "status"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      joinedAt: _readRequiredString(json, "joinedAt"),
+      leftAt: _readOptionalString(json, "leftAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "convId": convId,
+    "userId": userId,
+    "role": role,
+    "status": status,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "joinedAt": joinedAt,
+    "leftAt": leftAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!presenceConvMembersRoleValues.contains(role)) {
+      errors.add("unsupported presence_conv_members.role");
+    }
+    if (!presenceConvMembersStatusValues.contains(status)) {
+      errors.add("unsupported presence_conv_members.status");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

@@ -225,3 +225,43 @@ model LambdaFunction {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("lambda_functions")
 }
+
+model PresenceConvs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(120)
+  displayName String @map("display_name") @default("") @db.VarChar(200)
+  status String @default("active") @db.VarChar(32)
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // presence_convs_slug_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // presence_convs_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // presence_convs_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("presence_convs")
+}
+
+model PresenceConvMembers {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  convId String @map("conv_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  role String @default("member") @db.VarChar(32)
+  status String @default("active") @db.VarChar(32)
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  joinedAt DateTime @map("joined_at") @default(now()) @db.Timestamptz(6)
+  leftAt DateTime? @map("left_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // presence_conv_members_conv_user_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // presence_conv_members_user_id_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // presence_conv_members_conv_id_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // presence_conv_members_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("presence_conv_members")
+}

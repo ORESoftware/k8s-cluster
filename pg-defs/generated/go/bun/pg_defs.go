@@ -25,6 +25,7 @@ var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var presenceConvsSlugPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -502,6 +503,88 @@ func (value LambdaFunctionBun) Validate() error {
 	if !validateRawJSON(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateRawJSON(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const PresenceConvsTable = "presence_convs"
+const PresenceConvsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_convs`
+
+var PresenceConvsStatusValues = []string{"active", "paused", "archived"}
+
+type PresenceConvsBun struct {
+	bun.BaseModel `bun:"table:presence_convs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(120)" json:"slug"`
+	DisplayName string `bun:"display_name,type:varchar(200),default:''" json:"displayName"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value PresenceConvsBun) Validate() error {
+	if !presenceConvsSlugPattern.MatchString(value.Slug) { return errors.New("presence_convs.slug does not match the required pattern") }
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("presence_convs.display_name exceeds 200 bytes") }
+	if !containsString(PresenceConvsStatusValues, value.Status) { return errors.New("unsupported presence_convs.status") }
+	if !validateRawJSON(value.MetaData) { return errors.New("presence_convs.meta_data must be valid JSON") }
+	return nil
+}
+
+const PresenceConvMembersTable = "presence_conv_members"
+const PresenceConvMembersSelectSQL = `select
+      id::text as id,
+      conv_id::text as conv_id,
+      user_id::text as user_id,
+      role,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(left_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as left_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_conv_members`
+
+var PresenceConvMembersRoleValues = []string{"owner", "admin", "member", "guest", "bot"}
+var PresenceConvMembersStatusValues = []string{"active", "muted", "banned", "archived"}
+
+type PresenceConvMembersBun struct {
+	bun.BaseModel `bun:"table:presence_conv_members"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ConvId uuid.UUID `bun:"conv_id,type:uuid" json:"convId"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	Role string `bun:"role,type:varchar(32),default:'member'" json:"role"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	JoinedAt time.Time `bun:"joined_at,type:timestamptz,default:now()" json:"joinedAt"`
+	LeftAt *time.Time `bun:"left_at,type:timestamptz,nullzero" json:"leftAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value PresenceConvMembersBun) Validate() error {
+	if !containsString(PresenceConvMembersRoleValues, value.Role) { return errors.New("unsupported presence_conv_members.role") }
+	if !containsString(PresenceConvMembersStatusValues, value.Status) { return errors.New("unsupported presence_conv_members.status") }
+	if !validateRawJSON(value.MetaData) { return errors.New("presence_conv_members.meta_data must be valid JSON") }
 	return nil
 }
 

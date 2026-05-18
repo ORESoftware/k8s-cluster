@@ -870,3 +870,133 @@ class LambdaFunctionInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 8192:
             raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
         return value
+
+PresenceConvsStatus = Literal["active", "paused", "archived"]
+
+class PresenceConvs(Base):
+    __tablename__ = "presence_convs"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[A-Za-z0-9._:/-]{1,120}$'", name="presence_convs_slug_format_chk"),
+        CheckConstraint("octet_length(display_name) <= 200", name="presence_convs_display_name_size_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="presence_convs_meta_object_chk"),
+        CheckConstraint("status in ('active', 'paused', 'archived')", name="presence_convs_status_chk"),
+        Index("presence_convs_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("presence_convs_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
+        Index("presence_convs_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False, server_default=text("''"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class PresenceConvsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    displayName: str = Field(..., max_length=200)
+    status: PresenceConvsStatus
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("presence_convs.display_name exceeds 200 bytes")
+        return value
+
+class PresenceConvsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    displayName: str | None = Field("", max_length=200)
+    status: PresenceConvsStatus | None = "active"
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("presence_convs.display_name exceeds 200 bytes")
+        return value
+
+PresenceConvMembersRole = Literal["owner", "admin", "member", "guest", "bot"]
+PresenceConvMembersStatus = Literal["active", "muted", "banned", "archived"]
+
+class PresenceConvMembers(Base):
+    __tablename__ = "presence_conv_members"
+    __table_args__ = (
+        CheckConstraint("role in ('owner', 'admin', 'member', 'guest', 'bot')", name="presence_conv_members_role_chk"),
+        CheckConstraint("status in ('active', 'muted', 'banned', 'archived')", name="presence_conv_members_status_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="presence_conv_members_meta_object_chk"),
+        Index("presence_conv_members_conv_user_active_uq", "conv_id", "user_id", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("presence_conv_members_user_id_idx", "user_id", postgresql_where=text("is_soft_deleted = false")),
+        Index("presence_conv_members_conv_id_idx", "conv_id", postgresql_where=text("is_soft_deleted = false")),
+        Index("presence_conv_members_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    conv_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'member'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class PresenceConvMembersRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    convId: UUID
+    userId: UUID
+    role: PresenceConvMembersRole
+    status: PresenceConvMembersStatus
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    joinedAt: datetime
+    leftAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class PresenceConvMembersInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    convId: UUID
+    userId: UUID
+    role: PresenceConvMembersRole | None = "member"
+    status: PresenceConvMembersStatus | None = "active"
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    joinedAt: datetime | None = None
+    leftAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None

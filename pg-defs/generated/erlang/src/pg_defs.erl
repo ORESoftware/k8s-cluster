@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1]).
+-export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1]).
 
 app_config_table() -> <<"app_config">>.
 
@@ -322,3 +322,70 @@ validate_lambda_functions_status(Value) when is_binary(Value) ->
     end;
 validate_lambda_functions_status(Value) when is_list(Value) ->
     validate_lambda_functions_status(unicode:characters_to_binary(Value)).
+
+presence_convs_table() -> <<"presence_convs">>.
+
+presence_convs_columns() -> [<<"id">>, <<"slug">>, <<"display_name">>, <<"status">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+presence_convs_select_sql() -> <<"select
+      id::text as id,
+      slug,
+      display_name,
+      status,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_convs">>.
+
+presence_convs_status_values() -> [<<"active">>, <<"paused">>, <<"archived">>].
+
+validate_presence_convs_status(Value) when is_binary(Value) ->
+    case lists:member(Value, presence_convs_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported presence_convs.status: "/binary, Value/binary>>}
+    end;
+validate_presence_convs_status(Value) when is_list(Value) ->
+    validate_presence_convs_status(unicode:characters_to_binary(Value)).
+
+presence_conv_members_table() -> <<"presence_conv_members">>.
+
+presence_conv_members_columns() -> [<<"id">>, <<"conv_id">>, <<"user_id">>, <<"role">>, <<"status">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"joined_at">>, <<"left_at">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+presence_conv_members_select_sql() -> <<"select
+      id::text as id,
+      conv_id::text as conv_id,
+      user_id::text as user_id,
+      role,
+      status,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,
+      to_char(left_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as left_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_conv_members">>.
+
+presence_conv_members_role_values() -> [<<"owner">>, <<"admin">>, <<"member">>, <<"guest">>, <<"bot">>].
+
+validate_presence_conv_members_role(Value) when is_binary(Value) ->
+    case lists:member(Value, presence_conv_members_role_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported presence_conv_members.role: "/binary, Value/binary>>}
+    end;
+validate_presence_conv_members_role(Value) when is_list(Value) ->
+    validate_presence_conv_members_role(unicode:characters_to_binary(Value)).
+
+presence_conv_members_status_values() -> [<<"active">>, <<"muted">>, <<"banned">>, <<"archived">>].
+
+validate_presence_conv_members_status(Value) when is_binary(Value) ->
+    case lists:member(Value, presence_conv_members_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported presence_conv_members.status: "/binary, Value/binary>>}
+    end;
+validate_presence_conv_members_status(Value) when is_list(Value) ->
+    validate_presence_conv_members_status(unicode:characters_to_binary(Value)).

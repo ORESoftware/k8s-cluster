@@ -255,6 +255,55 @@ class LambdaFunctionTable extends Table {
   };
 }
 
+@DataClassName("PresenceConvsData")
+class PresenceConvsTable extends Table {
+  @override String get tableName => "presence_convs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 120)();
+  TextColumn get displayName => text().named("display_name").withLength(max: 200).clientDefault(() => '')();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("PresenceConvMembersData")
+class PresenceConvMembersTable extends Table {
+  @override String get tableName => "presence_conv_members";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get convId => text().named("conv_id").customConstraint("UUID REFERENCES presence_convs (id)")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get role => text().named("role").clientDefault(() => 'member')();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get joinedAt => dateTime().named("joined_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get leftAt => dateTime().named("left_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -267,4 +316,6 @@ const List<Type> registeredDriftTables = <Type>[
   AgentRemoteDevArtifactTable,
   AgentRemoteDevRuntimeLockTable,
   LambdaFunctionTable,
+  PresenceConvsTable,
+  PresenceConvMembersTable,
 ];

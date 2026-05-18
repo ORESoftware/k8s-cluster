@@ -135,3 +135,33 @@ update lambda_functions set slug = $2, display_name = $3, description = $4, runt
 
 -- name: DeleteLambdaFunctions :exec
 delete from lambda_functions where id = $1;
+
+-- name: ListPresenceConvs :many
+select id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from presence_convs;
+
+-- name: GetPresenceConvs :one
+select id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from presence_convs where id = $1 limit 1;
+
+-- name: CreatePresenceConvs :one
+insert into presence_convs (id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdatePresenceConvs :one
+update presence_convs set slug = $2, display_name = $3, status = $4, meta_data = $5, is_soft_deleted = $6, updated_at = $7, created_by = $8, updated_by = $9 where id = $1 returning id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeletePresenceConvs :exec
+delete from presence_convs where id = $1;
+
+-- name: ListPresenceConvMembers :many
+select id, conv_id, user_id, role, status, meta_data, is_soft_deleted, joined_at, left_at, created_at, updated_at, created_by, updated_by from presence_conv_members;
+
+-- name: GetPresenceConvMembers :one
+select id, conv_id, user_id, role, status, meta_data, is_soft_deleted, joined_at, left_at, created_at, updated_at, created_by, updated_by from presence_conv_members where id = $1 limit 1;
+
+-- name: CreatePresenceConvMembers :one
+insert into presence_conv_members (id, conv_id, user_id, role, status, meta_data, is_soft_deleted, joined_at, left_at, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, conv_id, user_id, role, status, meta_data, is_soft_deleted, joined_at, left_at, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdatePresenceConvMembers :one
+update presence_conv_members set conv_id = $2, user_id = $3, role = $4, status = $5, meta_data = $6, is_soft_deleted = $7, joined_at = $8, left_at = $9, updated_at = $10, created_by = $11, updated_by = $12 where id = $1 returning id, conv_id, user_id, role, status, meta_data, is_soft_deleted, joined_at, left_at, created_at, updated_at, created_by, updated_by;
+
+-- name: DeletePresenceConvMembers :exec
+delete from presence_conv_members where id = $1;

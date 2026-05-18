@@ -1402,6 +1402,261 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     Ok(())
 }
 
+pub const PRESENCE_CONVS_TABLE: &str = "presence_convs";
+pub const PRESENCE_CONVS_COLUMNS: &[&str] = &["id", "slug", "display_name", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const PRESENCE_CONVS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      display_name,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_convs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PresenceConvsStatus {
+    Active,
+    Paused,
+    Archived,
+}
+
+impl PresenceConvsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for PresenceConvsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceConvsRow {
+    pub id: String,
+    pub slug: String,
+    pub display_name: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceConvsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_presence_convs_row(value: &PresenceConvsRow) -> Result<(), String> {
+    validate_string_length("presence_convs.slug", &value.slug, None, Some(120))?;
+    validate_string_length("presence_convs.display_name", &value.display_name, None, Some(200))?;
+    if (&value.display_name).as_bytes().len() > 200 { return Err("presence_convs.display_name exceeds 200 bytes".to_string()); }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported presence_convs.status: {}", &value.status)); }
+    if !(&value.meta_data).is_object() { return Err("presence_convs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_presence_convs_insert(value: &PresenceConvsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_string_length("presence_convs.slug", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("presence_convs.display_name", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("presence_convs.display_name exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported presence_convs.status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("presence_convs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const PRESENCE_CONV_MEMBERS_TABLE: &str = "presence_conv_members";
+pub const PRESENCE_CONV_MEMBERS_COLUMNS: &[&str] = &["id", "conv_id", "user_id", "role", "status", "meta_data", "is_soft_deleted", "joined_at", "left_at", "created_at", "updated_at", "created_by", "updated_by"];
+pub const PRESENCE_CONV_MEMBERS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      conv_id::text as conv_id,
+      user_id::text as user_id,
+      role,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(left_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as left_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_conv_members"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PresenceConvMembersRole {
+    Owner,
+    Admin,
+    Member,
+    Guest,
+    Bot,
+}
+
+impl PresenceConvMembersRole {
+    pub const VALUES: &'static [&'static str] = &["owner", "admin", "member", "guest", "bot"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Owner => "owner",
+            Self::Admin => "admin",
+            Self::Member => "member",
+            Self::Guest => "guest",
+            Self::Bot => "bot",
+        }
+    }
+}
+
+impl TryFrom<&str> for PresenceConvMembersRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "owner" => Ok(Self::Owner),
+            "admin" => Ok(Self::Admin),
+            "member" => Ok(Self::Member),
+            "guest" => Ok(Self::Guest),
+            "bot" => Ok(Self::Bot),
+            _ => Err(format!("unsupported role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PresenceConvMembersStatus {
+    Active,
+    Muted,
+    Banned,
+    Archived,
+}
+
+impl PresenceConvMembersStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "muted", "banned", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Muted => "muted",
+            Self::Banned => "banned",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for PresenceConvMembersStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "muted" => Ok(Self::Muted),
+            "banned" => Ok(Self::Banned),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceConvMembersRow {
+    pub id: String,
+    pub conv_id: String,
+    pub user_id: String,
+    pub role: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub joined_at: String,
+    pub left_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresenceConvMembersInsert {
+    pub id: Option<String>,
+    pub conv_id: Option<String>,
+    pub user_id: Option<String>,
+    pub role: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub joined_at: Option<String>,
+    pub left_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_presence_conv_members_row(value: &PresenceConvMembersRow) -> Result<(), String> {
+    if !["owner", "admin", "member", "guest", "bot"].contains(&(&value.role).as_str()) { return Err(format!("unsupported presence_conv_members.role: {}", &value.role)); }
+    if !["active", "muted", "banned", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported presence_conv_members.status: {}", &value.status)); }
+    if !(&value.meta_data).is_object() { return Err("presence_conv_members.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_presence_conv_members_insert(value: &PresenceConvMembersInsert) -> Result<(), String> {
+    if let Some(value) = &value.role {
+        if !["owner", "admin", "member", "guest", "bot"].contains(&(value).as_str()) { return Err(format!("unsupported presence_conv_members.role: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "muted", "banned", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported presence_conv_members.status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("presence_conv_members.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

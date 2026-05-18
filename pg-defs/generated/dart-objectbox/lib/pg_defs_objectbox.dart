@@ -866,3 +866,158 @@ class LambdaFunctionObjectBox {
     );
   }
 }
+
+@Entity()
+class PresenceConvsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String slug;
+
+  String displayName;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  PresenceConvsObjectBox({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.status,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "status": status,
+    "metaData": jsonDecode(metaData),
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static PresenceConvsObjectBox fromJson(Map<String, Object?> json) {
+    return PresenceConvsObjectBox(
+      id: json["id"] as String,
+      slug: json["slug"] as String,
+      displayName: json["displayName"] as String,
+      status: json["status"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class PresenceConvMembersObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String convId;
+
+  String userId;
+
+  String role;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isSoftDeleted;
+
+  String joinedAt;
+
+  String? leftAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  PresenceConvMembersObjectBox({
+    required this.id,
+    required this.convId,
+    required this.userId,
+    required this.role,
+    required this.status,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.joinedAt,
+    this.leftAt,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "convId": convId,
+    "userId": userId,
+    "role": role,
+    "status": status,
+    "metaData": jsonDecode(metaData),
+    "isSoftDeleted": isSoftDeleted,
+    "joinedAt": joinedAt,
+    "leftAt": leftAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static PresenceConvMembersObjectBox fromJson(Map<String, Object?> json) {
+    return PresenceConvMembersObjectBox(
+      id: json["id"] as String,
+      convId: json["convId"] as String,
+      userId: json["userId"] as String,
+      role: json["role"] as String,
+      status: json["status"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      joinedAt: json["joinedAt"] as String,
+      leftAt: json["leftAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}

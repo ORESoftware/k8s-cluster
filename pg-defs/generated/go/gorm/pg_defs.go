@@ -25,6 +25,7 @@ var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var presenceConvsSlugPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -511,6 +512,90 @@ func (value LambdaFunctionGorm) Validate() error {
 	if !validateJSONString(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateJSONString(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const PresenceConvsTable = "presence_convs"
+const PresenceConvsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_convs`
+
+var PresenceConvsStatusValues = []string{"active", "paused", "archived"}
+
+type PresenceConvsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(120);not null" json:"slug"`
+	DisplayName string `gorm:"column:display_name;type:varchar(200);default:'';not null" json:"displayName"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (PresenceConvsGorm) TableName() string { return PresenceConvsTable }
+
+func (value PresenceConvsGorm) Validate() error {
+	if !presenceConvsSlugPattern.MatchString(value.Slug) { return errors.New("presence_convs.slug does not match the required pattern") }
+	if len([]byte(value.DisplayName)) > 200 { return errors.New("presence_convs.display_name exceeds 200 bytes") }
+	if !containsString(PresenceConvsStatusValues, value.Status) { return errors.New("unsupported presence_convs.status") }
+	if !validateJSONString(value.MetaData) { return errors.New("presence_convs.meta_data must be valid JSON") }
+	return nil
+}
+
+const PresenceConvMembersTable = "presence_conv_members"
+const PresenceConvMembersSelectSQL = `select
+      id::text as id,
+      conv_id::text as conv_id,
+      user_id::text as user_id,
+      role,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as joined_at,
+      to_char(left_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as left_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from presence_conv_members`
+
+var PresenceConvMembersRoleValues = []string{"owner", "admin", "member", "guest", "bot"}
+var PresenceConvMembersStatusValues = []string{"active", "muted", "banned", "archived"}
+
+type PresenceConvMembersGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ConvId uuid.UUID `gorm:"column:conv_id;type:uuid;not null" json:"convId"`
+	UserId uuid.UUID `gorm:"column:user_id;type:uuid;not null" json:"userId"`
+	Role string `gorm:"column:role;type:varchar(32);default:'member';not null" json:"role"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	JoinedAt time.Time `gorm:"column:joined_at;type:timestamptz;default:now();not null" json:"joinedAt"`
+	LeftAt *time.Time `gorm:"column:left_at;type:timestamptz" json:"leftAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (PresenceConvMembersGorm) TableName() string { return PresenceConvMembersTable }
+
+func (value PresenceConvMembersGorm) Validate() error {
+	if !containsString(PresenceConvMembersRoleValues, value.Role) { return errors.New("unsupported presence_conv_members.role") }
+	if !containsString(PresenceConvMembersStatusValues, value.Status) { return errors.New("unsupported presence_conv_members.status") }
+	if !validateJSONString(value.MetaData) { return errors.New("presence_conv_members.meta_data must be valid JSON") }
 	return nil
 }
 
