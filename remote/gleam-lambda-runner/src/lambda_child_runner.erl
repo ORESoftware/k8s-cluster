@@ -216,15 +216,34 @@ supported_runtime(Runtime) ->
     lists:member(Runtime, [<<"nodejs">>, <<"python3">>, <<"ruby">>, <<"bash">>]).
 
 host_command(<<"nodejs">>) ->
-    {ok, <<"env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs">>};
+    host_command_from_env(
+        "LAMBDA_NODEJS_HOST_COMMAND",
+        <<"env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs">>
+    );
 host_command(<<"python3">>) ->
-    {ok, <<"env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py">>};
+    host_command_from_env(
+        "LAMBDA_PYTHON3_HOST_COMMAND",
+        <<"env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py">>
+    );
 host_command(<<"ruby">>) ->
-    {ok, <<"env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb">>};
+    host_command_from_env(
+        "LAMBDA_RUBY_HOST_COMMAND",
+        <<"env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb">>
+    );
 host_command(<<"bash">>) ->
-    {ok, <<"env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs">>};
+    host_command_from_env(
+        "LAMBDA_BASH_HOST_COMMAND",
+        <<"env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs">>
+    );
 host_command(Runtime) ->
     {error, iolist_to_binary(["unsupported lambda runtime: ", Runtime])}.
+
+host_command_from_env(Name, Default) ->
+    case os:getenv(Name) of
+        false -> {ok, Default};
+        "" -> {ok, Default};
+        Value -> {ok, to_binary(Value)}
+    end.
 
 host_runtime_allowed(Runtime) ->
     lists:member(Runtime, csv_env("LAMBDA_ALLOW_HOST_RUNTIMES", <<"nodejs">>)).

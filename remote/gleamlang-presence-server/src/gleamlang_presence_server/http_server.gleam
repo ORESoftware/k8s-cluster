@@ -22,7 +22,7 @@
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/atom
-import gleam/http.{Delete, Get, Post}
+import gleam/http.{Delete, Get, Options, Post}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/int
@@ -69,15 +69,37 @@ pub fn supervised(
   port port: Int,
   deps deps: Deps,
 ) -> ChildSpecification(Supervisor) {
-  mist.new(fn(req) { route(deps, req) })
+  mist.new(fn(req) { with_cors(route(deps, req)) })
   |> mist.port(port)
   |> mist.bind("0.0.0.0")
   |> mist.supervised
 }
 
+/// Stamp CORS headers onto every response. Permissive on purpose so
+/// browsers loading the test UI from a different origin (e.g. the
+/// `web-home-rs` page on :8080) can hit `/conv/...` and `/user/...`
+/// directly. No auth lives on this endpoint yet anyway.
+fn with_cors(resp: Response(ResponseData)) -> Response(ResponseData) {
+  resp
+  |> response.set_header("access-control-allow-origin", "*")
+  |> response.set_header(
+    "access-control-allow-methods",
+    "GET, POST, DELETE, OPTIONS",
+  )
+  |> response.set_header("access-control-allow-headers", "content-type")
+  |> response.set_header("access-control-max-age", "600")
+}
+
 fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
   let path = request.path_segments(req)
   case req.method, path {
+    // CORS preflight. Browsers send this before any cross-origin
+    // POST/DELETE; respond 204 No Content with the allow-* headers
+    // (those are added by `with_cors`).
+    Options, _ ->
+      response.new(204)
+      |> response.set_body(Bytes(bytes_tree.from_string("")))
+
     Get, [] -> help()
     Get, ["healthz"] -> healthz(deps)
     Get, ["nodes"] -> nodes_text()

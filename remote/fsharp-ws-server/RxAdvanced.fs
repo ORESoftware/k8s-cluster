@@ -37,6 +37,11 @@ open OresSoftware.Dd.FsWs.PipelineStages
 ///                         output — flood the socket and you only get the
 ///                         last reply per 50 ms of silence. Classic
 ///                         keystroke-debounce shape.
+///
+///   - `RxSampleFlow`    : same input pipeline, but emits at most the latest
+///                         completed result every 100 ms. This is the "live
+///                         dashboard" shape: steady updates under load without
+///                         letting every upstream event resize the browser UI.
 
 // ----------------------------------------------------------------------------
 // RxStats — process-wide live counters fed through an Rx hot pipeline.
@@ -69,7 +74,9 @@ module RxStats =
         Interlocked.Increment(&openConns) |> ignore
 
     let connectionClosed () =
-        Interlocked.Decrement(&openConns) |> ignore
+        let after = Interlocked.Decrement(&openConns)
+        if after < 0 then
+            Interlocked.Exchange(&openConns, 0) |> ignore
 
     let messageIn (bytes: int) =
         Interlocked.Increment(&msgInCount) |> ignore
@@ -221,6 +228,19 @@ module RxThrottleFlow =
     let pipeline (inbound: IObservable<string>) : IObservable<string> =
         (rxFiveStages inbound)
             .Throttle(TimeSpan.FromMilliseconds(50.0))
+
+
+module RxSampleFlow =
+
+    /// `Sample(timespan)` — regardless of how busy the inbound stream is,
+    /// emit at most the latest completed result once per tick. This is the
+    /// Rx-native "operator UI telemetry" shape: the client can flood the
+    /// socket, but a dashboard or terminal pane only repaints at 10 Hz.
+    let pipeline (inbound: IObservable<string>) : IObservable<string> =
+        (rxFiveStages inbound)
+            .Sample(TimeSpan.FromMilliseconds(100.0))
+            .Select(fun frame ->
+                sprintf "{\"sample\":\"100ms\",\"item\":%s}" frame)
 
 
 // ----------------------------------------------------------------------------

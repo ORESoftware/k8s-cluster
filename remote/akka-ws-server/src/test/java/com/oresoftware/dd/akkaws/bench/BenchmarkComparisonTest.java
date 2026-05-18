@@ -53,8 +53,8 @@ class BenchmarkComparisonTest {
     // Was capped at 30 to dodge a CounterLimit lost-update data race in async.java that
     // hung Asyncc.Parallel under sustained rapid-fire load. Fixed upstream by
     // async-java/async.java#9 (CounterLimit.{started,finished} -> AtomicInteger). The
-    // current async-java.version coordinate in pom.xml pins to that fix branch's HEAD;
-    // once #9 merges and we bump to the merge SHA this can stay at 200.
+    // current async-java.version coordinate in pom.xml pins to the v0.2.9 tag that includes
+    // that fix, so this can stay at 200.
     final int iterations = 200;
 
     final String summary = runner.runAsync(iterations, payload).toCompletableFuture()

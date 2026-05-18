@@ -70,6 +70,10 @@ child-process, worker, addon, or inspector permission is granted. The deployment
 Python, Ruby, and Bash do not have a reliable in-process filesystem sandbox. The API and runner
 therefore require `containerized: true` for those runtimes by default. Host execution is limited to
 Node.js unless `LAMBDA_ALLOW_HOST_RUNTIMES` is explicitly widened for a trusted environment. The
+managed host commands can be overridden by trusted deployment/local env with
+`LAMBDA_NODEJS_HOST_COMMAND`, `LAMBDA_PYTHON3_HOST_COMMAND`, `LAMBDA_RUBY_HOST_COMMAND`, and
+`LAMBDA_BASH_HOST_COMMAND`; this is mainly for dev machines whose local Node permission flags lag the
+cluster `nodejs-current` package. The
 container path supports `LAMBDA_CONTAINER_RUNNER=nerdctl` and `LAMBDA_CONTAINER_RUNNER=ctr`.
 `nerdctl` uses `--read-only --tmpfs /tmp --user 10001:10001 --cap-drop ALL --security-opt
 no-new-privileges --pids-limit 64 --ulimit nofile=64:64`; `ctr` uses equivalent containerd flags

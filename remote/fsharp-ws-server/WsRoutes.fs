@@ -21,6 +21,7 @@ open OresSoftware.Dd.FsWs.RxAdvanced
 ///   GET  /readyz        — readiness probe.
 ///   GET  /ws/rx         — WebSocket; each text frame runs through the Rx.NET pipeline.
 ///   GET  /ws/async      — WebSocket; same frame, native F# `task { }` pipeline.
+///   GET  /ws/rx-*       — long-running Rx-native stream/window/throttle/sample demos.
 ///   GET  /v1/benchmark  — runs both pipelines N times against the same payload and
 ///                         returns a JSON timing summary. Iteration count comes
 ///                         from the `BENCHMARK_ITERATIONS` env var (default 200).
@@ -32,6 +33,8 @@ let private maxTextFrameBytesCeiling = 1048576
 let private defaultBenchmarkIterations = 200
 let private defaultMaxBenchmarkIterations = 1000
 let private maxBenchmarkIterationsCeiling = 10000
+let private defaultRxStreamOutboundQueueCapacity = 1024
+let private rxStreamOutboundQueueCapacityCeiling = 65536
 
 let private jsonString (raw: string) : string =
     JsonSerializer.Serialize(if isNull raw then "" else raw)
@@ -226,8 +229,22 @@ let private runRxStreamLoop
         // Hot Subject: the entry point into the Rx graph for this connection.
         // Subject is single-producer-safe (only the receive loop OnNext's it),
         // which is all we need here.
-        let inbound = new Subject<string>()
-        let outChan = Channel.CreateUnbounded<string>()
+        use inbound = new Subject<string>()
+        use loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct)
+        let loopCt = loopCts.Token
+        let outboundQueueCapacity =
+            parseBoundedPositiveIntEnv
+                "RX_STREAM_OUTBOUND_QUEUE_CAPACITY"
+                defaultRxStreamOutboundQueueCapacity
+                rxStreamOutboundQueueCapacityCeiling
+        let outChanOptions = BoundedChannelOptions(outboundQueueCapacity)
+        outChanOptions.SingleReader <- true
+        outChanOptions.SingleWriter <- false
+        outChanOptions.FullMode <- BoundedChannelFullMode.Wait
+        let outChan = Channel.CreateBounded<string>(outChanOptions)
+        let outboundQueueFull =
+            TaskCompletionSource<unit>(
+                TaskCreationOptions.RunContinuationsAsynchronously)
 
         // Materialise the pipeline ONCE for the lifetime of this socket.
         // Subscribing here means: subsequent inbound.OnNext walks the same
@@ -235,7 +252,18 @@ let private runRxStreamLoop
         // overhead win Rx is supposed to deliver — visible in
         // /v1/benchmark-stream vs /v1/benchmark.
         let onNext frame =
-            outChan.Writer.TryWrite(frame) |> ignore
+            if not (outChan.Writer.TryWrite(frame)) then
+                if outboundQueueFull.TrySetResult(()) then
+                    logger.LogWarning(
+                        "ws[{Pipeline}] outbound queue full ({Capacity}); closing connection",
+                        pipelineLabel,
+                        outboundQueueCapacity)
+                    outChan.Writer.TryComplete(
+                        InvalidOperationException(
+                            sprintf
+                                "rx outbound queue full (%d)"
+                                outboundQueueCapacity)) |> ignore
+                    loopCts.Cancel()
         let onError (ex: exn) =
             logger.LogWarning(
                 ex, "ws[{Pipeline}] pipeline OnError", pipelineLabel)
@@ -267,7 +295,7 @@ let private runRxStreamLoop
                 try
                     let mutable run = true
                     while run do
-                        let! more = outChan.Reader.WaitToReadAsync(ct).AsTask()
+                        let! more = outChan.Reader.WaitToReadAsync(loopCt).AsTask()
                         if not more then run <- false
                         else
                             let mutable frame : string = null
@@ -277,7 +305,7 @@ let private runRxStreamLoop
                                         ArraySegment(bytes),
                                         WebSocketMessageType.Text,
                                         true,
-                                        ct)
+                                        loopCt)
                                 RxStats.messageOut bytes.Length
                 with :? OperationCanceledException -> ()
             } :> Task
@@ -285,10 +313,10 @@ let private runRxStreamLoop
         try
             let mutable run = true
             while run do
-                let! frame = receiveTextFrame pipelineLabel logger ws ct maxTextFrameBytes
+                let! frame = receiveTextFrame pipelineLabel logger ws loopCt maxTextFrameBytes
                 match frame with
                 | CloseFrame ->
-                    do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" ct
+                    do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" loopCt
                     run <- false
                 | TextFrame input ->
                     RxStats.messageIn (Encoding.UTF8.GetByteCount(input: string))
@@ -330,6 +358,7 @@ let private acceptAndRunRxStream
 let handleRxStream    ctx = acceptAndRunRxStream "rx-stream"   RxStreamFlow.pipeline   ctx
 let handleRxWindow    ctx = acceptAndRunRxStream "rx-window"   RxWindowFlow.pipeline   ctx
 let handleRxThrottle  ctx = acceptAndRunRxStream "rx-throttle" RxThrottleFlow.pipeline ctx
+let handleRxSample    ctx = acceptAndRunRxStream "rx-sample"   RxSampleFlow.pipeline   ctx
 
 let handleBenchmark (ctx: HttpContext) : Task =
     task {
@@ -505,6 +534,7 @@ let handleIndex (ctx: HttpContext) : Task =
       <tr><td>WS</td><td><code>/ws/rx-stream</code></td><td>per-connection <code>Subject&lt;string&gt;</code>, pipeline materialised <em>once</em> at connect</td></tr>
       <tr><td>WS</td><td><code>/ws/rx-window</code></td><td>same input, output goes through <code>Buffer(200ms, 16)</code> — one batched frame per window</td></tr>
       <tr><td>WS</td><td><code>/ws/rx-throttle</code></td><td>same input, output <code>Throttle(50ms)</code> — flood the socket, you only get the last reply per quiet window</td></tr>
+      <tr><td>WS</td><td><code>/ws/rx-sample</code></td><td>same input, output <code>Sample(100ms)</code> — at most the latest completed reply every dashboard tick</td></tr>
     </tbody>
   </table>
 

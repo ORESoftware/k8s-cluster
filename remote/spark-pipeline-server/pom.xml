@@ -39,26 +39,14 @@
         <hikaricp.version>5.1.0</hikaricp.version>
 
         <!--
-          v0.2.4 of async-java/async.java served via JitPack. Cumulative history:
-            - PR #8  : daemon-thread NeoQueue executor, NeoLock thread-safety, modernised
-                       pom, Central Portal publishing, JitPack, LICENSE, Loom-aware readme.
-            - PR #9  : CounterLimit lost-update race fix (Asyncc.Parallel hung after a
-                       few dozen sequential iterations on JDK 21).
-            - PR #10 : NeoParallel.Parallel(List, callback) double-fire fix (~5%
-                       message drop in WS load tests).
-            - v0.2.1 : NeoReduce defensive fireFinalCallback routing + MisuseTest
-                       (12 adversarial / user-misuse scenarios pinned).
-            - v0.2.2 : NeoParallel/NeoMap slot-write-before-counter-increment fix,
-                       Unlock made public.
-            - v0.2.4 : ArrayList resize-race fix in Asyncc.Parallel(List, callback);
-                       c.success(v) / c.fail(e) default methods on IAsyncCallback;
-                       WrapErrFirst.wrap(...) adapter; substantial Javadoc rewrite;
-                       JDK floor raised from 11 to 17 (matches our build).
+          Latest async-java tag consumed through JitPack.
 
-          When io.github.async-java:async-java:0.2.4 lands on Maven Central, switch
-          this property to that stable coordinate. Until then the JitPack
-          `com.github.async-java:async.java:v0.2.4` coordinate is the authoritative
-          release artifact.
+          v0.2.9 includes the v0.2.8 shorthand / AsyncFut composition work plus the
+          NeoWhilst race fix and Concat `? extends` widening pinned by the submodule
+          at remote/libs/async-java. The library pom now declares the future Central
+          coordinate `io.github.async-java:async-java:0.2.9`, but Maven Central did
+          not yet expose that artifact during the 2026-05-18 audit. Keep the runtime
+          dependency on JitPack until Central metadata confirms the release.
         -->
         <async-java.version>v0.2.9</async-java.version>
 

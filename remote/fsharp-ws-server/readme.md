@@ -54,6 +54,7 @@ cleanly into a `string -> Task<string>` boundary.
 | WS     | `/ws/rx-stream`     | Long-running `Subject<string>`-fed pipeline. One reply per input, but the operator chain is built once. Replies can arrive out-of-order because `Observable.Start` on `TaskPoolScheduler` is unordered — that's the fan-out doing its job. |
 | WS     | `/ws/rx-window`     | Same input pipeline, but output goes through `Buffer(200ms, 16)` — one batched frame per window. Try this with `wscat`: send 5 frames quickly, get a single batch reply with `"count":5`. |
 | WS     | `/ws/rx-throttle`   | Same input pipeline, output `Throttle(50ms)` — flood the socket and you only get the latest reply once you pause for 50 ms. Classic keystroke-debounce shape. |
+| WS     | `/ws/rx-sample`     | Same input pipeline, output `Sample(100ms)` — a dashboard-friendly "latest value every tick" stream under heavy input. |
 
 ### Live process telemetry (Rx `BehaviorSubject` + `ReplaySubject` + SSE)
 
@@ -105,6 +106,7 @@ so the same loadtest correlator works against this service and `dd-akka-ws-serve
 | `MAX_BENCHMARK_ITERATIONS` | `1000`     | Upper bound applied to `BENCHMARK_ITERATIONS` at runtime.    |
 | `BENCHMARK_PAYLOAD`       | sample JSON | Payload to drive the benchmark.                              |
 | `MAX_WS_TEXT_FRAME_BYTES` | `65536`     | Maximum assembled inbound WebSocket text frame size.         |
+| `RX_STREAM_OUTBOUND_QUEUE_CAPACITY` | `1024` | Per-connection bounded outbound queue for long-running Rx streams. If the client cannot drain replies, the socket is closed instead of letting memory grow without bound. |
 | `DOTNET_gcServer`         | `1`         | Server GC (multi-core, throughput-tuned).                    |
 | `DOTNET_TieredPGO`        | `1`         | Tiered JIT + dynamic PGO.                                    |
 
@@ -211,8 +213,8 @@ and Rx.NET holds its tail latency just like the callback path. That pattern
 doesn't compose into a `string -> Task<string>` boundary, so it isn't what
 the `/v1/benchmark` endpoint measures — but it's the right call when the WS
 stream itself is the shape your business logic wants to react over. The
-`/ws/rx-stream`, `/ws/rx-window`, and `/ws/rx-throttle` endpoints exist
-specifically to demonstrate those shapes; see `RxAdvanced.fs`.
+`/ws/rx-stream`, `/ws/rx-window`, `/ws/rx-throttle`, and `/ws/rx-sample`
+endpoints exist specifically to demonstrate those shapes; see `RxAdvanced.fs`.
 
 ## Quick demo of the Rx-native endpoints
 
@@ -236,7 +238,13 @@ wscat -c ws://localhost:8087/ws/rx-window
 > {"id":"e","payload":"5"}
 < {"window":"200ms|16","count":5,"items":[...]}
 
-# 3. Live SSE feed of the process counters.
+# 3. Sampled output. Flood it; it emits at most one latest result per 100 ms.
+wscat -c ws://localhost:8087/ws/rx-sample
+> {"id":"sample-1","payload":"a"}
+> {"id":"sample-2","payload":"b"}
+< {"sample":"100ms","item":{"ok":true,"result":{...}}}
+
+# 4. Live SSE feed of the process counters.
 curl -N http://localhost:8087/sse/rx-stats
 event: hello
 data: connected

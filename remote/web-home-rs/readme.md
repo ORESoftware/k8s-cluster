@@ -7,6 +7,12 @@ Rust public web layer for remote-dev.
 - serves `GET /` and `GET /home` as the operator-facing homepage
 - serves `GET /agents/tasks` as the cluster-hosted remote-dev diagnostics table
 - serves `GET /agents/threads` as the thread-first chat/task UI with stored response events
+- serves `GET /presence-test` as a 1-user, N-conversation in-browser harness for
+  the gleamlang-presence-server (opens 1 user-scoped ws + N conv-scoped ws's,
+  exposes join/leave/broadcast/device-logout controls, intended to be opened
+  in 3 tabs as `alice/d1`, `bob/d2`, `carol/d3` to exercise cross-tab fan-out)
+- serves `GET /wss-test` as a same-origin gateway WebSocket harness with presets
+  for `dd-gleamlang-server`, `dd-webrtc-signaling-rs`, and `gms/gcs/chat.vibe`
 - keeps HTML/public pages out of the Node.js worker runtime
 - keeps database credentials out of the public HTML server
 - exposes `GET /healthz` for web liveness

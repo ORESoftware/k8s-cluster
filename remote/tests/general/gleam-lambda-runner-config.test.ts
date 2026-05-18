@@ -163,6 +163,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /host_command\(<<"python3">>\)/);
   assert.match(erlPort, /host_command\(<<"ruby">>\)/);
   assert.match(erlPort, /host_command\(<<"bash">>\)/);
+  assert.match(erlPort, /host_command_from_env/);
+  assert.match(erlPort, /LAMBDA_NODEJS_HOST_COMMAND/);
+  assert.match(erlPort, /LAMBDA_PYTHON3_HOST_COMMAND/);
+  assert.match(erlPort, /LAMBDA_RUBY_HOST_COMMAND/);
+  assert.match(erlPort, /LAMBDA_BASH_HOST_COMMAND/);
   assert.match(erlPort, /host_runtime_allowed/);
   assert.match(erlPort, /LAMBDA_ALLOW_HOST_RUNTIMES/);
   assert.match(erlPort, /lambda runtime requires containerized=true/);

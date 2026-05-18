@@ -68,6 +68,7 @@ let main args =
     app.MapGet("/ws/rx-stream",           toReqDelegate handleRxStream)        |> ignore
     app.MapGet("/ws/rx-window",           toReqDelegate handleRxWindow)        |> ignore
     app.MapGet("/ws/rx-throttle",         toReqDelegate handleRxThrottle)      |> ignore
+    app.MapGet("/ws/rx-sample",           toReqDelegate handleRxSample)        |> ignore
 
     let logger =
         app.Services.GetRequiredService<ILoggerFactory>()

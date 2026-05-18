@@ -267,6 +267,126 @@ acknowledged with a note.* That's the SOC 2 control. That's the audit trail.
 
 ---
 
+## Platform primitives that come with the ledger
+
+Three primitives ship in the same service as the ledger — not as a separate
+product, because they all live on the same Postgres and inherit its HA story
+"for free." All three become competitive differentiators once a tenant has
+glued together what they actually need:
+
+### 1. Tenant-scoped leases ("locks")
+
+A B2B customer running a payment job, end-of-month close, or manual
+adjustment can grab a lease on `customer:<id>` or `period:2026-05` while
+they work, and release it when done. Backed by Postgres (HA == ledger HA),
+TTL-based (no orphaned locks on a worker crash), opaque token (can't be
+stolen by a third party that knows the resource key), and audited (every
+acquire / renew / release / preempt / expire is a row).
+
+```
+POST   /v1/tenants/{t}/locks                          { resource, ttl_seconds, holder }
+POST   /v1/tenants/{t}/locks/{resource}/renew         { lease_token, ttl_seconds }
+DELETE /v1/tenants/{t}/locks/{resource}               { lease_token }
+GET    /v1/tenants/{t}/locks
+```
+
+Why not Solana for locks: Solana's 12-20 second finality and per-tx cost
+make it the wrong tool for any high-frequency coordination primitive.
+Postgres advisory leases run sub-millisecond and inherit RDS multi-AZ
+failover. (Solana stays valuable for anchoring the ledger postings as
+tamper-evidence — different use case, different tool.)
+
+### 2. Durable scheduler ("bulletproof cron")
+
+A Postgres-backed job runner using the standard `FOR UPDATE SKIP LOCKED`
+pattern (River / pg-boss / Sidekiq PG). Guarantees exactly-one execution
+per due tick across N pods. Per-tenant schedules with IANA timezones.
+Retries with exponential backoff. Failures after `max_attempts` land in
+`dead_letter_jobs` for the breaks dashboard.
+
+```
+POST /v1/tenants/{t}/scheduled-jobs               { kind, name, schedule_kind, cron_expr|interval_seconds|one_shot_at,
+                                                    timezone, payload, max_attempts, retry_backoff_secs, timeout_seconds }
+GET  /v1/tenants/{t}/scheduled-jobs
+GET  /v1/tenants/{t}/scheduled-jobs/{id}/runs    -> durable history (was it actually run? what happened?)
+POST /v1/tenants/{t}/scheduled-jobs/{id}/run-now
+POST /v1/tenants/{t}/scheduled-jobs/{id}/disable
+POST /v1/tenants/{t}/scheduled-jobs/{id}/enable
+```
+
+Built-in job kinds shipped on day 1:
+
+| Kind | Owner | What it does |
+|---|---|---|
+| `system.lock_sweeper` | platform | GC expired leases |
+| `system.anchor_sweeper` | platform | Publish Merkle roots to Solana |
+| `notifications.evaluate_rules` | platform | Walk active rules + emit dispatches |
+| `tenant.webhook` | tenant | POST signed payload to tenant URL (the building block for tenant payroll / AP run schedules) |
+
+Tenants don't run business logic on our platform; they register a
+`tenant.webhook` job whose payload includes their own `webhook_url`, and on
+schedule we POST a signed payload to *their* system. So "Friday 9am, run
+payroll" becomes a scheduled `tenant.webhook` whose handler hits the
+tenant's `/run-payroll` endpoint with an HMAC-signed body. Tenant's system
+does the actual work; we provide the bulletproof trigger.
+
+Why not Kubernetes CronJobs for this: K8s CronJobs are fine for a fixed
+set of platform housekeeping, but they fall over the moment you need
+per-tenant schedules, per-tenant timezones, or queryable run history.
+
+### 3. Three-layer sync (and why we don't poll constantly)
+
+Polling external providers on a fast cadence is expensive (API quota,
+infrastructure cost, signal-to-noise on rate-limit errors) and almost
+always the wrong default. The platform instead uses three layers, each
+covering the others' failure modes:
+
+| Layer | Cadence | Mechanism | Coverage |
+|---|---|---|---|
+| Webhooks | real-time | Provider pushes to `/v1/webhooks/{provider}` | New events, refunds, disputes, chargebacks — caught immediately |
+| **On-demand sync** | **on user action** | `POST /v1/tenants/{t}/connections/{c}/sync` | "Refresh now" buttons; the dominant poll path |
+| Backstop sync | **~5x/day** (default `interval_seconds: 18000`) | Scheduled `sync.connection` job per connection | Catches anything webhooks + on-demand missed (provider outage, dropped webhook, paused connection) |
+
+All three feed the same `sync.connection` handler, which acquires a
+tenant-scoped lease on `connection:<id>` so concurrent triggers don't
+double-sync. The backstop schedule lives in `scheduled_jobs` like any
+other job — tenants can adjust their own cadence, disable it entirely
+(if they trust their webhooks), or trigger it manually via the
+`run-now` endpoint.
+
+```
+POST /v1/tenants/{t}/connections/{c}/sync   { cursor?, trigger? }
+       → 202 Accepted
+       → { job: {...}, runs_url: ".../scheduled-jobs/<id>/runs?limit=1" }
+```
+
+The client polls `runs_url` (or subscribes to a future "job completed"
+webhook) to see the sync result. The job typically completes within
+seconds; large backfills paginate via `cursor`.
+
+### 4. Notifications
+
+Rules + dispatches, evaluated by the `notifications.evaluate_rules` job.
+Built-in rule kinds:
+
+- `balance_negative` — customer's AR account is credit-balanced (overpaid)
+- `payment_overdue` — AR posting > `days` old still outstanding
+- `payment_received` — credit posted to a clearing account
+- `reconciliation_break_opened` — new row in `reconciliation_breaks`
+- `lease_held_too_long` — a lease has been held > N minutes (operational)
+
+Built-in channels: `webhook` (HMAC-signed POST), `slack` (incoming webhook),
+`email` (SES/SendGrid driver — stub today), `sms` (Twilio driver — stub).
+
+Per-`(rule, target_resource, day)` throttling so a customer doesn't get
+emailed 100x as their balance oscillates around zero.
+
+```
+POST /v1/tenants/{t}/notification-rules            { kind, name, params, channel, target, throttle_per_day }
+GET  /v1/tenants/{t}/notification-rules
+GET  /v1/tenants/{t}/notification-dispatches       -> full delivery history (was it sent? did it bounce?)
+```
+
 ## What we deliberately don't do (yet)
 
 To stay shippable and out of regulatory minefields, v1 explicitly skips:
