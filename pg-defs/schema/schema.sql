@@ -515,21 +515,81 @@ alter table if exists presence_conv_members
   foreign key (conv_id) references presence_convs(id);
 
 -- ────────────────────────────────────────────────────────────────────────
--- Presence membership change notifications via LISTEN/NOTIFY.
+-- Presence membership change notifications via SHARDED LISTEN/NOTIFY.
 --
--- Every insert / update / delete on presence_conv_members fires
--- pg_notify('presence_member_change', '{"op":...,"conv_id":...,
--- "user_id":...,"soft_deleted":...,"emitted_at":...}'). The gleamlang-
--- presence-server opens a dedicated pgo_notifications connection per pod
--- and LISTENs on this channel; each notification updates the in-memory
--- conversations cache and dispatches JoinConv/LeaveConv to local
--- connections.
+-- Why sharded:
+--   A naïve pg_notify('presence_member_change', …) blasts every change to
+--   every pod that's LISTENing — fine at small scale, terrible once you
+--   have hundreds of pods and thousands of writes per second. Most pods
+--   don't care about most conversations.
 --
--- The conversations actor dedupes by (op, conv_id, user_id, emitted_at)
--- inside a small time window so that LISTEN/NOTIFY and the pg-mesh
--- gossip path (used as a fallback / belt-and-braces channel) can both
--- fire safely without producing duplicate client frames.
+-- Sharding strategy:
+--   For each membership change, compute
+--       shard = abs(hashtext(conv_id::text)) % presence_notify_shards()
+--   and pg_notify on channel `presence_change_<shard>`. The shard count
+--   is read from the GUC `presence.notify_shards` (default 256) so the
+--   value is part of the database's contract and pods don't have to guess.
+--
+--   Each pod LISTENs only on the shards corresponding to convs it has
+--   live connections in. The pg_listen.gleam module ref-counts these
+--   subscriptions and dynamically LISTEN/UNLISTENs as connections come
+--   and go, so per-pod NOTIFY volume scales with the pod's actual
+--   subscriber set, not the global write rate.
+--
+-- Sharding key (conv_id, not user_id):
+--   - When user X is added to conv Y, every pod that has any user in
+--     conv Y needs to update its members_of(Y) cache, and the pod where
+--     user X has a connection needs to dispatch JoinConv(Y).
+--   - The first set is exactly "pods listening on shard(Y)" by
+--     construction. The second set is reached because that pod is also
+--     listening on shard(Y) once it has any conn whose user is in Y.
+--   - Edge case: if user X isn't a member of any conv on this pod's
+--     listened shards before this NOTIFY, the pod misses the event for
+--     this user. That's fine because the conn already loaded the user's
+--     conv list from PG at open time, and any subsequent JoinConv flows
+--     over the broadcast plane (Erlang `pg` + NATS) which is independent.
+--
+-- Dedup:
+--   The same logical event may also arrive via the pg-mesh gossip path
+--   (Erlang `pg`, used as a fallback / belt-and-braces channel). The
+--   conversations actor dedupes by
+--       (op, conv_id, user_id, emitted_at)
+--   in a small TTL window so neither path produces duplicate client
+--   frames.
+--
+-- Payload:
+--   `{"op":...,"conv_id":...,"user_id":...,"soft_deleted":bool,
+--     "emitted_at":epoch_seconds}` — well under the 8KB NOTIFY cap.
 -- ────────────────────────────────────────────────────────────────────────
+
+-- Default number of NOTIFY shards. Override per-database with:
+--   ALTER DATABASE mydb SET presence.notify_shards = 64;
+-- Reading is via the helper below which always returns a positive int.
+
+create or replace function presence_notify_shards()
+returns int
+language plpgsql
+stable
+as $$
+declare
+  v_raw text;
+  v_n int;
+begin
+  v_raw := current_setting('presence.notify_shards', true);
+  if v_raw is null or v_raw = '' then
+    return 256;
+  end if;
+  begin
+    v_n := v_raw::int;
+  exception when others then
+    return 256;
+  end;
+  if v_n is null or v_n < 1 then
+    return 256;
+  end if;
+  return v_n;
+end;
+$$;
 
 create or replace function notify_presence_member_change()
 returns trigger
@@ -540,18 +600,26 @@ declare
   v_conv uuid := coalesce(new.conv_id, old.conv_id);
   v_user uuid := coalesce(new.user_id, old.user_id);
   v_soft boolean := coalesce(new.is_soft_deleted, old.is_soft_deleted, false);
+  v_shards int := presence_notify_shards();
+  v_shard int;
+  v_channel text;
   v_payload text;
 begin
+  -- hashtext returns a signed int32; abs((-2^31)) = -2^31 in postgres
+  -- (integer overflow) so we cast via bigint first.
+  v_shard := (abs(hashtext(v_conv::text)::bigint) % v_shards)::int;
+  v_channel := 'presence_change_' || v_shard::text;
+
   v_payload := json_build_object(
     'op',           v_op,
     'conv_id',      v_conv,
     'user_id',      v_user,
     'soft_deleted', v_soft,
+    'shard',        v_shard,
     'emitted_at',   extract(epoch from clock_timestamp())
   )::text;
 
-  -- NOTIFY payloads are capped at 8KB; ours is < 200 bytes so this is fine.
-  perform pg_notify('presence_member_change', v_payload);
+  perform pg_notify(v_channel, v_payload);
   return coalesce(new, old);
 end;
 $$;
@@ -562,3 +630,16 @@ create trigger presence_conv_members_notify
   after insert or update or delete on presence_conv_members
   for each row
   execute function notify_presence_member_change();
+
+-- Helper exposed to clients (and to the BEAM service) so they can compute
+-- the same shard locally without re-implementing the hash. Useful for
+-- pg_listen.gleam — it asks Postgres which shard a conv belongs to and
+-- LISTENs on the matching channel.
+
+create or replace function presence_shard_of(p_conv_id uuid)
+returns int
+language sql
+stable
+as $$
+  select (abs(hashtext(p_conv_id::text)::bigint) % presence_notify_shards())::int;
+$$;
