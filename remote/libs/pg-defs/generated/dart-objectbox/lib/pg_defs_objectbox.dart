@@ -1021,3 +1021,96 @@ class PresenceConvMembersObjectBox {
     );
   }
 }
+
+@Entity()
+class PresenceEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int seq;
+
+  String eventAt;
+
+  String op;
+
+  String convId;
+
+  String userId;
+
+  int convShard;
+
+  int userShard;
+
+  bool softDeleted;
+
+
+  PresenceEventsObjectBox({
+    required this.seq,
+    required this.eventAt,
+    required this.op,
+    required this.convId,
+    required this.userId,
+    required this.convShard,
+    required this.userShard,
+    required this.softDeleted,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "seq": seq,
+    "eventAt": eventAt,
+    "op": op,
+    "convId": convId,
+    "userId": userId,
+    "convShard": convShard,
+    "userShard": userShard,
+    "softDeleted": softDeleted,
+  };
+
+  static PresenceEventsObjectBox fromJson(Map<String, Object?> json) {
+    return PresenceEventsObjectBox(
+      seq: (json["seq"] as num).toInt(),
+      eventAt: json["eventAt"] as String,
+      op: json["op"] as String,
+      convId: json["convId"] as String,
+      userId: json["userId"] as String,
+      convShard: (json["convShard"] as num).toInt(),
+      userShard: (json["userShard"] as num).toInt(),
+      softDeleted: json["softDeleted"] as bool,
+    );
+  }
+}
+
+@Entity()
+class PresenceConsumerCheckpointsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String consumerId;
+
+  int lastSeq;
+
+  String updatedAt;
+
+
+  PresenceConsumerCheckpointsObjectBox({
+    required this.consumerId,
+    required this.lastSeq,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "consumerId": consumerId,
+    "lastSeq": lastSeq,
+    "updatedAt": updatedAt,
+  };
+
+  static PresenceConsumerCheckpointsObjectBox fromJson(Map<String, Object?> json) {
+    return PresenceConsumerCheckpointsObjectBox(
+      consumerId: json["consumerId"] as String,
+      lastSeq: (json["lastSeq"] as num).toInt(),
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}

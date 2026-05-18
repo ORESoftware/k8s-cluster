@@ -302,3 +302,14 @@ pub fn describe(store: Store) -> String {
   }
 }
 
+/// Expose the underlying pog connection for modules that need to issue
+/// SQL outside the store's surface (notably `pg_outbox` for tailing the
+/// `presence_events` table and `pg_wal` for `pg_logical_slot_get_changes`).
+/// Returns `None` when running in the in-memory fallback mode.
+pub fn connection(store: Store) -> Option(Connection) {
+  case store.mode {
+    Configured(conn) -> option.Some(conn)
+    InMemory(_) -> option.None
+  }
+}
+

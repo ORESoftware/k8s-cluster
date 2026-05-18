@@ -34,6 +34,13 @@ import { filter, takeUntil } from 'rxjs/operators';
 import { z } from 'zod';
 
 import { EventBus, type BusEvent } from './event-bus.js';
+import {
+  containerPoolConfigFromEnv,
+  containerPoolConfigured,
+  dispatchContainerPool,
+  type ContainerPoolDispatchRequest,
+  type ContainerPoolDispatchResponse,
+} from './container-pool.js';
 
 import {
   buildAgentEnv,
@@ -109,6 +116,7 @@ const config = {
   },
   logDir: process.env.LOG_DIR ?? '/tmp/convos',
   processedTasksDir: process.env.PROCESSED_TASKS_DIR ?? join(process.env.LOG_DIR ?? '/tmp/convos', 'processed-tasks'),
+  containerPool: containerPoolConfigFromEnv(process.env),
   taskGcAfterMs: 60 * 60 * 1000, // 1 hour
   taskGcIntervalMs: 5 * 60 * 1000, // 5 min sweep
 };
@@ -123,6 +131,11 @@ type WrappedEvent =
   | (BusEvent['event'] & { kind: 'stderr'; text: string })
   | (BusEvent['event'] & { kind: 'error'; message: string })
   | (BusEvent['event'] & { kind: 'artifact'; artifact: PublishedArtifact })
+  | (BusEvent['event'] & {
+      kind: 'container_pool';
+      pool: string;
+      response: ContainerPoolDispatchResponse;
+    })
   | (BusEvent['event'] & {
       kind: 'done';
       branch: string;
@@ -198,6 +211,7 @@ type TaskState = {
   threadId?: string;
   /** Which runner is driving this task (Claude, Gemini, OpenAI, etc.). */
   provider: AgentProvider;
+  containerPool?: { pool: string; request: ContainerPoolDispatchRequest };
   session: ThreadSession;
   child?: ChildProcess;
   /**
@@ -1187,6 +1201,38 @@ async function runTask(state: TaskState): Promise<void> {
         workspacePath: state.worktreePath,
         branch: state.branch,
       });
+
+      if (state.containerPool) {
+        emit(state, {
+          kind: 'status',
+          status: `container-pool-dispatch:${state.containerPool.pool}`,
+        });
+        const response = await dispatchContainerPool(
+          config.containerPool,
+          state.containerPool.pool,
+          {
+            ...state.containerPool.request,
+            requestId: state.containerPool.request.requestId ?? state.taskId,
+            poolSlug: state.containerPool.request.poolSlug ?? state.containerPool.pool,
+          },
+        );
+        await appendThreadLog(state, {
+          kind: 'container-pool-result',
+          pool: state.containerPool.pool,
+          response,
+        });
+        emit(state, {
+          kind: 'container_pool',
+          pool: state.containerPool.pool,
+          response,
+        });
+        emit(state, {
+          kind: 'done',
+          branch: state.branch,
+          exitReason: response.ok ? 'completed' : 'failed',
+        });
+        return;
+      }
 
       emit(state, { kind: 'status', status: `agent-running:${state.provider}` });
       // Strict env allowlist owned by the runner module. Inheriting the full
@@ -2325,6 +2371,7 @@ fastify.get('/healthz', async () => ({
   inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
   totalTracked: tasks.size,
   sessionCount: sessions.size,
+  containerPoolConfigured: containerPoolConfigured(config.containerPool),
 }));
 
 fastify.get('/metrics', async (_req, reply) => {
@@ -2341,6 +2388,7 @@ fastify.get('/status', async () => ({
   inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
   totalTracked: tasks.size,
   sessionCount: sessions.size,
+  containerPoolConfigured: containerPoolConfigured(config.containerPool),
   ingestCircuit: eventBus.getCircuitState(),
   idleTimeoutMs: config.threadId ? config.idleTimeoutMs : undefined,
 }));
@@ -2397,6 +2445,43 @@ fastify.get('/tasks', async () => {
   return { tasks: snapshot, serverStartedAt };
 });
 
+const ContainerPoolRequestSchema = z.object({
+  requestId: z.string().min(1).max(200).optional(),
+  poolId: z.string().min(1).max(120).optional(),
+  poolSlug: z.string().min(1).max(120).optional(),
+  path: z.string().min(1).max(256).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  payload: z.unknown().optional(),
+  body: z.unknown().optional(),
+});
+
+const ContainerPoolTaskSchema = ContainerPoolRequestSchema.extend({
+  pool: z.string().min(1).max(120),
+});
+
+fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
+  const params = z.object({ pool: z.string().min(1).max(120) }).safeParse(req.params);
+  const parsed = ContainerPoolRequestSchema.safeParse(req.body);
+  if (!params.success || !parsed.success) {
+    return reply.code(400).send({
+      error: 'invalid container pool dispatch',
+      params: params.success ? undefined : params.error.format(),
+      body: parsed.success ? undefined : parsed.error.format(),
+    });
+  }
+  try {
+    return await dispatchContainerPool(config.containerPool, params.data.pool, {
+      ...parsed.data,
+      poolSlug: parsed.data.poolSlug ?? params.data.pool,
+    });
+  } catch (error) {
+    return reply.code(502).send({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 const DispatchSchema = z.object({
   taskId: z.string().uuid().optional(),
   prompt: z.string().min(1).max(64_000),
@@ -2418,6 +2503,7 @@ const DispatchSchema = z.object({
   provider: z
     .enum(['claude-cli', 'claude-sdk', 'echo', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'])
     .optional(),
+  containerPool: ContainerPoolTaskSchema.optional(),
 });
 
 const MergeUpstreamSchema = z.object({
@@ -2547,12 +2633,26 @@ fastify.post('/tasks', async (req, reply) => {
       session.taskIds.add(taskId);
 
       const state: TaskState = {
-        taskId,
-        prompt,
-        userId,
-        threadId,
-        provider: resolveAgentProvider(parsed.data.provider),
-        session,
+    taskId,
+    prompt,
+    userId,
+    threadId,
+    provider: resolveAgentProvider(parsed.data.provider),
+    containerPool: parsed.data.containerPool
+      ? {
+          pool: parsed.data.containerPool.pool,
+          request: {
+            requestId: parsed.data.containerPool.requestId,
+            poolId: parsed.data.containerPool.poolId,
+            poolSlug: parsed.data.containerPool.poolSlug ?? parsed.data.containerPool.pool,
+            path: parsed.data.containerPool.path,
+            headers: parsed.data.containerPool.headers,
+            payload: parsed.data.containerPool.payload,
+            body: parsed.data.containerPool.body,
+          },
+        }
+      : undefined,
+    session,
         abortController: new AbortController(),
         events: [],
         event$: new ReplaySubject<StoredEvent>(),

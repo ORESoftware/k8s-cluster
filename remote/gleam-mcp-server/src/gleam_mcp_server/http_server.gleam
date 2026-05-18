@@ -9,19 +9,42 @@ import gleam/io
 import gleam/result
 import gleam/string
 import gleam_mcp_server/metrics
+import gleam_mcp_server/observability
 import mist
 
-const host = "0.0.0.0"
+@external(erlang, "gleam_mcp_runtime_env", "getenv")
+fn env_get(name: String) -> String
 
-const port = 8090
+const default_host = "0.0.0.0"
+
+const default_port = 8090
 
 const protocol_version = "2025-11-25"
 
 pub fn supervised(metrics_name: process.Name(metrics.Message)) {
   mist.new(fn(req) { route(req, metrics_name) })
-  |> mist.bind(host)
-  |> mist.port(port)
+  |> mist.bind(bind_host())
+  |> mist.port(bind_port())
   |> mist.supervised
+}
+
+pub fn bind_host() -> String {
+  case env_get("HOST") {
+    "" -> default_host
+    value -> value
+  }
+}
+
+pub fn bind_port() -> Int {
+  case int.parse(env_get("PORT")) {
+    Ok(value) -> {
+      case value > 0 && value <= 65_535 {
+        True -> value
+        False -> default_port
+      }
+    }
+    Error(_) -> default_port
+  }
 }
 
 fn route(
@@ -59,10 +82,10 @@ fn rpc(
 
     case method {
       "notifications/initialized" -> empty_response(202)
-      _ -> json_response(200, rpc_payload(method))
+      _ -> json_response(200, rpc_payload(method, body))
     }
   })
-  |> result.unwrap(json_response(400, json_rpc_error("parse error", -32700)))
+  |> result.unwrap(json_response(400, json_rpc_error("parse error", -32_700)))
 }
 
 fn method_from_body(body: String) -> String {
@@ -88,13 +111,68 @@ fn method_from_body(body: String) -> String {
   }
 }
 
-fn rpc_payload(method: String) -> String {
+fn rpc_payload(method: String, body: String) -> String {
   case method {
     "initialize" -> initialize_result()
     "tools/list" -> tools_list_result()
-    "tools/call" -> tools_call_result()
+    "tools/call" -> tools_call_result(tool_from_body(body))
     "ping" -> "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"
-    _ -> json_rpc_error("method not found", -32601)
+    _ -> json_rpc_error("method not found", -32_601)
+  }
+}
+
+fn tool_from_body(body: String) -> String {
+  case string.contains(body, "\"telemetry_summary\"") {
+    True -> "telemetry_summary"
+    False ->
+      case string.contains(body, "\"observability_health\"") {
+        True -> "observability_health"
+        False ->
+          case string.contains(body, "\"prometheus_up\"") {
+            True -> "prometheus_up"
+            False ->
+              case string.contains(body, "\"loki_labels\"") {
+                True -> "loki_labels"
+                False ->
+                  case string.contains(body, "\"grafana_inventory\"") {
+                    True -> "grafana_inventory"
+                    False ->
+                      case string.contains(body, "\"nats_metrics\"") {
+                        True -> "nats_metrics"
+                        False ->
+                          case string.contains(body, "\"trace_backends\"") {
+                            True -> "trace_backends"
+                            False ->
+                              case
+                                string.contains(body, "\"telemetry_targets\"")
+                              {
+                                True -> "telemetry_targets"
+                                False ->
+                                  case
+                                    string.contains(
+                                      body,
+                                      "\"service_directory\"",
+                                    )
+                                  {
+                                    True -> "service_directory"
+                                    False ->
+                                      case
+                                        string.contains(
+                                          body,
+                                          "\"cluster_status\"",
+                                        )
+                                      {
+                                        True -> "cluster_status"
+                                        False -> "unknown"
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      }
   }
 }
 
@@ -108,12 +186,101 @@ fn tools_list_result() -> String {
   "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":["
   <> "{\"name\":\"cluster_status\",\"title\":\"Cluster status\",\"description\":\"Return static service discovery details for the DD remote Kubernetes runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
   <> "{\"name\":\"service_directory\",\"title\":\"Service directory\",\"description\":\"List public and internal service paths exposed by the runtime gateway.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
-  <> "{\"name\":\"telemetry_targets\",\"title\":\"Telemetry targets\",\"description\":\"List Prometheus scrape targets and dashboard paths for this runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}}"
+  <> "{\"name\":\"telemetry_targets\",\"title\":\"Telemetry targets\",\"description\":\"List in-cluster observability endpoints, safe queries, and dashboard paths for this runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"telemetry_summary\",\"title\":\"Telemetry summary\",\"description\":\"Read a bounded parallel summary from Prometheus, Loki, Grafana, Tempo, Jaeger, the OTel collector, and NATS metrics endpoints.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"observability_health\",\"title\":\"Observability health\",\"description\":\"Read live health from Prometheus, Loki, Grafana, Tempo, Jaeger, and the OTel collector through bounded in-cluster HTTP calls.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"prometheus_up\",\"title\":\"Prometheus up query\",\"description\":\"Run the safe Prometheus instant query `up` so agents can see which scrape targets are reachable.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"loki_labels\",\"title\":\"Loki labels\",\"description\":\"Read Loki label names to confirm container logs are flowing through promtail.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"grafana_inventory\",\"title\":\"Grafana inventory\",\"description\":\"Read Grafana datasource and dashboard inventory so agents can discover available observability views.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"nats_metrics\",\"title\":\"NATS metrics\",\"description\":\"Read NATS server /varz and the Prometheus exporter /metrics endpoint for messaging telemetry.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"trace_backends\",\"title\":\"Trace backends\",\"description\":\"Read Tempo readiness and Jaeger service discovery to confirm OTLP trace export/query wiring.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}}"
   <> "]}}"
 }
 
-fn tools_call_result() -> String {
-  "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"dd-gleam-mcp-server is running in Kubernetes. Public gateway path: /mcp. Metrics path: /mcp/metrics. Grafana path: /telemetry/.\"}],\"structuredContent\":{\"service\":\"dd-gleam-mcp-server\",\"namespace\":\"default\",\"language\":\"gleam\",\"runtime\":\"beam\",\"gatewayPath\":\"/mcp\",\"metricsPath\":\"/mcp/metrics\",\"telemetry\":{\"prometheusJob\":\"dd-gleam-mcp-server\",\"grafanaDashboard\":\"dd-remote-dev-runtime\",\"lokiLabels\":{\"app\":\"dd-gleam-mcp-server\"}}}}}"
+fn tools_call_result(tool: String) -> String {
+  case tool {
+    "telemetry_targets" ->
+      tool_json_result(
+        "telemetry_targets",
+        "In-cluster observability endpoints and safe read-only queries.",
+        observability.targets_json(),
+      )
+    "telemetry_summary" ->
+      tool_json_result(
+        "telemetry_summary",
+        "Bounded parallel telemetry summary from the in-cluster observability and NATS endpoints.",
+        observability.telemetry_summary_json(),
+      )
+    "observability_health" ->
+      tool_json_result(
+        "observability_health",
+        "Live bounded health checks for Prometheus, Loki, Grafana, Tempo, Jaeger, and the OTel collector.",
+        observability.health_json(),
+      )
+    "prometheus_up" ->
+      tool_json_result(
+        "prometheus_up",
+        "Prometheus instant query `up` returned from the in-cluster Prometheus API.",
+        observability.prometheus_up_json(),
+      )
+    "loki_labels" ->
+      tool_json_result(
+        "loki_labels",
+        "Loki label names returned from the in-cluster Loki API.",
+        observability.loki_labels_json(),
+      )
+    "grafana_inventory" ->
+      tool_json_result(
+        "grafana_inventory",
+        "Grafana datasource and dashboard inventory returned from the in-cluster Grafana API.",
+        observability.grafana_inventory_json(),
+      )
+    "nats_metrics" ->
+      tool_json_result(
+        "nats_metrics",
+        "NATS /varz and Prometheus exporter metrics returned from the in-cluster messaging service.",
+        observability.nats_metrics_json(),
+      )
+    "trace_backends" ->
+      tool_json_result(
+        "trace_backends",
+        "Tempo readiness and Jaeger service discovery returned from in-cluster trace backends.",
+        observability.trace_backends_json(),
+      )
+    "service_directory" -> service_directory_result()
+    "cluster_status" -> cluster_status_result()
+    _ -> json_rpc_error("unknown tool", -32_602)
+  }
+}
+
+fn tool_json_result(
+  tool: String,
+  text: String,
+  structured_content: String,
+) -> String {
+  "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\""
+  <> json_escape(text)
+  <> "\"}],\"structuredContent\":"
+  <> structured_content
+  <> ",\"_meta\":{\"tool\":\""
+  <> tool
+  <> "\"}}}"
+}
+
+fn cluster_status_result() -> String {
+  tool_json_result(
+    "cluster_status",
+    "DD remote Kubernetes runtime MCP status.",
+    "{\"service\":\"dd-gleam-mcp-server\",\"namespace\":\"default\",\"language\":\"gleam\",\"runtime\":\"beam\",\"gatewayPath\":\"/mcp\",\"metricsPath\":\"/mcp/metrics\",\"observability\":{\"grafana\":\"/telemetry/\",\"prometheus\":\"/prometheus/\",\"loki\":\"dd-loki.observability.svc.cluster.local:3100\",\"tempo\":\"dd-tempo.observability.svc.cluster.local:3200\",\"jaeger\":\"dd-jaeger.observability.svc.cluster.local:16686\",\"otelCollector\":\"dd-otel-collector.observability.svc.cluster.local:8889\",\"natsMonitor\":\"dd-nats.messaging.svc.cluster.local:8222\",\"natsMetrics\":\"dd-nats.messaging.svc.cluster.local:7777\"}}",
+  )
+}
+
+fn service_directory_result() -> String {
+  tool_json_result(
+    "service_directory",
+    "Gateway and observability service directory.",
+    "{\"public\":[\"/mcp\",\"/mcp/home\",\"/mcp/healthz\",\"/mcp/metrics\",\"/telemetry/\",\"/prometheus/\",\"/nats/\",\"/nats-metrics/metrics\"],\"internal\":[\"dd-prometheus.observability.svc.cluster.local:9090\",\"dd-loki.observability.svc.cluster.local:3100\",\"dd-grafana.observability.svc.cluster.local:3000\",\"dd-tempo.observability.svc.cluster.local:3200\",\"dd-jaeger.observability.svc.cluster.local:16686\",\"dd-otel-collector.observability.svc.cluster.local:4317\",\"dd-otel-collector.observability.svc.cluster.local:4318\",\"dd-otel-collector.observability.svc.cluster.local:8889\",\"dd-nats.messaging.svc.cluster.local:8222\",\"dd-nats.messaging.svc.cluster.local:7777\"]}",
+  )
 }
 
 fn json_rpc_error(message: String, code: Int) -> String {
@@ -137,11 +304,19 @@ fn home_page() -> response.Response(mist.ResponseData) {
 }
 
 fn mcp_info() -> response.Response(mist.ResponseData) {
-  json_response(200, "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"protocolVersion\":\"" <> protocol_version <> "\",\"endpoint\":\"POST /mcp\",\"tools\":[\"cluster_status\",\"service_directory\",\"telemetry_targets\"]}")
+  json_response(
+    200,
+    "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"protocolVersion\":\""
+      <> protocol_version
+      <> "\",\"endpoint\":\"POST /mcp\",\"tools\":[\"cluster_status\",\"service_directory\",\"telemetry_targets\",\"telemetry_summary\",\"observability_health\",\"prometheus_up\",\"loki_labels\",\"grafana_inventory\",\"nats_metrics\",\"trace_backends\"]}",
+  )
 }
 
 fn healthz() -> response.Response(mist.ResponseData) {
-  json_response(200, "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"mode\":\"mcp\"}")
+  json_response(
+    200,
+    "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"mode\":\"mcp\"}",
+  )
 }
 
 fn metrics_response(
@@ -164,27 +339,29 @@ fn metrics_response(
     "content-type",
     "text/plain; version=0.0.4; charset=utf-8",
   )
-  |> response.set_body(mist.Bytes(bytes_tree.from_string(
-    "# HELP dd_gleam_mcp_http_requests_total HTTP requests observed by the Gleam MCP server.\n"
-    <> "# TYPE dd_gleam_mcp_http_requests_total counter\n"
-    <> "dd_gleam_mcp_http_requests_total{service=\"dd-gleam-mcp-server\"} "
-    <> int.to_string(http_requests)
-    <> "\n# HELP dd_gleam_mcp_rpc_requests_total JSON-RPC requests observed by method.\n"
-    <> "# TYPE dd_gleam_mcp_rpc_requests_total counter\n"
-    <> "dd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"all\"} "
-    <> int.to_string(rpc_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"initialize\"} "
-    <> int.to_string(initialize_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/list\"} "
-    <> int.to_string(tools_list_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/call\"} "
-    <> int.to_string(tools_call_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"ping\"} "
-    <> int.to_string(ping_requests)
-    <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"unknown\"} "
-    <> int.to_string(unknown_requests)
-    <> "\n",
-  )))
+  |> response.set_body(
+    mist.Bytes(bytes_tree.from_string(
+      "# HELP dd_gleam_mcp_http_requests_total HTTP requests observed by the Gleam MCP server.\n"
+      <> "# TYPE dd_gleam_mcp_http_requests_total counter\n"
+      <> "dd_gleam_mcp_http_requests_total{service=\"dd-gleam-mcp-server\"} "
+      <> int.to_string(http_requests)
+      <> "\n# HELP dd_gleam_mcp_rpc_requests_total JSON-RPC requests observed by method.\n"
+      <> "# TYPE dd_gleam_mcp_rpc_requests_total counter\n"
+      <> "dd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"all\"} "
+      <> int.to_string(rpc_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"initialize\"} "
+      <> int.to_string(initialize_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/list\"} "
+      <> int.to_string(tools_list_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"tools/call\"} "
+      <> int.to_string(tools_call_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"ping\"} "
+      <> int.to_string(ping_requests)
+      <> "\ndd_gleam_mcp_rpc_requests_total{service=\"dd-gleam-mcp-server\",method=\"unknown\"} "
+      <> int.to_string(unknown_requests)
+      <> "\n",
+    )),
+  )
 }
 
 fn json_response(
@@ -218,6 +395,15 @@ fn record_rpc(
 ) -> Nil {
   let metrics_subject = process.named_subject(metrics_name)
   process.send(metrics_subject, metrics.RecordRpcRequest(method))
+}
+
+fn json_escape(input: String) -> String {
+  input
+  |> string.replace("\\", "\\\\")
+  |> string.replace("\"", "\\\"")
+  |> string.replace("\n", "\\n")
+  |> string.replace("\r", "\\r")
+  |> string.replace("\t", "\\t")
 }
 
 const home_html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>dd gleam MCP server</title><style>body{font-family:system-ui;margin:24px;line-height:1.5}code,pre{background:#111;color:#d7fbf4;border-radius:8px}code{padding:2px 5px}pre{padding:12px;overflow:auto}a{color:#047857}</style></head><body><h1>dd gleam MCP server</h1><p>Dedicated MCP deployment for the DD remote Kubernetes runtime.</p><ul><li>JSON-RPC endpoint: <code id=\"mcp-path\">/mcp</code></li><li>Health: <code id=\"health-path\">/healthz</code></li><li>Prometheus metrics: <code id=\"metrics-path\">/metrics</code></li><li>Grafana: <a href=\"/telemetry/\">/telemetry/</a></li></ul><pre>{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}</pre><script>const prefix=location.pathname.startsWith('/mcp/')?'/mcp':'';document.getElementById('mcp-path').textContent=prefix||'/mcp';document.getElementById('health-path').textContent=prefix+'/healthz';document.getElementById('metrics-path').textContent=prefix+'/metrics';</script></body></html>"

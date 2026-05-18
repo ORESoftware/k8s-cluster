@@ -15,6 +15,7 @@
 //! (sealing, replay, breaks, anchoring) is already in place.
 
 pub mod connection;
+pub mod oauth_common;
 pub mod stripe;
 pub mod paypal;
 pub mod braintree;

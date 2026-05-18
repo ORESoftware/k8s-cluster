@@ -48,7 +48,10 @@ pub fn start(
   |> actor.start
 }
 
-fn handle_message(state: State, message: Message) -> actor.Next(State, Message) {
+fn handle_message(
+  state: State,
+  message: Message,
+) -> actor.Next(State, Message) {
   let State(
     http_requests: http_requests,
     rpc_requests: rpc_requests,
@@ -85,20 +88,25 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         tools_call_requests: tools_call_requests + bool_to_int(is_tools_call),
         ping_requests: ping_requests + bool_to_int(is_ping),
         unknown_requests: unknown_requests
-          + bool_to_int(!is_initialize && !is_tools_list && !is_tools_call && !is_ping),
+          + bool_to_int(
+          !is_initialize && !is_tools_list && !is_tools_call && !is_ping,
+        ),
       ))
     }
 
     GetSnapshot(reply_to) -> {
-      process.send(reply_to, Snapshot(
-        http_requests: http_requests,
-        rpc_requests: rpc_requests,
-        initialize_requests: initialize_requests,
-        tools_list_requests: tools_list_requests,
-        tools_call_requests: tools_call_requests,
-        ping_requests: ping_requests,
-        unknown_requests: unknown_requests,
-      ))
+      process.send(
+        reply_to,
+        Snapshot(
+          http_requests: http_requests,
+          rpc_requests: rpc_requests,
+          initialize_requests: initialize_requests,
+          tools_list_requests: tools_list_requests,
+          tools_call_requests: tools_call_requests,
+          ping_requests: ping_requests,
+          unknown_requests: unknown_requests,
+        ),
+      )
       actor.continue(state)
     }
   }

@@ -60,6 +60,9 @@ pub fn build_router(state: AppState) -> Router {
         // OAuth handshake
         .route("/v1/oauth/{provider}/start",    get(oauth::start))
         .route("/v1/oauth/{provider}/callback", get(oauth::callback))
+        // Plaid Link (not OAuth — frontend exchanges public_token via this route)
+        .route("/v1/plaid/link-token",          post(oauth::plaid_link_token))
+        .route("/v1/plaid/exchange",            post(oauth::plaid_exchange))
         // Webhooks (one endpoint per provider)
         .route("/v1/webhooks/stripe",   post(webhooks::stripe))
         .route("/v1/webhooks/paypal",   post(webhooks::paypal))

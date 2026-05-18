@@ -364,7 +364,42 @@ The client polls `runs_url` (or subscribes to a future "job completed"
 webhook) to see the sync result. The job typically completes within
 seconds; large backfills paginate via `cursor`.
 
-### 4. Notifications
+### 4. Provider integrations: what is real today
+
+| Provider | OAuth (code exchange) | Sync (poll path) | Webhooks |
+|---|---|---|---|
+| Stripe Connect | **Real** — `POST /oauth/token` | **Real** — `GET /balance_transactions` paginated, normalized to ledger postings (charge / refund / payout / payout_failure templates; unknown types raise reconciliation breaks) | Signature verification real (`Stripe-Signature` HMAC-SHA256), event normalizer is the same code path as the sync |
+| PayPal Partner | **Real** — `POST /v1/oauth2/token` with HTTP Basic | Stubbed (next: `GET /v1/reporting/transactions`) | Stubbed |
+| Braintree | **Real** — `POST /oauth/access_tokens` | Stubbed (next: GraphQL `searchTransactions`) | Stubbed |
+| Plaid Link | **Real** — `POST /item/public_token/exchange` plus `/link/token/create` to mint Link tokens | Stubbed (next: `POST /transactions/sync` with cursor) | Stubbed |
+| Coinbase / Wise / SWIFT / ACH / Solana | Stub (auth model varies per provider) | Stub | Stub |
+
+**Endpoints added in this push:**
+
+```
+# OAuth (redirect flow — Stripe, PayPal, Braintree)
+GET  /v1/oauth/{provider}/start?tenant_id=<uuid>&return_to=<url>
+GET  /v1/oauth/{provider}/callback?code=...&state=...
+        → 200 { connection_id, status: "active", backstop_job_id, ... }
+        ↑ this also auto-registers the backstop sync job (default 5x/day)
+
+# Plaid (Link flow — not OAuth)
+POST /v1/plaid/link-token       { tenant_id }                → { link_token }
+POST /v1/plaid/exchange         { tenant_id, public_token,
+                                  institution_id?, institution_name? }
+        → 200 { connection_id, status: "active", backstop_job_id, ... }
+```
+
+**What "active" really means** after the callback returns:
+- Sealed credential is in `provider_connections.sealed_credential`
+- `external_account_id` is populated (e.g. Stripe `acct_…`)
+- A `sync.connection` scheduled job exists for this connection at
+  `interval_seconds=18000` (5x/day) — tenant can disable, change cadence,
+  or trigger on-demand at any time
+- The first `sync.connection` will execute on the next scheduler tick
+  (within 5 seconds)
+
+### 5. Notifications
 
 Rules + dispatches, evaluated by the `notifications.evaluate_rules` job.
 Built-in rule kinds:

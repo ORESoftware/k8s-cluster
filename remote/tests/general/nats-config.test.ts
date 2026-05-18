@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-const repoRoot = resolve(process.cwd(), '..', '..');
+function findRepoRoot(): string {
+  for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
+    if (existsSync(resolve(candidate, 'remote/argocd/messaging/nats.service.yaml'))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Unable to locate repo root from ${process.cwd()}`);
+}
+
+const repoRoot = findRepoRoot();
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');

@@ -26,5 +26,6 @@
 //! `sync_balance_transactions` lands incrementally.
 
 pub mod handler;
+pub mod stripe_sync;
 
 pub use handler::ConnectionSyncJob;

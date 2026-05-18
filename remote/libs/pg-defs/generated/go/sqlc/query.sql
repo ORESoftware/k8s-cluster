@@ -165,3 +165,33 @@ update presence_conv_members set conv_id = $2, user_id = $3, role = $4, status =
 
 -- name: DeletePresenceConvMembers :exec
 delete from presence_conv_members where id = $1;
+
+-- name: ListPresenceEvents :many
+select seq, event_at, op, conv_id, user_id, conv_shard, user_shard, soft_deleted from presence_events;
+
+-- name: GetPresenceEvents :one
+select seq, event_at, op, conv_id, user_id, conv_shard, user_shard, soft_deleted from presence_events where seq = $1 limit 1;
+
+-- name: CreatePresenceEvents :one
+insert into presence_events (seq, event_at, op, conv_id, user_id, conv_shard, user_shard, soft_deleted) values ($1, $2, $3, $4, $5, $6, $7, $8) returning seq, event_at, op, conv_id, user_id, conv_shard, user_shard, soft_deleted;
+
+-- name: UpdatePresenceEvents :one
+update presence_events set event_at = $2, op = $3, conv_id = $4, user_id = $5, conv_shard = $6, user_shard = $7, soft_deleted = $8 where seq = $1 returning seq, event_at, op, conv_id, user_id, conv_shard, user_shard, soft_deleted;
+
+-- name: DeletePresenceEvents :exec
+delete from presence_events where seq = $1;
+
+-- name: ListPresenceConsumerCheckpoints :many
+select consumer_id, last_seq, updated_at from presence_consumer_checkpoints;
+
+-- name: GetPresenceConsumerCheckpoints :one
+select consumer_id, last_seq, updated_at from presence_consumer_checkpoints where consumer_id = $1 limit 1;
+
+-- name: CreatePresenceConsumerCheckpoints :one
+insert into presence_consumer_checkpoints (consumer_id, last_seq, updated_at) values ($1, $2, $3) returning consumer_id, last_seq, updated_at;
+
+-- name: UpdatePresenceConsumerCheckpoints :one
+update presence_consumer_checkpoints set last_seq = $2, updated_at = $3 where consumer_id = $1 returning consumer_id, last_seq, updated_at;
+
+-- name: DeletePresenceConsumerCheckpoints :exec
+delete from presence_consumer_checkpoints where consumer_id = $1;

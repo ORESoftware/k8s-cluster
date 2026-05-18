@@ -515,56 +515,56 @@ alter table if exists presence_conv_members
   foreign key (conv_id) references presence_convs(id);
 
 -- ────────────────────────────────────────────────────────────────────────
--- Presence membership change notifications via SHARDED LISTEN/NOTIFY.
+-- Presence membership change pipeline — fast LISTEN/NOTIFY + durable
+-- outbox.
 --
--- Why sharded:
---   A naïve pg_notify('presence_member_change', …) blasts every change to
---   every pod that's LISTENing — fine at small scale, terrible once you
---   have hundreds of pods and thousands of writes per second. Most pods
---   don't care about most conversations.
+-- We push every membership change down TWO parallel paths so that no
+-- single failure mode (LISTEN session drop, pod restart, NOTIFY queue
+-- saturation, transient partition) can lose a delivery:
 --
--- Sharding strategy:
---   For each membership change, compute
---       shard = abs(hashtext(conv_id::text)) % presence_notify_shards()
---   and pg_notify on channel `presence_change_<shard>`. The shard count
---   is read from the GUC `presence.notify_shards` (default 256) so the
---   value is part of the database's contract and pods don't have to guess.
+--   1. FAST PATH — sharded LISTEN/NOTIFY on TWO axes per change:
+--        * presence_change_conv_<shard(conv_id)>
+--        * presence_change_user_<shard(user_id)>
+--      Sub-millisecond push, payload-bearing, fire-and-forget: PG drops
+--      the notification if nobody is LISTENing at the instant of commit.
+--      Each pod LISTENs on (a) shards for convs it has local conv-ws's
+--      in and (b) shards for users it has local user-ws's for. With
+--      both axes, a pod that has only Alice's user-ws still gets
+--      notifications when Alice is added to a brand new conv on a
+--      shard the pod otherwise wouldn't be listening to.
 --
---   Each pod LISTENs only on the shards corresponding to convs it has
---   live connections in. The pg_listen.gleam module ref-counts these
---   subscriptions and dynamically LISTEN/UNLISTENs as connections come
---   and go, so per-pod NOTIFY volume scales with the pod's actual
---   subscriber set, not the global write rate.
+--   2. DURABLE PATH — outbox table `presence_events` with monotonic
+--      bigserial `seq`. The trigger appends a row inside the same
+--      transaction as the membership write, so the row is committed iff
+--      the membership change is committed. Consumers (one per pod,
+--      `pg_outbox.gleam`) remember the last `seq` they processed and
+--      poll for `seq > last AND (conv_shard ∈ S_c OR user_shard ∈ S_u)`.
+--      That gives us replay across pod restarts, LISTEN reconnects,
+--      and NOTIFY-queue overflows without needing logical replication
+--      slots, `wal_level = logical`, or superuser. Same guarantees as a
+--      WAL CDC consumer; pure SQL.
 --
--- Sharding key (conv_id, not user_id):
---   - When user X is added to conv Y, every pod that has any user in
---     conv Y needs to update its members_of(Y) cache, and the pod where
---     user X has a connection needs to dispatch JoinConv(Y).
---   - The first set is exactly "pods listening on shard(Y)" by
---     construction. The second set is reached because that pod is also
---     listening on shard(Y) once it has any conn whose user is in Y.
---   - Edge case: if user X isn't a member of any conv on this pod's
---     listened shards before this NOTIFY, the pod misses the event for
---     this user. That's fine because the conn already loaded the user's
---     conv list from PG at open time, and any subsequent JoinConv flows
---     over the broadcast plane (Erlang `pg` + NATS) which is independent.
+-- Why both:
+--   The fast path keeps p50 latency at sub-ms for the common case (pod
+--   is connected, LISTEN is open). The durable path catches the gaps
+--   (LISTEN was reconnecting, pod was rotating, NOTIFY queue overflowed
+--   before consumer drained it). The conversations actor dedupes on
+--   `(op, conv_id, user_id, kind)` within a 500ms window so anything
+--   arriving via both paths collapses to a single dispatch.
 --
--- Dedup:
---   The same logical event may also arrive via the pg-mesh gossip path
---   (Erlang `pg`, used as a fallback / belt-and-braces channel). The
---   conversations actor dedupes by
---       (op, conv_id, user_id, emitted_at)
---   in a small TTL window so neither path produces duplicate client
---   frames.
+-- Shard arithmetic (deliberately portable, NOT hashtext):
+--   shard = ('x' || first_4_hex_chars(uuid))::bit(16)::int % N
+--   N defaults to 256; override per-database with
+--     ALTER DATABASE mydb SET presence.notify_shards = 64;
+--   The Erlang side (`pg_listen.shard_of`) computes the same value so
+--   subscribers find the right channel without a round-trip.
 --
--- Payload:
---   `{"op":...,"conv_id":...,"user_id":...,"soft_deleted":bool,
---     "emitted_at":epoch_seconds}` — well under the 8KB NOTIFY cap.
+-- Retention:
+--   `presence_events` rows live as long as needed for replay. In
+--   production, a daily job should delete rows older than 24-72 hours
+--   (pick based on max plausible consumer downtime). Out of scope for
+--   the schema itself.
 -- ────────────────────────────────────────────────────────────────────────
-
--- Default number of NOTIFY shards. Override per-database with:
---   ALTER DATABASE mydb SET presence.notify_shards = 64;
--- Reading is via the helper below which always returns a positive int.
 
 create or replace function presence_notify_shards()
 returns int
@@ -591,6 +591,40 @@ begin
 end;
 $$;
 
+-- ── Outbox table ────────────────────────────────────────────────────────
+-- One row per membership change. `seq` is the monotonic stream cursor;
+-- consumers persist their position so they can resume after restart.
+-- `conv_shard` / `user_shard` are precomputed so `pg_outbox` can filter
+-- by index without recomputing the hash for every row.
+
+create table if not exists presence_events (
+  seq bigserial primary key,
+  event_at timestamptz not null default now(),
+  op text not null,
+  conv_id uuid not null,
+  user_id uuid not null,
+  conv_shard integer not null,
+  user_shard integer not null,
+  soft_deleted boolean not null default false,
+  constraint presence_events_op_chk
+    check (op in ('INSERT', 'UPDATE', 'DELETE'))
+);
+
+create index if not exists presence_events_conv_shard_seq_idx
+  on presence_events (conv_shard, seq);
+
+create index if not exists presence_events_user_shard_seq_idx
+  on presence_events (user_shard, seq);
+
+create index if not exists presence_events_event_at_idx
+  on presence_events (event_at);
+
+-- ── Trigger ─────────────────────────────────────────────────────────────
+-- 1. Insert into outbox (gets `seq`)
+-- 2. NOTIFY conv-shard channel with full payload including `seq`
+-- 3. NOTIFY user-shard channel with same payload
+-- All three happen in the same transaction.
+
 create or replace function notify_presence_member_change()
 returns trigger
 language plpgsql
@@ -601,28 +635,35 @@ declare
   v_user uuid := coalesce(new.user_id, old.user_id);
   v_soft boolean := coalesce(new.is_soft_deleted, old.is_soft_deleted, false);
   v_shards int := presence_notify_shards();
-  v_shard int;
-  v_channel text;
+  v_conv_shard int;
+  v_user_shard int;
+  v_seq bigint;
   v_payload text;
 begin
-  -- Use the first 16 bits of the conv_id UUID as the shard input.
-  -- The Erlang side mirrors this exactly via `dd_nats` / `pg_listen`'s
-  -- shard_of helper. Avoiding hashtext() keeps the algorithm portable
-  -- across BEAM and Postgres without re-implementing PG's internal hash.
-  v_shard := (('x' || substring(replace(v_conv::text, '-', ''), 1, 4))
-              ::bit(16)::int % v_shards);
-  v_channel := 'presence_change_' || v_shard::text;
+  v_conv_shard := (('x' || substring(replace(v_conv::text, '-', ''), 1, 4))
+                   ::bit(16)::int % v_shards);
+  v_user_shard := (('x' || substring(replace(v_user::text, '-', ''), 1, 4))
+                   ::bit(16)::int % v_shards);
+
+  insert into presence_events
+    (op, conv_id, user_id, conv_shard, user_shard, soft_deleted)
+    values (v_op, v_conv, v_user, v_conv_shard, v_user_shard, v_soft)
+    returning seq into v_seq;
 
   v_payload := json_build_object(
     'op',           v_op,
     'conv_id',      v_conv,
     'user_id',      v_user,
     'soft_deleted', v_soft,
-    'shard',        v_shard,
+    'conv_shard',   v_conv_shard,
+    'user_shard',   v_user_shard,
+    'seq',          v_seq,
     'emitted_at',   extract(epoch from clock_timestamp())
   )::text;
 
-  perform pg_notify(v_channel, v_payload);
+  perform pg_notify('presence_change_conv_' || v_conv_shard::text, v_payload);
+  perform pg_notify('presence_change_user_' || v_user_shard::text, v_payload);
+
   return coalesce(new, old);
 end;
 $$;
@@ -634,16 +675,28 @@ create trigger presence_conv_members_notify
   for each row
   execute function notify_presence_member_change();
 
--- Helper exposed to clients (and to the BEAM service) so they can compute
--- the same shard locally without re-implementing the hash. Useful for
--- pg_listen.gleam — it asks Postgres which shard a conv belongs to and
--- LISTENs on the matching channel.
+-- ── Shard helper exposed to clients ─────────────────────────────────────
+-- Canonical reference for the shard algorithm. The Erlang side re-
+-- implements the same UUID-prefix math locally to avoid a roundtrip on
+-- every subscribe; this function is the cross-check escape hatch.
 
-create or replace function presence_shard_of(p_conv_id uuid)
+create or replace function presence_shard_of(p_id uuid)
 returns int
 language sql
 stable
 as $$
-  select (('x' || substring(replace(p_conv_id::text, '-', ''), 1, 4))
+  select (('x' || substring(replace(p_id::text, '-', ''), 1, 4))
           ::bit(16)::int % presence_notify_shards());
 $$;
+
+-- ── Per-consumer checkpoint table ───────────────────────────────────────
+-- Each pod (`consumer_id` = erlang node name) records the highest `seq`
+-- it has processed. On startup, `pg_outbox.gleam` reads this to know
+-- where to resume from. Survives pod restart; reset to NULL to force a
+-- full replay of whatever is still in `presence_events`.
+
+create table if not exists presence_consumer_checkpoints (
+  consumer_id text primary key,
+  last_seq bigint not null default 0,
+  updated_at timestamptz not null default now()
+);

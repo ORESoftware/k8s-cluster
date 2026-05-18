@@ -76,11 +76,22 @@ pub fn make_on_init(
 
     register_for_scope(registry, scope, self)
 
-    // Hello handshake: tell the client which scope the server
-    // interpreted and which BEAM node accepted the upgrade. Useful for
-    // load-balanced setups where the client otherwise doesn't know
-    // which pod it landed on. Best-effort — if the send fails the ws
-    // will close on its own.
+    // Register the user/conv with conversations so the pg_listen +
+    // pg_outbox shards we care about expand to include this scope. The
+    // conversations actor de-dupes via ref counts internally; safe to
+    // call on every open. Conv-scope already covers user-axis interest
+    // (we have an active member in a conv), but user-scope ws's are the
+    // only signal for "I want to be told about user X joining brand
+    // new convs", so they specifically need the user-axis listen.
+    case scope {
+      UserScope(user_id, _) ->
+        conversations.register_user_interest(conversations, user_id)
+      ConvScope(user_id, conv_id, _) -> {
+        conversations.register_user_interest(conversations, user_id)
+        conversations.touch_conv(conversations, conv_id)
+      }
+    }
+
     let _ = mist.send_text_frame(ws_conn, hello_frame(scope))
 
     let state =
@@ -256,8 +267,17 @@ fn scope_label(scope: ConnScope) -> String {
 }
 
 /// Called when the ws process is shutting down. The local ETS registry's
-/// monitor and `pg`'s monitor both fire automatically — there's nothing
-/// for us to do here, but we keep the hook for symmetry / future logging.
-pub fn on_close(_state: ConnState) -> Nil {
-  Nil
+/// monitor and `pg`'s monitor both fire automatically — but we DO need
+/// to decrement the conversations actor's pg_listen/pg_outbox interest
+/// ref counts here, otherwise the subscriptions accumulate over the
+/// lifetime of the pod.
+pub fn on_close(state: ConnState) -> Nil {
+  case state.scope {
+    UserScope(user_id, _) ->
+      conversations.unregister_user_interest(state.conversations, user_id)
+    ConvScope(user_id, conv_id, _) -> {
+      conversations.unregister_user_interest(state.conversations, user_id)
+      conversations.untouch_conv(state.conversations, conv_id)
+    }
+  }
 }
