@@ -705,6 +705,160 @@ pub fn validate_lambda_functions_status(value: String) -> Result(String, String)
   }
 }
 
+pub const presence_convs_table = "presence_convs"
+pub const presence_convs_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from presence_convs"
+
+pub type PresenceConvsStatus {
+  PresenceConvsStatusActive
+  PresenceConvsStatusPaused
+  PresenceConvsStatusArchived
+}
+
+pub fn presence_convs_status_to_string(value: PresenceConvsStatus) -> String {
+  case value {
+    PresenceConvsStatusActive -> "active"
+    PresenceConvsStatusPaused -> "paused"
+    PresenceConvsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_presence_convs_status(value: String) -> Result(PresenceConvsStatus, String) {
+  case value {
+    "active" -> Ok(PresenceConvsStatusActive)
+    "paused" -> Ok(PresenceConvsStatusPaused)
+    "archived" -> Ok(PresenceConvsStatusArchived)
+    _ -> Error("unsupported presence_convs.status: " <> value)
+  }
+}
+
+pub type PresenceConvsRow {
+  PresenceConvsRow(
+    id: String,
+    slug: String,
+    display_name: String,
+    status: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_presence_convs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("presence_convs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_presence_convs_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported presence_convs.status: " <> value)
+  }
+}
+
+pub const presence_conv_members_table = "presence_conv_members"
+pub const presence_conv_members_select_sql = "select\n      id::text as id,\n      conv_id::text as conv_id,\n      user_id::text as user_id,\n      role,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(joined_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as joined_at,\n      to_char(left_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as left_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from presence_conv_members"
+
+pub type PresenceConvMembersRole {
+  PresenceConvMembersRoleOwner
+  PresenceConvMembersRoleAdmin
+  PresenceConvMembersRoleMember
+  PresenceConvMembersRoleGuest
+  PresenceConvMembersRoleBot
+}
+
+pub fn presence_conv_members_role_to_string(value: PresenceConvMembersRole) -> String {
+  case value {
+    PresenceConvMembersRoleOwner -> "owner"
+    PresenceConvMembersRoleAdmin -> "admin"
+    PresenceConvMembersRoleMember -> "member"
+    PresenceConvMembersRoleGuest -> "guest"
+    PresenceConvMembersRoleBot -> "bot"
+  }
+}
+
+pub fn parse_presence_conv_members_role(value: String) -> Result(PresenceConvMembersRole, String) {
+  case value {
+    "owner" -> Ok(PresenceConvMembersRoleOwner)
+    "admin" -> Ok(PresenceConvMembersRoleAdmin)
+    "member" -> Ok(PresenceConvMembersRoleMember)
+    "guest" -> Ok(PresenceConvMembersRoleGuest)
+    "bot" -> Ok(PresenceConvMembersRoleBot)
+    _ -> Error("unsupported presence_conv_members.role: " <> value)
+  }
+}
+
+pub type PresenceConvMembersStatus {
+  PresenceConvMembersStatusActive
+  PresenceConvMembersStatusMuted
+  PresenceConvMembersStatusBanned
+  PresenceConvMembersStatusArchived
+}
+
+pub fn presence_conv_members_status_to_string(value: PresenceConvMembersStatus) -> String {
+  case value {
+    PresenceConvMembersStatusActive -> "active"
+    PresenceConvMembersStatusMuted -> "muted"
+    PresenceConvMembersStatusBanned -> "banned"
+    PresenceConvMembersStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_presence_conv_members_status(value: String) -> Result(PresenceConvMembersStatus, String) {
+  case value {
+    "active" -> Ok(PresenceConvMembersStatusActive)
+    "muted" -> Ok(PresenceConvMembersStatusMuted)
+    "banned" -> Ok(PresenceConvMembersStatusBanned)
+    "archived" -> Ok(PresenceConvMembersStatusArchived)
+    _ -> Error("unsupported presence_conv_members.status: " <> value)
+  }
+}
+
+pub type PresenceConvMembersRow {
+  PresenceConvMembersRow(
+    id: String,
+    conv_id: String,
+    user_id: String,
+    role: String,
+    status: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    joined_at: String,
+    left_at: Option(String),
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_presence_conv_members_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("presence_conv_members.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_presence_conv_members_role(value: String) -> Result(String, String) {
+  case list.contains(["owner", "admin", "member", "guest", "bot"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported presence_conv_members.role: " <> value)
+  }
+}
+
+pub fn validate_presence_conv_members_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "muted", "banned", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported presence_conv_members.status: " <> value)
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

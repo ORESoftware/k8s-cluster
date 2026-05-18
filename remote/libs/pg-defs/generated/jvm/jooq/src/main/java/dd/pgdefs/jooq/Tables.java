@@ -186,4 +186,33 @@ public final class Tables {
     public static final Field<UUID> LAMBDA_FUNCTIONS_CREATED_BY = DSL.field(DSL.name("lambda_functions", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> LAMBDA_FUNCTIONS_UPDATED_BY = DSL.field(DSL.name("lambda_functions", "updated_by"), SQLDataType.UUID);
 
+    public static final Name PRESENCE_CONVS_NAME = DSL.name("presence_convs");
+    public static final Table<org.jooq.Record> PRESENCE_CONVS = DSL.table(PRESENCE_CONVS_NAME);
+    public static final Field<UUID> PRESENCE_CONVS_ID = DSL.field(DSL.name("presence_convs", "id"), SQLDataType.UUID);
+    public static final Field<String> PRESENCE_CONVS_SLUG = DSL.field(DSL.name("presence_convs", "slug"), SQLDataType.VARCHAR(120));
+    public static final Field<String> PRESENCE_CONVS_DISPLAY_NAME = DSL.field(DSL.name("presence_convs", "display_name"), SQLDataType.VARCHAR(200));
+    public static final Field<String> PRESENCE_CONVS_STATUS = DSL.field(DSL.name("presence_convs", "status"), SQLDataType.VARCHAR(32));
+    public static final Field<JSONB> PRESENCE_CONVS_META_DATA = DSL.field(DSL.name("presence_convs", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> PRESENCE_CONVS_IS_SOFT_DELETED = DSL.field(DSL.name("presence_convs", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> PRESENCE_CONVS_CREATED_AT = DSL.field(DSL.name("presence_convs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PRESENCE_CONVS_UPDATED_AT = DSL.field(DSL.name("presence_convs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> PRESENCE_CONVS_CREATED_BY = DSL.field(DSL.name("presence_convs", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> PRESENCE_CONVS_UPDATED_BY = DSL.field(DSL.name("presence_convs", "updated_by"), SQLDataType.UUID);
+
+    public static final Name PRESENCE_CONV_MEMBERS_NAME = DSL.name("presence_conv_members");
+    public static final Table<org.jooq.Record> PRESENCE_CONV_MEMBERS = DSL.table(PRESENCE_CONV_MEMBERS_NAME);
+    public static final Field<UUID> PRESENCE_CONV_MEMBERS_ID = DSL.field(DSL.name("presence_conv_members", "id"), SQLDataType.UUID);
+    public static final Field<UUID> PRESENCE_CONV_MEMBERS_CONV_ID = DSL.field(DSL.name("presence_conv_members", "conv_id"), SQLDataType.UUID);
+    public static final Field<UUID> PRESENCE_CONV_MEMBERS_USER_ID = DSL.field(DSL.name("presence_conv_members", "user_id"), SQLDataType.UUID);
+    public static final Field<String> PRESENCE_CONV_MEMBERS_ROLE = DSL.field(DSL.name("presence_conv_members", "role"), SQLDataType.VARCHAR(32));
+    public static final Field<String> PRESENCE_CONV_MEMBERS_STATUS = DSL.field(DSL.name("presence_conv_members", "status"), SQLDataType.VARCHAR(32));
+    public static final Field<JSONB> PRESENCE_CONV_MEMBERS_META_DATA = DSL.field(DSL.name("presence_conv_members", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> PRESENCE_CONV_MEMBERS_IS_SOFT_DELETED = DSL.field(DSL.name("presence_conv_members", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> PRESENCE_CONV_MEMBERS_JOINED_AT = DSL.field(DSL.name("presence_conv_members", "joined_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PRESENCE_CONV_MEMBERS_LEFT_AT = DSL.field(DSL.name("presence_conv_members", "left_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PRESENCE_CONV_MEMBERS_CREATED_AT = DSL.field(DSL.name("presence_conv_members", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PRESENCE_CONV_MEMBERS_UPDATED_AT = DSL.field(DSL.name("presence_conv_members", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> PRESENCE_CONV_MEMBERS_CREATED_BY = DSL.field(DSL.name("presence_conv_members", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> PRESENCE_CONV_MEMBERS_UPDATED_BY = DSL.field(DSL.name("presence_conv_members", "updated_by"), SQLDataType.UUID);
+
 }

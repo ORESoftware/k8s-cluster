@@ -478,3 +478,87 @@ export class LambdaFunctionEntity {
   updatedBy!: string | null;
 
 }
+
+@Index("presence_convs_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
+@Index("presence_convs_status_idx", ["status"], { where: "is_soft_deleted = false" })
+// presence_convs_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "presence_convs" })
+export class PresenceConvsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 120 })
+  slug!: string;
+
+  @Column({ name: "display_name", type: "varchar", length: 200, default: () => "''" })
+  displayName!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("presence_conv_members_conv_user_active_uq", ["convId", "userId"], { unique: true, where: "is_soft_deleted = false" })
+@Index("presence_conv_members_user_id_idx", ["userId"], { where: "is_soft_deleted = false" })
+@Index("presence_conv_members_conv_id_idx", ["convId"], { where: "is_soft_deleted = false" })
+// presence_conv_members_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "presence_conv_members" })
+export class PresenceConvMembersEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "conv_id", type: "uuid" })
+  convId!: string;
+
+  @Column({ name: "user_id", type: "uuid" })
+  userId!: string;
+
+  @Column({ name: "role", type: "varchar", length: 32, default: () => "'member'" })
+  role!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "joined_at", type: "timestamptz", default: () => "now()" })
+  joinedAt!: Date;
+
+  @Column({ name: "left_at", type: "timestamptz", nullable: true })
+  leftAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}

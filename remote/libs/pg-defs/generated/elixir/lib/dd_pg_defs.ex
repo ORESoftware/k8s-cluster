@@ -20,6 +20,8 @@ defmodule DdPgDefs do
     DdPgDefs.AgentRemoteDevArtifacts,
     DdPgDefs.AgentRemoteDevRuntimeLocks,
     DdPgDefs.LambdaFunctions,
+    DdPgDefs.PresenceConvs,
+    DdPgDefs.PresenceConvMembers,
   ]
 
   @spec tables() :: [module()]

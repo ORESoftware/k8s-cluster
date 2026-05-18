@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs_mnesia).
--export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, all_table_defs/0]).
+-export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, all_table_defs/0]).
 
 -record(app_config, {id, scope, key, value, version, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(container_pool_configs, {id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
@@ -14,6 +14,8 @@
 -record(agent_remote_dev_artifacts, {id, task_id, thread_id, filename, content_type, size_bytes, storage_provider, storage_bucket, storage_key, url, signed_url_expires_at, sha256, meta, created_at}).
 -record(agent_remote_dev_runtime_locks, {id, thread_id, owner, status, fencing_token, lease_expires_at, created_at, updated_at}).
 -record(lambda_functions, {id, slug, display_name, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, status, env, labels, meta_data, last_invoked_at, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
+-record(presence_convs, {id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
+-record(presence_conv_members, {id, conv_id, user_id, role, status, meta_data, is_soft_deleted, joined_at, left_at, created_at, updated_at, created_by, updated_by}).
 
 app_config_attributes() -> ['id', 'scope', 'key', 'value', 'version', 'status', 'labels', 'meta_data', 'is_soft_deleted', 'created_at', 'updated_at', 'created_by', 'updated_by'].
 
@@ -132,5 +134,31 @@ lambda_functions_table_def() ->
         {disc_copies, [node()]}
     ].
 
+presence_convs_attributes() -> ['id', 'slug', 'display_name', 'status', 'meta_data', 'is_soft_deleted', 'created_at', 'updated_at', 'created_by', 'updated_by'].
+
+presence_convs_record_info() ->
+    {presence_convs, 10, presence_convs_attributes()}.
+
+presence_convs_table_def() ->
+    [
+        {attributes, presence_convs_attributes()},
+        {type, set},
+        {record_name, presence_convs},
+        {disc_copies, [node()]}
+    ].
+
+presence_conv_members_attributes() -> ['id', 'conv_id', 'user_id', 'role', 'status', 'meta_data', 'is_soft_deleted', 'joined_at', 'left_at', 'created_at', 'updated_at', 'created_by', 'updated_by'].
+
+presence_conv_members_record_info() ->
+    {presence_conv_members, 13, presence_conv_members_attributes()}.
+
+presence_conv_members_table_def() ->
+    [
+        {attributes, presence_conv_members_attributes()},
+        {type, set},
+        {record_name, presence_conv_members},
+        {disc_copies, [node()]}
+    ].
+
 all_table_defs() ->
-    [{app_config, app_config_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {lambda_functions, lambda_functions_table_def()}].
+    [{app_config, app_config_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {lambda_functions, lambda_functions_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}].

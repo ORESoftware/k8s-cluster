@@ -551,3 +551,104 @@ pub struct LambdaFunctionDieselInsert {
     pub created_by: Option<Uuid>,
     pub updated_by: Option<Uuid>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    presence_convs (id) {
+        id -> Uuid,
+        slug -> Varchar,
+        display_name -> Varchar,
+        status -> Varchar,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = presence_convs)]
+pub struct PresenceConvsDieselRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub display_name: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = presence_convs)]
+pub struct PresenceConvsDieselInsert {
+    pub id: Option<Uuid>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    presence_conv_members (id) {
+        id -> Uuid,
+        conv_id -> Uuid,
+        user_id -> Uuid,
+        role -> Varchar,
+        status -> Varchar,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        joined_at -> Timestamptz,
+        left_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = presence_conv_members)]
+pub struct PresenceConvMembersDieselRow {
+    pub id: Uuid,
+    pub conv_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub joined_at: DateTime<Utc>,
+    pub left_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = presence_conv_members)]
+pub struct PresenceConvMembersDieselInsert {
+    pub id: Option<Uuid>,
+    pub conv_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub role: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub joined_at: Option<DateTime<Utc>>,
+    pub left_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}

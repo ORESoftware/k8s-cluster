@@ -728,3 +728,136 @@ export const lambdaFunctionUpdateSchema = lambdaFunctionInsertSchema.partial();
 export type LambdaFunctionRow = z.infer<typeof lambdaFunctionRowSchema>;
 export type LambdaFunctionInsert = z.infer<typeof lambdaFunctionInsertSchema>;
 export type LambdaFunctionUpdate = z.infer<typeof lambdaFunctionUpdateSchema>;
+
+export const presenceConvsStatusValues = ["active","paused","archived"] as const;
+export const presenceConvsStatusSchema = z.enum(presenceConvsStatusValues);
+export type PresenceConvsStatus = z.infer<typeof presenceConvsStatusSchema>;
+
+export const presenceConvs = pgTable(
+  "presence_convs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    displayName: varchar("display_name", { length: 200 }).default(sql`''`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    presenceConvsSlugFormatChk: check("presence_convs_slug_format_chk", sql.raw("slug ~ '^[A-Za-z0-9._:/-]{1,120}$'")),
+    presenceConvsDisplayNameSizeChk: check("presence_convs_display_name_size_chk", sql.raw("octet_length(display_name) <= 200")),
+    presenceConvsMetaObjectChk: check("presence_convs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    presenceConvsStatusChk: check("presence_convs_status_chk", sql.raw("status in ('active', 'paused', 'archived')")),
+    presenceConvsSlugActiveUq: uniqueIndex("presence_convs_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
+    presenceConvsStatusIdx: index("presence_convs_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
+    presenceConvsUpdatedAtIdx: index("presence_convs_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const presenceConvsRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  status: presenceConvsStatusSchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const presenceConvsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  displayName: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").optional().default(""),
+  status: presenceConvsStatusSchema.optional().default("active"),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const presenceConvsUpdateSchema = presenceConvsInsertSchema.partial();
+export type PresenceConvsRow = z.infer<typeof presenceConvsRowSchema>;
+export type PresenceConvsInsert = z.infer<typeof presenceConvsInsertSchema>;
+export type PresenceConvsUpdate = z.infer<typeof presenceConvsUpdateSchema>;
+
+export const presenceConvMembersRoleValues = ["owner","admin","member","guest","bot"] as const;
+export const presenceConvMembersRoleSchema = z.enum(presenceConvMembersRoleValues);
+export type PresenceConvMembersRole = z.infer<typeof presenceConvMembersRoleSchema>;
+
+export const presenceConvMembersStatusValues = ["active","muted","banned","archived"] as const;
+export const presenceConvMembersStatusSchema = z.enum(presenceConvMembersStatusValues);
+export type PresenceConvMembersStatus = z.infer<typeof presenceConvMembersStatusSchema>;
+
+export const presenceConvMembers = pgTable(
+  "presence_conv_members",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    convId: uuid("conv_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    role: varchar("role", { length: 32 }).default(sql`'member'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    joinedAt: timestamp("joined_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    leftAt: timestamp("left_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    presenceConvMembersRoleChk: check("presence_conv_members_role_chk", sql.raw("role in ('owner', 'admin', 'member', 'guest', 'bot')")),
+    presenceConvMembersStatusChk: check("presence_conv_members_status_chk", sql.raw("status in ('active', 'muted', 'banned', 'archived')")),
+    presenceConvMembersMetaObjectChk: check("presence_conv_members_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    presenceConvMembersConvUserActiveUq: uniqueIndex("presence_conv_members_conv_user_active_uq").on(table.convId, table.userId).where(sql.raw("is_soft_deleted = false")),
+    presenceConvMembersUserIdIdx: index("presence_conv_members_user_id_idx").on(table.userId).where(sql.raw("is_soft_deleted = false")),
+    presenceConvMembersConvIdIdx: index("presence_conv_members_conv_id_idx").on(table.convId).where(sql.raw("is_soft_deleted = false")),
+    presenceConvMembersUpdatedAtIdx: index("presence_conv_members_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const presenceConvMembersRowSchema = z.object({
+  id: z.string().uuid(),
+  convId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: presenceConvMembersRoleSchema,
+  status: presenceConvMembersStatusSchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  joinedAt: z.string().datetime(),
+  leftAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const presenceConvMembersInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  convId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: presenceConvMembersRoleSchema.optional().default("member"),
+  status: presenceConvMembersStatusSchema.optional().default("active"),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  joinedAt: z.string().datetime().optional(),
+  leftAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const presenceConvMembersUpdateSchema = presenceConvMembersInsertSchema.partial();
+export type PresenceConvMembersRow = z.infer<typeof presenceConvMembersRowSchema>;
+export type PresenceConvMembersInsert = z.infer<typeof presenceConvMembersInsertSchema>;
+export type PresenceConvMembersUpdate = z.infer<typeof presenceConvMembersUpdateSchema>;
