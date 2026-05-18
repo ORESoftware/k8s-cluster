@@ -139,6 +139,16 @@ sync_repo_to_origin_dev() {
   fi
 
   git -C "${REPO_ROOT}" pull --ff-only origin dev
+
+  # Submodules — chat.vibe lives at remote/gcs/chat-vibe as one. The
+  # gcs and gcs-router deployments hostPath-mount that path, so an
+  # uninitialized submodule on EC2 means an empty directory and the
+  # build-on-startup pods will fail. Idempotent; cheap to re-run.
+  if [[ -f "${REPO_ROOT}/.gitmodules" ]]; then
+    echo "==> Updating submodules"
+    git -C "${REPO_ROOT}" submodule sync --recursive
+    git -C "${REPO_ROOT}" submodule update --init --recursive --remote
+  fi
 }
 
 capacity_summary() {

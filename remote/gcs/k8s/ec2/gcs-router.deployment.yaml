@@ -139,7 +139,10 @@ spec:
       volumes:
         - name: chat-vibe-src
           hostPath:
-            path: /home/ec2-user/codes/dd/chat.vibe
+            # See gcs.deployment.yaml for the rationale. chat.vibe is
+            # a submodule at remote/gcs/chat-vibe; on the EC2 host
+            # the repo is cloned at /home/ec2-user/codes/dd/dd-next-1.
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/gcs/chat-vibe
             type: Directory
         - name: tmp
           emptyDir:

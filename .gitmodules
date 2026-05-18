@@ -1,0 +1,4 @@
+[submodule "remote/gcs/chat-vibe"]
+	path = remote/gcs/chat-vibe
+	url = git@github.com:ORESoftware/chat.vibe.git
+	branch = dev4

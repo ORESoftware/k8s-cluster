@@ -200,7 +200,16 @@ spec:
       volumes:
         - name: chat-vibe-src
           hostPath:
-            path: /home/ec2-user/codes/dd/chat.vibe
+            # chat.vibe lives in this repo as a git submodule at
+            # remote/gcs/chat-vibe (see .gitmodules). The EC2 host
+            # has the repo cloned at /home/ec2-user/codes/dd/dd-next-1
+            # — matches every other hostPath-mounted service in
+            # the cluster (dd-build-server, dd-formal-methods-service,
+            # dd-web-scraper, dd-gleamlang-server, etc.).
+            #
+            # Deploy: `git pull && git submodule update --init --recursive`
+            # on the EC2 host, then ArgoCD/kubectl picks up changes.
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/gcs/chat-vibe
             type: Directory
         - name: tmp
           emptyDir:

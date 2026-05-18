@@ -2,11 +2,51 @@
 
 This deploys `ORESoftware/chat.vibe` as `gcs` in the default namespace.
 
-The EC2 deployment mounts `ORESoftware/chat.vibe` from the EC2 host path:
+## Source layout
+
+`chat.vibe` is tracked here as a git submodule at
+`remote/gcs/chat-vibe` (see `.gitmodules` at the repo root). The
+submodule's own remote stays
+`git@github.com:ORESoftware/chat.vibe.git`, so day-to-day work on the
+chat server happens in that repo as usual. Bumping the deployed
+version is a two-step:
+
+```bash
+# 1. inside the submodule
+cd remote/gcs/chat-vibe
+git fetch origin dev4
+git reset --hard origin/dev4   # or any specific commit
+
+# 2. back in k8s-cluster — record the new pointer
+cd -
+git add remote/gcs/chat-vibe
+git commit -m "bump chat.vibe -> $(git -C remote/gcs/chat-vibe rev-parse --short HEAD)"
+git push origin dev
+```
+
+On the EC2 host (`/home/ec2-user/codes/dd/dd-next-1`):
+
+```bash
+git pull --ff-only origin dev
+git submodule update --init --recursive --remote
+```
+
+The bootstrap script (`remote/ec2/bootstrap-amazon-linux-2023-k8s.sh`)
+already does the submodule init on cluster bootstrap; the snippet
+above is for an existing host that just needs a refresh.
+
+## Build model
+
+The EC2 deployment mounts the in-repo submodule path via hostPath:
 
 ```txt
-/home/ec2-user/codes/dd/chat.vibe
+/home/ec2-user/codes/dd/dd-next-1/remote/gcs/chat-vibe
 ```
+
+This matches the established cluster pattern — every other Go / Rust
+/ TypeScript service that builds-on-startup (dd-build-server,
+dd-formal-methods-service, dd-web-scraper, dd-gleamlang-server, etc.)
+mounts from `/home/ec2-user/codes/dd/dd-next-1`.
 
 The pod builds the Go binary into an `emptyDir` at startup. This avoids needing
 ECR credentials while the chat service image pipeline is being cleaned up.
