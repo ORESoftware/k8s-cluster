@@ -46,6 +46,8 @@ test('fsharp websocket service is bounded, deployed, and guarded', async () => {
   assert.match(routes, /InvalidMessageType/);
   assert.match(routes, /receiveTextFrame/);
   assert.match(routes, /parseBoundedPositiveIntEnv/);
+  assert.match(routes, /handleRxBurst/);
+  assert.match(readme, /\/ws\/rx-burst/);
   assert.match(readme, /MAX_WS_TEXT_FRAME_BYTES/);
   assert.match(readme, /MAX_BENCHMARK_ITERATIONS/);
 

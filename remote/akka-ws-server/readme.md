@@ -38,22 +38,23 @@ deliberately throws when `id == "poison"` so the
 
 ## The async.java dependency
 
-This service pins [async.java](https://github.com/async-java/async.java) to a
-specific commit SHA via [JitPack](https://jitpack.io) rather than via Maven
-Central, because the post-`#8` release line hasn't been published to Central
-yet. The `pom.xml` declares:
+This service consumes [async.java](https://github.com/async-java/async.java)
+through [JitPack](https://jitpack.io) while the Central coordinate is still
+pending. The 2026-05-18 audit verified `v0.2.9` as the latest GitHub release
+and confirmed JitPack serves it; Maven Central did not yet expose
+`io.github.async-java:async-java:0.2.9`. The `pom.xml` declares:
 
 ```xml
 <dependency>
   <groupId>com.github.async-java</groupId>
   <artifactId>async.java</artifactId>
-  <version>937c0e3</version>   <!-- merged master, post-#8 -->
+  <version>v0.2.9</version>
 </dependency>
 ```
 
-When `io.github.async-java:async-java:0.2.0` lands on Central per the
+When `io.github.async-java:async-java:0.2.9` lands on Central per the
 [RELEASING.md](https://github.com/async-java/async.java/blob/master/RELEASING.md)
-runbook in that repo, swap this for a stable Central coordinate.
+runbook in that repo, swap this for the stable Central coordinate.
 
 ---
 
@@ -520,12 +521,11 @@ provides the memory-visibility guarantees the existing call sites assume,
 and removes any concern about `synchronized`-pinning at the same time
 (by making most of those `synchronized` blocks dead code).
 
-Fix lives in
-[async-java/async.java#9](https://github.com/async-java/async.java/pull/9).
-This repo's `pom.xml` consumes the fix-branch SHA via JitPack until #9
-merges. After that, bump both `async-java.version` properties to the merge
-commit SHA, and after the next Maven Central release bump them to the
-stable `io.github.async-java:async-java:0.2.0` coordinate.
+Fix landed in
+[async-java/async.java#9](https://github.com/async-java/async.java/pull/9)
+and is included in the current `v0.2.9` JitPack dependency consumed here.
+The future Central coordinate is `io.github.async-java:async-java:0.2.9`;
+keep the JitPack coordinate until Central metadata exposes that artifact.
 
 Why virtual threads surfaced this and platform threads didn't: VTs make
 spawning concurrent callbacks essentially free, so the contention window

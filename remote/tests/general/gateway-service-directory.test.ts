@@ -26,7 +26,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /dd remote service directory/);
   assert.match(
     home,
-    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, <code>\/scrape<\/code>, <code>\/trading<\/code>, <code>\/container-pools<\/code>, <code>\/bastion<\/code>, and <code>\/builds<\/code>; ops paths stay behind internal gateway access\./,
+    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, <code>\/presence-test<\/code>, <code>\/wss-test<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, <code>\/scrape<\/code>, <code>\/trading<\/code>, <code>\/container-pools<\/code>, <code>\/bastion<\/code>, and <code>\/builds<\/code>; ops paths stay behind internal gateway access\./,
   );
   assert.match(home, /<h2>Deployments<\/h2>/);
   assert.match(home, /<code>dd-web-scraper<\/code>/);
@@ -105,7 +105,14 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /href="\/gleam\/home"/);
   assert.match(home, /href="\/gleam\/healthz"/);
   assert.match(home, /href="\/gleam\/metrics"/);
-  assert.match(home, /href="\/gleam\/ws"/);
+  assert.match(home, /href="\/wss-test\?preset=gleam"/);
+  assert.match(home, /href="\/wss-test\?preset=webrtc"/);
+  assert.match(home, /href="\/wss-test\?preset=gcs"/);
+  assert.match(home, /href="\/wss-test\?preset=fsrx"/);
+  assert.match(home, /\/fsws\/ws\/rx-burst/);
+  assert.match(home, /id="send-burst"/);
+  assert.match(home, /id="start-interval"/);
+  assert.match(home, /id="stop-interval"/);
   assert.match(home, /wss:\/\/54\.91\.17\.58\/gleam\/ws/);
   assert.doesNotMatch(home, /ws:\/\/54\.91\.17\.58\/gleam\/ws/);
   assert.match(home, /href="\/mcp"/);
@@ -116,7 +123,8 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /href="\/webrtc\/"/);
   assert.match(home, /href="\/webrtc\/healthz"/);
   assert.match(home, /href="\/webrtc\/metrics"/);
-  assert.match(home, /wss:\/\/54\.91\.17\.58\/webrtc\/signal/);
+  assert.match(home, /href="\/wss-test\?preset=webrtc"/);
+  assert.match(home, /\/webrtc\/signal/);
   assert.match(home, /Rust WebRTC signaling service/);
   assert.match(home, /Media and data channels stay peer-to-peer/);
   assert.match(home, /href="\/scrape"/);

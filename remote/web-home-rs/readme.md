@@ -12,7 +12,9 @@ Rust public web layer for remote-dev.
   exposes join/leave/broadcast/device-logout controls, intended to be opened
   in 3 tabs as `alice/d1`, `bob/d2`, `carol/d3` to exercise cross-tab fan-out)
 - serves `GET /wss-test` as a same-origin gateway WebSocket harness with presets
-  for `dd-gleamlang-server`, `dd-webrtc-signaling-rs`, and `gms/gcs/chat.vibe`
+  for `dd-gleamlang-server`, `dd-webrtc-signaling-rs`, `gms/gcs/chat.vibe`,
+  and the F# Rx burst endpoint; the page includes health checks, burst send,
+  interval send, and separate sent/received counters for browser-side smoke tests
 - keeps HTML/public pages out of the Node.js worker runtime
 - keeps database credentials out of the public HTML server
 - exposes `GET /healthz` for web liveness

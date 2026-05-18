@@ -466,10 +466,10 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
                 <td>Self-contained page that opens one user-scoped ws plus N conv-scoped ws's against the presence server, with controls for join/leave/broadcast/device-logout. Open in 3 tabs (alice/d1, bob/d2, carol/d3) to see cross-tab fan-out.</td>
               </tr>
               <tr>
-                <td><span class="path-links"><a href="/wss-test"><code>/wss-test</code></a><a href="/wss-test?preset=gleam"><code>?preset=gleam</code></a><a href="/wss-test?preset=webrtc"><code>?preset=webrtc</code></a><a href="/wss-test?preset=gcs"><code>?preset=gcs</code></a></span></td>
+                <td><span class="path-links"><a href="/wss-test"><code>/wss-test</code></a><a href="/wss-test?preset=gleam"><code>?preset=gleam</code></a><a href="/wss-test?preset=webrtc"><code>?preset=webrtc</code></a><a href="/wss-test?preset=gcs"><code>?preset=gcs</code></a><a href="/wss-test?preset=fsrx"><code>?preset=fsrx</code></a></span></td>
                 <td>Gateway WebSocket test lab</td>
                 <td><span class="pill">public</span></td>
-                <td>Rust-served browser harness for the Gleam fan-out socket, Rust WebRTC signaling socket, and gms/gcs/chat.vibe websocket router. Uses same-origin gateway paths by default so it tests the production ingress shape.</td>
+                <td>Rust-served browser harness for the Gleam fan-out socket, Rust WebRTC signaling socket, gms/gcs/chat.vibe websocket router, and F# Rx burst endpoint. Uses same-origin gateway paths by default so it tests the production ingress shape.</td>
               </tr>
               <tr>
                 <td><span class="path-links"><a href="/auth?return=/home"><code>/auth</code></a></span></td>
@@ -3676,6 +3676,11 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
       .pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.08); }
       .pill.bad { color: var(--danger); border-color: rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.08); }
       .pill.ok { color: var(--ok); border-color: rgba(134, 239, 172, 0.35); background: rgba(134, 239, 172, 0.08); }
+      .stats {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
       .grid {
         display: grid;
         grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
@@ -3751,6 +3756,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
             <option value="gleam">Gleam fan-out</option>
             <option value="webrtc">Rust WebRTC signaling</option>
             <option value="gcs">gms/gcs/chat.vibe router</option>
+            <option value="fsrx">F# Rx burst</option>
           </select>
         </label>
         <label>base
@@ -3761,6 +3767,8 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
         </label>
         <span id="status" class="pill warn">idle</span>
         <span id="counter" class="pill">0 frames</span>
+        <span id="sent-counter" class="pill">0 sent</span>
+        <span id="recv-counter" class="pill">0 recv</span>
       </div>
       <div class="topline">
         <code id="url-preview">ws://...</code>
@@ -3779,6 +3787,8 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
             <label>user id<input id="user-id" /></label>
             <label>device id<input id="device-id" /></label>
             <label>conversation id<input id="conv-id" /></label>
+            <label>burst count<input id="burst-count" type="number" min="1" max="500" value="12" /></label>
+            <label>interval ms<input id="interval-ms" type="number" min="50" max="60000" value="1000" /></label>
             <label>gcs route
               <select id="gcs-route">
                 <option value="conv">conv</option>
@@ -3791,6 +3801,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
             <button id="connect" class="primary" type="button">connect</button>
             <button id="disconnect" class="danger" type="button">disconnect</button>
             <button id="copy-url" type="button">copy url</button>
+            <button id="check-health" type="button">health</button>
             <button id="clear" type="button">clear</button>
           </div>
           <div class="actions">
@@ -3798,6 +3809,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
             <a href="/gleam/home"><code>/gleam/home</code></a>
             <a href="/webrtc/"><code>/webrtc/</code></a>
             <a href="/gcs/ws-health"><code>/gcs/ws-health</code></a>
+            <a href="/wss-test?preset=fsrx"><code>/fsws/ws/rx-burst</code></a>
           </div>
         </div>
       </section>
@@ -3811,6 +3823,9 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
             <button id="send-ping" type="button">ping</button>
             <button id="send-hello" type="button">hello</button>
             <button id="send-sample" type="button">sample</button>
+            <button id="send-burst" type="button">burst</button>
+            <button id="start-interval" type="button">start interval</button>
+            <button id="stop-interval" type="button">stop interval</button>
           </div>
         </div>
       </section>
@@ -3833,7 +3848,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
         deviceId: "65c48f2f47d56fec05a41b39",
         convId: "65c48f2f47d56fec05a41b3a",
       };
-      const state = { ws: null, frames: 0 };
+      const state = { ws: null, frames: 0, sent: 0, received: 0, intervalTimer: null };
 
       function sameOriginWsBase() {
         const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -3841,6 +3856,9 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
       }
       function httpToWs(value) {
         return value.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
+      }
+      function wsToHttp(value) {
+        return value.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://");
       }
       function trimSlash(value) {
         return value.replace(/\/+$/, "");
@@ -3867,12 +3885,22 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
         $("status").textContent = text;
         $("status").className = "pill " + cls;
       }
-      function countFrame() {
-        state.frames += 1;
+      function updateCounters() {
         $("counter").textContent = `${state.frames} frames`;
+        $("sent-counter").textContent = `${state.sent} sent`;
+        $("recv-counter").textContent = `${state.received} recv`;
+      }
+      function countFrame(direction) {
+        state.frames += 1;
+        if (direction === "out") state.sent += 1;
+        if (direction === "in") state.received += 1;
+        updateCounters();
       }
       function pretty(raw) {
         try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (_) { return String(raw); }
+      }
+      function setGcsPath() {
+        $("path").value = `/gcs/ws/${$("gcs-route").value}/${encodeURIComponent(gcsRouteId())}`;
       }
 
       function applyPreset() {
@@ -3887,8 +3915,8 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
             type: "hello",
             metadata: { client: "web-home-rs/wss-test", at: new Date().toISOString() }
           }, null, 2);
-        } else {
-          $("path").value = `/gcs/ws/${$("gcs-route").value}/${gcsRouteId()}`;
+        } else if (preset === "gcs") {
+          setGcsPath();
           $("payload").value = JSON.stringify({
             Meta: {},
             List: [{
@@ -3896,6 +3924,12 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
               "@vibe-type": "PollForKafkaMessages",
               "@vibe-data": JSON.stringify({ TopicIds: [$("user-id").value] })
             }]
+          }, null, 2);
+        } else {
+          $("path").value = "/fsws/ws/rx-burst";
+          $("payload").value = JSON.stringify({
+            id: "rx-" + Date.now().toString(36),
+            payload: "sample from web-home-rs/wss-test"
           }, null, 2);
         }
         updateUrlPreview();
@@ -3911,6 +3945,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
       function buildUrl() {
         const preset = $("preset").value;
         const base = trimSlash(httpToWs($("base").value.trim() || sameOriginWsBase()));
+        if (preset === "gcs") setGcsPath();
         const path = ensureLeadingSlash($("path").value.trim());
         const url = new URL(base + path);
 
@@ -3933,6 +3968,32 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
         $("url-preview").textContent = buildUrl();
       }
 
+      function healthPath() {
+        const preset = $("preset").value;
+        if (preset === "gleam") return "/gleam/healthz";
+        if (preset === "webrtc") return "/webrtc/healthz";
+        if (preset === "gcs") return "/gcs/ws-health";
+        return "/fsws/healthz";
+      }
+
+      function httpBase() {
+        const raw = $("base").value.trim();
+        if (!raw) return location.origin;
+        return trimSlash(wsToHttp(httpToWs(raw)));
+      }
+
+      async function checkHealth() {
+        const url = httpBase() + healthPath();
+        log("GET " + url, "meta");
+        try {
+          const response = await fetch(url, { cache: "no-store" });
+          const text = await response.text();
+          log(`health ${response.status}: ${text.slice(0, 600)}`, response.ok ? "in" : "bad");
+        } catch (error) {
+          log("health error: " + String(error), "bad");
+        }
+      }
+
       function connect() {
         disconnect();
         const url = buildUrl();
@@ -3946,7 +4007,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
           if ($("preset").value === "webrtc") sendHello();
         };
         ws.onmessage = (event) => {
-          countFrame();
+          countFrame("in");
           log("in  " + pretty(event.data), "in");
         };
         ws.onerror = () => {
@@ -3954,6 +4015,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
           log("websocket error; check browser devtools network panel", "bad");
         };
         ws.onclose = (event) => {
+          stopInterval();
           setStatus(`closed ${event.code}`, event.code === 1000 ? "warn" : "bad");
           log(`closed code=${event.code} reason="${event.reason || ""}"`, "warn");
           if (state.ws === ws) state.ws = null;
@@ -3961,6 +4023,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
       }
 
       function disconnect() {
+        stopInterval();
         if (state.ws) {
           try { state.ws.close(1000, "ui disconnect"); } catch (_) {}
           state.ws = null;
@@ -3974,7 +4037,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
           return;
         }
         state.ws.send(raw);
-        countFrame();
+        countFrame("out");
         log("out " + pretty(raw), "out");
       }
 
@@ -4002,30 +4065,68 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
         }
       }
 
-      function sendSample() {
+      function sampleFrame(index = null) {
         if ($("preset").value === "gleam") {
-          sendRaw(JSON.stringify({
+          return JSON.stringify({
             type: "task-event",
             threadId: $("thread-id").value,
             taskId: $("task-id").value,
-            body: "sample from wss-test",
+            body: index === null ? "sample from wss-test" : `sample ${index} from wss-test`,
             at: new Date().toISOString()
-          }));
-        } else if ($("preset").value === "webrtc") {
-          sendRaw(JSON.stringify({
+          });
+        }
+        if ($("preset").value === "webrtc") {
+          return JSON.stringify({
             type: "message",
-            payload: { body: "sample signaling message", at: new Date().toISOString() }
-          }));
-        } else {
-          sendRaw(JSON.stringify({
+            payload: {
+              body: index === null ? "sample signaling message" : `sample signaling message ${index}`,
+              at: new Date().toISOString()
+            }
+          });
+        }
+        if ($("preset").value === "gcs") {
+          return JSON.stringify({
             Meta: {},
             List: [{
               "@vibe-meta": {},
               "@vibe-type": "PollForKafkaMessages",
-              "@vibe-data": JSON.stringify({ TopicIds: [$("user-id").value, $("conv-id").value] })
+              "@vibe-data": JSON.stringify({
+                TopicIds: [$("user-id").value, $("conv-id").value],
+                Sequence: index
+              })
             }]
-          }));
+          });
         }
+        return JSON.stringify({
+          id: `rx-${Date.now().toString(36)}-${index === null ? "sample" : index}`,
+          payload: index === null ? "sample from wss-test" : `burst payload ${index}`
+        });
+      }
+
+      function sendSample() {
+        sendRaw(sampleFrame());
+      }
+
+      function sendBurst() {
+        const count = Math.min(500, Math.max(1, Number.parseInt($("burst-count").value, 10) || 1));
+        for (let i = 0; i < count; i += 1) {
+          sendRaw(sampleFrame(i + 1));
+        }
+      }
+
+      function stopInterval() {
+        if (state.intervalTimer !== null) {
+          clearInterval(state.intervalTimer);
+          state.intervalTimer = null;
+          log("interval stopped", "meta");
+        }
+      }
+
+      function startInterval() {
+        stopInterval();
+        const ms = Math.min(60000, Math.max(50, Number.parseInt($("interval-ms").value, 10) || 1000));
+        state.intervalTimer = setInterval(sendSample, ms);
+        log(`interval started ${ms}ms`, "meta");
       }
 
       $("preset").value = params.get("preset") || "gleam";
@@ -4043,13 +4144,26 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
       for (const id of ["base", "path", "thread-id", "task-id", "room-id", "peer-id", "user-id", "device-id", "conv-id"]) {
         $(id).addEventListener("input", updateUrlPreview);
       }
+      for (const id of ["burst-count", "interval-ms"]) {
+        $(id).addEventListener("input", updateUrlPreview);
+      }
       $("connect").onclick = connect;
       $("disconnect").onclick = disconnect;
       $("send").onclick = sendPayload;
       $("send-ping").onclick = sendPing;
       $("send-hello").onclick = sendHello;
       $("send-sample").onclick = sendSample;
-      $("clear").onclick = () => { $("log").textContent = ""; state.frames = 0; $("counter").textContent = "0 frames"; };
+      $("send-burst").onclick = sendBurst;
+      $("start-interval").onclick = startInterval;
+      $("stop-interval").onclick = stopInterval;
+      $("check-health").onclick = () => { checkHealth().catch((error) => log("health error: " + String(error), "bad")); };
+      $("clear").onclick = () => {
+        $("log").textContent = "";
+        state.frames = 0;
+        state.sent = 0;
+        state.received = 0;
+        updateCounters();
+      };
       $("copy-url").onclick = async () => {
         try {
           await navigator.clipboard.writeText(buildUrl());
@@ -4063,6 +4177,7 @@ const WSS_TEST_HTML: &str = r##"<!doctype html>
       });
 
       applyPreset();
+      window.addEventListener("beforeunload", disconnect);
       if (params.get("autoconnect") === "1") setTimeout(connect, 50);
     </script>
   </body>

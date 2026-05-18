@@ -359,6 +359,7 @@ let handleRxStream    ctx = acceptAndRunRxStream "rx-stream"   RxStreamFlow.pipe
 let handleRxWindow    ctx = acceptAndRunRxStream "rx-window"   RxWindowFlow.pipeline   ctx
 let handleRxThrottle  ctx = acceptAndRunRxStream "rx-throttle" RxThrottleFlow.pipeline ctx
 let handleRxSample    ctx = acceptAndRunRxStream "rx-sample"   RxSampleFlow.pipeline   ctx
+let handleRxBurst     ctx = acceptAndRunRxStream "rx-burst"    RxBurstFlow.pipeline    ctx
 
 let handleBenchmark (ctx: HttpContext) : Task =
     task {
@@ -535,6 +536,7 @@ let handleIndex (ctx: HttpContext) : Task =
       <tr><td>WS</td><td><code>/ws/rx-window</code></td><td>same input, output goes through <code>Buffer(200ms, 16)</code> — one batched frame per window</td></tr>
       <tr><td>WS</td><td><code>/ws/rx-throttle</code></td><td>same input, output <code>Throttle(50ms)</code> — flood the socket, you only get the last reply per quiet window</td></tr>
       <tr><td>WS</td><td><code>/ws/rx-sample</code></td><td>same input, output <code>Sample(100ms)</code> — at most the latest completed reply every dashboard tick</td></tr>
+      <tr><td>WS</td><td><code>/ws/rx-burst</code></td><td>same input, output <code>Timestamp → Buffer(250ms, 64) → Scan</code> — stateful per-connection load windows</td></tr>
     </tbody>
   </table>
 

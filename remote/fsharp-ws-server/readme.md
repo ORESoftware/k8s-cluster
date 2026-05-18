@@ -55,6 +55,7 @@ cleanly into a `string -> Task<string>` boundary.
 | WS     | `/ws/rx-window`     | Same input pipeline, but output goes through `Buffer(200ms, 16)` — one batched frame per window. Try this with `wscat`: send 5 frames quickly, get a single batch reply with `"count":5`. |
 | WS     | `/ws/rx-throttle`   | Same input pipeline, output `Throttle(50ms)` — flood the socket and you only get the latest reply once you pause for 50 ms. Classic keystroke-debounce shape. |
 | WS     | `/ws/rx-sample`     | Same input pipeline, output `Sample(100ms)` — a dashboard-friendly "latest value every tick" stream under heavy input. |
+| WS     | `/ws/rx-burst`      | Same input pipeline, output goes through `Timestamp -> Buffer(250ms, 64) -> Scan` — stateful per-connection load windows with cumulative counts. |
 
 ### Live process telemetry (Rx `BehaviorSubject` + `ReplaySubject` + SSE)
 
@@ -213,7 +214,7 @@ and Rx.NET holds its tail latency just like the callback path. That pattern
 doesn't compose into a `string -> Task<string>` boundary, so it isn't what
 the `/v1/benchmark` endpoint measures — but it's the right call when the WS
 stream itself is the shape your business logic wants to react over. The
-`/ws/rx-stream`, `/ws/rx-window`, `/ws/rx-throttle`, and `/ws/rx-sample`
+`/ws/rx-stream`, `/ws/rx-window`, `/ws/rx-throttle`, `/ws/rx-sample`, and `/ws/rx-burst`
 endpoints exist specifically to demonstrate those shapes; see `RxAdvanced.fs`.
 
 ## Quick demo of the Rx-native endpoints
@@ -244,7 +245,13 @@ wscat -c ws://localhost:8087/ws/rx-sample
 > {"id":"sample-2","payload":"b"}
 < {"sample":"100ms","item":{"ok":true,"result":{...}}}
 
-# 4. Live SSE feed of the process counters.
+# 4. Stateful burst windows. Send several frames fast, get one compact summary.
+wscat -c ws://localhost:8087/ws/rx-burst
+> {"id":"burst-1","payload":"a"}
+> {"id":"burst-2","payload":"b"}
+< {"burst":"250ms|64","window":1,"count":2,"total":2,"items":[...]}
+
+# 5. Live SSE feed of the process counters.
 curl -N http://localhost:8087/sse/rx-stats
 event: hello
 data: connected

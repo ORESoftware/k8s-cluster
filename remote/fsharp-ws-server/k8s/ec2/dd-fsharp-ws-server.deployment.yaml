@@ -19,7 +19,7 @@ spec:
         # ArgoCD rolls a fresh pod that re-runs `dotnet publish` against the
         # latest source on the hostPath repo. Same pattern dd-remote-gateway
         # uses for configmap updates.
-        dd.dev/code-revision: '2026-05-18-rx-hogwild'
+        dd.dev/code-revision: '2026-05-18-rx-burst'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30

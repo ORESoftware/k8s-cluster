@@ -23,6 +23,11 @@ All multi-stage flow control inside a single job uses
 port of the node `async` library. Different job kinds use different
 combinators:
 
+The `pom.xml` is pinned to the latest audited release,
+`com.github.async-java:async.java:v0.2.9`, through JitPack. As of the
+2026-05-18 audit, JitPack serves that tag and Maven Central does not yet expose
+the future `io.github.async-java:async-java:0.2.9` coordinate.
+
 | Job kind                  | Combinator           | Notes                                                                 |
 | ------------------------- | -------------------- | --------------------------------------------------------------------- |
 | `INGEST_VALIDATE_PUBLISH` | `Asyncc.Waterfall`   | Each stage publishes a `(key, value)` consumed by downstream stages.  |

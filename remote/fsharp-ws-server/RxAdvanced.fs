@@ -42,6 +42,11 @@ open OresSoftware.Dd.FsWs.PipelineStages
 ///                         completed result every 100 ms. This is the "live
 ///                         dashboard" shape: steady updates under load without
 ///                         letting every upstream event resize the browser UI.
+///
+///   - `RxBurstFlow`     : timestamped outputs are buffered into 250 ms / 64
+///                         item windows, then `Scan` adds connection-local
+///                         cumulative counts. This is a compact live-load
+///                         telemetry stream rather than a per-message echo.
 
 // ----------------------------------------------------------------------------
 // RxStats — process-wide live counters fed through an Rx hot pipeline.
@@ -182,7 +187,7 @@ let private rxFiveStages (inbound: IObservable<string>) : IObservable<string> =
 
 
 // ----------------------------------------------------------------------------
-// Three concrete long-running pipelines that differ only in the *output side*.
+// Concrete long-running pipelines that differ only in the *output side*.
 // ----------------------------------------------------------------------------
 
 module RxStreamFlow =
@@ -241,6 +246,38 @@ module RxSampleFlow =
             .Sample(TimeSpan.FromMilliseconds(100.0))
             .Select(fun frame ->
                 sprintf "{\"sample\":\"100ms\",\"item\":%s}" frame)
+
+
+module RxBurstFlow =
+
+    /// `Timestamp` + `Buffer` + `Scan` — batch completed replies into a
+    /// 250 ms / 64 item window and carry a cumulative per-connection total
+    /// forward. The payload is intentionally dashboard-shaped: one frame
+    /// tells the client the window number, batch size, running total, and
+    /// the JSON result frames that landed in that window.
+    let pipeline (inbound: IObservable<string>) : IObservable<string> =
+        (rxFiveStages inbound)
+            .Timestamp(TaskPoolScheduler.Default)
+            .Buffer(TimeSpan.FromMilliseconds(250.0), 64)
+            .Where(fun batch -> batch.Count > 0)
+            .Scan(
+                struct (0L, 0L, ""),
+                fun (struct (windowNo, total, _)) batch ->
+                    let nextWindow = windowNo + 1L
+                    let nextTotal = total + int64 batch.Count
+                    let firstMs = batch.[0].Timestamp.ToUnixTimeMilliseconds()
+                    let lastMs =
+                        batch.[batch.Count - 1].Timestamp.ToUnixTimeMilliseconds()
+                    let items =
+                        batch
+                        |> Seq.map (fun item -> item.Value)
+                        |> String.concat ","
+                    let frame =
+                        sprintf
+                            "{\"burst\":\"250ms|64\",\"window\":%d,\"count\":%d,\"total\":%d,\"fromMs\":%d,\"toMs\":%d,\"items\":[%s]}"
+                            nextWindow batch.Count nextTotal firstMs lastMs items
+                    struct (nextWindow, nextTotal, frame))
+            .Select(fun (struct (_, _, frame)) -> frame)
 
 
 // ----------------------------------------------------------------------------
