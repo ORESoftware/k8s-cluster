@@ -51,32 +51,55 @@ import java.util.concurrent.Executor;
  *
  * <h2>Side-by-side mapping</h2>
  *
- * <table border="1" summary="Rx to async.java operator map">
- *   <tr><th>Rx (F#)</th><th>async.java callback (Waterfall)</th><th>async.java promise (AsyncFut)</th></tr>
+ * <p>The same five-stage pipeline expressed in four orchestrators: F# Rx, async.java
+ * callbacks, async.java promises, and Akka Streams. The Akka Streams column tracks the
+ * production {@link com.oresoftware.dd.akkaws.pipeline.AkkaStreamsPipeline} that lives next
+ * to this reference.
+ *
+ * <table border="1" summary="Rx, async.java, Akka Streams operator map">
+ *   <tr><th>Rx (F#)</th><th>async.java callback (Waterfall)</th><th>async.java promise (AsyncFut)</th><th>Akka Streams</th></tr>
  *   <tr>
  *     <td>{@code inbound.SelectMany(fun input -> ...)}</td>
  *     <td>one {@link #runWaterfall} call per inbound frame</td>
  *     <td>one {@link #runWithAsyncFut} call per inbound frame</td>
+ *     <td>{@code Source.single(input).via(flow).runWith(Sink.head(), system)} (per-message materialisation)</td>
  *   </tr>
  *   <tr>
  *     <td>{@code Observable.Return(input).Select(f)}</td>
  *     <td>Waterfall stage publishing {@code c.success(k, f(x))}</td>
  *     <td>{@code .thenApply(f)}</td>
+ *     <td>{@code Flow.<T>create().map(f)}</td>
  *   </tr>
  *   <tr>
  *     <td>{@code Observable.Start(fn, TaskPool)}</td>
  *     <td>{@code exec.execute(() -> try inner.success(fn()) catch inner.fail(t))}</td>
  *     <td>{@code CompletableFuture.supplyAsync(() -> fn(), exec)}</td>
+ *     <td>{@code CompletableFuture.supplyAsync(() -> fn(), system.executionContext())} inside a {@code mapAsync} stage</td>
  *   </tr>
  *   <tr>
  *     <td>{@code Observable.Zip(a, b, combiner)}</td>
  *     <td>{@code Asyncc.Parallel(List.of(a, b), (err, results) -> combiner(results.get(0), results.get(1)))}</td>
  *     <td>{@code AsyncFut.ParallelF(List.of(a, b)).thenApply(combiner)}</td>
+ *     <td>{@code .mapAsync(2, x -> aFut.thenCombine(bFut, combiner))} &mdash; or a {@code Broadcast} + {@code Zip} subgraph</td>
  *   </tr>
  *   <tr>
  *     <td>{@code body.Catch(fun ex -> errorFrame ex)}</td>
  *     <td>Waterfall's terminal {@code if (err != null) emitErrorFrame(err)} branch</td>
  *     <td>{@code .exceptionally(errorFrame)}</td>
+ *     <td>{@code .recover(ex -> errorFrame(ex))} Flow stage (or {@code Supervision.resumingDecider} on the materialiser)</td>
+ *   </tr>
+ *   <tr>
+ *     <td><em>Backpressure</em></td>
+ *     <td>not native &mdash; pair with {@link org.ores.async.NeoQueue} for submission-side cap</td>
+ *     <td>not native &mdash; same: {@code NeoQueue} or {@code Semaphore}-style permits</td>
+ *     <td><strong>structural</strong> &mdash; demand signal propagates upstream from the sink; {@code buffer(n, overflowStrategy)} per stage</td>
+ *   </tr>
+ *   <tr>
+ *     <td><em>Per-pipeline overhead</em></td>
+ *     <td>~50 µs (heap allocs + atomic counter increments + lambda dispatch)</td>
+ *     <td>~50 µs + one {@link CompletableFuture} per stage</td>
+ *     <td>~200&ndash;400 µs per <em>materialisation</em> &mdash; see the load-curve writeup at
+ *         https://async-java.github.io/blog/2026/05/17/async-java-vs-akka-streams/</td>
  *   </tr>
  * </table>
  *

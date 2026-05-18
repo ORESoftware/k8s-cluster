@@ -156,13 +156,20 @@ public static CompletableFuture<String> runWithAsyncFut(final String inputFrame,
 
 ## Operator mapping table
 
-| Rx (F#)                                          | async.java callback (Waterfall)                                                              | async.java promise (AsyncFut)                                |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `inbound.SelectMany(fun input -> ...)`           | one `runWaterfall` call per inbound frame                                                    | one `runWithAsyncFut` call per inbound frame                 |
-| `Observable.Return(input).Select(f)`             | Waterfall stage publishing `c.success(k, f(x))`                                              | `.thenApply(f)`                                              |
-| `Observable.Start(fn, TaskPool)`                 | `exec.execute(() -> try inner.success(fn()) catch inner.fail(t))`                            | `CompletableFuture.supplyAsync(() -> fn(), exec)`            |
-| `Observable.Zip(a, b, combiner)`                 | `Asyncc.Parallel(List.of(a, b), (err, results) -> combiner(results.get(0), results.get(1)))` | `AsyncFut.ParallelF(List.of(a, b)).thenApply(combiner)`      |
-| `body.Catch(fun ex -> errorFrame ex)`            | Waterfall's terminal `if (err != null) emitErrorFrame(err)` branch                           | `.exceptionally(errorFrame)`                                 |
+The same five-stage pipeline expressed in four orchestrators: F# Rx, async.java callbacks,
+async.java promises, and Akka Streams. The Akka Streams column tracks the production
+[`AkkaStreamsPipeline.java`](../../akka-ws-server/src/main/java/com/oresoftware/dd/akkaws/pipeline/AkkaStreamsPipeline.java)
+that lives next to the async.java reference in `akka-ws-server`.
+
+| Rx (F#)                                | async.java callback (Waterfall)                                                                | async.java promise (AsyncFut)                            | Akka Streams                                                                                                |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `inbound.SelectMany(fun input -> ...)` | one `runWaterfall` call per inbound frame                                                      | one `runWithAsyncFut` call per inbound frame             | `Source.single(input).via(flow).runWith(Sink.head(), system)` (per-message materialisation)                 |
+| `Observable.Return(input).Select(f)`   | Waterfall stage publishing `c.success(k, f(x))`                                                | `.thenApply(f)`                                          | `Flow.<T>create().map(f)`                                                                                   |
+| `Observable.Start(fn, TaskPool)`       | `exec.execute(() -> try inner.success(fn()) catch inner.fail(t))`                              | `CompletableFuture.supplyAsync(() -> fn(), exec)`        | `CompletableFuture.supplyAsync(() -> fn(), system.executionContext())` inside a `mapAsync` stage             |
+| `Observable.Zip(a, b, combiner)`       | `Asyncc.Parallel(List.of(a, b), (err, results) -> combiner(results.get(0), results.get(1)))`   | `AsyncFut.ParallelF(List.of(a, b)).thenApply(combiner)`  | `.mapAsync(2, x -> aFut.thenCombine(bFut, combiner))` — or a `Broadcast` + `Zip` subgraph                    |
+| `body.Catch(fun ex -> errorFrame ex)`  | Waterfall's terminal `if (err != null) emitErrorFrame(err)` branch                             | `.exceptionally(errorFrame)`                             | `.recover(ex -> errorFrame(ex))` Flow stage (or `Supervision.resumingDecider` on the materialiser)            |
+| *Backpressure*                         | not native — pair with `NeoQueue` for submission-side cap                                      | not native — same: `NeoQueue` or `Semaphore`-style       | **structural** — demand signal propagates upstream from the sink; `buffer(n, overflowStrategy)` per stage    |
+| *Per-pipeline overhead*                | ~50 µs (heap allocs + atomic counter increments + lambda dispatch)                             | ~50 µs + one `CompletableFuture` per stage               | ~200–400 µs per *materialisation* — see the [load-curve writeup](https://async-java.github.io/blog/2026/05/17/async-java-vs-akka-streams/) |
 
 ## When async.java earns its keep
 
