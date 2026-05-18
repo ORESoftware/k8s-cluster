@@ -1,0 +1,47 @@
+# gcs-router RBAC: ServiceAccount + Role + RoleBinding.
+#
+# The Go-based gcs-router watches EndpointSlices for the gcs-headless
+# Service to maintain a live ring of pod IPs. That requires:
+#
+#   - get/list/watch on discovery.k8s.io/endpointslices in the default
+#     namespace
+#
+# Nothing else. No write access, no other resources, no other
+# namespaces.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gcs-router
+  namespace: default
+  labels:
+    app: gcs-router
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gcs-router
+  namespace: default
+  labels:
+    app: gcs-router
+rules:
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gcs-router
+  namespace: default
+  labels:
+    app: gcs-router
+subjects:
+  - kind: ServiceAccount
+    name: gcs-router
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gcs-router

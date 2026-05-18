@@ -11,6 +11,6 @@ resources:
   - gcs.deployment.yaml
   - gcs.service.yaml
   - gcs-headless.service.yaml
-  - gcs-router.configmap.yaml
+  - gcs-router.rbac.yaml
   - gcs-router.deployment.yaml
   - gcs-router.service.yaml
