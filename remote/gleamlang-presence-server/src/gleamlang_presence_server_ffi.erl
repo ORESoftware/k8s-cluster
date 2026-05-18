@@ -154,15 +154,19 @@ self_node_binary() ->
     atom_to_binary(node(), utf8).
 
 %% Test-only helper: if `Name` is a registered process, kill it
-%% synchronously (process_flag(trap_exit) doesn't matter — we use
-%% `exit(Pid, kill)` which is uncatchable). Waits until the registration
-%% is released before returning so a subsequent `register/2` (or
-%% `actor.named`) under the same atom can succeed.
+%% synchronously and wait until the registration is released, so a
+%% subsequent `register/2` (or `actor.named`) under the same atom can
+%% succeed.
+%%
+%% We `unlink/1` first because `actor.start` links the actor to the
+%% spawning test process; an `exit(Pid, kill)` on a linked process would
+%% propagate the kill signal back to the test runner via the link.
 kill_named(NameBin) ->
     Name = binary_to_atom(NameBin, utf8),
     case erlang:whereis(Name) of
         undefined -> nil;
         Pid when is_pid(Pid) ->
+            erlang:unlink(Pid),
             MRef = erlang:monitor(process, Pid),
             erlang:exit(Pid, kill),
             receive

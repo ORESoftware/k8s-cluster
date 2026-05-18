@@ -25,8 +25,10 @@ spec:
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault
+          # `set -o pipefail` is bash-only. The maven base image ships dash as /bin/sh, which
+          # rejects it (see commit b7b3c1b for the same fix on fsharp-ws-server).
           command:
-            - /bin/sh
+            - /bin/bash
             - -lc
           args:
             - |
