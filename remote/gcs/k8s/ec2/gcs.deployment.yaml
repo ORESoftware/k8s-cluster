@@ -161,7 +161,11 @@ spec:
               containerPort: 3001
           resources:
             requests:
-              cpu: 250m
+              # Lowered from 250m -> 100m so 3 replicas fit on the
+              # single-node EC2 cluster (the node is shared with many
+              # other workloads). Real CPU usage is tiny when idle;
+              # the limit (2 vCPU) bursts handle hot paths.
+              cpu: 100m
               memory: 512Mi
             limits:
               cpu: '2'
