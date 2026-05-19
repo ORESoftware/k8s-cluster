@@ -14,6 +14,7 @@ on:
         type: choice
         options:
           - inspect-unhealthy
+          - inspect-container-pool
           - free-thread-pod-slots
           - repair-gleamlang-secret
           - reconcile-runtime
@@ -149,6 +150,33 @@ jobs:
               "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server|dd-container-pool|dd-remote-rest-api|dd-remote-queue-consumer'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -160\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=180\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=180 2>/dev/null\" || true; done",
               "echo '=== AWS secret candidates ==='",
               "for s in dd/remote-dev/gleamlang-server-secrets; do aws secretsmanager describe-secret --region us-east-1 --secret-id \"$s\" --query Name --output text 2>/dev/null || true; done"
+            ]
+          }
+          JSON
+              ;;
+            inspect-container-pool)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== context ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl config current-context; kubectl get nodes -o wide'",
+              "echo '=== container pool resources ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get deploy,rs,pod,svc,endpoints -l app=dd-container-pool -o wide || true'",
+              "echo '=== queue/rest/web resources ==='",
+              "sudo -u ec2-user -H bash -lc 'for app in dd-remote-queue-consumer dd-remote-rest-api dd-remote-web-home; do echo --- $app; kubectl -n default get pods -l app=$app -o wide || true; done'",
+              "echo '=== host listeners for container-pool port ==='",
+              "sudo -u ec2-user -H bash -lc 'sudo ss -ltnp | grep -E \":8102\\\\b\" || true'",
+              "echo '=== managed nerdctl workers ==='",
+              "sudo -u ec2-user -H bash -lc 'sudo nerdctl -n k8s.io ps -a --format \"{{.ID}} {{.Status}} {{.Names}}\" | grep dd-container-pool || true'",
+              "echo '=== container-pool deployment ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default describe deployment/dd-container-pool | tail -220 || true'",
+              "echo '=== container-pool pods ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-container-pool -o name\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -220\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=260\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=260 2>/dev/null\" || true; done",
+              "echo '=== queue-consumer recent logs ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-remote-queue-consumer -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=180\" || true; done",
+              "echo '=== recent container-pool events ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get events -n default --sort-by=.lastTimestamp | grep -E \"dd-container-pool|container-pool|8102\" | tail -80 || true'"
             ]
           }
           JSON
