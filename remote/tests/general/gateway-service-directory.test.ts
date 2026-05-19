@@ -1011,6 +1011,12 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.doesNotMatch(threadsJs, /terminalWindow/);
   assert.match(server, /sendFeedback\(seq, vote, button\)/);
   assert.match(server, /collectText\(raw\)/);
+  assert.match(server, /const AGENT_TEXT_JOIN_DELAY_MS = 1200/);
+  assert.match(server, /const AGENT_TEXT_MAX_BUFFER_MS = 3000/);
+  assert.match(server, /function shouldCoalesceAgentText\(row, text\) \{/);
+  assert.match(server, /function flushAgentTextBuffer\(\) \{/);
+  assert.match(server, /seqLabel: pending\.firstSeq === pending\.lastSeq \? `seq \$\{pending\.firstSeq\}` : `seq \$\{pending\.firstSeq\}-\$\{pending\.lastSeq\}`/);
+  assert.match(server, /for \(const event of data\.events\) renderEventRow\(event\);[\s\S]*flushAgentTextBuffer\(\);/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
   assert.match(server, /NATS container pool/);
   assert.match(server, /queueing container-pool task/);

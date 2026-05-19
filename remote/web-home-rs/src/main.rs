@@ -1684,7 +1684,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         threadUiMode: "empty",
         snapshotFailures: 0,
         snapshotRetryTimer: null,
+        agentTextBuffer: null,
+        agentTextFlushTimer: null,
       };
+
+      const AGENT_TEXT_JOIN_DELAY_MS = 1200;
+      const AGENT_TEXT_MAX_BUFFER_MS = 3000;
 
       function makeUuid() {
         if (crypto.randomUUID) return crypto.randomUUID();
@@ -2244,6 +2249,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       function clearStream(message, taskId = state.selectedTaskId) {
+        resetAgentTextBuffer();
         state.renderedEvents.clear();
         state.streamTaskId = taskId || null;
         $("stream").textContent = "";
@@ -2263,7 +2269,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (out.length > 8 || depth > 5 || value == null) return out;
         if (typeof value === "string") {
           const trimmed = value.trim();
-          if (trimmed && trimmed.length <= 4000) out.push(trimmed);
+          if (trimmed && value.length <= 4000) out.push(value);
           return out;
         }
         if (Array.isArray(value)) {
@@ -2281,7 +2287,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return out;
       }
 
-      function eventText(row) {
+      function eventText(row, options = {}) {
         const payload = eventPayload(row);
         if (payload.kind === "status") return [payload.status, payload.message].filter(Boolean).join("\n") || "status";
         if (payload.kind === "stderr") return payload.text || "stderr";
@@ -2290,8 +2296,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (payload.kind === "pr_open") return [payload.prUrl, payload.draft ? "draft" : ""].filter(Boolean).join("\n") || "PR opened";
         if (payload.kind === "feedback") return `feedback: ${payload.vote || "unknown"}`;
         const raw = payload.raw || payload;
-        const text = collectText(raw).filter(Boolean);
-        if (text.length) return [...new Set(text)].join("\n");
+        const text = collectText(raw).filter((value) => value.trim());
+        if (text.length) {
+          const values = options.preserveWhitespace ? text : text.map((value) => value.trim());
+          return [...new Set(values)].join("\n").trim();
+        }
         try {
           return JSON.stringify(payload, null, 2);
         } catch (_error) {
@@ -2355,24 +2364,122 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
-      function renderEventRow(row) {
-        state.streamTaskId = state.selectedTaskId || state.streamTaskId;
-        const seq = row.seq ?? row.payload?.seq ?? Date.now();
-        const kind = eventKind(row);
+      function eventRowKey(row, kind, seq) {
         const stableSeq = row.seq ?? row.payload?.seq;
-        const key = stableSeq !== undefined && stableSeq !== null
-          ? `${state.selectedTaskId || row.taskId || "task"}:${stableSeq}:${kind}`
-          : row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${kind}`;
-        if (state.renderedEvents.has(key)) return;
+        if (stableSeq !== undefined && stableSeq !== null) {
+          return `${state.selectedTaskId || row.taskId || "task"}:${stableSeq}:${kind}`;
+        }
+        return row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${kind}`;
+      }
+
+      function agentRawType(row) {
+        const payload = eventPayload(row);
+        const raw = payload.raw || payload;
+        if (!raw || typeof raw !== "object") return "";
+        return [
+          raw.type,
+          raw.data?.type,
+          raw.event?.type,
+          raw.data?.event?.type,
+          raw.providerData?.type,
+          raw.message?.type,
+        ].filter(Boolean).join(" ");
+      }
+
+      function shouldCoalesceAgentText(row, text) {
+        if (eventKind(row) !== "claude" || !text.trim()) return false;
+        const payload = eventPayload(row);
+        const raw = payload.raw || payload;
+        if (payload.error || raw?.error) return false;
+        const rawType = agentRawType(row);
+        if (/system|result|tool|error|response\.created|response\.in_progress|response_started/i.test(rawType)) {
+          return false;
+        }
+        if (/delta|text_delta|output_text|message_delta|assistant|raw_model_stream_event|content_block_delta/i.test(rawType)) {
+          return true;
+        }
+        return text.trim().length <= 180 && !text.trim().includes("\n");
+      }
+
+      function joinAgentTextParts(parts) {
+        let output = "";
+        for (const part of parts) {
+          if (!part) continue;
+          if (!output) {
+            output = part;
+            continue;
+          }
+          if (/\s$/.test(output) || /^\s/.test(part) || /^[,.;:!?)}\]]/.test(part) || /[(\[{]$/.test(output)) {
+            output += part;
+          } else {
+            output += ` ${part}`;
+          }
+        }
+        return output.trim();
+      }
+
+      function resetAgentTextBuffer() {
+        if (state.agentTextFlushTimer !== null) {
+          window.clearTimeout(state.agentTextFlushTimer);
+          state.agentTextFlushTimer = null;
+        }
+        state.agentTextBuffer = null;
+      }
+
+      function flushAgentTextBuffer() {
+        if (!state.agentTextBuffer) return;
+        if (state.agentTextFlushTimer !== null) {
+          window.clearTimeout(state.agentTextFlushTimer);
+          state.agentTextFlushTimer = null;
+        }
+        const pending = state.agentTextBuffer;
+        state.agentTextBuffer = null;
+        appendEventElement({
+          row: pending.row,
+          kind: "claude",
+          seq: pending.firstSeq,
+          seqLabel: pending.firstSeq === pending.lastSeq ? `seq ${pending.firstSeq}` : `seq ${pending.firstSeq}-${pending.lastSeq}`,
+          text: joinAgentTextParts(pending.parts),
+          feedbackSeq: pending.firstSeq,
+        });
+      }
+
+      function scheduleAgentTextFlush() {
+        if (!state.agentTextBuffer) return;
+        if (state.agentTextFlushTimer !== null) window.clearTimeout(state.agentTextFlushTimer);
+        const elapsed = Date.now() - state.agentTextBuffer.startedAt;
+        const delay = Math.max(0, Math.min(AGENT_TEXT_JOIN_DELAY_MS, AGENT_TEXT_MAX_BUFFER_MS - elapsed));
+        state.agentTextFlushTimer = window.setTimeout(flushAgentTextBuffer, delay);
+      }
+
+      function queueAgentTextRow(row, key, seq, text) {
         state.renderedEvents.add(key);
-        const text = eventText(row);
+        const taskId = state.selectedTaskId || row.taskId || "task";
+        if (!state.agentTextBuffer || state.agentTextBuffer.taskId !== taskId) {
+          flushAgentTextBuffer();
+          state.agentTextBuffer = {
+            taskId,
+            row,
+            firstSeq: seq,
+            lastSeq: seq,
+            parts: [],
+            startedAt: Date.now(),
+          };
+        }
+        state.agentTextBuffer.row = { ...row, createdAt: row.createdAt || state.agentTextBuffer.row.createdAt };
+        state.agentTextBuffer.lastSeq = seq;
+        state.agentTextBuffer.parts.push(text);
+        scheduleAgentTextFlush();
+      }
+
+      function appendEventElement({ row, kind, seq, seqLabel, text, feedbackSeq }) {
         const item = document.createElement("article");
         item.className = `event ${kind === "claude" ? "agent" : kind === "error" ? "error" : ""}`;
         const head = document.createElement("div");
         head.className = "event-head";
         const left = document.createElement("span");
         left.className = kind === "error" ? "pill bad" : kind === "done" || kind === "claude" ? "pill" : "pill warn";
-        left.textContent = `${kind} · seq ${seq}`;
+        left.textContent = `${kind} · ${seqLabel || `seq ${seq}`}`;
         const right = document.createElement("span");
         right.className = "muted";
         right.textContent = fmt(row.createdAt);
@@ -2390,7 +2497,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
             button.className = "icon";
             button.title = vote === "up" ? "Upvote this response" : "Downvote this response";
             button.textContent = vote === "up" ? "+" : "-";
-            button.addEventListener("click", () => sendFeedback(seq, vote, button));
+            button.addEventListener("click", () => sendFeedback(feedbackSeq ?? seq, vote, button));
             votes.appendChild(button);
           }
           item.appendChild(votes);
@@ -2398,6 +2505,22 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         $("stream").appendChild(item);
         $("stream").scrollTop = $("stream").scrollHeight;
         setStreamState("showing events", "ok");
+      }
+
+      function renderEventRow(row) {
+        state.streamTaskId = state.selectedTaskId || state.streamTaskId;
+        const seq = row.seq ?? row.payload?.seq ?? Date.now();
+        const kind = eventKind(row);
+        const key = eventRowKey(row, kind, seq);
+        if (state.renderedEvents.has(key)) return;
+        const text = eventText(row, { preserveWhitespace: kind === "claude" });
+        if (shouldCoalesceAgentText(row, text)) {
+          queueAgentTextRow(row, key, seq, text);
+          return;
+        }
+        flushAgentTextBuffer();
+        state.renderedEvents.add(key);
+        appendEventElement({ row, kind, seq, text, feedbackSeq: seq });
       }
 
       function workerRuntimeSummary(data) {
@@ -2549,6 +2672,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           clearStream("loading events", taskId);
         }
         for (const event of data.events) renderEventRow(event);
+        flushAgentTextBuffer();
       }
 
       function openLiveStream(threadId, taskId) {
@@ -2571,6 +2695,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           }
         };
         source.onerror = () => {
+          flushAgentTextBuffer();
           setStreamState("live stream disconnected", "bad");
         };
       }
