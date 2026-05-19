@@ -18,6 +18,7 @@ on:
           - free-thread-pod-slots
           - repair-gleamlang-secret
           - reconcile-runtime
+          - seed-container-pool-config
           - sync-agent-gh-pat
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
@@ -177,6 +178,22 @@ jobs:
               "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-remote-queue-consumer -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=180\" || true; done",
               "echo '=== recent container-pool events ==='",
               "sudo -u ec2-user -H bash -lc 'kubectl get events -n default --sort-by=.lastTimestamp | grep -E \"dd-container-pool|container-pool|8102\" | tail -80 || true'"
+            ]
+          }
+          JSON
+              ;;
+            seed-container-pool-config)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== applying container-pool app_config seed ==='",
+              "sudo -u ec2-user -H bash -lc 'set -euo pipefail; pod=$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath=\"{.items[0].metadata.name}\"); kubectl -n default exec \"$pod\" -- bash -lc '\\''set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; if ! command -v psql >/dev/null 2>&1; then apt-get update >/dev/null && apt-get install -y --no-install-recommends postgresql-client >/dev/null; fi; db_url=\"${CONTAINER_POOL_DATABASE_URL:-${AGENT_TASKS_RDS_DATABASE_URL:-${RDS_DATABASE_URL:-${DATABASE_URL:-}}}}\"; if [[ -z \"$db_url\" ]]; then echo \"missing database URL env\" >&2; exit 1; fi; psql \"$db_url\" -v ON_ERROR_STOP=1 -f /opt/dd-next-1/remote/databases/pg/seeds/container-pool-app-config.sql >/tmp/container-pool-seed.out; grep -E \"^(INSERT|UPDATE|CREATE|ALTER|NOTICE)\" /tmp/container-pool-seed.out || cat /tmp/container-pool-seed.out'\\'''",
+              "echo '=== restarting container-pool and queue consumer ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-queue-consumer'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-container-pool --timeout=300s'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -l app=dd-container-pool -o wide'"
             ]
           }
           JSON
