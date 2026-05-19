@@ -39,13 +39,9 @@ export const DEFAULT_GENERIC_AI_SDK_SOURCES = [
     id: 'xai',
     displayName: 'Grok 4.x',
     baseURL: 'https://api.x.ai/v1',
-    models: [
-      'grok-4.3',
-      'grok-code-fast-1',
-      'grok-4-fast-reasoning',
-      'grok-4-fast-non-reasoning',
-      'grok-4',
-    ],
+    // Older Grok 4 fast and code-fast slugs retired on 2026-05-15 and redirect
+    // to grok-4.3, so prefer the current canonical slug directly.
+    models: ['grok-4.3'],
   },
 ] as const;
 

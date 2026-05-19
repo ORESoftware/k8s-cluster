@@ -7,7 +7,8 @@ connects to the WireGuard VPN, they can query the bastion service for:
 
 - `/profile` or `/config` - VPN, service CIDR, pod CIDR, DNS, and Kubernetes API connection info.
 - `/kubeconfig` - a read-only kubeconfig backed by the pod's Kubernetes service account token.
-- `/runtime/deployments` - live Deployment/Pod/container inventory for the managed runtime services.
+- `/runtime/deployments` - live Deployment/Pod/container inventory for the managed runtime services,
+  including the Rust WebRTC and Gleam WebSocket surfaces.
 - `/healthz` - unauthenticated readiness check.
 
 Protected routes accept `X-Bastion-Auth`, `X-Server-Auth`, `Auth`, or `Authorization: Bearer ...`

@@ -1,4 +1,5 @@
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env,
     net::SocketAddr,
     process::Stdio,
@@ -45,6 +46,42 @@ struct ManagedDeployment {
 }
 
 const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
+    ManagedDeployment {
+        slug: "web-scraper",
+        title: "Web scraper service",
+        namespace: "default",
+        deployment: "dd-web-scraper",
+        service: "dd-web-scraper.default.svc.cluster.local:8097",
+        access: "server auth",
+        notes: "Fastify scraping strategy router for browser and DOM-backed fetch pipelines.",
+    },
+    ManagedDeployment {
+        slug: "build-server",
+        title: "Build server",
+        namespace: "default",
+        deployment: "dd-build-server",
+        service: "dd-build-server.default.svc.cluster.local:8100",
+        access: "server auth",
+        notes: "Rust CI/CD service for allowlisted repo builds and constrained deploys.",
+    },
+    ManagedDeployment {
+        slug: "ai-ml-pipeline",
+        title: "AI/ML feature pipeline",
+        namespace: "ai-ml",
+        deployment: "dd-ai-ml-pipeline",
+        service: "dd-ai-ml-pipeline.ai-ml.svc.cluster.local:8099",
+        access: "server auth",
+        notes: "Python feature and anomaly pipeline for runtime telemetry.",
+    },
+    ManagedDeployment {
+        slug: "des-simulator",
+        title: "Discrete event simulator",
+        namespace: "default",
+        deployment: "dd-des-simulator",
+        service: "dd-des-simulator.default.svc.cluster.local:8099",
+        access: "public",
+        notes: "Rust DES model validation and simulation service.",
+    },
     ManagedDeployment {
         slug: "solana-contracts",
         title: "Solana contract server",
@@ -116,6 +153,267 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
         service: "dd-container-pool.default.svc.cluster.local:8102",
         access: "server auth",
         notes: "Rust warm-worker pool backed by Postgres config and local containerd.",
+    },
+    ManagedDeployment {
+        slug: "gleam-lambda-runner",
+        title: "Gleam lambda runner",
+        namespace: "default",
+        deployment: "dd-gleam-lambda-runner",
+        service: "dd-gleam-lambda-runner.default.svc.cluster.local:8083",
+        access: "server auth",
+        notes: "Gleam child-process function runner for lambda invocation traffic.",
+    },
+    ManagedDeployment {
+        slug: "remote-gateway",
+        title: "Public gateway",
+        namespace: "default",
+        deployment: "dd-remote-gateway",
+        service: "dd-remote-gateway.default.svc.cluster.local:80/443",
+        access: "public",
+        notes: "nginx gateway that owns EC2 hostPort 80/443 and proxies public/auth paths.",
+    },
+    ManagedDeployment {
+        slug: "web-home",
+        title: "Rust web home",
+        namespace: "default",
+        deployment: "dd-remote-web-home",
+        service: "dd-remote-web-home.default.svc.cluster.local:8080",
+        access: "public",
+        notes: "Rust homepage, task/thread UI, presence test, and WebSocket test lab.",
+    },
+    ManagedDeployment {
+        slug: "remote-auth",
+        title: "Rust PIN auth",
+        namespace: "default",
+        deployment: "dd-remote-auth",
+        service: "dd-remote-auth.default.svc.cluster.local:8083",
+        access: "public",
+        notes: "Browser PIN auth service that mints the dd_auth gateway cookie.",
+    },
+    ManagedDeployment {
+        slug: "remote-rest-api",
+        title: "Rust REST API",
+        namespace: "default",
+        deployment: "dd-remote-rest-api",
+        service: "dd-remote-rest-api.default.svc.cluster.local:8082",
+        access: "public",
+        notes: "RDS/Postgres-backed JSON API for agent and lambda data.",
+    },
+    ManagedDeployment {
+        slug: "agent-worker-broker",
+        title: "Agent worker broker",
+        namespace: "default",
+        deployment: "dd-agent-worker-broker",
+        service: "dd-agent-worker-broker.default.svc.cluster.local:8098",
+        access: "server auth",
+        notes: "Rust NATS-first worker dispatch broker for UUID-bound workers.",
+    },
+    ManagedDeployment {
+        slug: "dev-server-api",
+        title: "Node.js dev server API",
+        namespace: "default",
+        deployment: "dd-dev-server-api",
+        service: "dd-dev-server-api.default.svc.cluster.local:8080",
+        access: "server auth",
+        notes: "Bootstrap coding-agent task manager behind /tasks, /status, and /stream.",
+    },
+    ManagedDeployment {
+        slug: "queue-consumer",
+        title: "Queue consumer",
+        namespace: "default",
+        deployment: "dd-remote-queue-consumer",
+        service: "dd-remote-queue-consumer.default.svc.cluster.local",
+        access: "internal",
+        notes: "Rust NATS shadow consumer that prepares thread-affined workers.",
+    },
+    ManagedDeployment {
+        slug: "idle-reaper",
+        title: "Idle reaper",
+        namespace: "default",
+        deployment: "dd-idle-reaper",
+        service: "dd-idle-reaper.default.svc.cluster.local",
+        access: "internal",
+        notes: "Runtime maintenance supervisor and Kubernetes pod/deployment event watcher.",
+    },
+    ManagedDeployment {
+        slug: "billing",
+        title: "Billing server",
+        namespace: "default",
+        deployment: "dd-billing-server",
+        service: "dd-billing-server.default.svc.cluster.local:80",
+        access: "cluster local",
+        notes: "Rust multi-tenant AR/AP ledger and provider integration service.",
+    },
+    ManagedDeployment {
+        slug: "gleamlang-server",
+        title: "Gleam WebSocket fan-out",
+        namespace: "default",
+        deployment: "dd-gleamlang-server",
+        service: "dd-gleamlang-server.default.svc.cluster.local:8081",
+        access: "server auth",
+        notes: "Gleam/OTP WebSocket fan-out for /gleam/ws plus NATS runtime event broadcast.",
+    },
+    ManagedDeployment {
+        slug: "gleam-mcp",
+        title: "Gleam MCP server",
+        namespace: "default",
+        deployment: "dd-gleam-mcp-server",
+        service: "dd-gleam-mcp-server.default.svc.cluster.local:8090",
+        access: "server auth",
+        notes: "Read-only JSON-RPC MCP runtime tools, metrics, and log surface.",
+    },
+    ManagedDeployment {
+        slug: "webrtc-signaling",
+        title: "Rust WebRTC signaling",
+        namespace: "default",
+        deployment: "dd-webrtc-signaling",
+        service: "dd-webrtc-signaling.default.svc.cluster.local:8095",
+        access: "public",
+        notes: "Rust WebSocket signaling service and admin runtime event relay.",
+    },
+    ManagedDeployment {
+        slug: "mdp-optimizer",
+        title: "MDP/POMDP optimizer",
+        namespace: "default",
+        deployment: "dd-mdp-optimizer",
+        service: "dd-mdp-optimizer.default.svc.cluster.local:8096",
+        access: "public",
+        notes: "Rust optimizer service for MDP/POMDP/RL jobs and telemetry learning.",
+    },
+    ManagedDeployment {
+        slug: "akka-ws",
+        title: "Akka WebSocket reference server",
+        namespace: "default",
+        deployment: "dd-akka-ws-server",
+        service: "dd-akka-ws-server.default.svc.cluster.local:8086",
+        access: "internal",
+        notes: "Scala/Akka WebSocket target for streams and async Java load tests.",
+    },
+    ManagedDeployment {
+        slug: "fsharp-ws",
+        title: "F# WebSocket server",
+        namespace: "default",
+        deployment: "dd-fsharp-ws-server",
+        service: "dd-fsharp-ws-server.default.svc.cluster.local:8087",
+        access: "public",
+        notes: "F# ASP.NET Core WebSocket server behind /fsws/.",
+    },
+    ManagedDeployment {
+        slug: "formal-methods-server",
+        title: "Formal methods server",
+        namespace: "default",
+        deployment: "dd-formal-methods-server",
+        service: "dd-formal-methods-server.default.svc.cluster.local:8110",
+        access: "internal",
+        notes: "Rust annotation-driven formal verification runtime.",
+    },
+    ManagedDeployment {
+        slug: "formal-methods-service",
+        title: "Formal methods service",
+        namespace: "default",
+        deployment: "dd-formal-methods-service",
+        service: "dd-formal-methods-service.default.svc.cluster.local:8111",
+        access: "internal",
+        notes: "Rust orchestration layer for formal verification jobs.",
+    },
+    ManagedDeployment {
+        slug: "spark-pipeline",
+        title: "Spark pipeline server",
+        namespace: "default",
+        deployment: "dd-spark-pipeline-server",
+        service: "dd-spark-pipeline-server.default.svc.cluster.local:8085",
+        access: "internal",
+        notes: "Java/Spark batch and stream coordination service.",
+    },
+    ManagedDeployment {
+        slug: "ws-loadtest-rs",
+        title: "Rust WebSocket load generator",
+        namespace: "default",
+        deployment: "dd-ws-loadtest-rs",
+        service: "dd-ws-loadtest-rs.default.svc.cluster.local",
+        access: "internal",
+        notes: "Rust 5k-client WebSocket load generator targeting the Gleam fan-out path.",
+    },
+    ManagedDeployment {
+        slug: "ws-loadtest-rs-akka-streams",
+        title: "Rust Akka streams load generator",
+        namespace: "default",
+        deployment: "dd-ws-loadtest-rs-akkaws-akkastreams",
+        service: "dd-ws-loadtest-rs-akkaws-akkastreams.default.svc.cluster.local",
+        access: "internal",
+        notes: "Rust WebSocket load generator targeting Akka Streams.",
+    },
+    ManagedDeployment {
+        slug: "ws-loadtest-rs-asyncjava",
+        title: "Rust async Java load generator",
+        namespace: "default",
+        deployment: "dd-ws-loadtest-rs-akkaws-asyncjava",
+        service: "dd-ws-loadtest-rs-akkaws-asyncjava.default.svc.cluster.local",
+        access: "internal",
+        notes: "Rust WebSocket load generator targeting async Java.",
+    },
+    ManagedDeployment {
+        slug: "gleamlang-ws-loadtest",
+        title: "Gleam WebSocket load generator",
+        namespace: "default",
+        deployment: "dd-gleamlang-ws-loadtest",
+        service: "dd-gleamlang-ws-loadtest.default.svc.cluster.local",
+        access: "internal",
+        notes: "Gleam WebSocket load generator targeting the Gleam fan-out path.",
+    },
+    ManagedDeployment {
+        slug: "gleamlang-ws-loadtest-akka-streams",
+        title: "Gleam Akka streams load generator",
+        namespace: "default",
+        deployment: "dd-gleamlang-ws-loadtest-akkaws-akkastreams",
+        service: "dd-gleamlang-ws-loadtest-akkaws-akkastreams.default.svc.cluster.local",
+        access: "internal",
+        notes: "Gleam WebSocket load generator targeting Akka Streams.",
+    },
+    ManagedDeployment {
+        slug: "gleamlang-ws-loadtest-asyncjava",
+        title: "Gleam async Java load generator",
+        namespace: "default",
+        deployment: "dd-gleamlang-ws-loadtest-akkaws-asyncjava",
+        service: "dd-gleamlang-ws-loadtest-akkaws-asyncjava.default.svc.cluster.local",
+        access: "internal",
+        notes: "Gleam WebSocket load generator targeting async Java.",
+    },
+    ManagedDeployment {
+        slug: "gcs",
+        title: "chat.vibe runtime",
+        namespace: "default",
+        deployment: "gcs",
+        service: "gcs.default.svc.cluster.local:3000/3001",
+        access: "server auth",
+        notes: "chat.vibe REST and WebSocket runtime for /gcs/api and /gcs/ws traffic.",
+    },
+    ManagedDeployment {
+        slug: "gcs-router",
+        title: "chat.vibe WebSocket router",
+        namespace: "default",
+        deployment: "gcs-router",
+        service: "gcs-router.default.svc.cluster.local:3001",
+        access: "server auth",
+        notes: "WebSocket router that pins conv/user/device traffic across gcs pods.",
+    },
+    ManagedDeployment {
+        slug: "nats",
+        title: "NATS JetStream",
+        namespace: "messaging",
+        deployment: "dd-nats",
+        service: "dd-nats.messaging.svc.cluster.local:4222/8222/7777",
+        access: "internal",
+        notes: "NATS and JetStream broker for cluster runtime events and task queues.",
+    },
+    ManagedDeployment {
+        slug: "headlamp",
+        title: "Headlamp Kubernetes UI",
+        namespace: "headlamp",
+        deployment: "headlamp",
+        service: "headlamp.headlamp.svc.cluster.local:80",
+        access: "server auth",
+        notes: "Read-only Kubernetes web UI deployment.",
     },
 ];
 
@@ -554,16 +852,6 @@ fn json_at_i64(value: &Value, path: &[&str]) -> Option<i64> {
     json_at(value, path).and_then(Value::as_i64)
 }
 
-fn selector_from_deployment(deployment: &Value) -> Option<String> {
-    let labels = json_at(deployment, &["spec", "selector", "matchLabels"])?.as_object()?;
-    let mut parts = labels
-        .iter()
-        .filter_map(|(key, value)| value.as_str().map(|value| format!("{key}={value}")))
-        .collect::<Vec<_>>();
-    parts.sort();
-    (!parts.is_empty()).then(|| parts.join(","))
-}
-
 fn selector_matches_pod(deployment: &Value, pod: &Value) -> bool {
     let Some(selector_labels) =
         json_at(deployment, &["spec", "selector", "matchLabels"]).and_then(Value::as_object)
@@ -685,81 +973,151 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-async fn managed_deployment_info(
-    config: &Config,
-    target: ManagedDeployment,
-    terminal_base: &str,
-) -> ManagedDeploymentInfo {
-    let mut errors = Vec::new();
-    let deployment = match kubectl_json(
-        config,
-        &[
-            "-n".to_string(),
-            target.namespace.to_string(),
-            "get".to_string(),
-            "deployment".to_string(),
-            target.deployment.to_string(),
-            "-o".to_string(),
-            "json".to_string(),
-        ],
-    )
-    .await
-    {
-        Ok(value) => Some(value),
-        Err(error) => {
-            errors.push(error);
-            None
-        }
-    };
+fn json_items_by_name(value: &Value) -> BTreeMap<String, Value> {
+    json_at(value, &["items"])
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| json_at_string(&item, &["metadata", "name"]).map(|name| (name, item)))
+        .collect()
+}
 
-    let selector = deployment.as_ref().and_then(selector_from_deployment);
-    let pods = if let Some(selector) = selector {
+fn json_items(value: &Value) -> Vec<Value> {
+    json_at(value, &["items"])
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn managed_deployment_namespaces() -> Vec<&'static str> {
+    MANAGED_DEPLOYMENTS
+        .iter()
+        .map(|target| target.namespace)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+async fn managed_deployment_infos(
+    config: &Config,
+    terminal_base: &str,
+) -> (Vec<ManagedDeploymentInfo>, Vec<String>) {
+    let mut deployments_by_namespace = BTreeMap::new();
+    let mut pods_by_namespace = BTreeMap::new();
+    let mut deployment_errors = BTreeMap::new();
+    let mut pod_errors = BTreeMap::new();
+
+    for namespace in managed_deployment_namespaces() {
         match kubectl_json(
             config,
             &[
                 "-n".to_string(),
-                target.namespace.to_string(),
+                namespace.to_string(),
                 "get".to_string(),
-                "pods".to_string(),
-                "-l".to_string(),
-                selector,
+                "deployments".to_string(),
                 "-o".to_string(),
                 "json".to_string(),
             ],
         )
         .await
         {
-            Ok(value) => json_at(&value, &["items"])
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-                .iter()
-                .map(|pod| summarize_pod(pod, target.deployment, terminal_base))
-                .collect::<Vec<_>>(),
+            Ok(value) => {
+                deployments_by_namespace.insert(namespace, json_items_by_name(&value));
+            }
             Err(error) => {
-                errors.push(error);
-                Vec::new()
+                deployment_errors.insert(namespace, error);
             }
         }
-    } else {
-        Vec::new()
-    };
 
-    ManagedDeploymentInfo {
-        slug: target.slug,
-        title: target.title,
-        namespace: target.namespace,
-        deployment: target.deployment,
-        service: target.service,
-        access: target.access,
-        notes: target.notes,
-        summary: deployment
-            .as_ref()
-            .map(summarize_deployment)
-            .unwrap_or_else(|| json!({})),
-        pods,
-        errors,
+        match kubectl_json(
+            config,
+            &[
+                "-n".to_string(),
+                namespace.to_string(),
+                "get".to_string(),
+                "pods".to_string(),
+                "-o".to_string(),
+                "json".to_string(),
+            ],
+        )
+        .await
+        {
+            Ok(value) => {
+                pods_by_namespace.insert(namespace, json_items(&value));
+            }
+            Err(error) => {
+                pod_errors.insert(namespace, error);
+            }
+        }
     }
+
+    let mut errors = BTreeSet::new();
+    let deployments = MANAGED_DEPLOYMENTS
+        .iter()
+        .copied()
+        .map(|target| {
+            let mut target_errors = Vec::new();
+            let deployment = if let Some(namespace_deployments) =
+                deployments_by_namespace.get(target.namespace)
+            {
+                namespace_deployments
+                    .get(target.deployment)
+                    .cloned()
+                    .or_else(|| {
+                        target_errors.push(format!(
+                            "deployment {}/{} was not returned by Kubernetes",
+                            target.namespace, target.deployment
+                        ));
+                        None
+                    })
+            } else {
+                if let Some(error) = deployment_errors.get(target.namespace) {
+                    target_errors.push(error.clone());
+                }
+                None
+            };
+
+            let pods = if let Some(deployment) = deployment.as_ref() {
+                if let Some(namespace_pods) = pods_by_namespace.get(target.namespace) {
+                    namespace_pods
+                        .iter()
+                        .filter(|pod| selector_matches_pod(deployment, pod))
+                        .map(|pod| summarize_pod(pod, target.deployment, terminal_base))
+                        .collect::<Vec<_>>()
+                } else {
+                    if let Some(error) = pod_errors.get(target.namespace) {
+                        target_errors.push(error.clone());
+                    }
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            };
+
+            for error in &target_errors {
+                errors.insert(error.clone());
+            }
+
+            ManagedDeploymentInfo {
+                slug: target.slug,
+                title: target.title,
+                namespace: target.namespace,
+                deployment: target.deployment,
+                service: target.service,
+                access: target.access,
+                notes: target.notes,
+                summary: deployment
+                    .as_ref()
+                    .map(summarize_deployment)
+                    .unwrap_or_else(|| json!({})),
+                pods,
+                errors: target_errors,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    (deployments, errors.into_iter().collect())
 }
 
 async fn runtime_deployments(
@@ -772,14 +1130,7 @@ async fn runtime_deployments(
     } else {
         ""
     };
-    let mut deployments = Vec::with_capacity(MANAGED_DEPLOYMENTS.len());
-    let mut errors = Vec::new();
-
-    for target in MANAGED_DEPLOYMENTS {
-        let info = managed_deployment_info(&state.config, *target, terminal_base).await;
-        errors.extend(info.errors.iter().cloned());
-        deployments.push(info);
-    }
+    let (deployments, errors) = managed_deployment_infos(&state.config, terminal_base).await;
 
     Ok(Json(RuntimeDeploymentsResponse {
         ok: errors.is_empty(),

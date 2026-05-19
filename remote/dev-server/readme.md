@@ -192,7 +192,7 @@ agent edits.
 | `OPENCODE_MODELS`   | Optional JSON array or comma/newline separated OpenCode model list. Defaults to five free/low-cost Zen models.             |
 | `DEEPSEEK_API_KEYS_JSON` | Optional JSON array of DeepSeek keys. Tried before `DEEPSEEK_API_KEY` by `generic-ai-sdk`. Defaults to `deepseek-v4-flash,deepseek-v4-pro`. |
 | `DASHSCOPE_API_KEYS_JSON` | Optional JSON array of Alibaba Model Studio / DashScope keys. `QWEN_API_KEYS_JSON` and `ALIBABA_API_KEYS_JSON` are also accepted. |
-| `XAI_API_KEYS_JSON` | Optional JSON array of xAI keys. `GROK_API_KEYS_JSON` is also accepted. Defaults to `grok-4.3,grok-code-fast-1,grok-4-fast-reasoning,grok-4-fast-non-reasoning,grok-4`. |
+| `XAI_API_KEYS_JSON` | Optional JSON array of xAI keys. `GROK_API_KEYS_JSON` is also accepted. Defaults to `grok-4.3`. |
 | `THREAD_CONTEXT_BASE_URL` | Optional. Defaults to the in-cluster REST API. Workers call `/api/agents/threads/:threadId/context` before each task. |
 | `THREAD_CONTEXT_LIMIT` | Optional. Defaults to `20` prior tasks.                                                                                  |
 | `THREAD_CONTEXT_MAX_CHARS` | Optional. Defaults to `48000` characters injected into the prompt.                                                   |

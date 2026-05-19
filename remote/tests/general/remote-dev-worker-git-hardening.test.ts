@@ -95,6 +95,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /event\.kind === 'claude'/);
   assert.match(server, /raw: sanitizeEventValue\(event\.raw\)/);
   assert.match(server, /redacted-anthropic-key[\s\S]*redacted-openai-key/);
+  assert.match(server, /DEEPSEEK_API_KEYS_JSON/);
+  assert.match(server, /XAI_API_KEYS_JSON/);
+  assert.match(server, /GROK_API_KEYS_JSON/);
+  assert.match(server, /redacted-xai-key/);
   assert.match(server, /GET  \/ws\s+— WebSocket replay\/live stream for pinned thread tasks/);
   assert.match(server, /function registerWorkerWebSocketUpgrade\(\): void/);
   assert.match(server, /requestUrl\.pathname !== '\/ws'/);
@@ -153,7 +157,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(entrypoint, /pnpm install --frozen-lockfile --prefer-offline/);
   assert.doesNotMatch(entrypoint, /pnpm install --prefer-offline/);
   assert.match(entrypoint, /find "\$REPO_DIR\/\.git" -maxdepth 1 -type f -name index\.lock -delete/);
-  assert.match(server, /const providerOrder = \[\.\.\.config\.agentProviderRotation, state\.provider\]\.filter/);
+  assert.match(server, /const providerOrder = \[state\.provider, \.\.\.config\.agentProviderRotation\]\.filter/);
   assert.match(server, /const attemptGroups: \{ provider: AgentProvider; candidates: AgentEnvCandidate\[\] \}\[\] = \[\]/);
   assert.match(server, /buildAgentEnvCandidates\(provider\)/);
   assert.match(server, /status: `agent-fallback:\$\{group\.provider\}`/);
@@ -257,7 +261,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(opencodeRunner, /provider: 'opencode-ai-sdk'/);
   assert.match(opencodeRunner, /tools: createWorkspaceTools\(opts\.cwd, opts\.emit\)/);
   assert.match(opencodeRunner, /stopWhen: stepCountIs\(8\)/);
-  assert.match(genericRunner, /DEFAULT_GENERIC_AI_SDK_SOURCES = \[[\s\S]*id: 'deepseek'[\s\S]*'deepseek-v4-flash'[\s\S]*'deepseek-v4-pro'[\s\S]*id: 'qwen'[\s\S]*'qwen3\.6-max-preview'[\s\S]*id: 'xai'[\s\S]*'grok-4\.3'[\s\S]*'grok-code-fast-1'[\s\S]*'grok-4-fast-reasoning'[\s\S]*'grok-4-fast-non-reasoning'/);
+  assert.match(genericRunner, /DEFAULT_GENERIC_AI_SDK_SOURCES = \[[\s\S]*id: 'deepseek'[\s\S]*'deepseek-v4-flash'[\s\S]*'deepseek-v4-pro'[\s\S]*id: 'qwen'[\s\S]*'qwen3\.6-max-preview'[\s\S]*id: 'xai'[\s\S]*'grok-4\.3'/);
+  assert.match(genericRunner, /code-fast slugs retired on 2026-05-15/);
   assert.match(genericRunner, /createOpenAICompatible/);
   assert.match(genericRunner, /model: provider\(modelId\)/);
   assert.match(genericRunner, /provider: 'generic-ai-sdk'/);
@@ -306,7 +311,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(secretsTemplate, /DASHSCOPE_API_KEYS_JSON/);
   assert.match(secretsTemplate, /QWEN_MODELS:\s*"qwen3\.6-max-preview,qwen3\.6-plus,qwen3\.6-flash"/);
   assert.match(secretsTemplate, /XAI_API_KEYS_JSON/);
-  assert.match(secretsTemplate, /XAI_MODELS:\s*"grok-4\.3,grok-code-fast-1,grok-4-fast-reasoning,grok-4-fast-non-reasoning,grok-4"/);
+  assert.match(secretsTemplate, /GROK_API_KEY and GROK_API_KEYS_JSON are accepted aliases/);
+  assert.match(secretsTemplate, /XAI_MODELS:\s*"grok-4\.3"/);
   assert.match(secretsTemplate, /GEMINI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);

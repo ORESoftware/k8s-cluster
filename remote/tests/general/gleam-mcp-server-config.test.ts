@@ -36,6 +36,7 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   );
   const k8sFfi = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_k8s.erl');
   const runtimeEnv = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_runtime_env.erl');
+  const jsonFfi = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_json.erl');
 
   assert.match(gleamToml, /name = "gleam_mcp_server"/);
   assert.match(gleamToml, /mist = ">= 6\.0\.0 and < 7\.0\.0"/);
@@ -43,6 +44,7 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(main, /metrics\.start\(named_as: metrics_name\)/);
   assert.match(main, /http_server\.supervised\(metrics_name\)/);
   assert.match(httpServer, /@external\(erlang, "gleam_mcp_runtime_env", "getenv"\)/);
+  assert.match(httpServer, /@external\(erlang, "gleam_mcp_json", "request_id"\)/);
   assert.match(httpServer, /const default_port = 8090/);
   assert.match(httpServer, /pub fn bind_host\(\)/);
   assert.match(httpServer, /pub fn bind_port\(\)/);
@@ -51,12 +53,18 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(main, /http_server\.bind_port\(\)/);
   assert.match(runtimeEnv, /-module\(gleam_mcp_runtime_env\)/);
   assert.match(runtimeEnv, /os:getenv\(Name\)/);
+  assert.match(jsonFfi, /-module\(gleam_mcp_json\)/);
+  assert.match(jsonFfi, /request_id\/1/);
+  assert.match(jsonFfi, /re:run\(Body, Pattern/);
   assert.match(httpServer, /Get, \["healthz"\] -> healthz\(\)/);
   assert.match(httpServer, /Get, \["metrics"\] -> metrics_response\(metrics_name\)/);
   assert.match(httpServer, /Get, \["observability"\] -> observability_response\(\)/);
   assert.match(httpServer, /"initialize"/);
   assert.match(httpServer, /"tools\/list"/);
   assert.match(httpServer, /"tools\/call"/);
+  assert.match(httpServer, /initialize_result\(request_id\)/);
+  assert.match(httpServer, /tools_list_result\(request_id\)/);
+  assert.match(httpServer, /tools_call_result\(tool_from_body\(body\), request_id\)/);
   assert.match(httpServer, /import gleam_mcp_server\/k8s/);
   assert.match(httpServer, /"kubernetes_inventory"/);
   assert.match(httpServer, /"kubernetes_deployments"/);

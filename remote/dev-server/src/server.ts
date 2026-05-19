@@ -908,6 +908,24 @@ function sanitizeEventText(value: string): string {
     'OPENCODE_ZEN_API_KEY',
     'OPENCODE_ZEN_API_KEYS',
     'OPENCODE_ZEN_API_KEYS_JSON',
+    'DEEPSEEK_API_KEY',
+    'DEEPSEEK_API_KEYS',
+    'DEEPSEEK_API_KEYS_JSON',
+    'DASHSCOPE_API_KEY',
+    'DASHSCOPE_API_KEYS',
+    'DASHSCOPE_API_KEYS_JSON',
+    'QWEN_API_KEY',
+    'QWEN_API_KEYS',
+    'QWEN_API_KEYS_JSON',
+    'ALIBABA_API_KEY',
+    'ALIBABA_API_KEYS',
+    'ALIBABA_API_KEYS_JSON',
+    'XAI_API_KEY',
+    'XAI_API_KEYS',
+    'XAI_API_KEYS_JSON',
+    'GROK_API_KEY',
+    'GROK_API_KEYS',
+    'GROK_API_KEYS_JSON',
     'GH_PAT',
     'GH_DEPLOY_KEY',
     'SERVER_AUTH_SECRET',
@@ -924,6 +942,7 @@ function sanitizeEventText(value: string): string {
     .replace(/\bsk-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-openai-key]')
     .replace(/\bAIza[A-Za-z0-9_*\-]{12,}\b/g, '[redacted-google-key]')
     .replace(/\bsk-oc-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-opencode-key]')
+    .replace(/\bxai-[A-Za-z0-9_*.-]{24,}\b/g, '[redacted-xai-key]')
     .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]');
 }
 
@@ -1792,7 +1811,7 @@ async function runTask(state: TaskState): Promise<void> {
       if (deterministicEdit) {
         completedAgentRun = true;
       } else {
-        const providerOrder = [...config.agentProviderRotation, state.provider].filter(
+        const providerOrder = [state.provider, ...config.agentProviderRotation].filter(
           (provider, index, values) => values.indexOf(provider) === index,
         );
         const attemptGroups: { provider: AgentProvider; candidates: AgentEnvCandidate[] }[] = [];

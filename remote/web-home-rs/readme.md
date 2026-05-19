@@ -20,7 +20,8 @@ Rust public web layer for remote-dev.
 - exposes `GET /healthz` for web liveness
 - exposes `GET /metrics` for Prometheus/OpenTelemetry Collector scraping
 - links to the Rust PIN auth service at `/auth?return=/home`
-- loads live managed service Pods/containers from `/bastion/runtime/deployments`
+- loads live managed service Pods/containers from `/bastion/runtime/deployments`, with timed polling
+  and Rust/Gleam websocket-triggered refreshes when Kubernetes runtime events arrive
 - opens managed service container terminals inline through `/bastion/terminal`
 
 Task dispatch / stream / cancel routing should use the per-thread Kubernetes Ingress path
@@ -40,8 +41,10 @@ keeps page rendering separate from data access without making the webserver a pr
 ## Service directory
 
 `/home` lists the managed runtime deployments including Solana contracts, VPN, live-mutex, bastion,
-Redis, live-mutex load testing, trading, and the container pool. Its live containers table calls
-the authenticated bastion route `/bastion/runtime/deployments`; terminal buttons embed
+Redis, live-mutex load testing, trading, websocket services, load generators, and the container
+pool. Its live containers table calls the authenticated bastion route
+`/bastion/runtime/deployments`; Rust/Gleam websocket events trigger near-real-time reloads, with a
+timed poll as the fallback. Terminal buttons embed
 `/bastion/terminal?...` in the current page so service-container shells flow through the jumphost
 instead of the public homepage process.
 

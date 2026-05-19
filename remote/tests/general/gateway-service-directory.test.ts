@@ -113,6 +113,11 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assertDeploymentRow(home, 'dd-container-pool');
   assert.match(home, /h2 \{ "Live containers" \}/);
   assert.match(home, /\/bastion\/runtime\/deployments/);
+  assert.match(home, /const runtimeReloadIntervalMs = 30000/);
+  assert.match(home, /HTTP poll plus websocket-triggered refresh/);
+  assert.match(home, /openRuntimeSocket\("gleam", `\/admin\/gleam\/ws\?channel=k8s-runtime-admin&client=home-\$\{clientId\}`\)/);
+  assert.match(home, /openRuntimeSocket\("rust", `\/admin\/webrtc\/runtime\/ws\?client=home-\$\{clientId\}`\)/);
+  assert.match(home, /startTimedReload\(\)/);
   assert.match(home, /home-terminal-frame/);
   assert.match(home, /Open bastion exec terminal/);
   assert.match(home, /const safeBastionTerminalUrl = \(value\) =>/);
@@ -818,6 +823,8 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   );
   assert.match(maintenanceWorkflow, /free-thread-pod-slots/);
   assert.match(maintenanceWorkflow, /sync-agent-gh-pat/);
+  assert.match(maintenanceWorkflow, /sync-agent-model-keys/);
+  assert.match(maintenanceWorkflow, /data\["XAI_MODELS"\]\s*=\s*"grok-4\.3"/);
   assert.match(maintenanceWorkflow, /REMOTE_DEV_GH_PAT/);
   assert.match(maintenanceWorkflow, /dd\/remote-dev\/agent-secrets/);
   assert.match(maintenanceWorkflow, /THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS/);
@@ -922,23 +929,29 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(
     server,
-    /\.prompt-panel \{[\s\S]*flex: var\(--control-share\) 1 0;[\s\S]*overflow: hidden auto;/,
+    /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/,
   );
-  assert.match(server, /\.main\.control-wide \{[\s\S]*--control-share: 1\.2;[\s\S]*--lower-share: 0\.8;/);
-  assert.match(server, /\.main\.lower-wide \{[\s\S]*--control-share: 0\.8;[\s\S]*--lower-share: 1\.2;/);
+  assert.match(
+    server,
+    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*max-height: min\(58dvh, 560px\);[\s\S]*overflow: hidden auto;/,
+  );
+  assert.match(server, /\.main\.control-top #thread-control-panel \{[\s\S]*order: 1;/);
+  assert.match(server, /\.main\.control-bottom #thread-control-panel \{[\s\S]*order: 2;/);
+  assert.match(server, /\.main\.control-sliding-down #thread-control-panel \{[\s\S]*animation: control-slide-down 260ms ease;/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
-  assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
-  assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
-  assert.match(server, /\.task-stream-grid\.tasks-wide \{[\s\S]*grid-template-columns: minmax\(0, 1\.02fr\) minmax\(0, 0\.98fr\);/);
-  assert.match(server, /\.task-stream-grid\.stream-wide \{[\s\S]*grid-template-columns: minmax\(0, 0\.62fr\) minmax\(0, 1\.38fr\);/);
+  assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
+  assert.match(server, /aside id="previous-tasks-panel" class="tasks-sidebar" tabindex="0" aria-label="Thread tasks sidebar"/);
+  assert.match(server, /\.tasks-sidebar \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/);
+  assert.match(server, /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/);
   assert.match(server, /function setWorkspaceLayout\(mode\) \{/);
+  assert.match(server, /function setControlPosition\(position, options = \{\}\) \{/);
   assert.match(server, /function setThreadUiMode\(modeName\) \{/);
   assert.match(server, /const UUID_PATTERN = \/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/i;/);
   assert.match(server, /function readUuidInput\(id, label, options = \{\}\) \{/);
   assert.match(server, /const requestedThread = queryUuid\(params, "thread"\)/);
   assert.match(server, /const threadId = readUuidInput\("thread-id", "thread UUID", \{ generate: true \}\)/);
-  assert.match(server, /class="main mode-empty control-wide"/);
+  assert.match(server, /class="main mode-empty control-top"/);
   assert.match(server, /\.main\.mode-new #terminal-thread[\s\S]*display: none;/);
   assert.match(server, /\$\("send"\)\.textContent = modeName === "new" \? "Create thread & send"/);
   assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", handleControlPanelClick\)/);
@@ -985,7 +998,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /id="task-list"/);
   assert.match(server, /id="stream"/);
   assert.match(server, /Response stream/);
-  assert.match(server, /Previous tasks/);
+  assert.match(server, /h2 \{ "Tasks" \}/);
   assert.match(
     server,
     /fetch\(`\/api\/agents\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/events\?limit=250`, \{ cache: "no-store" \}\)/,
@@ -1111,20 +1124,20 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(
     server,
-    /\.prompt-panel \{[\s\S]*flex: var\(--control-share\) 1 0;[\s\S]*overflow: hidden auto;[\s\S]*z-index: 1;/,
+    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*max-height: min\(58dvh, 560px\);[\s\S]*overflow: hidden auto;[\s\S]*z-index: 1;/,
   );
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
-  assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
-  assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
-  assert.match(server, /\.main > \.grid \{[\s\S]*flex: var\(--lower-share\) 1 0;/);
+  assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
+  assert.match(server, /aside id="previous-tasks-panel" class="tasks-sidebar" tabindex="0" aria-label="Thread tasks sidebar"/);
+  assert.match(server, /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/);
   assert.match(
     server,
-    /\.grid > \.panel > \.task-list,[\s\S]*\.grid > \.panel > \.stream,[\s\S]*\.grid > \.panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/,
+    /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/,
   );
   assert.match(
     server,
-    /@media \(max-width: 980px\) \{[\s\S]*\.app \{[\s\S]*grid-template-rows: minmax\(150px, 28dvh\) minmax\(0, 1fr\);/,
+    /@media \(max-width: 980px\) \{[\s\S]*\.app \{[\s\S]*grid-template-rows: minmax\(132px, 24dvh\) minmax\(0, 1fr\) minmax\(132px, 28dvh\);/,
   );
   assert.match(
     server,

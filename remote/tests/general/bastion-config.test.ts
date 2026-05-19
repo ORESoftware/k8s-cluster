@@ -52,6 +52,11 @@ test('rust bastion serves authenticated vpn cluster access profile and kubeconfi
   assert.match(source, /const MANAGED_DEPLOYMENTS/);
   assert.match(source, /dd-lock-loadtest-trigger/);
   assert.match(source, /dd-container-pool/);
+  assert.match(source, /dd-gleamlang-server/);
+  assert.match(source, /dd-webrtc-signaling/);
+  assert.match(source, /dd-fsharp-ws-server/);
+  assert.match(source, /dd-ws-loadtest-rs/);
+  assert.match(source, /dd-gleamlang-ws-loadtest/);
   assert.match(source, /WebSocketUpgrade/);
   assert.match(source, /kubectl/);
   assert.match(source, /BASTION_SCRIPT_BIN/);
@@ -65,6 +70,7 @@ test('rust bastion serves authenticated vpn cluster access profile and kubeconfi
   assert.match(readme, /authenticated HTTP service/);
   assert.match(readme, /kubeconfig/);
   assert.match(readme, /runtime\/deployments/);
+  assert.match(readme, /Rust WebRTC and Gleam WebSocket surfaces/);
   assert.match(readme, /disabled by default/);
 });
 

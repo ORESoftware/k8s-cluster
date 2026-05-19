@@ -245,9 +245,10 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
     await withMcpServer(baseUrl, async (port) => {
       const listed = await fetchJson(port, '/mcp', {
         method: 'POST',
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+        body: JSON.stringify({ jsonrpc: '2.0', id: 42, method: 'tools/list' }),
         headers: { 'content-type': 'application/json' },
       });
+      assert.equal(listed.id, 42);
       const toolNames = listed.result.tools.map((tool: { name: string }) => tool.name);
       assert.ok(toolNames.includes('telemetry_summary'));
       assert.ok(toolNames.includes('kubernetes_inventory'));
@@ -322,9 +323,15 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
 
       const accessPolicy = await fetchJson(port, '/mcp', {
         method: 'POST',
-        body: rpcBody('human_access_policy'),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'mcp-client-check',
+          method: 'tools/call',
+          params: { name: 'human_access_policy', arguments: {} },
+        }),
         headers: { 'content-type': 'application/json' },
       });
+      assert.equal(accessPolicy.id, 'mcp-client-check');
       assert.equal(accessPolicy.result.structuredContent.elevatedMcpToolsEnabled, false);
       assert.match(accessPolicy.result.structuredContent.recommendedHumanProof, /TOTP/);
     });

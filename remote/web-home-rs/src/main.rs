@@ -252,7 +252,7 @@ fn live_containers_section() -> Markup {
             div class="live-toolbar" {
                 div {
                     h2 { "Live containers" }
-                    p id="live-containers-status" { "loading managed deployment pods" }
+                    p id="live-containers-status" { "loading managed deployment pods from bastion" }
                 }
                 button id="live-containers-refresh" type="button" { "Refresh" }
             }
@@ -633,11 +633,15 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   const frame = document.getElementById("home-terminal-frame");
   const caption = document.getElementById("home-terminal-caption");
   const close = document.getElementById("home-terminal-close");
-  let inventoryStatus = "loading managed deployment pods";
+  const runtimeReloadIntervalMs = 30000;
+  let inventoryStatus = "loading managed deployment pods from bastion";
+  let lastUpdatedAt = "";
+  let loading = false;
   let reloadTimer = 0;
   const wsStatus = { gleam: "idle", rust: "idle" };
   const renderStatus = () => {
-    status.textContent = `${inventoryStatus} · gleam ws ${wsStatus.gleam} · rust ws ${wsStatus.rust}`;
+    const updated = lastUpdatedAt ? ` · updated ${lastUpdatedAt}` : "";
+    status.textContent = `${inventoryStatus}${updated} · gleam ws ${wsStatus.gleam} · rust ws ${wsStatus.rust}`;
   };
   const setStatus = (message) => {
     inventoryStatus = message;
@@ -709,6 +713,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   const render = (data) => {
     body.textContent = "";
     let rowCount = 0;
+    let containerCount = 0;
     for (const deployment of data.deployments || []) {
       const pods = deployment.pods || [];
       if (!pods.length) {
@@ -726,6 +731,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       }
       for (const pod of pods) {
         const containers = pod.containers || [];
+        containerCount += containers.length;
         const containerCell = document.createElement("div");
         containerCell.className = "container-cell";
         const actions = document.createElement("div");
@@ -774,9 +780,12 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       }
     }
     if (!rowCount) renderEmpty("No managed deployment pods returned.");
-    setStatus((data.deployments || []).length + " managed deployments · " + (data.terminalEnabled ? "terminal enabled" : "terminal disabled"));
+    lastUpdatedAt = new Date().toLocaleTimeString();
+    setStatus(`${containerCount} containers across ${rowCount} pods from ${(data.deployments || []).length} managed deployments · HTTP poll plus websocket-triggered refresh · ${data.terminalEnabled ? "terminal enabled" : "terminal disabled"}`);
   };
   const load = async () => {
+    if (loading) return;
+    loading = true;
     setStatus("loading managed deployment pods");
     refresh.disabled = true;
     try {
@@ -793,6 +802,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       setStatus("live container inventory unavailable");
     } finally {
       refresh.disabled = false;
+      loading = false;
     }
   };
   const scheduleRuntimeReload = (label, event) => {
@@ -837,6 +847,11 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     openRuntimeSocket("gleam", `/admin/gleam/ws?channel=k8s-runtime-admin&client=home-${clientId}`);
     openRuntimeSocket("rust", `/admin/webrtc/runtime/ws?client=home-${clientId}`);
   };
+  const startTimedReload = () => {
+    window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, runtimeReloadIntervalMs);
+  };
   refresh.addEventListener("click", load);
   close.addEventListener("click", () => {
     frame.src = "about:blank";
@@ -844,6 +859,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   });
   load();
   connectRuntimeSockets();
+  startTimedReload();
 })();
 "##;
 
@@ -982,19 +998,22 @@ fn html_asset(path: &'static str, body: Markup) -> Response {
 
 fn agents_threads_body() -> Markup {
     html! {
-        div class="app" data-spa-root="agents-threads" {
-            aside class="sidebar" {
-                div class="topbar" {
-                    div {
+        div id="agents-app" class="app tasks-hidden" data-spa-root="agents-threads" {
+            aside id="threads-sidebar" class="sidebar threads-sidebar" aria-label="Threads" {
+                div class="topbar sidebar-topbar" {
+                    div class="threads-heading" {
                         h1 { "Agent threads" }
                         p id="snapshot-meta" { "loading threads" }
                     }
-                    button id="refresh" type="button" title="Refresh" { "Refresh" }
+                    div class="sidebar-controls" {
+                        button id="refresh" type="button" title="Refresh" { "Refresh" }
+                        button id="threads-toggle" class="icon" type="button" title="Collapse threads sidebar" aria-expanded="true" { "<" }
+                    }
                 }
                 button id="new-thread" class="primary" type="button" { "New thread" }
                 div id="thread-list" class="thread-list" aria-live="polite" {}
             }
-            main id="thread-workspace" class="main mode-empty control-wide" {
+            main id="thread-workspace" class="main mode-empty control-top" {
                 div class="topbar" {
                     div {
                         h1 id="selected-title" { "Select a thread" }
@@ -1006,94 +1025,8 @@ fn agents_threads_body() -> Markup {
                     }
                 }
 
-                section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel" {
-                    div class="topbar thread-control-heading" {
-                        div {
-                            h2 { "Thread Control" }
-                            p id="thread-control-subtitle" { "Select an existing worker thread or prepare a new one." }
-                        }
-                        span id="thread-mode" class="pill warn" { "select thread" }
-                    }
-                    div class="form-grid" {
-                        label {
-                            span { "Thread UUID" }
-                            input id="thread-id" autocomplete="off" spellcheck="false";
-                        }
-                        label {
-                            span { "Task UUID" }
-                            input id="task-id" autocomplete="off" spellcheck="false";
-                        }
-                        label {
-                            span { "Provider" }
-                            select id="provider" {
-                                option value="openai-sdk" selected { "openai-sdk" }
-                                option value="claude-sdk" { "claude-sdk" }
-                                option value="generic-ai-sdk" { "generic-ai-sdk" }
-                                option value="opencode-ai-sdk" { "opencode-ai-sdk" }
-                                option value="gemini-sdk" { "gemini-sdk" }
-                            }
-                        }
-                        label {
-                            span { "Dispatch mode" }
-                            select id="dispatch-mode" {
-                                option value="queued" selected { "queued NATS" }
-                                option value="queued-pool" { "NATS container pool" }
-                                option value="direct" { "direct REST" }
-                            }
-                        }
-                        label class="field-wide" {
-                            span { "Git repo URL" }
-                            select id="repo-url" {}
-                        }
-                        label id="repo-url-new-row" class="field-wide" hidden="hidden" {
-                            span { "New repo URL" }
-                            input id="repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git or org/repo";
-                        }
-                        label {
-                            span { "Base branch" }
-                            input id="base-branch" autocomplete="off" spellcheck="false" value="dev";
-                        }
-                        label class="field-wide" {
-                            span { "Prompt" }
-                            textarea id="prompt" placeholder="Ask this thread worker to do something" {}
-                        }
-                        div id="context-picker" class="context-picker field-wide" {
-                            div class="context-picker-head" {
-                                label class="checkbox-row" {
-                                    input id="zero-context" type="checkbox";
-                                    span { "Start with zero context" }
-                                }
-                                span id="context-summary" class="muted" { "Context review will run before first dispatch." }
-                            }
-                            div id="context-candidates" class="context-candidates" aria-live="polite" {
-                                p class="muted" { "No context loaded yet." }
-                            }
-                        }
-                    }
-                    div class="actions prompt-actions" {
-                        button id="save-repo" type="button" title="Save this repo URL and default branch to the known repo list" { "Save repo URL" }
-                        button id="new-task" type="button" { "New task" }
-                        button id="sleep-thread" type="button" title="Reduce resources by scaling the thread container to zero" { "Pause/Sleep" }
-                        button id="archive-thread" class="warn" type="button" title="Deep sleep: suspend the thread container" { "Archive" }
-                        button id="delete-thread" class="danger" type="button" { "Delete runtime" }
-                        button id="merge-thread" type="button" { "Merge with upstream" }
-                        button id="commit-thread" type="button" title="Commit current worker changes and push the thread branch" { "Make commit" }
-                        button id="open-pr-thread" type="button" { "Open draft PR" }
-                        button id="terminal-thread" type="button" title="Open a shell in the thread's Node.js worker container" { "Terminal" }
-                        button id="send" class="primary" type="button" { "Send" }
-                    }
-                    p id="status-line" class="muted status-line" { "idle" }
-                }
-
-                div id="task-stream-grid" class="grid task-stream-grid" {
-                    section id="previous-tasks-panel" class="panel" tabindex="0" aria-label="Previous tasks panel" {
-                        div class="topbar" {
-                            h2 { "Previous tasks" }
-                            span id="task-count" class="pill" { "0 tasks" }
-                        }
-                        div id="task-list" class="task-list" {}
-                    }
-                    section id="response-stream-panel" class="panel" tabindex="0" aria-label="Response stream panel" {
+                div id="workspace-flow" class="workspace-flow" {
+                    section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel" {
                         div class="topbar" {
                             h2 { "Response stream" }
                             span id="stream-state" class="pill warn" { "no task selected" }
@@ -1110,7 +1043,102 @@ fn agents_threads_body() -> Markup {
                             iframe id="terminal-frame" title="Thread worker terminal" {}
                         }
                     }
+
+                    section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel" {
+                        div class="topbar thread-control-heading" {
+                            div {
+                                h2 { "Thread Control" }
+                                p id="thread-control-subtitle" { "Select an existing worker thread or prepare a new one." }
+                            }
+                            span id="thread-mode" class="pill warn" { "select thread" }
+                        }
+                        div class="form-grid" {
+                            label {
+                                span { "Thread UUID" }
+                                input id="thread-id" autocomplete="off" spellcheck="false";
+                            }
+                            label {
+                                span { "Task UUID" }
+                                input id="task-id" autocomplete="off" spellcheck="false";
+                            }
+                            label {
+                                span { "Provider" }
+                                select id="provider" {
+                                    option value="openai-sdk" selected { "openai-sdk" }
+                                    option value="claude-sdk" { "claude-sdk" }
+                                    option value="generic-ai-sdk" { "generic-ai-sdk" }
+                                    option value="opencode-ai-sdk" { "opencode-ai-sdk" }
+                                    option value="gemini-sdk" { "gemini-sdk" }
+                                }
+                            }
+                            label {
+                                span { "Dispatch mode" }
+                                select id="dispatch-mode" {
+                                    option value="queued" selected { "queued NATS" }
+                                    option value="queued-pool" { "NATS container pool" }
+                                    option value="direct" { "direct REST" }
+                                }
+                            }
+                            label class="field-wide" {
+                                span { "Git repo URL" }
+                                select id="repo-url" {}
+                            }
+                            label id="repo-url-new-row" class="field-wide" hidden="hidden" {
+                                span { "New repo URL" }
+                                input id="repo-url-new" autocomplete="off" spellcheck="false" placeholder="git@github.com:org/repo.git or org/repo";
+                            }
+                            label {
+                                span { "Base branch" }
+                                input id="base-branch" autocomplete="off" spellcheck="false" value="dev";
+                            }
+                            label class="field-wide" {
+                                span { "Prompt" }
+                                textarea id="prompt" placeholder="Ask this thread worker to do something" {}
+                            }
+                            div id="context-picker" class="context-picker field-wide" {
+                                div class="context-picker-head" {
+                                    label class="checkbox-row" {
+                                        input id="zero-context" type="checkbox";
+                                        span { "Start with zero context" }
+                                    }
+                                    span id="context-summary" class="muted" { "Context review will run before first dispatch." }
+                                }
+                                div id="context-candidates" class="context-candidates" aria-live="polite" {
+                                    p class="muted" { "No context loaded yet." }
+                                }
+                            }
+                        }
+                        div class="actions prompt-actions" {
+                            button id="save-repo" type="button" title="Save this repo URL and default branch to the known repo list" { "Save repo URL" }
+                            button id="new-task" type="button" { "New task" }
+                            button id="sleep-thread" type="button" title="Reduce resources by scaling the thread container to zero" { "Pause/Sleep" }
+                            button id="archive-thread" class="warn" type="button" title="Deep sleep: suspend the thread container" { "Archive" }
+                            button id="delete-thread" class="danger" type="button" { "Delete runtime" }
+                            button id="merge-thread" type="button" { "Merge with upstream" }
+                            button id="commit-thread" type="button" title="Commit current worker changes and push the thread branch" { "Make commit" }
+                            button id="open-pr-thread" type="button" { "Open draft PR" }
+                            button id="terminal-thread" type="button" title="Open a shell in the thread's Node.js worker container" { "Terminal" }
+                            button id="send" class="primary" type="button" { "Send" }
+                        }
+                        p id="status-line" class="muted status-line" { "idle" }
+                    }
                 }
+            }
+            aside id="previous-tasks-panel" class="tasks-sidebar" tabindex="0" aria-label="Thread tasks sidebar" {
+                div class="topbar tasks-sidebar-head" {
+                    div class="tasks-heading" {
+                        h2 { "Tasks" }
+                        div class="task-meta-row" {
+                            span id="task-count" class="pill" { "0 tasks" }
+                        }
+                    }
+                    button id="tasks-toggle" class="icon" type="button" title="Collapse tasks sidebar" aria-expanded="true" { ">" }
+                }
+                label class="task-search-field" {
+                    span { "Search tasks" }
+                    input id="task-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search prompts, ids, or status";
+                }
+                div id="task-list" class="task-list" {}
             }
         }
     }
@@ -1327,12 +1355,24 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         resize: vertical;
       }
       .app {
+        --threads-width: clamp(260px, 21vw, 330px);
+        --tasks-width: clamp(280px, 24vw, 370px);
         height: 100vh;
         height: 100dvh;
         min-height: 0;
         display: grid;
-        grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
+        grid-template-columns: var(--threads-width) minmax(0, 1fr) var(--tasks-width);
         overflow: hidden;
+        transition: grid-template-columns 220ms ease;
+      }
+      .app.threads-collapsed {
+        --threads-width: 68px;
+      }
+      .app.tasks-collapsed {
+        --tasks-width: 64px;
+      }
+      .app.tasks-hidden {
+        --tasks-width: 0px;
       }
       .sidebar {
         border-right: 1px solid var(--line);
@@ -1344,14 +1384,34 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         flex-direction: column;
         overflow: hidden auto;
         overscroll-behavior: contain;
+        transition: padding 220ms ease;
       }
       .sidebar * {
         min-width: 0;
         max-width: 100%;
       }
+      .sidebar-topbar {
+        align-items: flex-start;
+      }
+      .sidebar-controls {
+        display: flex;
+        gap: 8px;
+        flex: 0 0 auto;
+      }
+      .app.threads-collapsed .threads-sidebar {
+        padding: 12px 9px;
+      }
+      .app.threads-collapsed .threads-heading,
+      .app.threads-collapsed #refresh {
+        display: none;
+      }
+      .app.threads-collapsed #new-thread {
+        width: 100%;
+        padding-inline: 0;
+        font-size: 20px;
+        line-height: 1;
+      }
       .main {
-        --control-share: 1;
-        --lower-share: 1;
         min-width: 0;
         min-height: 0;
         padding: 22px;
@@ -1359,14 +1419,6 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         flex-direction: column;
         gap: 16px;
         overflow: hidden;
-      }
-      .main.control-wide {
-        --control-share: 1.2;
-        --lower-share: 0.8;
-      }
-      .main.lower-wide {
-        --control-share: 0.8;
-        --lower-share: 1.2;
       }
       .main.mode-empty #sleep-thread,
       .main.mode-empty #archive-thread,
@@ -1423,6 +1475,11 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         overscroll-behavior: contain;
         padding-right: 3px;
       }
+      .app.threads-collapsed .thread-list {
+        gap: 6px;
+        margin-top: 10px;
+        padding-right: 0;
+      }
       .thread-item {
         width: 100%;
         min-width: 0;
@@ -1433,6 +1490,11 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         border-color: rgba(196, 181, 154, 0.18);
         overflow: hidden;
       }
+      .app.threads-collapsed .thread-item {
+        min-height: 48px;
+        padding: 7px 4px;
+        text-align: center;
+      }
       .thread-item.active {
         background: rgba(110, 231, 183, 0.08);
         border-color: rgba(110, 231, 183, 0.5);
@@ -1442,6 +1504,9 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      .app.threads-collapsed .thread-title {
+        display: none;
       }
       .thread-meta {
         margin-top: 8px;
@@ -1464,6 +1529,20 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .app.threads-collapsed .thread-meta {
+        display: block;
+        margin-top: 0;
+        font-size: 10px;
+        line-height: 1.2;
+      }
+      .app.threads-collapsed .thread-meta > span:first-child {
+        display: block;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .app.threads-collapsed .thread-meta > span:last-child {
+        display: none;
+      }
       .panel {
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -1471,22 +1550,63 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         padding: 14px;
         min-height: 0;
       }
+      .workspace-flow {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        overflow: hidden;
+      }
+      .stream-panel {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .main.control-top #thread-control-panel {
+        order: 1;
+      }
+      .main.control-top #response-stream-panel {
+        order: 2;
+      }
+      .main.control-bottom #response-stream-panel {
+        order: 1;
+      }
+      .main.control-bottom #thread-control-panel {
+        order: 2;
+      }
+      .main.control-sliding-down #thread-control-panel {
+        animation: control-slide-down 260ms ease;
+      }
+      @keyframes control-slide-down {
+        from {
+          opacity: 0.82;
+          transform: translateY(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
       .prompt-panel {
-        flex: var(--control-share) 1 0;
-        min-height: 170px;
+        flex: 0 0 auto;
+        max-height: min(58dvh, 560px);
+        min-height: 154px;
         overflow: hidden auto;
         overscroll-behavior: contain;
         position: relative;
         z-index: 1;
-        transition: flex-grow 160ms ease;
+        transition: max-height 220ms ease, transform 220ms ease, opacity 220ms ease;
       }
-      .main.control-wide .prompt-panel {
-        min-height: 230px;
+      .main.control-top .prompt-panel {
+        max-height: min(66dvh, 680px);
       }
-      .main.lower-wide .prompt-panel {
-        min-height: 140px;
+      .main.control-bottom .prompt-panel {
+        max-height: min(42dvh, 360px);
       }
-      .main.mode-existing.lower-wide textarea {
+      .main.mode-existing.control-bottom textarea {
         min-height: 78px;
         max-height: 28dvh;
       }
@@ -1502,27 +1622,54 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       .status-line {
         margin-top: 12px;
       }
-      .grid {
-        display: grid;
-        grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
-        gap: 14px;
-        min-height: 0;
-        overflow: hidden;
-      }
-      .task-stream-grid {
-        margin-top: 6px;
-        transition: grid-template-columns 160ms ease, flex-grow 160ms ease;
-      }
-      .task-stream-grid.tasks-wide {
-        grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
-      }
-      .task-stream-grid.stream-wide {
-        grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr);
-      }
-      #previous-tasks-panel,
       #response-stream-panel,
       #thread-control-panel {
         cursor: pointer;
+      }
+      .tasks-sidebar {
+        border-left: 1px solid var(--line);
+        background: #111719;
+        padding: 18px;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: padding 220ms ease, opacity 180ms ease;
+      }
+      .app.tasks-hidden .tasks-sidebar {
+        display: none;
+      }
+      .tasks-sidebar-head {
+        flex: 0 0 auto;
+        align-items: flex-start;
+        margin-bottom: 12px;
+      }
+      .tasks-heading h2 {
+        margin-bottom: 7px;
+      }
+      .task-meta-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .task-search-field {
+        flex: 0 0 auto;
+        display: block;
+        margin-bottom: 12px;
+        min-width: 0;
+      }
+      .app.tasks-collapsed .tasks-sidebar {
+        padding: 12px 9px;
+        align-items: stretch;
+      }
+      .app.tasks-collapsed .tasks-heading,
+      .app.tasks-collapsed .task-search-field,
+      .app.tasks-collapsed #task-list {
+        display: none;
+      }
+      .app.tasks-collapsed .tasks-sidebar-head {
+        justify-content: center;
       }
       .form-grid {
         display: grid;
@@ -1593,6 +1740,7 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         margin-bottom: 5px;
       }
       .task-list {
+        flex: 1 1 auto;
         display: grid;
         align-content: start;
         gap: 8px;
@@ -1652,23 +1800,12 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       .main > .topbar {
         flex: 0 0 auto;
       }
-      .main > .grid {
-        flex: var(--lower-share) 1 0;
-        min-height: 0;
-      }
-      .grid > .panel {
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-      .grid > .panel > .topbar {
+      .stream-panel > .topbar {
         flex: 0 0 auto;
         margin-bottom: 12px;
       }
-      .grid > .panel > .task-list,
-      .grid > .panel > .stream,
-      .grid > .panel > .terminal-inline {
+      .stream-panel > .stream,
+      .stream-panel > .terminal-inline {
         flex: 1 1 auto;
       }
       .event {
@@ -1709,23 +1846,35 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       @media (max-width: 980px) {
         .app {
           grid-template-columns: 1fr;
-          grid-template-rows: minmax(150px, 28dvh) minmax(0, 1fr);
+          grid-template-rows: minmax(132px, 24dvh) minmax(0, 1fr) minmax(132px, 28dvh);
+        }
+        .app.threads-collapsed {
+          grid-template-rows: 58px minmax(0, 1fr) minmax(132px, 28dvh);
+        }
+        .app.tasks-hidden {
+          grid-template-rows: minmax(132px, 24dvh) minmax(0, 1fr) 0;
+        }
+        .app.threads-collapsed.tasks-hidden {
+          grid-template-rows: 58px minmax(0, 1fr) 0;
         }
         .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+        .tasks-sidebar { border-left: 0; border-top: 1px solid var(--line); }
         .main {
           overflow: hidden auto;
           overscroll-behavior: contain;
         }
-        .main > .grid {
-          flex: 0 0 auto;
-          min-height: min(360px, 52dvh);
+        .workspace-flow {
+          min-height: min(540px, 100%);
         }
-        .grid, .form-grid { grid-template-columns: 1fr; }
+        .app.tasks-collapsed .tasks-sidebar {
+          padding-block: 9px;
+        }
+        .form-grid { grid-template-columns: 1fr; }
       }
 
       @media (max-width: 640px) {
         button, select, input, textarea { font-size: 16px; }
-        .sidebar, .main { padding: 14px; }
+        .sidebar, .main, .tasks-sidebar { padding: 14px; }
         .topbar { align-items: stretch; }
         .topbar > div { min-width: 0; }
         .row, .actions { width: 100%; align-items: stretch; }
@@ -1761,6 +1910,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         contextReady: false,
         contextLoading: false,
         contextErrors: [],
+        optimisticThreads: new Map(),
+        optimisticTasks: new Map(),
+        threadSidebarCollapsed: false,
+        tasksSidebarCollapsed: false,
+        taskSearch: "",
       };
 
       const AGENT_TEXT_JOIN_DELAY_MS = 1200;
@@ -1845,11 +1999,26 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
-      function setWorkspaceLayout(mode) {
+      function setControlPosition(position, options = {}) {
         const workspace = $("thread-workspace");
-        workspace.classList.remove("control-wide", "lower-wide");
-        if (mode === "control") workspace.classList.add("control-wide");
-        if (mode === "lower") workspace.classList.add("lower-wide");
+        const next = position === "bottom" ? "bottom" : "top";
+        const wasBottom = workspace.classList.contains("control-bottom");
+        workspace.classList.remove("control-top", "control-bottom", "control-sliding-down");
+        workspace.classList.add(`control-${next}`);
+        if (next === "bottom" && (!wasBottom || options.forceAnimation)) {
+          requestAnimationFrame(() => {
+            workspace.classList.add("control-sliding-down");
+            window.setTimeout(() => workspace.classList.remove("control-sliding-down"), 280);
+          });
+        }
+      }
+
+      function setWorkspaceLayout(mode) {
+        if (mode === "control") {
+          setControlPosition("top");
+          return;
+        }
+        setControlPosition(existingThread(state.selectedThreadId) ? "bottom" : "top");
       }
 
       function setThreadUiMode(modeName) {
@@ -1857,6 +2026,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.threadUiMode = modeName;
         workspace.classList.remove("mode-empty", "mode-new", "mode-existing");
         workspace.classList.add(`mode-${modeName}`);
+        setControlPosition(modeName === "existing" ? "bottom" : "top");
+        updateTasksSidebarVisibility();
         $("new-task").disabled = modeName === "empty";
         $("send").textContent = modeName === "new" ? "Create thread & send" : modeName === "existing" ? "Send task" : "Send";
         for (const id of ["sleep-thread", "archive-thread", "delete-thread", "merge-thread", "commit-thread", "open-pr-thread", "terminal-thread"]) {
@@ -1865,11 +2036,34 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       function setTaskStreamLayout(mode) {
-        const grid = $("task-stream-grid");
-        grid.classList.remove("tasks-wide", "stream-wide");
-        if (mode === "tasks") grid.classList.add("tasks-wide");
-        if (mode === "stream") grid.classList.add("stream-wide");
+        if (mode === "tasks") setTasksSidebarCollapsed(false);
         setWorkspaceLayout("lower");
+      }
+
+      function setThreadsSidebarCollapsed(collapsed) {
+        state.threadSidebarCollapsed = Boolean(collapsed);
+        const app = $("agents-app");
+        app.classList.toggle("threads-collapsed", state.threadSidebarCollapsed);
+        $("threads-toggle").setAttribute("aria-expanded", String(!state.threadSidebarCollapsed));
+        $("threads-toggle").textContent = state.threadSidebarCollapsed ? ">" : "<";
+        $("threads-toggle").title = state.threadSidebarCollapsed ? "Expand threads sidebar" : "Collapse threads sidebar";
+        $("new-thread").textContent = state.threadSidebarCollapsed ? "+" : "New thread";
+        $("new-thread").title = state.threadSidebarCollapsed ? "New thread" : "";
+      }
+
+      function setTasksSidebarCollapsed(collapsed) {
+        state.tasksSidebarCollapsed = Boolean(collapsed);
+        const app = $("agents-app");
+        app.classList.toggle("tasks-collapsed", state.tasksSidebarCollapsed);
+        $("tasks-toggle").setAttribute("aria-expanded", String(!state.tasksSidebarCollapsed));
+        $("tasks-toggle").textContent = state.tasksSidebarCollapsed ? "<" : ">";
+        $("tasks-toggle").title = state.tasksSidebarCollapsed ? "Expand tasks sidebar" : "Collapse tasks sidebar";
+      }
+
+      function updateTasksSidebarVisibility() {
+        const visible = Boolean(state.selectedThreadId || $("thread-id").value.trim());
+        $("agents-app").classList.toggle("tasks-hidden", !visible);
+        $("previous-tasks-panel").setAttribute("aria-hidden", String(!visible));
       }
 
       function handlePanelKey(event, mode) {
@@ -1885,7 +2079,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function handleControlPanelClick(event) {
         if (shouldIgnorePanelShortcut(event.target)) return;
-        setWorkspaceLayout("control");
+        setWorkspaceLayout(state.threadUiMode === "existing" ? "lower" : "control");
       }
 
       function handleLowerPanelClick(event, mode) {
@@ -1897,7 +2091,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (shouldIgnorePanelShortcut(event.target)) return;
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
-        setWorkspaceLayout("control");
+        setWorkspaceLayout(state.threadUiMode === "existing" ? "lower" : "control");
       }
 
       function replaceSelectionUrl(threadId, taskId) {
@@ -2266,18 +2460,70 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         node.className = kind === "bad" ? "pill bad" : kind === "ok" ? "pill" : "pill warn";
       }
 
+      function allThreads() {
+        const merged = new Map();
+        for (const thread of state.threads) merged.set(thread.id, thread);
+        for (const thread of state.optimisticThreads.values()) {
+          if (!merged.has(thread.id)) merged.set(thread.id, thread);
+        }
+        return [...merged.values()];
+      }
+
+      function allTasks() {
+        const merged = new Map();
+        for (const task of state.tasks) merged.set(task.id, task);
+        for (const task of state.optimisticTasks.values()) {
+          if (!merged.has(task.id)) merged.set(task.id, task);
+        }
+        return [...merged.values()];
+      }
+
       function threadTasks(threadId) {
-        return state.tasks
+        return allTasks()
           .filter((task) => task.threadId === threadId)
           .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
       }
 
       function existingThread(threadId) {
-        return state.threads.find((item) => item.id === threadId) || null;
+        return allThreads().find((item) => item.id === threadId) || null;
       }
 
       function existingTask(taskId) {
-        return state.tasks.find((item) => item.id === taskId) || null;
+        return allTasks().find((item) => item.id === taskId) || null;
+      }
+
+      function upsertOptimisticThread(thread) {
+        if (!thread?.id || state.threads.some((item) => item.id === thread.id)) return;
+        state.optimisticThreads.set(thread.id, {
+          title: "Remote thread",
+          taskCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...thread,
+        });
+      }
+
+      function upsertOptimisticTask(task) {
+        if (!task?.id || state.tasks.some((item) => item.id === task.id)) return;
+        state.optimisticTasks.set(task.id, {
+          status: "queued",
+          eventCount: 0,
+          createdAt: new Date().toISOString(),
+          ...task,
+        });
+      }
+
+      function taskMatchesSearch(task, query) {
+        if (!query) return true;
+        const haystack = [
+          task.id,
+          shortId(task.id),
+          task.status,
+          task.prompt,
+          task.createdAt,
+          task.updatedAt,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(query);
       }
 
       function updateThreadMode() {
@@ -2306,15 +2552,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function renderThreads() {
         const list = $("thread-list");
+        const threads = allThreads();
         list.textContent = "";
-        if (!state.threads.length) {
+        if (!threads.length) {
           const empty = document.createElement("p");
           empty.className = "muted";
           empty.textContent = "No threads found yet.";
           list.appendChild(empty);
           return;
         }
-        for (const thread of state.threads) {
+        for (const thread of threads) {
           const button = document.createElement("button");
           button.type = "button";
           button.className = thread.id === state.selectedThreadId ? "thread-item active" : "thread-item";
@@ -2336,7 +2583,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function renderTaskList() {
         const tasks = state.selectedThreadId ? threadTasks(state.selectedThreadId) : [];
-        $("task-count").textContent = `${tasks.length} tasks`;
+        const query = state.taskSearch.trim().toLowerCase();
+        const visibleTasks = tasks.filter((task) => taskMatchesSearch(task, query));
+        $("task-count").textContent = query ? `${visibleTasks.length}/${tasks.length} tasks` : `${tasks.length} tasks`;
         const list = $("task-list");
         list.textContent = "";
         if (!tasks.length) {
@@ -2346,7 +2595,14 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           list.appendChild(empty);
           return;
         }
-        for (const task of tasks) {
+        if (!visibleTasks.length) {
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "No matching tasks.";
+          list.appendChild(empty);
+          return;
+        }
+        for (const task of visibleTasks) {
           const button = document.createElement("button");
           button.type = "button";
           button.className = task.id === state.selectedTaskId ? "task-item active" : "task-item";
@@ -2994,15 +3250,18 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.snapshot = data;
         state.threads = data.threads || [];
         state.tasks = data.tasks || [];
-        $("snapshot-meta").textContent = `${state.threads.length} threads · ${state.tasks.length} tasks · ${data.source || "unknown"}`;
+        for (const thread of state.threads) state.optimisticThreads.delete(thread.id);
+        for (const task of state.tasks) state.optimisticTasks.delete(task.id);
+        $("snapshot-meta").textContent = `${allThreads().length} threads · ${allTasks().length} tasks · ${data.source || "unknown"}`;
         const params = new URLSearchParams(window.location.search);
         const requestedThread = queryUuid(params, "thread");
         const requestedTask = queryUuid(params, "task");
         if (requestedThread) {
           state.selectedThreadId = requestedThread;
         }
-        if (!state.selectedThreadId && state.threads.length) state.selectedThreadId = state.threads[0].id;
-        if (requestedTask && state.tasks.some((task) => task.id === requestedTask)) state.selectedTaskId = requestedTask;
+        const threads = allThreads();
+        if (!state.selectedThreadId && threads.length) state.selectedThreadId = threads[0].id;
+        if (requestedTask && allTasks().some((task) => task.id === requestedTask)) state.selectedTaskId = requestedTask;
         if (!state.selectedTaskId && state.selectedThreadId) state.selectedTaskId = threadTasks(state.selectedThreadId)[0]?.id || null;
         renderThreads();
         updateSelectionHeader();
@@ -3136,6 +3395,27 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           setStatus("dispatch failed", true);
           return;
         }
+        upsertOptimisticThread({
+          id: threadId,
+          title: prompt.slice(0, 80) || "Remote thread",
+          repo,
+          baseBranch,
+          taskCount: Math.max(1, threadTasks(threadId).length),
+        });
+        upsertOptimisticTask({
+          id: taskId,
+          threadId,
+          prompt,
+          provider,
+          repo,
+          baseBranch,
+          status: usesContainerPool ? "queued" : "running",
+          eventCount: 1,
+        });
+        renderThreads();
+        updateSelectionHeader();
+        renderTaskList();
+        setControlPosition("bottom", { forceAnimation: true });
         setStatus("dispatch accepted");
         renderEventRow({
           seq: `dispatch-accepted-${Date.now()}`,
@@ -3274,6 +3554,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         loadKnownRepos().catch((error) => setStatus(adminPreview("known repos load error", error, 240), true));
         loadSnapshot().catch((error) => handleSnapshotError(error));
       });
+      $("threads-toggle").addEventListener("click", () => setThreadsSidebarCollapsed(!state.threadSidebarCollapsed));
+      $("tasks-toggle").addEventListener("click", (event) => {
+        event.stopPropagation();
+        setTasksSidebarCollapsed(!state.tasksSidebarCollapsed);
+      });
+      $("task-search").addEventListener("input", () => {
+        state.taskSearch = $("task-search").value;
+        renderTaskList();
+      });
       $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(adminPreview("repo save error", error, 240), true)));
       $("repo-url").addEventListener("change", updateRepoUrlMode);
       $("repo-url-new").addEventListener("blur", validateRepoUrlField);
@@ -3310,7 +3599,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("new-task").addEventListener("click", () => {
         state.selectedTaskId = null;
         closeInlineTerminal();
-        setWorkspaceLayout("control");
+        setWorkspaceLayout(existingThread(state.selectedThreadId) ? "lower" : "control");
         $("task-id").value = makeUuid();
         replaceSelectionUrl(state.selectedThreadId, null);
         clearStream("new task ready");
