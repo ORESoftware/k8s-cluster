@@ -1,5 +1,6 @@
 -- Minimal bootstrap for services that read dynamic JSON config from app_config.
 -- Keep this idempotent so maintenance jobs can safely run it before app_config seeds.
+-- Mirrors the canonical app_config block from remote/libs/pg-defs/schema/schema.sql.
 
 create table if not exists app_config (
   id uuid primary key default gen_random_uuid(),
