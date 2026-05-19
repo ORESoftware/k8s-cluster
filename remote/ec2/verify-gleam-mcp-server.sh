@@ -60,6 +60,63 @@ fi
 echo "Waiting for MCP deployment rollout."
 kubectl -n "${namespace}" rollout status "deployment/${deployment_name}" --timeout="${rollout_timeout}"
 
+mcp_subject_namespace="${service_account#system:serviceaccount:}"
+mcp_subject_namespace="${mcp_subject_namespace%%:*}"
+mcp_subject_name="${service_account##*:}"
+
+mcp_rbac_diagnostics() {
+  echo "=== MCP effective permissions for ${service_account} in namespace ${namespace} ===" >&2
+  kubectl auth can-i --list --as="${service_account}" -n "${namespace}" >&2 || true
+
+  echo "=== MCP inventory ClusterRole ===" >&2
+  kubectl get clusterrole dd-gleam-mcp-server-read-inventory -o yaml >&2 || true
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is not available; skipping RoleBinding/ClusterRoleBinding subject diagnostics." >&2
+    return 0
+  fi
+
+  echo "=== RoleBindings that apply to ${service_account} or broad service account groups ===" >&2
+  kubectl get rolebindings -A -o json \
+    | jq -r --arg ns "${mcp_subject_namespace}" --arg sa "${mcp_subject_name}" '
+      .items[] as $item
+      | select(any($item.subjects[]?;
+          (.kind == "ServiceAccount" and .name == $sa and ((.namespace // $item.metadata.namespace) == $ns))
+          or (.kind == "User" and .name == ("system:serviceaccount:" + $ns + ":" + $sa))
+          or (.kind == "Group" and (.name == "system:serviceaccounts" or .name == ("system:serviceaccounts:" + $ns) or .name == "system:authenticated"))
+        ))
+      | [
+          $item.kind,
+          ($item.metadata.namespace // "-"),
+          $item.metadata.name,
+          $item.roleRef.kind,
+          $item.roleRef.name,
+          (($item.subjects // []) | map(.kind + ":" + (if .namespace then .namespace + "/" else "" end) + .name) | join(","))
+        ]
+      | @tsv
+    ' >&2 || true
+
+  echo "=== ClusterRoleBindings that apply to ${service_account} or broad service account groups ===" >&2
+  kubectl get clusterrolebindings -o json \
+    | jq -r --arg ns "${mcp_subject_namespace}" --arg sa "${mcp_subject_name}" '
+      .items[] as $item
+      | select(any($item.subjects[]?;
+          (.kind == "ServiceAccount" and .name == $sa and ((.namespace // "") == $ns))
+          or (.kind == "User" and .name == ("system:serviceaccount:" + $ns + ":" + $sa))
+          or (.kind == "Group" and (.name == "system:serviceaccounts" or .name == ("system:serviceaccounts:" + $ns) or .name == "system:authenticated"))
+        ))
+      | [
+          $item.kind,
+          "-",
+          $item.metadata.name,
+          $item.roleRef.kind,
+          $item.roleRef.name,
+          (($item.subjects // []) | map(.kind + ":" + (if .namespace then .namespace + "/" else "" end) + .name) | join(","))
+        ]
+      | @tsv
+    ' >&2 || true
+}
+
 require_can_i() {
   local verb="$1"
   local resource="$2"
@@ -76,6 +133,7 @@ require_cannot_i() {
   local scope_args=("${@:3}")
   if [[ "$(kubectl auth can-i "${verb}" "${resource}" --as="${service_account}" "${scope_args[@]}")" != "no" ]]; then
     echo "Expected ${service_account} to be denied ${verb} ${resource} ${scope_args[*]}." >&2
+    mcp_rbac_diagnostics
     exit 1
   fi
 }

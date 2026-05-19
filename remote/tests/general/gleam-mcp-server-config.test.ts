@@ -262,6 +262,10 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Verifier, /require_cannot_i list configmaps --all-namespaces/);
   assert.match(ec2Verifier, /require_cannot_i get pods\/log/);
   assert.match(ec2Verifier, /require_cannot_i create pods\/exec/);
+  assert.match(ec2Verifier, /mcp_rbac_diagnostics/);
+  assert.match(ec2Verifier, /kubectl auth can-i --list --as="\$\{service_account\}"/);
+  assert.match(ec2Verifier, /kubectl get rolebindings -A -o json/);
+  assert.match(ec2Verifier, /kubectl get clusterrolebindings -o json/);
   assert.match(ec2Verifier, /human_access_policy/);
   assert.match(ec2Verifier, /kubernetes_inventory/);
 });
