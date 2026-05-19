@@ -2506,9 +2506,9 @@ const DispatchSchema = z.object({
   repo: z.string().min(1).max(2048).optional(),
   baseBranch: z.string().min(1).max(120).optional(),
   /** Stable remote-dev thread branch, if the dispatcher already knows it. */
-  branch: z.string().max(200).optional(),
+  branch: z.string().max(200).nullish(),
   /** Human-readable thread title / branch slug fallback. */
-  threadTitle: z.string().min(1).max(200).optional(),
+  threadTitle: z.string().min(1).max(200).nullish(),
   /**
    * Which agent runner to drive the task. Falls back to AGENT_PROVIDER env
    * then "gemini-sdk". Validated by the selector — unknown values fall
@@ -2516,8 +2516,8 @@ const DispatchSchema = z.object({
    */
   provider: z
     .enum(['claude-cli', 'claude-sdk', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'])
-    .optional(),
-  containerPool: ContainerPoolTaskSchema.optional(),
+    .nullish(),
+  containerPool: ContainerPoolTaskSchema.nullish(),
 });
 
 const MergeUpstreamSchema = z.object({
@@ -2646,8 +2646,8 @@ fastify.post('/tasks', async (req, reply) => {
         taskId,
         threadId,
         userId,
-        branch: parsed.data.branch,
-        threadTitle: parsed.data.threadTitle,
+        branch: parsed.data.branch ?? undefined,
+        threadTitle: parsed.data.threadTitle ?? undefined,
       });
       session.taskIds.add(taskId);
 
@@ -2656,7 +2656,7 @@ fastify.post('/tasks', async (req, reply) => {
     prompt,
     userId,
     threadId,
-    provider: resolveAgentProvider(parsed.data.provider),
+    provider: resolveAgentProvider(parsed.data.provider ?? undefined),
     containerPool: parsed.data.containerPool
       ? {
           pool: parsed.data.containerPool.pool,

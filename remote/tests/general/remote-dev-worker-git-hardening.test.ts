@@ -142,6 +142,13 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
   assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'gemini-sdk'/);
   assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
+  assert.match(server, /threadTitle:\s*z\.string\(\)\.min\(1\)\.max\(200\)\.nullish\(\)/);
+  assert.match(
+    server,
+    /provider:\s*z[\s\S]*\.enum\(\['claude-cli', 'claude-sdk', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'\]\)[\s\S]*\.nullish\(\)/,
+  );
+  assert.match(server, /threadTitle:\s*parsed\.data\.threadTitle \?\? undefined/);
+  assert.match(server, /resolveAgentProvider\(parsed\.data\.provider \?\? undefined\)/);
   assert.match(
     geminiRunner,
     /const primaryModel = opts\.env\.GEMINI_MODEL \?\? 'gemini-3\.1-pro-preview'/,

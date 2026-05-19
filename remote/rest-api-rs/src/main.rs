@@ -1519,7 +1519,10 @@ async fn delete_thread_runtime(thread_id: String, task_id: Option<String>) -> Re
 }
 
 async fn wait_thread_worker_ready(namespace: &str, name: &str, secret: &str) -> Result<(), String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .map_err(|error| format!("failed to build worker readiness client: {error}"))?;
     let url = thread_worker_url(namespace, name, "/healthz");
     for _ in 0..100 {
         if let Ok(response) = client
