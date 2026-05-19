@@ -4194,27 +4194,29 @@ async fn dispatch_thread_task(
         {
             eprintln!("failed to persist queued dispatch accepted event: {error}");
         }
-        return match publish_task_dispatch_to_nats(&request, None).await {
-            Ok(()) => (
-                StatusCode::ACCEPTED,
-                Json(json!({
-                    "ok": true,
-                    "mode": "queued",
-                    "threadId": request.thread_id,
-                    "taskId": request.task_id,
-                    "subject": nats_task_subject(&thread_id),
-                })),
-            )
-                .into_response(),
+        match publish_task_dispatch_to_nats(&request, None).await {
+            Ok(()) => {}
             Err(error) => {
                 eprintln!("failed to publish queued remote task to nats: {error}");
-                (
-                    StatusCode::BAD_GATEWAY,
-                    Json(json!({ "error": "failed to queue task", "detail": error })),
+                if let Err(persist_error) = persist_task_status_event(
+                    &request.task_id,
+                    -940,
+                    "nats publish failed",
+                    "REST API could not publish the queued handoff to NATS; continuing with synchronous worker dispatch.",
+                    json!({
+                        "source": "dd-remote-rest-api",
+                        "stage": "nats-publish-failed",
+                        "dispatchMode": &request.dispatch_mode,
+                        "subject": nats_task_subject(&thread_id),
+                        "error": error,
+                    }),
                 )
-                    .into_response()
+                .await
+                {
+                    eprintln!("failed to persist queued dispatch publish failure: {persist_error}");
+                }
             }
-        };
+        }
     }
 
     let Ok((namespace, name, _results)) =

@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-19-queued-ui-events'
+        dd.dev/telemetry-revision: '2026-05-19-queued-sync-stream'
       labels:
         app: dd-remote-rest-api
     spec:

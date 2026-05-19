@@ -20,7 +20,7 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
-test('rest api publishes successful direct dispatches to the nats shadow queue', async () => {
+test('rest api publishes queued handoffs while preserving direct worker dispatch', async () => {
   const cargo = await readRepoFile('remote/rest-api-rs/Cargo.toml');
   const server = await readRepoFile('remote/rest-api-rs/src/main.rs');
 
@@ -46,7 +46,13 @@ test('rest api publishes successful direct dispatches to the nats shadow queue',
   assert.match(server, /publish_task_dispatch_to_nats/);
   assert.match(server, /"task\.dispatch"/);
   assert.match(server, /dispatch_mode/);
-  assert.match(server, /StatusCode::ACCEPTED/);
+  assert.match(server, /"stage": "nats-publish-failed"/);
+  assert.match(server, /continuing with synchronous worker dispatch/);
+  assert.ok(
+    server.indexOf('publish_task_dispatch_to_nats(&request, None).await')
+      < server.indexOf('ensure_thread_worker(&thread_id'),
+    'queued NATS publish must happen before the synchronous worker wake path',
+  );
   assert.match(server, /shadow: bool/);
   assert.match(server, /direct_dispatch: bool/);
   assert.match(server, /publish_task_shadow_to_nats\(&request, branch\.as_deref\(\)\)/);

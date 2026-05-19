@@ -2322,10 +2322,13 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function renderEventRow(row) {
         state.streamTaskId = state.selectedTaskId || state.streamTaskId;
         const seq = row.seq ?? row.payload?.seq ?? Date.now();
-        const key = row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${eventKind(row)}`;
+        const kind = eventKind(row);
+        const stableSeq = row.seq ?? row.payload?.seq;
+        const key = stableSeq !== undefined && stableSeq !== null
+          ? `${state.selectedTaskId || row.taskId || "task"}:${stableSeq}:${kind}`
+          : row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${kind}`;
         if (state.renderedEvents.has(key)) return;
         state.renderedEvents.add(key);
-        const kind = eventKind(row);
         const text = eventText(row);
         const item = document.createElement("article");
         item.className = `event ${kind === "claude" ? "agent" : kind === "error" ? "error" : ""}`;
@@ -2633,11 +2636,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           createdAt: new Date().toISOString(),
         });
         await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
-        if (dispatchMode !== "queued") {
-          openLiveStream(threadId, taskId);
-        } else {
-          setStatus("queued dispatch accepted; waiting for stored worker events");
-        }
+        openLiveStream(threadId, taskId);
         await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
       }
 

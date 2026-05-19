@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-05-15-direct-rest-api-fetch"
+        dd.dev/telemetry-revision: "2026-05-19-queued-sync-stream"
       labels:
         app: dd-remote-web-home
     spec:
