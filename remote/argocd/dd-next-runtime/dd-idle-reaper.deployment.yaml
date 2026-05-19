@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-15-nats-watchdog'
+        dd.dev/telemetry-revision: '2026-05-19-queued-ui-events'
       labels:
         app: dd-idle-reaper
     spec:

@@ -48,10 +48,15 @@ jobs:
                 "sudo -u ec2-user -H bash -lc '\''cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-next-runtime'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n default rollout restart deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer deployment/dd-idle-reaper || true'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n default rollout status deployment/dd-idle-reaper --timeout=300s'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl delete pod -n default -l app=dd-remote-web-home --wait=true --timeout=120s'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl wait --for=condition=Available deployment/dd-remote-web-home -n default --timeout=300s'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl get deployment dd-remote-web-home -n default -o wide'\''",
-                "sudo -u ec2-user -H bash -lc '\''kubectl get pods -n default -l app=dd-remote-web-home -o wide'\''"
+                "sudo -u ec2-user -H bash -lc '\''kubectl get deployment dd-remote-rest-api dd-remote-queue-consumer dd-idle-reaper dd-remote-web-home -n default -o wide'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl get pods -n default -l \"app in (dd-remote-rest-api,dd-remote-queue-consumer,dd-idle-reaper,dd-remote-web-home)\" -o wide'\''"
               ]' \
               --query "Command.CommandId" \
               --output text

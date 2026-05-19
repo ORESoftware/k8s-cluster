@@ -2576,6 +2576,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         setStatus(`POST /api/agents/threads/${threadId}/tasks`);
         const startedAt = Date.now();
+        const keepRuntimePolling = dispatchMode === "queued";
         const waitTicker = setInterval(() => {
           const elapsed = Math.round((Date.now() - startedAt) / 1000);
           setStatus(`dispatch still waiting after ${elapsed}s; worker cold-start may still be running`);
@@ -2608,7 +2609,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           });
         } finally {
           clearInterval(waitTicker);
-          stopRuntimePolling();
+          if (!keepRuntimePolling) stopRuntimePolling();
         }
         const body = await response.text();
         if (!response.ok) {
@@ -2632,7 +2633,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           createdAt: new Date().toISOString(),
         });
         await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
-        if (dispatchMode !== "queued") openLiveStream(threadId, taskId);
+        if (dispatchMode !== "queued") {
+          openLiveStream(threadId, taskId);
+        } else {
+          setStatus("queued dispatch accepted; waiting for stored worker events");
+        }
         await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
       }
 
