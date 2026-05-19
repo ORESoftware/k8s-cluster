@@ -33,6 +33,7 @@ remote/dev-server/
     │   ├── index.ts           # selector + per-runner env allowlist
     │   ├── claude-cli.ts      # working: spawns `claude`
     │   ├── claude-sdk.ts      # working: @anthropic-ai/claude-agent-sdk
+    │   ├── cluster-mcp.ts     # read-only cluster MCP config shared by SDK runners
     │   ├── openai-codex-cli.ts# working (after `codex` binary install)
     │   └── openai-sdk.ts      # working: @openai/agents
     └── storage/
@@ -194,10 +195,18 @@ agent edits.
 | `THREAD_CONTEXT_BASE_URL` | Optional. Defaults to the in-cluster REST API. Workers call `/api/agents/threads/:threadId/context` before each task. |
 | `THREAD_CONTEXT_LIMIT` | Optional. Defaults to `20` prior tasks.                                                                                  |
 | `THREAD_CONTEXT_MAX_CHARS` | Optional. Defaults to `48000` characters injected into the prompt.                                                   |
+| `AGENT_MCP_URL` | Optional. In-cluster MCP endpoint passed to SDK runners, defaulting in Kubernetes to `http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp`. |
+| `AGENT_MCP_CONNECT_TIMEOUT_MS` | Optional. MCP connect timeout for SDK runners. Defaults to `3000`; clamped by the runner. |
+| `AGENT_MCP_ENABLED` | Optional. Set to `false` to suppress MCP prompt context and runner MCP connection attempts. |
 
 Each runner is given a **strict env allowlist** (`PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`, plus
 its provider-specific API key). The agent never sees `GH_PAT`, `GH_DEPLOY_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`, etc.
+
+When `AGENT_MCP_URL` is set, the worker injects a short runtime context section into every task
+prompt. The OpenAI SDK runner connects the endpoint as MCP server `dd_cluster`; the Claude SDK runner
+declares the same server and allows its read-only tools. CLI runners still get the prompt hint, but
+their native MCP support depends on the installed CLI.
 
 ### Recommended — Supabase Realtime fan-out
 

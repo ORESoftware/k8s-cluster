@@ -79,6 +79,7 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   const networkPolicy = await readRepoFile('remote/argocd/vpn/dd-bastion.networkpolicy.yaml');
   const vpnReadme = await readRepoFile('remote/argocd/vpn/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
+  const ec2Readme = await readRepoFile('remote/ec2/README.md');
 
   for (const resource of [
     'dd-bastion-rbac.yaml',
@@ -140,6 +141,10 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   assert.match(vpnReadme, /Bastion\/access broker/);
   assert.match(vpnReadme, /runtime\/deployments/);
   assert.match(vpnReadme, /terminal access is disabled\s+by default/);
+  assert.match(vpnReadme, /not a public MCP server that can mint AWS access/);
+  assert.match(vpnReadme, /AWS credentials stay\s+in AWS Secrets Manager/);
+  assert.match(ec2Readme, /inbound UDP `51820`/);
+  assert.match(ec2Readme, /Do not use a public MCP endpoint as a password-to-SSH or password-to-AWS bridge/);
   assert.match(remoteReadme, /argocd\/vpn/);
   assert.match(remoteReadme, /Rust `dd-bastion` access/);
 });

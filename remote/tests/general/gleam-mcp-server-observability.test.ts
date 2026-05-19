@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 function findRepoRoot(): string {
@@ -82,6 +84,17 @@ function writeMockResponse(req: IncomingMessage, res: ServerResponse): void {
         '',
       ].join('\n'),
     },
+    '/apis/apps/v1/deployments': {
+      contentType: 'application/json',
+      body: JSON.stringify({
+        apiVersion: 'meta.k8s.io/v1',
+        kind: 'PartialObjectMetadataList',
+        items: [
+          { metadata: { name: 'dd-dev-server-api', namespace: 'default' } },
+          { metadata: { name: 'dd-gleam-mcp-server', namespace: 'default' } },
+        ],
+      }),
+    },
   };
   const response = responses[path] ?? {
     status: 404,
@@ -141,6 +154,9 @@ async function stopProcess(processHandle: ChildProcessWithoutNullStreams): Promi
 
 async function withMcpServer(baseUrl: string, callback: (port: number) => Promise<void>): Promise<void> {
   const port = await openPort();
+  const tempDir = await mkdtemp(join(tmpdir(), 'dd-mcp-test-'));
+  const tokenPath = join(tempDir, 'token');
+  await writeFile(tokenPath, 'mock-kubernetes-token\n');
   const processHandle = spawn('gleam', ['run'], {
     cwd: mcpCwd,
     detached: true,
@@ -156,8 +172,12 @@ async function withMcpServer(baseUrl: string, callback: (port: number) => Promis
       MCP_OTEL_COLLECTOR_URL: baseUrl,
       MCP_NATS_MONITOR_URL: baseUrl,
       MCP_NATS_METRICS_URL: baseUrl,
+      MCP_KUBERNETES_API_URL: baseUrl,
+      MCP_KUBERNETES_TOKEN_PATH: tokenPath,
       MCP_OBSERVABILITY_TIMEOUT_MS: '500',
       MCP_OBSERVABILITY_BODY_LIMIT_BYTES: '4096',
+      MCP_KUBERNETES_TIMEOUT_MS: '500',
+      MCP_KUBERNETES_BODY_LIMIT_BYTES: '4096',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -187,6 +207,7 @@ async function withMcpServer(baseUrl: string, callback: (port: number) => Promis
     assert.fail(`MCP server did not become healthy:\n${output}`);
   } finally {
     await stopProcess(processHandle);
+    await rm(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -209,6 +230,7 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
       });
       const toolNames = listed.result.tools.map((tool: { name: string }) => tool.name);
       assert.ok(toolNames.includes('telemetry_summary'));
+      assert.ok(toolNames.includes('kubernetes_deployments'));
       assert.ok(toolNames.includes('grafana_inventory'));
       assert.ok(toolNames.includes('nats_metrics'));
 
@@ -256,6 +278,15 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
       assert.equal(nats.result.structuredContent.metrics.ok, true);
       assert.match(nats.result.structuredContent.monitor.sample, /mock-nats/);
       assert.match(nats.result.structuredContent.metrics.sample, /gnatsd_varz_connections/);
+
+      const deployments = await fetchJson(port, '/mcp', {
+        method: 'POST',
+        body: rpcBody('kubernetes_deployments'),
+        headers: { 'content-type': 'application/json' },
+      });
+      assert.equal(deployments.result.structuredContent.readOnly, true);
+      assert.equal(deployments.result.structuredContent.response.ok, true);
+      assert.match(deployments.result.structuredContent.response.sample, /dd-dev-server-api/);
     });
   });
 });

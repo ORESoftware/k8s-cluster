@@ -45,6 +45,23 @@ The browser terminal code path is compiled into the Rust service, but terminal a
 by default in the Kubernetes deployment and the shipped RBAC does not grant `pods/exec`. Enable it
 only after a separate review of the exact pod allowlist and operational need.
 
+## Recommended access model
+
+The safe version of "one password for access" is not a public MCP server that can mint AWS access.
+Keep the MCP server read-only, keep `dd-bastion` behind the authenticated gateway and WireGuard, and
+use a long random `SERVER_AUTH_SECRET` only as a gateway/bastion bearer secret. AWS credentials stay
+in AWS Secrets Manager, External Secrets, the EC2 instance profile, or a scoped CI/OIDC role; they
+should not be returned by MCP tools or the bastion API.
+
+For day-to-day operations:
+
+1. Connect a WireGuard client created by the private wg-easy UI.
+2. Query `dd-bastion` with `X-Bastion-Auth: $SERVER_AUTH_SECRET` for `/profile`, `/kubeconfig`, and
+   `/runtime/deployments`.
+3. Use the generated kubeconfig for read-only `kubectl get/list/watch` work.
+4. Use normal key-based SSH or AWS Systems Manager Session Manager for host shell access. Do not
+   make the Kubernetes MCP endpoint a public SSH/AWS credential broker.
+
 ## Secret setup
 
 Create this JSON in AWS Secrets Manager before syncing the Argo app:

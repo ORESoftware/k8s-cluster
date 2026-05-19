@@ -16,12 +16,35 @@ Use at least:
   `AmazonEBSCSIDriverPolicy`
 - inbound security-group access for `6443` from Vercel/control-plane IPs
 - inbound access for HTTP/HTTPS or your chosen ingress ports
+- inbound UDP `51820` from trusted operator networks if deploying the WireGuard access layer
+- inbound SSH `22` only from trusted operator IPs, or use AWS Systems Manager Session Manager instead
 
 The bootstrap script can install prerequisites on a smaller instance for
 smoke testing, but it refuses the cluster phase below about 2 GiB RAM unless
 `--force-small-instance` or `DD_ALLOW_UNDERSIZED=1` is set. A `t3.micro` is
 useful for validating clone and package setup, not for reliable remote-dev
 thread pods or the long-lived `remote/dev-server` service.
+
+## Operator Access
+
+Prefer two separate access paths:
+
+- Cluster access: deploy `remote/argocd/vpn`, connect through WireGuard, then use `dd-bastion` to
+  fetch a read-only kubeconfig and deployment inventory. This avoids handing agents or browsers raw
+  AWS credentials.
+- Host shell access: use key-based SSH from a trusted IP or AWS Systems Manager Session Manager.
+  Do not use a public MCP endpoint as a password-to-SSH or password-to-AWS bridge.
+
+Local SSH config example:
+
+```sshconfig
+Host dd-ec2-runtime
+  HostName 54.91.17.58
+  User ec2-user
+  IdentityFile ~/.ssh/dd-ec2-runtime.pem
+  IdentitiesOnly yes
+  ServerAliveInterval 30
+```
 
 ## First-Time Setup
 

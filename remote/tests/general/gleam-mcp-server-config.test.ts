@@ -30,9 +30,11 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   const observability = await readRepoFile(
     'remote/gleam-mcp-server/src/gleam_mcp_server/observability.gleam',
   );
+  const k8s = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_server/k8s.gleam');
   const observabilityFfi = await readRepoFile(
     'remote/gleam-mcp-server/src/gleam_mcp_observability.erl',
   );
+  const k8sFfi = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_k8s.erl');
   const runtimeEnv = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_runtime_env.erl');
 
   assert.match(gleamToml, /name = "gleam_mcp_server"/);
@@ -55,6 +57,9 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(httpServer, /"initialize"/);
   assert.match(httpServer, /"tools\/list"/);
   assert.match(httpServer, /"tools\/call"/);
+  assert.match(httpServer, /import gleam_mcp_server\/k8s/);
+  assert.match(httpServer, /"kubernetes_deployments"/);
+  assert.match(httpServer, /k8s\.deployments_json\(\)/);
   assert.match(httpServer, /"telemetry_summary"/);
   assert.match(httpServer, /"observability_health"/);
   assert.match(httpServer, /"prometheus_up"/);
@@ -65,6 +70,7 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(httpServer, /dd_gleam_mcp_rpc_requests_total/);
   assert.match(metrics, /RecordRpcRequest\(String\)/);
   assert.match(observability, /@external\(erlang, "gleam_mcp_observability", "health_json"\)/);
+  assert.match(k8s, /@external\(erlang, "gleam_mcp_k8s", "deployments_json"\)/);
   assert.match(observability, /telemetry_summary_json/);
   assert.match(observability, /grafana_inventory_json/);
   assert.match(observability, /nats_metrics_json/);
@@ -80,6 +86,13 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(observabilityFfi, /MCP_NATS_MONITOR_URL/);
   assert.match(observabilityFfi, /MCP_NATS_METRICS_URL/);
   assert.match(observabilityFfi, /MCP_OBSERVABILITY_TIMEOUT_MS/);
+  assert.match(k8sFfi, /-module\(gleam_mcp_k8s\)/);
+  assert.match(k8sFfi, /\/apis\/apps\/v1\/deployments\?limit=500/);
+  assert.match(k8sFfi, /MCP_KUBERNETES_API_URL/);
+  assert.match(k8sFfi, /MCP_KUBERNETES_TOKEN_PATH/);
+  assert.match(k8sFfi, /MCP_KUBERNETES_CA_PATH/);
+  assert.match(k8sFfi, /authorization/);
+  assert.match(k8sFfi, /httpc:request/);
 });
 
 test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () => {
@@ -92,6 +105,9 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   const ec2NetworkPolicy = await readRepoFile(
     'remote/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.networkpolicy.yaml',
   );
+  const ec2Rbac = await readRepoFile(
+    'remote/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server-rbac.yaml',
+  );
   const ec2Kustomization = await readRepoFile(
     'remote/gleam-mcp-server/k8s/ec2/kustomization.yaml',
   );
@@ -100,6 +116,9 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   );
   const minikubeNetworkPolicy = await readRepoFile(
     'remote/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.networkpolicy.yaml',
+  );
+  const minikubeRbac = await readRepoFile(
+    'remote/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server-rbac.yaml',
   );
   const minikubeKustomization = await readRepoFile(
     'remote/gleam-mcp-server/k8s/minikube/kustomization.yaml',
@@ -119,6 +138,8 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.doesNotMatch(ec2Deployment, /gleam deps download/);
   assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
+  assert.match(ec2Deployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
+  assert.match(ec2Deployment, /automountServiceAccountToken:\s*true/);
   assert.match(ec2Deployment, /capabilities:[\s\S]*drop:[\s\S]*-\s*ALL/);
   assert.match(ec2Deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(ec2Deployment, /startupProbe:[\s\S]*failureThreshold:\s*60/);
@@ -140,10 +161,19 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.match(ec2Deployment, /MCP_NATS_METRICS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:7777/);
   assert.match(ec2Deployment, /MCP_OBSERVABILITY_TIMEOUT_MS[\s\S]*value:\s*'1200'/);
   assert.match(ec2Deployment, /MCP_OBSERVABILITY_BODY_LIMIT_BYTES[\s\S]*value:\s*'32768'/);
+  assert.match(ec2Deployment, /MCP_KUBERNETES_TIMEOUT_MS[\s\S]*value:\s*'1500'/);
+  assert.match(ec2Deployment, /MCP_KUBERNETES_BODY_LIMIT_BYTES[\s\S]*value:\s*'262144'/);
   assert.match(ec2Deployment, /path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1/);
   assert.match(ec2Service, /port:\s*8090/);
   assert.match(ec2Service, /targetPort:\s*8090/);
   assert.match(ec2Kustomization, /dd-gleam-mcp-server\.networkpolicy\.yaml/);
+  assert.match(ec2Kustomization, /dd-gleam-mcp-server-rbac\.yaml/);
+  assert.match(ec2Rbac, /kind:\s*ServiceAccount[\s\S]*name:\s*dd-gleam-mcp-server/);
+  assert.match(ec2Rbac, /kind:\s*ClusterRole[\s\S]*name:\s*dd-gleam-mcp-server-read-deployments/);
+  assert.match(ec2Rbac, /apiGroups:[\s\S]*-\s*apps/);
+  assert.match(ec2Rbac, /resources:[\s\S]*-\s*deployments/);
+  assert.match(ec2Rbac, /verbs:[\s\S]*-\s*get[\s\S]*-\s*list/);
+  assert.doesNotMatch(ec2Rbac, /-\s*secrets|pods\/exec|-\s*create|-\s*patch|-\s*update|-\s*delete/);
   assert.match(ec2NetworkPolicy, /kind:\s*NetworkPolicy/);
   assert.match(ec2NetworkPolicy, /app:\s*dd-gleam-mcp-server/);
   assert.match(ec2NetworkPolicy, /app:\s*dd-remote-gateway/);
@@ -158,8 +188,11 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.match(ec2NetworkPolicy, /port:\s*8889/);
   assert.match(ec2NetworkPolicy, /port:\s*9090/);
   assert.match(ec2NetworkPolicy, /port:\s*16686/);
+  assert.match(ec2NetworkPolicy, /port:\s*443/);
   assert.match(ec2NetworkPolicy, /port:\s*5432/);
   assert.match(minikubeDeployment, /image:\s*dd-gleam-mcp-server:dev/);
+  assert.match(minikubeDeployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
+  assert.match(minikubeDeployment, /automountServiceAccountToken:\s*true/);
   assert.match(minikubeDeployment, /name:\s*HOST[\s\S]*value:\s*0\.0\.0\.0/);
   assert.match(minikubeDeployment, /name:\s*PORT[\s\S]*value:\s*'8090'/);
   assert.match(minikubeDeployment, /MCP_PROMETHEUS_URL[\s\S]*dd-prometheus\.observability\.svc\.cluster\.local:9090/);
@@ -167,16 +200,24 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.match(minikubeDeployment, /MCP_OTEL_COLLECTOR_URL[\s\S]*dd-otel-collector\.observability\.svc\.cluster\.local:8889/);
   assert.match(minikubeDeployment, /MCP_NATS_MONITOR_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:8222/);
   assert.match(minikubeDeployment, /MCP_NATS_METRICS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:7777/);
+  assert.match(minikubeDeployment, /MCP_KUBERNETES_TIMEOUT_MS[\s\S]*value:\s*'1500'/);
+  assert.match(minikubeDeployment, /MCP_KUBERNETES_BODY_LIMIT_BYTES[\s\S]*value:\s*'262144'/);
   assert.match(minikubeDeployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(minikubeDeployment, /startupProbe:[\s\S]*failureThreshold:\s*60/);
   assert.match(minikubeDeployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(minikubeDeployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(minikubeKustomization, /dd-gleam-mcp-server\.networkpolicy\.yaml/);
+  assert.match(minikubeKustomization, /dd-gleam-mcp-server-rbac\.yaml/);
+  assert.match(minikubeRbac, /namespace:\s*dd-dev-local/);
+  assert.match(minikubeRbac, /dd-gleam-mcp-server-read-deployments-local/);
+  assert.match(minikubeRbac, /resources:[\s\S]*-\s*deployments/);
+  assert.match(minikubeRbac, /verbs:[\s\S]*-\s*get[\s\S]*-\s*list/);
   assert.match(minikubeNetworkPolicy, /namespace:\s*dd-dev-local/);
   assert.match(minikubeNetworkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
   assert.match(minikubeNetworkPolicy, /kubernetes\.io\/metadata\.name:\s*messaging/);
   assert.match(minikubeNetworkPolicy, /port:\s*7777/);
   assert.match(minikubeNetworkPolicy, /port:\s*8222/);
+  assert.match(minikubeNetworkPolicy, /port:\s*443/);
   assert.match(ec2App, /path:\s*remote\/gleam-mcp-server\/k8s\/ec2/);
   assert.match(minikubeApp, /path:\s*remote\/gleam-mcp-server\/k8s\/minikube/);
 });
@@ -209,6 +250,7 @@ test('Gleam MCP server exposes read-only observability tools', async () => {
   );
   const readme = await readRepoFile('remote/gleam-mcp-server/readme.md');
 
+  assert.match(httpServer, /k8s\.deployments_json\(\)/);
   assert.match(httpServer, /observability\.health_json\(\)/);
   assert.match(httpServer, /observability\.telemetry_summary_json\(\)/);
   assert.match(httpServer, /observability\.prometheus_up_json\(\)/);
@@ -218,6 +260,10 @@ test('Gleam MCP server exposes read-only observability tools', async () => {
   assert.match(httpServer, /observability\.trace_backends_json\(\)/);
   assert.match(httpServer, /openWorldHint\\":false/);
   assert.match(readme, /telemetry_summary/);
+  assert.match(readme, /kubernetes_deployments/);
+  assert.match(readme, /read-only service account/);
+  assert.match(readme, /MCP_KUBERNETES_API_URL/);
+  assert.match(readme, /Kubernetes API egress on TCP 443/);
   assert.match(readme, /observability_health/);
   assert.match(readme, /prometheus_up/);
   assert.match(readme, /loki_labels/);
@@ -229,5 +275,5 @@ test('Gleam MCP server exposes read-only observability tools', async () => {
   assert.match(readme, /MCP_NATS_METRICS_URL/);
   assert.match(readme, /fan out checks\s+in parallel/);
   assert.match(readme, /NetworkPolicy/);
-  assert.match(readme, /does not need Kubernetes\s+API permissions/);
+  assert.doesNotMatch(readme, /does not need Kubernetes\s+API permissions/);
 });

@@ -30,6 +30,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const genericRunner = await readRepoFile('remote/dev-server/src/agents/generic-ai-sdk.ts');
   const geminiRunner = await readRepoFile('remote/dev-server/src/agents/gemini-sdk.ts');
   const opencodeRunner = await readRepoFile('remote/dev-server/src/agents/opencode-ai-sdk.ts');
+  const openaiSdkRunner = await readRepoFile('remote/dev-server/src/agents/openai-sdk.ts');
+  const claudeSdkRunner = await readRepoFile('remote/dev-server/src/agents/claude-sdk.ts');
+  const clusterMcp = await readRepoFile('remote/dev-server/src/agents/cluster-mcp.ts');
   const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
   const localDockerfile = await readRepoFile('remote/dev-server-local/Dockerfile');
   const readme = await readRepoFile('remote/dev-server/readme.md');
@@ -41,9 +44,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const config = await readRepoFile('remote/k8s/01-configmap.yaml');
+  const localMinikube = await readRepoFile('remote/dev-server-local/k8s/minikube-dev-server.yaml');
   const secretsTemplate = await readRepoFile('remote/k8s/02-secrets.template.yaml');
   const threadTemplate = await readRepoFile('remote/k8s/07-thread-deployment.template.yaml');
   const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const agentsMd = await readRepoFile('AGENTS.md');
 
   assert.match(server, /async function remoteBranchExists\(branch: string\): Promise<boolean>/);
   assert.match(
@@ -117,6 +122,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /prompt,\s*\}\);/);
   assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
+  assert.match(server, /import \{ clusterMcpPromptSection \} from '\.\/agents\/cluster-mcp\.js'/);
+  assert.match(server, /agentMcpUrl: process\.env\.AGENT_MCP_ENABLED === 'false' \? null : process\.env\.AGENT_MCP_URL \?\? null/);
+  assert.match(server, /const runtimeContext = clusterMcpPromptSection\(config\.agentMcpUrl\)/);
+  assert.match(server, /thread-context:cluster-mcp/);
+  assert.match(server, /<runtime_context>/);
   assert.match(server, /type TaskReceipt/);
   assert.match(server, /function taskReceiptPath\(taskId: string\): string/);
   assert.match(server, /async function readTaskReceipt\(taskId: string\)/);
@@ -163,7 +173,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /status: `pushing to \$\{gitBranchTarget\(state\.branch\)\}`/);
   assert.match(server, /status: `pushed to \$\{gitBranchTarget\(state\.branch\)\}`/);
   assert.match(server, /status: `completed task on \$\{gitBranchTarget\(state\.branch\)\}`/);
-  assert.match(server, /const GENERATED_GIT_EXCLUDES = \[':!\.pnpm-store'/);
+  assert.match(server, /const GENERATED_GIT_EXCLUDE_PATHS = \['\.pnpm-store', 'node_modules', '\.next', '\.turbo'\]/);
+  assert.match(server, /const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS\.map/);
+  assert.match(server, /\['add', '-A', '--', '\.'\]/);
+  assert.match(server, /\['reset', '-q', 'HEAD', '--', \.\.\.GENERATED_GIT_EXCLUDE_PATHS\]/);
   assert.match(server, /async function gitWorkspaceStatus\(workspacePath: string\): Promise<string>/);
   assert.match(server, /async function gitAddWorkspaceChanges\(workspacePath: string\): Promise<void>/);
   assert.match(server, /function stripNegatedWorkspaceChangePhrases\(prompt: string\): string/);
@@ -202,6 +215,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(agentIndex, /base\.OPENCODE_BASE_URL = process\.env\.OPENCODE_BASE_URL \?\? 'https:\/\/opencode\.ai\/zen\/v1'/);
   assert.match(agentIndex, /base\.OPENCODE_MODELS =[\s\S]*DEFAULT_OPENCODE_MODELS\.join\(','\)/);
   assert.match(agentIndex, /base\.GEMINI_FALLBACK_MODEL =[\s\S]*DEFAULT_GEMINI_FALLBACK_MODEL/);
+  assert.match(agentIndex, /AGENT_MCP_ENABLED/);
+  assert.match(agentIndex, /AGENT_MCP_URL/);
+  assert.match(agentIndex, /AGENT_MCP_CONNECT_TIMEOUT_MS/);
   assert.match(agentIndex, /OPENCODE_API_KEY not set/);
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
   assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'openai-sdk'/);
@@ -233,11 +249,24 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(genericRunner, /createOpenAICompatible/);
   assert.match(genericRunner, /model: provider\(modelId\)/);
   assert.match(genericRunner, /provider: 'generic-ai-sdk'/);
+  assert.match(clusterMcp, /CLUSTER_MCP_SERVER_NAME = 'dd_cluster'/);
+  assert.match(clusterMcp, /kubernetes_deployments/);
+  assert.match(clusterMcp, /AGENT_MCP_URL/);
+  assert.match(clusterMcp, /read-only DD cluster MCP server/);
+  assert.match(openaiSdkRunner, /MCPServerStreamableHttp/);
+  assert.match(openaiSdkRunner, /connectMcpServers/);
+  assert.match(openaiSdkRunner, /mcpServers/);
+  assert.match(openaiSdkRunner, /clusterMcpInstructions\(\)/);
+  assert.match(claudeSdkRunner, /mcpServers/);
+  assert.match(claudeSdkRunner, /strictMcpConfig:\s*true/);
+  assert.match(claudeSdkRunner, /mcp__\$\{CLUSTER_MCP_SERVER_NAME\}__\$\{name\}/);
   assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'claude-sdk'/);
   assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'openai-sdk,claude-sdk,generic-ai-sdk,gemini-sdk'/);
   assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
+  assert.match(config, /AGENT_MCP_URL:\s*'http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp'/);
+  assert.match(config, /AGENT_MCP_CONNECT_TIMEOUT_MS:\s*'3000'/);
   assert.match(secretsTemplate, /OPENAI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /ANTHROPIC_API_KEYS_JSON/);
   assert.match(secretsTemplate, /OPENCODE_API_KEYS_JSON/);
@@ -300,6 +329,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     /pnpm install --ignore-workspace --frozen-lockfile[\s\S]*standalone package instead of the root workspace/,
   );
   assert.match(readme, /Before the first build you need a `pnpm-lock\.yaml`/);
+  assert.match(readme, /cluster-mcp\.ts/);
+  assert.match(readme, /AGENT_MCP_URL/);
+  assert.match(readme, /dd_cluster/);
+  assert.match(readme, /CLI runners still get the prompt hint/);
   assert.match(lockfile, /^lockfileVersion: '9\.0'$/m);
   assert.match(lockfile, /^importers:\s*$/m);
 
@@ -317,6 +350,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(deployment, /runAsUser: 1000/);
   assert.match(deployment, /mountPath: \/home\/node\/workspace/);
   assert.match(deployment, /name: DD_REPO_URL[\s\S]*secretKeyRef:[\s\S]*name: dd-agent-secrets[\s\S]*key: DD_REPO_URL/);
+  assert.match(deployment, /name:\s*AGENT_MCP_URL[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp/);
+  assert.match(deployment, /name:\s*AGENT_MCP_CONNECT_TIMEOUT_MS[\s\S]*value:\s*"3000"/);
   assert.doesNotMatch(deployment, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(deployment, /apt-get update/);
   assert.match(brokerServer, /repo: Option<String>/);
@@ -345,6 +380,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(webHome, /PodScheduled/);
   assert.match(webHome, /worker pending:/);
   assert.match(restServer, /"THREAD_CONTEXT_BASE_URL", "value": "http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082"/);
+  assert.match(restServer, /"AGENT_MCP_URL", "value": "http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp"/);
+  assert.match(restServer, /"AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000"/);
   assert.match(restServer, /"NATS_EVENT_SUBJECT", "value": "dd\.remote\.events"/);
   assert.match(restServer, /"envFrom": \[/);
   assert.match(
@@ -353,4 +390,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   );
   assert.doesNotMatch(restServer, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(restServer, /apt-get update/);
+  assert.match(localMinikube, /AGENT_MCP_URL:\s*"http:\/\/dd-gleam-mcp-server\.dd-dev-local\.svc\.cluster\.local:8090\/mcp"/);
+  assert.match(agentsMd, /docs\/\*\.md/);
+  assert.match(agentsMd, /agents\/\*\.md/);
+  assert.match(agentsMd, /dd_cluster/);
+  assert.match(agentsMd, /WireGuard VPN plus `dd-bastion`/);
 });

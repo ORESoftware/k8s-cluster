@@ -80,7 +80,8 @@ const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
   'openai-codex-cli',
   'openai-sdk',
 ]);
-const GENERATED_GIT_EXCLUDES = [':!.pnpm-store', ':!node_modules', ':!.next', ':!.turbo'];
+const GENERATED_GIT_EXCLUDE_PATHS = ['.pnpm-store', 'node_modules', '.next', '.turbo'];
+const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS.map((path) => `:(exclude)${path}`);
 
 function configAgentProvider(value: string | undefined, fallback: AgentProvider): AgentProvider {
   return value && CONFIG_AGENT_PROVIDERS.has(value as AgentProvider) ? (value as AgentProvider) : fallback;
@@ -626,14 +627,17 @@ async function applyDeterministicWorkspaceEdit(
 async function gitWorkspaceStatus(workspacePath: string): Promise<string> {
   return shCapture(
     'git',
-    ['status', '--porcelain', '--untracked-files=all', '--', '.', ...GENERATED_GIT_EXCLUDES],
+    ['status', '--porcelain', '--untracked-files=all', '--', '.', ...GENERATED_GIT_STATUS_EXCLUDES],
     workspacePath,
     { timeoutMs: TIMEOUT_GIT_QUICK },
   );
 }
 
 async function gitAddWorkspaceChanges(workspacePath: string): Promise<void> {
-  await shCapture('git', ['add', '-A', '--', '.', ...GENERATED_GIT_EXCLUDES], workspacePath, {
+  await shCapture('git', ['add', '-A', '--', '.'], workspacePath, {
+    timeoutMs: TIMEOUT_GIT_QUICK,
+  });
+  await shCapture('git', ['reset', '-q', 'HEAD', '--', ...GENERATED_GIT_EXCLUDE_PATHS], workspacePath, {
     timeoutMs: TIMEOUT_GIT_QUICK,
   });
 }
@@ -1642,7 +1646,8 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
   }
 
   const selectedContext = formatSelectedContextBlobs(state);
-  if (!contextText && !selectedContext) {
+  const runtimeContext = clusterMcpPromptSection(config.agentMcpUrl);
+  if (!contextText && !selectedContext && !runtimeContext) {
     return state.prompt;
   }
 
@@ -1665,6 +1670,15 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     const cappedContext = truncateContext(contextText, config.threadContextMaxChars);
     emit(state, { kind: 'status', status: `thread-context:${contextSource}` });
     promptSections.push('', '<previous_thread_context>', cappedContext, '</previous_thread_context>');
+  }
+
+  if (runtimeContext) {
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:cluster-mcp',
+      message: 'Cluster MCP runtime context injected into the task prompt.',
+    });
+    promptSections.push('', '<runtime_context>', runtimeContext, '</runtime_context>');
   }
 
   promptSections.push('', '<current_user_prompt>', state.prompt, '</current_user_prompt>');

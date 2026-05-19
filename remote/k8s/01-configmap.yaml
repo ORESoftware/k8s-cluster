@@ -34,6 +34,8 @@ data:
   THREAD_CONTEXT_BASE_URL: 'http://dd-remote-rest-api.default.svc.cluster.local:8082'
   THREAD_CONTEXT_LIMIT: '20'
   THREAD_CONTEXT_MAX_CHARS: '48000'
+  AGENT_MCP_URL: 'http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp'
+  AGENT_MCP_CONNECT_TIMEOUT_MS: '3000'
 
   # ---- Storage ----
   # R2 is the default — Cloudflare R2 is S3-compatible (same SDK as S3,

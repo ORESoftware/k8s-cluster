@@ -106,6 +106,7 @@ The tools are intentionally read-only:
 
 - `cluster_status`
 - `service_directory`
+- `kubernetes_deployments`
 - `telemetry_targets`
 - `telemetry_summary`
 - `observability_health`
@@ -114,6 +115,19 @@ The tools are intentionally read-only:
 - `grafana_inventory`
 - `nats_metrics`
 - `trace_backends`
+
+`kubernetes_deployments` reads all `apps/v1` Deployments visible to the MCP service account through
+the in-cluster Kubernetes API. The shipped RBAC grants only `get` and `list` on Deployments and does
+not grant Kubernetes Secret access, pod exec, or mutation verbs.
+
+| Env var | Default |
+| --- | --- |
+| `MCP_KUBERNETES_API_URL` | `https://kubernetes.default.svc` |
+| `MCP_KUBERNETES_DEPLOYMENTS_PATH` | `/apis/apps/v1/deployments?limit=500` |
+| `MCP_KUBERNETES_TOKEN_PATH` | `/var/run/secrets/kubernetes.io/serviceaccount/token` |
+| `MCP_KUBERNETES_CA_PATH` | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` |
+| `MCP_KUBERNETES_TIMEOUT_MS` | `1500` |
+| `MCP_KUBERNETES_BODY_LIMIT_BYTES` | `262144` |
 
 `telemetry_summary`, `observability_health`, `prometheus_up`, `loki_labels`,
 `grafana_inventory`, `nats_metrics`, and `trace_backends` make bounded
@@ -148,13 +162,15 @@ The OpenTelemetry Collector scrapes `dd-gleam-mcp-server.default.svc.cluster.loc
 re-exports the metrics to Prometheus. Logs go to stdout, where promtail collects them for Loki.
 Grafana dashboard panels live in `remote/argocd/observability/grafana.dashboards.configmap.yaml`.
 
-The MCP server also reads observability data directly from the in-cluster
+The MCP server reads observability data directly from the in-cluster
 Prometheus/Loki/Grafana/Tempo/Jaeger/OTel services and from the NATS monitoring
-and metrics endpoints. It does not need Kubernetes API permissions for this path
-and it does not expose write-capable telemetry operations. The deployment
-includes a NetworkPolicy that permits ingress from the gateway and metrics
-scrapers, DNS egress, bounded egress to observability and NATS telemetry ports,
-and database egress for future read-only PG-backed MCP tools.
+and metrics endpoints without Kubernetes API permissions for that telemetry path.
+The Deployment also has a read-only service account for Deployment inventory.
+It does not expose write-capable telemetry, Kubernetes, AWS, or secret-management
+operations. The deployment includes a NetworkPolicy that permits ingress from the
+gateway and metrics scrapers, DNS egress, bounded egress to observability and
+NATS telemetry ports, Kubernetes API egress on TCP 443, and database egress for
+future read-only PG-backed MCP tools.
 
 ## Kubernetes
 

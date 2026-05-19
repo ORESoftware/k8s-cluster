@@ -1436,6 +1436,8 @@ fn render_thread_deployment(
                             { "name": "OTEL_SERVICE_NAME", "value": name },
                             { "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://dd-otel-collector.observability.svc.cluster.local:4318" },
                             { "name": "THREAD_CONTEXT_BASE_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082" },
+                            { "name": "AGENT_MCP_URL", "value": "http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp" },
+                            { "name": "AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000" },
                             { "name": "EVENT_INGEST_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events" },
                             { "name": "EVENT_INGEST_SECRET", "valueFrom": { "secretKeyRef": { "name": "dd-agent-secrets", "key": "SERVER_AUTH_SECRET" } } },
                             { "name": "NATS_URL", "value": "nats://dd-nats.messaging.svc.cluster.local:4222" },
