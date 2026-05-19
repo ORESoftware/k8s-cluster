@@ -150,6 +150,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /await runAgentAttempt\(attempt\)/);
   assert.match(server, /function shouldForwardAgentRunnerEvent\(event: AgentRunnerEvent\): boolean/);
   assert.match(server, /agentEventHasProviderError\(event\.raw\)/);
+  assert.match(server, /agentEventIsProviderMetadataOnly\(event\.raw\)/);
   assert.match(server, /if \(shouldForwardAgentRunnerEvent\(ev\)\) \{[\s\S]*emit\(state, ev\);/);
   assert.doesNotMatch(server, /agent-fallback:echo/);
   assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
@@ -192,7 +193,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   );
   assert.match(geminiRunner, /GEMINI_FALLBACK_MODEL/);
   assert.match(geminiRunner, /isQuotaFailure/);
-  assert.match(geminiRunner, /retrying \$\{fallbackModel\}/);
+  assert.match(geminiRunner, /if \(text\.trim\(\)\) \{[\s\S]*opts\.emit\(\{[\s\S]*provider: 'gemini-sdk'/);
+  assert.doesNotMatch(geminiRunner, /quota\/rate limit failed; retrying/);
   assert.match(geminiRunner, /MALFORMED_FUNCTION_CALL/);
   assert.match(geminiRunner, /produced no text output/);
   assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);

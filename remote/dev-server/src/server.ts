@@ -929,11 +929,18 @@ function agentEventHasProviderError(raw: unknown): boolean {
   );
 }
 
+function agentEventIsProviderMetadataOnly(raw: unknown): boolean {
+  const obj = recordValue(raw);
+  if (!obj) return false;
+  return Boolean(obj.provider && obj.model && !agentEventVisibleText(raw));
+}
+
 function shouldForwardAgentRunnerEvent(event: AgentRunnerEvent): boolean {
   if (event.kind !== 'claude') return true;
   const rawType = agentRawType(event.raw);
   const visibleText = agentEventVisibleText(event.raw);
   if (agentEventHasProviderError(event.raw)) return false;
+  if (agentEventIsProviderMetadataOnly(event.raw)) return false;
   if (
     /raw_model_stream_event|response\.created|response\.in_progress|response_started|response\.completed|system|tool/i.test(
       rawType,

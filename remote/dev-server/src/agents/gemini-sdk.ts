@@ -75,6 +75,15 @@ async function streamGeminiModel(
     const text = typeof chunk.text === 'string' ? chunk.text : '';
     if (text.trim()) {
       sawText = true;
+      opts.emit({
+        kind: 'claude',
+        raw: {
+          provider: 'gemini-sdk',
+          model,
+          text,
+          usageMetadata: chunk.usageMetadata,
+        },
+      });
     }
     for (const candidate of chunk.candidates ?? []) {
       const finishReason = candidate.finishReason;
@@ -82,16 +91,6 @@ async function streamGeminiModel(
         malformedFinishReason = finishReason;
       }
     }
-    opts.emit({
-      kind: 'claude',
-      raw: {
-        provider: 'gemini-sdk',
-        model,
-        text: chunk.text,
-        candidates: chunk.candidates,
-        usageMetadata: chunk.usageMetadata,
-      },
-    });
   }
 
   if (malformedFinishReason) {
@@ -125,10 +124,6 @@ export const geminiSdkRunner: AgentRunner = {
         !opts.signal?.aborted &&
         isQuotaFailure(error)
       ) {
-        opts.emit({
-          kind: 'stderr',
-          text: `gemini-sdk: ${primaryModel} quota/rate limit failed; retrying ${fallbackModel}`,
-        });
         await streamGeminiModel(client, opts, fallbackModel);
         return;
       }
