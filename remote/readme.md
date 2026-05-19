@@ -421,9 +421,9 @@ worker nodes.
 A Node.js + TypeScript HTTP server (Fastify) that:
 
 1. Receives a task from Vercel: `POST /tasks { taskId, threadId, prompt }`.
-2. Creates or reuses the thread workspace/branch `dev-thread/<threadId>/<slugified-thread-title>`
+2. Creates or reuses the thread workspace/branch `agent/k8s/openai-5.5/<threadId>/<slugified-thread-title>`
    from the warm baseline of `dd-next-1` on `dev`.
-3. Runs the selected provider (`claude-sdk` default, Claude CLI, OpenAI Agents SDK, or OpenAI Codex
+3. Runs the selected provider (`openai-sdk` default, Claude SDK/CLI, or OpenAI Codex
    CLI) inside the thread workspace.
 4. Streams every event:
    - back to Vercel via `POST /api/admin/remote-dev/events` (server-to-server, used to populate
@@ -490,7 +490,7 @@ mismatches.
 ┌─────────────────────────────────────┐  ┌────────────────┐
 │  remote/dev-server/  (Docker)       │  │   NeonDB       │
 │  • git worktree per task            │  │ agent_remote_  │
-│  • spawns claude                    │  │  dev_threads   │
+│  • runs OpenAI SDK by default       │  │  dev_threads   │
 │  • streams events                   │  │  …_tasks       │
 │  • opens PRs                        │  │  …_events      │
 │  • publishes outputs to S3/GCS/R2/  │  │  …_artifacts   │
@@ -498,8 +498,8 @@ mismatches.
 └──┬─────────────────────────┬────────┘
    ▼                         ▼
 ┌────────────┐       ┌──────────────────────┐       ┌──────────────────────┐
-│  GitHub    │       │  Anthropic API       │       │  S3 / GCS / R2 /     │
-│ (truth +   │       │  (claude-opus-4-7)   │       │  Drive (artifacts)   │
+│  GitHub    │       │  OpenAI API          │       │  S3 / GCS / R2 /     │
+│ (truth +   │       │  (gpt-5.5 default)   │       │  Drive (artifacts)   │
 │  PRs)      │       │                      │       │                      │
 └────────────┘       └──────────────────────┘       └──────────────────────┘
 ```
@@ -543,7 +543,7 @@ authenticated HTTP/webhook calls and Supabase client APIs.
 - Next.js resolves thread -> worker container/pod and forwards to `POST /tasks` on the worker with
   `X-Server-Auth`.
 - Reusing the same UUID reuses the same runtime session and branch.
-- Branch naming convention is now: `dev-thread/<threadId>/<title-and-explanation-slug>`.
+- Branch naming convention is now: `agent/k8s/openai-5.5/<threadId>/<title-and-explanation-slug>`.
 - Completed runs emit a `done` event with `prUrl`; the admin pages surface those links in both
   `/u/admin/remote-dev` and `/u/admin/remote-ui`.
 
@@ -654,16 +654,16 @@ admin's events because they subscribe with their own UUID. Three layers of defen
 
 ## Agent providers (pluggable)
 
-Each task can be driven by Gemini, Claude, or OpenAI. The default is the Gemini SDK runner;
+Each task can be driven by Gemini, Claude, or OpenAI. The default is the OpenAI SDK runner;
 override per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`
 env on the docker.
 
 | Provider           | Path                                                | Status               |
 | ------------------ | --------------------------------------------------- | -------------------- |
-| `gemini-sdk`       | `@google/genai` streaming SDK                       | working (default/fallback) |
+| `gemini-sdk`       | `@google/genai` streaming SDK                       | model-only response runner |
 | `claude-sdk`       | `@anthropic-ai/claude-agent-sdk` `query()` iterator | working              |
 | `claude-cli`       | `claude -p ... --output-format stream-json`         | working CLI fallback |
-| `openai-sdk`       | `@openai/agents` + scoped shell/apply-patch tools   | working SDK path     |
+| `openai-sdk`       | `@openai/agents` + scoped shell/apply-patch tools   | working default SDK path |
 | `openai-codex-cli` | `codex exec "<prompt>" --json`                      | working CLI fallback |
 
 Each runner gets a **strict env allowlist** — only the API key it needs (`GOOGLE_API_KEY` or
@@ -739,7 +739,7 @@ surface — review before broadening access.
 
 - **Agent shell/file tools can make broad branch edits.** SDK providers are scoped to the thread
   workspace and use explicit tool surfaces; CLI providers still expose broad shell access inside
-  that workspace. The blast radius is bounded to the thread branch (`dev-thread/<threadId>/<slug>`)
+  that workspace. The blast radius is bounded to the thread branch (`agent/k8s/openai-5.5/<threadId>/<slug>`)
   and PR review gate, not direct `dev` writes.
 - **No per-user concurrent-stream cap.** A single admin opening many task tabs each starts a
   250ms-poll SSE against Postgres for up to ~12 min. Mitigate later with a Redis semaphore (cap N

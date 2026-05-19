@@ -2,7 +2,7 @@
 //   1. Per-task `provider` field on the dispatch payload (untrusted input,
 //      validated against the AgentProvider union).
 //   2. AGENT_PROVIDER env var.
-//   3. Hard-coded default: "claude-sdk".
+//   3. Hard-coded default: "openai-sdk".
 //
 // Per-runner secret needs (must be present in the env allowlist passed to
 // run(), not just process.env):
@@ -61,7 +61,7 @@ function configuredSecret(name: string): string | undefined {
  *   1. Explicit per-task override (from dispatch payload)
  *   2. AGENT_PROVIDER env var
  *   3. Availability adjustment: prefer SDK over CLI when both are available
- *   4. Default: "claude-sdk"
+ *   4. Default: "openai-sdk"
  *
  * The availability logic checks the cached probe when it exists. It can
  * upgrade a CLI choice to an available SDK or fall back from an unavailable
@@ -73,7 +73,7 @@ export function resolveAgentProvider(perTaskOverride?: string | null): AgentProv
     chosen = perTaskOverride;
   } else {
     const fromEnv = process.env.AGENT_PROVIDER;
-    chosen = isAgentProvider(fromEnv) ? fromEnv : 'claude-sdk';
+    chosen = isAgentProvider(fromEnv) ? fromEnv : 'openai-sdk';
   }
 
   // Prefer SDK runners when available, but fall back to CLI if the cached

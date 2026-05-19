@@ -190,7 +190,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
   const parsed = parseContainerPoolAppConfigSeed(appConfigSeedSql);
   const expectedRuntimes = [
     'nodejs',
-    'nodejs-chat-claude',
+    'nodejs-chat-openai',
     'rust',
     'golang',
     'python3',
@@ -232,8 +232,8 @@ test('container pool app_config seed is a complete runtime contract', async () =
     parsed.pools.map((entry) => entry.slug).sort(),
     [
       'nodejs',
-      'nodejs-chat-claude-k8s-cluster-dev',
-      'nodejs-chat-claude-live-mutex-dev',
+      'nodejs-chat-openai-k8s-cluster-dev',
+      'nodejs-chat-openai-live-mutex-dev',
       'rust',
       'golang',
       'python3',
@@ -247,22 +247,22 @@ test('container pool app_config seed is a complete runtime contract', async () =
   for (const pool of parsed.pools) {
     const baseImage =
       baseImageByRuntime.get(pool.slug) ??
-      (pool.slug.startsWith('nodejs-chat-claude-')
-        ? baseImageByRuntime.get('nodejs-chat-claude')
+      (pool.slug.startsWith('nodejs-chat-openai-')
+        ? baseImageByRuntime.get('nodejs-chat-openai')
         : undefined);
     assert.ok(baseImage, `pool ${pool.slug} should have a matching base image`);
     assert.equal(pool.image, baseImage.image);
-    if (pool.slug.startsWith('nodejs-chat-claude-')) {
+    if (pool.slug.startsWith('nodejs-chat-openai-')) {
       assert.equal(baseImage.dockerfile, 'remote/dev-server/Dockerfile');
       assert.equal(baseImage.buildContext, 'remote/dev-server');
       assert.equal(pool.requestPath, '/tasks');
       assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
       const expectedRepoBySlug = new Map([
-        ['nodejs-chat-claude-live-mutex-dev', 'git@github.com:ORESoftware/live-mutex.git'],
-        ['nodejs-chat-claude-k8s-cluster-dev', 'git@github.com:ORESoftware/k8s-cluster.git'],
+        ['nodejs-chat-openai-live-mutex-dev', 'git@github.com:ORESoftware/live-mutex.git'],
+        ['nodejs-chat-openai-k8s-cluster-dev', 'git@github.com:ORESoftware/k8s-cluster.git'],
       ]);
       assert.equal(pool.env.DD_REPO_URL, expectedRepoBySlug.get(pool.slug));
-      assert.equal(pool.env.AGENT_PROVIDER, 'claude-sdk');
+      assert.equal(pool.env.AGENT_PROVIDER, 'openai-sdk');
       assert.equal(pool.readOnly, false);
       assert.equal(pool.user, '1000:1000');
     } else {
@@ -277,7 +277,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
     }
     assert.equal(pool.healthPath, parsed.runtimeContract.defaultHealthPath);
     assert.equal(pool.containerPort, parsed.runtimeContract.defaultContainerPort);
-    if (pool.slug === 'nodejs-chat-claude-live-mutex-dev') {
+    if (pool.slug === 'nodejs-chat-openai-live-mutex-dev') {
       assert.ok(pool.minWarm >= 1, `pool ${pool.slug} should keep at least one warm worker`);
     } else {
       assert.ok(pool.minWarm >= 0, `pool ${pool.slug} should allow disabled prewarm`);

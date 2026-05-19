@@ -116,7 +116,7 @@ remote/dev-server-local/
     ├── agents/
     │   ├── types.ts           # AgentRunner interface
     │   ├── index.ts           # selector + per-runner env allowlist
-    │   ├── claude-cli.ts      # working: spawns `claude` (default)
+    │   ├── claude-cli.ts      # working: spawns `claude`
     │   ├── claude-sdk.ts      # working: @anthropic-ai/claude-agent-sdk
     │   ├── openai-codex-cli.ts# working (after `codex` binary install)
     │   └── openai-sdk.ts      # working: @openai/agents
@@ -196,23 +196,23 @@ docker run --rm -p 8080:8080 \
 
 ### Recommended — agent provider
 
-The runner that drives each task is pluggable. Default is Claude Code via the `claude` CLI; can be
+The runner that drives each task is pluggable. Default is OpenAI SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `claude-sdk`       | working (default) | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
+| `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
-| `openai-sdk`       | working           | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace.         |
-| `openai-codex-cli` | working           | `OPENAI_API_KEY` (+ optional `CODEX_MODEL`, e.g. `gpt-5`) | Spawns OpenAI's `codex` CLI installed in the Dockerfile and parses JSON/NDJSON output.           |
+| `openai-sdk`       | working (default) | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace.         |
+| `openai-codex-cli` | working           | `OPENAI_API_KEY` (+ optional `CODEX_MODEL`, e.g. `gpt-5.5`) | Spawns OpenAI's `codex` CLI installed in the Dockerfile and parses JSON/NDJSON output.         |
 
 | Var                 | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `AGENT_PROVIDER`    | Default runner if the dispatch doesn't specify one. One of `claude-sdk` / `claude-cli` / `openai-sdk` / `openai-codex-cli`. |
 | `ANTHROPIC_API_KEY` | Required when provider is a `claude-*` runner.                                                                              |
 | `OPENAI_API_KEY`    | Required when provider is an `openai-*` runner.                                                                             |
-| `CODEX_MODEL`       | Optional. Pins `codex --model <name>` per dispatch.                                                                         |
-| `OPENAI_MODEL`      | Optional. Read by the SDK runner if set.                                                                                    |
+| `CODEX_MODEL`       | Optional. Defaults to `OPENAI_MODEL`; pins `codex --model <name>` per dispatch.                                            |
+| `OPENAI_MODEL`      | Optional. Defaults to `gpt-5.5`; read by the SDK runner if set.                                                            |
 
 Each runner is given a **strict env allowlist** (`PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`, plus
 its provider-specific API key). The agent never sees `GH_PAT`, `GH_DEPLOY_KEY`,
@@ -347,7 +347,7 @@ For each `POST /tasks` in that thread:
 
 1. Append prompt/event metadata to `tmp/convos/thread.log` as JSONL.
 2. `mkdir -p $OUTPUTS_DIR/<taskId>` so the agent has a place to write.
-3. Run the selected provider (`claude-sdk` by default, or CLI/OpenAI override).
+3. Run the selected provider (`openai-sdk` by default, or CLI/Claude override).
 4. `git add -A && git commit && git push --set-upstream origin agent/thread/<threadId>`.
 5. `gh pr view` the thread branch and reuse an existing PR, or create one.
 6. **Walk `$OUTPUTS_DIR/<taskId>/`** — every regular file (one level deep) is uploaded via the

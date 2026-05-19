@@ -52,7 +52,7 @@ and acknowledged only after the REST prepare call succeeds.
 
 The consumer does not assign coding-agent work to an arbitrary generic worker.
 For queued execution it derives a repo-scoped pool slug from the task repo and
-base branch, for example `nodejs-chat-claude-live-mutex-dev`. If that pool is
+base branch, for example `nodejs-chat-openai-live-mutex-dev`. If that pool is
 not healthy, fallback dispatch keeps the deterministic `dd-thread-<short>`
 runtime available.
 

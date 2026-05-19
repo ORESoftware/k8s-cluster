@@ -98,8 +98,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /type: 'worker-heartbeat'/);
   assert.match(server, /status: 'waiting-for-task'/);
   assert.match(server, /registerWorkerWebSocketUpgrade\(\);[\s\S]*await fastify\.listen/);
-  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk'/);
+  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'openai-sdk'/);
   assert.match(server, /agentFallbackProvider: AGENT_FALLBACK_PROVIDER/);
+  assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
+  assert.match(server, /return `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
+  assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
   assert.match(server, /type TaskReceipt/);
   assert.match(server, /function taskReceiptPath\(taskId: string\): string/);
@@ -150,7 +153,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(agentIndex, /configuredSecret\('GOOGLE_API_KEY'\) \?\? configuredSecret\('GEMINI_API_KEY'\)/);
   assert.match(agentIndex, /base\.GEMINI_FALLBACK_MODEL =[\s\S]*DEFAULT_GEMINI_FALLBACK_MODEL/);
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
-  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'claude-sdk'/);
+  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'openai-sdk'/);
   assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
   assert.match(server, /threadTitle:\s*z\.string\(\)\.min\(1\)\.max\(200\)\.nullish\(\)/);
   assert.match(
@@ -168,7 +171,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(geminiRunner, /retrying \$\{fallbackModel\}/);
   assert.match(geminiRunner, /MALFORMED_FUNCTION_CALL/);
   assert.match(geminiRunner, /produced no text output/);
-  assert.match(config, /AGENT_PROVIDER:\s*'claude-sdk'/);
+  assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);
+  assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);
 

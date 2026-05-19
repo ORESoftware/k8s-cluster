@@ -14,7 +14,7 @@
 //   GET  /healthz                — liveness probe
 //
 // Per thread, the server prepares/reuses a stable branch
-// dev-thread/<threadId>/<slugified-title>.
+// agent/k8s/openai-5.5/<threadId>/<slugified-title>.
 // Per task, it runs the selected provider, streams sequenced events,
 // appends tmp/convos/thread.log, and pushes the branch. PR creation is an
 // explicit UI/API action.
@@ -67,7 +67,7 @@ import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js'
 
 // ---------- Config ----------
 
-const AGENT_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk';
+const AGENT_FALLBACK_PROVIDER: AgentProvider = 'openai-sdk';
 const GENERATED_GIT_EXCLUDES = [':!.pnpm-store', ':!node_modules', ':!.next', ':!.turbo'];
 
 const config = {
@@ -113,6 +113,7 @@ const config = {
   threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
   threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
   agentFallbackProvider: AGENT_FALLBACK_PROVIDER,
+  agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
   threadLogRelativePath: process.env.THREAD_LOG_RELATIVE_PATH ?? 'tmp/convos/thread.log',
   skipBootGitSync: process.env.SKIP_BOOT_GIT_SYNC === 'true',
@@ -445,7 +446,7 @@ function getSessionBranch(
     return hinted;
   }
   const titleSlug = slugifyBranchFragment(titleHint?.trim() || sessionId);
-  return `dev-thread/${sessionId}/${titleSlug}`;
+  return `${config.agentBranchPrefix}/${sessionId}/${titleSlug}`;
 }
 
 function getSessionLogPath(workspacePath: string): string {

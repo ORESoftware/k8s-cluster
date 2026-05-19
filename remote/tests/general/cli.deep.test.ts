@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-const baseUrl = (process.env.REMOTE_DEV_BASE_URL ?? 'http://54.91.17.58').replace(/\/+$/, '');
+const baseUrl = (process.env.REMOTE_DEV_BASE_URL ?? 'https://54.91.17.58').replace(/\/+$/, '');
 const serverSecret = process.env.REMOTE_DEV_SERVER_SECRET ?? 'dd-k8s-home';
 const sshHost = process.env.REMOTE_DEV_EC2_HOST ?? '54.91.17.58';
 const sshUser = process.env.REMOTE_DEV_EC2_USER ?? 'ec2-user';
@@ -359,7 +359,7 @@ test(
     assert.ok(doneA, 'task A stream should include done');
     assert.match(
       String(doneA.data.branch ?? ''),
-      /^dev-thread\//,
+      /^agent\/k8s\/openai-5\.5\//,
       'done event should include thread branch',
     );
     assert.ok(

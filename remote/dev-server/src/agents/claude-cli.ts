@@ -1,7 +1,7 @@
 // Claude Code CLI runner — spawns the `claude` binary and parses its
 // `--output-format stream-json` NDJSON stdout.
 //
-// This is the default runner. It works without any SDK install — just
+// This runner works without any SDK install — just
 // `npm i -g @anthropic-ai/claude-code` (already done in the Dockerfile).
 
 import { spawn } from "node:child_process";

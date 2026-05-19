@@ -262,7 +262,7 @@ fn repo_pool_slug(repo: &str, base_branch: &str) -> String {
         .unwrap_or("repo");
     let repo_part = sanitize_slug_part(repo_name);
     let branch_part = sanitize_slug_part(base_branch);
-    format!("nodejs-chat-claude-{repo_part}-{branch_part}")
+    format!("nodejs-chat-openai-{repo_part}-{branch_part}")
 }
 
 async fn dispatch_to_container_pool(

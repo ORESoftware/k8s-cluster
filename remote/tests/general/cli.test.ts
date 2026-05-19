@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const execFileAsync = promisify(execFile);
 
-const baseUrl = (process.env.REMOTE_DEV_BASE_URL ?? 'http://54.91.17.58').replace(/\/+$/, '');
+const baseUrl = (process.env.REMOTE_DEV_BASE_URL ?? 'https://54.91.17.58').replace(/\/+$/, '');
 const serverSecret = process.env.REMOTE_DEV_SERVER_SECRET ?? 'dd-k8s-home';
 const sshHost = process.env.REMOTE_DEV_EC2_HOST ?? '54.91.17.58';
 const sshUser = process.env.REMOTE_DEV_EC2_USER ?? 'ec2-user';

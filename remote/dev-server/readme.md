@@ -6,7 +6,7 @@ configured git repo, and streams agent events back to the REST API and directly 
 Public homepage rendering moved to `remote/web-home-rs`. This server is worker/API only.
 
 The production shape is **one thread/conversation UUID maps to one container runtime and one git
-branch** (`dev-thread/<uuid>/<slug>`). The container is pinned to a single threadId via
+branch** (`agent/k8s/openai-5.5/<uuid>/<slug>`). The container is pinned to a single threadId via
 `REMOTE_DEV_THREAD_ID` on startup; subsequent prompts in that thread are queued into the same
 runtime so workspace context is preserved across tasks. The server refuses to start without a
 threadId — a per-thread pod is the only supported deployment shape.
@@ -31,7 +31,7 @@ remote/dev-server/
     ├── agents/
     │   ├── types.ts           # AgentRunner interface
     │   ├── index.ts           # selector + per-runner env allowlist
-    │   ├── claude-cli.ts      # working: spawns `claude` (default)
+    │   ├── claude-cli.ts      # working: spawns `claude`
     │   ├── claude-sdk.ts      # working: @anthropic-ai/claude-agent-sdk
     │   ├── openai-codex-cli.ts# working (after `codex` binary install)
     │   └── openai-sdk.ts      # working: @openai/agents
@@ -146,16 +146,16 @@ workflow without a failing package install.
 
 ### Recommended — agent provider
 
-The runner that drives each task is pluggable. Default is Claude SDK; it can be
+The runner that drives each task is pluggable. Default is OpenAI SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
-If a non-Claude provider throws before completing, the worker retries once with Claude SDK.
+If a non-OpenAI provider throws before completing, the worker retries once with OpenAI SDK.
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `gemini-sdk`       | working           | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Model-only response runner. It cannot edit the workspace; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
-| `claude-sdk`       | working (default/fallback) | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
+| `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
-| `openai-sdk`       | working           | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace.         |
+| `openai-sdk`       | working (default/fallback) | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace.         |
 | `openai-codex-cli` | working           | `OPENAI_API_KEY` (+ optional `CODEX_MODEL`, e.g. `gpt-5.5`) | Spawns OpenAI's `codex` CLI installed in the Dockerfile and parses JSON/NDJSON output.         |
 
 | Var                 | Purpose                                                                                                                     |
@@ -311,7 +311,7 @@ For each new thread, the container/workspace:
 
 1. `git fetch origin <BASE_BRANCH>` against the warm base repo.
 2. Choose the session branch. If dispatch provides `branch`, reuse it; otherwise derive one as
-   `dev-thread/<threadId>/<slugified-thread-title>`. If that remote branch already exists, switch from it;
+   `agent/k8s/openai-5.5/<threadId>/<slugified-thread-title>`. If that remote branch already exists, switch from it;
    otherwise create from `origin/<BASE_BRANCH>` and hard-reset to that base. This keeps a restarted
    thread container resumable while still making a brand-new thread start from fresh `origin/<BASE_BRANCH>`.
 3. `pnpm install --ignore-workspace --frozen-lockfile` from `remote/dev-server` so the worker installs
@@ -322,7 +322,7 @@ For each `POST /tasks` in that thread:
 
 1. Append prompt/event metadata to `tmp/convos/thread.log` as JSONL.
 2. `mkdir -p $OUTPUTS_DIR/<taskId>` so the agent has a place to write.
-3. Run the selected provider (`claude-sdk` by default, with Gemini/OpenAI overrides available).
+3. Run the selected provider (`openai-sdk` by default, with Claude/Gemini overrides available).
 4. Stage workspace changes while excluding generated dependency/cache dirs, then commit and push `origin <session-branch>`.
 5. **Walk `$OUTPUTS_DIR/<taskId>/`** — every regular file (one level deep) is uploaded via the
    configured storage adapter, emitting one `artifact` event per file with the resulting URL.
