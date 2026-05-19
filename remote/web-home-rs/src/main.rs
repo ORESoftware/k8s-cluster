@@ -3193,6 +3193,18 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           });
           startRuntimePolling(threadId);
         }
+        if (routeAction === "open-pr") {
+          renderEventRow({
+            seq: `open-pr-start-${Date.now()}`,
+            eventKind: "status",
+            payload: {
+              kind: "status",
+              status: `opening draft PR against ${currentBaseBranch()}`,
+              message: `Thread: ${threadId}\nTask: ${taskId}`,
+            },
+            createdAt: new Date().toISOString(),
+          });
+        }
         let response;
         try {
           response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/${routeAction}`, {
@@ -3211,6 +3223,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           if (pollRuntime) stopRuntimePolling();
         }
         const body = await response.text();
+        let parsedBody = null;
+        try {
+          parsedBody = JSON.parse(body);
+        } catch {
+          parsedBody = null;
+        }
         const visibleBody = adminPreview(`${routeAction} response body`, body);
         renderEventRow({
           seq: `control-${Date.now()}`,
@@ -3227,6 +3245,22 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           setStatus(`${routeAction} failed`, true);
         } else {
           setStatus(`${routeAction} accepted`);
+          if (routeAction === "open-pr" && parsedBody?.ok) {
+            const branch = parsedBody.branch || "(unknown branch)";
+            const baseBranch = parsedBody.baseBranch || currentBaseBranch();
+            const resultLabel = parsedBody.reused ? "reused" : "created";
+            renderEventRow({
+              seq: `open-pr-complete-${Date.now()}`,
+              eventKind: "status",
+              payload: {
+                kind: "status",
+                status: `completed PR request: ${resultLabel} draft PR against ${baseBranch}`,
+                message: [parsedBody.prUrl, `Head branch: ${branch}`].filter(Boolean).join("\n"),
+              },
+              createdAt: new Date().toISOString(),
+            });
+            setStatus(`completed PR request: ${resultLabel} draft PR against ${baseBranch}`);
+          }
           let terminalTargetUrl = null;
           if (routeAction === "terminal") {
             terminalTargetUrl = terminalUrlFromControlResponse(threadId, body);
