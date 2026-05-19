@@ -1010,8 +1010,15 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /setStreamState\("showing live status", "ok"\)/);
   assert.match(server, /if \(options\.appendOnly\) \{[\s\S]*state\.streamTaskId = taskId;[\s\S]*\} else \{[\s\S]*clearStream\("loading events", taskId\);[\s\S]*\}/);
   assert.match(server, /async function loadSnapshot\(options = \{\}\) \{/);
+  assert.match(server, /snapshotFailures: 0/);
+  assert.match(server, /snapshotRetryTimer: null/);
+  assert.match(server, /function scheduleSnapshotRetry\(options = \{\}\) \{/);
+  assert.match(server, /function handleSnapshotError\(error, options = \{\}\) \{/);
+  assert.match(server, /snapshot unavailable · retrying/);
+  assert.match(server, /snapshot temporarily unavailable; retrying/);
   assert.match(server, /if \(options\.preserveStreamForTask !== state\.selectedTaskId\) \{[\s\S]*await loadTaskEvents\(state\.selectedTaskId, \{[\s\S]*preserveCurrentOnEmpty: state\.streamTaskId === state\.selectedTaskId,[\s\S]*\}\);[\s\S]*\}/);
   assert.match(server, /loadSnapshot\(\{ preserveStreamForTask: taskId \}\)/);
+  assert.match(server, /handleSnapshotError\(error, \{ preserveStreamForTask: taskId \}\)/);
   assert.match(server, /setInterval\(\(\) => \{[\s\S]*loadSnapshot\(\{ preserveStreamForTask: state\.selectedTaskId \}\)[\s\S]*appendOnly: true,[\s\S]*\}, 10000\);/);
   assert.match(
     server,

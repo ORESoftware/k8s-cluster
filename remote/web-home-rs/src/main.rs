@@ -1682,6 +1682,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         runtimePoll: null,
         lastRuntimeSummary: "",
         threadUiMode: "empty",
+        snapshotFailures: 0,
+        snapshotRetryTimer: null,
       };
 
       function makeUuid() {
@@ -2303,6 +2305,27 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
       }
 
+      function scheduleSnapshotRetry(options = {}) {
+        if (state.snapshotRetryTimer !== null) return;
+        const delay = Math.min(30000, 2000 * Math.max(1, state.snapshotFailures));
+        state.snapshotRetryTimer = window.setTimeout(() => {
+          state.snapshotRetryTimer = null;
+          loadSnapshot({ ...options, fromRetry: true }).catch((error) => handleSnapshotError(error, options));
+        }, delay);
+      }
+
+      function handleSnapshotError(error, options = {}) {
+        state.snapshotFailures += 1;
+        logAdminDetail("snapshot load error", error);
+        const hasSnapshot = Boolean(state.snapshot || state.threads.length || state.tasks.length);
+        const summary = hasSnapshot
+          ? `${state.threads.length} threads · ${state.tasks.length} tasks · snapshot retrying`
+          : "snapshot unavailable · retrying";
+        $("snapshot-meta").textContent = summary;
+        setStatus(adminPreview("snapshot temporarily unavailable; retrying", error, 180), true);
+        scheduleSnapshotRetry(options);
+      }
+
       function renderRealtimePayload(raw, source = "ws") {
         let parsed = raw;
         try { parsed = JSON.parse(raw); } catch (_error) {}
@@ -2523,6 +2546,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
         if (!response.ok) throw new Error(`snapshot failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
+        state.snapshotFailures = 0;
+        if (state.snapshotRetryTimer !== null) {
+          window.clearTimeout(state.snapshotRetryTimer);
+          state.snapshotRetryTimer = null;
+        }
         state.snapshot = data;
         state.threads = data.threads || [];
         state.tasks = data.tasks || [];
@@ -2646,7 +2674,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
         openLiveStream(threadId, taskId);
-        await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
+        await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => handleSnapshotError(error, { preserveStreamForTask: taskId }));
       }
 
       async function threadControl(action) {
@@ -2725,14 +2753,14 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           if (routeAction === "terminal") {
             terminalTargetUrl = terminalUrlFromControlResponse(threadId, body);
           }
-          await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
+          await loadSnapshot().catch((error) => handleSnapshotError(error));
           if (terminalTargetUrl) openInlineTerminal(terminalTargetUrl);
         }
       }
 
       $("refresh").addEventListener("click", () => {
         loadKnownRepos().catch((error) => setStatus(adminPreview("known repos load error", error, 240), true));
-        loadSnapshot().catch((error) => setStatus(adminPreview("snapshot load error", error, 240), true));
+        loadSnapshot().catch((error) => handleSnapshotError(error));
       });
       $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(adminPreview("repo save error", error, 240), true)));
       $("repo-url").addEventListener("change", updateRepoUrlMode);
@@ -2798,13 +2826,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("terminal-thread").addEventListener("click", () => threadControl("terminal").catch((error) => renderError(adminPreview("terminal exception", error), error, "terminal exception")));
 
       loadKnownRepos().catch((error) => setStatus(adminPreview("known repos load error", error, 240), true));
-      loadSnapshot().catch((error) => {
-        $("snapshot-meta").textContent = "snapshot failed";
-        setStatus(adminPreview("snapshot load error", error, 240), true);
-      });
+      loadSnapshot().catch((error) => handleSnapshotError(error));
       setInterval(() => {
         if (!state.selectedTaskId) return;
-        loadSnapshot({ preserveStreamForTask: state.selectedTaskId }).catch((error) => setStatus(adminPreview("snapshot poll error", error, 240), true));
+        loadSnapshot({ preserveStreamForTask: state.selectedTaskId }).catch((error) => handleSnapshotError(error, { preserveStreamForTask: state.selectedTaskId }));
         loadTaskEvents(state.selectedTaskId, {
           preserveCurrentOnEmpty: true,
           appendOnly: true,
