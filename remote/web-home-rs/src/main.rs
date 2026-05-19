@@ -1061,7 +1061,7 @@ fn agents_threads_body() -> Markup {
                         button id="new-task" type="button" { "New task" }
                         button id="sleep-thread" type="button" title="Reduce resources by scaling the thread container to zero" { "Pause/Sleep" }
                         button id="archive-thread" class="warn" type="button" title="Deep sleep: suspend the thread container" { "Archive" }
-                        button id="delete-thread" class="danger" type="button" { "Delete (Delete Container)" }
+                        button id="delete-thread" class="danger" type="button" { "Delete runtime" }
                         button id="merge-thread" type="button" { "Merge with upstream" }
                         button id="commit-thread" type="button" title="Commit current worker changes and push the thread branch" { "Make commit" }
                         button id="open-pr-thread" type="button" { "Open draft PR" }
@@ -1181,7 +1181,7 @@ fn agents_tasks_body() -> Markup {
                     button id="save-chat-repo" type="button" title="Save this repo URL and default branch to the known repo list" { "Save repo URL" }
                     button id="thread-sleep" type="button" title="Reduce resources by scaling the thread container to zero" { "Pause/Sleep" }
                     button id="thread-archive" class="warn" type="button" title="Deep sleep: suspend the thread container" { "Archive" }
-                    button id="thread-delete" class="danger" type="button" { "Delete (Delete Container)" }
+                    button id="thread-delete" class="danger" type="button" { "Delete runtime" }
                     button id="thread-merge" type="button" { "Merge with upstream" }
                     button id="thread-commit" type="button" title="Commit current worker changes and push the thread branch" { "Make commit" }
                     button id="thread-open-pr" type="button" { "Open draft PR" }
@@ -1678,6 +1678,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         liveSource: null,
         liveWs: null,
         renderedEvents: new Set(),
+        streamTaskId: null,
         runtimePoll: null,
         lastRuntimeSummary: "",
         threadUiMode: "empty",
@@ -2199,7 +2200,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (state.selectedThreadId && existingThread(state.selectedThreadId)) setWorkspaceLayout("lower");
         if (state.selectedTaskId) {
           $("task-id").value = state.selectedTaskId;
-        loadTaskEvents(state.selectedTaskId).catch((error) => renderError(`events load failed: ${adminPreview("events load error", error)}`, error, "events load error"));
+          loadTaskEvents(state.selectedTaskId).catch((error) => renderError(`events load failed: ${adminPreview("events load error", error)}`, error, "events load error"));
         } else {
           clearStream("No task selected.");
         }
@@ -2236,8 +2237,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setStreamState(state.selectedTaskId ? "showing events" : "no task selected", state.selectedTaskId ? "ok" : "warn");
       }
 
-      function clearStream(message) {
+      function clearStream(message, taskId = state.selectedTaskId) {
         state.renderedEvents.clear();
+        state.streamTaskId = taskId || null;
         $("stream").textContent = "";
         setStreamState(message || "waiting", "warn");
       }
@@ -2318,6 +2320,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       function renderEventRow(row) {
+        state.streamTaskId = state.selectedTaskId || state.streamTaskId;
         const seq = row.seq ?? row.payload?.seq ?? Date.now();
         const key = row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${eventKind(row)}`;
         if (state.renderedEvents.has(key)) return;
@@ -2437,13 +2440,17 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (data?.event) renderEventRow(data.event);
       }
 
-      async function loadTaskEvents(taskId) {
-        clearStream("loading events");
+      async function loadTaskEvents(taskId, options = {}) {
         const response = await fetch(`/api/agents/tasks/${encodeURIComponent(taskId)}/events?limit=250`, { cache: "no-store" });
         if (!response.ok) throw new Error(`events request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         if (data.errors?.length) renderError(data.errors.join("\n"));
         if (!data.events?.length) {
+          if (options.preserveCurrentOnEmpty && state.streamTaskId === taskId && $("stream").childElementCount > 0) {
+            setStreamState("waiting for stored events", "warn");
+            return;
+          }
+          clearStream("no stored events", taskId);
           setStreamState("no stored events yet", "warn");
           const empty = document.createElement("p");
           empty.className = "muted";
@@ -2451,6 +2458,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           $("stream").appendChild(empty);
           return;
         }
+        clearStream("loading events", taskId);
         for (const event of data.events) renderEventRow(event);
       }
 
@@ -2495,7 +2503,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         };
       }
 
-      async function loadSnapshot() {
+      async function loadSnapshot(options = {}) {
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
         if (!response.ok) throw new Error(`snapshot failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
@@ -2518,7 +2526,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setWorkspaceLayout(state.selectedThreadId && existingThread(state.selectedThreadId) ? "lower" : "control");
         if (state.selectedTaskId) {
           $("task-id").value = state.selectedTaskId;
-          await loadTaskEvents(state.selectedTaskId);
+          if (options.preserveStreamForTask !== state.selectedTaskId) {
+            await loadTaskEvents(state.selectedTaskId, {
+              preserveCurrentOnEmpty: state.streamTaskId === state.selectedTaskId,
+            });
+          }
         }
       }
 
@@ -2617,7 +2629,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
         if (dispatchMode !== "queued") openLiveStream(threadId, taskId);
-        await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
+        await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
       }
 
       async function threadControl(action) {
@@ -3503,7 +3515,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
             confirm: "Archive this thread runtime?"
           },
           delete: {
-            label: "Delete (Delete Container)",
+            label: "Delete runtime",
             action: "hard-delete",
             route: `/api/agents/threads/${encodeURIComponent(threadId)}/hard-delete`,
             confirm: "Delete the Kubernetes runtime resources for this thread? GitHub PRs are not deleted."

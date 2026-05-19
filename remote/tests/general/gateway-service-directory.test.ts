@@ -975,7 +975,7 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /button id="archive-thread" class="warn" type="button" title="Deep sleep: suspend the thread container" \{ "Archive" \}/,
   );
-  assert.match(server, /Delete \(Delete Container\)/);
+  assert.match(server, /Delete runtime/);
   assert.match(server, /Merge with upstream/);
   assert.match(
     server,
@@ -1004,6 +1004,12 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /Creating or waking the UUID-bound worker/);
   assert.match(server, /dispatch still waiting after/);
   assert.match(server, /dispatch accepted/);
+  assert.match(server, /streamTaskId: null/);
+  assert.match(server, /async function loadTaskEvents\(taskId, options = \{\}\) \{/);
+  assert.match(server, /if \(options\.preserveCurrentOnEmpty && state\.streamTaskId === taskId && \$\("stream"\)\.childElementCount > 0\) \{/);
+  assert.match(server, /async function loadSnapshot\(options = \{\}\) \{/);
+  assert.match(server, /if \(options\.preserveStreamForTask !== state\.selectedTaskId\) \{[\s\S]*await loadTaskEvents\(state\.selectedTaskId, \{[\s\S]*preserveCurrentOnEmpty: state\.streamTaskId === state\.selectedTaskId,[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(server, /loadSnapshot\(\{ preserveStreamForTask: taskId \}\)/);
   assert.match(
     server,
     /fetch\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/runtime`, \{ cache: "no-store" \}\)/,
