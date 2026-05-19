@@ -45,7 +45,7 @@ jobs:
       - name: Run maintenance command through SSM
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          OPERATION: ${{ inputs.operation || 'repair-gleamlang-secret' }}
+          OPERATION: ${{ inputs.operation || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
         run: |
           set -euo pipefail
@@ -134,7 +134,9 @@ jobs:
             'kubectl -n default annotate externalsecret dd-gleamlang-server-secrets force-sync=$(date +%s) --overwrite'
           sleep 20
           sudo -u ec2-user -H bash -lc \
-            'kubectl -n default get externalsecret dd-gleamlang-server-secrets -o jsonpath="{range .status.conditions[*]}{.type}={.status}:{.reason}:{.message}{\"\\n\"}{end}"'
+            'kubectl -n default get externalsecret dd-gleamlang-server-secrets'
+          sudo -u ec2-user -H bash -lc \
+            'kubectl -n default describe externalsecret dd-gleamlang-server-secrets | sed -n "/Status:/,/Events:/p"'
           sudo -u ec2-user -H bash -lc \
             'kubectl -n default get secret dd-gleamlang-server-secrets'
           '''
