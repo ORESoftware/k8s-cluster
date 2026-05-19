@@ -499,6 +499,196 @@ pub fn validate_known_git_repos_insert(value: &KnownGitRepoInsert) -> Result<(),
     Ok(())
 }
 
+pub const AGENT_CONTEXT_BLOBS_TABLE: &str = "agent_context_blobs";
+pub const AGENT_CONTEXT_BLOBS_COLUMNS: &[&str] = &["id", "project_id", "repo_id", "context_id", "context_title", "context_blob", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const AGENT_CONTEXT_BLOBS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      project_id,
+      repo_id::text as repo_id,
+      context_id,
+      context_title,
+      context_blob,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from agent_context_blobs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentContextBlobsStatus {
+    Active,
+    Paused,
+    Archived,
+}
+
+impl AgentContextBlobsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for AgentContextBlobsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextBlobsRow {
+    pub id: String,
+    pub project_id: String,
+    pub repo_id: Option<String>,
+    pub context_id: String,
+    pub context_title: String,
+    pub context_blob: String,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextBlobsInsert {
+    pub id: Option<String>,
+    pub project_id: Option<String>,
+    pub repo_id: Option<String>,
+    pub context_id: Option<String>,
+    pub context_title: Option<String>,
+    pub context_blob: Option<String>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_agent_context_blobs_row(value: &AgentContextBlobsRow) -> Result<(), String> {
+    validate_string_length("agent_context_blobs.project_id", &value.project_id, None, Some(120))?;
+    validate_string_length("agent_context_blobs.context_id", &value.context_id, None, Some(200))?;
+    validate_string_length("agent_context_blobs.context_title", &value.context_title, None, Some(300))?;
+    if (&value.context_title).as_bytes().len() > 300 { return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string()); }
+    if (&value.context_blob).as_bytes().len() > 1048576 { return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string()); }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported agent_context_blobs.status: {}", &value.status)); }
+    if !(&value.labels).is_array() { return Err("agent_context_blobs.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("agent_context_blobs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_agent_context_blobs_insert(value: &AgentContextBlobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.project_id {
+        validate_string_length("agent_context_blobs.project_id", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.context_id {
+        validate_string_length("agent_context_blobs.context_id", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.context_title {
+        validate_string_length("agent_context_blobs.context_title", value, None, Some(300))?;
+        if (value).as_bytes().len() > 300 { return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string()); }
+    }
+    if let Some(value) = &value.context_blob {
+        if (value).as_bytes().len() > 1048576 { return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported agent_context_blobs.status: {}", value)); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("agent_context_blobs.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("agent_context_blobs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const AGENT_CONTEXT_EMBEDDINGS_TABLE: &str = "agent_context_embeddings";
+pub const AGENT_CONTEXT_EMBEDDINGS_COLUMNS: &[&str] = &["id", "context_blob_id", "embedding_model", "embedding", "embedding_dimensions", "content_sha256", "created_at"];
+pub const AGENT_CONTEXT_EMBEDDINGS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      context_blob_id::text as context_blob_id,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      content_sha256,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from agent_context_embeddings"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextEmbeddingsRow {
+    pub id: String,
+    pub context_blob_id: String,
+    pub embedding_model: String,
+    pub embedding: Value,
+    pub embedding_dimensions: i32,
+    pub content_sha256: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextEmbeddingsInsert {
+    pub id: Option<String>,
+    pub context_blob_id: Option<String>,
+    pub embedding_model: Option<String>,
+    pub embedding: Option<Value>,
+    pub embedding_dimensions: Option<i32>,
+    pub content_sha256: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_agent_context_embeddings_row(value: &AgentContextEmbeddingsRow) -> Result<(), String> {
+    validate_string_length("agent_context_embeddings.embedding_model", &value.embedding_model, None, Some(120))?;
+    if !(&value.embedding).is_array() { return Err("agent_context_embeddings.embedding must be a JSON array".to_string()); }
+    if *(&value.embedding_dimensions) < 1 { return Err("agent_context_embeddings.embedding_dimensions is below the minimum".to_string()); }
+    validate_string_length("agent_context_embeddings.content_sha256", &value.content_sha256, None, Some(64))?;
+    Ok(())
+}
+
+pub fn validate_agent_context_embeddings_insert(value: &AgentContextEmbeddingsInsert) -> Result<(), String> {
+    if let Some(value) = &value.embedding_model {
+        validate_string_length("agent_context_embeddings.embedding_model", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.embedding {
+        if !(value).is_array() { return Err("agent_context_embeddings.embedding must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.embedding_dimensions {
+        if *(value) < 1 { return Err("agent_context_embeddings.embedding_dimensions is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.content_sha256 {
+        validate_string_length("agent_context_embeddings.content_sha256", value, None, Some(64))?;
+    }
+    Ok(())
+}
+
 pub const AGENT_REMOTE_DEV_THREADS_TABLE: &str = "agent_remote_dev_threads";
 pub const AGENT_REMOTE_DEV_THREADS_COLUMNS: &[&str] = &["id", "user_id", "known_git_repo_id", "title", "repo", "base_branch", "meta", "archived_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const AGENT_REMOTE_DEV_THREADS_SELECT_SQL: &str = r###"select

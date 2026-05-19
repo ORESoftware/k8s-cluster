@@ -82,6 +82,33 @@ public final class Tables {
     public static final Field<UUID> KNOWN_GIT_REPOS_CREATED_BY = DSL.field(DSL.name("known_git_repos", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> KNOWN_GIT_REPOS_UPDATED_BY = DSL.field(DSL.name("known_git_repos", "updated_by"), SQLDataType.UUID);
 
+    public static final Name AGENT_CONTEXT_BLOBS_NAME = DSL.name("agent_context_blobs");
+    public static final Table<org.jooq.Record> AGENT_CONTEXT_BLOBS = DSL.table(AGENT_CONTEXT_BLOBS_NAME);
+    public static final Field<UUID> AGENT_CONTEXT_BLOBS_ID = DSL.field(DSL.name("agent_context_blobs", "id"), SQLDataType.UUID);
+    public static final Field<String> AGENT_CONTEXT_BLOBS_PROJECT_ID = DSL.field(DSL.name("agent_context_blobs", "project_id"), SQLDataType.VARCHAR(120));
+    public static final Field<UUID> AGENT_CONTEXT_BLOBS_REPO_ID = DSL.field(DSL.name("agent_context_blobs", "repo_id"), SQLDataType.UUID);
+    public static final Field<String> AGENT_CONTEXT_BLOBS_CONTEXT_ID = DSL.field(DSL.name("agent_context_blobs", "context_id"), SQLDataType.VARCHAR(200));
+    public static final Field<String> AGENT_CONTEXT_BLOBS_CONTEXT_TITLE = DSL.field(DSL.name("agent_context_blobs", "context_title"), SQLDataType.VARCHAR(300));
+    public static final Field<String> AGENT_CONTEXT_BLOBS_CONTEXT_BLOB = DSL.field(DSL.name("agent_context_blobs", "context_blob"), SQLDataType.CLOB);
+    public static final Field<String> AGENT_CONTEXT_BLOBS_STATUS = DSL.field(DSL.name("agent_context_blobs", "status"), SQLDataType.VARCHAR(32));
+    public static final Field<JSONB> AGENT_CONTEXT_BLOBS_LABELS = DSL.field(DSL.name("agent_context_blobs", "labels"), SQLDataType.JSONB);
+    public static final Field<JSONB> AGENT_CONTEXT_BLOBS_META_DATA = DSL.field(DSL.name("agent_context_blobs", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> AGENT_CONTEXT_BLOBS_IS_SOFT_DELETED = DSL.field(DSL.name("agent_context_blobs", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> AGENT_CONTEXT_BLOBS_CREATED_AT = DSL.field(DSL.name("agent_context_blobs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> AGENT_CONTEXT_BLOBS_UPDATED_AT = DSL.field(DSL.name("agent_context_blobs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> AGENT_CONTEXT_BLOBS_CREATED_BY = DSL.field(DSL.name("agent_context_blobs", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> AGENT_CONTEXT_BLOBS_UPDATED_BY = DSL.field(DSL.name("agent_context_blobs", "updated_by"), SQLDataType.UUID);
+
+    public static final Name AGENT_CONTEXT_EMBEDDINGS_NAME = DSL.name("agent_context_embeddings");
+    public static final Table<org.jooq.Record> AGENT_CONTEXT_EMBEDDINGS = DSL.table(AGENT_CONTEXT_EMBEDDINGS_NAME);
+    public static final Field<UUID> AGENT_CONTEXT_EMBEDDINGS_ID = DSL.field(DSL.name("agent_context_embeddings", "id"), SQLDataType.UUID);
+    public static final Field<UUID> AGENT_CONTEXT_EMBEDDINGS_CONTEXT_BLOB_ID = DSL.field(DSL.name("agent_context_embeddings", "context_blob_id"), SQLDataType.UUID);
+    public static final Field<String> AGENT_CONTEXT_EMBEDDINGS_EMBEDDING_MODEL = DSL.field(DSL.name("agent_context_embeddings", "embedding_model"), SQLDataType.VARCHAR(120));
+    public static final Field<JSONB> AGENT_CONTEXT_EMBEDDINGS_EMBEDDING = DSL.field(DSL.name("agent_context_embeddings", "embedding"), SQLDataType.JSONB);
+    public static final Field<Integer> AGENT_CONTEXT_EMBEDDINGS_EMBEDDING_DIMENSIONS = DSL.field(DSL.name("agent_context_embeddings", "embedding_dimensions"), SQLDataType.INTEGER);
+    public static final Field<String> AGENT_CONTEXT_EMBEDDINGS_CONTENT_SHA256 = DSL.field(DSL.name("agent_context_embeddings", "content_sha256"), SQLDataType.VARCHAR(64));
+    public static final Field<OffsetDateTime> AGENT_CONTEXT_EMBEDDINGS_CREATED_AT = DSL.field(DSL.name("agent_context_embeddings", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name AGENT_REMOTE_DEV_THREADS_NAME = DSL.name("agent_remote_dev_threads");
     public static final Table<org.jooq.Record> AGENT_REMOTE_DEV_THREADS = DSL.table(AGENT_REMOTE_DEV_THREADS_NAME);
     public static final Field<UUID> AGENT_REMOTE_DEV_THREADS_ID = DSL.field(DSL.name("agent_remote_dev_threads", "id"), SQLDataType.UUID);

@@ -93,6 +93,53 @@ class KnownGitRepoTable extends Table {
   };
 }
 
+@DataClassName("AgentContextBlobsData")
+class AgentContextBlobsTable extends Table {
+  @override String get tableName => "agent_context_blobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get projectId => text().named("project_id").withLength(max: 120).clientDefault(() => 'default')();
+  TextColumn get repoId => text().named("repo_id").nullable().customConstraint("UUID REFERENCES known_git_repos (id)")();
+  TextColumn get contextId => text().named("context_id").withLength(max: 200)();
+  TextColumn get contextTitle => text().named("context_title").withLength(max: 300)();
+  TextColumn get contextBlob => text().named("context_blob")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get labels => text().named("labels").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("AgentContextEmbeddingsData")
+class AgentContextEmbeddingsTable extends Table {
+  @override String get tableName => "agent_context_embeddings";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get contextBlobId => text().named("context_blob_id").customConstraint("UUID REFERENCES agent_context_blobs (id)")();
+  TextColumn get embeddingModel => text().named("embedding_model").withLength(max: 120)();
+  TextColumn get embedding => text().named("embedding").customConstraint("JSONB")();
+  IntColumn get embeddingDimensions => integer().named("embedding_dimensions")();
+  TextColumn get contentSha256 => text().named("content_sha256").withLength(max: 64)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("AgentRemoteDevThreadData")
 class AgentRemoteDevThreadTable extends Table {
   @override String get tableName => "agent_remote_dev_threads";
@@ -363,6 +410,8 @@ const List<Type> registeredDriftTables = <Type>[
   AppConfigTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,
+  AgentContextBlobsTable,
+  AgentContextEmbeddingsTable,
   AgentRemoteDevThreadTable,
   AgentRemoteDevTaskTable,
   AgentRemoteDevEventTable,

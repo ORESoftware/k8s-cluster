@@ -20,6 +20,7 @@ on:
           - reconcile-runtime
           - seed-container-pool-config
           - sync-agent-gh-pat
+          - sync-agent-model-keys
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false
@@ -52,6 +53,9 @@ jobs:
           OPERATION: ${{ inputs.operation || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
+          REMOTE_DEV_DASHSCOPE_API_KEY: ${{ secrets.REMOTE_DEV_DASHSCOPE_API_KEY }}
+          REMOTE_DEV_XAI_API_KEY: ${{ secrets.REMOTE_DEV_XAI_API_KEY }}
           THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS: ${{ vars.THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS || '4' }}
         run: |
           set -euo pipefail
@@ -294,6 +298,151 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
           ]
           print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            sync-agent-model-keys)
+              if [[ -z "${REMOTE_DEV_DEEPSEEK_API_KEY:-}" && -z "${REMOTE_DEV_DASHSCOPE_API_KEY:-}" && -z "${REMOTE_DEV_XAI_API_KEY:-}" ]]; then
+                echo "At least one REMOTE_DEV_* model provider repository secret is required" >&2
+                exit 65
+              fi
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          env = {
+              "REMOTE_DEV_DEEPSEEK_API_KEY": os.environ.get("REMOTE_DEV_DEEPSEEK_API_KEY", ""),
+              "REMOTE_DEV_DASHSCOPE_API_KEY": os.environ.get("REMOTE_DEV_DASHSCOPE_API_KEY", ""),
+              "REMOTE_DEV_XAI_API_KEY": os.environ.get("REMOTE_DEV_XAI_API_KEY", ""),
+          }
+          env_args = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items())
+          script = r'''set -euo pipefail
+          secret_name="dd/remote-dev/agent-secrets"
+          region="${AWS_REGION:-us-east-1}"
+
+          read_secret_stage() {
+            local stage="$1"
+            aws secretsmanager get-secret-value \
+              --region "$region" \
+              --secret-id "$secret_name" \
+              --version-stage "$stage" \
+              --query SecretString \
+              --output text
+          }
+
+          validate_agent_secret() {
+            SECRET_JSON="$1" python3 - <<'INNER'
+          import json
+          import os
+          import sys
+
+          required = [
+              "SERVER_AUTH_SECRET",
+              "GH_DEPLOY_KEY",
+              "GEMINI_API_KEY",
+          ]
+          try:
+              data = json.loads(os.environ.get("SECRET_JSON") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          missing = [
+              key
+              for key in required
+              if not isinstance(data, dict) or not str(data.get(key) or "").strip()
+          ]
+          if missing:
+              print("missing required keys: " + ", ".join(missing), file=sys.stderr)
+              raise SystemExit(1)
+          INNER
+          }
+
+          if ! current_secret="$(read_secret_stage AWSCURRENT 2>/tmp/agent-secrets-current.err)"; then
+            cat /tmp/agent-secrets-current.err >&2
+            exit 1
+          fi
+          source_stage="AWSCURRENT"
+          if ! validate_agent_secret "$current_secret"; then
+            echo "current $secret_name is incomplete; trying AWSPREVIOUS" >&2
+            if ! current_secret="$(read_secret_stage AWSPREVIOUS 2>/tmp/agent-secrets-previous.err)"; then
+              cat /tmp/agent-secrets-previous.err >&2
+              exit 1
+            fi
+            validate_agent_secret "$current_secret"
+            source_stage="AWSPREVIOUS"
+          fi
+
+          updated_secret="$(
+            CURRENT_SECRET="$current_secret" python3 - <<'INNER'
+          import json
+          import os
+
+          try:
+              data = json.loads(os.environ.get("CURRENT_SECRET") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          if not isinstance(data, dict):
+              data = {}
+
+          def merge_json_array(key: str, value: str) -> None:
+              value = (value or "").strip()
+              if not value:
+                  return
+              existing = data.get(key)
+              values = []
+              if isinstance(existing, str) and existing.strip():
+                  try:
+                      parsed = json.loads(existing)
+                      if isinstance(parsed, list):
+                          values.extend(str(item) for item in parsed if str(item).strip())
+                      else:
+                          values.append(existing)
+                  except json.JSONDecodeError:
+                      values.extend(item.strip() for item in existing.replace("\n", ",").split(",") if item.strip())
+              elif isinstance(existing, list):
+                  values.extend(str(item) for item in existing if str(item).strip())
+              if value not in values:
+                  values.append(value)
+              data[key] = json.dumps(values, separators=(",", ":"))
+
+          merge_json_array("DEEPSEEK_API_KEYS_JSON", os.environ.get("REMOTE_DEV_DEEPSEEK_API_KEY", ""))
+          merge_json_array("DASHSCOPE_API_KEYS_JSON", os.environ.get("REMOTE_DEV_DASHSCOPE_API_KEY", ""))
+          merge_json_array("XAI_API_KEYS_JSON", os.environ.get("REMOTE_DEV_XAI_API_KEY", ""))
+          data.setdefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+          data.setdefault("DEEPSEEK_MODELS", "deepseek-v4-pro,deepseek-v4-flash")
+          data.setdefault("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
+          data.setdefault("QWEN_MODELS", "qwen3.6-max-preview,qwen3.6-plus,qwen3.6-flash")
+          data.setdefault("XAI_BASE_URL", "https://api.x.ai/v1")
+          data.setdefault("XAI_MODELS", "grok-4.3,grok-code-fast-1,grok-4-fast")
+          print(json.dumps(data, separators=(",", ":")))
+          INNER
+          )"
+
+          aws secretsmanager describe-secret \
+            --region "$region" \
+            --secret-id "$secret_name" >/dev/null
+          aws secretsmanager put-secret-value \
+            --region "$region" \
+            --secret-id "$secret_name" \
+            --secret-string "$updated_secret" >/dev/null
+          echo "updated $secret_name model provider keys from $source_stage"
+
+          kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite
+          sleep 20
+          kubectl -n default get externalsecret dd-agent-secrets
+          kubectl -n default get secret dd-agent-secrets
+          kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true
+          kubectl -n default rollout restart deployment -l app.kubernetes.io/component=thread-pod || true
+          kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env {env_args} bash -lc {shlex.quote(script)}",
+              ],
+          }))
           PY
               ;;
             sync-agent-gh-pat)

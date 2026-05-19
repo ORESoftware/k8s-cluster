@@ -788,7 +788,14 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   );
   assert.match(
     restServer,
-    /insert into agent_remote_dev_tasks[\s\S]*\(id, thread_id, user_id, docker_task_id, prompt, status, branch, last_event_seq, is_soft_deleted, started_at, created_at, updated_at, created_by, updated_by\)/,
+    /insert into agent_remote_dev_tasks[\s\S]*\(id, thread_id, user_id, docker_task_id, prompt, status, branch, last_event_seq, meta, is_soft_deleted, started_at, created_at, updated_at, created_by, updated_by\)/,
+  );
+  assert.match(restServer, /meta = agent_remote_dev_tasks\.meta \|\| excluded\.meta/);
+  assert.match(restServer, /struct AgentContextCandidatesRequest/);
+  assert.match(restServer, /async fn fetch_agent_context_candidates_from_postgres/);
+  assert.match(
+    restServer,
+    /\.route\(\s*"\/api\/agents\/threads\/:thread_id\/context-candidates",\s*post\(thread_context_candidates\),\s*\)/,
   );
   assert.match(restServer, /updated_by = excluded\.updated_by/);
   assert.match(restServer, /fn public_data_source_error\(source: &str\) -> String \{/);
@@ -935,6 +942,16 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /id="thread-list"/);
   assert.match(server, /select id="repo-url"/);
   assert.match(server, /input id="repo-url-new"/);
+  assert.match(server, /input id="zero-context" type="checkbox"/);
+  assert.match(server, /div id="context-candidates" class="context-candidates"/);
+  assert.match(server, /\.context-candidates \{[\s\S]*overflow: auto;/);
+  assert.match(server, /async function loadContextCandidates\(threadId, prompt, repo, baseBranch, promptKey\) \{/);
+  assert.match(
+    server,
+    /fetch\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/context-candidates`,/,
+  );
+  assert.match(server, /contextMode: contextDispatch\.contextMode/);
+  assert.match(server, /contextIds: contextDispatch\.contextIds/);
   assert.match(server, /placeholder="git@github\.com:org\/repo\.git or org\/repo"/);
   assert.match(server, /New repo URL\.\.\./);
   assert.match(server, /const BUILTIN_GIT_REPOS = \[/);

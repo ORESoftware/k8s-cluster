@@ -9,10 +9,25 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 
+import {
+  CLUSTER_MCP_SERVER_NAME,
+  clusterMcpConnectTimeoutMs,
+  clusterMcpInstructions,
+  clusterMcpUrlFromEnv,
+} from "./cluster-mcp.js";
 import type { AgentRunOpts, AgentRunner } from "./types.js";
 
 type OpenAiAgentsModule = {
   Agent: new (_input: Record<string, unknown>) => unknown;
+  MCPServerStreamableHttp: new (_input: Record<string, unknown>) => unknown;
+  connectMcpServers: (
+    _servers: unknown[],
+    _options?: Record<string, unknown>,
+  ) => Promise<{
+    active: unknown[];
+    close: () => Promise<void>;
+    errors?: ReadonlyMap<unknown, Error>;
+  }>;
   applyDiff: (
     _input: string,
     _diff: string,
@@ -215,6 +230,54 @@ export const openaiSdkRunner: AgentRunner = {
       },
     };
 
+    let managedMcpServers: Awaited<
+      ReturnType<OpenAiAgentsModule["connectMcpServers"]>
+    > | null = null;
+    let mcpServers: unknown[] = [];
+    const mcpUrl = clusterMcpUrlFromEnv(opts.env);
+    if (mcpUrl) {
+      const timeoutMs = clusterMcpConnectTimeoutMs(opts.env);
+      try {
+        const clusterMcp = new agents.MCPServerStreamableHttp({
+          name: CLUSTER_MCP_SERVER_NAME,
+          url: mcpUrl,
+          cacheToolsList: false,
+          clientSessionTimeoutSeconds: Math.ceil(timeoutMs / 1000),
+          errorFunction: ({ error }: { error: unknown }) =>
+            `${CLUSTER_MCP_SERVER_NAME} MCP tool failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+        });
+        managedMcpServers = await agents.connectMcpServers([clusterMcp], {
+          connectTimeoutMs: timeoutMs,
+          closeTimeoutMs: timeoutMs,
+          dropFailed: true,
+          strict: false,
+          suppressAbortError: true,
+          connectInParallel: true,
+        });
+        mcpServers = managedMcpServers.active;
+        if (mcpServers.length > 0) {
+          opts.emit({
+            kind: "stderr",
+            text: `openai-sdk: connected MCP server ${CLUSTER_MCP_SERVER_NAME} at ${mcpUrl}`,
+          });
+        } else {
+          opts.emit({
+            kind: "stderr",
+            text: `openai-sdk: MCP server ${CLUSTER_MCP_SERVER_NAME} unavailable at ${mcpUrl}`,
+          });
+        }
+      } catch (err) {
+        opts.emit({
+          kind: "stderr",
+          text: `openai-sdk: failed to connect MCP server ${CLUSTER_MCP_SERVER_NAME}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        });
+      }
+    }
+
     const agent = new agents.Agent({
       name: "DD Remote Dev Agent",
       model: opts.env.OPENAI_MODEL ?? "gpt-5.5",
@@ -222,11 +285,13 @@ export const openaiSdkRunner: AgentRunner = {
         "You are a coding agent working inside a per-thread git workspace. " +
         "Use apply_patch for file edits and shell for inspection/tests. " +
         "Do not use rm, sed, mv, git reset, git checkout, or git stash. " +
-        "Keep changes scoped and leave a concise final summary.",
+        "Keep changes scoped and leave a concise final summary. " +
+        clusterMcpInstructions(),
       tools: [
         agents.applyPatchTool({ editor, needsApproval: false }),
         agents.shellTool({ shell, needsApproval: false }),
       ],
+      mcpServers,
     });
 
     const abortController = new AbortController();
@@ -271,6 +336,14 @@ export const openaiSdkRunner: AgentRunner = {
         clearTimeout(killTimer);
       }
       opts.signal?.removeEventListener("abort", onAbort);
+      await managedMcpServers?.close().catch((err) => {
+        opts.emit({
+          kind: "stderr",
+          text: `openai-sdk: failed closing MCP servers: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        });
+      });
     }
   },
 };

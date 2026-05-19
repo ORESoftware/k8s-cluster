@@ -87,6 +87,43 @@ model KnownGitRepo {
   @@map("known_git_repos")
 }
 
+model AgentContextBlobs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String @map("project_id") @default("default") @db.VarChar(120)
+  repoId String? @map("repo_id") @db.Uuid
+  contextId String @map("context_id") @db.VarChar(200)
+  contextTitle String @map("context_title") @db.VarChar(300)
+  contextBlob String @map("context_blob") @db.Text
+  status String @default("active") @db.VarChar(32)
+  labels Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // agent_context_blobs_project_repo_context_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // agent_context_blobs_repo_id_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // agent_context_blobs_project_id_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // agent_context_blobs_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("agent_context_blobs")
+}
+
+model AgentContextEmbeddings {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contextBlobId String @map("context_blob_id") @db.Uuid
+  embeddingModel String @map("embedding_model") @db.VarChar(120)
+  embedding Json
+  embeddingDimensions Int @map("embedding_dimensions")
+  contentSha256 String @map("content_sha256") @db.VarChar(64)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([contextBlobId, embeddingModel, contentSha256], map: "agent_context_embeddings_blob_model_sha_uq")
+  @@index([contextBlobId], map: "agent_context_embeddings_blob_id_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("agent_context_embeddings")
+}
+
 model AgentRemoteDevThread {
   id String @id @db.Uuid
   userId String @map("user_id") @db.Uuid

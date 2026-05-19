@@ -72,4 +72,6 @@ spec:
             cidr: 192.168.0.0/16
       ports:
         - protocol: TCP
+          port: 443
+        - protocol: TCP
           port: 5432

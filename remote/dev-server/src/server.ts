@@ -65,6 +65,7 @@ import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
 import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
+import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
 
 // ---------- Config ----------
 
@@ -154,6 +155,7 @@ const config = {
     'http://dd-remote-rest-api.default.svc.cluster.local:8082',
   threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
   threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
+  agentMcpUrl: process.env.AGENT_MCP_ENABLED === 'false' ? null : process.env.AGENT_MCP_URL ?? null,
   agentFallbackProvider: configuredAgentFallbackProvider,
   agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider,
   agentProviderRotation: configAgentProviderList(
@@ -271,6 +273,9 @@ type TaskState = {
   threadId?: string;
   /** Which runner is driving this task (Claude, Gemini, OpenAI, etc.). */
   provider: AgentProvider;
+  contextMode?: 'none' | 'selected' | 'auto';
+  contextIds?: string[];
+  contextBlobs?: SelectedContextBlob[];
   containerPool?: { pool: string; request: ContainerPoolDispatchRequest };
   session: ThreadSession;
   child?: ChildProcess;
@@ -309,6 +314,18 @@ type ThreadContextTask = {
   latestPayload?: string | null;
   createdAt?: string | null;
   finishedAt?: string | null;
+};
+
+type SelectedContextBlob = {
+  contextId: string;
+  projectId?: string;
+  repoId?: string | null;
+  contextTitle: string;
+  contextBlob: string;
+  score?: number;
+  matchSource?: string;
+  embeddingModel?: string | null;
+  updatedAt?: string | null;
 };
 
 const tasks = new Map<string, TaskState>();
@@ -1518,6 +1535,13 @@ function truncateContext(value: string, maxChars: number): string {
   return value.slice(value.length - maxChars);
 }
 
+function truncateContextBlob(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, maxChars)}\n[context blob truncated]`;
+}
+
 function formatThreadContextTasks(
   tasksFromContext: ThreadContextTask[],
   currentTaskId: string,
@@ -1548,6 +1572,38 @@ function formatThreadContextTasks(
     .join('\n\n');
 }
 
+function formatSelectedContextBlobs(state: TaskState): string {
+  if (state.contextMode === 'none' || !state.contextBlobs?.length) {
+    return '';
+  }
+
+  const maxTotalChars = Math.min(config.threadContextMaxChars, 40_000);
+  const maxBlobChars = 6_000;
+  let usedChars = 0;
+  const sections: string[] = [];
+  for (const [index, item] of state.contextBlobs.entries()) {
+    const title = item.contextTitle.trim() || item.contextId;
+    const blob = truncateContextBlob(item.contextBlob.trim(), maxBlobChars);
+    const section = [
+      `Context ${index + 1}: ${title}`,
+      `contextId: ${item.contextId}`,
+      item.projectId ? `projectId: ${item.projectId}` : '',
+      item.matchSource ? `matchSource: ${item.matchSource}` : '',
+      Number.isFinite(item.score) ? `score: ${item.score}` : '',
+      '',
+      blob,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    if (usedChars + section.length > maxTotalChars) {
+      break;
+    }
+    sections.push(section);
+    usedChars += section.length;
+  }
+  return sections.join('\n\n---\n\n');
+}
+
 async function readLocalThreadContext(state: TaskState): Promise<string> {
   try {
     const text = await readFile(state.logPath, 'utf8');
@@ -1558,14 +1614,10 @@ async function readLocalThreadContext(state: TaskState): Promise<string> {
 }
 
 async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
-  if (!state.threadId) {
-    return state.prompt;
-  }
-
   const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
   let contextText = '';
   let contextSource = 'none';
-  if (base) {
+  if (state.threadId && base) {
     try {
       const response = await fetch(
         `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context?limit=${config.threadContextLimit}`,
@@ -1584,30 +1636,39 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     }
   }
 
-  if (!contextText) {
+  if (state.threadId && !contextText) {
     contextText = await readLocalThreadContext(state);
     contextSource = contextText ? 'local-thread-log' : 'none';
   }
 
-  if (!contextText) {
+  const selectedContext = formatSelectedContextBlobs(state);
+  if (!contextText && !selectedContext) {
     return state.prompt;
   }
 
-  const cappedContext = truncateContext(contextText, config.threadContextMaxChars);
-  emit(state, { kind: 'status', status: `thread-context:${contextSource}` });
-  return [
-    `You are continuing remote development thread ${state.threadId}.`,
-    'Use the previous thread context below when deciding what to do next.',
+  const promptSections = [
+    state.threadId ? `You are continuing remote development thread ${state.threadId}.` : 'You are starting a remote development task.',
+    'Use the supplied context when it is relevant, but let the current user prompt decide the work.',
     'Do not repeat completed work unless the current user prompt asks you to.',
-    '',
-    '<previous_thread_context>',
-    cappedContext,
-    '</previous_thread_context>',
-    '',
-    '<current_user_prompt>',
-    state.prompt,
-    '</current_user_prompt>',
-  ].join('\n');
+  ];
+
+  if (selectedContext) {
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:selected-blobs',
+      message: `${state.contextBlobs?.length ?? 0} selected context blob(s) injected into the task prompt.`,
+    });
+    promptSections.push('', '<selected_context_blobs>', selectedContext, '</selected_context_blobs>');
+  }
+
+  if (contextText) {
+    const cappedContext = truncateContext(contextText, config.threadContextMaxChars);
+    emit(state, { kind: 'status', status: `thread-context:${contextSource}` });
+    promptSections.push('', '<previous_thread_context>', cappedContext, '</previous_thread_context>');
+  }
+
+  promptSections.push('', '<current_user_prompt>', state.prompt, '</current_user_prompt>');
+  return promptSections.join('\n');
 }
 
 // ---------- Per-task workflow ----------
@@ -1654,6 +1715,14 @@ async function runTask(state: TaskState): Promise<void> {
         prompt: state.prompt,
         workspacePath: state.worktreePath,
         branch: state.branch,
+        contextMode: state.contextMode,
+        contextIds: state.contextIds,
+        contextTitles: state.contextBlobs?.map((item) => ({
+          contextId: item.contextId,
+          title: item.contextTitle,
+          matchSource: item.matchSource,
+          score: item.score,
+        })),
       });
 
       if (state.containerPool) {
@@ -3082,6 +3151,18 @@ const ContainerPoolTaskSchema = ContainerPoolRequestSchema.extend({
   pool: z.string().min(1).max(120),
 });
 
+const SelectedContextBlobSchema = z.object({
+  contextId: z.string().min(1).max(200),
+  projectId: z.string().min(1).max(120).optional(),
+  repoId: z.string().uuid().nullish(),
+  contextTitle: z.string().min(1).max(300),
+  contextBlob: z.string().min(1).max(200_000),
+  score: z.number().optional(),
+  matchSource: z.string().min(1).max(80).optional(),
+  embeddingModel: z.string().min(1).max(120).nullish(),
+  updatedAt: z.string().min(1).max(80).nullish(),
+});
+
 fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
   const params = z.object({ pool: z.string().min(1).max(120) }).safeParse(req.params);
   const parsed = ContainerPoolRequestSchema.safeParse(req.body);
@@ -3134,6 +3215,9 @@ const DispatchSchema = z.object({
       'openai-sdk',
     ])
     .nullish(),
+  contextMode: z.enum(['none', 'selected', 'auto']).nullish(),
+  contextIds: z.array(z.string().min(1).max(200)).max(10).nullish(),
+  contextBlobs: z.array(SelectedContextBlobSchema).max(10).nullish(),
   containerPool: ContainerPoolTaskSchema.nullish(),
 });
 
@@ -3275,6 +3359,9 @@ fastify.post('/tasks', async (req, reply) => {
     userId,
     threadId,
     provider: resolveAgentProvider(parsed.data.provider ?? undefined),
+    contextMode: parsed.data.contextMode ?? undefined,
+    contextIds: parsed.data.contextIds ?? undefined,
+    contextBlobs: parsed.data.contextBlobs ?? undefined,
     containerPool: parsed.data.containerPool
       ? {
           pool: parsed.data.containerPool.pool,

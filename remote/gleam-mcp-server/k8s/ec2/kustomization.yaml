@@ -4,4 +4,5 @@ kind: Kustomization
 resources:
   - dd-gleam-mcp-server.deployment.yaml
   - dd-gleam-mcp-server.networkpolicy.yaml
+  - dd-gleam-mcp-server-rbac.yaml
   - dd-gleam-mcp-server.service.yaml

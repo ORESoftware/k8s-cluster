@@ -306,6 +306,12 @@ export function buildAgentEnv(provider: AgentProvider, apiKey?: string): Record<
     LANG: process.env.LANG ?? 'C.UTF-8',
     NODE_ENV: process.env.NODE_ENV ?? 'production',
   };
+  for (const name of ['AGENT_MCP_ENABLED', 'AGENT_MCP_URL', 'AGENT_MCP_CONNECT_TIMEOUT_MS']) {
+    const value = process.env[name]?.trim();
+    if (value) {
+      base[name] = value;
+    }
+  }
 
   if (provider === 'claude-cli' || provider === 'claude-sdk') {
     const key = apiKey ?? configuredProviderApiKeys(provider)[0];

@@ -57,6 +57,8 @@ struct DispatchTaskRequest {
     prompt: String,
     provider: Option<String>,
     thread_title: Option<String>,
+    context_mode: Option<String>,
+    context_ids: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -126,6 +128,8 @@ struct NatsTaskMessage {
     base_branch: String,
     feature_branch: Option<String>,
     prompt: String,
+    context_mode: Option<String>,
+    context_ids: Option<Vec<String>>,
     created_at_ms: u128,
 }
 
@@ -334,6 +338,8 @@ async fn publish_task_to_nats(
         base_branch: base_branch.to_string(),
         feature_branch: None,
         prompt: request.prompt.clone(),
+        context_mode: request.context_mode.clone(),
+        context_ids: request.context_ids.clone(),
         created_at_ms: now_ms(),
     })
     .map_err(|error| error.to_string())?;
@@ -422,6 +428,8 @@ async fn direct_dispatch(
         "prompt": &request.prompt,
         "provider": &request.provider,
         "threadTitle": &request.thread_title,
+        "contextMode": &request.context_mode,
+        "contextIds": &request.context_ids,
     });
     let url = thread_worker_url(&state.config.namespace, worker_name, "/tasks");
     match state

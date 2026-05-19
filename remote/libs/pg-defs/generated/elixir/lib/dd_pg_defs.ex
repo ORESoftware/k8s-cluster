@@ -14,6 +14,8 @@ defmodule DdPgDefs do
     DdPgDefs.AppConfig,
     DdPgDefs.ContainerPoolConfigs,
     DdPgDefs.KnownGitRepos,
+    DdPgDefs.AgentContextBlobs,
+    DdPgDefs.AgentContextEmbeddings,
     DdPgDefs.AgentRemoteDevThreads,
     DdPgDefs.AgentRemoteDevTasks,
     DdPgDefs.AgentRemoteDevEvents,

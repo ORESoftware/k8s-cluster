@@ -3,11 +3,13 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs_mnesia).
--export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, all_table_defs/0]).
+-export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_context_blobs_attributes/0, agent_context_blobs_table_def/0, agent_context_blobs_record_info/0, agent_context_embeddings_attributes/0, agent_context_embeddings_table_def/0, agent_context_embeddings_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, all_table_defs/0]).
 
 -record(app_config, {id, scope, key, value, version, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(container_pool_configs, {id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(known_git_repos, {id, repo_url, display_name, provider, default_branch, status, last_verified_at, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
+-record(agent_context_blobs, {id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
+-record(agent_context_embeddings, {id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at}).
 -record(agent_remote_dev_threads, {id, user_id, known_git_repo_id, title, repo, base_branch, meta, archived_at, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(agent_remote_dev_tasks, {id, thread_id, user_id, docker_task_id, prompt, status, branch, pr_url, pr_state, exit_reason, error_message, last_event_seq, meta, is_soft_deleted, started_at, finished_at, created_at, updated_at, created_by, updated_by}).
 -record(agent_remote_dev_events, {id, task_id, seq, event_kind, payload, created_at}).
@@ -56,6 +58,32 @@ known_git_repos_table_def() ->
         {attributes, known_git_repos_attributes()},
         {type, set},
         {record_name, known_git_repos},
+        {disc_copies, [node()]}
+    ].
+
+agent_context_blobs_attributes() -> ['id', 'project_id', 'repo_id', 'context_id', 'context_title', 'context_blob', 'status', 'labels', 'meta_data', 'is_soft_deleted', 'created_at', 'updated_at', 'created_by', 'updated_by'].
+
+agent_context_blobs_record_info() ->
+    {agent_context_blobs, 14, agent_context_blobs_attributes()}.
+
+agent_context_blobs_table_def() ->
+    [
+        {attributes, agent_context_blobs_attributes()},
+        {type, set},
+        {record_name, agent_context_blobs},
+        {disc_copies, [node()]}
+    ].
+
+agent_context_embeddings_attributes() -> ['id', 'context_blob_id', 'embedding_model', 'embedding', 'embedding_dimensions', 'content_sha256', 'created_at'].
+
+agent_context_embeddings_record_info() ->
+    {agent_context_embeddings, 7, agent_context_embeddings_attributes()}.
+
+agent_context_embeddings_table_def() ->
+    [
+        {attributes, agent_context_embeddings_attributes()},
+        {type, set},
+        {record_name, agent_context_embeddings},
         {disc_copies, [node()]}
     ].
 
@@ -203,4 +231,4 @@ presence_consumer_checkpoints_table_def() ->
     ].
 
 all_table_defs() ->
-    [{app_config, app_config_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {lambda_functions, lambda_functions_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}].
+    [{app_config, app_config_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_context_blobs, agent_context_blobs_table_def()}, {agent_context_embeddings, agent_context_embeddings_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {lambda_functions, lambda_functions_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}].

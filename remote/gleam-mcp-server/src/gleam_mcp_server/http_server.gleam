@@ -8,6 +8,7 @@ import gleam/int
 import gleam/io
 import gleam/result
 import gleam/string
+import gleam_mcp_server/k8s
 import gleam_mcp_server/metrics
 import gleam_mcp_server/observability
 import mist
@@ -123,48 +124,55 @@ fn rpc_payload(method: String, body: String) -> String {
 }
 
 fn tool_from_body(body: String) -> String {
-  case string.contains(body, "\"telemetry_summary\"") {
-    True -> "telemetry_summary"
+  case string.contains(body, "\"kubernetes_deployments\"") {
+    True -> "kubernetes_deployments"
     False ->
-      case string.contains(body, "\"observability_health\"") {
-        True -> "observability_health"
+      case string.contains(body, "\"telemetry_summary\"") {
+        True -> "telemetry_summary"
         False ->
-          case string.contains(body, "\"prometheus_up\"") {
-            True -> "prometheus_up"
+          case string.contains(body, "\"observability_health\"") {
+            True -> "observability_health"
             False ->
-              case string.contains(body, "\"loki_labels\"") {
-                True -> "loki_labels"
+              case string.contains(body, "\"prometheus_up\"") {
+                True -> "prometheus_up"
                 False ->
-                  case string.contains(body, "\"grafana_inventory\"") {
-                    True -> "grafana_inventory"
+                  case string.contains(body, "\"loki_labels\"") {
+                    True -> "loki_labels"
                     False ->
-                      case string.contains(body, "\"nats_metrics\"") {
-                        True -> "nats_metrics"
+                      case string.contains(body, "\"grafana_inventory\"") {
+                        True -> "grafana_inventory"
                         False ->
-                          case string.contains(body, "\"trace_backends\"") {
-                            True -> "trace_backends"
+                          case string.contains(body, "\"nats_metrics\"") {
+                            True -> "nats_metrics"
                             False ->
-                              case
-                                string.contains(body, "\"telemetry_targets\"")
-                              {
-                                True -> "telemetry_targets"
+                              case string.contains(body, "\"trace_backends\"") {
+                                True -> "trace_backends"
                                 False ->
                                   case
                                     string.contains(
                                       body,
-                                      "\"service_directory\"",
+                                      "\"telemetry_targets\"",
                                     )
                                   {
-                                    True -> "service_directory"
+                                    True -> "telemetry_targets"
                                     False ->
                                       case
                                         string.contains(
                                           body,
-                                          "\"cluster_status\"",
+                                          "\"service_directory\"",
                                         )
                                       {
-                                        True -> "cluster_status"
-                                        False -> "unknown"
+                                        True -> "service_directory"
+                                        False ->
+                                          case
+                                            string.contains(
+                                              body,
+                                              "\"cluster_status\"",
+                                            )
+                                          {
+                                            True -> "cluster_status"
+                                            False -> "unknown"
+                                          }
                                       }
                                   }
                               }
@@ -187,6 +195,7 @@ fn tools_list_result() -> String {
   "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":["
   <> "{\"name\":\"cluster_status\",\"title\":\"Cluster status\",\"description\":\"Return static service discovery details for the DD remote Kubernetes runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
   <> "{\"name\":\"service_directory\",\"title\":\"Service directory\",\"description\":\"List public and internal service paths exposed by the runtime gateway.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
+  <> "{\"name\":\"kubernetes_deployments\",\"title\":\"Kubernetes deployments\",\"description\":\"Read all Kubernetes deployments across namespaces from the in-cluster Kubernetes API using the MCP service account.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
   <> "{\"name\":\"telemetry_targets\",\"title\":\"Telemetry targets\",\"description\":\"List in-cluster observability endpoints, safe queries, and dashboard paths for this runtime.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
   <> "{\"name\":\"telemetry_summary\",\"title\":\"Telemetry summary\",\"description\":\"Read a bounded parallel summary from Prometheus, Loki, Grafana, Tempo, Jaeger, the OTel collector, and NATS metrics endpoints.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
   <> "{\"name\":\"observability_health\",\"title\":\"Observability health\",\"description\":\"Read live health from Prometheus, Loki, Grafana, Tempo, Jaeger, and the OTel collector through bounded in-cluster HTTP calls.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{}},\"annotations\":{\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":false}},"
@@ -200,6 +209,12 @@ fn tools_list_result() -> String {
 
 fn tools_call_result(tool: String) -> String {
   case tool {
+    "kubernetes_deployments" ->
+      tool_json_result(
+        "kubernetes_deployments",
+        "All Kubernetes deployments visible to the read-only MCP service account.",
+        k8s.deployments_json(),
+      )
     "telemetry_targets" ->
       tool_json_result(
         "telemetry_targets",
@@ -309,7 +324,7 @@ fn mcp_info() -> response.Response(mist.ResponseData) {
     200,
     "{\"ok\":true,\"service\":\"dd-gleam-mcp-server\",\"protocolVersion\":\""
       <> protocol_version
-      <> "\",\"endpoint\":\"POST /mcp\",\"tools\":[\"cluster_status\",\"service_directory\",\"telemetry_targets\",\"telemetry_summary\",\"observability_health\",\"prometheus_up\",\"loki_labels\",\"grafana_inventory\",\"nats_metrics\",\"trace_backends\"]}",
+      <> "\",\"endpoint\":\"POST /mcp\",\"tools\":[\"cluster_status\",\"service_directory\",\"kubernetes_deployments\",\"telemetry_targets\",\"telemetry_summary\",\"observability_health\",\"prometheus_up\",\"loki_labels\",\"grafana_inventory\",\"nats_metrics\",\"trace_backends\"]}",
   )
 }
 

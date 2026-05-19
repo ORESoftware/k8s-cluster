@@ -46,6 +46,36 @@ update known_git_repos set repo_url = $2, display_name = $3, provider = $4, defa
 -- name: DeleteKnownGitRepos :exec
 delete from known_git_repos where id = $1;
 
+-- name: ListAgentContextBlobs :many
+select id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from agent_context_blobs;
+
+-- name: GetAgentContextBlobs :one
+select id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from agent_context_blobs where id = $1 limit 1;
+
+-- name: CreateAgentContextBlobs :one
+insert into agent_context_blobs (id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateAgentContextBlobs :one
+update agent_context_blobs set project_id = $2, repo_id = $3, context_id = $4, context_title = $5, context_blob = $6, status = $7, labels = $8, meta_data = $9, is_soft_deleted = $10, updated_at = $11, created_by = $12, updated_by = $13 where id = $1 returning id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteAgentContextBlobs :exec
+delete from agent_context_blobs where id = $1;
+
+-- name: ListAgentContextEmbeddings :many
+select id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at from agent_context_embeddings;
+
+-- name: GetAgentContextEmbeddings :one
+select id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at from agent_context_embeddings where id = $1 limit 1;
+
+-- name: CreateAgentContextEmbeddings :one
+insert into agent_context_embeddings (id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at;
+
+-- name: UpdateAgentContextEmbeddings :one
+update agent_context_embeddings set context_blob_id = $2, embedding_model = $3, embedding = $4, embedding_dimensions = $5, content_sha256 = $6 where id = $1 returning id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at;
+
+-- name: DeleteAgentContextEmbeddings :exec
+delete from agent_context_embeddings where id = $1;
+
 -- name: ListAgentRemoteDevThreads :many
 select id, user_id, known_git_repo_id, title, repo, base_branch, meta, archived_at, is_soft_deleted, created_at, updated_at, created_by, updated_by from agent_remote_dev_threads;
 

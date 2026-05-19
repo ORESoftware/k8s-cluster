@@ -1057,6 +1057,18 @@ fn agents_threads_body() -> Markup {
                             span { "Prompt" }
                             textarea id="prompt" placeholder="Ask this thread worker to do something" {}
                         }
+                        div id="context-picker" class="context-picker field-wide" {
+                            div class="context-picker-head" {
+                                label class="checkbox-row" {
+                                    input id="zero-context" type="checkbox";
+                                    span { "Start with zero context" }
+                                }
+                                span id="context-summary" class="muted" { "Context review will run before first dispatch." }
+                            }
+                            div id="context-candidates" class="context-candidates" aria-live="polite" {
+                                p class="muted" { "No context loaded yet." }
+                            }
+                        }
                     }
                     div class="actions prompt-actions" {
                         button id="save-repo" type="button" title="Save this repo URL and default branch to the known repo list" { "Save repo URL" }
@@ -1520,6 +1532,60 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         align-items: start;
       }
       .field-wide { grid-column: 1 / -1; }
+      .context-picker {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+        padding: 10px;
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+      }
+      .context-picker-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+      }
+      .checkbox-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .checkbox-row span {
+        margin: 0;
+      }
+      .context-candidates {
+        display: grid;
+        gap: 7px;
+        max-height: 170px;
+        overflow: auto;
+        overscroll-behavior: contain;
+      }
+      .context-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 8px;
+      }
+      .context-row strong,
+      .context-row small {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .context-row small {
+        color: var(--muted);
+        margin-top: 3px;
+      }
       label span {
         display: block;
         color: var(--muted);
@@ -1690,6 +1756,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         snapshotRetryTimer: null,
         agentTextBuffer: null,
         agentTextFlushTimer: null,
+        contextPromptKey: "",
+        contextCandidates: [],
+        contextReady: false,
+        contextLoading: false,
+        contextErrors: [],
       };
 
       const AGENT_TEXT_JOIN_DELAY_MS = 1200;
@@ -1994,6 +2065,117 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function currentBaseBranch() {
         return $("base-branch").value.trim() || "dev";
+      }
+
+      function contextReviewKey(threadId, prompt, repo, baseBranch) {
+        return JSON.stringify([threadId, prompt, repo, baseBranch]);
+      }
+
+      function resetContextReview(message = "Context review will run before first dispatch.") {
+        state.contextPromptKey = "";
+        state.contextCandidates = [];
+        state.contextReady = false;
+        state.contextLoading = false;
+        state.contextErrors = [];
+        $("context-summary").textContent = message;
+        $("context-candidates").innerHTML = '<p class="muted">No context loaded yet.</p>';
+      }
+
+      function renderContextCandidates() {
+        const container = $("context-candidates");
+        container.textContent = "";
+        if ($("zero-context").checked) {
+          $("context-summary").textContent = "Zero context selected.";
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "The worker will receive only the current prompt and thread log.";
+          container.appendChild(empty);
+          return;
+        }
+        if (state.contextLoading) {
+          $("context-summary").textContent = "Finding relevant context...";
+          const loading = document.createElement("p");
+          loading.className = "muted";
+          loading.textContent = "Loading matching context blobs from Postgres.";
+          container.appendChild(loading);
+          return;
+        }
+        if (!state.contextReady) {
+          $("context-summary").textContent = "Context review will run before first dispatch.";
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "No context loaded yet.";
+          container.appendChild(empty);
+          return;
+        }
+        const errors = state.contextErrors?.length ? ` · ${state.contextErrors.length} fallback note(s)` : "";
+        $("context-summary").textContent = `${state.contextCandidates.length} suggested context blob(s)${errors}`;
+        if (!state.contextCandidates.length) {
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "No matching context blobs were found. Final submit will start without selected blobs.";
+          container.appendChild(empty);
+          return;
+        }
+        for (const item of state.contextCandidates) {
+          const row = document.createElement("label");
+          row.className = "context-row";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.className = "context-checkbox";
+          checkbox.value = item.contextId || "";
+          checkbox.checked = true;
+          const text = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = item.contextTitle || item.contextId || "context blob";
+          const detail = document.createElement("small");
+          const source = item.matchSource || "context";
+          const score = Number.isFinite(item.score) ? ` · score ${Number(item.score).toFixed(3)}` : "";
+          detail.textContent = `${item.contextId || "context"} · ${source}${score}`;
+          text.append(title, detail);
+          row.append(checkbox, text);
+          container.appendChild(row);
+        }
+      }
+
+      async function loadContextCandidates(threadId, prompt, repo, baseBranch, promptKey) {
+        state.contextLoading = true;
+        state.contextReady = false;
+        state.contextErrors = [];
+        renderContextCandidates();
+        const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/context-candidates`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ prompt, repo, baseBranch, limit: 10 }),
+        });
+        const body = await response.text();
+        if (!response.ok) throw new Error(`context candidates failed ${response.status}: ${body}`);
+        const data = JSON.parse(body);
+        state.contextPromptKey = promptKey;
+        state.contextCandidates = data.candidates || [];
+        state.contextErrors = data.errors || [];
+        state.contextReady = true;
+        state.contextLoading = false;
+        renderContextCandidates();
+      }
+
+      function selectedContextDispatch(promptKey) {
+        if ($("zero-context").checked) {
+          return { contextMode: "none", contextIds: [] };
+        }
+        if (!state.contextReady || state.contextPromptKey !== promptKey) {
+          return null;
+        }
+        const ids = Array.from(document.querySelectorAll(".context-checkbox:checked"))
+          .map((item) => item.value)
+          .filter(Boolean)
+          .slice(0, 10);
+        return { contextMode: ids.length ? "selected" : "none", contextIds: ids };
+      }
+
+      function contextInputsChanged() {
+        resetContextReview();
+        setThreadUiMode(state.threadUiMode);
       }
 
       function optionLabel(repo) {
@@ -2864,6 +3046,21 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           taskId = makeUuid();
           $("task-id").value = taskId;
         }
+        const contextKey = contextReviewKey(threadId, prompt, repo, baseBranch);
+        let contextDispatch = selectedContextDispatch(contextKey);
+        if (!contextDispatch) {
+          try {
+            await loadContextCandidates(threadId, prompt, repo, baseBranch, contextKey);
+            $("send").textContent = "Final submit";
+            setStatus("Review context selections, then click Final submit.");
+          } catch (error) {
+            state.contextLoading = false;
+            state.contextReady = false;
+            renderContextCandidates();
+            setStatus(adminPreview("context candidate error", error, 260), true);
+          }
+          return;
+        }
         state.selectedThreadId = threadId;
         state.selectedTaskId = taskId;
         closeInlineTerminal();
@@ -2920,6 +3117,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
               repo,
               baseBranch,
               dispatchMode,
+              contextMode: contextDispatch.contextMode,
+              contextIds: contextDispatch.contextIds,
               threadTitle: prompt.slice(0, 80),
             }),
           });
@@ -2952,6 +3151,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
         }
         openLiveStream(threadId, taskId);
+        resetContextReview("Context review will run before the next dispatch.");
         await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => handleSnapshotError(error, { preserveStreamForTask: taskId }));
       }
 
@@ -3044,6 +3244,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("repo-url").addEventListener("change", updateRepoUrlMode);
       $("repo-url-new").addEventListener("blur", validateRepoUrlField);
       $("repo-url-new").addEventListener("input", () => $("repo-url-new").setCustomValidity(""));
+      $("repo-url").addEventListener("change", contextInputsChanged);
+      $("repo-url-new").addEventListener("input", contextInputsChanged);
+      $("base-branch").addEventListener("input", contextInputsChanged);
+      $("prompt").addEventListener("input", contextInputsChanged);
+      $("zero-context").addEventListener("change", renderContextCandidates);
       $("thread-control-panel").addEventListener("click", handleControlPanelClick);
       $("thread-control-panel").addEventListener("keydown", handleControlPanelKey);
       $("previous-tasks-panel").addEventListener("click", (event) => handleLowerPanelClick(event, "tasks"));
@@ -3066,6 +3271,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         updateSelectionHeader();
         renderTaskList();
         clearStream("new thread ready");
+        resetContextReview();
       });
       $("new-task").addEventListener("click", () => {
         state.selectedTaskId = null;
@@ -3074,10 +3280,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         $("task-id").value = makeUuid();
         replaceSelectionUrl(state.selectedThreadId, null);
         clearStream("new task ready");
+        resetContextReview();
       });
       $("thread-id").addEventListener("input", () => {
         $("thread-id").setCustomValidity("");
         updateThreadMode();
+        contextInputsChanged();
       });
       $("thread-id").addEventListener("change", () => {
         const threadId = readUuidInput("thread-id", "thread UUID", { allowEmpty: true });

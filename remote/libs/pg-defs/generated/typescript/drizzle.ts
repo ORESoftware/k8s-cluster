@@ -273,6 +273,128 @@ export type KnownGitRepoRow = z.infer<typeof knownGitRepoRowSchema>;
 export type KnownGitRepoInsert = z.infer<typeof knownGitRepoInsertSchema>;
 export type KnownGitRepoUpdate = z.infer<typeof knownGitRepoUpdateSchema>;
 
+export const agentContextBlobsStatusValues = ["active","paused","archived"] as const;
+export const agentContextBlobsStatusSchema = z.enum(agentContextBlobsStatusValues);
+export type AgentContextBlobsStatus = z.infer<typeof agentContextBlobsStatusSchema>;
+
+export const agentContextBlobs = pgTable(
+  "agent_context_blobs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    projectId: varchar("project_id", { length: 120 }).default(sql`'default'`).notNull(),
+    repoId: uuid("repo_id"),
+    contextId: varchar("context_id", { length: 200 }).notNull(),
+    contextTitle: varchar("context_title", { length: 300 }).notNull(),
+    contextBlob: text("context_blob").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    agentContextBlobsProjectIdFormatChk: check("agent_context_blobs_project_id_format_chk", sql.raw("project_id ~ '^[A-Za-z0-9._:/-]{1,120}$'")),
+    agentContextBlobsContextIdFormatChk: check("agent_context_blobs_context_id_format_chk", sql.raw("context_id ~ '^[A-Za-z0-9._:/-]{1,200}$'")),
+    agentContextBlobsContextTitleSizeChk: check("agent_context_blobs_context_title_size_chk", sql.raw("octet_length(context_title) between 1 and 300")),
+    agentContextBlobsContextBlobSizeChk: check("agent_context_blobs_context_blob_size_chk", sql.raw("octet_length(context_blob) between 1 and 1048576")),
+    agentContextBlobsLabelsArrayChk: check("agent_context_blobs_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    agentContextBlobsMetaObjectChk: check("agent_context_blobs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    agentContextBlobsStatusChk: check("agent_context_blobs_status_chk", sql.raw("status in ('active', 'paused', 'archived')")),
+    agentContextBlobsProjectRepoContextActiveUq: uniqueIndex("agent_context_blobs_project_repo_context_active_uq").on(table.projectId, table.repoId, table.contextId).where(sql.raw("is_soft_deleted = false")),
+    agentContextBlobsRepoIdIdx: index("agent_context_blobs_repo_id_idx").on(table.repoId).where(sql.raw("is_soft_deleted = false")),
+    agentContextBlobsProjectIdIdx: index("agent_context_blobs_project_id_idx").on(table.projectId).where(sql.raw("is_soft_deleted = false")),
+    agentContextBlobsUpdatedAtIdx: index("agent_context_blobs_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const agentContextBlobsRowSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  repoId: z.string().uuid().nullable(),
+  contextId: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  contextTitle: z.string().max(300).refine((value) => byteLength(value) <= 300, "Must be at most 300 bytes"),
+  contextBlob: z.string().refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
+  status: agentContextBlobsStatusSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const agentContextBlobsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  projectId: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")).optional().default("default"),
+  repoId: z.string().uuid().nullable().optional(),
+  contextId: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  contextTitle: z.string().max(300).refine((value) => byteLength(value) <= 300, "Must be at most 300 bytes"),
+  contextBlob: z.string().refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
+  status: agentContextBlobsStatusSchema.optional().default("active"),
+  labels: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const agentContextBlobsUpdateSchema = agentContextBlobsInsertSchema.partial();
+export type AgentContextBlobsRow = z.infer<typeof agentContextBlobsRowSchema>;
+export type AgentContextBlobsInsert = z.infer<typeof agentContextBlobsInsertSchema>;
+export type AgentContextBlobsUpdate = z.infer<typeof agentContextBlobsUpdateSchema>;
+
+export const agentContextEmbeddings = pgTable(
+  "agent_context_embeddings",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    contextBlobId: uuid("context_blob_id").notNull(),
+    embeddingModel: varchar("embedding_model", { length: 120 }).notNull(),
+    embedding: jsonb("embedding").notNull(),
+    embeddingDimensions: integer("embedding_dimensions").notNull(),
+    contentSha256: varchar("content_sha256", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    agentContextEmbeddingsModelFormatChk: check("agent_context_embeddings_model_format_chk", sql.raw("embedding_model ~ '^[A-Za-z0-9._:/-]{1,120}$'")),
+    agentContextEmbeddingsDimensionsChk: check("agent_context_embeddings_dimensions_chk", sql.raw("embedding_dimensions > 0")),
+    agentContextEmbeddingsArrayChk: check("agent_context_embeddings_array_chk", sql.raw("jsonb_typeof(embedding) = 'array'")),
+    agentContextEmbeddingsSha256Chk: check("agent_context_embeddings_sha256_chk", sql.raw("content_sha256 ~ '^[a-f0-9]{64}$'")),
+    agentContextEmbeddingsBlobModelShaUq: uniqueIndex("agent_context_embeddings_blob_model_sha_uq").on(table.contextBlobId, table.embeddingModel, table.contentSha256),
+    agentContextEmbeddingsBlobIdIdx: index("agent_context_embeddings_blob_id_idx").on(table.contextBlobId),
+  }),
+);
+
+export const agentContextEmbeddingsRowSchema = z.object({
+  id: z.string().uuid(),
+  contextBlobId: z.string().uuid(),
+  embeddingModel: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  embedding: jsonArraySchema,
+  embeddingDimensions: z.number().int().min(1),
+  contentSha256: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  createdAt: z.string().datetime(),
+});
+
+export const agentContextEmbeddingsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  contextBlobId: z.string().uuid(),
+  embeddingModel: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  embedding: jsonArraySchema,
+  embeddingDimensions: z.number().int().min(1),
+  contentSha256: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const agentContextEmbeddingsUpdateSchema = agentContextEmbeddingsInsertSchema.partial();
+export type AgentContextEmbeddingsRow = z.infer<typeof agentContextEmbeddingsRowSchema>;
+export type AgentContextEmbeddingsInsert = z.infer<typeof agentContextEmbeddingsInsertSchema>;
+export type AgentContextEmbeddingsUpdate = z.infer<typeof agentContextEmbeddingsUpdateSchema>;
+
 export const agentRemoteDevThreads = pgTable(
   "agent_remote_dev_threads",
   {

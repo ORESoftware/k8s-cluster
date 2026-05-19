@@ -22,6 +22,8 @@ struct QueueTaskMessage {
     base_branch: Option<String>,
     prompt: Option<String>,
     thread_title: Option<String>,
+    context_mode: Option<String>,
+    context_ids: Option<Vec<String>>,
     shadow: Option<bool>,
     direct_dispatch: Option<bool>,
 }
@@ -308,6 +310,8 @@ async fn dispatch_to_container_pool(
                 "prompt": prompt,
                 "provider": &task.provider,
                 "threadTitle": &task.thread_title,
+                "contextMode": &task.context_mode,
+                "contextIds": &task.context_ids,
             }
         }))
         .send()
@@ -361,6 +365,8 @@ async fn dispatch_to_rest_api(
             "prompt": prompt,
             "provider": &task.provider,
             "threadTitle": &task.thread_title,
+            "contextMode": &task.context_mode,
+            "contextIds": &task.context_ids,
         }))
         .send()
         .await?;

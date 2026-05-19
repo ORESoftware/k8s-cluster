@@ -1,7 +1,7 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env, fs,
     io::BufReader,
     net::SocketAddr,
@@ -105,6 +105,33 @@ struct ThreadContextResponse {
     thread_id: String,
     generated_at_ms: u128,
     tasks: Vec<AgentTaskRow>,
+    errors: Vec<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentContextCandidate {
+    context_id: String,
+    project_id: String,
+    repo_id: Option<String>,
+    context_title: String,
+    context_blob: String,
+    score: f64,
+    match_source: String,
+    embedding_model: Option<String>,
+    updated_at: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentContextCandidatesResponse {
+    ok: bool,
+    source: String,
+    thread_id: String,
+    generated_at_ms: u128,
+    project_id: String,
+    repo_id: Option<String>,
+    candidates: Vec<AgentContextCandidate>,
     errors: Vec<String>,
 }
 
@@ -315,6 +342,18 @@ struct DispatchTaskRequest {
     provider: Option<String>,
     thread_title: Option<String>,
     dispatch_mode: Option<String>,
+    context_mode: Option<String>,
+    context_ids: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentContextCandidatesRequest {
+    prompt: String,
+    repo: String,
+    base_branch: Option<String>,
+    project_id: Option<String>,
+    limit: Option<i64>,
 }
 
 struct ExistingTaskDispatch {
@@ -373,6 +412,8 @@ struct NatsTaskMessage {
     base_branch: String,
     feature_branch: Option<String>,
     prompt: String,
+    context_mode: Option<String>,
+    context_ids: Option<Vec<String>>,
     created_at_ms: u128,
 }
 
@@ -477,6 +518,37 @@ fn limit_from_query(query: &AgentsQuery) -> i64 {
 
 fn context_limit_from_query(query: &ContextQuery) -> i64 {
     query.limit.unwrap_or(20).clamp(1, 100)
+}
+
+fn context_candidate_limit(value: Option<i64>) -> i64 {
+    value.unwrap_or(10).clamp(1, 10)
+}
+
+fn normalize_context_project_id(value: Option<&str>) -> Result<String, String> {
+    let project_id = value.unwrap_or("default").trim();
+    if project_id.is_empty() {
+        return Ok("default".to_string());
+    }
+    if project_id.len() > 120 {
+        return Err("projectId must be 120 characters or fewer".to_string());
+    }
+    if !project_id
+        .chars()
+        .all(|item| item.is_ascii_alphanumeric() || matches!(item, '.' | '_' | ':' | '/' | '-'))
+    {
+        return Err("projectId contains unsupported characters".to_string());
+    }
+    Ok(project_id.to_string())
+}
+
+fn normalize_context_mode(value: Option<&str>, selected_count: usize) -> String {
+    match value.map(str::trim).filter(|value| !value.is_empty()) {
+        Some("none") | Some("zero") | Some("off") => "none".to_string(),
+        Some("selected") => "selected".to_string(),
+        Some("auto") => "auto".to_string(),
+        _ if selected_count > 0 => "selected".to_string(),
+        _ => "none".to_string(),
+    }
 }
 
 fn event_limit_from_query(query: &ContextQuery) -> i64 {
@@ -2335,6 +2407,381 @@ async fn connect_postgres() -> Result<tokio_postgres::Client, String> {
     Ok(client)
 }
 
+fn agent_context_embedding_model() -> String {
+    first_env(&["AGENT_CONTEXT_EMBEDDING_MODEL", "OPENAI_EMBEDDING_MODEL"])
+        .unwrap_or_else(|| "text-embedding-3-small".to_string())
+}
+
+fn configured_secret_list(keys: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in keys {
+        let Some(raw) = first_env(&[*key]) else {
+            continue;
+        };
+        if raw.trim_start().starts_with('[') {
+            if let Ok(values) = serde_json::from_str::<Vec<String>>(&raw) {
+                out.extend(
+                    values
+                        .into_iter()
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty()),
+                );
+                continue;
+            }
+        }
+        out.extend(
+            raw.split([',', '\n'])
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+        );
+    }
+    out
+}
+
+fn openai_api_key_for_embeddings() -> Option<String> {
+    configured_secret_list(&["OPENAI_API_KEYS_JSON", "OPENAI_API_KEY"])
+        .into_iter()
+        .next()
+}
+
+async fn embed_context_query(prompt: &str) -> Result<(String, Vec<f64>), String> {
+    let api_key = openai_api_key_for_embeddings()
+        .ok_or_else(|| "no OpenAI key configured for context embeddings".to_string())?;
+    let model = agent_context_embedding_model();
+    let base_url = first_env(&["OPENAI_BASE_URL"])
+        .unwrap_or_else(|| "https://api.openai.com/v1".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    let response = reqwest::Client::new()
+        .post(format!("{base_url}/embeddings"))
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": model,
+            "input": prompt,
+        }))
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| error.to_string())?;
+    if !status.is_success() {
+        return Err(format!(
+            "embedding request failed with HTTP {}",
+            status.as_u16()
+        ));
+    }
+    let value = serde_json::from_str::<Value>(&body).map_err(|error| error.to_string())?;
+    let embedding = value
+        .get("data")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("embedding"))
+        .and_then(json_embedding_to_vec)
+        .filter(|values| !values.is_empty())
+        .ok_or_else(|| "embedding response did not include a numeric vector".to_string())?;
+    Ok((model, embedding))
+}
+
+fn json_embedding_to_vec(value: &Value) -> Option<Vec<f64>> {
+    value
+        .as_array()
+        .map(|items| items.iter().filter_map(Value::as_f64).collect::<Vec<f64>>())
+}
+
+fn cosine_similarity(a: &[f64], b: &[f64]) -> Option<f64> {
+    if a.len() != b.len() || a.is_empty() {
+        return None;
+    }
+    let mut dot = 0.0;
+    let mut a_norm = 0.0;
+    let mut b_norm = 0.0;
+    for (left, right) in a.iter().zip(b.iter()) {
+        dot += left * right;
+        a_norm += left * left;
+        b_norm += right * right;
+    }
+    if a_norm == 0.0 || b_norm == 0.0 {
+        return None;
+    }
+    Some(dot / (a_norm.sqrt() * b_norm.sqrt()))
+}
+
+fn context_tokens(value: &str) -> HashSet<String> {
+    value
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .map(str::to_lowercase)
+        .filter(|item| item.len() >= 3)
+        .collect()
+}
+
+fn lexical_context_score(prompt: &str, title: &str, blob: &str) -> f64 {
+    let query = context_tokens(prompt);
+    if query.is_empty() {
+        return 0.0;
+    }
+    let title_tokens = context_tokens(title);
+    let blob_tokens = context_tokens(blob);
+    let title_hits = query.intersection(&title_tokens).count() as f64;
+    let blob_hits = query.intersection(&blob_tokens).count() as f64;
+    ((title_hits * 3.0) + blob_hits) / query.len() as f64
+}
+
+async fn ensure_agent_context_schema(client: &tokio_postgres::Client) -> Result<(), String> {
+    client
+        .batch_execute(
+            r#"
+            create table if not exists agent_context_blobs (
+              id uuid primary key default gen_random_uuid(),
+              project_id varchar(120) default 'default' not null,
+              repo_id uuid references known_git_repos(id),
+              context_id varchar(200) not null,
+              context_title varchar(300) not null,
+              context_blob text not null,
+              status varchar(32) default 'active' not null,
+              labels jsonb default '[]'::jsonb not null,
+              meta_data jsonb default '{}'::jsonb not null,
+              is_soft_deleted boolean default false not null,
+              created_at timestamptz default now() not null,
+              updated_at timestamptz default now() not null,
+              created_by uuid,
+              updated_by uuid
+            );
+            create unique index if not exists agent_context_blobs_project_repo_context_active_uq
+              on agent_context_blobs (project_id, repo_id, context_id)
+              where is_soft_deleted = false;
+            create index if not exists agent_context_blobs_repo_id_idx
+              on agent_context_blobs (repo_id)
+              where is_soft_deleted = false;
+            create index if not exists agent_context_blobs_project_id_idx
+              on agent_context_blobs (project_id)
+              where is_soft_deleted = false;
+            create index if not exists agent_context_blobs_updated_at_idx
+              on agent_context_blobs (updated_at desc)
+              where is_soft_deleted = false;
+
+            create table if not exists agent_context_embeddings (
+              id uuid primary key default gen_random_uuid(),
+              context_blob_id uuid not null references agent_context_blobs(id),
+              embedding_model varchar(120) not null,
+              embedding jsonb not null,
+              embedding_dimensions integer not null,
+              content_sha256 varchar(64) not null,
+              created_at timestamptz default now() not null
+            );
+            create unique index if not exists agent_context_embeddings_blob_model_sha_uq
+              on agent_context_embeddings (context_blob_id, embedding_model, content_sha256);
+            create index if not exists agent_context_embeddings_blob_id_idx
+              on agent_context_embeddings (context_blob_id);
+            "#,
+        )
+        .await
+        .map_err(|error| error.to_string())
+}
+
+async fn fetch_agent_context_candidates_from_postgres(
+    thread_id: &str,
+    request: &AgentContextCandidatesRequest,
+) -> Result<AgentContextCandidatesResponse, String> {
+    let repo_url = normalize_repo_url(&request.repo)?;
+    let base_branch = normalize_base_branch(request.base_branch.as_deref())?;
+    let project_id = normalize_context_project_id(request.project_id.as_deref())?;
+    let limit = context_candidate_limit(request.limit);
+    let repo = upsert_known_git_repo_to_postgres(&repo_url, None, None, Some(&base_branch)).await?;
+    let client = connect_postgres().await?;
+    ensure_agent_context_schema(&client).await?;
+
+    let rows = client
+        .query(
+            r#"
+            select
+              c.context_id,
+              c.project_id,
+              c.repo_id::text as repo_id,
+              c.context_title,
+              left(c.context_blob, 20000) as context_blob,
+              to_char(c.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+              e.embedding_model,
+              e.embedding
+            from agent_context_blobs c
+            left join lateral (
+              select embedding_model, embedding
+              from agent_context_embeddings
+              where context_blob_id = c.id
+              order by created_at desc
+              limit 1
+            ) e on true
+            where c.is_soft_deleted = false
+              and c.status = 'active'
+              and c.project_id = $1
+              and c.repo_id = $2::text::uuid
+            order by c.updated_at desc
+            limit 200
+            "#,
+            &[&project_id, &repo.id],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut errors = Vec::new();
+    let query_embedding = match embed_context_query(&request.prompt).await {
+        Ok(value) => Some(value),
+        Err(error) => {
+            errors.push(format!(
+                "embedding ranking unavailable; using lexical fallback: {error}"
+            ));
+            None
+        }
+    };
+
+    let mut candidates = rows
+        .iter()
+        .map(|row| {
+            let title = row_string(row, "context_title");
+            let blob = row_string(row, "context_blob");
+            let embedding_model = row_opt_string(row, "embedding_model");
+            let embedding_value = row.try_get::<_, Value>("embedding").ok();
+            let embedding_score =
+                query_embedding
+                    .as_ref()
+                    .and_then(|(query_model, query_vector)| {
+                        let row_model = embedding_model.as_deref()?;
+                        if row_model != query_model {
+                            return None;
+                        }
+                        let row_vector =
+                            embedding_value.as_ref().and_then(json_embedding_to_vec)?;
+                        cosine_similarity(query_vector, &row_vector)
+                    });
+            let lexical_score = lexical_context_score(&request.prompt, &title, &blob);
+            AgentContextCandidate {
+                context_id: row_string(row, "context_id"),
+                project_id: row_string(row, "project_id"),
+                repo_id: row_opt_string(row, "repo_id"),
+                context_title: title,
+                context_blob: blob,
+                score: embedding_score.unwrap_or(lexical_score),
+                match_source: if embedding_score.is_some() {
+                    "embedding".to_string()
+                } else {
+                    "lexical".to_string()
+                },
+                embedding_model,
+                updated_at: row_opt_string(row, "updated_at"),
+            }
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.context_title.cmp(&b.context_title))
+    });
+    candidates.truncate(limit as usize);
+
+    Ok(AgentContextCandidatesResponse {
+        ok: true,
+        source: "postgres".to_string(),
+        thread_id: thread_id.to_string(),
+        generated_at_ms: now_ms(),
+        project_id,
+        repo_id: Some(repo.id),
+        candidates,
+        errors,
+    })
+}
+
+async fn fetch_selected_agent_context_from_postgres(
+    request: &DispatchTaskRequest,
+    repo_config: &ThreadRepoConfig,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    let selected_ids = request.context_ids.clone().unwrap_or_default();
+    let mode = normalize_context_mode(request.context_mode.as_deref(), selected_ids.len());
+    if mode == "none" {
+        return Ok(Vec::new());
+    }
+    if mode == "auto" && selected_ids.is_empty() {
+        return Ok(fetch_agent_context_candidates_from_postgres(
+            &request.thread_id,
+            &AgentContextCandidatesRequest {
+                prompt: request.prompt.clone(),
+                repo: repo_config.repo.clone(),
+                base_branch: Some(repo_config.base_branch.clone()),
+                project_id: None,
+                limit: Some(10),
+            },
+        )
+        .await?
+        .candidates);
+    }
+    if selected_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let project_id = normalize_context_project_id(None)?;
+    let repo = upsert_known_git_repo_to_postgres(
+        &repo_config.repo,
+        None,
+        None,
+        Some(&repo_config.base_branch),
+    )
+    .await?;
+    let client = connect_postgres().await?;
+    ensure_agent_context_schema(&client).await?;
+    let rows = client
+        .query(
+            r#"
+            select
+              c.context_id,
+              c.project_id,
+              c.repo_id::text as repo_id,
+              c.context_title,
+              left(c.context_blob, 20000) as context_blob,
+              to_char(c.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+              e.embedding_model
+            from agent_context_blobs c
+            left join lateral (
+              select embedding_model
+              from agent_context_embeddings
+              where context_blob_id = c.id
+              order by created_at desc
+              limit 1
+            ) e on true
+            where c.is_soft_deleted = false
+              and c.status = 'active'
+              and c.project_id = $1
+              and c.repo_id = $2::text::uuid
+              and c.context_id = any($3)
+            "#,
+            &[&project_id, &repo.id, &selected_ids],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut by_id = rows
+        .iter()
+        .map(|row| {
+            let candidate = AgentContextCandidate {
+                context_id: row_string(row, "context_id"),
+                project_id: row_string(row, "project_id"),
+                repo_id: row_opt_string(row, "repo_id"),
+                context_title: row_string(row, "context_title"),
+                context_blob: row_string(row, "context_blob"),
+                score: 1.0,
+                match_source: "selected".to_string(),
+                embedding_model: row_opt_string(row, "embedding_model"),
+                updated_at: row_opt_string(row, "updated_at"),
+            };
+            (candidate.context_id.clone(), candidate)
+        })
+        .collect::<HashMap<_, _>>();
+
+    Ok(selected_ids
+        .iter()
+        .filter_map(|id| by_id.remove(id))
+        .collect::<Vec<_>>())
+}
+
 async fn fetch_agents_from_postgres(
     limit: i64,
 ) -> Result<(Vec<AgentThreadRow>, Vec<AgentTaskRow>), String> {
@@ -3264,6 +3711,12 @@ async fn persist_runtime_task_to_postgres(
         .thread_title
         .clone()
         .unwrap_or_else(|| request.prompt.chars().take(80).collect::<String>());
+    let context_ids = request.context_ids.clone().unwrap_or_default();
+    let context_mode = normalize_context_mode(request.context_mode.as_deref(), context_ids.len());
+    let task_meta = json!({
+        "contextMode": context_mode,
+        "contextIds": context_ids,
+    });
 
     let affected_thread_rows = client
         .execute(
@@ -3299,9 +3752,9 @@ async fn persist_runtime_task_to_postgres(
         .execute(
             r#"
             insert into agent_remote_dev_tasks
-              (id, thread_id, user_id, docker_task_id, prompt, status, branch, last_event_seq, is_soft_deleted, started_at, created_at, updated_at, created_by, updated_by)
+              (id, thread_id, user_id, docker_task_id, prompt, status, branch, last_event_seq, meta, is_soft_deleted, started_at, created_at, updated_at, created_by, updated_by)
             values
-              ($1::text::uuid, $2::text::uuid, $3::text::uuid, $1::text::uuid, $4, $6, $5, -1, false, now(), now(), now(), $3::text::uuid, $3::text::uuid)
+              ($1::text::uuid, $2::text::uuid, $3::text::uuid, $1::text::uuid, $4, $6, $5, -1, $7, false, now(), now(), now(), $3::text::uuid, $3::text::uuid)
             on conflict (id) do update set
               prompt = agent_remote_dev_tasks.prompt,
               status = case
@@ -3320,6 +3773,7 @@ async fn persist_runtime_task_to_postgres(
                 else excluded.status
               end,
               branch = coalesce(excluded.branch, agent_remote_dev_tasks.branch),
+              meta = agent_remote_dev_tasks.meta || excluded.meta,
               updated_by = excluded.updated_by,
               updated_at = now()
             "#,
@@ -3330,6 +3784,7 @@ async fn persist_runtime_task_to_postgres(
                 &request.prompt,
                 &branch,
                 &status,
+                &task_meta,
             ],
         )
         .await
@@ -3628,6 +4083,11 @@ async fn publish_task_to_nats(
         base_branch: repo_config.base_branch,
         feature_branch: branch.map(str::to_string),
         prompt: request.prompt.clone(),
+        context_mode: Some(normalize_context_mode(
+            request.context_mode.as_deref(),
+            request.context_ids.as_ref().map_or(0, Vec::len),
+        )),
+        context_ids: request.context_ids.clone(),
         created_at_ms: now_ms(),
     };
     let payload = serde_json::to_vec(&message).map_err(|error| error.to_string())?;
@@ -4337,6 +4797,53 @@ async fn thread_context(
     ))
 }
 
+async fn thread_context_candidates(
+    Path(thread_id): Path<String>,
+    Json(request): Json<AgentContextCandidatesRequest>,
+) -> Response {
+    record_request(
+        "POST",
+        "/api/agents/threads/:threadId/context-candidates",
+        StatusCode::OK,
+    );
+    if request.prompt.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "prompt is required" })),
+        )
+            .into_response();
+    }
+    if postgres_database_url().is_none() {
+        return Json(AgentContextCandidatesResponse {
+            ok: true,
+            source: "postgres".to_string(),
+            thread_id,
+            generated_at_ms: now_ms(),
+            project_id: normalize_context_project_id(request.project_id.as_deref())
+                .unwrap_or_else(|_| "default".to_string()),
+            repo_id: None,
+            candidates: Vec::new(),
+            errors: vec![
+                "postgres database URL is not configured; start with zero context or dispatch without selected context".to_string(),
+            ],
+        })
+        .into_response();
+    }
+    match fetch_agent_context_candidates_from_postgres(&thread_id, &request).await {
+        Ok(response) => Json(response).into_response(),
+        Err(error) => {
+            eprintln!("agent context candidate lookup failed: {error}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "error": public_data_source_error("postgres context candidates")
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn dispatch_thread_task(
     Path(thread_id): Path<String>,
     Json(request): Json<DispatchTaskRequest>,
@@ -4508,6 +5015,25 @@ async fn dispatch_thread_task(
         return (StatusCode::BAD_GATEWAY, Json(json!({ "error": error }))).into_response();
     }
 
+    let selected_context = if postgres_database_url().is_some() {
+        match fetch_selected_agent_context_from_postgres(&request, &repo_config).await {
+            Ok(items) => items,
+            Err(error) => {
+                eprintln!("failed to fetch selected agent context: {error}");
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({ "error": public_data_source_error("postgres selected context") })),
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let context_mode = normalize_context_mode(
+        request.context_mode.as_deref(),
+        request.context_ids.as_ref().map_or(0, Vec::len),
+    );
     let worker_body = json!({
         "taskId": &request.task_id,
         "threadId": &request.thread_id,
@@ -4516,6 +5042,9 @@ async fn dispatch_thread_task(
         "threadTitle": &request.thread_title,
         "repo": &repo_config.repo,
         "baseBranch": &repo_config.base_branch,
+        "contextMode": context_mode,
+        "contextIds": &request.context_ids,
+        "contextBlobs": selected_context,
     });
     let client = reqwest::Client::new();
     let response = client
@@ -4863,6 +5392,10 @@ async fn main() {
         .route(
             "/api/agents/threads/:thread_id/context",
             get(thread_context),
+        )
+        .route(
+            "/api/agents/threads/:thread_id/context-candidates",
+            post(thread_context_candidates),
         )
         .route(
             "/api/agents/threads/:thread_id/runtime",

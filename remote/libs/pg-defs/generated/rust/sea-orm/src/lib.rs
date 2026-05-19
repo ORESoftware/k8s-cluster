@@ -120,6 +120,65 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "agent_context_blobs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "project_id")]
+    pub project_id: String,
+    #[sea_orm(column_name = "repo_id")]
+    pub repo_id: Option<Uuid>,
+    #[sea_orm(column_name = "context_id")]
+    pub context_id: String,
+    #[sea_orm(column_name = "context_title")]
+    pub context_title: String,
+    #[sea_orm(column_name = "context_blob")]
+    pub context_blob: String,
+    pub status: String,
+    pub labels: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "agent_context_embeddings")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "context_blob_id")]
+    pub context_blob_id: Uuid,
+    #[sea_orm(column_name = "embedding_model")]
+    pub embedding_model: String,
+    pub embedding: Json,
+    #[sea_orm(column_name = "embedding_dimensions")]
+    pub embedding_dimensions: i32,
+    #[sea_orm(column_name = "content_sha256")]
+    pub content_sha256: String,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_threads")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
