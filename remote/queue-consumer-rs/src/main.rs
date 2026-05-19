@@ -691,6 +691,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
             continue;
         }
+        emit_queue_status_event(
+            &http,
+            &nats_client,
+            &rest_api_url,
+            &secret,
+            &task,
+            -910,
+            "queue-handoff-ok",
+            "queue handoff ok",
+            "Queue consumer completed the worker handoff and will acknowledge the JetStream message.",
+            json!({ "directDispatch": direct_dispatch }),
+        )
+        .await;
         receipts.insert(task.task_id.clone());
         if let Err(error) = write_task_receipt(&receipts_dir, &task) {
             eprintln!(

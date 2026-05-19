@@ -105,6 +105,7 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /match dispatch_to_container_pool\(&http, &container_pool_url, &secret, &task\)\.await/);
   assert.match(consumer, /container-pool-failed/);
   assert.match(consumer, /"affinityKey": &task\.thread_id/);
+  assert.match(consumer, /queue-handoff-ok/);
   assert.match(consumer, /rest-fallback-skipped/);
   assert.match(consumer, /rest-fallback-accepted/);
   assert.match(consumer, /queue-acked/);

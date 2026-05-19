@@ -218,7 +218,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(idleReaper, /WORKER_IMAGE_BUILD_REPO_URL"\)[\s\S]*unwrap_or_else\(\|\| "git@github\.com/);
   assert.match(threadTemplate, /envFrom:[\s\S]*configMapRef:[\s\S]*name: dd-agent-config/);
   assert.match(threadTemplate, /envFrom:[\s\S]*secretRef:[\s\S]*name: dd-agent-secrets/);
-  assert.match(threadTemplate, /requests:[\s\S]*cpu:\s*"10m"[\s\S]*memory:\s*"512Mi"/);
+  assert.match(threadTemplate, /requests:[\s\S]*cpu:\s*"1m"[\s\S]*memory:\s*"512Mi"/);
   assert.doesNotMatch(threadTemplate, /dd-k8s-home/);
   assert.match(
     config,
@@ -228,7 +228,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(restServer, /docker\.io\/library\/dd-dev-server:dev/);
   assert.match(restServer, /"mountPath": "\/home\/node\/workspace"/);
   assert.match(restServer, /"runAsUser": 1000/);
-  assert.match(restServer, /"requests": \{ "cpu": "10m", "memory": "512Mi" \}/);
+  assert.match(restServer, /"requests": \{ "cpu": "1m", "memory": "512Mi" \}/);
   assert.match(restServer, /"limits": \{ "cpu": "2", "memory": "4Gi" \}/);
   assert.match(restServer, /"containerSpecs": container_specs/);
   assert.match(restServer, /"startupProbe": \{[\s\S]*"failureThreshold": 180/);
