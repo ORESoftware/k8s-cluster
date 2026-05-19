@@ -169,6 +169,13 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const editablePrompt = stripNegatedWorkspaceChangePhrases\(prompt\)/);
   assert.match(server, /function promptLikelyRequiresWorkspaceChange\(prompt: string\): boolean/);
   assert.match(server, /function providerCanEditWorkspace\(provider: AgentProvider\): boolean/);
+  assert.match(server, /type DeterministicAppendFileEdit = \{/);
+  assert.match(server, /function parseDeterministicAppendFilePrompt\(prompt: string\): DeterministicAppendFileEdit \| null/);
+  assert.match(server, /function safeRepoRelativePath\(workspacePath: string, rawPath: string\): string/);
+  assert.match(server, /async function applyDeterministicWorkspaceEdit\(/);
+  assert.match(server, /status: 'deterministic-edit:append-file'/);
+  assert.match(server, /await applyDeterministicWorkspaceEdit\(state\)/);
+  assert.match(server, /blockedSegments = new Set\(\['\.git', 'node_modules', '\.pnpm-store', '\.next', '\.turbo'\]\)/);
   assert.match(agentTypes, /\| ['"]gemini-sdk['"]/);
   assert.match(agentTypes, /\| ['"]opencode-ai-sdk['"]/);
   assert.doesNotMatch(agentTypes, /\| ['"]echo['"]/);

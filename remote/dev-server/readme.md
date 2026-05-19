@@ -151,7 +151,9 @@ overridden per dispatch (UI picker / API `provider` field) or globally via `AGEN
 Each task walks `AGENT_PROVIDER_ROTATION` and every configured key for that provider before moving
 on. The default order is all OpenAI SDK keys, then all Claude SDK keys, then OpenCode Zen keys, then
 Gemini keys. OpenCode and Gemini are skipped for repo-edit/inspection prompts because they are still
-model-only.
+model-only. Simple append-to-file prompts such as `append "foobar" to todos.md` are handled by a
+deterministic workspace edit path before provider fallback, then committed and pushed like normal
+agent edits.
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -336,7 +338,8 @@ For each `POST /tasks` in that thread:
 
 1. Append prompt/event metadata to `tmp/convos/thread.log` as JSONL.
 2. `mkdir -p $OUTPUTS_DIR/<taskId>` so the agent has a place to write.
-3. Run the selected provider (`openai-sdk` by default, with Claude/Gemini overrides available).
+3. Apply any supported deterministic workspace edit, otherwise run the selected provider
+   (`openai-sdk` by default, with Claude/Gemini overrides available).
 4. Stage workspace changes while excluding generated dependency/cache dirs, then commit and push `origin <session-branch>`.
 5. **Walk `$OUTPUTS_DIR/<taskId>/`** — every regular file (one level deep) is uploaded via the
    configured storage adapter, emitting one `artifact` event per file with the resulting URL.

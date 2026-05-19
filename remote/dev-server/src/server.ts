@@ -25,7 +25,7 @@ import Fastify from 'fastify';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Dirent } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import type { IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
 import { access, appendFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
@@ -496,8 +496,113 @@ function promptLikelyRequiresWorkspaceAccess(prompt: string): boolean {
   const hasInspectionVerb =
     /\b(count|find|grep|how many|inspect|list|look|open|read|search|show|tree|what|where|which)\b/i.test(
       workspacePrompt,
-    );
+  );
   return hasWorkspaceNoun && hasInspectionVerb;
+}
+
+type DeterministicAppendFileEdit = {
+  action: 'append-file';
+  text: string;
+  relativePath: string;
+};
+
+type DeterministicWorkspaceEditResult = {
+  action: 'append-file';
+  relativePath: string;
+  appendedChars: number;
+};
+
+function parseDeterministicAppendFilePrompt(prompt: string): DeterministicAppendFileEdit | null {
+  const quoted = prompt.match(
+    /\b(?:append(?:ing)?|add(?:ing)?)\s+(?:"([^"]+)"|'([^']+)'|`([^`]+)`)\s+(?:to|into)\s+(?:the\s+)?(?:file\s+)?([A-Za-z0-9][A-Za-z0-9._/-]*)(?:\b|$)/i,
+  );
+  if (quoted) {
+    return {
+      action: 'append-file',
+      text: quoted[1] ?? quoted[2] ?? quoted[3] ?? '',
+      relativePath: quoted[4]!,
+    };
+  }
+
+  const unquoted = prompt.match(
+    /\b(?:append(?:ing)?|add(?:ing)?)\s+([A-Za-z0-9][A-Za-z0-9._-]*)\s+(?:to|into)\s+(?:the\s+)?(?:file\s+)?([A-Za-z0-9][A-Za-z0-9._/-]*)(?:\b|$)/i,
+  );
+  if (!unquoted) {
+    return null;
+  }
+
+  return {
+    action: 'append-file',
+    text: unquoted[1]!,
+    relativePath: unquoted[2]!,
+  };
+}
+
+function safeRepoRelativePath(workspacePath: string, rawPath: string): string {
+  const trimmed = rawPath.trim().replace(/^[.][/\\]+/, '').replace(/[),.;:]+$/g, '');
+  const normalized = normalize(trimmed);
+  if (!trimmed || trimmed.includes('\0') || isAbsolute(trimmed) || normalized === '.' || normalized === '..') {
+    throw new Error(`refusing unsafe deterministic append path: ${rawPath}`);
+  }
+  if (normalized.startsWith(`..${sep}`) || normalized.split(sep).some((part) => part === '..')) {
+    throw new Error(`refusing deterministic append outside ${repoDisplayName()}: ${rawPath}`);
+  }
+  const blockedSegments = new Set(['.git', 'node_modules', '.pnpm-store', '.next', '.turbo']);
+  const segments = normalized.split(sep).filter(Boolean);
+  if (segments.some((part) => blockedSegments.has(part))) {
+    throw new Error(`refusing deterministic append into generated or git-managed path: ${rawPath}`);
+  }
+  const workspaceRoot = resolve(workspacePath);
+  const resolvedTarget = resolve(workspaceRoot, normalized);
+  const repoRelative = relative(workspaceRoot, resolvedTarget);
+  if (!repoRelative || repoRelative.startsWith(`..${sep}`) || isAbsolute(repoRelative)) {
+    throw new Error(`refusing deterministic append outside ${repoDisplayName()}: ${rawPath}`);
+  }
+  return repoRelative.split(sep).join('/');
+}
+
+async function applyDeterministicWorkspaceEdit(
+  state: TaskState,
+): Promise<DeterministicWorkspaceEditResult | null> {
+  const appendEdit = parseDeterministicAppendFilePrompt(state.prompt);
+  if (!appendEdit) {
+    return null;
+  }
+
+  const relativePath = safeRepoRelativePath(state.worktreePath, appendEdit.relativePath);
+  const targetPath = resolve(state.worktreePath, relativePath);
+  await mkdir(dirname(targetPath), { recursive: true });
+  let existing = '';
+  try {
+    existing = await readFile(targetPath, 'utf8');
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
+      throw err;
+    }
+  }
+  const prefix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+  const suffix = appendEdit.text.endsWith('\n') ? '' : '\n';
+  await appendFile(targetPath, `${prefix}${appendEdit.text}${suffix}`, 'utf8');
+  const result: DeterministicWorkspaceEditResult = {
+    action: 'append-file',
+    relativePath,
+    appendedChars: appendEdit.text.length,
+  };
+  await appendThreadLog(state, {
+    kind: 'deterministic-edit',
+    action: result.action,
+    relativePath: result.relativePath,
+    appendedChars: result.appendedChars,
+    branch: state.branch,
+  });
+  emit(state, {
+    kind: 'status',
+    status: 'deterministic-edit:append-file',
+    message:
+      `Appended ${result.appendedChars} character(s) to ${relativePath} in ${repoDisplayName()}.\n` +
+      `Workspace: ${gitBranchTarget(state.branch)}`,
+  });
+  return result;
 }
 
 async function gitWorkspaceStatus(workspacePath: string): Promise<string> {
@@ -1590,115 +1695,120 @@ async function runTask(state: TaskState): Promise<void> {
       // `printenv` tool call. The runner adds only the API key its model
       // needs.
       const prompt = await buildPromptWithThreadContext(state);
-      const providerOrder = [...config.agentProviderRotation, state.provider].filter(
-        (provider, index, values) => values.indexOf(provider) === index,
-      );
-      const attemptGroups: { provider: AgentProvider; candidates: AgentEnvCandidate[] }[] = [];
-      for (const provider of providerOrder) {
-        if (requiresWorkspaceChange && !providerCanEditWorkspace(provider)) {
-          emit(state, {
-            kind: 'status',
-            status: `agent-skip:${provider}`,
-            message: `${provider} is model-only and cannot edit files in ${repoDisplayName()}`,
-          });
-          continue;
-        }
-        if (requiresWorkspaceAccess && !providerCanAccessWorkspace(provider)) {
-          emit(state, {
-            kind: 'status',
-            status: `agent-skip:${provider}`,
-            message: `${provider} is model-only and cannot inspect the workspace for ${repoDisplayName()}`,
-          });
-          continue;
-        }
-        const candidates = buildAgentEnvCandidates(provider);
-        if (candidates.length === 0) {
-          emit(state, {
-            kind: 'status',
-            status: `agent-skip:${provider}`,
-            message: `No configured API keys for ${provider}`,
-          });
-          continue;
-        }
-        attemptGroups.push({ provider, candidates });
-      }
-      if (attemptGroups.length === 0) {
-        throw new Error(
-          `no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, OPENCODE_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`,
-        );
-      }
-
-      const runAgentAttempt = async (attempt: AgentEnvCandidate): Promise<void> => {
-        const runner = getRunner(attempt.provider);
-        await runner.run({
-          prompt,
-          cwd: state.worktreePath,
-          env: attempt.env,
-          signal: state.abortController.signal,
-          timeoutMs: config.agentRunTimeoutMs,
-          emit: (ev: AgentRunnerEvent) => {
-            if (shouldForwardAgentRunnerEvent(ev)) {
-              emit(state, ev);
-            }
-          },
-          setChild: (child: ChildProcess) => {
-            state.child = child;
-          },
-        });
-      };
-
       let lastErr: unknown = null;
       let completedAgentRun = false;
-      for (const [groupIndex, group] of attemptGroups.entries()) {
-        if (state.cancelled || state.abortController.signal.aborted) {
-          throw lastErr ?? new Error('agent run cancelled');
+      const deterministicEdit = requiresWorkspaceChange ? await applyDeterministicWorkspaceEdit(state) : null;
+      if (deterministicEdit) {
+        completedAgentRun = true;
+      } else {
+        const providerOrder = [...config.agentProviderRotation, state.provider].filter(
+          (provider, index, values) => values.indexOf(provider) === index,
+        );
+        const attemptGroups: { provider: AgentProvider; candidates: AgentEnvCandidate[] }[] = [];
+        for (const provider of providerOrder) {
+          if (requiresWorkspaceChange && !providerCanEditWorkspace(provider)) {
+            emit(state, {
+              kind: 'status',
+              status: `agent-skip:${provider}`,
+              message: `${provider} is model-only and cannot edit files in ${repoDisplayName()}`,
+            });
+            continue;
+          }
+          if (requiresWorkspaceAccess && !providerCanAccessWorkspace(provider)) {
+            emit(state, {
+              kind: 'status',
+              status: `agent-skip:${provider}`,
+              message: `${provider} is model-only and cannot inspect the workspace for ${repoDisplayName()}`,
+            });
+            continue;
+          }
+          const candidates = buildAgentEnvCandidates(provider);
+          if (candidates.length === 0) {
+            emit(state, {
+              kind: 'status',
+              status: `agent-skip:${provider}`,
+              message: `No configured API keys for ${provider}`,
+            });
+            continue;
+          }
+          attemptGroups.push({ provider, candidates });
         }
-        if (groupIndex > 0) {
-          emit(state, {
-            kind: 'status',
-            status: `agent-fallback:${group.provider}`,
-            message: `Switching to ${group.provider} after the previous provider failed`,
+        if (attemptGroups.length === 0) {
+          throw new Error(
+            `no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, OPENCODE_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`,
+          );
+        }
+
+        const runAgentAttempt = async (attempt: AgentEnvCandidate): Promise<void> => {
+          const runner = getRunner(attempt.provider);
+          await runner.run({
+            prompt,
+            cwd: state.worktreePath,
+            env: attempt.env,
+            signal: state.abortController.signal,
+            timeoutMs: config.agentRunTimeoutMs,
+            emit: (ev: AgentRunnerEvent) => {
+              if (shouldForwardAgentRunnerEvent(ev)) {
+                emit(state, ev);
+              }
+            },
+            setChild: (child: ChildProcess) => {
+              state.child = child;
+            },
           });
-        }
-        emit(state, {
-          kind: 'status',
-          status: `agent-running:${group.provider}`,
-          message:
-            `Workspace: ${gitBranchTarget(state.branch)}\n` +
-            `Base branch: ${config.baseBranch}\n` +
-            `Credentials: ${group.candidates.length} configured key(s)`,
-        });
-        const failures = new Map<string, number>();
-        let attempted = 0;
-        for (const attempt of group.candidates) {
+        };
+
+        for (const [groupIndex, group] of attemptGroups.entries()) {
           if (state.cancelled || state.abortController.signal.aborted) {
             throw lastErr ?? new Error('agent run cancelled');
           }
-          attempted += 1;
-          try {
-            await runAgentAttempt(attempt);
-            completedAgentRun = true;
-            lastErr = null;
-            break;
-          } catch (err) {
-            lastErr = err;
-            const reason = compactAgentErrorMessage(attempt.provider, err);
-            failures.set(reason, (failures.get(reason) ?? 0) + 1);
+          if (groupIndex > 0) {
+            emit(state, {
+              kind: 'status',
+              status: `agent-fallback:${group.provider}`,
+              message: `Switching to ${group.provider} after the previous provider failed`,
+            });
           }
-        }
-        if (completedAgentRun) {
-          break;
-        }
-        if (attempted > 0) {
           emit(state, {
-            kind: 'error',
-            message: formatAgentFailureSummary(
-              group.provider,
-              failures,
-              attempted,
-              group.candidates.length,
-            ),
+            kind: 'status',
+            status: `agent-running:${group.provider}`,
+            message:
+              `Workspace: ${gitBranchTarget(state.branch)}\n` +
+              `Base branch: ${config.baseBranch}\n` +
+              `Credentials: ${group.candidates.length} configured key(s)`,
           });
+          const failures = new Map<string, number>();
+          let attempted = 0;
+          for (const attempt of group.candidates) {
+            if (state.cancelled || state.abortController.signal.aborted) {
+              throw lastErr ?? new Error('agent run cancelled');
+            }
+            attempted += 1;
+            try {
+              await runAgentAttempt(attempt);
+              completedAgentRun = true;
+              lastErr = null;
+              break;
+            } catch (err) {
+              lastErr = err;
+              const reason = compactAgentErrorMessage(attempt.provider, err);
+              failures.set(reason, (failures.get(reason) ?? 0) + 1);
+            }
+          }
+          if (completedAgentRun) {
+            break;
+          }
+          if (attempted > 0) {
+            emit(state, {
+              kind: 'error',
+              message: formatAgentFailureSummary(
+                group.provider,
+                failures,
+                attempted,
+                group.candidates.length,
+              ),
+            });
+          }
         }
       }
       if (!completedAgentRun) {
