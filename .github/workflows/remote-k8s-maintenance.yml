@@ -251,20 +251,29 @@ jobs:
                 echo "REMOTE_DEV_GH_PAT repository secret is not configured" >&2
                 exit 65
               fi
-              secret_name="dd/remote-dev/agent-secrets"
-              region="${AWS_REGION:-us-east-1}"
-              current_secret="$(
-                aws secretsmanager get-secret-value \
-                  --region "$region" \
-                  --secret-id "$secret_name" \
-                  --query SecretString \
-                  --output text 2>/tmp/agent-secrets.err || true
-              )"
-              if [[ -z "$current_secret" || "$current_secret" == "None" ]]; then
-                current_secret="{}"
-              fi
-              updated_secret="$(
-                CURRENT_SECRET="$current_secret" REMOTE_DEV_GH_PAT="$REMOTE_DEV_GH_PAT" python3 - <<'PY'
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          token = os.environ["REMOTE_DEV_GH_PAT"]
+          script = r'''set -euo pipefail
+          secret_name="dd/remote-dev/agent-secrets"
+          region="${AWS_REGION:-us-east-1}"
+
+          current_secret="$(
+            aws secretsmanager get-secret-value \
+              --region "$region" \
+              --secret-id "$secret_name" \
+              --query SecretString \
+              --output text 2>/tmp/agent-secrets.err || true
+          )"
+          if [[ -z "$current_secret" || "$current_secret" == "None" ]]; then
+            current_secret="{}"
+          fi
+
+          updated_secret="$(
+            CURRENT_SECRET="$current_secret" REMOTE_DEV_GH_PAT="$REMOTE_DEV_GH_PAT" python3 - <<'INNER'
           import json
           import os
 
@@ -276,38 +285,45 @@ jobs:
               data = {}
           data["GH_PAT"] = os.environ["REMOTE_DEV_GH_PAT"]
           print(json.dumps(data, separators=(",", ":")))
+          INNER
+          )"
+
+          if aws secretsmanager describe-secret \
+            --region "$region" \
+            --secret-id "$secret_name" >/dev/null 2>/tmp/agent-secret-describe.err; then
+            aws secretsmanager put-secret-value \
+              --region "$region" \
+              --secret-id "$secret_name" \
+              --secret-string "$updated_secret" >/dev/null
+            echo "updated $secret_name GH_PAT"
+          elif grep -q ResourceNotFoundException /tmp/agent-secret-describe.err; then
+            aws secretsmanager create-secret \
+              --region "$region" \
+              --name "$secret_name" \
+              --secret-string "$updated_secret" >/dev/null
+            echo "created $secret_name with GH_PAT"
+          else
+            cat /tmp/agent-secret-describe.err >&2
+            exit 1
+          fi
+
+          kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite
+          sleep 20
+          kubectl -n default get externalsecret dd-agent-secrets
+          kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true
+          kubectl -n default rollout restart deployment -l app.kubernetes.io/component=thread-pod || true
+          kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env REMOTE_DEV_GH_PAT={shlex.quote(token)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
           PY
-              )"
-              if aws secretsmanager describe-secret \
-                --region "$region" \
-                --secret-id "$secret_name" >/dev/null 2>/tmp/agent-secret-describe.err; then
-                aws secretsmanager put-secret-value \
-                  --region "$region" \
-                  --secret-id "$secret_name" \
-                  --secret-string "$updated_secret" >/dev/null
-                echo "updated $secret_name GH_PAT"
-              else
-                aws secretsmanager create-secret \
-                  --region "$region" \
-                  --name "$secret_name" \
-                  --secret-string "$updated_secret" >/dev/null
-                echo "created $secret_name with GH_PAT"
-              fi
-              cat > /tmp/remote-k8s-commands.json <<'JSON'
-          {
-            "commands": [
-              "set -euo pipefail",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite'",
-              "sleep 20",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default get externalsecret dd-agent-secrets'",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true'",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment -l app.kubernetes.io/component=thread-pod || true'",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true'",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s'",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true'"
-            ]
-          }
-          JSON
               ;;
             *)
               echo "Unsupported operation: $OPERATION" >&2
