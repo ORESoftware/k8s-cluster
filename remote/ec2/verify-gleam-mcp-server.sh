@@ -46,6 +46,9 @@ if [[ "${actual_destination_namespace}" != "${namespace}" ]]; then
   exit 1
 fi
 
+echo "Applying EC2 MCP overlay: ${repo_root}/${expected_app_path}"
+kubectl apply -k "${repo_root}/${expected_app_path}"
+
 if command -v argocd >/dev/null 2>&1 && argocd app get "${app_name}" --grpc-web >/dev/null 2>&1; then
   echo "Syncing ${app_name} with argocd CLI."
   argocd app sync "${app_name}" --grpc-web

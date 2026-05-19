@@ -122,7 +122,7 @@ The tools are intentionally read-only:
 Kubernetes API for namespaces, nodes, pods, services, endpoints, PVCs/PVs, service accounts, events,
 apps workloads, batch jobs, ingresses, network policies, HPAs, storage classes, and CRDs.
 `kubernetes_deployments` remains the narrower all-Deployment view. The shipped RBAC grants only
-`get` and `list` for the inventory resources. It does not grant Kubernetes Secret access, ConfigMap
+`list` for the inventory resources. It does not grant Kubernetes Secret access, ConfigMap
 data access, pod logs, pod exec, or mutation verbs. The client requests only
 `PartialObjectMetadataList`; if the API server cannot serve metadata-only content for a resource, the
 tool reports that API error instead of falling back to full objects.

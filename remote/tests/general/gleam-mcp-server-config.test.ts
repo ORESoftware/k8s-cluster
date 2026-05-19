@@ -194,7 +194,8 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Rbac, /apiGroups:[\s\S]*-\s*batch[\s\S]*resources:[\s\S]*-\s*cronjobs[\s\S]*-\s*jobs/);
   assert.match(ec2Rbac, /apiGroups:[\s\S]*-\s*networking\.k8s\.io[\s\S]*resources:[\s\S]*-\s*ingresses[\s\S]*-\s*networkpolicies/);
   assert.match(ec2Rbac, /apiGroups:[\s\S]*-\s*apiextensions\.k8s\.io[\s\S]*customresourcedefinitions/);
-  assert.match(ec2Rbac, /verbs:[\s\S]*-\s*get[\s\S]*-\s*list/);
+  assert.match(ec2Rbac, /verbs:[\s\S]*-\s*list/);
+  assert.doesNotMatch(ec2Rbac, /-\s*get/);
   assert.doesNotMatch(ec2Rbac, /-\s*secrets|-\s*configmaps|pods\/exec|pods\/log|-\s*create|-\s*patch|-\s*update|-\s*delete/);
   assert.match(ec2NetworkPolicy, /kind:\s*NetworkPolicy/);
   assert.match(ec2NetworkPolicy, /app:\s*dd-gleam-mcp-server/);
@@ -253,6 +254,7 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Verifier, /\*minikube\*\|\*kind\*\|\*docker-desktop\*\|\*colima\*/);
   assert.match(ec2Verifier, /ALLOW_NON_EC2_CONTEXT=true/);
   assert.match(ec2Verifier, /kubectl -n "\$\{argocd_namespace\}" get application "\$\{app_name\}"/);
+  assert.match(ec2Verifier, /kubectl apply -k "\$\{repo_root\}\/\$\{expected_app_path\}"/);
   assert.match(ec2Verifier, /kubectl auth can-i/);
   assert.match(ec2Verifier, /require_can_i list deployments\.apps --all-namespaces/);
   assert.match(ec2Verifier, /require_can_i list customresourcedefinitions\.apiextensions\.k8s\.io/);
