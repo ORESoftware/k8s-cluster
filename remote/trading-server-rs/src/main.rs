@@ -352,8 +352,8 @@ fn config_from_env() -> Config {
         allow_unauthenticated: env_bool("TRADING_ALLOW_UNAUTHENTICATED", false),
         database_url: first_env(&[
             "TRADING_DATABASE_URL",
-            "AGENT_TASKS_RDS_DATABASE_URL",
             "RDS_DATABASE_URL",
+            "AGENT_TASKS_RDS_DATABASE_URL",
             "DATABASE_URL",
         ]),
         app_config_scope: env_value("TRADING_APP_CONFIG_SCOPE", "default"),

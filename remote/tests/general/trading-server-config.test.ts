@@ -66,6 +66,7 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /blocked_by_safety_gate/);
   assert.match(source, /TRADING_ALLOW_LIVE_ORDERS/);
   assert.match(source, /SERVER_AUTH_SECRET/);
+  assert.match(source, /"TRADING_DATABASE_URL",[\s\S]*"RDS_DATABASE_URL",[\s\S]*"AGENT_TASKS_RDS_DATABASE_URL"/);
   assert.match(source, /constant_time_equals/);
   assert.match(source, /queue_subscribe/);
   assert.match(source, /dd\.remote\.trading\.signals/);

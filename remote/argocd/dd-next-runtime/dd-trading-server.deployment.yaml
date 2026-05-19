@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-19-rds-ca'
+        dd.dev/telemetry-revision: '2026-05-19-rds-url-order'
       labels:
         app: dd-trading-server
     spec:
