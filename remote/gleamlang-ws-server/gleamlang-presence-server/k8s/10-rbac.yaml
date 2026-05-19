@@ -1,0 +1,37 @@
+# ServiceAccount + Role + RoleBinding that lets the presence pods list
+# their peers via the Kubernetes API. The presence binary reads its
+# in-pod token from /var/run/secrets/kubernetes.io/serviceaccount/token
+# and calls /api/v1/namespaces/<ns>/pods?labelSelector=app=presence on
+# the API server to discover sibling pods.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: presence
+  namespace: presence
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: presence-pod-reader
+  namespace: presence
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: presence-pod-reader
+  namespace: presence
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: presence-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: presence
+    namespace: presence
