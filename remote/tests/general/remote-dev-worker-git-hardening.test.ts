@@ -153,6 +153,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const GENERATED_GIT_EXCLUDES = \[':!\.pnpm-store'/);
   assert.match(server, /async function gitWorkspaceStatus\(workspacePath: string\): Promise<string>/);
   assert.match(server, /async function gitAddWorkspaceChanges\(workspacePath: string\): Promise<void>/);
+  assert.match(server, /function stripNegatedWorkspaceChangePhrases\(prompt: string\): string/);
+  assert.match(server, /const editablePrompt = stripNegatedWorkspaceChangePhrases\(prompt\)/);
   assert.match(server, /function promptLikelyRequiresWorkspaceChange\(prompt: string\): boolean/);
   assert.match(server, /function providerCanEditWorkspace\(provider: AgentProvider\): boolean/);
   assert.match(agentTypes, /\| ['"]gemini-sdk['"]/);

@@ -448,9 +448,26 @@ function providerCanEditWorkspace(provider: AgentProvider): boolean {
   return provider !== 'gemini-sdk';
 }
 
+function stripNegatedWorkspaceChangePhrases(prompt: string): string {
+  return prompt
+    .replace(
+      /\b(?:do\s+not|don't|dont|never)\s+(?:make\s+)?(?:any\s+)?(?:file|code|workspace|repo(?:sitory)?|source)?\s*(?:changes?|edits?|modifications?)\b/gi,
+      ' ',
+    )
+    .replace(
+      /\b(?:do\s+not|don't|dont|never)\s+(?:edit|change|modify|write|update|create|delete|remove|patch|fix|implement)(?:\s+(?:the|a|any|files?|code|workspace|repo(?:sitory)?|source|project|readme(?:\.md)?|package(?:\.json)?)){0,4}\b/gi,
+      ' ',
+    )
+    .replace(
+      /\b(?:without|no)\s+(?:making\s+)?(?:any\s+)?(?:file|code|workspace|repo(?:sitory)?|source)?\s*(?:changes?|edits?|modifications?)\b/gi,
+      ' ',
+    );
+}
+
 function promptLikelyRequiresWorkspaceChange(prompt: string): boolean {
+  const editablePrompt = stripNegatedWorkspaceChangePhrases(prompt);
   return /\b(add|change|create|delete|edit|fix|implement|modify|move|patch|refactor|remove|rename|replace|update|write)\b/i.test(
-    prompt,
+    editablePrompt,
   );
 }
 
