@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-15-nats-shadow-preparer'
+        dd.dev/telemetry-revision: '2026-05-18-queued-handoff-events'
       labels:
         app: dd-remote-queue-consumer
     spec:
