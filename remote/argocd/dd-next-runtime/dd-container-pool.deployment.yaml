@@ -73,9 +73,9 @@ spec:
             - name: CONTAINER_POOL_RECONCILE_SECONDS
               value: '10'
             - name: CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS
-              value: '30'
+              value: '120'
             - name: CONTAINER_POOL_START_TIMEOUT_SECONDS
-              value: '20'
+              value: '90'
             - name: CONTAINER_POOL_CONTAINER_MEMORY
               value: 512m
             - name: CONTAINER_POOL_CONTAINER_CPUS
