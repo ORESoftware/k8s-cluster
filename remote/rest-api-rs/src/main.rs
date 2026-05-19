@@ -3528,8 +3528,27 @@ async fn publish_task_shadow_to_nats(
 async fn publish_task_dispatch_to_nats(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
+    direct_dispatch: bool,
 ) -> Result<(), String> {
-    publish_task_to_nats(request, branch, "task.dispatch", false, true).await
+    publish_task_to_nats(request, branch, "task.dispatch", false, direct_dispatch).await
+}
+
+fn dispatch_mode_value(request: &DispatchTaskRequest) -> &str {
+    request.dispatch_mode.as_deref().unwrap_or("direct").trim()
+}
+
+fn is_queued_dispatch_mode(mode: &str) -> bool {
+    matches!(
+        mode,
+        "queued" | "nats" | "async" | "queued-pool" | "nats-pool" | "container-pool" | "pool"
+    )
+}
+
+fn is_container_pool_dispatch_mode(mode: &str) -> bool {
+    matches!(
+        mode,
+        "queued-pool" | "nats-pool" | "container-pool" | "pool"
+    )
 }
 
 async fn publish_task_to_nats(
@@ -4296,10 +4315,9 @@ async fn dispatch_thread_task(
         }
     }
 
-    let queued_dispatch = request
-        .dispatch_mode
-        .as_deref()
-        .is_some_and(|mode| matches!(mode, "queued" | "nats" | "async"));
+    let dispatch_mode = dispatch_mode_value(&request);
+    let queued_dispatch = is_queued_dispatch_mode(dispatch_mode);
+    let container_pool_dispatch = is_container_pool_dispatch_mode(dispatch_mode);
     remember_runtime_task(&request, None);
     if let Err(error) = persist_runtime_task_to_postgres(
         &request,
@@ -4327,7 +4345,7 @@ async fn dispatch_thread_task(
         {
             eprintln!("failed to persist queued dispatch accepted event: {error}");
         }
-        match publish_task_dispatch_to_nats(&request, None).await {
+        match publish_task_dispatch_to_nats(&request, None, !container_pool_dispatch).await {
             Ok(()) => {}
             Err(error) => {
                 eprintln!("failed to publish queued remote task to nats: {error}");
@@ -4348,7 +4366,31 @@ async fn dispatch_thread_task(
                 {
                     eprintln!("failed to persist queued dispatch publish failure: {persist_error}");
                 }
+                if container_pool_dispatch {
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        Json(json!({
+                            "error": "failed to publish queued container-pool task to nats"
+                        })),
+                    )
+                        .into_response();
+                }
             }
+        }
+        if container_pool_dispatch {
+            return (
+                StatusCode::ACCEPTED,
+                Json(json!({
+                    "ok": true,
+                    "mode": dispatch_mode,
+                    "queued": true,
+                    "directDispatch": false,
+                    "subject": nats_task_subject(&thread_id),
+                    "taskId": &request.task_id,
+                    "threadId": &thread_id,
+                })),
+            )
+                .into_response();
         }
     }
 

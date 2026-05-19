@@ -1035,6 +1035,7 @@ fn agents_threads_body() -> Markup {
                             span { "Dispatch mode" }
                             select id="dispatch-mode" {
                                 option value="queued" selected { "queued NATS" }
+                                option value="queued-pool" { "NATS container pool" }
                                 option value="direct" { "direct REST" }
                             }
                         }
@@ -2629,6 +2630,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const prompt = $("prompt").value.trim();
         const provider = $("provider").value;
         const dispatchMode = $("dispatch-mode").value;
+        const usesContainerPool = dispatchMode === "queued-pool";
         const repoValidation = validateCurrentRepoUrl();
         const repo = repoValidation.repo;
         const baseBranch = currentBaseBranch();
@@ -2646,42 +2648,44 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         closeInlineTerminal();
         setTaskStreamLayout("stream");
         replaceSelectionUrl(threadId, taskId);
-        clearStream("waking worker");
+        clearStream(usesContainerPool ? "waiting for queue" : "waking worker");
         openGleamLiveSocket(threadId, taskId);
-        startRuntimePolling(threadId);
+        if (!usesContainerPool) startRuntimePolling(threadId);
         renderEventRow({
           seq: `dispatch-start-${Date.now()}`,
           eventKind: "status",
           payload: {
             kind: "status",
-            status: "waking worker",
-            message: "Creating or waking the UUID-bound worker. Cold starts can take 30-90 seconds while the container installs dependencies, refreshes git, and starts Node.",
+            status: usesContainerPool ? "queueing container-pool task" : "waking worker",
+            message: usesContainerPool
+              ? "Publishing the task to NATS for the queue consumer to dispatch through container-pool using this thread UUID as the affinity key."
+              : "Creating or waking the UUID-bound worker. Cold starts can take 30-90 seconds while the container installs dependencies, refreshes git, and starts Node.",
           },
           createdAt: new Date().toISOString(),
         });
         setStatus(`POST /api/agents/threads/${threadId}/tasks`);
         const startedAt = Date.now();
         const keepRuntimePolling = dispatchMode === "queued";
-        const waitTicker = setInterval(() => {
-          const elapsed = Math.round((Date.now() - startedAt) / 1000);
-          const runtimeSummary = state.lastRuntimeSummary || "runtime snapshot pending";
-          const runtimeDetails = workerRuntimeWaitDetails(state.lastRuntimeData);
-          setStatus(`dispatch waiting ${elapsed}s · ${runtimeSummary}`);
-          renderEventRow({
-            seq: `dispatch-wait-${elapsed}`,
-            eventKind: "status",
-            payload: {
-              kind: "status",
-              status: `still waiting (${elapsed}s)`,
-              message: [
-                "The REST API is waiting for the thread worker readiness check before it forwards the task.",
-                runtimeSummary,
-                runtimeDetails,
-              ].filter(Boolean).join("\n"),
-            },
-            createdAt: new Date().toISOString(),
-          });
-        }, 15000);
+        const waitTicker = usesContainerPool ? null : setInterval(() => {
+            const elapsed = Math.round((Date.now() - startedAt) / 1000);
+            const runtimeSummary = state.lastRuntimeSummary || "runtime snapshot pending";
+            const runtimeDetails = workerRuntimeWaitDetails(state.lastRuntimeData);
+            setStatus(`dispatch waiting ${elapsed}s · ${runtimeSummary}`);
+            renderEventRow({
+              seq: `dispatch-wait-${elapsed}`,
+              eventKind: "status",
+              payload: {
+                kind: "status",
+                status: `still waiting (${elapsed}s)`,
+                message: [
+                  "The REST API is waiting for the thread worker readiness check before it forwards the task.",
+                  runtimeSummary,
+                  runtimeDetails,
+                ].filter(Boolean).join("\n"),
+              },
+              createdAt: new Date().toISOString(),
+            });
+          }, 15000);
         let response;
         try {
           response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/tasks`, {
@@ -2699,7 +2703,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
             }),
           });
         } finally {
-          clearInterval(waitTicker);
+          if (waitTicker !== null) clearInterval(waitTicker);
           if (!keepRuntimePolling) stopRuntimePolling();
         }
         const body = await response.text();
@@ -2723,7 +2727,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           },
           createdAt: new Date().toISOString(),
         });
-        await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
+        if (!usesContainerPool) {
+          await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
+        }
         openLiveStream(threadId, taskId);
         await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => handleSnapshotError(error, { preserveStreamForTask: taskId }));
       }

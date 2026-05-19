@@ -44,13 +44,17 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /on conflict \(task_id, seq\) do update set/);
   assert.match(server, /"task\.shadow"/);
   assert.match(server, /publish_task_dispatch_to_nats/);
-  assert.match(server, /publish_task_to_nats\(request, branch, "task\.dispatch", false, true\)/);
+  assert.match(server, /publish_task_to_nats\(request, branch, "task\.dispatch", false, direct_dispatch\)/);
+  assert.match(server, /fn is_container_pool_dispatch_mode/);
+  assert.match(server, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(server, /publish_task_dispatch_to_nats\(&request, None, !container_pool_dispatch\)\.await/);
+  assert.match(server, /"directDispatch": false/);
   assert.match(server, /"task\.dispatch"/);
   assert.match(server, /dispatch_mode/);
   assert.match(server, /"stage": "nats-publish-failed"/);
   assert.match(server, /continuing with synchronous worker dispatch/);
   assert.ok(
-    server.indexOf('publish_task_dispatch_to_nats(&request, None).await')
+    server.indexOf('publish_task_dispatch_to_nats(&request, None, !container_pool_dispatch).await')
       < server.indexOf('ensure_thread_worker(&thread_id'),
     'queued NATS publish must happen before the synchronous worker wake path',
   );

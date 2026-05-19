@@ -1011,6 +1011,9 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /sendFeedback\(seq, vote, button\)/);
   assert.match(server, /collectText\(raw\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
+  assert.match(server, /NATS container pool/);
+  assert.match(server, /queueing container-pool task/);
+  assert.match(server, /thread UUID as the affinity key/);
   assert.match(server, /lastRuntimeData: null/);
   assert.match(server, /async function readableFetchError\(response, label\) \{/);
   assert.match(server, /gateway returned HTML; retrying/);
@@ -1120,8 +1123,12 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,
-    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
+    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None, !container_pool_dispatch\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
   );
+  assert.match(restServer, /fn is_container_pool_dispatch_mode\(mode: &str\) -> bool/);
+  assert.match(restServer, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(restServer, /StatusCode::ACCEPTED/);
+  assert.match(restServer, /"directDispatch": false/);
   assert.match(restServer, /repo: String,/);
   assert.match(restServer, /base_branch: Option<String>,/);
   assert.match(restServer, /status: "running"\.to_string\(\),/);
