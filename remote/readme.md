@@ -656,7 +656,8 @@ admin's events because they subscribe with their own UUID. Three layers of defen
 
 Each task can be driven by Gemini, Claude, or OpenAI. The default is the OpenAI SDK runner;
 override per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`
-env on the docker.
+env on the docker. Failed runs retry through the configured fallback providers, with
+`openai-sdk` primary and `claude-sdk` secondary by default.
 
 | Provider           | Path                                                | Status               |
 | ------------------ | --------------------------------------------------- | -------------------- |

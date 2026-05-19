@@ -68,7 +68,19 @@ import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js'
 // ---------- Config ----------
 
 const AGENT_FALLBACK_PROVIDER: AgentProvider = 'openai-sdk';
+const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk';
+const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
+  'claude-cli',
+  'claude-sdk',
+  'gemini-sdk',
+  'openai-codex-cli',
+  'openai-sdk',
+]);
 const GENERATED_GIT_EXCLUDES = [':!.pnpm-store', ':!node_modules', ':!.next', ':!.turbo'];
+
+function configAgentProvider(value: string | undefined, fallback: AgentProvider): AgentProvider {
+  return value && CONFIG_AGENT_PROVIDERS.has(value as AgentProvider) ? (value as AgentProvider) : fallback;
+}
 
 const config = {
   port: Number(process.env.PORT ?? 8080),
@@ -112,7 +124,11 @@ const config = {
     'http://dd-remote-rest-api.default.svc.cluster.local:8082',
   threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
   threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
-  agentFallbackProvider: AGENT_FALLBACK_PROVIDER,
+  agentFallbackProvider: configAgentProvider(process.env.AGENT_FALLBACK_PROVIDER, AGENT_FALLBACK_PROVIDER),
+  agentSecondaryFallbackProvider: configAgentProvider(
+    process.env.AGENT_SECONDARY_FALLBACK_PROVIDER,
+    AGENT_SECONDARY_FALLBACK_PROVIDER,
+  ),
   agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
   threadLogRelativePath: process.env.THREAD_LOG_RELATIVE_PATH ?? 'tmp/convos/thread.log',
@@ -1321,17 +1337,6 @@ async function runTask(state: TaskState): Promise<void> {
       }
 
       const requiresWorkspaceChange = promptLikelyRequiresWorkspaceChange(state.prompt);
-      if (requiresWorkspaceChange && !providerCanEditWorkspace(state.provider)) {
-        throw new Error(
-          `${state.provider} is model-only and cannot edit files in ${repoDisplayName()}; choose claude-sdk, claude-cli, openai-sdk, or openai-codex-cli for repo changes`,
-        );
-      }
-
-      emit(state, {
-        kind: 'status',
-        status: `agent-running:${state.provider}`,
-        message: `Workspace: ${gitBranchTarget(state.branch)}\nBase branch: ${config.baseBranch}`,
-      });
       // Strict env allowlist owned by the runner module. Inheriting the full
       // process.env into the agent process would leak our GitHub deploy key,
       // Supabase service role key, ingest secret, etc. via any `env` or
@@ -1339,6 +1344,16 @@ async function runTask(state: TaskState): Promise<void> {
       // needs.
       const prompt = await buildPromptWithThreadContext(state);
       const runSelectedAgent = async (provider: AgentProvider): Promise<void> => {
+        if (requiresWorkspaceChange && !providerCanEditWorkspace(provider)) {
+          throw new Error(
+            `${provider} is model-only and cannot edit files in ${repoDisplayName()}; choose claude-sdk, claude-cli, openai-sdk, or openai-codex-cli for repo changes`,
+          );
+        }
+        emit(state, {
+          kind: 'status',
+          status: `agent-running:${provider}`,
+          message: `Workspace: ${gitBranchTarget(state.branch)}\nBase branch: ${config.baseBranch}`,
+        });
         const agentEnv = buildAgentEnv(provider);
         const runner = getRunner(provider);
         await runner.run({
@@ -1361,20 +1376,47 @@ async function runTask(state: TaskState): Promise<void> {
           kind: 'error',
           message: `${state.provider} failed: ${message}`,
         });
-        if (
-          state.provider === config.agentFallbackProvider ||
-          state.cancelled ||
-          state.abortController.signal.aborted ||
-          (requiresWorkspaceChange && !providerCanEditWorkspace(config.agentFallbackProvider))
-        ) {
+        if (state.cancelled || state.abortController.signal.aborted) {
           throw err;
         }
-        emit(state, {
-          kind: 'status',
-          status: `agent-fallback:${config.agentFallbackProvider}`,
-          message: `Retrying against ${gitBranchTarget(state.branch)}`,
+        const seenFallbackProviders = new Set<AgentProvider>([state.provider]);
+        const fallbackProviders = [
+          config.agentFallbackProvider,
+          config.agentSecondaryFallbackProvider,
+        ].filter((provider) => {
+          if (seenFallbackProviders.has(provider)) {
+            return false;
+          }
+          seenFallbackProviders.add(provider);
+          return !requiresWorkspaceChange || providerCanEditWorkspace(provider);
         });
-        await runSelectedAgent(config.agentFallbackProvider);
+        if (fallbackProviders.length === 0) {
+          throw err;
+        }
+        let lastErr: unknown = err;
+        for (const fallbackProvider of fallbackProviders) {
+          emit(state, {
+            kind: 'status',
+            status: `agent-fallback:${fallbackProvider}`,
+            message: `Retrying against ${gitBranchTarget(state.branch)}`,
+          });
+          try {
+            await runSelectedAgent(fallbackProvider);
+            lastErr = null;
+            break;
+          } catch (fallbackErr) {
+            lastErr = fallbackErr;
+            const fallbackMessage =
+              fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+            emit(state, {
+              kind: 'error',
+              message: `${fallbackProvider} failed: ${fallbackMessage}`,
+            });
+          }
+        }
+        if (lastErr) {
+          throw lastErr;
+        }
       }
 
       if (state.cancelled || state.abortController.signal.aborted) {

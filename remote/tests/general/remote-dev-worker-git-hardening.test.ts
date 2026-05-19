@@ -99,7 +99,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /status: 'waiting-for-task'/);
   assert.match(server, /registerWorkerWebSocketUpgrade\(\);[\s\S]*await fastify\.listen/);
   assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'openai-sdk'/);
-  assert.match(server, /agentFallbackProvider: AGENT_FALLBACK_PROVIDER/);
+  assert.match(server, /const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk'/);
+  assert.match(server, /function configAgentProvider\(value: string \| undefined, fallback: AgentProvider\): AgentProvider/);
+  assert.match(server, /agentFallbackProvider: configAgentProvider\(process\.env\.AGENT_FALLBACK_PROVIDER, AGENT_FALLBACK_PROVIDER\)/);
+  assert.match(server, /agentSecondaryFallbackProvider: configAgentProvider\(/);
   assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
   assert.match(server, /return `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
   assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
@@ -129,9 +132,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(entrypoint, /pnpm install --frozen-lockfile --prefer-offline/);
   assert.doesNotMatch(entrypoint, /pnpm install --prefer-offline/);
   assert.match(entrypoint, /find "\$REPO_DIR\/\.git" -maxdepth 1 -type f -name index\.lock -delete/);
-  assert.match(server, /state\.provider === config\.agentFallbackProvider[\s\S]*state\.cancelled[\s\S]*state\.abortController\.signal\.aborted/);
-  assert.match(server, /status: `agent-fallback:\$\{config\.agentFallbackProvider\}`/);
-  assert.match(server, /await runSelectedAgent\(config\.agentFallbackProvider\)/);
+  assert.match(server, /const fallbackProviders = \[[\s\S]*config\.agentFallbackProvider,[\s\S]*config\.agentSecondaryFallbackProvider,[\s\S]*\]\.filter/);
+  assert.match(server, /status: `agent-fallback:\$\{fallbackProvider\}`/);
+  assert.match(server, /await runSelectedAgent\(fallbackProvider\)/);
   assert.doesNotMatch(server, /agent-fallback:echo/);
   assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
   assert.match(server, /\['commit', '--no-verify', '-m'/);
@@ -172,6 +175,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(geminiRunner, /MALFORMED_FUNCTION_CALL/);
   assert.match(geminiRunner, /produced no text output/);
   assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);
+  assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'openai-sdk'/);
+  assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'claude-sdk'/);
   assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);

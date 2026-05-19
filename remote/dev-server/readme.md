@@ -148,19 +148,23 @@ workflow without a failing package install.
 
 The runner that drives each task is pluggable. Default is OpenAI SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
-If a non-OpenAI provider throws before completing, the worker retries once with OpenAI SDK.
+If the selected provider throws before completing, the worker tries `AGENT_FALLBACK_PROVIDER`
+and then `AGENT_SECONDARY_FALLBACK_PROVIDER`, skipping duplicate or model-only providers for
+repo-edit tasks.
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `gemini-sdk`       | working           | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Model-only response runner. It cannot edit the workspace; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
 | `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
-| `openai-sdk`       | working (default/fallback) | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace.         |
+| `openai-sdk`       | working (default/primary fallback) | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace. |
 | `openai-codex-cli` | working           | `OPENAI_API_KEY` (+ optional `CODEX_MODEL`, e.g. `gpt-5.5`) | Spawns OpenAI's `codex` CLI installed in the Dockerfile and parses JSON/NDJSON output.         |
 
 | Var                 | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `AGENT_PROVIDER`    | Default runner if the dispatch doesn't specify one. One of `gemini-sdk` / `claude-sdk` / `claude-cli` / `openai-sdk` / `openai-codex-cli`. |
+| `AGENT_FALLBACK_PROVIDER` | First retry provider when the selected runner fails. Defaults to `openai-sdk`.                                                        |
+| `AGENT_SECONDARY_FALLBACK_PROVIDER` | Second retry provider when the selected runner or primary fallback fails. Defaults to `claude-sdk`.                           |
 | `ANTHROPIC_API_KEY` | Required when provider is a `claude-*` runner.                                                                              |
 | `ANTHROPIC_MODEL`   | Optional. Defaults to `claude-opus-4-7`; read by CLI/SDK when set.                                                          |
 | `GOOGLE_API_KEY`    | Preferred API key for `gemini-sdk`; mapped into the runner's strict `GEMINI_API_KEY` allowlist.                              |
