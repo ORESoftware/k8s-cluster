@@ -67,7 +67,8 @@ import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js'
 
 // ---------- Config ----------
 
-const AGENT_FALLBACK_PROVIDER: AgentProvider = 'gemini-sdk';
+const AGENT_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk';
+const GENERATED_GIT_EXCLUDES = [':!.pnpm-store', ':!node_modules', ':!.next', ':!.turbo'];
 
 const config = {
   port: Number(process.env.PORT ?? 8080),
@@ -132,7 +133,7 @@ const config = {
 type ClaudeWrappedEvent = BusEvent['event'] & Extract<AgentRunnerEvent, { kind: 'claude' }>;
 
 type WrappedEvent =
-  | (BusEvent['event'] & { kind: 'status'; status: string })
+  | (BusEvent['event'] & { kind: 'status'; status: string; message?: string })
   | ClaudeWrappedEvent
   | (BusEvent['event'] & { kind: 'stderr'; text: string })
   | (BusEvent['event'] & { kind: 'error'; message: string })
@@ -381,6 +382,59 @@ function slugifyBranchFragment(value: string): string {
   return slug || 'thread';
 }
 
+function repoDisplayName(): string {
+  const repo = config.repoUrl?.trim();
+  if (!repo) {
+    return 'unknown repo';
+  }
+  const githubMatch = repo.match(/github\.com[:/]([^/]+)\/([^/#?]+?)(?:\.git)?$/i);
+  if (githubMatch) {
+    return `${githubMatch[1]}/${githubMatch[2]}`;
+  }
+  return repo;
+}
+
+function gitBranchTarget(branch: string): string {
+  return `${repoDisplayName()} branch ${branch}`;
+}
+
+function providerCanEditWorkspace(provider: AgentProvider): boolean {
+  return provider !== 'gemini-sdk';
+}
+
+function promptLikelyRequiresWorkspaceChange(prompt: string): boolean {
+  return /\b(add|change|create|delete|edit|fix|implement|modify|move|patch|refactor|remove|rename|replace|update|write)\b/i.test(
+    prompt,
+  );
+}
+
+async function gitWorkspaceStatus(workspacePath: string): Promise<string> {
+  return shCapture(
+    'git',
+    ['status', '--porcelain', '--untracked-files=all', '--', '.', ...GENERATED_GIT_EXCLUDES],
+    workspacePath,
+    { timeoutMs: TIMEOUT_GIT_QUICK },
+  );
+}
+
+async function gitAddWorkspaceChanges(workspacePath: string): Promise<void> {
+  await shCapture('git', ['add', '-A', '--', '.', ...GENERATED_GIT_EXCLUDES], workspacePath, {
+    timeoutMs: TIMEOUT_GIT_QUICK,
+  });
+}
+
+async function resetDependencyInstallArtifacts(workspacePath: string): Promise<void> {
+  await shCapture('git', ['restore', '--staged', '--worktree', '--', '.'], workspacePath, {
+    timeoutMs: TIMEOUT_GIT_QUICK,
+  });
+  await shCapture(
+    'git',
+    ['clean', '-fdx', '--exclude=node_modules', '--exclude=.pnpm-store', '--exclude=.next', '--exclude=.turbo'],
+    workspacePath,
+    { timeoutMs: TIMEOUT_GIT_QUICK },
+  );
+}
+
 function getSessionBranch(
   sessionId: string,
   branchHint?: string | null,
@@ -490,6 +544,7 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
   );
 
   const installResult = await installWorkspaceDependencies(session.workspacePath);
+  await resetDependencyInstallArtifacts(session.workspacePath);
 
   await configureGitIdentity(session.workspacePath);
   await mkdir(dirname(session.logPath), { recursive: true });
@@ -898,7 +953,11 @@ async function makeCommitForThread(input: {
   });
   const taskState = input.taskId ? tasks.get(input.taskId) : undefined;
   if (taskState) {
-    emit(taskState, { kind: 'status', status: 'manual-commit-pushing' });
+    emit(taskState, {
+      kind: 'status',
+      status: `manual commit: preparing ${gitBranchTarget(session.branch)}`,
+      message: `Base branch: ${config.baseBranch}`,
+    });
   }
 
   await waitForBootGitReady();
@@ -923,14 +982,10 @@ async function makeCommitForThread(input: {
           taskId,
         }) + '\n',
       );
-      const status = await shCapture('git', ['status', '--porcelain'], session.workspacePath, {
-        timeoutMs: TIMEOUT_GIT_QUICK,
-      });
+      const status = await gitWorkspaceStatus(session.workspacePath);
       const hasChanges = status.trim().length > 0;
       if (hasChanges) {
-        await shCapture('git', ['add', '-A'], session.workspacePath, {
-          timeoutMs: TIMEOUT_GIT_QUICK,
-        });
+        await gitAddWorkspaceChanges(session.workspacePath);
         await shCapture(
           'git',
           ['commit', '--no-verify', '-m', manualCommitMessage({ ...input, threadId })],
@@ -963,7 +1018,13 @@ async function makeCommitForThread(input: {
         }) + '\n',
       );
       if (taskState) {
-        emit(taskState, { kind: 'status', status: hasChanges ? 'manual-commit-pushed' : 'pushed' });
+        emit(taskState, {
+          kind: 'status',
+          status: hasChanges
+            ? `manual commit pushed to ${gitBranchTarget(session.branch)}`
+            : `pushed ${gitBranchTarget(session.branch)} without new commit`,
+          message: `Base branch: ${config.baseBranch}`,
+        });
       }
       return {
         ok: true as const,
@@ -1014,7 +1075,11 @@ async function openPullRequestForThread(input: {
   });
   const taskState = input.taskId ? tasks.get(input.taskId) : undefined;
   if (taskState) {
-    emit(taskState, { kind: 'status', status: 'opening-draft-pr' });
+    emit(taskState, {
+      kind: 'status',
+      status: `opening draft PR against ${config.baseBranch} from ${gitBranchTarget(session.branch)}`,
+      message: `Repo: ${repoDisplayName()}`,
+    });
   }
 
   await waitForBootGitReady();
@@ -1060,6 +1125,11 @@ async function openPullRequestForThread(input: {
           branch: result.branch,
           prUrl: result.prUrl,
           draft: result.draft,
+        });
+        emit(taskState, {
+          kind: 'status',
+          status: `completed PR request: ${result.reused ? 'reused' : 'created'} draft PR against ${result.baseBranch}`,
+          message: `${result.prUrl}\nHead: ${repoDisplayName()} branch ${result.branch}`,
         });
       }
       return result;
@@ -1249,7 +1319,18 @@ async function runTask(state: TaskState): Promise<void> {
         return;
       }
 
-      emit(state, { kind: 'status', status: `agent-running:${state.provider}` });
+      const requiresWorkspaceChange = promptLikelyRequiresWorkspaceChange(state.prompt);
+      if (requiresWorkspaceChange && !providerCanEditWorkspace(state.provider)) {
+        throw new Error(
+          `${state.provider} is model-only and cannot edit files in ${repoDisplayName()}; choose claude-sdk, claude-cli, openai-sdk, or openai-codex-cli for repo changes`,
+        );
+      }
+
+      emit(state, {
+        kind: 'status',
+        status: `agent-running:${state.provider}`,
+        message: `Workspace: ${gitBranchTarget(state.branch)}\nBase branch: ${config.baseBranch}`,
+      });
       // Strict env allowlist owned by the runner module. Inheriting the full
       // process.env into the agent process would leak our GitHub deploy key,
       // Supabase service role key, ingest secret, etc. via any `env` or
@@ -1282,11 +1363,16 @@ async function runTask(state: TaskState): Promise<void> {
         if (
           state.provider === config.agentFallbackProvider ||
           state.cancelled ||
-          state.abortController.signal.aborted
+          state.abortController.signal.aborted ||
+          (requiresWorkspaceChange && !providerCanEditWorkspace(config.agentFallbackProvider))
         ) {
           throw err;
         }
-        emit(state, { kind: 'status', status: `agent-fallback:${config.agentFallbackProvider}` });
+        emit(state, {
+          kind: 'status',
+          status: `agent-fallback:${config.agentFallbackProvider}`,
+          message: `Retrying against ${gitBranchTarget(state.branch)}`,
+        });
         await runSelectedAgent(config.agentFallbackProvider);
       }
 
@@ -1300,14 +1386,19 @@ async function runTask(state: TaskState): Promise<void> {
       }
 
       // Stage + commit anything the agent left uncommitted, then push.
-      emit(state, { kind: 'status', status: 'pushing' });
-      const status = await shCapture('git', ['status', '--porcelain'], state.worktreePath, {
-        timeoutMs: TIMEOUT_GIT_QUICK,
+      const status = await gitWorkspaceStatus(state.worktreePath);
+      if (!status.trim() && requiresWorkspaceChange) {
+        throw new Error(
+          `agent completed without workspace changes for a repo-edit prompt in ${repoDisplayName()}`,
+        );
+      }
+      emit(state, {
+        kind: 'status',
+        status: `pushing to ${gitBranchTarget(state.branch)}`,
+        message: `Base branch: ${config.baseBranch}`,
       });
       if (status.trim()) {
-        await shCapture('git', ['add', '-A'], state.worktreePath, {
-          timeoutMs: TIMEOUT_GIT_QUICK,
-        });
+        await gitAddWorkspaceChanges(state.worktreePath);
         await shCapture(
           'git',
           ['commit', '--no-verify', '-m', `agent(${state.session.sessionId}): ${state.taskId}`],
@@ -1321,13 +1412,24 @@ async function runTask(state: TaskState): Promise<void> {
         state.worktreePath,
         { timeoutMs: TIMEOUT_GIT_NETWORK },
       );
-      emit(state, { kind: 'status', status: 'pushed' });
+      emit(state, {
+        kind: 'status',
+        status: `pushed to ${gitBranchTarget(state.branch)}`,
+        message: status.trim()
+          ? `Committed ${status.trim().split('\n').length} changed path(s).`
+          : 'No workspace changes were committed; branch push verified.',
+      });
 
       // Publish any files the agent dropped in the per-task outputs dir.
       // Failures uploading individual files are surfaced as `error` events
       // but do not fail the whole task.
       await publishOutputs(state, taskOutputsDir);
 
+      emit(state, {
+        kind: 'status',
+        status: `completed task on ${gitBranchTarget(state.branch)}`,
+        message: 'No PR was opened automatically; use Open draft PR to create one against the base branch.',
+      });
       emit(state, {
         kind: 'done',
         branch: state.branch,

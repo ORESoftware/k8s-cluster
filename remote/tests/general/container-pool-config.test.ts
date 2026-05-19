@@ -262,7 +262,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
         ['nodejs-chat-claude-k8s-cluster-dev', 'git@github.com:ORESoftware/k8s-cluster.git'],
       ]);
       assert.equal(pool.env.DD_REPO_URL, expectedRepoBySlug.get(pool.slug));
-      assert.equal(pool.env.AGENT_PROVIDER, 'gemini-sdk');
+      assert.equal(pool.env.AGENT_PROVIDER, 'claude-sdk');
       assert.equal(pool.readOnly, false);
       assert.equal(pool.user, '1000:1000');
     } else {

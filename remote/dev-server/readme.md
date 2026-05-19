@@ -146,14 +146,14 @@ workflow without a failing package install.
 
 ### Recommended — agent provider
 
-The runner that drives each task is pluggable. Default is Gemini SDK; it can be
+The runner that drives each task is pluggable. Default is Claude SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
-If a non-Gemini provider throws before completing, the worker retries once with Gemini SDK.
+If a non-Claude provider throws before completing, the worker retries once with Claude SDK.
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `gemini-sdk`       | working (default/fallback) | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Uses Google's `@google/genai` SDK. Defaults to `gemini-3.1-pro-preview`; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
-| `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
+| `gemini-sdk`       | working           | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Model-only response runner. It cannot edit the workspace; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
+| `claude-sdk`       | working (default/fallback) | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
 | `openai-sdk`       | working           | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace.         |
 | `openai-codex-cli` | working           | `OPENAI_API_KEY` (+ optional `CODEX_MODEL`, e.g. `gpt-5.5`) | Spawns OpenAI's `codex` CLI installed in the Dockerfile and parses JSON/NDJSON output.         |
@@ -322,8 +322,8 @@ For each `POST /tasks` in that thread:
 
 1. Append prompt/event metadata to `tmp/convos/thread.log` as JSONL.
 2. `mkdir -p $OUTPUTS_DIR/<taskId>` so the agent has a place to write.
-3. Run the selected provider (`gemini-sdk` by default, or Claude/OpenAI override).
-4. `git add -A && git commit && git push --set-upstream origin <session-branch>`.
+3. Run the selected provider (`claude-sdk` by default, with Gemini/OpenAI overrides available).
+4. Stage workspace changes while excluding generated dependency/cache dirs, then commit and push `origin <session-branch>`.
 5. **Walk `$OUTPUTS_DIR/<taskId>/`** — every regular file (one level deep) is uploaded via the
    configured storage adapter, emitting one `artifact` event per file with the resulting URL.
 6. Emit terminal `done` event.

@@ -64,10 +64,23 @@ async function streamGeminiModel(
     contents: opts.prompt,
   });
 
+  let sawText = false;
+  let malformedFinishReason: string | undefined;
+
   for await (const chunk of stream) {
     if (opts.signal?.aborted) {
       opts.emit({ kind: 'stderr', text: 'gemini-sdk: aborted by signal' });
       return;
+    }
+    const text = typeof chunk.text === 'string' ? chunk.text : '';
+    if (text.trim()) {
+      sawText = true;
+    }
+    for (const candidate of chunk.candidates ?? []) {
+      const finishReason = candidate.finishReason;
+      if (typeof finishReason === 'string' && /MALFORMED_FUNCTION_CALL/i.test(finishReason)) {
+        malformedFinishReason = finishReason;
+      }
     }
     opts.emit({
       kind: 'claude',
@@ -79,6 +92,13 @@ async function streamGeminiModel(
         usageMetadata: chunk.usageMetadata,
       },
     });
+  }
+
+  if (malformedFinishReason) {
+    throw new Error(`${model} returned ${malformedFinishReason}`);
+  }
+  if (!sawText) {
+    throw new Error(`${model} produced no text output`);
   }
 }
 

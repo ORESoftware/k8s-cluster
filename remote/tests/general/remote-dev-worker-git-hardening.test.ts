@@ -98,7 +98,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /type: 'worker-heartbeat'/);
   assert.match(server, /status: 'waiting-for-task'/);
   assert.match(server, /registerWorkerWebSocketUpgrade\(\);[\s\S]*await fastify\.listen/);
-  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'gemini-sdk'/);
+  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk'/);
   assert.match(server, /agentFallbackProvider: AGENT_FALLBACK_PROVIDER/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
   assert.match(server, /type TaskReceipt/);
@@ -133,6 +133,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
   assert.match(server, /\['commit', '--no-verify', '-m'/);
   assert.match(server, /\['push', '--no-verify', '--set-upstream', 'origin'/);
+  assert.match(server, /const GENERATED_GIT_EXCLUDES = \[':!\.pnpm-store'/);
+  assert.match(server, /async function gitWorkspaceStatus\(workspacePath: string\): Promise<string>/);
+  assert.match(server, /async function gitAddWorkspaceChanges\(workspacePath: string\): Promise<void>/);
+  assert.match(server, /function promptLikelyRequiresWorkspaceChange\(prompt: string\): boolean/);
+  assert.match(server, /function providerCanEditWorkspace\(provider: AgentProvider\): boolean/);
   assert.match(agentTypes, /\| ['"]gemini-sdk['"]/);
   assert.doesNotMatch(agentTypes, /\| ['"]echo['"]/);
   assert.match(agentIndex, /const DEFAULT_GEMINI_MODEL = 'gemini-3\.1-pro-preview'/);
@@ -140,7 +145,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(agentIndex, /configuredSecret\('GOOGLE_API_KEY'\) \?\? configuredSecret\('GEMINI_API_KEY'\)/);
   assert.match(agentIndex, /base\.GEMINI_FALLBACK_MODEL =[\s\S]*DEFAULT_GEMINI_FALLBACK_MODEL/);
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
-  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'gemini-sdk'/);
+  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'claude-sdk'/);
   assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
   assert.match(server, /threadTitle:\s*z\.string\(\)\.min\(1\)\.max\(200\)\.nullish\(\)/);
   assert.match(
@@ -156,7 +161,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(geminiRunner, /GEMINI_FALLBACK_MODEL/);
   assert.match(geminiRunner, /isQuotaFailure/);
   assert.match(geminiRunner, /retrying \$\{fallbackModel\}/);
-  assert.match(config, /AGENT_PROVIDER:\s*'gemini-sdk'/);
+  assert.match(geminiRunner, /MALFORMED_FUNCTION_CALL/);
+  assert.match(geminiRunner, /produced no text output/);
+  assert.match(config, /AGENT_PROVIDER:\s*'claude-sdk'/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);
 
