@@ -261,15 +261,55 @@ jobs:
           secret_name="dd/remote-dev/agent-secrets"
           region="${AWS_REGION:-us-east-1}"
 
-          current_secret="$(
+          read_secret_stage() {
+            local stage="$1"
             aws secretsmanager get-secret-value \
               --region "$region" \
               --secret-id "$secret_name" \
+              --version-stage "$stage" \
               --query SecretString \
-              --output text 2>/tmp/agent-secrets.err || true
-          )"
-          if [[ -z "$current_secret" || "$current_secret" == "None" ]]; then
-            current_secret="{}"
+              --output text
+          }
+
+          validate_agent_secret() {
+            SECRET_JSON="$1" python3 - <<'INNER'
+          import json
+          import os
+          import sys
+
+          required = [
+              "SERVER_AUTH_SECRET",
+              "GH_DEPLOY_KEY",
+              "GEMINI_API_KEY",
+          ]
+          try:
+              data = json.loads(os.environ.get("SECRET_JSON") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          missing = [
+              key
+              for key in required
+              if not isinstance(data, dict) or not str(data.get(key) or "").strip()
+          ]
+          if missing:
+              print("missing required keys: " + ", ".join(missing), file=sys.stderr)
+              raise SystemExit(1)
+          INNER
+          }
+
+          if ! current_secret="$(read_secret_stage AWSCURRENT 2>/tmp/agent-secrets-current.err)"; then
+            cat /tmp/agent-secrets-current.err >&2
+            exit 1
+          fi
+          source_stage="AWSCURRENT"
+          if ! validate_agent_secret "$current_secret"; then
+            echo "current $secret_name is incomplete; trying AWSPREVIOUS" >&2
+            if ! current_secret="$(read_secret_stage AWSPREVIOUS 2>/tmp/agent-secrets-previous.err)"; then
+              cat /tmp/agent-secrets-previous.err >&2
+              exit 1
+            fi
+            validate_agent_secret "$current_secret"
+            source_stage="AWSPREVIOUS"
           fi
 
           updated_secret="$(
@@ -288,24 +328,14 @@ jobs:
           INNER
           )"
 
-          if aws secretsmanager describe-secret \
+          aws secretsmanager describe-secret \
             --region "$region" \
-            --secret-id "$secret_name" >/dev/null 2>/tmp/agent-secret-describe.err; then
-            aws secretsmanager put-secret-value \
-              --region "$region" \
-              --secret-id "$secret_name" \
-              --secret-string "$updated_secret" >/dev/null
-            echo "updated $secret_name GH_PAT"
-          elif grep -q ResourceNotFoundException /tmp/agent-secret-describe.err; then
-            aws secretsmanager create-secret \
-              --region "$region" \
-              --name "$secret_name" \
-              --secret-string "$updated_secret" >/dev/null
-            echo "created $secret_name with GH_PAT"
-          else
-            cat /tmp/agent-secret-describe.err >&2
-            exit 1
-          fi
+            --secret-id "$secret_name" >/dev/null
+          aws secretsmanager put-secret-value \
+            --region "$region" \
+            --secret-id "$secret_name" \
+            --secret-string "$updated_secret" >/dev/null
+          echo "updated $secret_name GH_PAT from $source_stage"
 
           kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite
           sleep 20
