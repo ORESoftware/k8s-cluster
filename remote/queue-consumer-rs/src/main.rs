@@ -298,6 +298,7 @@ async fn dispatch_to_container_pool(
         .json(&serde_json::json!({
             "requestId": &task.task_id,
             "poolSlug": pool,
+            "affinityKey": &task.thread_id,
             "path": "/tasks",
             "payload": {
                 "taskId": &task.task_id,
@@ -580,7 +581,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 "container-pool-dispatch",
                 "dispatching to container pool",
                 "Queue consumer is asking container-pool for a warm repo worker.",
-                json!({ "poolSlug": &pool }),
+                json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
             )
             .await;
             match dispatch_to_container_pool(&http, &container_pool_url, &secret, &task).await {
@@ -595,7 +596,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         "container-pool-accepted",
                         "container pool accepted",
                         "Container-pool accepted the task dispatch.",
-                        json!({ "poolSlug": &pool }),
+                        json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
                     )
                     .await;
                     Ok(())
@@ -615,7 +616,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         "container-pool-failed",
                         "container pool failed",
                         "Container-pool dispatch failed before accepting the queued task.",
-                        json!({ "poolSlug": &pool, "error": pool_error.to_string() }),
+                        json!({ "poolSlug": &pool, "affinityKey": &task.thread_id, "error": pool_error.to_string() }),
                     )
                     .await;
                     if task.direct_dispatch.unwrap_or(false) {

@@ -84,8 +84,8 @@ spec:
               mountPath: /tmp/convos
           resources:
             requests:
-              cpu: "1"
-              memory: "2Gi"
+              cpu: "50m"
+              memory: "512Mi"
             limits:
               cpu: "2"
               memory: "4Gi"

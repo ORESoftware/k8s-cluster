@@ -95,6 +95,7 @@ struct PoolRegistry {
     configs: HashMap<String, PoolConfig>,
     slug_to_id: HashMap<String, String>,
     containers: HashMap<String, WarmContainer>,
+    affinity: HashMap<String, String>,
     next_port: u16,
     last_config_error: Option<String>,
     last_config_refresh_ms: Option<u128>,
@@ -138,6 +139,7 @@ struct WarmContainer {
     name: String,
     pool_id: String,
     pool_slug: String,
+    affinity_key: Option<String>,
     port: u16,
     status: ContainerStatus,
     in_flight: usize,
@@ -157,6 +159,7 @@ struct DispatchRequest {
     request_id: Option<String>,
     pool_id: Option<String>,
     pool_slug: Option<String>,
+    affinity_key: Option<String>,
     path: Option<String>,
     headers: Option<BTreeMap<String, String>>,
     payload: Option<Value>,
@@ -170,6 +173,7 @@ struct DispatchResponse {
     request_id: String,
     pool_id: String,
     pool_slug: String,
+    affinity_key: Option<String>,
     container_name: String,
     container_port: u16,
     target_url: String,
@@ -912,6 +916,7 @@ async fn refresh_pool_configs(state: &AppState) -> Result<(), String> {
             .collect::<Vec<_>>();
         for name in &removed_names {
             registry.containers.remove(name);
+            remove_affinity_for_container(&mut registry, name);
         }
         registry.configs = next_configs;
         registry.slug_to_id = next_slugs;
@@ -1001,6 +1006,7 @@ async fn allocate_container_slot(
         name: name.clone(),
         pool_id: pool.id.clone(),
         pool_slug: pool.slug.clone(),
+        affinity_key: None,
         port,
         status: ContainerStatus::Starting,
         in_flight: 0,
@@ -1148,6 +1154,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
             if let Err(error) = wait_container_ready(state, &pool, &container).await {
                 let mut registry = state.registry.lock().await;
                 registry.containers.remove(&container.name);
+                remove_affinity_for_container(&mut registry, &container.name);
                 drop(registry);
                 if let Err(remove_error) = remove_container(state, &container.name).await {
                     eprintln!(
@@ -1175,6 +1182,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         Err(error) => {
             let mut registry = state.registry.lock().await;
             registry.containers.remove(&container.name);
+            remove_affinity_for_container(&mut registry, &container.name);
             Err(error)
         }
     }
@@ -1359,7 +1367,11 @@ async fn retire_container(state: &AppState, name: &str, reason: &str) {
             container.last_health_at_ms = Some(now_ms());
             container.last_health_error = Some(reason.chars().take(512).collect());
         }
-        registry.containers.remove(name).is_some()
+        let removed = registry.containers.remove(name).is_some();
+        if removed {
+            remove_affinity_for_container(&mut registry, name);
+        }
+        removed
     };
     if removed {
         state
@@ -1535,6 +1547,7 @@ async fn reconcile_all(state: &AppState) {
                 container.status = ContainerStatus::Draining;
             }
             registry.containers.remove(name);
+            remove_affinity_for_container(&mut registry, name);
         }
         stale
     };
@@ -1553,7 +1566,49 @@ fn pool_id_from_selector(registry: &PoolRegistry, selector: &str) -> Option<Stri
     }
 }
 
-async fn lease_container(state: &AppState, selector: &str) -> Result<ContainerLease, String> {
+fn normalized_affinity_key(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let mut output = String::new();
+    for ch in value.chars() {
+        if output.len() >= 256 {
+            break;
+        }
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':') {
+            output.push(ch);
+        } else {
+            output.push('-');
+        }
+    }
+    let output = output.trim_matches('-').to_string();
+    (!output.is_empty()).then_some(output)
+}
+
+fn affinity_map_key(pool_id: &str, affinity_key: &str) -> String {
+    format!("{pool_id}:{affinity_key}")
+}
+
+fn remove_affinity_for_container(registry: &mut PoolRegistry, container_name: &str) {
+    registry
+        .affinity
+        .retain(|_, mapped_name| mapped_name != container_name);
+}
+
+fn container_can_accept(pool: &PoolConfig, container: &WarmContainer) -> bool {
+    !matches!(
+        container.status,
+        ContainerStatus::Starting | ContainerStatus::Draining | ContainerStatus::Unhealthy
+    ) && container.in_flight < pool.max_concurrency_per_container
+}
+
+async fn lease_container(
+    state: &AppState,
+    selector: &str,
+    affinity_key: Option<&str>,
+) -> Result<ContainerLease, String> {
+    let affinity_key = normalized_affinity_key(affinity_key);
     let pool_id = {
         let registry = state.registry.lock().await;
         pool_id_from_selector(&registry, selector)
@@ -1568,23 +1623,92 @@ async fn lease_container(state: &AppState, selector: &str) -> Result<ContainerLe
                 .get(&pool_id)
                 .cloned()
                 .ok_or_else(|| format!("unknown container pool: {selector}"))?;
-            let candidate_name = registry
-                .containers
-                .values()
-                .filter(|container| container.pool_id == pool.id)
-                .filter(|container| {
-                    !matches!(
-                        container.status,
-                        ContainerStatus::Starting
-                            | ContainerStatus::Draining
-                            | ContainerStatus::Unhealthy
-                    )
+            let candidate_name = if let Some(affinity_key) = affinity_key.as_deref() {
+                let map_key = affinity_map_key(&pool.id, affinity_key);
+                let mapped_name = registry.affinity.get(&map_key).cloned();
+                let mapped_candidate = match mapped_name
+                    .as_deref()
+                    .and_then(|name| registry.containers.get(name))
+                {
+                    Some(container)
+                        if container.pool_id == pool.id
+                            && container_can_accept(&pool, container) =>
+                    {
+                        Some(container.name.clone())
+                    }
+                    Some(container)
+                        if container.pool_id == pool.id
+                            && !matches!(
+                                container.status,
+                                ContainerStatus::Draining | ContainerStatus::Unhealthy
+                            ) =>
+                    {
+                        return Err(format!(
+                                "affinity container {} for key {} is not ready (status {:?}, inFlight {})",
+                                container.name, affinity_key, container.status, container.in_flight
+                            ));
+                    }
+                    _ => None,
+                };
+                if mapped_candidate.is_none() {
+                    if let Some(mapped_name) = mapped_name {
+                        let clear_mapping = registry
+                            .containers
+                            .get(&mapped_name)
+                            .map(|container| {
+                                container.pool_id != pool.id
+                                    || matches!(
+                                        container.status,
+                                        ContainerStatus::Draining | ContainerStatus::Unhealthy
+                                    )
+                            })
+                            .unwrap_or(true);
+                        if clear_mapping {
+                            registry.affinity.remove(&map_key);
+                        }
+                    }
+                }
+                mapped_candidate.or_else(|| {
+                    registry
+                        .containers
+                        .values()
+                        .filter(|container| container.pool_id == pool.id)
+                        .filter(|container| container_can_accept(&pool, container))
+                        .filter(|container| {
+                            container
+                                .affinity_key
+                                .as_deref()
+                                .map(|bound| bound == affinity_key)
+                                .unwrap_or(true)
+                        })
+                        .min_by_key(|container| {
+                            (
+                                container.affinity_key.as_deref() != Some(affinity_key),
+                                container.in_flight,
+                                container.last_used_at_ms,
+                            )
+                        })
+                        .map(|container| container.name.clone())
                 })
-                .filter(|container| container.in_flight < pool.max_concurrency_per_container)
-                .min_by_key(|container| (container.in_flight, container.last_used_at_ms))
-                .map(|container| container.name.clone());
+            } else {
+                registry
+                    .containers
+                    .values()
+                    .filter(|container| container.pool_id == pool.id)
+                    .filter(|container| container_can_accept(&pool, container))
+                    .min_by_key(|container| (container.in_flight, container.last_used_at_ms))
+                    .map(|container| container.name.clone())
+            };
             candidate_name.and_then(|name| {
+                let affinity = affinity_key.clone();
+                if let Some(affinity_key) = affinity.as_deref() {
+                    let map_key = affinity_map_key(&pool.id, affinity_key);
+                    registry.affinity.insert(map_key, name.clone());
+                }
                 let container = registry.containers.get_mut(&name)?;
+                if let Some(affinity_key) = affinity {
+                    container.affinity_key = Some(affinity_key);
+                }
                 container.in_flight += 1;
                 container.status = ContainerStatus::Busy;
                 container.request_count += 1;
@@ -1724,7 +1848,8 @@ async fn dispatch_to_pool(
     request: DispatchRequest,
 ) -> Result<DispatchResponse, String> {
     let started = now_ms();
-    let lease = lease_container(state, selector).await?;
+    let affinity_key = normalized_affinity_key(request.affinity_key.as_deref());
+    let lease = lease_container(state, selector, affinity_key.as_deref()).await?;
     let path = match safe_dispatch_path(request.path.as_deref(), &lease.pool.request_path) {
         Ok(path) => path,
         Err(error) => {
@@ -1766,6 +1891,7 @@ async fn dispatch_to_pool(
                         request_id,
                         pool_id: lease.pool.id.clone(),
                         pool_slug: lease.pool.slug.clone(),
+                        affinity_key: affinity_key.clone(),
                         container_name: lease.container.name.clone(),
                         container_port: lease.container.port,
                         target_url: url,

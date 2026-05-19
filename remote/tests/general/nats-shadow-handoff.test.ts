@@ -87,6 +87,7 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /dispatch_to_container_pool/);
   assert.match(consumer, /repo_pool_slug/);
   assert.match(consumer, /nodejs-chat-claude-/);
+  assert.match(consumer, /"affinityKey": &task\.thread_id/);
   assert.match(consumer, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH/);
   assert.match(consumer, /HashSet/);
   assert.match(consumer, /has_task_receipt/);

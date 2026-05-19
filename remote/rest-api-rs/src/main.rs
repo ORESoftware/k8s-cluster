@@ -1108,6 +1108,20 @@ fn summarize_pod(pod: &Value) -> Value {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let container_specs = json_at(pod, &["spec", "containers"])
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|container| {
+                    json!({
+                        "name": json_string(container, "name"),
+                        "resources": container.get("resources").cloned().unwrap_or_else(|| json!({})),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let containers = json_at(pod, &["status", "containerStatuses"])
         .and_then(Value::as_array)
         .map(|items| {
@@ -1135,6 +1149,7 @@ fn summarize_pod(pod: &Value) -> Value {
         "deletionTimestamp": json_at_string(pod, &["metadata", "deletionTimestamp"]),
         "conditions": conditions,
         "initContainers": init_containers,
+        "containerSpecs": container_specs,
         "containers": containers,
     })
 }
@@ -1280,7 +1295,7 @@ fn render_thread_deployment(
                             { "name": "tmp-convos", "mountPath": "/tmp/convos" }
                         ],
                         "resources": {
-                            "requests": { "cpu": "250m", "memory": "768Mi" },
+                            "requests": { "cpu": "50m", "memory": "512Mi" },
                             "limits": { "cpu": "2", "memory": "4Gi" }
                         },
                         "startupProbe": {

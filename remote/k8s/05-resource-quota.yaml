@@ -2,8 +2,9 @@
 # Prevents runaway thread-pods from starving kube-system / ingress-nginx
 # on the same single-node box.
 #
-# These values are sized for a t3.2xlarge (8 vCPU / 32 GiB) single-node
-# cluster running ~5-6 concurrent thread pods @ 1 vCPU / 2 GiB requests.
+# These values are sized for a single-node dev cluster. Thread pods keep
+# small CPU/memory requests and higher burst limits so cold-starts can fit
+# even when several older workers are still alive.
 # Adjust pods / cpu / memory / ephemeral-storage proportionally if you
 # scale the EC2 box up or down.
 apiVersion: v1
