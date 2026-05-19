@@ -317,6 +317,11 @@ struct DispatchTaskRequest {
     dispatch_mode: Option<String>,
 }
 
+struct ExistingTaskDispatch {
+    thread_id: String,
+    prompt: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnownGitRepoRequest {
@@ -3286,9 +3291,14 @@ async fn persist_runtime_task_to_postgres(
             values
               ($1::text::uuid, $2::text::uuid, $3::text::uuid, $1::text::uuid, $4, $6, $5, -1, false, now(), now(), now(), $3::text::uuid, $3::text::uuid)
             on conflict (id) do update set
-              prompt = excluded.prompt,
-              status = excluded.status,
-              branch = excluded.branch,
+              prompt = agent_remote_dev_tasks.prompt,
+              status = case
+                when agent_remote_dev_tasks.status in ('done', 'cancelled', 'failed', 'pr_open', 'pr_merged', 'pr_closed')
+                  and excluded.status in ('queued', 'running', 'streaming')
+                then agent_remote_dev_tasks.status
+                else excluded.status
+              end,
+              branch = coalesce(excluded.branch, agent_remote_dev_tasks.branch),
               updated_by = excluded.updated_by,
               updated_at = now()
             "#,
@@ -3305,6 +3315,31 @@ async fn persist_runtime_task_to_postgres(
         .map_err(|error| error.to_string())?;
 
     Ok(())
+}
+
+async fn fetch_existing_task_dispatch_from_postgres(
+    task_id: &str,
+) -> Result<Option<ExistingTaskDispatch>, String> {
+    let client = connect_postgres().await?;
+    let row = client
+        .query_opt(
+            r#"
+            select
+              thread_id::text as thread_id,
+              prompt
+            from agent_remote_dev_tasks
+            where id = $1::text::uuid
+              and is_soft_deleted = false
+            "#,
+            &[&task_id],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(row.map(|row| ExistingTaskDispatch {
+        thread_id: row_string(&row, "thread_id"),
+        prompt: row_string(&row, "prompt"),
+    }))
 }
 
 fn task_status_from_exit_reason(exit_reason: &str) -> &'static str {
@@ -4312,6 +4347,35 @@ async fn dispatch_thread_task(
             }
             Ok(None) => {}
             Err(error) => eprintln!("failed to fetch thread repo config before dispatch: {error}"),
+        }
+        match fetch_existing_task_dispatch_from_postgres(&request.task_id).await {
+            Ok(Some(existing)) => {
+                if existing.thread_id != thread_id {
+                    return (
+                        StatusCode::CONFLICT,
+                        Json(json!({
+                            "error": "taskId already belongs to a different thread",
+                            "threadId": &thread_id,
+                            "existingThreadId": existing.thread_id,
+                            "taskId": &request.task_id,
+                        })),
+                    )
+                        .into_response();
+                }
+                if existing.prompt != request.prompt {
+                    return (
+                        StatusCode::CONFLICT,
+                        Json(json!({
+                            "error": "taskId already exists; generate a new taskId for follow-up tasks",
+                            "threadId": &thread_id,
+                            "taskId": &request.task_id,
+                        })),
+                    )
+                        .into_response();
+                }
+            }
+            Ok(None) => {}
+            Err(error) => eprintln!("failed to check existing task before dispatch: {error}"),
         }
     }
 

@@ -2085,6 +2085,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return state.threads.find((item) => item.id === threadId) || null;
       }
 
+      function existingTask(taskId) {
+        return state.tasks.find((item) => item.id === taskId) || null;
+      }
+
       function updateThreadMode() {
         const threadId = $("thread-id").value.trim() || state.selectedThreadId || "";
         const mode = $("thread-mode");
@@ -2626,7 +2630,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       async function dispatchPrompt() {
         const threadId = readUuidInput("thread-id", "thread UUID", { generate: true });
-        const taskId = readUuidInput("task-id", "task UUID", { generate: true });
+        let taskId = readUuidInput("task-id", "task UUID", { generate: true });
         const prompt = $("prompt").value.trim();
         const provider = $("provider").value;
         const dispatchMode = $("dispatch-mode").value;
@@ -2642,6 +2646,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (repoValidation.error) {
           setStatus(repoValidation.error, true);
           return;
+        }
+        const taskAlreadyExists = existingTask(taskId);
+        if (taskAlreadyExists) {
+          if (taskAlreadyExists.threadId !== threadId) {
+            setStatus("task UUID already belongs to a different thread", true);
+            return;
+          }
+          taskId = makeUuid();
+          $("task-id").value = taskId;
         }
         state.selectedThreadId = threadId;
         state.selectedTaskId = taskId;
