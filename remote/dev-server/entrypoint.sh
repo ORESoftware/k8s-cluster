@@ -19,8 +19,28 @@ if [[ -z "$REPO_URL" ]]; then
   exit 64
 fi
 
+github_https_to_ssh() {
+  local url="$1"
+  if [[ "$url" =~ ^https://github.com/([^/]+)/([^/?#]+)(\.git)?/?$ ]]; then
+    local owner="${BASH_REMATCH[1]}"
+    local repo="${BASH_REMATCH[2]}"
+    repo="${repo%.git}"
+    printf 'git@github.com:%s/%s.git\n' "$owner" "$repo"
+  else
+    printf '%s\n' "$url"
+  fi
+}
+
+GIT_REPO_URL="$REPO_URL"
+if [[ -n "${GH_DEPLOY_KEY:-}" ]]; then
+  GIT_REPO_URL="$(github_https_to_ssh "$REPO_URL")"
+fi
+
 echo "==> dd-dev-server entrypoint starting at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "    workspace=$REPO_DIR source=$REPO_URL branch=$BASE_BRANCH thread=${THREAD_ID:-<multi-thread>}"
+if [[ "$GIT_REPO_URL" != "$REPO_URL" ]]; then
+  echo "    git transport=$GIT_REPO_URL (deploy-key ssh)"
+fi
 
 export CI="${CI:-true}"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT="${COREPACK_ENABLE_DOWNLOAD_PROMPT:-0}"
@@ -62,9 +82,9 @@ chmod 600 "$SSH_DIR/config"
 export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY_PATH -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$SSH_DIR/known_hosts"
 
 if [[ ! -d "$REPO_DIR/.git" ]]; then
-  echo "==> Runtime clone: $REPO_URL#$BASE_BRANCH -> $REPO_DIR"
+  echo "==> Runtime clone: $GIT_REPO_URL#$BASE_BRANCH -> $REPO_DIR"
   mkdir -p "$(dirname "$REPO_DIR")"
-  git clone --depth 50 --branch "$BASE_BRANCH" "$REPO_URL" "$REPO_DIR" 2>&1 || {
+  git clone --depth 50 --branch "$BASE_BRANCH" "$GIT_REPO_URL" "$REPO_DIR" 2>&1 || {
     echo "runtime git clone failed" >&2
     exit 65
   }
@@ -77,7 +97,7 @@ fi
 if [[ -d "$REPO_DIR/.git" ]]; then
   echo "==> git fetch + switch starting"
   cd "$REPO_DIR"
-  git remote set-url origin "$REPO_URL" 2>&1 || echo "git remote set-url failed (non-fatal)"
+  git remote set-url origin "$GIT_REPO_URL" 2>&1 || echo "git remote set-url failed (non-fatal)"
   git fetch --quiet origin "$BASE_BRANCH" --depth=50 2>&1 || echo "git fetch failed (non-fatal)"
   git switch --discard-changes --detach "origin/$BASE_BRANCH" 2>&1 || echo "git switch failed (non-fatal)"
   git clean -fdx \

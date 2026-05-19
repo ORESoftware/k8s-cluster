@@ -8,6 +8,7 @@ on:
       - ".github/workflows/refresh-remote-web-home-local-image.yml"
       - "remote/argocd/apps/dd-next-runtime.application.yaml"
       - "remote/argocd/dd-next-runtime/**"
+      - "remote/dev-server/**"
       - "remote/web-home-rs/**"
   workflow_dispatch:
 
@@ -44,6 +45,7 @@ jobs:
                 "set -euo pipefail",
                 "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin dev; git merge --ff-only origin/dev; git rev-parse --short HEAD'\''",
                 "cd /home/ec2-user/codes/dd/dd-next-1",
+                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-dev-server:dev remote/dev-server",
                 "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/web-home-rs",
                 "sudo -u ec2-user -H bash -lc '\''cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-next-runtime'\''",

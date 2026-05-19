@@ -127,7 +127,7 @@ workflow without a failing package install.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY`  | Auth for the `claude` CLI the server spawns.                                                                                 |
 | `SERVER_AUTH_SECRET` | Shared secret presented by Vercel in `X-Server-Auth`. Random, ≥ 32 chars.                                                    |
-| `DD_REPO_URL`        | Git URL for the repo this thread container is pinned to. Required at runtime; optional at build time for a generic worker image. |
+| `DD_REPO_URL`        | Git URL for the repo this thread container is pinned to. Required at runtime; optional at build time for a generic worker image. GitHub HTTPS URLs are converted to SSH at boot when `GH_DEPLOY_KEY` is present so branch pushes use the deploy key. |
 | `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against `DD_REPO_URL`. The server writes this to `~/.ssh/id_ed25519` at boot. |
 | `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope it to the configured repo with Contents + Pull Requests.            |
 

@@ -171,7 +171,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(entrypoint, /TEMPLATE_DIR="\$\{REPO_TEMPLATE_DIR:-\/home\/node\/repo-template\}"/);
   assert.match(entrypoint, /REPO_URL="\$\{DD_REPO_URL:-\}"/);
   assert.match(entrypoint, /DD_REPO_URL is required/);
-  assert.match(entrypoint, /git remote set-url origin "\$REPO_URL"/);
+  assert.match(entrypoint, /github_https_to_ssh\(\)/);
+  assert.match(entrypoint, /GIT_REPO_URL="\$\(github_https_to_ssh "\$REPO_URL"\)"/);
+  assert.match(entrypoint, /git clone --depth 50 --branch "\$BASE_BRANCH" "\$GIT_REPO_URL" "\$REPO_DIR"/);
+  assert.match(entrypoint, /git remote set-url origin "\$GIT_REPO_URL"/);
   assert.match(entrypoint, /if \[\[ ! -d "\$REPO_DIR\/\.git" && -d "\$TEMPLATE_DIR\/\.git" \]\]; then/);
   assert.match(entrypoint, /cp -a "\$TEMPLATE_DIR\/\." "\$REPO_DIR\/"/);
   assert.match(entrypoint, /==> git fetch \+ switch starting/);
