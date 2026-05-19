@@ -2409,6 +2409,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (unscheduled) {
           const reason = unscheduled.condition.reason || "unscheduled";
           const message = unscheduled.condition.message || "scheduler has not placed this pod yet";
+          if (/too many pods/i.test(message)) {
+            return `worker pending: node pod-slot limit full; ${unscheduled.pod} ${reason}: ${message}`;
+          }
+          if (/insufficient cpu/i.test(message)) {
+            return `worker pending: node CPU capacity full; ${unscheduled.pod} ${reason}: ${message}`;
+          }
           return `worker pending: ${unscheduled.pod} ${reason}: ${message}`;
         }
         const waiting = pods.flatMap((pod) => (pod.containers || []).map((container) => ({

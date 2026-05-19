@@ -14,8 +14,10 @@ on:
         type: choice
         options:
           - inspect-unhealthy
+          - free-thread-pod-slots
           - repair-gleamlang-secret
           - reconcile-runtime
+          - sync-agent-gh-pat
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false
@@ -47,10 +49,82 @@ jobs:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
           OPERATION: ${{ inputs.operation || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
+          REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
         run: |
           set -euo pipefail
 
           case "$OPERATION" in
+            free-thread-pod-slots)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+
+          script = r'''set -euo pipefail
+          namespace=default
+          max_awake="${THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS:-4}"
+          case "$max_awake" in
+            ''|*[!0-9]*) max_awake=4 ;;
+          esac
+
+          echo "=== node pod capacity ==="
+          kubectl get nodes -o json | jq -r '.items[] | "\(.metadata.name) pods_capacity=\(.status.capacity.pods) pods_allocatable=\(.status.allocatable.pods)"'
+          echo "=== default namespace pod count ==="
+          kubectl -n "$namespace" get pods --no-headers 2>/dev/null | wc -l
+          echo "=== thread runtime deployments before ==="
+          kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o wide || true
+          echo "=== thread runtime pods before ==="
+          kubectl -n "$namespace" get pods -l app.kubernetes.io/component=thread-pod -o wide || true
+
+          mapfile -t keep < <(
+            kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o json \
+              | jq -r --argjson max "$max_awake" '.items
+                | map(select((.spec.replicas // 0) > 0))
+                | sort_by(.metadata.creationTimestamp)
+                | reverse
+                | .[0:$max][]?.metadata.name'
+          )
+          echo "keeping newest awake deployments: ${keep[*]:-(none)}"
+
+          scaled=0
+          while IFS= read -r deployment; do
+            keep_it=0
+            for current in "${keep[@]}"; do
+              if [[ "$deployment" == "$current" ]]; then
+                keep_it=1
+                break
+              fi
+            done
+            if [[ "$keep_it" -eq 0 ]]; then
+              echo "scaling stale thread runtime to zero: $deployment"
+              kubectl -n "$namespace" scale deployment "$deployment" --replicas=0 || true
+              ((scaled+=1))
+            fi
+          done < <(
+            kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o json \
+              | jq -r '.items[] | select((.spec.replicas // 0) > 0) | .metadata.name'
+          )
+
+          kubectl -n "$namespace" delete pod \
+            -l app.kubernetes.io/component=thread-pod \
+            --field-selector=status.phase=Pending \
+            --wait=false || true
+
+          echo "scaled stale awake deployments: $scaled"
+          echo "=== thread runtime deployments after ==="
+          kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o wide || true
+          echo "=== thread runtime pods after ==="
+          kubectl -n "$namespace" get pods -l app.kubernetes.io/component=thread-pod -o wide || true
+          echo "=== recent scheduler events ==="
+          kubectl get events -n "$namespace" --sort-by=.lastTimestamp | tail -80 || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H bash -lc {json.dumps(script)}",
+              ],
+          }))
+          PY
+              ;;
             inspect-unhealthy)
               cat > /tmp/remote-k8s-commands.json <<'JSON'
           {
@@ -166,6 +240,67 @@ jobs:
           ]
           print(json.dumps({"commands": commands}))
           PY
+              ;;
+            sync-agent-gh-pat)
+              if [[ -z "${REMOTE_DEV_GH_PAT:-}" ]]; then
+                echo "REMOTE_DEV_GH_PAT repository secret is not configured" >&2
+                exit 65
+              fi
+              secret_name="dd/remote-dev/agent-secrets"
+              region="${AWS_REGION:-us-east-1}"
+              current_secret="$(
+                aws secretsmanager get-secret-value \
+                  --region "$region" \
+                  --secret-id "$secret_name" \
+                  --query SecretString \
+                  --output text 2>/tmp/agent-secrets.err || true
+              )"
+              if [[ -z "$current_secret" || "$current_secret" == "None" ]]; then
+                current_secret="{}"
+              fi
+              updated_secret="$(
+                CURRENT_SECRET="$current_secret" REMOTE_DEV_GH_PAT="$REMOTE_DEV_GH_PAT" python3 - <<'PY'
+          import json
+          import os
+
+          try:
+              data = json.loads(os.environ.get("CURRENT_SECRET") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          if not isinstance(data, dict):
+              data = {}
+          data["GH_PAT"] = os.environ["REMOTE_DEV_GH_PAT"]
+          print(json.dumps(data, separators=(",", ":")))
+          PY
+              )"
+              if aws secretsmanager describe-secret \
+                --region "$region" \
+                --secret-id "$secret_name" >/dev/null 2>/tmp/agent-secret-describe.err; then
+                aws secretsmanager put-secret-value \
+                  --region "$region" \
+                  --secret-id "$secret_name" \
+                  --secret-string "$updated_secret" >/dev/null
+                echo "updated $secret_name GH_PAT"
+              else
+                aws secretsmanager create-secret \
+                  --region "$region" \
+                  --name "$secret_name" \
+                  --secret-string "$updated_secret" >/dev/null
+                echo "created $secret_name with GH_PAT"
+              fi
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite'",
+              "sleep 20",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get externalsecret dd-agent-secrets'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true'"
+            ]
+          }
+          JSON
               ;;
             *)
               echo "Unsupported operation: $OPERATION" >&2

@@ -638,6 +638,7 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   const refreshWorkflow = await readRepoFile(
     '.github/workflows/refresh-remote-web-home-local-image.yml',
   );
+  const maintenanceWorkflow = await readRepoFile('.github/workflows/remote-k8s-maintenance.yml');
   const restDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-rest-api.deployment.yaml',
   );
@@ -727,6 +728,8 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(restDeployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
   assert.match(restDeployment, /name:\s*dd-remote-rest-api-secrets[\s\S]*optional:\s*true/);
   assert.match(restDeployment, /name:\s*THREAD_RUNTIME_NAMESPACE[\s\S]*value:\s*default/);
+  assert.match(restDeployment, /name:\s*THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED[\s\S]*value:\s*'true'/);
+  assert.match(restDeployment, /name:\s*THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS[\s\S]*value:\s*'4'/);
   assert.match(restDeployment, /name:\s*http[\s\S]*containerPort:\s*8082/);
   assert.match(restDeployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(restDeployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
@@ -791,6 +794,11 @@ test('rust agent tasks page fetches the REST API directly', async () => {
     restServer,
     /env::var\("THREAD_RUNTIME_NAMESPACE"\)\.unwrap_or_else\(\|_\| "default"\.to_string\(\)\)/,
   );
+  assert.match(maintenanceWorkflow, /free-thread-pod-slots/);
+  assert.match(maintenanceWorkflow, /sync-agent-gh-pat/);
+  assert.match(maintenanceWorkflow, /REMOTE_DEV_GH_PAT/);
+  assert.match(maintenanceWorkflow, /dd\/remote-dev\/agent-secrets/);
+  assert.match(maintenanceWorkflow, /THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS/);
   assert.match(restServer, /source unavailable; check remote REST API server logs/);
   assert.match(
     restServer,
@@ -1008,6 +1016,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /gateway returned HTML; retrying/);
   assert.match(server, /function workerRuntimeWaitDetails\(data\) \{/);
   assert.match(server, /runtime phase=\$\{summary\.phase \|\| "unknown"\}/);
+  assert.match(server, /node pod-slot limit full/);
   assert.match(server, /dispatch waiting \$\{elapsed\}s · \$\{runtimeSummary\}/);
   assert.match(server, /workerRuntimeWaitDetails\(state\.lastRuntimeData\)/);
   assert.match(server, /dispatch accepted/);

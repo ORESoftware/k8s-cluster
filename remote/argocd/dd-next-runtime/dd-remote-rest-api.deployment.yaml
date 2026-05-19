@@ -49,6 +49,10 @@ spec:
               value: DD_REMOTE_TASKS
             - name: THREAD_RUNTIME_NAMESPACE
               value: default
+            - name: THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED
+              value: 'true'
+            - name: THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS
+              value: '4'
             - name: LAMBDA_IMAGE_BUILD_ENABLED
               value: 'true'
             - name: LAMBDA_IMAGE_BUILD_ROOT

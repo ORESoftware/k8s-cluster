@@ -1213,7 +1213,7 @@ async fn prune_awake_thread_workers_for_capacity(
     if !env_bool("THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED", true) {
         return Ok(Vec::new());
     }
-    let max_awake = env_usize("THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS", 16);
+    let max_awake = env_usize("THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS", 4);
     let value = match k8s_get_value(format!(
         "/apis/apps/v1/namespaces/{namespace}/deployments?labelSelector=app.kubernetes.io%2Fcomponent%3Dthread-pod"
     ))
