@@ -21,7 +21,7 @@ spec:
         # ArgoCD rolls a fresh pod that re-runs `dotnet publish` against the
         # latest source on the hostPath repo. Same pattern dd-remote-gateway
         # uses for configmap updates.
-        dd.dev/code-revision: '2026-05-18-telemetry'
+        dd.dev/code-revision: '2026-05-18-presence-fanin'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -105,6 +105,40 @@ spec:
               value: /tmp/nuget-packages
             - name: DOTNET_CLI_HOME
               value: /tmp
+            # ---------------------------------------------------------------
+            # Presence subsystem (NATS + PG LISTEN/NOTIFY + PG WAL + outbox).
+            # Posture mirrors dd-gleamlang-presence-server: every source is
+            # optional, and unset env vars trigger a graceful skip with an
+            # info log line.
+            #
+            # NATS is wired up by default — the cluster ships `dd-nats` in
+            # the `messaging` namespace, the same NATS the other DD services
+            # use. If `dd-nats` is unavailable the F# server logs a warning
+            # and keeps serving every other endpoint normally.
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            # PG is OFF by default. To enable, provision a database+role with
+            # `wal_level = logical` and the `wal2json` extension installed,
+            # then drop the URI into a Secret (e.g. `fsws-pg`) and uncomment:
+            #
+            # - name: PG_DATABASE_URL
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: fsws-pg
+            #       key: url
+            #
+            # When PG is enabled all three PG paths (LISTEN/NOTIFY, WAL via
+            # pg_logical_slot_get_changes, and the outbox tail) come online
+            # automatically — see remote/fsharp-ws-server/sql/schema.sql for
+            # what the boot-time migrator provisions.
+            - name: FSWS_WAL_POLL_MS
+              value: '250'
+            - name: FSWS_OUTBOX_POLL_MS
+              value: '1000'
+            - name: FSWS_OUTBOX_BATCH
+              value: '256'
+            - name: FSWS_OUTBOX_BACKFILL
+              value: 'false'
           ports:
             - name: http
               containerPort: 8087
