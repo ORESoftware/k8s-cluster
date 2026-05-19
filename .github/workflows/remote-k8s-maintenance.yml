@@ -50,6 +50,7 @@ jobs:
           OPERATION: ${{ inputs.operation || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS: ${{ vars.THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS || '4' }}
         run: |
           set -euo pipefail
 
@@ -57,6 +58,8 @@ jobs:
             free-thread-pod-slots)
               python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
+          import os
+          import shlex
 
           script = r'''set -euo pipefail
           namespace=default
@@ -120,7 +123,7 @@ jobs:
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  f"sudo -u ec2-user -H bash -lc {json.dumps(script)}",
+                  f"sudo -u ec2-user -H env THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS={shlex.quote(os.environ.get('THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS', '4'))} bash -lc {json.dumps(script)}",
               ],
           }))
           PY
@@ -295,7 +298,9 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite'",
               "sleep 20",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get externalsecret dd-agent-secrets'",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment -l app.kubernetes.io/component=thread-pod || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true'"
             ]
