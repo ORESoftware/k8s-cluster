@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-headlamp-cron-sentinel
+  namespace: default
+  labels:
+    app: dd-headlamp-cron-sentinel
+    app.kubernetes.io/name: dd-headlamp-cron-sentinel
+    app.kubernetes.io/part-of: dd-next-runtime
+    dd.dev/component: runtime-observability
+  annotations:
+    dd.dev/note: Native CronJob/Job visibility sentinel for Headlamp; real maintenance scheduling stays in dd-idle-reaper.
+spec:
+  schedule: '* * * * *'
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app: dd-headlamp-cron-sentinel
+        app.kubernetes.io/name: dd-headlamp-cron-sentinel
+        app.kubernetes.io/part-of: dd-next-runtime
+        dd.dev/component: runtime-observability
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 300
+      template:
+        metadata:
+          labels:
+            app: dd-headlamp-cron-sentinel
+            app.kubernetes.io/name: dd-headlamp-cron-sentinel
+            app.kubernetes.io/part-of: dd-next-runtime
+            dd.dev/component: runtime-observability
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: sentinel
+              image: docker.io/library/busybox:1.37.0
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -c
+              args:
+                - |
+                  set -eu
+                  echo "dd-headlamp-cron-sentinel active: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  while true; do
+                    sleep 3600
+                  done
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65534
+                runAsGroup: 65534
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                requests:
+                  cpu: 1m
+                  memory: 8Mi
+                limits:
+                  cpu: 25m
+                  memory: 32Mi

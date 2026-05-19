@@ -92,6 +92,27 @@ test('argocd reaper deployment runs the rust scheduler with a 90-minute doctor l
   assert.match(runtimeReadme, /docker\.io\/library\/dd-dev-server:dev/);
 });
 
+test('argocd runtime exposes a native headlamp cron sentinel', async () => {
+  const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
+  const cron = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-headlamp-cron-sentinel.cronjob.yaml',
+  );
+  const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
+
+  assert.match(kustomization, /dd-headlamp-cron-sentinel\.cronjob\.yaml/);
+  assert.match(cron, /kind:\s*CronJob/);
+  assert.match(cron, /name:\s*dd-headlamp-cron-sentinel/);
+  assert.match(cron, /namespace:\s*default/);
+  assert.match(cron, /schedule:\s*['"]\* \* \* \* \*['"]/);
+  assert.match(cron, /concurrencyPolicy:\s*Forbid/);
+  assert.match(cron, /automountServiceAccountToken:\s*false/);
+  assert.match(cron, /while true; do\s+sleep 3600\s+done/);
+  assert.match(cron, /cpu:\s*1m/);
+  assert.match(cron, /memory:\s*8Mi/);
+  assert.match(runtimeReadme, /dd-headlamp-cron-sentinel/);
+  assert.match(runtimeReadme, /Headlamp's Jobs and Cron Jobs workload cards/);
+});
+
 test('reaper nats watchdog backstops worker prepare and websocket fanout', async () => {
   const reaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
   const readme = await readRepoFile('remote/idle-reaper-rs/README.md');

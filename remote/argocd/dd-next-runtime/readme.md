@@ -262,6 +262,11 @@ the newest local image on the EC2 Kubernetes node. This is intentionally a Rust 
 the reaper deployment, not Linux `cron`/`at`; Kubernetes keeps the supervisor process alive, and
 the deployment mounts the EC2 containerd socket plus `nerdctl` for the actual build.
 
+`dd-headlamp-cron-sentinel` is a tiny native Kubernetes `CronJob` kept in this kustomization only
+to make Headlamp's Jobs and Cron Jobs workload cards non-zero. It runs a no-op BusyBox pod and uses
+`concurrencyPolicy: Forbid` so there is normally one active child `Job`; the real maintenance loops
+above still live in `dd-idle-reaper`.
+
 ## NATS shadow prepare path
 
 The runtime now includes a shadow NATS prepare path for future queue execution:

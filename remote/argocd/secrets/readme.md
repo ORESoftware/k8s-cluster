@@ -19,6 +19,7 @@ Required AWS secret names:
 - `dd/remote-dev/lambda-runner-secrets` -> creates `dd-gleam-lambda-runner-secrets`
 - `dd/remote-dev/idle-reaper-secret` -> creates `dd-idle-reaper-secret`
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
+- `dd/remote-dev/gleamlang-server-secrets` -> creates `dd-gleamlang-server-secrets`
 
 `dd/remote-dev/agent-secrets` is also the home for Git credentials used by remote-dev workers.
 Expected Git keys are:
@@ -33,9 +34,40 @@ Never commit deploy-key material or bake it into a worker image. `dd-dev-server`
 `GH_DEPLOY_KEY` from the Kubernetes secret to a private key file at container startup.
 
 The `dd-aws-secrets-manager` store uses the External Secrets controller pod's default AWS
-credential chain. On EC2 this means the node instance role must allow
-`secretsmanager:GetSecretValue`, `secretsmanager:DescribeSecret`, and
-`secretsmanager:ListSecretVersionIds` on `arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*`.
+credential chain. On EC2 this is the node instance role `dd-remote-k8s-role`, which also
+backs the `Remote K8s maintenance` GitHub Actions workflow over SSM. A single inline
+policy `ManageRemoteDevSecrets` covers both consumers:
+
+```jsonc
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageRemoteDevSecretsByPath",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",      // workflow: repair-gleamlang-secret bootstrap path
+        "secretsmanager:DescribeSecret",    // ESO + workflow probe
+        "secretsmanager:PutSecretValue",    // workflow: repair-gleamlang-secret
+        "secretsmanager:GetSecretValue",    // ESO read path
+        "secretsmanager:ListSecretVersionIds", // ESO read path
+        "secretsmanager:TagResource"        // future tag-on-create paths
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*"
+    },
+    {
+      "Sid": "ListSecretsForInspect",
+      "Effect": "Allow",
+      "Action": "secretsmanager:ListSecrets", // not resource-scopeable
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Do not split this back into separate read-only and write policies — the bootstrap path
+needs `CreateSecret` and the inspect path needs `ListSecrets`, and the ESO read path is a
+strict subset of those actions on the same resource prefix.
 
 `dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the Gleam lambda runner
 consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda

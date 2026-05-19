@@ -48,3 +48,4 @@ resources:
   - dd-idle-reaper.configmap.yaml
   - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml
+  - dd-headlamp-cron-sentinel.cronjob.yaml
