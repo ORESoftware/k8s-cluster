@@ -664,6 +664,66 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
         };
         if let Err(error) = result {
+            if shadow || direct_dispatch {
+                let (stage, status, message_text) = if shadow {
+                    (
+                        "shadow-prepare-failed",
+                        "shadow prepare failed",
+                        "Queue consumer could not complete the shadow worker warmup; the original task dispatch already owns execution.",
+                    )
+                } else {
+                    (
+                        "direct-dispatch-prepare-failed",
+                        "direct dispatch warmup failed",
+                        "Queue consumer could not complete the duplicate warmup; synchronous REST dispatch remains responsible for task execution.",
+                    )
+                };
+                eprintln!(
+                    "queue task prepare failed for non-executing handoff: thread={} task={} shadow={} direct_dispatch={} error={error}",
+                    task.thread_id, task.task_id, shadow, direct_dispatch
+                );
+                emit_queue_status_event(
+                    &http,
+                    &nats_client,
+                    &rest_api_url,
+                    &secret,
+                    &task,
+                    -910,
+                    stage,
+                    status,
+                    message_text,
+                    json!({ "error": error.to_string(), "shadow": shadow, "directDispatch": direct_dispatch }),
+                )
+                .await;
+                receipts.insert(task.task_id.clone());
+                if let Err(error) = write_task_receipt(&receipts_dir, &task) {
+                    eprintln!(
+                        "queue task receipt write failed: thread={} task={} error={error}",
+                        task.thread_id, task.task_id
+                    );
+                }
+                if let Err(error) = message.ack().await {
+                    eprintln!(
+                        "queue task ack failed after non-executing prepare failure: thread={} task={} error={error}",
+                        task.thread_id, task.task_id
+                    );
+                } else {
+                    emit_queue_status_event(
+                        &http,
+                        &nats_client,
+                        &rest_api_url,
+                        &secret,
+                        &task,
+                        -900,
+                        "queue-acked",
+                        "queue message acked",
+                        "Queue consumer acknowledged the non-executing JetStream message after recording the warmup failure.",
+                        json!({ "shadow": shadow, "directDispatch": direct_dispatch }),
+                    )
+                    .await;
+                }
+                continue;
+            }
             eprintln!(
                 "queue task handoff failed: thread={} task={} error={error}",
                 task.thread_id, task.task_id

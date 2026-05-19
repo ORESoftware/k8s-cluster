@@ -395,6 +395,7 @@ dependencies = [
  "futures-util",
  "reqwest",
  "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "tokio",

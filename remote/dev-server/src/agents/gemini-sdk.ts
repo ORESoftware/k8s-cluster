@@ -30,6 +30,58 @@ type GoogleGenAiModule = {
   GoogleGenAI: new (_input: { apiKey: string }) => GoogleGenAiClient;
 };
 
+function geminiErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function isQuotaFailure(error: unknown): boolean {
+  const message = geminiErrorText(error);
+  return (
+    /RESOURCE_EXHAUSTED/i.test(message) ||
+    /Too Many Requests/i.test(message) ||
+    /\b429\b/.test(message) ||
+    /quota/i.test(message)
+  );
+}
+
+async function streamGeminiModel(
+  client: GoogleGenAiClient,
+  opts: AgentRunOpts,
+  model: string,
+): Promise<void> {
+  const stream = await client.models.generateContentStream({
+    model,
+    contents: opts.prompt,
+  });
+
+  for await (const chunk of stream) {
+    if (opts.signal?.aborted) {
+      opts.emit({ kind: 'stderr', text: 'gemini-sdk: aborted by signal' });
+      return;
+    }
+    opts.emit({
+      kind: 'claude',
+      raw: {
+        provider: 'gemini-sdk',
+        model,
+        text: chunk.text,
+        candidates: chunk.candidates,
+        usageMetadata: chunk.usageMetadata,
+      },
+    });
+  }
+}
+
 export const geminiSdkRunner: AgentRunner = {
   id: 'gemini-sdk',
   displayName: 'Gemini SDK',
@@ -41,25 +93,26 @@ export const geminiSdkRunner: AgentRunner = {
 
     const genai = (await import('@google/genai')) as GoogleGenAiModule;
     const client = new genai.GoogleGenAI({ apiKey: opts.env.GEMINI_API_KEY });
-    const stream = await client.models.generateContentStream({
-      model: opts.env.GEMINI_MODEL ?? 'gemini-3.1-pro',
-      contents: opts.prompt,
-    });
+    const primaryModel = opts.env.GEMINI_MODEL ?? 'gemini-3.1-pro';
+    const fallbackModel = opts.env.GEMINI_FALLBACK_MODEL?.trim();
 
-    for await (const chunk of stream) {
-      if (opts.signal?.aborted) {
-        opts.emit({ kind: 'stderr', text: 'gemini-sdk: aborted by signal' });
+    try {
+      await streamGeminiModel(client, opts, primaryModel);
+    } catch (error) {
+      if (
+        fallbackModel &&
+        fallbackModel !== primaryModel &&
+        !opts.signal?.aborted &&
+        isQuotaFailure(error)
+      ) {
+        opts.emit({
+          kind: 'stderr',
+          text: `gemini-sdk: ${primaryModel} quota/rate limit failed; retrying ${fallbackModel}`,
+        });
+        await streamGeminiModel(client, opts, fallbackModel);
         return;
       }
-      opts.emit({
-        kind: 'claude',
-        raw: {
-          provider: 'gemini-sdk',
-          text: chunk.text,
-          candidates: chunk.candidates,
-          usageMetadata: chunk.usageMetadata,
-        },
-      });
+      throw error;
     }
   },
 };

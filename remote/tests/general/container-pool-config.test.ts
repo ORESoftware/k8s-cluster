@@ -75,11 +75,14 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(cargoToml, /name = "dd-container-pool"/);
   assert.match(cargoToml, /async-nats/);
   assert.match(cargoToml, /tokio-postgres/);
+  assert.match(cargoToml, /rustls-pemfile/);
   assert.match(cargoToml, /reqwest/);
   assert.match(source, /const SERVICE_NAME: &str = "dd-container-pool"/);
   assert.match(source, /from app_config/);
   assert.match(source, /CONTAINER_POOL_APP_CONFIG_KEY/);
   assert.match(source, /container-pool\.runtime-pools\.v1/);
+  assert.match(source, /rds-us-east-1-bundle\.pem/);
+  assert.match(source, /add_rds_root_certificates\(&mut root_store\)\?/);
   assert.match(source, /from container_pool_configs/);
   assert.match(source, /CONTAINER_POOL_DATABASE_URL/);
   assert.match(source, /AGENT_TASKS_RDS_DATABASE_URL/);

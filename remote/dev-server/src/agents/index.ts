@@ -33,6 +33,7 @@ const RUNNERS: Record<AgentProvider, AgentRunner> = {
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
+const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 
 const VALID_PROVIDERS = new Set<AgentProvider>([
@@ -148,6 +149,8 @@ export function buildAgentEnv(provider: AgentProvider): Record<string, string> {
       base.GEMINI_API_KEY = apiKey;
     }
     base.GEMINI_MODEL = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
+    base.GEMINI_FALLBACK_MODEL =
+      process.env.GEMINI_FALLBACK_MODEL ?? DEFAULT_GEMINI_FALLBACK_MODEL;
   }
   if (provider === 'openai-codex-cli' || provider === 'openai-sdk') {
     if (process.env.OPENAI_API_KEY) {

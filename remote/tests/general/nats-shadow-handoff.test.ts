@@ -99,6 +99,9 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /dd\.remote\.events/);
   assert.match(consumer, /queue-received/);
   assert.match(consumer, /direct-dispatch-prepare/);
+  assert.match(consumer, /direct-dispatch-prepare-failed/);
+  assert.match(consumer, /shadow-prepare-failed/);
+  assert.match(consumer, /non-executing handoff/);
   assert.match(consumer, /if shadow \|\| direct_dispatch \{[\s\S]*prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await[\s\S]*\} else \{/);
   assert.match(consumer, /container-pool-dispatch/);
   assert.match(consumer, /let pool = task[\s\S]*repo_pool_slug\(repo, task\.base_branch\.as_deref\(\)\.unwrap_or\("dev"\)\)/);
