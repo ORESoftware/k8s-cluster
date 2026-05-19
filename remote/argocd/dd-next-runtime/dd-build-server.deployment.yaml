@@ -38,6 +38,7 @@ spec:
           args:
             - |
               set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               export CARGO_HOME=/tmp/cargo
               export CARGO_TARGET_DIR=/tmp/dd-build-server-target
               export HOME=/tmp
@@ -115,7 +116,7 @@ spec:
               containerPort: 8100
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 384Mi
             limits:
               cpu: '2'

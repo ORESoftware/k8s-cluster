@@ -34,6 +34,7 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
   assert.match(cargo, /tokio-postgres/);
   assert.match(cargo, /tokio-postgres-rustls/);
+  assert.match(cargo, /rustls-pemfile/);
   assert.match(source, /const SCHEMA_VERSION: &str = "trading\.decision\.v1"/);
   assert.match(source, /struct TradingPlatform/);
   assert.match(source, /struct TradingPlatformConfig/);
@@ -43,6 +44,10 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /TRADING_APP_CONFIG_KEY/);
   assert.match(source, /trading\.platforms\.v1/);
   assert.match(source, /from app_config/);
+  assert.match(source, /rds-us-east-1-bundle\.pem/);
+  assert.match(source, /add_rds_root_certificates/);
+  assert.match(source, /is_missing_app_config_table_error/);
+  assert.match(source, /using built-in platform defaults/);
   assert.match(source, /fetch_platform_config_from_app_config/);
   assert.match(source, /refresh_platform_config/);
   assert.match(source, /fn conservative_cap/);
@@ -63,6 +68,7 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /blocked_by_safety_gate/);
   assert.match(source, /TRADING_ALLOW_LIVE_ORDERS/);
   assert.match(source, /SERVER_AUTH_SECRET/);
+  assert.match(source, /"TRADING_DATABASE_URL",[\s\S]*"RDS_DATABASE_URL",[\s\S]*"AGENT_TASKS_RDS_DATABASE_URL"/);
   assert.match(source, /constant_time_equals/);
   assert.match(source, /queue_subscribe/);
   assert.match(source, /dd\.remote\.trading\.signals/);

@@ -388,6 +388,7 @@ dependencies = [
  "dd-wal-consumer",
  "futures-util",
  "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "tokio",

@@ -68,7 +68,96 @@ A 1 Hz ticker drives a `BehaviorSubject<StatsSnapshot>` (latest-cached) and a
 | ------ | -------------------------- | ---------------------------------------------------------------------- |
 | GET    | `/v1/rx-stats`             | Current snapshot — open connections, msgs/bytes in & out, uptime.      |
 | GET    | `/v1/rx-stats/history`     | Last ~120 snapshots, replayed synchronously off the `ReplaySubject`.   |
+| GET    | `/v1/rx-stats/sources`     | Per-source counters for the presence subsystem (LISTEN/NOTIFY, WAL, outbox, NATS, fan-in dedup). |
 | SSE    | `/sse/rx-stats`            | Server-Sent Events feed at 1 Hz. `curl -N` shows `data: {…}` per second. |
+
+### Presence pipeline (NATS + PG LISTEN/NOTIFY + PG WAL + PG outbox)
+
+Four parallel ingest paths converge in `PresenceFanIn` on one hot
+`IObservable<UnifiedEvent>`. The graph is built once per process via
+`Publish().RefCount()`; every WebSocket subscriber attaches to the same hot
+stream rather than spinning up its own copy.
+
+```
+WS /ws/rx-publish  ──┐
+                     │   (DB write returns)
+                     ▼
+            fsws_events(seq, event_id, conv_id, …)
+                     │
+       ┌─────────────┼──────────────┬──────────────┐
+       │             │              │              │
+  trigger NOTIFY  WAL slot     outbox poll    NATS publish (from handler)
+       │             │              │              │
+       ▼             ▼              ▼              ▼
+  PgListen.fs   PgWal.fs       PgOutbox.fs    NatsRx.fs   + local Inject
+       └─────────────┴──────┬───────┴──────────────┘
+                            ▼
+                   PresenceFanIn.fs
+                   (Merge → dedup-by-event_id
+                          → GroupBy conv_id
+                          → Throttle 25ms per group
+                          → Publish().RefCount())
+                            │
+                            ▼
+                   /ws/rx-presence subscribers
+```
+
+Same event arrives in our process up to 4 times (NOTIFY, WAL, outbox, NATS).
+The dedup cache (bounded LRU keyed on `event_id`, 60 s TTL) keeps only the
+first delivery; the others increment `dedup_hits` on `/v1/rx-stats/sources`.
+First-source-wins: the `source` label on the propagated event reflects which
+path won the race.
+
+| Method | Path                  | Purpose                                                                                                                                                                                                                  |
+| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| WS     | `/ws/rx-presence`     | Subscribe to the merged hot observable. First inbound frame: `{"conv_ids":["uuid",…]}` (empty array or missing key = all conv ids). Server replies with `{"ok":true,"subscribed":<N>}` then streams events as they land. |
+| WS     | `/ws/rx-publish`      | Write events into `fsws_events`. Frame shape: `{"conv_id":"…","kind":"message","payload":{…}}`. Reply per frame is `{"ok":true,"event_id":"…","seq":N,"durable":true,"nats":true}`. With PG missing, `durable=false`.    |
+| WS     | `/ws/rx-nats-echo`    | Raw NATS round-trip demo. First frame: `{"subject":"…"}`. Subsequent inbound frames are `Publish`'d to that subject; any message on the subject is delivered back as `{"from":"nats","subject":"…","body":"…"}`.        |
+
+#### SQL schema
+
+The boot-time migrator runs [`sql/schema.sql`](./sql/schema.sql) under
+`PgSchema.migrate`. Everything is idempotent (`IF NOT EXISTS`,
+`CREATE OR REPLACE`, `DO` blocks for `CREATE PUBLICATION`) so it's safe on
+every pod start. The schema is deliberately disjoint from
+`dd-gleamlang-presence-server`'s `presence_*` schema — own table, own
+trigger, own publication, own slot name pattern, own NOTIFY channel space,
+own NATS subject space — so the F# demo and the Gleam presence server can
+run side by side without coordinating LSN progression.
+
+#### Quick demo (local)
+
+```bash
+docker network create fsws-net
+docker run -d --name fsws-pg   --network fsws-net -e POSTGRES_PASSWORD=fsws \
+    -e POSTGRES_USER=fsws -e POSTGRES_DB=fsws -p 55432:5432 \
+    postgres:16 postgres -c wal_level=logical -c max_replication_slots=8
+docker run -d --name fsws-nats --network fsws-net -p 24222:4222 nats:2.10
+docker build -f remote/fsharp-ws-server/Dockerfile -t dd-fsharp-ws-server:dev .
+docker run --rm --network fsws-net \
+    -e PG_DATABASE_URL="postgres://fsws:fsws@fsws-pg:5432/fsws" \
+    -e NATS_URL="nats://fsws-nats:4222" \
+    -p 8087:8087 dd-fsharp-ws-server:dev
+```
+
+Then in another terminal:
+
+```bash
+# Subscribe to ALL conv ids, leave open in one shell:
+wscat -c ws://localhost:8087/ws/rx-presence -x '{"conv_ids":[]}'
+
+# In a second shell, publish:
+wscat -c ws://localhost:8087/ws/rx-publish \
+    -x '{"conv_id":"00000000-0000-0000-0000-000000000001","kind":"message","payload":{"hello":"world"}}'
+
+# Check per-source counters:
+curl -fsS http://localhost:8087/v1/rx-stats/sources | jq .
+```
+
+Expected: the first subscriber sees the event roughly instantly (LISTEN/NOTIFY
+wins the race). The `/v1/rx-stats/sources` JSON shows `pg_notify.delivered`,
+`pg_outbox.delivered`, and `nats.delivered` all incrementing, and
+`fan_in.dedup_hits` growing 3x faster than `fan_in.dedup_misses`.
 
 ### The pipeline
 
@@ -109,6 +198,12 @@ so the same loadtest correlator works against this service and `dd-akka-ws-serve
 | `BENCHMARK_PAYLOAD`       | sample JSON | Payload to drive the benchmark.                              |
 | `MAX_WS_TEXT_FRAME_BYTES` | `65536`     | Maximum assembled inbound WebSocket text frame size.         |
 | `RX_STREAM_OUTBOUND_QUEUE_CAPACITY` | `1024` | Per-connection bounded outbound queue for long-running Rx streams. If the client cannot drain replies, the socket is closed instead of letting memory grow without bound. |
+| `PG_DATABASE_URL`         | _(unset)_   | `postgres://…` URI. When set, the boot-time migration runs, then `PgListen` / `PgWal` / `PgOutbox` come online. When unset, all PG paths are silently skipped and the F# server runs in "NATS-only + injection" mode. |
+| `NATS_URL`                | _(unset)_   | `nats://host:port`. When set, the server connects on boot, subscribes to `fsws.events.published`, and publishes every `/ws/rx-publish` event there. When unset, NATS path is skipped. |
+| `FSWS_WAL_POLL_MS`        | `250`       | How often `PgWal` calls `pg_logical_slot_get_changes`.       |
+| `FSWS_OUTBOX_POLL_MS`     | `1000`      | How often `PgOutbox` SELECTs new rows from `fsws_events`.    |
+| `FSWS_OUTBOX_BATCH`       | `256`       | LIMIT applied to each outbox poll.                            |
+| `FSWS_OUTBOX_BACKFILL`    | `false`     | If `true`, `PgOutbox` starts at seq 0 instead of MAX(seq) — useful for replaying historical events on first boot. |
 | `DOTNET_gcServer`         | `1`         | Server GC (multi-core, throughput-tuned).                    |
 | `DOTNET_TieredPGO`        | `1`         | Tiered JIT + dynamic PGO.                                    |
 

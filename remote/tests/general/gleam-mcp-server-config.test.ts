@@ -113,9 +113,10 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.match(ec2Deployment, /ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine/);
   assert.match(
     ec2Deployment,
-    /cd \/opt\/dd-next-1\/remote\/gleam-mcp-server[\s\S]*gleam clean \|\| true[\s\S]*gleam deps download[\s\S]*exec gleam run/,
+    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*WORK_ROOT=\/tmp\/dd-gleam-mcp-server\/dd-next-1[\s\S]*cp -R "\$SRC_ROOT\/remote\/gleam-mcp-server"\/\.[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*exec gleam run/,
   );
-  assert.match(ec2Deployment, /gleam deps download/);
+  assert.doesNotMatch(ec2Deployment, /apk add/);
+  assert.doesNotMatch(ec2Deployment, /gleam deps download/);
   assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
   assert.match(ec2Deployment, /capabilities:[\s\S]*drop:[\s\S]*-\s*ALL/);
@@ -123,7 +124,7 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.match(ec2Deployment, /startupProbe:[\s\S]*failureThreshold:\s*60/);
   assert.match(ec2Deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(ec2Deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
-  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*"1"[\s\S]*memory:\s*1Gi/);
+  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*1Gi/);
   assert.match(ec2Deployment, /limits:[\s\S]*cpu:\s*"4"[\s\S]*memory:\s*8Gi/);
   assert.match(ec2Deployment, /mountPath:\s*\/opt\/dd-next-1/);
   assert.match(ec2Deployment, /dd\.dev\/telemetry-revision/);

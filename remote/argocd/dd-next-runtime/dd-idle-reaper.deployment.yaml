@@ -19,7 +19,8 @@ spec:
       labels:
         app: dd-idle-reaper
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: dd-idle-reaper
+      automountServiceAccountToken: true
       terminationGracePeriodSeconds: 20
       containers:
         - name: reaper
@@ -31,6 +32,7 @@ spec:
           args:
             - |
               set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               cd /opt/dd-next-1/remote/idle-reaper-rs
               exec /usr/local/cargo/bin/cargo run --release
           envFrom:

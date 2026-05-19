@@ -1,0 +1,27 @@
+# Headless Service (clusterIP: None). Each pod gets a stable DNS name of
+# the form  <podname>.presence-svc.presence.svc.cluster.local — which is
+# exactly what our Erlang node names embed, so peers are reachable by
+# their node name without any further translation.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: presence-svc
+  namespace: presence
+  labels:
+    app: presence
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: presence
+  ports:
+    - name: ws
+      port: 8081
+      targetPort: ws
+    - name: epmd
+      port: 4369
+      targetPort: epmd
+    - name: dist
+      port: 9100
+      targetPort: dist

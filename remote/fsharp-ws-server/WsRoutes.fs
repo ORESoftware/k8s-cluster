@@ -3,9 +3,11 @@ module OresSoftware.Dd.FsWs.WsRoutes
 open System
 open System.IO
 open System.Net.WebSockets
+open System.Reactive.Linq
 open System.Reactive.Subjects
 open System.Text
 open System.Text.Json
+open System.Text.Json.Nodes
 open System.Threading
 open System.Threading.Channels
 open System.Threading.Tasks
@@ -13,7 +15,41 @@ open Microsoft.AspNetCore.Http
 open Microsoft.AspNetCore.Http.Features
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Logging
+open NATS.Client.Core
+open Npgsql
 open OresSoftware.Dd.FsWs.RxAdvanced
+open OresSoftware.Dd.FsWs.PgSchema
+open OresSoftware.Dd.FsWs.PgListen
+open OresSoftware.Dd.FsWs.PgWal
+open OresSoftware.Dd.FsWs.PgOutbox
+open OresSoftware.Dd.FsWs.NatsRx
+open OresSoftware.Dd.FsWs.PresenceFanIn
+
+// ----------------------------------------------------------------------------
+// PresenceState — Program.fs builds this at boot (some fields may be `None`
+// when their env var was unset / the connection failed) and hands it to
+// WsRoutes via `setPresenceState`. Handlers read it through the module-level
+// ref; nothing else mutates it after boot.
+// ----------------------------------------------------------------------------
+
+type PresenceState = {
+    /// Postgres connection string in Npgsql format (key=value;key=value).
+    /// `None` means PG-backed endpoints (/ws/rx-publish writes, /ws/rx-presence
+    /// fan-in from PG sources) operate in degraded mode.
+    DbConnectionString: string option
+    PgListen:           PgListenHandle option
+    PgWal:              PgWalHandle option
+    PgOutbox:           PgOutboxHandle option
+    Nats:               NatsHandle option
+    FanIn:              FanInHandle
+}
+
+let mutable private presenceStateRef : PresenceState option = None
+
+let setPresenceState (state: PresenceState) : unit =
+    presenceStateRef <- Some state
+
+let private presence () : PresenceState option = presenceStateRef
 
 /// HTTP / WebSocket route handlers.
 ///
@@ -456,6 +492,520 @@ let handleRxStatsSse (ctx: HttpContext) : Task =
         | ex -> logger.LogWarning(ex, "sse[rx-stats] terminated")
     }
 
+// ----------------------------------------------------------------------------
+// Presence (NATS + PG LISTEN/NOTIFY + PG WAL + PG outbox) — the four ingest
+// paths fan into PresenceFanIn's hot observable; the handlers here are pure
+// projections off that single shared stream.
+// ----------------------------------------------------------------------------
+
+let private serializeUnifiedEvent (evt: UnifiedEvent) : string =
+    // Build a small JSON envelope around the verbatim payload. We don't
+    // re-serialize `evt.Payload` because it's already JSON; we just splice it
+    // in with the parens trick. Other fields are simple enough to format
+    // with String.Format under the invariant culture (no comma surprises
+    // on European locales).
+    let payload =
+        if String.IsNullOrEmpty(evt.Payload) then "null" else evt.Payload
+    System.String.Format(
+        System.Globalization.CultureInfo.InvariantCulture,
+        "{{\"event_id\":\"{0}\",\"seq\":{1},\"kind\":{2},\"conv_id\":\"{3}\",\"occurred_at\":\"{4:O}\",\"source\":{5},\"payload\":{6}}}",
+        evt.EventId,
+        evt.Seq,
+        jsonString evt.Kind,
+        evt.ConvId,
+        evt.OccurredAt.ToUniversalTime(),
+        jsonString evt.Source.Label,
+        payload)
+
+let private parseConvIdFilter (logger: ILogger) (raw: string) : Set<Guid> option =
+    // First frame on /ws/rx-presence is `{"conv_ids":["uuid","uuid",...]}`
+    // — empty array OR no `conv_ids` key means "all conv ids".
+    try
+        let root = JsonNode.Parse(raw)
+        match root.["conv_ids"] with
+        | :? JsonArray as arr when arr.Count > 0 ->
+            arr
+            |> Seq.choose (fun n ->
+                if isNull n then None
+                else
+                    match Guid.TryParse(n.ToString()) with
+                    | true, g -> Some g
+                    | _ -> None)
+            |> Set.ofSeq
+            |> Some
+        | _ -> None
+    with ex ->
+        logger.LogWarning(
+            ex,
+            "ws[rx-presence]: filter frame is not valid JSON; falling back to ALL")
+        None
+
+let handleRxPresence (ctx: HttpContext) : Task =
+    task {
+        let factory = ctx.RequestServices.GetRequiredService<ILoggerFactory>()
+        let logger = factory.CreateLogger("WsRoutes:rx-presence")
+        match presence () with
+        | None ->
+            ctx.Response.StatusCode <- 503
+            do! ctx.Response.WriteAsync(
+                    "presence subsystem not initialised\n")
+        | Some state ->
+            if not ctx.WebSockets.IsWebSocketRequest then
+                ctx.Response.StatusCode <- 400
+                do! ctx.Response.WriteAsync("expected websocket upgrade\n")
+            else
+                use! ws = ctx.WebSockets.AcceptWebSocketAsync()
+                RxStats.connectionOpened ()
+                let ct = ctx.RequestAborted
+                let maxBytes =
+                    parseBoundedPositiveIntEnv
+                        "MAX_WS_TEXT_FRAME_BYTES"
+                        defaultMaxTextFrameBytes
+                        maxTextFrameBytesCeiling
+                try
+                    try
+                        // 1. Wait for the filter frame.
+                        let! firstFrame = receiveTextFrame "rx-presence" logger ws ct maxBytes
+                        match firstFrame with
+                        | CloseFrame ->
+                            do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" ct
+                        | TextFrame raw ->
+                            RxStats.messageIn (Encoding.UTF8.GetByteCount(raw: string))
+                            let filter = parseConvIdFilter logger raw
+                            let filterText =
+                                match filter with
+                                | Some s -> sprintf "%d conv ids" s.Count
+                                | None -> "ALL"
+                            logger.LogInformation(
+                                "ws[rx-presence]: client subscribed to {Filter}",
+                                filterText)
+                            // 2. Wire the fan-in observable into a Channel
+                            //    (Subscribe is sync-only, sends must be async
+                            //    and serialised).
+                            let outChan = Channel.CreateUnbounded<string>()
+                            let onNext (evt: UnifiedEvent) =
+                                let pass =
+                                    match filter with
+                                    | None     -> true
+                                    | Some set -> set.Contains(evt.ConvId)
+                                if pass then
+                                    outChan.Writer.TryWrite(
+                                        serializeUnifiedEvent evt) |> ignore
+                            use _sub =
+                                System.ObservableExtensions.Subscribe(
+                                    state.FanIn.Events,
+                                    Action<UnifiedEvent>(onNext))
+                            // Send `ack` so the client knows the subscribe
+                            // succeeded before it starts waiting on events.
+                            let ack =
+                                sprintf "{\"ok\":true,\"subscribed\":%s}"
+                                    (match filter with
+                                     | None -> "\"all\""
+                                     | Some s -> sprintf "%d" s.Count)
+                            let ackBytes = Encoding.UTF8.GetBytes(ack: string)
+                            do! ws.SendAsync(
+                                    ArraySegment(ackBytes),
+                                    WebSocketMessageType.Text,
+                                    true, ct)
+                            RxStats.messageOut ackBytes.Length
+
+                            // 3. Producer task: drain the channel into the WS.
+                            //    Receive task: consume inbound frames so the
+                            //    socket stays open (we currently ignore them,
+                            //    but they prevent client keepalive timeouts).
+                            let sender =
+                                task {
+                                    let mutable run = true
+                                    while run && not ct.IsCancellationRequested do
+                                        let! more = outChan.Reader.WaitToReadAsync(ct).AsTask()
+                                        if not more then run <- false
+                                        else
+                                            let mutable frame : string = null
+                                            while outChan.Reader.TryRead(&frame) do
+                                                let bytes = Encoding.UTF8.GetBytes(frame: string)
+                                                do! ws.SendAsync(
+                                                        ArraySegment(bytes),
+                                                        WebSocketMessageType.Text,
+                                                        true, ct)
+                                                RxStats.messageOut bytes.Length
+                                } :> Task
+                            try
+                                let mutable run = true
+                                while run do
+                                    let! frame =
+                                        receiveTextFrame "rx-presence" logger ws ct maxBytes
+                                    match frame with
+                                    | CloseFrame ->
+                                        do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" ct
+                                        run <- false
+                                    | TextFrame _ ->
+                                        // Future: re-subscribe / unsubscribe
+                                        // commands could be parsed here. For
+                                        // now we just count inbound bytes for
+                                        // stats parity.
+                                        ()
+                            finally
+                                outChan.Writer.TryComplete() |> ignore
+                            try do! sender
+                            with _ -> ()
+                    with
+                    | :? OperationCanceledException -> ()
+                    | ex -> logger.LogWarning(ex, "ws[rx-presence] connection ended")
+                finally
+                    RxStats.connectionClosed ()
+    }
+
+let private nowIso () =
+    DateTime.UtcNow.ToString(
+        "yyyy-MM-ddTHH:mm:ss.fffZ",
+        System.Globalization.CultureInfo.InvariantCulture)
+
+let private writeEventToDb
+        (connectionString: string)
+        (eid: Guid)
+        (kind: string)
+        (convId: Guid)
+        (payload: string)
+        (ct: CancellationToken)
+        : Task<int64 * DateTime> =
+    task {
+        use conn = new NpgsqlConnection(connectionString)
+        do! conn.OpenAsync(ct)
+        use cmd =
+            new NpgsqlCommand(
+                "SELECT seq, occurred_at FROM fsws_publish_event(@id, @kind, @conv, @payload::jsonb)",
+                conn)
+        cmd.Parameters.AddWithValue("id", eid) |> ignore
+        cmd.Parameters.AddWithValue("kind", kind) |> ignore
+        cmd.Parameters.AddWithValue("conv", convId) |> ignore
+        cmd.Parameters.AddWithValue("payload", payload) |> ignore
+        use! reader = cmd.ExecuteReaderAsync(ct)
+        let! hasRow = reader.ReadAsync(ct)
+        if hasRow then
+            let seq = reader.GetInt64(0)
+            let occurred = reader.GetDateTime(1).ToUniversalTime()
+            return (seq, occurred)
+        else
+            // Insert was de-duped by the ON CONFLICT DO NOTHING — the row
+            // already existed under this event_id. Return -1 to signal
+            // "no-op". Caller decides whether to surface that to the client.
+            return (-1L, DateTime.UtcNow)
+    }
+
+let handleRxPublish (ctx: HttpContext) : Task =
+    task {
+        let factory = ctx.RequestServices.GetRequiredService<ILoggerFactory>()
+        let logger = factory.CreateLogger("WsRoutes:rx-publish")
+        if not ctx.WebSockets.IsWebSocketRequest then
+            ctx.Response.StatusCode <- 400
+            do! ctx.Response.WriteAsync("expected websocket upgrade\n")
+        else
+            use! ws = ctx.WebSockets.AcceptWebSocketAsync()
+            RxStats.connectionOpened ()
+            let ct = ctx.RequestAborted
+            let maxBytes =
+                parseBoundedPositiveIntEnv
+                    "MAX_WS_TEXT_FRAME_BYTES"
+                    defaultMaxTextFrameBytes
+                    maxTextFrameBytesCeiling
+            try
+                try
+                    let mutable run = true
+                    while run do
+                        let! frame = receiveTextFrame "rx-publish" logger ws ct maxBytes
+                        match frame with
+                        | CloseFrame ->
+                            do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" ct
+                            run <- false
+                        | TextFrame raw ->
+                            RxStats.messageIn (Encoding.UTF8.GetByteCount(raw: string))
+                            // Expected shape:
+                            //   {"conv_id":"<uuid>", "kind":"message",
+                            //    "payload": { ... arbitrary ... }}
+                            // event_id is generated server-side. We surface
+                            // parse errors as an `ok:false` reply rather than
+                            // dropping the connection — easier to test.
+                            let reply =
+                                try
+                                    let root = JsonNode.Parse(raw)
+                                    let convStr =
+                                        match root.["conv_id"] with
+                                        | null -> ""
+                                        | v -> v.ToString()
+                                    let kind =
+                                        match root.["kind"] with
+                                        | null -> "message"
+                                        | v -> v.ToString()
+                                    let payloadNode = root.["payload"]
+                                    let payloadJson =
+                                        if isNull payloadNode then "null"
+                                        else payloadNode.ToJsonString()
+                                    match Guid.TryParse(convStr) with
+                                    | false, _ ->
+                                        Task.FromResult(
+                                            "{\"ok\":false,\"error\":\"conv_id missing or invalid\"}")
+                                    | true, convId ->
+                                        task {
+                                            let eid = Guid.NewGuid()
+                                            let presence = presence ()
+                                            let! dbResult =
+                                                match presence with
+                                                | Some s when s.DbConnectionString.IsSome ->
+                                                    task {
+                                                        try
+                                                            let! r =
+                                                                writeEventToDb
+                                                                    s.DbConnectionString.Value
+                                                                    eid kind convId payloadJson ct
+                                                            return Some r
+                                                        with ex ->
+                                                            logger.LogWarning(
+                                                                ex,
+                                                                "ws[rx-publish] DB write failed; falling back to ephemeral")
+                                                            return None
+                                                    }
+                                                | _ -> Task.FromResult(None)
+
+                                            let seq, occurred =
+                                                match dbResult with
+                                                | Some r -> r
+                                                | None -> (-1L, DateTime.UtcNow)
+                                            let evt = {
+                                                EventId    = eid
+                                                Seq        = seq
+                                                Kind       = kind
+                                                ConvId     = convId
+                                                Payload    = payloadJson
+                                                OccurredAt = occurred
+                                                Source     = WsPublishSrc
+                                            }
+                                            // Inject into the fan-in graph
+                                            // first — that's the lowest-
+                                            // latency path so local
+                                            // /ws/rx-presence subscribers see
+                                            // the event before any cross-pod
+                                            // delivery wakes up.
+                                            match presence with
+                                            | Some s -> s.FanIn.Inject(evt)
+                                            | None -> ()
+                                            // Then publish to NATS so other
+                                            // pods / consumers see it too.
+                                            match presence with
+                                            | Some s when s.Nats.IsSome ->
+                                                try do! s.Nats.Value.PublishEvent(evt)
+                                                with ex ->
+                                                    logger.LogWarning(
+                                                        ex, "ws[rx-publish] NATS publish failed")
+                                            | _ -> ()
+                                            return
+                                                sprintf
+                                                    "{\"ok\":true,\"event_id\":\"%O\",\"seq\":%d,\"durable\":%s,\"nats\":%s}"
+                                                    eid seq
+                                                    (if dbResult.IsSome then "true" else "false")
+                                                    (match presence with
+                                                     | Some s when s.Nats.IsSome -> "true"
+                                                     | _ -> "false")
+                                        }
+                                with ex ->
+                                    Task.FromResult(
+                                        sprintf "{\"ok\":false,\"error\":%s}"
+                                            (jsonString
+                                                (sprintf "%s: %s"
+                                                    (ex.GetType().Name) ex.Message)))
+                            let! replyText = reply
+                            let bytes = Encoding.UTF8.GetBytes(replyText: string)
+                            do! ws.SendAsync(
+                                    ArraySegment(bytes),
+                                    WebSocketMessageType.Text,
+                                    true, ct)
+                            RxStats.messageOut bytes.Length
+                with
+                | :? OperationCanceledException -> ()
+                | ex -> logger.LogWarning(ex, "ws[rx-publish] connection ended")
+            finally
+                RxStats.connectionClosed ()
+    }
+
+let handleRxNatsEcho (ctx: HttpContext) : Task =
+    task {
+        let factory = ctx.RequestServices.GetRequiredService<ILoggerFactory>()
+        let logger = factory.CreateLogger("WsRoutes:rx-nats-echo")
+        match presence () with
+        | None -> 
+            ctx.Response.StatusCode <- 503
+            do! ctx.Response.WriteAsync("presence subsystem not initialised\n")
+        | Some state ->
+            match state.Nats with
+            | None ->
+                ctx.Response.StatusCode <- 503
+                do! ctx.Response.WriteAsync("nats not configured (NATS_URL unset)\n")
+            | Some nats ->
+                if not ctx.WebSockets.IsWebSocketRequest then
+                    ctx.Response.StatusCode <- 400
+                    do! ctx.Response.WriteAsync("expected websocket upgrade\n")
+                else
+                    use! ws = ctx.WebSockets.AcceptWebSocketAsync()
+                    RxStats.connectionOpened ()
+                    let ct = ctx.RequestAborted
+                    let maxBytes =
+                        parseBoundedPositiveIntEnv
+                            "MAX_WS_TEXT_FRAME_BYTES"
+                            defaultMaxTextFrameBytes
+                            maxTextFrameBytesCeiling
+                    try
+                        try
+                            // First frame: `{"subject":"some.subject"}`
+                            let! firstFrame = receiveTextFrame "rx-nats-echo" logger ws ct maxBytes
+                            match firstFrame with
+                            | CloseFrame ->
+                                do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" ct
+                            | TextFrame raw ->
+                                RxStats.messageIn (Encoding.UTF8.GetByteCount(raw: string))
+                                let subjectName =
+                                    try
+                                        let root = JsonNode.Parse(raw)
+                                        match root.["subject"] with
+                                        | null -> NatsRx.echoSubjectPrefix + "default"
+                                        | v ->
+                                            let s = v.ToString()
+                                            if String.IsNullOrWhiteSpace(s) then
+                                                NatsRx.echoSubjectPrefix + "default"
+                                            else s
+                                    with _ ->
+                                        NatsRx.echoSubjectPrefix + "default"
+                                logger.LogInformation(
+                                    "ws[rx-nats-echo]: bound to NATS subject {Subject}",
+                                    subjectName)
+
+                                let outChan = Channel.CreateUnbounded<string>()
+                                let onNext (msg: NatsMsg<byte array>) =
+                                    let body =
+                                        match msg.Data with
+                                        | null -> ""
+                                        | b -> Encoding.UTF8.GetString(b)
+                                    let env =
+                                        sprintf
+                                            "{\"from\":\"nats\",\"subject\":%s,\"body\":%s}"
+                                            (jsonString msg.Subject)
+                                            (jsonString body)
+                                    outChan.Writer.TryWrite(env) |> ignore
+                                use _natsSub =
+                                    System.ObservableExtensions.Subscribe(
+                                        nats.SubscribeRaw(subjectName),
+                                        Action<NatsMsg<byte array>>(onNext))
+
+                                let ack =
+                                    sprintf "{\"ok\":true,\"subject\":%s}"
+                                        (jsonString subjectName)
+                                let ackBytes = Encoding.UTF8.GetBytes(ack: string)
+                                do! ws.SendAsync(
+                                        ArraySegment(ackBytes),
+                                        WebSocketMessageType.Text,
+                                        true, ct)
+                                RxStats.messageOut ackBytes.Length
+
+                                let sender =
+                                    task {
+                                        let mutable run = true
+                                        while run && not ct.IsCancellationRequested do
+                                            let! more = outChan.Reader.WaitToReadAsync(ct).AsTask()
+                                            if not more then run <- false
+                                            else
+                                                let mutable frame : string = null
+                                                while outChan.Reader.TryRead(&frame) do
+                                                    let bytes = Encoding.UTF8.GetBytes(frame: string)
+                                                    do! ws.SendAsync(
+                                                            ArraySegment(bytes),
+                                                            WebSocketMessageType.Text,
+                                                            true, ct)
+                                                    RxStats.messageOut bytes.Length
+                                    } :> Task
+
+                                try
+                                    let mutable run = true
+                                    while run do
+                                        let! frame =
+                                            receiveTextFrame "rx-nats-echo" logger ws ct maxBytes
+                                        match frame with
+                                        | CloseFrame ->
+                                            do! closeIfOpen ws WebSocketCloseStatus.NormalClosure "bye" ct
+                                            run <- false
+                                        | TextFrame body ->
+                                            RxStats.messageIn (Encoding.UTF8.GetByteCount(body: string))
+                                            // Bounce every inbound WS frame to
+                                            // NATS — the round trip is then
+                                            // visible to *this* same connection
+                                            // (because we're subscribed to the
+                                            // same subject) and to anything
+                                            // else subscribed.
+                                            try
+                                                do! nats.PublishRaw subjectName body
+                                            with ex ->
+                                                logger.LogWarning(
+                                                    ex,
+                                                    "ws[rx-nats-echo] NATS publish failed")
+                                finally
+                                    outChan.Writer.TryComplete() |> ignore
+                                try do! sender
+                                with _ -> ()
+                        with
+                        | :? OperationCanceledException -> ()
+                        | ex -> logger.LogWarning(ex, "ws[rx-nats-echo] connection ended")
+                    finally
+                        RxStats.connectionClosed ()
+    }
+
+let handleRxStatsSources (ctx: HttpContext) : Task =
+    let body =
+        match presence () with
+        | None ->
+            "{\"ok\":false,\"error\":\"presence subsystem not initialised\"}"
+        | Some state ->
+            let pgNotifyDelivered =
+                match state.PgListen with
+                | Some h -> h.DeliveredCount() | None -> 0L
+            let pgWalDelivered =
+                match state.PgWal with
+                | Some h -> h.DeliveredCount() | None -> 0L
+            let pgWalSlot =
+                match state.PgWal with
+                | Some h -> sprintf "%s" h.SlotName | None -> ""
+            let pgOutboxDelivered =
+                match state.PgOutbox with
+                | Some h -> h.DeliveredCount() | None -> 0L
+            let pgOutboxLastSeq =
+                match state.PgOutbox with
+                | Some h -> h.LastSeq() | None -> 0L
+            let natsDelivered =
+                match state.Nats with
+                | Some h -> h.DeliveredCount() | None -> 0L
+            let natsPublished =
+                match state.Nats with
+                | Some h -> h.PublishedCount() | None -> 0L
+            System.String.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "{{\"pg_notify\":{{\"available\":{0},\"delivered\":{1}}},\
+                  \"pg_wal\":{{\"available\":{2},\"delivered\":{3},\"slot\":{4}}},\
+                  \"pg_outbox\":{{\"available\":{5},\"delivered\":{6},\"last_seq\":{7}}},\
+                  \"nats\":{{\"available\":{8},\"delivered\":{9},\"published\":{10}}},\
+                  \"fan_in\":{{\"dedup_hits\":{11},\"dedup_misses\":{12},\"cache_size\":{13}}}}}",
+                (if state.PgListen.IsSome then "true" else "false"),
+                pgNotifyDelivered,
+                (if state.PgWal.IsSome then "true" else "false"),
+                pgWalDelivered,
+                jsonString pgWalSlot,
+                (if state.PgOutbox.IsSome then "true" else "false"),
+                pgOutboxDelivered,
+                pgOutboxLastSeq,
+                (if state.Nats.IsSome then "true" else "false"),
+                natsDelivered,
+                natsPublished,
+                state.FanIn.DedupHitCount(),
+                state.FanIn.DedupMissCount(),
+                state.FanIn.DedupCurrentSize())
+    ctx.Response.ContentType <- "application/json"
+    ctx.Response.WriteAsync(body)
+
 let private promMetric (name: string) (metricType: string) (help: string) (value: string) : string =
     sprintf "# HELP %s %s\n# TYPE %s %s\n%s %s\n" name help name metricType name value
 
@@ -593,6 +1143,16 @@ let handleIndex (ctx: HttpContext) : Task =
       <tr><td>GET</td><td><a href="/v1/rx-stats"><code>/v1/rx-stats</code></a></td><td>current open-connections / msgs / bytes (JSON, one-shot)</td></tr>
       <tr><td>GET</td><td><a href="/v1/rx-stats/history"><code>/v1/rx-stats/history</code></a></td><td>last ~120 snapshots, replayed off the <code>ReplaySubject</code> buffer</td></tr>
       <tr><td>SSE</td><td><a href="/sse/rx-stats"><code>/sse/rx-stats</code></a></td><td>1 Hz Server-Sent Events feed of the live snapshot</td></tr>
+      <tr><td>GET</td><td><a href="/v1/rx-stats/sources"><code>/v1/rx-stats/sources</code></a></td><td>per-source counters (pg-notify / pg-wal / pg-outbox / nats / fan-in dedup)</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="grp">Presence pipeline (Rx fan-in: NATS &#8741; PG LISTEN/NOTIFY &#8741; PG WAL &#8741; PG outbox)</h2>
+  <table>
+    <tbody>
+      <tr><td>WS</td><td><code>/ws/rx-presence</code></td><td>subscribe to the merged, deduped, per-conv throttled hot observable. First frame: <code>{"conv_ids":[…]}</code> (empty = all).</td></tr>
+      <tr><td>WS</td><td><code>/ws/rx-publish</code></td><td>write events into <code>fsws_events</code>. Frame shape: <code>{"conv_id":"…","kind":"message","payload":{…}}</code>. Trigger fires NOTIFY, WAL captures the row, NATS broadcasts — all three paths come back through the fan-in and are dedup'd on <code>event_id</code>.</td></tr>
+      <tr><td>WS</td><td><code>/ws/rx-nats-echo</code></td><td>raw NATS round-trip demo. First frame: <code>{"subject":"…"}</code>. Subsequent inbound frames are <code>Publish</code>'d to that subject; any message on it is delivered back.</td></tr>
     </tbody>
   </table>
 

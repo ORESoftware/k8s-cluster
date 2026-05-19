@@ -7,6 +7,8 @@ metadata:
     app: dd-gleam-mcp-server
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: dd-gleam-mcp-server
@@ -36,13 +38,15 @@ spec:
           args:
             - |
               set -eu
-              if ! apk add --no-cache postgresql-client >/tmp/dd-gleam-mcp-apk.log 2>&1; then
-                cat /tmp/dd-gleam-mcp-apk.log
-                exit 1
-              fi
-              cd /opt/dd-next-1/remote/gleam-mcp-server
-              gleam clean || true
-              gleam deps download
+              SRC_ROOT=/opt/dd-next-1
+              WORK_ROOT=/tmp/dd-gleam-mcp-server/dd-next-1
+              rm -rf /tmp/dd-gleam-mcp-server
+              mkdir -p \
+                "$WORK_ROOT/remote/gleam-mcp-server" \
+                "$WORK_ROOT/remote/libs/pg-defs/generated"
+              cp -R "$SRC_ROOT/remote/gleam-mcp-server"/. "$WORK_ROOT/remote/gleam-mcp-server"/
+              cp -R "$SRC_ROOT/remote/libs/pg-defs/generated/gleam" "$WORK_ROOT/remote/libs/pg-defs/generated/gleam"
+              cd "$WORK_ROOT/remote/gleam-mcp-server"
               exec gleam run
           env:
             - name: HOST
@@ -113,7 +117,7 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: "1"
+              cpu: 250m
               memory: 1Gi
             limits:
               cpu: "4"

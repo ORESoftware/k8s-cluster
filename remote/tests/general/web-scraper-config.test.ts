@@ -20,6 +20,21 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+function regexEscape(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertDeploymentRow(source: string, deployment: string, service: string): void {
+  assert.match(
+    source,
+    new RegExp(
+      `DeploymentRow \\{ deployments: &\\[[^\\]]*"${regexEscape(
+        deployment,
+      )}"[^\\]]*\\], service: &\\[[^\\]]*"${regexEscape(service)}"[^\\]]*\\]`,
+    ),
+  );
+}
+
 test('web scraper service supports browser, DOM, fetch, and Browserless strategies', async () => {
   const packageJson = await readRepoFile('remote/web-scraper-service/package.json');
   const source = await readRepoFile('remote/web-scraper-service/src/server.ts');
@@ -181,7 +196,7 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
     /job_name:\s*dd-web-scraper[\s\S]*dd-web-scraper\.default\.svc\.cluster\.local:8097/,
   );
   assert.match(home, /dd-web-scraper Fastify deployment/);
-  assert.match(home, /<code>dd-web-scraper:8097<\/code>/);
+  assertDeploymentRow(home, 'dd-web-scraper', 'dd-web-scraper:8097');
   assert.match(runtimeReadme, /`dd-web-scraper`/);
   assert.match(runtimeReadme, /worker_threads/);
   assert.match(runtimeReadme, /SCRAPER_PARSER_WORKERS=2/);

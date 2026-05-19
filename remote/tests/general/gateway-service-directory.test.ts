@@ -20,28 +20,98 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+function regexEscape(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertHomeCode(source: string, value: string): void {
+  assert.match(source, new RegExp(`code \\{ "${regexEscape(value)}" \\}`));
+}
+
+function assertDeploymentRow(source: string, deployment: string, service?: string): void {
+  const deploymentPattern =
+    `DeploymentRow \\{ deployments: &\\[[^\\]]*"${regexEscape(deployment)}"[^\\]]*\\]`;
+  assert.match(source, new RegExp(deploymentPattern));
+
+  if (service) {
+    const rowPattern =
+      `${deploymentPattern}, service: &\\[[^\\]]*"${regexEscape(service)}"[^\\]]*\\]`;
+    assert.match(source, new RegExp(rowPattern));
+  }
+}
+
+function assertPathEntry(source: string, label: string, href?: string): void {
+  const hrefPattern = href === undefined ? '[^}]+' : `Some\\("${regexEscape(href)}"\\)`;
+  assert.match(
+    source,
+    new RegExp(`PathEntry \\{ label: "${regexEscape(label)}", href: ${hrefPattern} \\}`),
+  );
+}
+
 test('rust homepage lists public task paths and protected ops paths', async () => {
   const home = await readRepoFile('remote/web-home-rs/src/main.rs');
 
   assert.match(home, /dd remote service directory/);
-  assert.match(
-    home,
-    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, <code>\/presence-test<\/code>, <code>\/wss-test<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, <code>\/scrape<\/code>, <code>\/trading<\/code>, <code>\/container-pools<\/code>, <code>\/bastion<\/code>, and <code>\/builds<\/code>; ops paths stay behind internal gateway access\./,
-  );
-  assert.match(home, /<h2>Deployments<\/h2>/);
-  assert.match(home, /<code>dd-web-scraper<\/code>/);
-  assert.match(home, /<code>dd-web-scraper:8097<\/code>/);
-  assert.match(home, /SCRAPER_PARSER_WORKERS=2/);
-  assert.match(home, /<code>dd-build-server<\/code>/);
-  assert.match(home, /<code>dd-build-server:8100<\/code>/);
+  assert.match(home, /Public entrypoint for the EC2 Kubernetes runtime\. Open paths:/);
+  for (const path of [
+    '/',
+    '/home',
+    '/auth',
+    '/agents/tasks',
+    '/agents/threads',
+    '/api/agents/tasks',
+    '/presence-test',
+    '/wss-test',
+    '/webrtc/',
+    '/fsws/',
+    '/mdp/',
+    '/des/',
+  ]) {
+    assertHomeCode(home, path);
+  }
+  assert.match(home, /Server-auth paths:/);
+  for (const path of [
+    '/lambdas/functions',
+    '/lambdas/invoke/<function-id>',
+    '/api/lambdas/',
+    '/api/agent-worker/',
+    '/container-pools',
+    '/bastion/',
+    '/scrape',
+    '/trading/',
+    '/contracts/',
+    '/ml/',
+    '/builds',
+    '/gleam/',
+    '/mcp',
+    '/gcs/',
+  ]) {
+    assertHomeCode(home, path);
+  }
+  assert.match(home, /Internal-access ops:/);
+  for (const path of [
+    '/headlamp/',
+    '/telemetry/',
+    '/prometheus/',
+    '/nats/',
+    '/nats-metrics/',
+    '/reaper/',
+    '/cron/',
+  ]) {
+    assertHomeCode(home, path);
+  }
+  assert.match(home, /h2 \{ "Deployments" \}/);
+  assertDeploymentRow(home, 'dd-web-scraper', 'dd-web-scraper:8097');
+  assert.match(home, /scraper parser workers/);
+  assertDeploymentRow(home, 'dd-build-server', 'dd-build-server:8100');
   assert.match(home, /Rust CI\/CD server/);
-  assert.match(home, /<code>dd-vpn<\/code>/);
-  assert.match(home, /<code>dd-live-mutex<\/code>/);
-  assert.match(home, /<code>dd-bastion<\/code>/);
-  assert.match(home, /<code>dd-redis-cache<\/code>/);
-  assert.match(home, /<code>dd-lock-loadtest-trigger<\/code>/);
-  assert.match(home, /<code>dd-container-pool<\/code>/);
-  assert.match(home, /<h2>Live containers<\/h2>/);
+  assertDeploymentRow(home, 'dd-vpn');
+  assertDeploymentRow(home, 'dd-live-mutex');
+  assertDeploymentRow(home, 'dd-bastion');
+  assertDeploymentRow(home, 'dd-redis-cache');
+  assertDeploymentRow(home, 'dd-lock-loadtest-trigger');
+  assertDeploymentRow(home, 'dd-container-pool');
+  assert.match(home, /h2 \{ "Live containers" \}/);
   assert.match(home, /\/bastion\/runtime\/deployments/);
   assert.match(home, /home-terminal-frame/);
   assert.match(home, /Open bastion exec terminal/);
@@ -49,49 +119,52 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /url\.pathname !== "\/bastion\/terminal"/);
   assert.match(home, /ignored unsafe bastion terminal URL/);
   assert.match(home, /const safeTerminalUrl = safeBastionTerminalUrl\(container\.terminalUrl\)/);
-  assert.match(home, /href="\/builds"/);
-  assert.match(home, /\/builds\/&lt;jobId&gt;\/logs/);
-  assert.match(home, /<code>dd-gleam-lambda-runner<\/code>/);
-  assert.match(home, /<code>dd-gleam-lambda-runner:8083<\/code>/);
+  assertPathEntry(home, 'POST /builds', '/builds');
+  assertPathEntry(home, '/builds/<jobId>/logs', '/builds/example-job/logs');
+  assertDeploymentRow(home, 'dd-gleam-lambda-runner', 'dd-gleam-lambda-runner:8083');
   assert.match(home, /dd-gleam-lambda-runner-secrets/);
   assert.doesNotMatch(home, /Auth: [^<"]+/);
-  assert.doesNotMatch(home, /Auth header/);
+  assert.match(home, /legacy Auth header/);
   assert.match(home, /Node\.js Coding Agent Task Manager/);
   assert.doesNotMatch(home, /Node control-plane API/);
-  assert.match(
-    home,
-    /href="\/tasks"><code>\/tasks<\/code><\/a><a href="\/status"><code>\/status<\/code><\/a><a href="\/stream\/example-task-id"><code>\/stream\/&lt;uuid&gt;<\/code><\/a>/,
-  );
-  assert.match(
-    home,
-    /href="\/"><code>\/<\/code><\/a><a href="\/home"><code>\/home<\/code><\/a><a href="\/agents\/tasks"><code>\/agents\/tasks<\/code><\/a><a href="\/agents\/threads"><code>\/agents\/threads<\/code><\/a>/,
-  );
-  assert.match(home, /href="\/"><code>\/<\/code><\/a><a href="\/home"><code>\/home<\/code><\/a>/);
+  assertPathEntry(home, '/tasks', '/tasks');
+  assertPathEntry(home, '/status', '/status');
+  assertPathEntry(home, '/stream/<uuid>', '/stream/example-task-id');
+  assertPathEntry(home, '/', '/');
+  assertPathEntry(home, '/home', '/home');
+  assertPathEntry(home, '/agents/tasks', '/agents/tasks');
+  assertPathEntry(home, '/agents/threads', '/agents/threads');
   assert.match(home, /rejects requests for the wrong pinned thread/);
   assert.match(home, /Kubernetes Ingress selects the UUID-bound worker Service/);
   assert.match(home, /Kubernetes per-thread Ingress/);
-  assert.match(home, /\/dd-thread\/&lt;short&gt;/);
-  assert.match(home, /href="\/dd-thread\/example"/);
-  assert.match(home, /\/dd-thread\/&lt;short&gt;\/tasks/);
-  assert.match(home, /href="\/dd-thread\/example\/tasks"/);
+  assertPathEntry(home, '/dd-thread/<short>', '/dd-thread/example');
+  assertPathEntry(home, '/dd-thread/<short>/tasks', '/dd-thread/example/tasks');
   assert.match(home, /Ingress selects the UUID-bound worker Service/);
   assert.doesNotMatch(home, /routes by thread UUID\/taskId/);
-  assert.match(home, /href="\/agents\/tasks"/);
-  assert.match(home, /href="\/agents\/threads"/);
+  assertPathEntry(home, '/agents/tasks', '/agents/tasks');
+  assertPathEntry(home, '/agents/threads', '/agents/threads');
   assert.match(home, /Rust web homepage deployment/);
   assert.match(home, /Service directory plus cluster-served task\/thread\/PR UI/);
   assert.match(home, /stored events/);
-  assert.match(home, /href="\/api\/agents\/tasks"/);
-  assert.match(home, /href="\/api\/agents\/threads\/example-thread-id\/context"/);
-  assert.match(home, /href="\/lambdas\/functions"/);
-  assert.match(home, /href="\/api\/lambdas\/functions"/);
-  assert.match(home, /href="\/lambdas\/invoke\/00000000-0000-0000-0000-000000000000"/);
+  assertPathEntry(home, '/api/agents/tasks', '/api/agents/tasks');
+  assertPathEntry(
+    home,
+    '/api/agents/threads/<uuid>/context',
+    '/api/agents/threads/example-thread-id/context',
+  );
+  assertPathEntry(home, '/lambdas/functions', '/lambdas/functions');
+  assertPathEntry(home, '/api/lambdas/functions', '/api/lambdas/functions');
+  assertPathEntry(
+    home,
+    'POST /lambdas/invoke/<function-id>',
+    '/lambdas/invoke/00000000-0000-0000-0000-000000000000',
+  );
   assert.match(home, /dd-gleam-lambda-runner deployment \+ Rust REST API/);
   assert.match(home, /Gleam child-process runner/);
-  assert.match(home, /href="\/auth\?return=\/home"/);
+  assertPathEntry(home, '/auth', '/auth?return=/home');
   assert.match(home, /Rust PIN auth service/);
   assert.match(home, /dd_auth/);
-  assert.match(home, /href="\/bastion\/runtime\/deployments"/);
+  assertPathEntry(home, '/bastion/runtime/deployments', '/bastion/runtime/deployments');
   assert.match(home, /Rust bastion\/jumphost access broker/);
   assert.match(home, /allowlisted browser exec terminals/);
   assert.match(home, /option value="echo" \{ "echo" \}/);
@@ -99,44 +172,48 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /Rust NATS shadow preparer \(dd-remote-queue-consumer\)/);
   assert.match(home, /Rust NATS Queue Consumer/);
   assert.match(home, /dd\.remote\.thread\.\*\.tasks/);
-  assert.match(home, /href="\/api\/agents\/threads\/example-thread-id\/prepare"/);
-  assert.match(home, /dd-remote-thread-preparer/);
+  assertPathEntry(
+    home,
+    'POST /api/agents/threads/<uuid>/prepare',
+    '/api/agents/threads/example-thread-id/prepare',
+  );
+  assertDeploymentRow(home, 'dd-remote-queue-consumer');
   assert.match(home, /It does not execute prompts/);
-  assert.match(home, /href="\/gleam\/home"/);
-  assert.match(home, /href="\/gleam\/healthz"/);
-  assert.match(home, /href="\/gleam\/metrics"/);
-  assert.match(home, /href="\/wss-test\?preset=gleam"/);
-  assert.match(home, /href="\/wss-test\?preset=webrtc"/);
-  assert.match(home, /href="\/wss-test\?preset=gcs"/);
-  assert.match(home, /href="\/wss-test\?preset=fsrx"/);
+  assertPathEntry(home, '/gleam/home', '/gleam/home');
+  assertPathEntry(home, '/gleam/healthz', '/gleam/healthz');
+  assertPathEntry(home, '/gleam/metrics', '/gleam/metrics');
+  assertPathEntry(home, '?preset=gleam', '/wss-test?preset=gleam');
+  assertPathEntry(home, '?preset=webrtc', '/wss-test?preset=webrtc');
+  assertPathEntry(home, '?preset=gcs', '/wss-test?preset=gcs');
+  assertPathEntry(home, '?preset=fsrx', '/wss-test?preset=fsrx');
   assert.match(home, /\/fsws\/ws\/rx-burst/);
   assert.match(home, /id="send-burst"/);
   assert.match(home, /id="start-interval"/);
   assert.match(home, /id="stop-interval"/);
-  assert.match(home, /wss:\/\/54\.91\.17\.58\/gleam\/ws/);
+  assert.match(home, /wss:\/\/<host>\/gleam\/ws/);
   assert.doesNotMatch(home, /ws:\/\/54\.91\.17\.58\/gleam\/ws/);
-  assert.match(home, /href="\/mcp"/);
-  assert.match(home, /href="\/mcp\/home"/);
-  assert.match(home, /href="\/mcp\/healthz"/);
-  assert.match(home, /href="\/mcp\/metrics"/);
+  assertPathEntry(home, '/mcp', '/mcp');
+  assertPathEntry(home, '/mcp/home', '/mcp/home');
+  assertPathEntry(home, '/mcp/healthz', '/mcp/healthz');
+  assertPathEntry(home, '/mcp/metrics', '/mcp/metrics');
   assert.match(home, /Gleam MCP service/);
-  assert.match(home, /href="\/webrtc\/"/);
-  assert.match(home, /href="\/webrtc\/healthz"/);
-  assert.match(home, /href="\/webrtc\/metrics"/);
-  assert.match(home, /href="\/wss-test\?preset=webrtc"/);
+  assertPathEntry(home, '/webrtc/', '/webrtc/');
+  assertPathEntry(home, '/webrtc/healthz', '/webrtc/healthz');
+  assertPathEntry(home, '/webrtc/metrics', '/webrtc/metrics');
+  assertPathEntry(home, '/webrtc/signal test', '/wss-test?preset=webrtc');
   assert.match(home, /\/webrtc\/signal/);
   assert.match(home, /Rust WebRTC signaling service/);
   assert.match(home, /Media and data channels stay peer-to-peer/);
-  assert.match(home, /href="\/scrape"/);
-  assert.match(home, /href="\/scrape\/healthz"/);
+  assertPathEntry(home, 'POST /scrape', '/scrape');
+  assertPathEntry(home, '/scrape/healthz', '/scrape/healthz');
   assert.match(home, /Playwright, Puppeteer, and Browserless scraping/);
   assert.doesNotMatch(home, /href="\/scraper/);
-  assert.match(home, /href="\/telemetry\/"/);
-  assert.match(home, /href="\/prometheus\/"/);
-  assert.match(home, /href="\/nats\/"/);
-  assert.match(home, /href="\/nats-metrics\/metrics"/);
-  assert.match(home, /href="\/reaper\/"/);
-  assert.match(home, /href="\/cron\/"/);
+  assertPathEntry(home, '/telemetry/', '/telemetry/');
+  assertPathEntry(home, '/prometheus/', '/prometheus/');
+  assertPathEntry(home, '/nats/', '/nats/');
+  assertPathEntry(home, '/nats-metrics/metrics', '/nats-metrics/metrics');
+  assertPathEntry(home, '/reaper/', '/reaper/');
+  assertPathEntry(home, '/cron/', '/cron/');
   assert.match(
     home,
     /Today: the public gateway keeps ops paths behind temporary internal access while bootstrap work is still in flight\./,
@@ -789,7 +866,7 @@ test('rust agent threads page renders stored response events and feedback contro
   );
 
   assert.match(server, /async fn agents_threads_page\(\) -> impl IntoResponse/);
-  assert.match(server, /use maud::\{html, Markup, DOCTYPE\}/);
+  assert.match(server, /use maud::\{html, Markup, PreEscaped, DOCTYPE\}/);
   assert.match(server, /const AGENTS_THREADS_CSS: &str/);
   assert.match(server, /const AGENTS_THREADS_JS: &str/);
   assert.doesNotMatch(server, /const AGENTS_THREADS_HTML: &str/);
@@ -1002,7 +1079,7 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,
-    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
+    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
   );
   assert.match(restServer, /repo: String,/);
   assert.match(restServer, /base_branch: Option<String>,/);
@@ -1092,7 +1169,7 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
   assert.match(server, /openWorkerWebSocket\(threadId, taskId\)/);
   assert.match(
     server,
-    /appendStreamLine\(`dispatch accepted \$\{textBody\.slice\(0, 500\)\}`\);[\s\S]*openTaskStream\(threadId, taskId\);[\s\S]*openWorkerWebSocket\(threadId, taskId\);/,
+    /appendStreamLine\(`dispatch accepted \$\{adminPreview\("dispatch accepted response body", textBody\)\}`\);[\s\S]*openTaskStream\(threadId, taskId\);[\s\S]*openWorkerWebSocket\(threadId, taskId\);/,
   );
   assert.match(server, /setThreadRuntimeState\(threadId, "sleeping"/);
   assert.match(server, /button\.ok/);
@@ -1113,11 +1190,11 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
   );
   assert.match(
     server,
-    /appendStreamLine\(`\$\{config\.label\} failed \$\{response\.status\}: \$\{textBody\.slice\(0, 500\)\}`\);/,
+    /appendStreamLine\(`\$\{config\.label\} failed \$\{response\.status\}: \$\{adminPreview\(`\$\{config\.label\} response body`, textBody\)\}`\);/,
   );
   assert.match(
     server,
-    /appendStreamLine\(`\$\{config\.label\} accepted \$\{textBody\.slice\(0, 500\)\}`\);/,
+    /appendStreamLine\(`\$\{config\.label\} accepted \$\{adminPreview\(`\$\{config\.label\} response body`, textBody\)\}`\);/,
   );
   assert.match(
     server,
