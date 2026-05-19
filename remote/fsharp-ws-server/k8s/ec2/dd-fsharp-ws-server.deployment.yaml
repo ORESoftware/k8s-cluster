@@ -53,21 +53,23 @@ spec:
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/fsharp-ws-server
+              SRC=/opt/dd-next-1/remote/fsharp-ws-server
               # Publish into a node-local writable workdir so concurrent pods
               # (and re-deploys) don't trip over each other writing into the
               # read-only repo mount.
+              WORK=/tmp/dd-fsharp-ws-server-src
               OUT=/tmp/dd-fsharp-ws-server
-              OBJ=/tmp/dd-fsharp-ws-server-obj
               if [ ! -f "$OUT/dd-fsharp-ws-server.dll" ]; then
                 echo "Publishing dd-fsharp-ws-server with dotnet..."
-                mkdir -p "$OUT" "$OBJ"
+                rm -rf "$WORK" "$OUT"
+                mkdir -p "$WORK" "$OUT"
+                cp -R "$SRC"/. "$WORK"/
+                rm -rf "$WORK/bin" "$WORK/obj"
+                cd "$WORK"
                 dotnet publish DdFsharpWsServer.fsproj \
                     -c Release \
                     -o "$OUT" \
-                    /p:UseAppHost=false \
-                    /p:BaseIntermediateOutputPath="$OBJ/" \
-                    /p:MSBuildProjectExtensionsPath="$OBJ/"
+                    /p:UseAppHost=false
               fi
               exec dotnet "$OUT/dd-fsharp-ws-server.dll"
           env:

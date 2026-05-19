@@ -123,7 +123,7 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.match(ec2Deployment, /startupProbe:[\s\S]*failureThreshold:\s*60/);
   assert.match(ec2Deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(ec2Deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
-  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*"1"[\s\S]*memory:\s*1Gi/);
+  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*1Gi/);
   assert.match(ec2Deployment, /limits:[\s\S]*cpu:\s*"4"[\s\S]*memory:\s*8Gi/);
   assert.match(ec2Deployment, /mountPath:\s*\/opt\/dd-next-1/);
   assert.match(ec2Deployment, /dd\.dev\/telemetry-revision/);
