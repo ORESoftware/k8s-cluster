@@ -144,6 +144,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /providerCanAccessWorkspace\(provider\)/);
   assert.match(server, /formatAgentFailureSummary\(/);
   assert.match(server, /await runAgentAttempt\(attempt\)/);
+  assert.match(server, /function shouldForwardAgentRunnerEvent\(event: AgentRunnerEvent\): boolean/);
+  assert.match(server, /agentEventHasProviderError\(event\.raw\)/);
+  assert.match(server, /if \(shouldForwardAgentRunnerEvent\(ev\)\) \{[\s\S]*emit\(state, ev\);/);
   assert.doesNotMatch(server, /agent-fallback:echo/);
   assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
   assert.match(server, /\['commit', '--no-verify', '-m'/);

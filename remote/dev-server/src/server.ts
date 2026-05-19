@@ -839,6 +839,96 @@ function sanitizeEvent(event: WrappedEvent): WrappedEvent {
   return event;
 }
 
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function nestedRecord(value: unknown, key: string): Record<string, unknown> | undefined {
+  return recordValue(recordValue(value)?.[key]);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function agentRawType(raw: unknown): string {
+  const obj = recordValue(raw);
+  const data = nestedRecord(raw, 'data');
+  const event = nestedRecord(raw, 'event');
+  const dataEvent = recordValue(data?.event);
+  const providerData = nestedRecord(raw, 'providerData');
+  const message = nestedRecord(raw, 'message');
+  return [
+    obj?.type,
+    data?.type,
+    event?.type,
+    dataEvent?.type,
+    providerData?.type,
+    message?.type,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join(' ');
+}
+
+function agentEventVisibleText(raw: unknown): string {
+  const obj = recordValue(raw);
+  if (!obj) return '';
+  const directText = stringValue(obj.text).trim();
+  if (directText) return directText;
+  const data = nestedRecord(raw, 'data');
+  const event = recordValue(data?.event) ?? nestedRecord(raw, 'event') ?? data ?? {};
+  const rawType = agentRawType(raw);
+  if (/output_text\.delta|text_delta|message_delta|content_block_delta/i.test(rawType)) {
+    const eventRecord = recordValue(event);
+    const content = Array.isArray(eventRecord?.content) ? eventRecord.content[0] : undefined;
+    return stringValue(eventRecord?.delta || eventRecord?.text || recordValue(content)?.text).trim();
+  }
+  if (/message|assistant/i.test(rawType)) {
+    const eventRecord = recordValue(event);
+    const message = recordValue(eventRecord?.message) ?? nestedRecord(raw, 'message');
+    const content = message?.content ?? obj.content;
+    if (Array.isArray(content)) {
+      return content
+        .map((item) => stringValue(recordValue(item)?.text))
+        .filter(Boolean)
+        .join('');
+    }
+  }
+  return '';
+}
+
+function agentEventHasProviderError(raw: unknown): boolean {
+  const obj = recordValue(raw);
+  const message = nestedRecord(raw, 'message');
+  return Boolean(
+    obj?.error ||
+      obj?.is_error === true ||
+      message?.error ||
+      /billing_error|api_error|permission_denied|quota|rate limit/i.test(
+        [obj?.error, obj?.result, obj?.terminal_reason].filter(Boolean).join(' '),
+      ),
+  );
+}
+
+function shouldForwardAgentRunnerEvent(event: AgentRunnerEvent): boolean {
+  if (event.kind !== 'claude') return true;
+  const rawType = agentRawType(event.raw);
+  const visibleText = agentEventVisibleText(event.raw);
+  if (agentEventHasProviderError(event.raw)) return false;
+  if (
+    /raw_model_stream_event|response\.created|response\.in_progress|response_started|response\.completed|system|tool/i.test(
+      rawType,
+    ) &&
+    !visibleText
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function emit(state: TaskState, event: WrappedEvent): void {
   event = sanitizeEvent(event);
   // Once a task has emitted `done`, it's terminal — late events from a
@@ -1510,7 +1600,11 @@ async function runTask(state: TaskState): Promise<void> {
           env: attempt.env,
           signal: state.abortController.signal,
           timeoutMs: config.agentRunTimeoutMs,
-          emit: (ev: AgentRunnerEvent) => emit(state, ev),
+          emit: (ev: AgentRunnerEvent) => {
+            if (shouldForwardAgentRunnerEvent(ev)) {
+              emit(state, ev);
+            }
+          },
           setChild: (child: ChildProcess) => {
             state.child = child;
           },

@@ -2427,6 +2427,22 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return /raw_model_stream_event|response\.created|response\.in_progress|response_started|response\.completed|system|tool/i.test(rawType);
       }
 
+      function isProviderErrorAgentEvent(row) {
+        if (eventKind(row) !== "claude") return false;
+        const raw = rawObject(row);
+        if (!raw || typeof raw !== "object") return false;
+        const message = raw.message && typeof raw.message === "object" ? raw.message : {};
+        const errorBits = [raw.error, raw.result, raw.terminal_reason, message.error]
+          .filter(Boolean)
+          .join(" ");
+        return Boolean(
+          raw.error ||
+          raw.is_error === true ||
+          message.error ||
+          /billing_error|api_error|permission_denied|quota|rate limit/i.test(errorBits)
+        );
+      }
+
       function shouldHideEventRow(row, text) {
         const kind = eventKind(row);
         const trimmed = text.trim();
@@ -2439,6 +2455,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (kind !== "claude") return false;
         if (!trimmed) return true;
         if (/^model stream\b/i.test(trimmed)) return true;
+        if (isProviderErrorAgentEvent(row)) return true;
         return isInternalAgentRawEvent(row) && !visibleAgentRawText(row);
       }
 
