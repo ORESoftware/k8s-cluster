@@ -2295,12 +2295,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function eventText(row, options = {}) {
         const payload = eventPayload(row);
         if (payload.kind === "status") return [payload.status, payload.message].filter(Boolean).join("\n") || "status";
-        if (payload.kind === "stderr") return payload.text || "stderr";
-        if (payload.kind === "error") return payload.message || "agent error";
+        if (payload.kind === "stderr") return adminPreview("agent stderr", payload.text || "stderr", 420);
+        if (payload.kind === "error") return adminPreview("agent error", payload.message || "agent error", 520);
         if (payload.kind === "done") return payload.errorMessage || payload.exitReason || "done";
         if (payload.kind === "pr_open") return [payload.prUrl, payload.draft ? "draft" : ""].filter(Boolean).join("\n") || "PR opened";
         if (payload.kind === "feedback") return `feedback: ${payload.vote || "unknown"}`;
         const raw = payload.raw || payload;
+        const agentText = visibleAgentRawText(row);
+        if (agentText) return options.preserveWhitespace ? agentText : agentText.trim();
+        if (payload.kind === "claude" && isInternalAgentRawEvent(row)) return "";
         const text = collectText(raw).filter((value) => value.trim());
         if (text.length) {
           const values = options.preserveWhitespace ? text : text.map((value) => value.trim());
@@ -2381,9 +2384,13 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${kind}`;
       }
 
-      function agentRawType(row) {
+      function rawObject(row) {
         const payload = eventPayload(row);
-        const raw = payload.raw || payload;
+        return payload.raw || payload;
+      }
+
+      function agentRawType(row) {
+        const raw = rawObject(row);
         if (!raw || typeof raw !== "object") return "";
         return [
           raw.type,
@@ -2395,11 +2402,51 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         ].filter(Boolean).join(" ");
       }
 
+      function visibleAgentRawText(row) {
+        if (eventKind(row) !== "claude") return "";
+        const raw = rawObject(row);
+        if (!raw || typeof raw !== "object") return "";
+        if (typeof raw.text === "string" && raw.text.trim()) return raw.text;
+        const event = raw.data?.event || raw.event || raw.data || {};
+        const rawType = agentRawType(row);
+        if (/output_text\.delta|text_delta|message_delta|content_block_delta/i.test(rawType)) {
+          return String(event.delta || event.text || event.content?.[0]?.text || "").trim();
+        }
+        if (/message|assistant/i.test(rawType)) {
+          const content = event.message?.content || raw.message?.content || raw.content;
+          if (Array.isArray(content)) {
+            return content.map((item) => item?.text || "").filter(Boolean).join("");
+          }
+        }
+        return "";
+      }
+
+      function isInternalAgentRawEvent(row) {
+        if (eventKind(row) !== "claude") return false;
+        const rawType = agentRawType(row);
+        return /raw_model_stream_event|response\.created|response\.in_progress|response_started|response\.completed|system|tool/i.test(rawType);
+      }
+
+      function shouldHideEventRow(row, text) {
+        const kind = eventKind(row);
+        const trimmed = text.trim();
+        const credentialMatch = trimmed.match(/\bkey\s+(\d+)\/(\d+)\b/i);
+        if ((kind === "status" || kind === "error") && credentialMatch) {
+          const index = Number(credentialMatch[1]);
+          const total = Number(credentialMatch[2]);
+          if (total > 12 && index !== 1 && index !== total && index % 10 !== 0) return true;
+        }
+        if (kind !== "claude") return false;
+        if (!trimmed) return true;
+        if (/^model stream\b/i.test(trimmed)) return true;
+        return isInternalAgentRawEvent(row) && !visibleAgentRawText(row);
+      }
+
       function shouldCoalesceAgentText(row, text) {
         if (eventKind(row) !== "claude" || !text.trim()) return false;
         if (/^model stream\b/i.test(text.trim())) return false;
         const payload = eventPayload(row);
-        const raw = payload.raw || payload;
+        const raw = rawObject(row);
         if (payload.error || raw?.error) return false;
         const rawType = agentRawType(row);
         if (/system|result|tool|error|response\.created|response\.in_progress|response_started/i.test(rawType)) {
@@ -2489,7 +2536,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         head.className = "event-head";
         const left = document.createElement("span");
         left.className = kind === "error" ? "pill bad" : kind === "done" || kind === "claude" ? "pill" : "pill warn";
-        left.textContent = `${kind} · ${seqLabel || `seq ${seq}`}`;
+        const displayKind = kind === "claude" ? "agent" : kind;
+        left.textContent = `${displayKind} · ${seqLabel || `seq ${seq}`}`;
         const right = document.createElement("span");
         right.className = "muted";
         right.textContent = fmt(row.createdAt);
@@ -2524,6 +2572,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const key = eventRowKey(row, kind, seq);
         if (state.renderedEvents.has(key)) return;
         const text = eventText(row, { preserveWhitespace: kind === "claude" });
+        if (shouldHideEventRow(row, text)) {
+          state.renderedEvents.add(key);
+          return;
+        }
         if (shouldCoalesceAgentText(row, text)) {
           queueAgentTextRow(row, key, seq, text);
           return;

@@ -137,9 +137,12 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(entrypoint, /pnpm install --prefer-offline/);
   assert.match(entrypoint, /find "\$REPO_DIR\/\.git" -maxdepth 1 -type f -name index\.lock -delete/);
   assert.match(server, /const providerOrder = \[\.\.\.config\.agentProviderRotation, state\.provider\]\.filter/);
-  assert.match(server, /const attempts: AgentEnvCandidate\[\] = \[\]/);
+  assert.match(server, /const attemptGroups: \{ provider: AgentProvider; candidates: AgentEnvCandidate\[\] \}\[\] = \[\]/);
   assert.match(server, /buildAgentEnvCandidates\(provider\)/);
-  assert.match(server, /status: `agent-fallback:\$\{attempt\.provider\}`/);
+  assert.match(server, /status: `agent-fallback:\$\{group\.provider\}`/);
+  assert.match(server, /promptLikelyRequiresWorkspaceAccess\(state\.prompt\)/);
+  assert.match(server, /providerCanAccessWorkspace\(provider\)/);
+  assert.match(server, /formatAgentFailureSummary\(/);
   assert.match(server, /await runAgentAttempt\(attempt\)/);
   assert.doesNotMatch(server, /agent-fallback:echo/);
   assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);

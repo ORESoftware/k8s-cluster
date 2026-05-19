@@ -448,6 +448,10 @@ function providerCanEditWorkspace(provider: AgentProvider): boolean {
   return provider !== 'gemini-sdk';
 }
 
+function providerCanAccessWorkspace(provider: AgentProvider): boolean {
+  return providerCanEditWorkspace(provider);
+}
+
 function stripNegatedWorkspaceChangePhrases(prompt: string): string {
   return prompt
     .replace(
@@ -469,6 +473,25 @@ function promptLikelyRequiresWorkspaceChange(prompt: string): boolean {
   return /\b(add|change|create|delete|edit|fix|implement|modify|move|patch|refactor|remove|rename|replace|update|write)\b/i.test(
     editablePrompt,
   );
+}
+
+function promptLikelyRequiresWorkspaceAccess(prompt: string): boolean {
+  const workspacePrompt = stripNegatedWorkspaceChangePhrases(prompt);
+  if (promptLikelyRequiresWorkspaceChange(prompt)) {
+    return true;
+  }
+  if (/\b(readme(?:\.md)?|package(?:\.json)?|pnpm-lock|dockerfile|makefile|tsconfig|cargo\.toml|go\.mod)\b/i.test(workspacePrompt)) {
+    return true;
+  }
+  const hasWorkspaceNoun =
+    /\b(repo(?:sitory)?|codebase|workspace|working tree|source tree|folders?|directories|dirs?|files?|top[- ]level|root)\b/i.test(
+      workspacePrompt,
+    );
+  const hasInspectionVerb =
+    /\b(count|find|grep|how many|inspect|list|look|open|read|search|show|tree|what|where|which)\b/i.test(
+      workspacePrompt,
+    );
+  return hasWorkspaceNoun && hasInspectionVerb;
 }
 
 async function gitWorkspaceStatus(workspacePath: string): Promise<string> {
@@ -739,6 +762,46 @@ function sanitizeEventText(value: string): string {
     .replace(/\bsk-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-openai-key]')
     .replace(/\bAIza[A-Za-z0-9_*\-]{12,}\b/g, '[redacted-google-key]')
     .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]');
+}
+
+function compactAgentErrorMessage(provider: AgentProvider, err: unknown): string {
+  const raw = sanitizeEventText(err instanceof Error ? err.message : String(err));
+  if (/You exceeded your current quota|insufficient_quota|quota/i.test(raw)) {
+    return provider === 'gemini-sdk' ? 'quota or rate limit' : 'quota exceeded';
+  }
+  if (/Credit balance is too low/i.test(raw)) {
+    return 'credit balance is too low';
+  }
+  if (/SERVICE_DISABLED|Gemini API has not been used/i.test(raw)) {
+    return 'Gemini API disabled for this key project';
+  }
+  if (/API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(raw)) {
+    return 'Google API key blocks server-side requests';
+  }
+  if (/API_KEY_SERVICE_BLOCKED|StreamGenerateContent are blocked|Requests to this API/i.test(raw)) {
+    return 'Google API key blocks the Gemini API';
+  }
+  if (/API_KEY_INVALID|API key not valid/i.test(raw)) {
+    return 'invalid API key';
+  }
+  if (/MALFORMED_FUNCTION_CALL/i.test(raw)) {
+    return 'model returned malformed function call';
+  }
+  return raw.replace(/\s+/g, ' ').slice(0, 240);
+}
+
+function formatAgentFailureSummary(
+  provider: AgentProvider,
+  failures: Map<string, number>,
+  attempted: number,
+  total: number,
+): string {
+  const reasons = Array.from(failures.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => `${reason} (${count})`)
+    .slice(0, 4)
+    .join('; ');
+  return `${provider} failed ${attempted}/${total} configured key(s): ${reasons || 'unknown error'}`;
 }
 
 function isWebSocketJsonObject(value: WebSocketJsonValue): value is WebSocketJsonObject {
@@ -1394,6 +1457,7 @@ async function runTask(state: TaskState): Promise<void> {
       }
 
       const requiresWorkspaceChange = promptLikelyRequiresWorkspaceChange(state.prompt);
+      const requiresWorkspaceAccess = promptLikelyRequiresWorkspaceAccess(state.prompt);
       // Strict env allowlist owned by the runner module. Inheriting the full
       // process.env into the agent process would leak our GitHub deploy key,
       // Supabase service role key, ingest secret, etc. via any `env` or
@@ -1403,13 +1467,21 @@ async function runTask(state: TaskState): Promise<void> {
       const providerOrder = [...config.agentProviderRotation, state.provider].filter(
         (provider, index, values) => values.indexOf(provider) === index,
       );
-      const attempts: AgentEnvCandidate[] = [];
+      const attemptGroups: { provider: AgentProvider; candidates: AgentEnvCandidate[] }[] = [];
       for (const provider of providerOrder) {
         if (requiresWorkspaceChange && !providerCanEditWorkspace(provider)) {
           emit(state, {
             kind: 'status',
             status: `agent-skip:${provider}`,
             message: `${provider} is model-only and cannot edit files in ${repoDisplayName()}`,
+          });
+          continue;
+        }
+        if (requiresWorkspaceAccess && !providerCanAccessWorkspace(provider)) {
+          emit(state, {
+            kind: 'status',
+            status: `agent-skip:${provider}`,
+            message: `${provider} is model-only and cannot inspect the workspace for ${repoDisplayName()}`,
           });
           continue;
         }
@@ -1422,23 +1494,15 @@ async function runTask(state: TaskState): Promise<void> {
           });
           continue;
         }
-        attempts.push(...candidates);
+        attemptGroups.push({ provider, candidates });
       }
-      if (attempts.length === 0) {
+      if (attemptGroups.length === 0) {
         throw new Error(
           `no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`,
         );
       }
 
       const runAgentAttempt = async (attempt: AgentEnvCandidate): Promise<void> => {
-        emit(state, {
-          kind: 'status',
-          status: `agent-running:${attempt.provider}`,
-          message:
-            `Workspace: ${gitBranchTarget(state.branch)}\n` +
-            `Base branch: ${config.baseBranch}\n` +
-            `Credential: key ${attempt.credentialIndex}/${attempt.credentialCount}`,
-        });
         const runner = getRunner(attempt.provider);
         await runner.run({
           prompt,
@@ -1455,35 +1519,60 @@ async function runTask(state: TaskState): Promise<void> {
 
       let lastErr: unknown = null;
       let completedAgentRun = false;
-      for (const [index, attempt] of attempts.entries()) {
+      for (const [groupIndex, group] of attemptGroups.entries()) {
         if (state.cancelled || state.abortController.signal.aborted) {
           throw lastErr ?? new Error('agent run cancelled');
         }
-        if (index > 0) {
+        if (groupIndex > 0) {
           emit(state, {
             kind: 'status',
-            status: `agent-fallback:${attempt.provider}`,
-            message:
-              `Retrying against ${gitBranchTarget(state.branch)} with ` +
-              `${attempt.provider} key ${attempt.credentialIndex}/${attempt.credentialCount}`,
+            status: `agent-fallback:${group.provider}`,
+            message: `Switching to ${group.provider} after the previous provider failed`,
           });
         }
-        try {
-          await runAgentAttempt(attempt);
-          completedAgentRun = true;
-          lastErr = null;
+        emit(state, {
+          kind: 'status',
+          status: `agent-running:${group.provider}`,
+          message:
+            `Workspace: ${gitBranchTarget(state.branch)}\n` +
+            `Base branch: ${config.baseBranch}\n` +
+            `Credentials: ${group.candidates.length} configured key(s)`,
+        });
+        const failures = new Map<string, number>();
+        let attempted = 0;
+        for (const attempt of group.candidates) {
+          if (state.cancelled || state.abortController.signal.aborted) {
+            throw lastErr ?? new Error('agent run cancelled');
+          }
+          attempted += 1;
+          try {
+            await runAgentAttempt(attempt);
+            completedAgentRun = true;
+            lastErr = null;
+            break;
+          } catch (err) {
+            lastErr = err;
+            const reason = compactAgentErrorMessage(attempt.provider, err);
+            failures.set(reason, (failures.get(reason) ?? 0) + 1);
+          }
+        }
+        if (completedAgentRun) {
           break;
-        } catch (err) {
-          lastErr = err;
-          const message = err instanceof Error ? err.message : String(err);
+        }
+        if (attempted > 0) {
           emit(state, {
             kind: 'error',
-            message: `${attempt.provider} key ${attempt.credentialIndex}/${attempt.credentialCount} failed: ${message}`,
+            message: formatAgentFailureSummary(
+              group.provider,
+              failures,
+              attempted,
+              group.candidates.length,
+            ),
           });
         }
       }
       if (!completedAgentRun) {
-        throw lastErr ?? new Error('all configured agent keys failed');
+        throw new Error('all configured agent providers failed; see provider summaries above');
       }
 
       if (state.cancelled || state.abortController.signal.aborted) {
