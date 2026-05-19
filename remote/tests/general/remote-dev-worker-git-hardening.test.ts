@@ -169,6 +169,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /function stripNegatedWorkspaceChangePhrases\(prompt: string\): string/);
   assert.match(server, /const editablePrompt = stripNegatedWorkspaceChangePhrases\(prompt\)/);
   assert.match(server, /function promptLikelyRequiresWorkspaceChange\(prompt: string\): boolean/);
+  assert.match(server, /\(add\|append\|change\|create\|delete\|edit\|fix\|implement\|modify\|move\|patch\|refactor\|remove\|rename\|replace\|update\|write\)/);
   assert.match(server, /function providerCanEditWorkspace\(provider: AgentProvider\): boolean/);
   assert.match(server, /type DeterministicAppendFileEdit = \{/);
   assert.match(server, /function parseDeterministicAppendFilePrompt\(prompt: string\): DeterministicAppendFileEdit \| null/);

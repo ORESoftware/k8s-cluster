@@ -477,7 +477,7 @@ function stripNegatedWorkspaceChangePhrases(prompt: string): string {
 
 function promptLikelyRequiresWorkspaceChange(prompt: string): boolean {
   const editablePrompt = stripNegatedWorkspaceChangePhrases(prompt);
-  return /\b(add|change|create|delete|edit|fix|implement|modify|move|patch|refactor|remove|rename|replace|update|write)\b/i.test(
+  return /\b(add|append|change|create|delete|edit|fix|implement|modify|move|patch|refactor|remove|rename|replace|update|write)\b/i.test(
     editablePrompt,
   );
 }
