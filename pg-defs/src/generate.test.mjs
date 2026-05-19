@@ -230,7 +230,14 @@ test("parser captures canonical presence LISTEN/NOTIFY functions and trigger", a
   );
   assert.equal(notifyRoutine?.language, "plpgsql");
   assert.equal(notifyRoutine?.volatility, "volatile");
-  assert.match(notifyRoutine?.bodySql ?? "", /perform\s+pg_notify\(v_channel,\s*v_payload\)/i);
+  assert.match(
+    notifyRoutine?.bodySql ?? "",
+    /perform\s+pg_notify\('presence_change_conv_'\s+\|\|\s+v_conv_shard::text,\s*v_payload\)/i,
+  );
+  assert.match(
+    notifyRoutine?.bodySql ?? "",
+    /perform\s+pg_notify\('presence_change_user_'\s+\|\|\s+v_user_shard::text,\s*v_payload\)/i,
+  );
 
   const shardRoutine = schema.routines.find((routine) => routine.name === "presence_shard_of");
   assert.equal(shardRoutine?.returns, "int");

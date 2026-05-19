@@ -390,3 +390,63 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "presence_users")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "presence_events")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub seq: i64,
+    #[sea_orm(column_name = "event_at")]
+    pub event_at: DateTimeWithTimeZone,
+    pub op: String,
+    #[sea_orm(column_name = "conv_id")]
+    pub conv_id: Uuid,
+    #[sea_orm(column_name = "user_id")]
+    pub user_id: Uuid,
+    #[sea_orm(column_name = "conv_slug")]
+    pub conv_slug: String,
+    #[sea_orm(column_name = "user_slug")]
+    pub user_slug: String,
+    #[sea_orm(column_name = "conv_shard")]
+    pub conv_shard: i32,
+    #[sea_orm(column_name = "user_shard")]
+    pub user_shard: i32,
+    #[sea_orm(column_name = "soft_deleted")]
+    pub soft_deleted: bool,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "presence_consumer_checkpoints")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "consumer_id")]
+    pub consumer_id: String,
+    #[sea_orm(column_name = "last_seq")]
+    pub last_seq: i64,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}

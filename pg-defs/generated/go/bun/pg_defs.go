@@ -588,6 +588,77 @@ func (value PresenceConvMembersBun) Validate() error {
 	return nil
 }
 
+const PresenceUsersTable = "presence_users"
+const PresenceUsersSelectSQL = `select
+      id::text as id,
+      slug,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from presence_users`
+
+type PresenceUsersBun struct {
+	bun.BaseModel `bun:"table:presence_users"`
+	Id uuid.UUID `bun:"id,type:uuid,pk" json:"id"`
+	Slug string `bun:"slug,type:text" json:"slug"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value PresenceUsersBun) Validate() error {
+	return nil
+}
+
+const PresenceEventsTable = "presence_events"
+const PresenceEventsSelectSQL = `select
+      seq,
+      to_char(event_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as event_at,
+      op,
+      conv_id::text as conv_id,
+      user_id::text as user_id,
+      conv_slug,
+      user_slug,
+      conv_shard,
+      user_shard,
+      soft_deleted
+    from presence_events`
+
+var PresenceEventsOpValues = []string{"INSERT", "UPDATE", "DELETE"}
+
+type PresenceEventsBun struct {
+	bun.BaseModel `bun:"table:presence_events"`
+	Seq int64 `bun:"seq,type:bigserial,pk" json:"seq"`
+	EventAt time.Time `bun:"event_at,type:timestamptz,default:now()" json:"eventAt"`
+	Op string `bun:"op,type:text" json:"op"`
+	ConvId uuid.UUID `bun:"conv_id,type:uuid" json:"convId"`
+	UserId uuid.UUID `bun:"user_id,type:uuid" json:"userId"`
+	ConvSlug string `bun:"conv_slug,type:text" json:"convSlug"`
+	UserSlug string `bun:"user_slug,type:text" json:"userSlug"`
+	ConvShard int32 `bun:"conv_shard,type:integer" json:"convShard"`
+	UserShard int32 `bun:"user_shard,type:integer" json:"userShard"`
+	SoftDeleted bool `bun:"soft_deleted,type:boolean,default:false" json:"softDeleted"`
+}
+
+func (value PresenceEventsBun) Validate() error {
+	if !containsString(PresenceEventsOpValues, value.Op) { return errors.New("unsupported presence_events.op") }
+	return nil
+}
+
+const PresenceConsumerCheckpointsTable = "presence_consumer_checkpoints"
+const PresenceConsumerCheckpointsSelectSQL = `select
+      consumer_id,
+      last_seq,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from presence_consumer_checkpoints`
+
+type PresenceConsumerCheckpointsBun struct {
+	bun.BaseModel `bun:"table:presence_consumer_checkpoints"`
+	ConsumerId string `bun:"consumer_id,type:text,pk" json:"consumerId"`
+	LastSeq int64 `bun:"last_seq,type:bigint,default:0" json:"lastSeq"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value PresenceConsumerCheckpointsBun) Validate() error {
+	return nil
+}
+
 func validateRawJSON(value json.RawMessage) bool {
 	if len(value) == 0 {
 		return true

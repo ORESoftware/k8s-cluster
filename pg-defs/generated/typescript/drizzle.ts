@@ -861,3 +861,117 @@ export const presenceConvMembersUpdateSchema = presenceConvMembersInsertSchema.p
 export type PresenceConvMembersRow = z.infer<typeof presenceConvMembersRowSchema>;
 export type PresenceConvMembersInsert = z.infer<typeof presenceConvMembersInsertSchema>;
 export type PresenceConvMembersUpdate = z.infer<typeof presenceConvMembersUpdateSchema>;
+
+export const presenceUsers = pgTable(
+  "presence_users",
+  {
+    id: uuid("id").primaryKey(),
+    slug: text("slug").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    presenceUsersSlugUq: uniqueIndex("presence_users_slug_uq").on(table.slug),
+  }),
+);
+
+export const presenceUsersRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  updatedAt: z.string().datetime(),
+});
+
+export const presenceUsersInsertSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const presenceUsersUpdateSchema = presenceUsersInsertSchema.partial();
+export type PresenceUsersRow = z.infer<typeof presenceUsersRowSchema>;
+export type PresenceUsersInsert = z.infer<typeof presenceUsersInsertSchema>;
+export type PresenceUsersUpdate = z.infer<typeof presenceUsersUpdateSchema>;
+
+export const presenceEventsOpValues = ["INSERT","UPDATE","DELETE"] as const;
+export const presenceEventsOpSchema = z.enum(presenceEventsOpValues);
+export type PresenceEventsOp = z.infer<typeof presenceEventsOpSchema>;
+
+export const presenceEvents = pgTable(
+  "presence_events",
+  {
+    seq: bigserial("seq", { mode: "number" }).primaryKey(),
+    eventAt: timestamp("event_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    op: text("op").notNull(),
+    convId: uuid("conv_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    convSlug: text("conv_slug").notNull(),
+    userSlug: text("user_slug").notNull(),
+    convShard: integer("conv_shard").notNull(),
+    userShard: integer("user_shard").notNull(),
+    softDeleted: boolean("soft_deleted").default(sql`false`).notNull(),
+  },
+  (table) => ({
+    presenceEventsOpChk: check("presence_events_op_chk", sql.raw("op in ('INSERT', 'UPDATE', 'DELETE')")),
+    presenceEventsConvShardSeqIdx: index("presence_events_conv_shard_seq_idx").on(table.convShard, table.seq),
+    presenceEventsUserShardSeqIdx: index("presence_events_user_shard_seq_idx").on(table.userShard, table.seq),
+    presenceEventsEventAtIdx: index("presence_events_event_at_idx").on(table.eventAt),
+  }),
+);
+
+export const presenceEventsRowSchema = z.object({
+  seq: z.number().int(),
+  eventAt: z.string().datetime(),
+  op: presenceEventsOpSchema,
+  convId: z.string().uuid(),
+  userId: z.string().uuid(),
+  convSlug: z.string(),
+  userSlug: z.string(),
+  convShard: z.number().int(),
+  userShard: z.number().int(),
+  softDeleted: z.boolean(),
+});
+
+export const presenceEventsInsertSchema = z.object({
+  seq: z.number().int(),
+  eventAt: z.string().datetime().optional(),
+  op: presenceEventsOpSchema,
+  convId: z.string().uuid(),
+  userId: z.string().uuid(),
+  convSlug: z.string(),
+  userSlug: z.string(),
+  convShard: z.number().int(),
+  userShard: z.number().int(),
+  softDeleted: z.boolean().optional().default(false),
+});
+
+export const presenceEventsUpdateSchema = presenceEventsInsertSchema.partial();
+export type PresenceEventsRow = z.infer<typeof presenceEventsRowSchema>;
+export type PresenceEventsInsert = z.infer<typeof presenceEventsInsertSchema>;
+export type PresenceEventsUpdate = z.infer<typeof presenceEventsUpdateSchema>;
+
+export const presenceConsumerCheckpoints = pgTable(
+  "presence_consumer_checkpoints",
+  {
+    consumerId: text("consumer_id").primaryKey(),
+    lastSeq: bigint("last_seq", { mode: "number" }).default(sql`0`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+  }),
+);
+
+export const presenceConsumerCheckpointsRowSchema = z.object({
+  consumerId: z.string(),
+  lastSeq: z.number().int(),
+  updatedAt: z.string().datetime(),
+});
+
+export const presenceConsumerCheckpointsInsertSchema = z.object({
+  consumerId: z.string(),
+  lastSeq: z.number().int().optional().default(0),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const presenceConsumerCheckpointsUpdateSchema = presenceConsumerCheckpointsInsertSchema.partial();
+export type PresenceConsumerCheckpointsRow = z.infer<typeof presenceConsumerCheckpointsRowSchema>;
+export type PresenceConsumerCheckpointsInsert = z.infer<typeof presenceConsumerCheckpointsInsertSchema>;
+export type PresenceConsumerCheckpointsUpdate = z.infer<typeof presenceConsumerCheckpointsUpdateSchema>;

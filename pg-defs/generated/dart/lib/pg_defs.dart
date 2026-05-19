@@ -1089,6 +1089,141 @@ class PresenceConvMembersRow {
   }
 }
 
+const presenceUsersTable = "presence_users";
+const presenceUsersSelectSql = "select\n      id::text as id,\n      slug,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from presence_users";
+
+class PresenceUsersRow {
+  const PresenceUsersRow({
+    required this.id,
+    required this.slug,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String slug;
+  final String updatedAt;
+
+  factory PresenceUsersRow.fromJson(Map<String, Object?> json) {
+    return PresenceUsersRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
+const presenceEventsTable = "presence_events";
+const presenceEventsSelectSql = "select\n      seq,\n      to_char(event_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as event_at,\n      op,\n      conv_id::text as conv_id,\n      user_id::text as user_id,\n      conv_slug,\n      user_slug,\n      conv_shard,\n      user_shard,\n      soft_deleted\n    from presence_events";
+
+const presenceEventsOpValues = <String>["INSERT", "UPDATE", "DELETE"];
+
+class PresenceEventsRow {
+  const PresenceEventsRow({
+    required this.seq,
+    required this.eventAt,
+    required this.op,
+    required this.convId,
+    required this.userId,
+    required this.convSlug,
+    required this.userSlug,
+    required this.convShard,
+    required this.userShard,
+    required this.softDeleted,
+  });
+
+  final int seq;
+  final String eventAt;
+  final String op;
+  final String convId;
+  final String userId;
+  final String convSlug;
+  final String userSlug;
+  final int convShard;
+  final int userShard;
+  final bool softDeleted;
+
+  factory PresenceEventsRow.fromJson(Map<String, Object?> json) {
+    return PresenceEventsRow(
+      seq: _readRequiredInt(json, "seq"),
+      eventAt: _readRequiredString(json, "eventAt"),
+      op: _readRequiredString(json, "op"),
+      convId: _readRequiredString(json, "convId"),
+      userId: _readRequiredString(json, "userId"),
+      convSlug: _readRequiredString(json, "convSlug"),
+      userSlug: _readRequiredString(json, "userSlug"),
+      convShard: _readRequiredInt(json, "convShard"),
+      userShard: _readRequiredInt(json, "userShard"),
+      softDeleted: _readRequiredBool(json, "softDeleted"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "seq": seq,
+    "eventAt": eventAt,
+    "op": op,
+    "convId": convId,
+    "userId": userId,
+    "convSlug": convSlug,
+    "userSlug": userSlug,
+    "convShard": convShard,
+    "userShard": userShard,
+    "softDeleted": softDeleted,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!presenceEventsOpValues.contains(op)) {
+      errors.add("unsupported presence_events.op");
+    }
+    return errors;
+  }
+}
+
+const presenceConsumerCheckpointsTable = "presence_consumer_checkpoints";
+const presenceConsumerCheckpointsSelectSql = "select\n      consumer_id,\n      last_seq,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from presence_consumer_checkpoints";
+
+class PresenceConsumerCheckpointsRow {
+  const PresenceConsumerCheckpointsRow({
+    required this.consumerId,
+    required this.lastSeq,
+    required this.updatedAt,
+  });
+
+  final String consumerId;
+  final int lastSeq;
+  final String updatedAt;
+
+  factory PresenceConsumerCheckpointsRow.fromJson(Map<String, Object?> json) {
+    return PresenceConsumerCheckpointsRow(
+      consumerId: _readRequiredString(json, "consumerId"),
+      lastSeq: _readRequiredInt(json, "lastSeq"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "consumerId": consumerId,
+    "lastSeq": lastSeq,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

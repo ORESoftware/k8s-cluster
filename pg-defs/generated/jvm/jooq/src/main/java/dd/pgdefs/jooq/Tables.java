@@ -215,4 +215,29 @@ public final class Tables {
     public static final Field<UUID> PRESENCE_CONV_MEMBERS_CREATED_BY = DSL.field(DSL.name("presence_conv_members", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> PRESENCE_CONV_MEMBERS_UPDATED_BY = DSL.field(DSL.name("presence_conv_members", "updated_by"), SQLDataType.UUID);
 
+    public static final Name PRESENCE_USERS_NAME = DSL.name("presence_users");
+    public static final Table<org.jooq.Record> PRESENCE_USERS = DSL.table(PRESENCE_USERS_NAME);
+    public static final Field<UUID> PRESENCE_USERS_ID = DSL.field(DSL.name("presence_users", "id"), SQLDataType.UUID);
+    public static final Field<String> PRESENCE_USERS_SLUG = DSL.field(DSL.name("presence_users", "slug"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> PRESENCE_USERS_UPDATED_AT = DSL.field(DSL.name("presence_users", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name PRESENCE_EVENTS_NAME = DSL.name("presence_events");
+    public static final Table<org.jooq.Record> PRESENCE_EVENTS = DSL.table(PRESENCE_EVENTS_NAME);
+    public static final Field<Long> PRESENCE_EVENTS_SEQ = DSL.field(DSL.name("presence_events", "seq"), SQLDataType.BIGINT);
+    public static final Field<OffsetDateTime> PRESENCE_EVENTS_EVENT_AT = DSL.field(DSL.name("presence_events", "event_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> PRESENCE_EVENTS_OP = DSL.field(DSL.name("presence_events", "op"), SQLDataType.CLOB);
+    public static final Field<UUID> PRESENCE_EVENTS_CONV_ID = DSL.field(DSL.name("presence_events", "conv_id"), SQLDataType.UUID);
+    public static final Field<UUID> PRESENCE_EVENTS_USER_ID = DSL.field(DSL.name("presence_events", "user_id"), SQLDataType.UUID);
+    public static final Field<String> PRESENCE_EVENTS_CONV_SLUG = DSL.field(DSL.name("presence_events", "conv_slug"), SQLDataType.CLOB);
+    public static final Field<String> PRESENCE_EVENTS_USER_SLUG = DSL.field(DSL.name("presence_events", "user_slug"), SQLDataType.CLOB);
+    public static final Field<Integer> PRESENCE_EVENTS_CONV_SHARD = DSL.field(DSL.name("presence_events", "conv_shard"), SQLDataType.INTEGER);
+    public static final Field<Integer> PRESENCE_EVENTS_USER_SHARD = DSL.field(DSL.name("presence_events", "user_shard"), SQLDataType.INTEGER);
+    public static final Field<Boolean> PRESENCE_EVENTS_SOFT_DELETED = DSL.field(DSL.name("presence_events", "soft_deleted"), SQLDataType.BOOLEAN);
+
+    public static final Name PRESENCE_CONSUMER_CHECKPOINTS_NAME = DSL.name("presence_consumer_checkpoints");
+    public static final Table<org.jooq.Record> PRESENCE_CONSUMER_CHECKPOINTS = DSL.table(PRESENCE_CONSUMER_CHECKPOINTS_NAME);
+    public static final Field<String> PRESENCE_CONSUMER_CHECKPOINTS_CONSUMER_ID = DSL.field(DSL.name("presence_consumer_checkpoints", "consumer_id"), SQLDataType.CLOB);
+    public static final Field<Long> PRESENCE_CONSUMER_CHECKPOINTS_LAST_SEQ = DSL.field(DSL.name("presence_consumer_checkpoints", "last_seq"), SQLDataType.BIGINT);
+    public static final Field<OffsetDateTime> PRESENCE_CONSUMER_CHECKPOINTS_UPDATED_AT = DSL.field(DSL.name("presence_consumer_checkpoints", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
 }
