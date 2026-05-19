@@ -3,6 +3,14 @@ import gleam/int
 import gleam/list
 import gleam/otp/actor
 
+const dedupe_ttl_ms = 300_000
+
+@external(erlang, "gleamlang_server_env", "json_message_id")
+fn json_message_id(payload: String) -> Result(String, Nil)
+
+@external(erlang, "gleamlang_server_env", "now_ms")
+fn now_ms() -> Int
+
 pub type StreamMessage {
   StreamJson(payload: String)
 }
@@ -27,10 +35,15 @@ pub type Message {
   EmitTick
 }
 
+type SeenMessage {
+  SeenMessage(id: String, expires_at_ms: Int)
+}
+
 type State {
   State(
     control_subject: process.Subject(Message),
     subscribers: List(process.Subject(StreamMessage)),
+    seen_messages: List(SeenMessage),
     sequence: Int,
     http_requests: Int,
     ws_messages: Int,
@@ -49,6 +62,7 @@ pub fn start(
     actor.initialised(State(
       control_subject: control_subject,
       subscribers: [],
+      seen_messages: [],
       sequence: 0,
       http_requests: 0,
       ws_messages: 0,
@@ -67,6 +81,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
   let State(
     control_subject: control_subject,
     subscribers: subscribers,
+    seen_messages: seen_messages,
     sequence: sequence,
     http_requests: http_requests,
     ws_messages: ws_messages,
@@ -81,6 +96,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
       actor.continue(State(
         control_subject: control_subject,
         subscribers: [subscriber, ..deduped],
+        seen_messages: seen_messages,
         sequence: sequence,
         http_requests: http_requests,
         ws_messages: ws_messages,
@@ -95,6 +111,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         subscribers: list.filter(subscribers, fn(existing) {
           existing != subscriber
         }),
+        seen_messages: seen_messages,
         sequence: sequence,
         http_requests: http_requests,
         ws_messages: ws_messages,
@@ -106,6 +123,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
       actor.continue(State(
         control_subject: control_subject,
         subscribers: subscribers,
+        seen_messages: seen_messages,
         sequence: sequence,
         http_requests: http_requests + 1,
         ws_messages: ws_messages,
@@ -117,6 +135,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
       actor.continue(State(
         control_subject: control_subject,
         subscribers: subscribers,
+        seen_messages: seen_messages,
         sequence: sequence,
         http_requests: http_requests,
         ws_messages: ws_messages + 1,
@@ -124,20 +143,36 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         interval_ms: interval_ms,
       ))
 
-    BroadcastJson(payload) -> {
-      list.each(subscribers, fn(subscriber) {
-        process.send(subscriber, StreamJson(payload))
-      })
-      actor.continue(State(
-        control_subject: control_subject,
-        subscribers: subscribers,
-        sequence: sequence,
-        http_requests: http_requests,
-        ws_messages: ws_messages,
-        nats_messages: nats_messages + 1,
-        interval_ms: interval_ms,
-      ))
-    }
+    BroadcastJson(payload) ->
+      case should_broadcast(payload, seen_messages) {
+        #(False, next_seen_messages) ->
+          actor.continue(State(
+            control_subject: control_subject,
+            subscribers: subscribers,
+            seen_messages: next_seen_messages,
+            sequence: sequence,
+            http_requests: http_requests,
+            ws_messages: ws_messages,
+            nats_messages: nats_messages,
+            interval_ms: interval_ms,
+          ))
+
+        #(True, next_seen_messages) -> {
+          list.each(subscribers, fn(subscriber) {
+            process.send(subscriber, StreamJson(payload))
+          })
+          actor.continue(State(
+            control_subject: control_subject,
+            subscribers: subscribers,
+            seen_messages: next_seen_messages,
+            sequence: sequence,
+            http_requests: http_requests,
+            ws_messages: ws_messages,
+            nats_messages: nats_messages + 1,
+            interval_ms: interval_ms,
+          ))
+        }
+      }
 
     GetSnapshot(reply_to) -> {
       process.send(reply_to, MetricsSnapshot(
@@ -150,6 +185,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
       actor.continue(State(
         control_subject: control_subject,
         subscribers: subscribers,
+        seen_messages: seen_messages,
         sequence: sequence,
         http_requests: http_requests,
         ws_messages: ws_messages,
@@ -168,6 +204,7 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
       actor.continue(State(
         control_subject: control_subject,
         subscribers: subscribers,
+        seen_messages: seen_messages,
         sequence: next_sequence,
         http_requests: http_requests,
         ws_messages: ws_messages,
@@ -175,6 +212,28 @@ fn handle_message(state: State, message: Message) -> actor.Next(State, Message) 
         interval_ms: interval_ms,
       ))
     }
+  }
+}
+
+fn should_broadcast(
+  payload: String,
+  seen_messages: List(SeenMessage),
+) -> #(Bool, List(SeenMessage)) {
+  let now = now_ms()
+  let active_seen =
+    list.filter(seen_messages, fn(message) { message.expires_at_ms > now })
+
+  case json_message_id(payload) {
+    Ok(message_id) -> {
+      case list.any(active_seen, fn(message) { message.id == message_id }) {
+        True -> #(False, active_seen)
+        False -> #(
+          True,
+          [SeenMessage(id: message_id, expires_at_ms: now + dedupe_ttl_ms), ..active_seen],
+        )
+      }
+    }
+    Error(_) -> #(True, active_seen)
   }
 }
 

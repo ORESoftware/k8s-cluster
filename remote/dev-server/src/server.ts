@@ -34,6 +34,13 @@ import { filter, takeUntil } from 'rxjs/operators';
 import { z } from 'zod';
 
 import { EventBus, type BusEvent } from './event-bus.js';
+import {
+  containerPoolConfigFromEnv,
+  containerPoolConfigured,
+  dispatchContainerPool,
+  type ContainerPoolDispatchRequest,
+  type ContainerPoolDispatchResponse,
+} from './container-pool.js';
 
 import {
   buildAgentEnv,
@@ -56,6 +63,7 @@ import {
 import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
+import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 
 // ---------- Config ----------
 
@@ -64,11 +72,11 @@ const config = {
   host: process.env.HOST ?? '0.0.0.0',
   workspaceRepo: process.env.WORKSPACE_REPO ?? '/home/node/workspace/repo',
   repoUrl: process.env.DD_REPO_URL ?? null,
-  // The container is pinned to a single threadId originating from
-  // /u/admin/remote-dev. Set via REMOTE_DEV_THREAD_ID (preferred) or
-  // THREAD_ID (fallback). The server refuses to start without one — see
-  // main().
+  // Per-thread pods set REMOTE_DEV_THREAD_ID. Repo-scoped warm pool workers
+  // leave it unset and accept tasks for any thread in the configured repo.
   threadId: process.env.REMOTE_DEV_THREAD_ID ?? process.env.THREAD_ID ?? null,
+  workerBindMode:
+    process.env.WORKER_BIND_MODE ?? (process.env.REMOTE_DEV_THREAD_ID || process.env.THREAD_ID ? 'thread' : 'repo'),
   userId: process.env.USER_ID ?? null,
   // Each agent run writes publishable files into ${OUTPUTS_DIR}/<taskId>/.
   // After claude exits, runTask scans that dir and uploads each file via
@@ -92,6 +100,9 @@ const config = {
   eventIngestSecret: process.env.EVENT_INGEST_SECRET ?? null,
   natsUrl: process.env.NATS_URL ?? null,
   natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events',
+  workerFanoutWsUrl: workerFanoutWsUrlFromEnv(process.env),
+  workerFanoutWsMaxQueueDepth: Number(process.env.WORKER_FANOUT_WS_MAX_QUEUE_DEPTH ?? 500),
+  workerFanoutWsReconnectMs: Number(process.env.WORKER_FANOUT_WS_RECONNECT_MS ?? 1000),
   threadContextBaseUrl:
     process.env.THREAD_CONTEXT_BASE_URL ??
     process.env.REMOTE_REST_API_BASE_URL ??
@@ -109,6 +120,7 @@ const config = {
   },
   logDir: process.env.LOG_DIR ?? '/tmp/convos',
   processedTasksDir: process.env.PROCESSED_TASKS_DIR ?? join(process.env.LOG_DIR ?? '/tmp/convos', 'processed-tasks'),
+  containerPool: containerPoolConfigFromEnv(process.env),
   taskGcAfterMs: 60 * 60 * 1000, // 1 hour
   taskGcIntervalMs: 5 * 60 * 1000, // 5 min sweep
 };
@@ -123,6 +135,11 @@ type WrappedEvent =
   | (BusEvent['event'] & { kind: 'stderr'; text: string })
   | (BusEvent['event'] & { kind: 'error'; message: string })
   | (BusEvent['event'] & { kind: 'artifact'; artifact: PublishedArtifact })
+  | (BusEvent['event'] & {
+      kind: 'container_pool';
+      pool: string;
+      response: ContainerPoolDispatchResponse;
+    })
   | (BusEvent['event'] & {
       kind: 'done';
       branch: string;
@@ -198,6 +215,7 @@ type TaskState = {
   threadId?: string;
   /** Which runner is driving this task (Claude, Gemini, OpenAI, etc.). */
   provider: AgentProvider;
+  containerPool?: { pool: string; request: ContainerPoolDispatchRequest };
   session: ThreadSession;
   child?: ChildProcess;
   /**
@@ -246,6 +264,12 @@ const serverInstanceId = randomUUID();
 // ---- RxJS EventBus — reactive pipeline for events ----
 const eventBus = new EventBus();
 const natsPublisher = new NatsPublisher(config.natsUrl);
+const workerFanout = new WorkerFanoutWebSocket({
+  url: config.workerFanoutWsUrl,
+  logger: console,
+  maxQueueDepth: config.workerFanoutWsMaxQueueDepth,
+  reconnectMs: config.workerFanoutWsReconnectMs,
+});
 
 // ---------- Helpers ----------
 
@@ -666,8 +690,9 @@ function emit(state: TaskState, event: WrappedEvent): void {
     seq: stored.seq,
     event,
   });
-  natsPublisher.publish(config.natsEventSubject, {
+  const fanoutPayload = {
     type: 'task-event',
+    messageId: randomUUID(),
     taskId: state.taskId,
     threadId: state.threadId,
     userId: state.userId,
@@ -676,7 +701,9 @@ function emit(state: TaskState, event: WrappedEvent): void {
     seq: stored.seq,
     emittedAt: new Date().toISOString(),
     event,
-  });
+  };
+  natsPublisher.publish(config.natsEventSubject, fanoutPayload);
+  workerFanout.publish(fanoutPayload);
 }
 
 async function ensureDeployKey(): Promise<void> {
@@ -1187,6 +1214,38 @@ async function runTask(state: TaskState): Promise<void> {
         workspacePath: state.worktreePath,
         branch: state.branch,
       });
+
+      if (state.containerPool) {
+        emit(state, {
+          kind: 'status',
+          status: `container-pool-dispatch:${state.containerPool.pool}`,
+        });
+        const response = await dispatchContainerPool(
+          config.containerPool,
+          state.containerPool.pool,
+          {
+            ...state.containerPool.request,
+            requestId: state.containerPool.request.requestId ?? state.taskId,
+            poolSlug: state.containerPool.request.poolSlug ?? state.containerPool.pool,
+          },
+        );
+        await appendThreadLog(state, {
+          kind: 'container-pool-result',
+          pool: state.containerPool.pool,
+          response,
+        });
+        emit(state, {
+          kind: 'container_pool',
+          pool: state.containerPool.pool,
+          response,
+        });
+        emit(state, {
+          kind: 'done',
+          branch: state.branch,
+          exitReason: response.ok ? 'completed' : 'failed',
+        });
+        return;
+      }
 
       emit(state, { kind: 'status', status: `agent-running:${state.provider}` });
       // Strict env allowlist owned by the runner module. Inheriting the full
@@ -2325,6 +2384,7 @@ fastify.get('/healthz', async () => ({
   inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
   totalTracked: tasks.size,
   sessionCount: sessions.size,
+  containerPoolConfigured: containerPoolConfigured(config.containerPool),
 }));
 
 fastify.get('/metrics', async (_req, reply) => {
@@ -2341,6 +2401,7 @@ fastify.get('/status', async () => ({
   inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
   totalTracked: tasks.size,
   sessionCount: sessions.size,
+  containerPoolConfigured: containerPoolConfigured(config.containerPool),
   ingestCircuit: eventBus.getCircuitState(),
   idleTimeoutMs: config.threadId ? config.idleTimeoutMs : undefined,
 }));
@@ -2397,6 +2458,43 @@ fastify.get('/tasks', async () => {
   return { tasks: snapshot, serverStartedAt };
 });
 
+const ContainerPoolRequestSchema = z.object({
+  requestId: z.string().min(1).max(200).optional(),
+  poolId: z.string().min(1).max(120).optional(),
+  poolSlug: z.string().min(1).max(120).optional(),
+  path: z.string().min(1).max(256).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  payload: z.unknown().optional(),
+  body: z.unknown().optional(),
+});
+
+const ContainerPoolTaskSchema = ContainerPoolRequestSchema.extend({
+  pool: z.string().min(1).max(120),
+});
+
+fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
+  const params = z.object({ pool: z.string().min(1).max(120) }).safeParse(req.params);
+  const parsed = ContainerPoolRequestSchema.safeParse(req.body);
+  if (!params.success || !parsed.success) {
+    return reply.code(400).send({
+      error: 'invalid container pool dispatch',
+      params: params.success ? undefined : params.error.format(),
+      body: parsed.success ? undefined : parsed.error.format(),
+    });
+  }
+  try {
+    return await dispatchContainerPool(config.containerPool, params.data.pool, {
+      ...parsed.data,
+      poolSlug: parsed.data.poolSlug ?? params.data.pool,
+    });
+  } catch (error) {
+    return reply.code(502).send({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 const DispatchSchema = z.object({
   taskId: z.string().uuid().optional(),
   prompt: z.string().min(1).max(64_000),
@@ -2418,6 +2516,7 @@ const DispatchSchema = z.object({
   provider: z
     .enum(['claude-cli', 'claude-sdk', 'echo', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'])
     .optional(),
+  containerPool: ContainerPoolTaskSchema.optional(),
 });
 
 const MergeUpstreamSchema = z.object({
@@ -2491,6 +2590,11 @@ fastify.post('/tasks', async (req, reply) => {
           boundThreadId: config.threadId,
         });
       }
+      if (config.workerBindMode === 'repo' && !threadId) {
+        return reply.code(400).send({
+          error: 'threadId is required for repo-scoped warm workers',
+        });
+      }
       if (config.userId && userId !== config.userId) {
         return reply.code(403).send({
           error: 'container is bound to a different user',
@@ -2547,12 +2651,26 @@ fastify.post('/tasks', async (req, reply) => {
       session.taskIds.add(taskId);
 
       const state: TaskState = {
-        taskId,
-        prompt,
-        userId,
-        threadId,
-        provider: resolveAgentProvider(parsed.data.provider),
-        session,
+    taskId,
+    prompt,
+    userId,
+    threadId,
+    provider: resolveAgentProvider(parsed.data.provider),
+    containerPool: parsed.data.containerPool
+      ? {
+          pool: parsed.data.containerPool.pool,
+          request: {
+            requestId: parsed.data.containerPool.requestId,
+            poolId: parsed.data.containerPool.poolId,
+            poolSlug: parsed.data.containerPool.poolSlug ?? parsed.data.containerPool.pool,
+            path: parsed.data.containerPool.path,
+            headers: parsed.data.containerPool.headers,
+            payload: parsed.data.containerPool.payload,
+            body: parsed.data.containerPool.body,
+          },
+        }
+      : undefined,
+    session,
         abortController: new AbortController(),
         events: [],
         event$: new ReplaySubject<StoredEvent>(),
@@ -2942,9 +3060,9 @@ async function discoverOwnIp(): Promise<string> {
 async function main(): Promise<void> {
   initTelemetry();
 
-  if (!config.threadId) {
+  if (!config.threadId && config.workerBindMode !== 'repo') {
     throw new Error(
-      'REMOTE_DEV_THREAD_ID or THREAD_ID is required — the container is pinned to one thread.',
+      'REMOTE_DEV_THREAD_ID or THREAD_ID is required unless WORKER_BIND_MODE=repo.',
     );
   }
   if (!config.repoUrl) {
@@ -2977,6 +3095,9 @@ async function main(): Promise<void> {
   if (config.natsUrl) {
     fastify.log.info(`EventBus: NATS websocket fanout active on ${config.natsEventSubject}`);
   }
+  if (config.workerFanoutWsUrl) {
+    fastify.log.info('EventBus: outbound worker websocket fanout active');
+  }
 
   if (config.threadId && config.idleTimeoutMs > 0) {
     eventBus.startIdleWatchdog(config.idleTimeoutMs, () => {
@@ -3007,12 +3128,15 @@ async function main(): Promise<void> {
     );
   });
 
-  // Pre-warm the thread session so the first task lands on a ready workspace.
-  const bootSession = getOrCreateSession({
-    taskId: config.threadId,
-    threadId: config.threadId,
-  });
-  await bootSession.ready;
+  // Per-thread pods pre-warm their single session. Repo-scoped pool workers
+  // create sessions lazily per task/thread.
+  if (config.threadId) {
+    const bootSession = getOrCreateSession({
+      taskId: config.threadId,
+      threadId: config.threadId,
+    });
+    await bootSession.ready;
+  }
 
   registerWorkerWebSocketUpgrade();
   await fastify.listen({ host: config.host, port: config.port });
@@ -3020,6 +3144,7 @@ async function main(): Promise<void> {
 
 function shutdown(signal: string): void {
   fastify.log.info(`${signal} received — tearing down EventBus + channels`);
+  workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();
   destroyChannelPool();
@@ -3035,6 +3160,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 main().catch((err) => {
   fastify.log.error(err);
+  workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();
   shutdownTelemetry().finally(() => process.exit(1));

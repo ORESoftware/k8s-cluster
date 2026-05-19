@@ -69,6 +69,7 @@ struct ServiceConfig {
     server_auth_secret: Option<String>,
     container_memory: Option<String>,
     container_cpus: Option<String>,
+    forward_env_keys: Vec<String>,
     pids_limit: u64,
     nofile_limit: u64,
 }
@@ -116,6 +117,8 @@ struct PoolConfig {
     request_timeout: Duration,
     idle_ttl: Duration,
     nats_subject: Option<String>,
+    read_only: bool,
+    user: String,
     labels: Value,
 }
 
@@ -355,9 +358,37 @@ fn service_config_from_env() -> ServiceConfig {
             .filter(|value| safe_resource_value(value)),
         container_cpus: first_env(&["CONTAINER_POOL_CONTAINER_CPUS"])
             .filter(|value| safe_resource_value(value)),
+        forward_env_keys: forwarded_worker_env_keys(),
         pids_limit: env_u64("CONTAINER_POOL_PIDS_LIMIT", 128).clamp(16, 4096),
         nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 128).clamp(32, 8192),
     }
+}
+
+fn forwarded_worker_env_keys() -> Vec<String> {
+    let configured = first_env(&["CONTAINER_POOL_FORWARD_ENV_KEYS"]).unwrap_or_else(|| {
+        [
+            "SERVER_AUTH_SECRET",
+            "REMOTE_DEV_SERVER_SECRET",
+            "GH_DEPLOY_KEY",
+            "GH_PAT",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GOOGLE_API_KEY",
+            "GEMINI_API_KEY",
+            "EVENT_INGEST_URL",
+            "EVENT_INGEST_SECRET",
+            "GLEAM_WORKER_WS_SECRET",
+            "WORKER_FANOUT_WS_SECRET",
+            "WORKER_FANOUT_WS_BASE_URL",
+        ]
+        .join(",")
+    });
+    configured
+        .split(',')
+        .map(str::trim)
+        .filter(|key| safe_env_key(key))
+        .map(str::to_string)
+        .collect()
 }
 
 fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
@@ -516,6 +547,13 @@ fn json_u64_field(value: &Value, camel_key: &str, snake_key: &str) -> Option<u64
         .and_then(Value::as_u64)
 }
 
+fn json_bool_field(value: &Value, camel_key: &str, snake_key: &str) -> Option<bool> {
+    value
+        .get(camel_key)
+        .or_else(|| value.get(snake_key))
+        .and_then(Value::as_bool)
+}
+
 fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
     let slug = json_string_field(value, "slug", "slug")
         .ok_or_else(|| "container pool config is missing slug".to_string())?;
@@ -586,6 +624,15 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
                 .clamp(10, 86_400),
         ),
         nats_subject,
+        read_only: json_bool_field(value, "readOnly", "read_only").unwrap_or(true),
+        user: json_string_field(value, "user", "user")
+            .filter(|value| {
+                value.len() <= 64
+                    && value
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ':' | '_' | '-'))
+            })
+            .unwrap_or_else(|| "10001:10001".to_string()),
         labels: value.get("labels").cloned().unwrap_or_else(|| json!([])),
     })
 }
@@ -704,6 +751,8 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         request_timeout: Duration::from_millis(request_timeout_ms as u64),
         idle_ttl: Duration::from_secs(idle_ttl_seconds as u64),
         nats_subject,
+        read_only: true,
+        user: "10001:10001".to_string(),
         labels: row_value(row, "labels", json!([])),
     })
 }
@@ -985,11 +1034,8 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         format!("dd.container-pool.pool-id={}", pool.id),
         "--label".to_string(),
         format!("dd.container-pool.service={SERVICE_NAME}"),
-        "--read-only".to_string(),
-        "--tmpfs".to_string(),
-        "/tmp:rw,noexec,nosuid,size=64m".to_string(),
         "--user".to_string(),
-        "10001:10001".to_string(),
+        pool.user.clone(),
         "--cap-drop".to_string(),
         "ALL".to_string(),
         "--security-opt".to_string(),
@@ -999,6 +1045,11 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         "--ulimit".to_string(),
         format!("nofile={limit}:{limit}", limit = state.config.nofile_limit),
     ];
+    if pool.read_only {
+        args.push("--read-only".to_string());
+        args.push("--tmpfs".to_string());
+        args.push("/tmp:rw,noexec,nosuid,size=64m".to_string());
+    }
     if let Some(memory) = state.config.container_memory.as_deref() {
         args.push("--memory".to_string());
         args.push(memory.to_string());
@@ -1067,6 +1118,16 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         container_env
             .entry("DD_POOL_NATS_HEARTBEAT_SUBJECT".to_string())
             .or_insert_with(|| format!("dd.remote.container_pool.{}.heartbeats", pool.slug));
+    }
+    for key in &state.config.forward_env_keys {
+        if container_env.contains_key(key) {
+            continue;
+        }
+        if let Ok(value) = env::var(key) {
+            if !value.is_empty() {
+                container_env.insert(key.clone(), value);
+            }
+        }
     }
 
     for (key, value) in &container_env {
@@ -2058,6 +2119,118 @@ async fn run_reconcile_loop(state: AppState) {
     }
 }
 
+/// Subscribe to the WAL gateway and refresh the pool registry whenever:
+///   * the `app_config` row this server reads from changes (scope/key match), or
+///   * any row in `container_pool_configs` changes.
+///
+/// We don't try to be surgical (partial-apply just the changed pool). The
+/// existing `refresh_pool_configs` is cheap enough that a full reload is
+/// the simplest correct thing — the registry mutex already serializes
+/// readers against the swap.
+///
+/// The poll loop is still on as the fallback path. The CDC subscription
+/// just shortens the perceived edit-to-effect latency from O(refresh_secs)
+/// to O(WAL gateway poll interval) ≈ a few hundred ms.
+async fn run_cdc_refresh_subscription(state: AppState) {
+    let Some(nats) = state.nats.clone() else {
+        println!("container pool cdc subscription disabled: no NATS_URL configured");
+        return;
+    };
+    let jetstream = async_nats::jetstream::new(nats);
+    let app_config_scope = state.config.app_config_scope.clone();
+    let app_config_key = state.config.app_config_key.clone();
+    let stream_name = env_value("CONTAINER_POOL_CDC_STREAM", "CDC");
+
+    // Subscription 1 — app_config (filtered to the row we read from).
+    {
+        let task_state = state.clone();
+        let scope = app_config_scope.clone();
+        let key = app_config_key.clone();
+        let durable = format!(
+            "dd-container-pool-app-config-{}",
+            cdc_sanitize(&format!("{scope}.{key}"))
+        );
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream_name.clone())
+            .durable_name(durable.clone())
+            .filter_subject("cdc.public.app_config.>")
+            .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
+                let task_state = task_state.clone();
+                let scope = scope.clone();
+                let key = key.clone();
+                async move {
+                    let row_scope = change.column("scope").and_then(Value::as_str);
+                    let row_key = change.column("key").and_then(Value::as_str);
+                    if row_scope != Some(scope.as_str()) || row_key != Some(key.as_str()) {
+                        return;
+                    }
+                    cdc_trigger_refresh(&task_state, "app_config").await;
+                }
+            })
+            .await;
+        log_cdc_subscription_result(&durable, "cdc.public.app_config.>", result);
+    }
+
+    // Subscription 2 — container_pool_configs (no row filter, every change
+    // touches the registry).
+    {
+        let task_state = state.clone();
+        let durable = "dd-container-pool-table".to_string();
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream_name.clone())
+            .durable_name(durable.clone())
+            .filter_subject("cdc.public.container_pool_configs.>")
+            .start(&jetstream, move |_change: dd_wal_consumer::RowChange| {
+                let task_state = task_state.clone();
+                async move {
+                    cdc_trigger_refresh(&task_state, "container_pool_configs").await;
+                }
+            })
+            .await;
+        log_cdc_subscription_result(&durable, "cdc.public.container_pool_configs.>", result);
+    }
+}
+
+async fn cdc_trigger_refresh(state: &AppState, source: &str) {
+    if let Err(error) = refresh_pool_configs(state).await {
+        eprintln!("container pool CDC-driven refresh failed ({source}): {error}");
+        record_config_error(state, error).await;
+        return;
+    }
+    // Trigger a reconcile too so containers actually warm/cool in line
+    // with the new config without waiting for the regular reconcile tick.
+    reconcile_all(state).await;
+}
+
+fn cdc_sanitize(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
+fn log_cdc_subscription_result(
+    durable: &str,
+    subject: &str,
+    result: Result<tokio::task::JoinHandle<()>, dd_wal_consumer::Error>,
+) {
+    match result {
+        Ok(_join) => {
+            println!(
+                "container pool cdc subscription started: durable={durable} subject={subject}"
+            );
+        }
+        Err(error) => {
+            eprintln!(
+                "container pool cdc subscription failed to start ({error}); \
+                 falling back to poll-only refresh for {subject}"
+            );
+        }
+    }
+}
+
 async fn run_nats_loop(state: AppState) {
     let Some(client) = state.nats.clone() else {
         return;
@@ -2179,6 +2352,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::spawn(run_config_refresh_loop(state.clone()));
     tokio::spawn(run_reconcile_loop(state.clone()));
     tokio::spawn(run_nats_loop(state.clone()));
+    tokio::spawn(run_cdc_refresh_subscription(state.clone()));
 
     let app = Router::new()
         .route("/healthz", get(healthz))

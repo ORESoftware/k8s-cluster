@@ -62,14 +62,14 @@ During migration, the service also supports Supabase REST fallback:
 
 NATS is configured separately through `NATS_URL`. On successful direct dispatch, the REST API
 ensures JetStream stream `DD_REMOTE_TASKS`, publishes a shadow task message to
-`dd.remote.thread.<threadId>.tasks`, and also emits `dd.remote.orchestrator.wakeup`. The queue
-consumer reads the durable `dd-remote-thread-preparer` pull consumer and calls `/prepare`, but
-direct REST handoff remains the source of execution for now.
+`dd.remote.thread.<threadId>.tasks`, and also emits `dd.remote.orchestrator.wakeup`. Requests may
+also set `dispatchMode: "queued"` to persist the task, publish a real `task.dispatch` message, and
+return `202 Accepted` without waiting for a worker container.
 
-So yes: task dispatch currently does both. It directly calls the deterministic thread worker for
+So yes: direct task dispatch still does both. It directly calls the deterministic thread worker for
 the response path, and also publishes the same taskId/threadId to NATS as a shadow/wakeup message.
-Consumers prepare the same UUID-bound container and rely on taskId receipts to de-dupe repeated
-deliveries.
+Queued dispatch relies on the NATS consumer to hand the task to a repo-scoped warm Node chat/Claude
+pool first, with direct REST fallback for recovery.
 
 The lambda function API is CRUD-only:
 

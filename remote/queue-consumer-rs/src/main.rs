@@ -6,8 +6,14 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QueueTaskMessage {
+    message_kind: Option<String>,
     thread_id: String,
     task_id: String,
+    provider: Option<String>,
+    repo: Option<String>,
+    base_branch: Option<String>,
+    prompt: Option<String>,
+    thread_title: Option<String>,
     shadow: Option<bool>,
     direct_dispatch: Option<bool>,
 }
@@ -45,6 +51,18 @@ fn server_auth_secret() -> String {
         .unwrap_or_else(|| "dd-k8s-home".to_string())
 }
 
+fn env_bool(key: &str, fallback: bool) -> bool {
+    env::var(key)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
+        .unwrap_or(fallback)
+}
+
 fn receipt_path(base_dir: &str, task_id: &str) -> PathBuf {
     let safe_task_id = task_id
         .chars()
@@ -72,13 +90,162 @@ fn write_task_receipt(
     fs::write(
         receipt_path(base_dir, &task.task_id),
         serde_json::to_vec_pretty(&serde_json::json!({
-            "threadId": task.thread_id,
-            "taskId": task.task_id,
+            "threadId": &task.thread_id,
+            "taskId": &task.task_id,
+            "messageKind": &task.message_kind,
             "shadow": task.shadow.unwrap_or(false),
             "directDispatch": task.direct_dispatch.unwrap_or(false),
         }))?,
     )?;
     Ok(())
+}
+
+fn is_shadow_task(task: &QueueTaskMessage) -> bool {
+    task.shadow.unwrap_or(false)
+        || task
+            .message_kind
+            .as_deref()
+            .is_some_and(|kind| kind == "task.shadow")
+}
+
+fn sanitize_slug_part(input: &str) -> String {
+    let mut output = String::new();
+    let mut last_dash = false;
+    for ch in input.chars() {
+        let next = if ch.is_ascii_alphanumeric() {
+            Some(ch.to_ascii_lowercase())
+        } else if !last_dash {
+            Some('-')
+        } else {
+            None
+        };
+        if let Some(value) = next {
+            last_dash = value == '-';
+            output.push(value);
+        }
+    }
+    output.trim_matches('-').chars().take(80).collect()
+}
+
+fn repo_pool_slug(repo: &str, base_branch: &str) -> String {
+    let repo_name = repo
+        .trim_end_matches(".git")
+        .rsplit(['/', ':'])
+        .next()
+        .unwrap_or("repo");
+    let repo_part = sanitize_slug_part(repo_name);
+    let branch_part = sanitize_slug_part(base_branch);
+    format!("nodejs-chat-claude-{repo_part}-{branch_part}")
+}
+
+async fn dispatch_to_container_pool(
+    http: &reqwest::Client,
+    container_pool_url: &str,
+    secret: &str,
+    task: &QueueTaskMessage,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let repo = task
+        .repo
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("queued task missing repo")?;
+    let base_branch = task
+        .base_branch
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("dev");
+    let prompt = task
+        .prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("queued task missing prompt")?;
+    let pool = repo_pool_slug(repo, base_branch);
+    let base = container_pool_url.trim_end_matches('/');
+    let url = format!("{base}/pools/{pool}/dispatch");
+    let response = http
+        .post(url)
+        .header("X-Server-Auth", secret)
+        .json(&serde_json::json!({
+            "requestId": &task.task_id,
+            "poolSlug": pool,
+            "path": "/tasks",
+            "payload": {
+                "taskId": &task.task_id,
+                "threadId": &task.thread_id,
+                "repo": repo,
+                "baseBranch": base_branch,
+                "prompt": prompt,
+                "provider": &task.provider,
+                "threadTitle": &task.thread_title,
+            }
+        }))
+        .send()
+        .await?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = response.text().await.unwrap_or_default();
+    Err(format!(
+        "container pool dispatch failed with {status}: {}",
+        body.chars().take(500).collect::<String>()
+    )
+    .into())
+}
+
+async fn dispatch_to_rest_api(
+    http: &reqwest::Client,
+    rest_api_url: &str,
+    secret: &str,
+    task: &QueueTaskMessage,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let repo = task
+        .repo
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("queued task missing repo")?;
+    let base_branch = task
+        .base_branch
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("dev");
+    let prompt = task
+        .prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("queued task missing prompt")?;
+    let base = rest_api_url.trim_end_matches('/');
+    let url = format!("{base}/api/agents/threads/{}/tasks", task.thread_id);
+    let response = http
+        .post(url)
+        .header("X-Agent-Auth", secret)
+        .json(&serde_json::json!({
+            "taskId": &task.task_id,
+            "threadId": &task.thread_id,
+            "repo": repo,
+            "baseBranch": base_branch,
+            "prompt": prompt,
+            "provider": &task.provider,
+            "threadTitle": &task.thread_title,
+        }))
+        .send()
+        .await?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = response.text().await.unwrap_or_default();
+    Err(format!(
+        "rest fallback dispatch failed with {status}: {}",
+        body.chars().take(500).collect::<String>()
+    )
+    .into())
 }
 
 async fn prepare_thread(
@@ -159,6 +326,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "REMOTE_REST_API_URL",
         "http://dd-remote-rest-api.default.svc.cluster.local:8082",
     );
+    let container_pool_url = env_value(
+        "CONTAINER_POOL_BASE_URL",
+        "http://dd-container-pool.default.svc.cluster.local:8102",
+    );
+    let fallback_rest_dispatch = env_bool("QUEUE_CONSUMER_FALLBACK_REST_DISPATCH", true);
     let receipts_dir = env_value(
         "QUEUE_CONSUMER_RECEIPTS_DIR",
         "/tmp/dd-remote-queue-consumer/tasks",
@@ -169,7 +341,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .build()?;
 
     println!(
-        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} consumer={consumer_name} rest_api_url={rest_api_url} receipts_dir={receipts_dir}"
+        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} receipts_dir={receipts_dir}"
     );
     let client = async_nats::connect(nats_url).await?;
     let consumer = build_jetstream_consumer(
@@ -213,16 +385,33 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
             continue;
         }
+        let shadow = is_shadow_task(&task);
         println!(
-            "queue task received: thread={} task={} shadow={} direct_dispatch={}",
+            "queue task received: thread={} task={} kind={} shadow={} direct_dispatch={}",
             task.thread_id,
             task.task_id,
-            task.shadow.unwrap_or(false),
+            task.message_kind.as_deref().unwrap_or("unknown"),
+            shadow,
             task.direct_dispatch.unwrap_or(false),
         );
-        if let Err(error) = prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await {
+        let result = if shadow {
+            prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
+        } else {
+            match dispatch_to_container_pool(&http, &container_pool_url, &secret, &task).await {
+                Ok(()) => Ok(()),
+                Err(pool_error) if fallback_rest_dispatch => {
+                    eprintln!(
+                        "queue task container pool dispatch failed; falling back to rest dispatch: thread={} task={} error={pool_error}",
+                        task.thread_id, task.task_id
+                    );
+                    dispatch_to_rest_api(&http, &rest_api_url, &secret, &task).await
+                }
+                Err(pool_error) => Err(pool_error),
+            }
+        };
+        if let Err(error) = result {
             eprintln!(
-                "queue task prepare failed: thread={} task={} error={error}",
+                "queue task handoff failed: thread={} task={} error={error}",
                 task.thread_id, task.task_id
             );
             if let Err(nak_error) = message

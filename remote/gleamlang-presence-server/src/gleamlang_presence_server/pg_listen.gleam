@@ -44,17 +44,27 @@ pub type Event {
     conv_id: String,
     user_id: String,
     soft_deleted: Bool,
-    shard: Int,
+    conv_shard: Int,
+    user_shard: Int,
+    seq: Int,
     emitted_at: Float,
   )
+}
+
+/// Which sharding axis a subscription is on. Both axes share the same
+/// numeric shard space; they differ only in the channel name prefix
+/// (`presence_change_conv_<n>` vs `presence_change_user_<n>`).
+pub type Axis {
+  ConvAxis
+  UserAxis
 }
 
 pub type PgListen =
   Subject(Message)
 
 pub opaque type Message {
-  Subscribe(conv_id: String)
-  Unsubscribe(conv_id: String)
+  Subscribe(axis: Axis, id: String)
+  Unsubscribe(axis: Axis, id: String)
   Raw(channel: String, payload: String)
   Shutdown
 }
@@ -62,8 +72,8 @@ pub opaque type Message {
 type State {
   State(
     server: Pid,
-    /// shard -> { ref count, opaque pgo listen reference }
-    shards: Dict(Int, ShardState),
+    /// (axis, shard) -> { ref count, opaque pgo listen reference }
+    shards: Dict(#(Axis, Int), ShardState),
     on_event: fn(Event) -> Nil,
     n_shards: Int,
   )
@@ -149,12 +159,26 @@ pub fn start(
   |> actor.start()
 }
 
-pub fn subscribe(listen: PgListen, conv_id conv_id: String) -> Nil {
-  process.send(listen, Subscribe(conv_id))
+/// Subscribe to the conv-axis shard for `conv_id`. Idempotent: ref-
+/// counted, so calling subscribe(N) then unsubscribe(N-1) leaves us
+/// LISTENing.
+pub fn subscribe_conv(listen: PgListen, conv_id conv_id: String) -> Nil {
+  process.send(listen, Subscribe(ConvAxis, conv_id))
 }
 
-pub fn unsubscribe(listen: PgListen, conv_id conv_id: String) -> Nil {
-  process.send(listen, Unsubscribe(conv_id))
+pub fn unsubscribe_conv(listen: PgListen, conv_id conv_id: String) -> Nil {
+  process.send(listen, Unsubscribe(ConvAxis, conv_id))
+}
+
+/// Subscribe to the user-axis shard for `user_id`. Used so a pod with a
+/// user-scope ws gets notified about that user being added to any new
+/// conv, regardless of whether the pod also listens on the conv's shard.
+pub fn subscribe_user(listen: PgListen, user_id user_id: String) -> Nil {
+  process.send(listen, Subscribe(UserAxis, user_id))
+}
+
+pub fn unsubscribe_user(listen: PgListen, user_id user_id: String) -> Nil {
+  process.send(listen, Unsubscribe(UserAxis, user_id))
 }
 
 pub fn stop(listen: PgListen) -> Nil {
@@ -165,9 +189,14 @@ pub fn stop(listen: PgListen) -> Nil {
 /// hash. Lets the conversations actor (and tests) reason about which
 /// channel a given conv will be NOTIFY'd on.
 pub fn shard_of(conv_id: String, n_shards: Int) -> Int {
-  // Mirrors postgres `presence_shard_of(uuid)`: strip hyphens, read the
-  // first 16 bits of the canonical UUID hex, then modulo the configured
-  // shard count. Keeping this deterministic avoids PG hashtext drift.
+  // Mirrors the SQL trigger `notify_presence_member_change()` in
+  // schema.sql: take the first 4 hex digits of the canonical UUID form
+  // (after stripping hyphens), interpret as an unsigned 16-bit integer,
+  // then modulo n_shards. Non-UUID conv_ids fall back to `phash2` purely
+  // so the listener doesn't crash on demo data — the SQL side also
+  // bails on such inputs, so the two paths simply never converge for
+  // non-UUID conv_ids and that's fine. If the algorithm ever drifts,
+  // cross-check with `select presence_shard_of('<uuid>')`.
   shard_of_ffi(conv_id, n_shards)
 }
 
@@ -178,20 +207,20 @@ fn shard_of_ffi(conv_id: String, n_shards: Int) -> Int
 
 fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
   case msg {
-    Subscribe(conv_id) -> {
-      let shard = shard_of(conv_id, state.n_shards)
-      let new_state = case dict.get(state.shards, shard) {
+    Subscribe(axis, id) -> {
+      let key = #(axis, shard_of(id, state.n_shards))
+      let new_state = case dict.get(state.shards, key) {
         Ok(existing) ->
           State(
             ..state,
             shards: dict.insert(
               state.shards,
-              shard,
+              key,
               ShardState(..existing, refcount: existing.refcount + 1),
             ),
           )
         Error(_) -> {
-          let channel = channel_name(shard)
+          let channel = channel_name(key)
           case pgo_notifications_listen(state.server, channel) {
             Ok(ref) -> {
               io.println("pg_listen: LISTEN " <> channel)
@@ -199,7 +228,7 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
                 ..state,
                 shards: dict.insert(
                   state.shards,
-                  shard,
+                  key,
                   ShardState(refcount: 1, listen_ref: ref),
                 ),
               )
@@ -219,9 +248,9 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
       actor.continue(new_state)
     }
 
-    Unsubscribe(conv_id) -> {
-      let shard = shard_of(conv_id, state.n_shards)
-      let new_state = case dict.get(state.shards, shard) {
+    Unsubscribe(axis, id) -> {
+      let key = #(axis, shard_of(id, state.n_shards))
+      let new_state = case dict.get(state.shards, key) {
         Error(_) -> state
         Ok(existing) -> {
           let next_count = existing.refcount - 1
@@ -231,15 +260,15 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
                 ..state,
                 shards: dict.insert(
                   state.shards,
-                  shard,
+                  key,
                   ShardState(..existing, refcount: next_count),
                 ),
               )
             True -> {
               let _ =
                 pgo_notifications_unlisten(state.server, existing.listen_ref)
-              io.println("pg_listen: UNLISTEN " <> channel_name(shard))
-              State(..state, shards: dict.delete(state.shards, shard))
+              io.println("pg_listen: UNLISTEN " <> channel_name(key))
+              State(..state, shards: dict.delete(state.shards, key))
             }
           }
         }
@@ -259,8 +288,13 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
   }
 }
 
-fn channel_name(shard: Int) -> String {
-  "presence_change_" <> int.to_string(shard)
+fn channel_name(key: #(Axis, Int)) -> String {
+  let #(axis, shard) = key
+  let prefix = case axis {
+    ConvAxis -> "presence_change_conv_"
+    UserAxis -> "presence_change_user_"
+  }
+  prefix <> int.to_string(shard)
 }
 
 // ── Dynamic / JSON decoding ──────────────────────────────────────────────
@@ -288,14 +322,18 @@ fn decode_event(json_str: String) -> Result(Event, String) {
     use conv_id <- decode.field("conv_id", decode.string)
     use user_id <- decode.field("user_id", decode.string)
     use soft_deleted <- decode.field("soft_deleted", decode.bool)
-    use shard <- decode.field("shard", decode.int)
+    use conv_shard <- decode.field("conv_shard", decode.int)
+    use user_shard <- decode.field("user_shard", decode.int)
+    use seq <- decode.field("seq", decode.int)
     use emitted_at <- decode.field("emitted_at", decode.float)
     decode.success(Event(
       op: parse_op(op),
       conv_id: conv_id,
       user_id: user_id,
       soft_deleted: soft_deleted,
-      shard: shard,
+      conv_shard: conv_shard,
+      user_shard: user_shard,
+      seq: seq,
       emitted_at: emitted_at,
     ))
   }

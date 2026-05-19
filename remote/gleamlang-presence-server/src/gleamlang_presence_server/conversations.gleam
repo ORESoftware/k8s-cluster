@@ -48,6 +48,7 @@ import gleamlang_presence_server/pg_groups
 import gleamlang_presence_server/pg_listen.{
   type Event as PgEvent, KindAdded, KindRemoved,
 }
+import gleamlang_presence_server/pg_outbox.{type PgOutbox}
 import gleamlang_presence_server/registry.{type Registry}
 import gleamlang_presence_server/store.{type Store}
 
@@ -77,6 +78,24 @@ pub type Message {
   /// and the pg_listen actor have started. While None, the LISTEN path
   /// is inactive and we rely on pg-mesh gossip.
   AttachPgListen(pg_listen: option.Option(pg_listen.PgListen))
+  /// Late-bind the pg_outbox handle. While None, only the LISTEN/NOTIFY
+  /// fast path is active — outbox replay is unavailable, so a NOTIFY
+  /// missed during pod startup will not be recovered.
+  AttachPgOutbox(pg_outbox: option.Option(PgOutbox))
+  /// Express interest in a specific user, independent of conversation. A
+  /// user-scoped ws calls this on open so the pod LISTENs on the user-
+  /// axis shard for that user — covering writes that add the user to a
+  /// conv whose conv-axis shard the pod isn't subscribed to yet.
+  RegisterUserInterest(user_id: UserId)
+  /// Drop an earlier `RegisterUserInterest` (last conn for the user on
+  /// this pod closing).
+  UnregisterUserInterest(user_id: UserId)
+  /// Conv-scope ws opened for a conv the pod may not yet be LISTENing
+  /// on. Triggers `pg_listen.subscribe_conv` (ref-counted) and lazy
+  /// hydrates the conv's member set into the in-memory cache. Does NOT
+  /// write to Postgres — the caller is asserting an existing membership.
+  TouchConv(conv_id: ConvId)
+  UntouchConv(conv_id: ConvId)
 }
 
 pub type PeerEchoKind {
@@ -108,10 +127,19 @@ type State {
     /// `pg_listen.subscribe(conv_id)` whenever it touches a new conv so
     /// the dedicated pgo connection is LISTENing on the matching shard.
     pg_listen: option.Option(pg_listen.PgListen),
+    /// Optional outbox-tail handle. Mirrors pg_listen's subscriptions
+    /// so the polling consumer filters by the same shard set.
+    pg_outbox: option.Option(PgOutbox),
   )
 }
 
-const dedup_window_ms: Int = 500
+/// How long after a local dispatch we suppress the same logical event
+/// arriving via the other paths. Must exceed both the LISTEN/NOTIFY
+/// fanout latency (negligible) AND the slowest poll interval among the
+/// durable consumers — pg_outbox at 5s and pg_wal at 1s by default —
+/// otherwise late re-deliveries escape and the same event fires twice.
+/// 10s gives a generous margin over both.
+const dedup_window_ms: Int = 10_000
 
 const gc_threshold: Int = 4096
 
@@ -150,6 +178,7 @@ pub fn start(
       fanout: fanout,
       last_dispatched_ms: dict.new(),
       pg_listen: option.None,
+      pg_outbox: option.None,
     ))
     |> actor.selecting(selector)
     |> actor.returning(named)
@@ -234,17 +263,107 @@ pub fn attach_pg_listen(
   process.send(convs, AttachPgListen(option.Some(pg_listen)))
 }
 
-fn ensure_listen(state: State, conv_id: ConvId) -> Nil {
+/// Late-bind the outbox-tail handle. Symmetric to `attach_pg_listen`;
+/// from this point on every shard subscribe/unsubscribe is mirrored to
+/// the outbox actor so the durable poll path filters on the same set
+/// of shards as the LISTEN path.
+pub fn attach_pg_outbox(
+  convs: Conversations,
+  pg_outbox: PgOutbox,
+) -> Nil {
+  process.send(convs, AttachPgOutbox(option.Some(pg_outbox)))
+}
+
+/// Subscribe (ref-counted, so safe to call repeatedly) to the conv-axis
+/// shard for `conv_id` on every durable transport — LISTEN/NOTIFY (push
+/// path) AND the outbox-tail (durable poll path). Cheap when already
+/// subscribed.
+fn ensure_conv_listen(state: State, conv_id: ConvId) -> Nil {
   case state.pg_listen {
-    option.Some(pl) -> pg_listen.subscribe(pl, conv_id)
+    option.Some(pl) -> pg_listen.subscribe_conv(pl, conv_id)
     option.None -> Nil
   }
+  case state.pg_outbox {
+    option.Some(po) -> pg_outbox.subscribe_conv(po, conv_id)
+    option.None -> Nil
+  }
+}
+
+fn ensure_conv_unlisten(state: State, conv_id: ConvId) -> Nil {
+  case state.pg_listen {
+    option.Some(pl) -> pg_listen.unsubscribe_conv(pl, conv_id)
+    option.None -> Nil
+  }
+  case state.pg_outbox {
+    option.Some(po) -> pg_outbox.unsubscribe_conv(po, conv_id)
+    option.None -> Nil
+  }
+}
+
+/// Subscribe to the user-axis shard for `user_id` on every durable
+/// transport. Used so a pod running a user-scope ws gets notified about
+/// that user being added to any new conv whose conv-axis shard the pod
+/// isn't yet subscribed to.
+fn ensure_user_listen(state: State, user_id: UserId) -> Nil {
+  case state.pg_listen {
+    option.Some(pl) -> pg_listen.subscribe_user(pl, user_id)
+    option.None -> Nil
+  }
+  case state.pg_outbox {
+    option.Some(po) -> pg_outbox.subscribe_user(po, user_id)
+    option.None -> Nil
+  }
+}
+
+fn ensure_user_unlisten(state: State, user_id: UserId) -> Nil {
+  case state.pg_listen {
+    option.Some(pl) -> pg_listen.unsubscribe_user(pl, user_id)
+    option.None -> Nil
+  }
+  case state.pg_outbox {
+    option.Some(po) -> pg_outbox.unsubscribe_user(po, user_id)
+    option.None -> Nil
+  }
+}
+
+/// Called by `connection.gleam`'s UserScope open hook so the pod begins
+/// LISTENing on the user-axis shard for this user. Symmetrically called
+/// on close via `unregister_user_interest`.
+pub fn register_user_interest(
+  convs: Conversations,
+  user_id user_id: UserId,
+) -> Nil {
+  process.send(convs, RegisterUserInterest(user_id))
+}
+
+pub fn unregister_user_interest(
+  convs: Conversations,
+  user_id user_id: UserId,
+) -> Nil {
+  process.send(convs, UnregisterUserInterest(user_id))
+}
+
+/// Called by `connection.gleam`'s ConvScope open hook. Hydrates the
+/// conv into the in-memory cache (cheap one-time PG read) and subscribes
+/// to its conv-axis LISTEN shard.
+pub fn touch_conv(
+  convs: Conversations,
+  conv_id conv_id: ConvId,
+) -> Nil {
+  process.send(convs, TouchConv(conv_id))
+}
+
+pub fn untouch_conv(
+  convs: Conversations,
+  conv_id conv_id: ConvId,
+) -> Nil {
+  process.send(convs, UntouchConv(conv_id))
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
     AddMember(conv_id, user_id) -> {
-      ensure_listen(state, conv_id)
+      ensure_conv_listen(state, conv_id)
       let written = case store.add_member(state.store, conv_id, user_id) {
         Ok(_) -> True
         Error(_) -> False
@@ -421,16 +540,64 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
     AttachPgListen(pg_listen) -> {
       let new_state = State(..state, pg_listen: pg_listen)
       // Eagerly subscribe to shards for any conv currently in our cache,
-      // so existing conv connections benefit from LISTEN/NOTIFY too.
+      // so existing conv connections benefit from LISTEN/NOTIFY too. We
+      // can't easily replay user-axis subscribes here (the actor doesn't
+      // hold the user-interest set explicitly), so user-scope conns will
+      // re-register via their `on_init` after the handle is attached.
       dict.each(new_state.conv_members, fn(conv_id, _) {
-        ensure_listen(new_state, conv_id)
+        ensure_conv_listen(new_state, conv_id)
       })
       actor.continue(new_state)
     }
 
+    AttachPgOutbox(pg_outbox) -> {
+      let new_state = State(..state, pg_outbox: pg_outbox)
+      // Same eager-resubscribe as AttachPgListen so the outbox poll
+      // includes our currently-known convs from tick one.
+      dict.each(new_state.conv_members, fn(conv_id, _) {
+        ensure_conv_listen(new_state, conv_id)
+      })
+      actor.continue(new_state)
+    }
+
+    RegisterUserInterest(user_id) -> {
+      ensure_user_listen(state, user_id)
+      actor.continue(state)
+    }
+
+    UnregisterUserInterest(user_id) -> {
+      ensure_user_unlisten(state, user_id)
+      actor.continue(state)
+    }
+
+    TouchConv(conv_id) -> {
+      ensure_conv_listen(state, conv_id)
+      // Lazy hydrate so future MembersOf calls don't pay the PG cost.
+      let new_state = case dict.has_key(state.conv_members, conv_id) {
+        True -> state
+        False -> {
+          let members = store.members_of(state.store, conv_id)
+          State(
+            ..state,
+            conv_members: dict.insert(
+              state.conv_members,
+              conv_id,
+              set.from_list(members),
+            ),
+          )
+        }
+      }
+      actor.continue(new_state)
+    }
+
+    UntouchConv(conv_id) -> {
+      ensure_conv_unlisten(state, conv_id)
+      actor.continue(state)
+    }
+
     Hydrate(user_id) -> {
       let from_pg = store.convs_of(state.store, user_id)
-      list.each(from_pg, fn(c) { ensure_listen(state, c) })
+      list.each(from_pg, fn(c) { ensure_conv_listen(state, c) })
       let conv_members =
         list.fold(from_pg, state.conv_members, fn(acc, conv_id) {
           case dict.has_key(acc, conv_id) {

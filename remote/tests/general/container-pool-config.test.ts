@@ -20,6 +20,45 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+function parseContainerPoolAppConfigSeed(seedSql: string): {
+  runtimeContract: {
+    defaultRequestPath: string;
+    defaultHealthPath: string;
+    defaultContainerPort: number;
+    managerInjectedEnv: string[];
+    natsEventPattern: string;
+    natsHeartbeatPattern: string;
+  };
+  baseImages: Array<{
+    runtime: string;
+    image: string;
+    dockerfile: string;
+    buildContext: string;
+  }>;
+  pools: Array<{
+    slug: string;
+    image: string;
+    env: Record<string, string>;
+    requestPath: string;
+    healthPath: string;
+    containerPort: number;
+    readOnly?: boolean;
+    user?: string;
+    minWarm: number;
+    maxWarm: number;
+    maxConcurrencyPerContainer: number;
+    requestTimeoutMs: number;
+    idleTtlSeconds: number;
+    natsSubject: string;
+  }>;
+} {
+  const match = seedSql.match(
+    /'container-pool\.runtime-pools\.v1',\s*'([\s\S]*?)'::jsonb,\s*1,\s*'active'/,
+  );
+  assert.ok(match, 'container pool app_config seed should include a JSONB value');
+  return JSON.parse(match[1]);
+}
+
 test('rust container pool reads Postgres config and dispatches over HTTP or NATS', async () => {
   const cargoToml = await readRepoFile('remote/container-pool-rs/Cargo.toml');
   const source = await readRepoFile('remote/container-pool-rs/src/main.rs');
@@ -132,6 +171,104 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(schemaSql, /max_warm integer default 2 not null/);
   assert.match(schemaSql, /health_path varchar\(256\) default '\/healthz' not null/);
   assert.match(schemaSql, /nats_subject text/);
+});
+
+test('container pool app_config seed is a complete runtime contract', async () => {
+  const appConfigSeedSql = await readRepoFile(
+    'remote/databases/pg/seeds/container-pool-app-config.sql',
+  );
+  const parsed = parseContainerPoolAppConfigSeed(appConfigSeedSql);
+  const expectedRuntimes = [
+    'nodejs',
+    'nodejs-chat-claude',
+    'rust',
+    'golang',
+    'python3',
+    'dart',
+    'gleamlang',
+    'erlang',
+  ];
+
+  assert.equal(parsed.runtimeContract.defaultRequestPath, '/invoke');
+  assert.equal(parsed.runtimeContract.defaultHealthPath, '/healthz');
+  assert.equal(parsed.runtimeContract.defaultContainerPort, 8080);
+  assert.deepEqual(
+    parsed.runtimeContract.managerInjectedEnv.sort(),
+    [
+      'DD_POOL_CONTAINER_NAME',
+      'DD_POOL_HEALTH_PATH',
+      'DD_POOL_ID',
+      'DD_POOL_NATS_EVENT_SUBJECT',
+      'DD_POOL_NATS_HEARTBEAT_SUBJECT',
+      'DD_POOL_REQUEST_PATH',
+      'DD_POOL_SLUG',
+      'NATS_URL',
+      'PORT',
+    ].sort(),
+  );
+  assert.equal(
+    parsed.runtimeContract.natsEventPattern,
+    'dd.remote.container_pool.<poolSlug>.events',
+  );
+  assert.equal(
+    parsed.runtimeContract.natsHeartbeatPattern,
+    'dd.remote.container_pool.<poolSlug>.heartbeats',
+  );
+  assert.deepEqual(
+    parsed.baseImages.map((entry) => entry.runtime).sort(),
+    [...expectedRuntimes].sort(),
+  );
+  assert.deepEqual(
+    parsed.pools.map((entry) => entry.slug).sort(),
+    [
+      'nodejs',
+      'nodejs-chat-claude-live-mutex-dev',
+      'rust',
+      'golang',
+      'python3',
+      'dart',
+      'gleamlang',
+      'erlang',
+    ].sort(),
+  );
+
+  const baseImageByRuntime = new Map(parsed.baseImages.map((entry) => [entry.runtime, entry]));
+  for (const pool of parsed.pools) {
+    const baseImage =
+      baseImageByRuntime.get(pool.slug) ??
+      (pool.slug.startsWith('nodejs-chat-claude-')
+        ? baseImageByRuntime.get('nodejs-chat-claude')
+        : undefined);
+    assert.ok(baseImage, `pool ${pool.slug} should have a matching base image`);
+    assert.equal(pool.image, baseImage.image);
+    if (pool.slug.startsWith('nodejs-chat-claude-')) {
+      assert.equal(baseImage.dockerfile, 'remote/dev-server/Dockerfile');
+      assert.equal(baseImage.buildContext, 'remote/dev-server');
+      assert.equal(pool.requestPath, '/tasks');
+      assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
+      assert.equal(pool.env.DD_REPO_URL, 'git@github.com:ORESoftware/live-mutex.git');
+      assert.equal(pool.readOnly, false);
+      assert.equal(pool.user, '1000:1000');
+      assert.equal(pool.minWarm, 2);
+    } else {
+      assert.equal(
+        baseImage.dockerfile,
+        `remote/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
+      );
+      assert.equal(baseImage.buildContext, 'remote/container-pool-rs');
+      assert.equal(pool.requestPath, parsed.runtimeContract.defaultRequestPath);
+      assert.equal(pool.env.DD_POOL_RUNTIME, pool.slug);
+      assert.ok(pool.env.DD_POOL_HANDLER.length > 0, `pool ${pool.slug} should define a handler`);
+    }
+    assert.equal(pool.healthPath, parsed.runtimeContract.defaultHealthPath);
+    assert.equal(pool.containerPort, parsed.runtimeContract.defaultContainerPort);
+    assert.ok(pool.minWarm >= 1, `pool ${pool.slug} should keep at least one warm worker`);
+    assert.ok(pool.maxWarm >= pool.minWarm, `pool ${pool.slug} maxWarm should cover minWarm`);
+    assert.equal(pool.maxConcurrencyPerContainer, 1);
+    assert.ok(pool.requestTimeoutMs >= 30_000);
+    assert.ok(pool.idleTtlSeconds >= 900);
+    assert.equal(pool.natsSubject, `dd.remote.container_pool.${pool.slug}.requests`);
+  }
 });
 
 test('container pool is deployed through Argo, gateway, and metrics scraping', async () => {

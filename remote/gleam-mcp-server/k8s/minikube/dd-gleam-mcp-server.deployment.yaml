@@ -31,6 +31,10 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8090'
             - name: RDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -49,20 +53,20 @@ spec:
               value: http://dd-loki.observability.svc.cluster.local:3100
             - name: MCP_GRAFANA_URL
               value: http://dd-grafana.observability.svc.cluster.local:3000
-            - name: MCP_OTEL_COLLECTOR_URL
-              value: http://dd-otel-collector.observability.svc.cluster.local:8889
             - name: MCP_TEMPO_URL
               value: http://dd-tempo.observability.svc.cluster.local:3200
             - name: MCP_JAEGER_URL
               value: http://dd-jaeger.observability.svc.cluster.local:16686
+            - name: MCP_OTEL_COLLECTOR_URL
+              value: http://dd-otel-collector.observability.svc.cluster.local:8889
+            - name: MCP_NATS_MONITOR_URL
+              value: http://dd-nats.messaging.svc.cluster.local:8222
             - name: MCP_NATS_METRICS_URL
               value: http://dd-nats.messaging.svc.cluster.local:7777
-            - name: MCP_OBS_HTTP_TIMEOUT_MS
-              value: "650"
-            - name: MCP_OBS_SNAPSHOT_TIMEOUT_MS
-              value: "1800"
-            - name: MCP_OBS_SNIPPET_BYTES
-              value: "768"
+            - name: MCP_OBSERVABILITY_TIMEOUT_MS
+              value: '1200'
+            - name: MCP_OBSERVABILITY_BODY_LIMIT_BYTES
+              value: '32768'
           envFrom:
             - secretRef:
                 name: dd-gleam-mcp-server-secrets
@@ -70,6 +74,13 @@ spec:
           ports:
             - name: http
               containerPort: 8090
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /healthz

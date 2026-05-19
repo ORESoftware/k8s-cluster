@@ -46,6 +46,10 @@ The dedicated fallback table shape is the `container_pool_configs` block in
 - `image`: trusted local or registry image for warm containers.
 - `command`: optional JSON array appended after the image in `nerdctl run`.
 - `env`: JSON object injected as container environment variables.
+- `readOnly`: optional bool; defaults to true for generic runtimes. Repo-scoped
+  chat/Claude workers set this false because they need a writable checkout.
+- `user`: optional container user. Generic runtimes use `10001:10001`; the
+  Node chat/Claude worker image uses `1000:1000`.
 - `request_path`: default HTTP path inside the worker, usually `/invoke`.
 - `health_path`: worker health endpoint, usually `/healthz`.
 - `container_port`: container listener port when not using host networking.
@@ -101,6 +105,12 @@ Every managed worker image should implement this convention:
 The bundled runtime images use a common Python HTTP shim that implements `/healthz`, `/invoke`,
 optional NATS `started`/`heartbeat`/`request.*` messages, and hands request bodies to the trusted
 runtime-specific handler configured by `DD_POOL_HANDLER`.
+
+Repo-scoped Node chat/Claude pools are a separate trusted worker shape. They use
+the generic `dd-dev-server:dev` image, keep `min_warm` workers per configured
+repo/base branch, accept task dispatches on `/tasks`, and stream task events
+through outbound WebSocket plus NATS. The repo URL and base branch are supplied
+through pool config/env; they are not hardcoded into the Dockerfile.
 
 This service is intentionally a container-pool control plane, not a shell execution API. It never
 accepts arbitrary commands from dispatch requests; process shape comes from trusted Postgres config.

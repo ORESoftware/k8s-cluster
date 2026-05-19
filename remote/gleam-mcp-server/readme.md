@@ -107,7 +107,35 @@ The tools are intentionally read-only:
 - `cluster_status`
 - `service_directory`
 - `telemetry_targets`
-- `observability_snapshot`
+- `telemetry_summary`
+- `observability_health`
+- `prometheus_up`
+- `loki_labels`
+- `grafana_inventory`
+- `nats_metrics`
+- `trace_backends`
+
+`telemetry_summary`, `observability_health`, `prometheus_up`, `loki_labels`,
+`grafana_inventory`, `nats_metrics`, and `trace_backends` make bounded
+in-cluster HTTP reads from the observability and messaging planes. Summary and
+health calls fan out checks in parallel so MCP clients do not wait for slow
+endpoints one by one, and timed-out checks are returned explicitly in the
+structured response. Grafana datasource and dashboard inventory is read through
+the anonymous in-cluster Grafana API. They use the service DNS names below by
+default and can be overridden per deployment:
+
+| Env var | Default |
+| --- | --- |
+| `MCP_PROMETHEUS_URL` | `http://dd-prometheus.observability.svc.cluster.local:9090` |
+| `MCP_LOKI_URL` | `http://dd-loki.observability.svc.cluster.local:3100` |
+| `MCP_GRAFANA_URL` | `http://dd-grafana.observability.svc.cluster.local:3000` |
+| `MCP_TEMPO_URL` | `http://dd-tempo.observability.svc.cluster.local:3200` |
+| `MCP_JAEGER_URL` | `http://dd-jaeger.observability.svc.cluster.local:16686` |
+| `MCP_OTEL_COLLECTOR_URL` | `http://dd-otel-collector.observability.svc.cluster.local:8889` |
+| `MCP_NATS_MONITOR_URL` | `http://dd-nats.messaging.svc.cluster.local:8222` |
+| `MCP_NATS_METRICS_URL` | `http://dd-nats.messaging.svc.cluster.local:7777` |
+| `MCP_OBSERVABILITY_TIMEOUT_MS` | `1200` |
+| `MCP_OBSERVABILITY_BODY_LIMIT_BYTES` | `32768` |
 
 ## Telemetry
 
@@ -120,22 +148,13 @@ The OpenTelemetry Collector scrapes `dd-gleam-mcp-server.default.svc.cluster.loc
 re-exports the metrics to Prometheus. Logs go to stdout, where promtail collects them for Loki.
 Grafana dashboard panels live in `remote/argocd/observability/grafana.dashboards.configmap.yaml`.
 
-The MCP server can also read the observability plane through internal service DNS without routing
-through the public gateway. The `observability_snapshot` tool and `GET /observability` probe:
-
-- Prometheus: readiness plus `up` query.
-- Loki: readiness plus labels API.
-- Grafana: health API.
-- OpenTelemetry Collector: collector-exported Prometheus metrics.
-- Tempo and Jaeger: trace backend readiness/query APIs.
-- NATS metrics exporter: Prometheus metrics endpoint.
-
-Deployment env vars keep those URLs explicit and overrideable: `MCP_PROMETHEUS_URL`,
-`MCP_LOKI_URL`, `MCP_GRAFANA_URL`, `MCP_OTEL_COLLECTOR_URL`, `MCP_TEMPO_URL`, `MCP_JAEGER_URL`, and
-`MCP_NATS_METRICS_URL`. The snapshot probes targets concurrently and is bounded by
-`MCP_OBS_HTTP_TIMEOUT_MS`, `MCP_OBS_SNAPSHOT_TIMEOUT_MS`, and `MCP_OBS_SNIPPET_BYTES`. Responses
-return only small body snippets so agents can diagnose telemetry reachability without turning MCP
-into a broad data exfiltration path.
+The MCP server also reads observability data directly from the in-cluster
+Prometheus/Loki/Grafana/Tempo/Jaeger/OTel services and from the NATS monitoring
+and metrics endpoints. It does not need Kubernetes API permissions for this path
+and it does not expose write-capable telemetry operations. The deployment
+includes a NetworkPolicy that permits ingress from the gateway and metrics
+scrapers, DNS egress, bounded egress to observability and NATS telemetry ports,
+and database egress for future read-only PG-backed MCP tools.
 
 ## Kubernetes
 

@@ -20,6 +20,18 @@ Required AWS secret names:
 - `dd/remote-dev/idle-reaper-secret` -> creates `dd-idle-reaper-secret`
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
 
+`dd/remote-dev/agent-secrets` is also the home for Git credentials used by remote-dev workers.
+Expected Git keys are:
+
+- `DD_REPO_URL`
+- `DD_REPO_REF`
+- `GH_DEPLOY_KEY`
+- `GH_DEPLOY_KEY_PUBLIC` for operator/audit convenience
+- `GH_PAT` if GitHub CLI PR creation needs a token
+
+Never commit deploy-key material or bake it into a worker image. `dd-dev-server` writes
+`GH_DEPLOY_KEY` from the Kubernetes secret to a private key file at container startup.
+
 The `dd-aws-secrets-manager` store uses the External Secrets controller pod's default AWS
 credential chain. On EC2 this means the node instance role must allow
 `secretsmanager:GetSecretValue`, `secretsmanager:DescribeSecret`, and

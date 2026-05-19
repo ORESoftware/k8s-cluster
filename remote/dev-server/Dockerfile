@@ -100,34 +100,35 @@ ENV HOME=/home/node \
     USER=node
 
 # ============================================================
-# Bake the "recent baseline" — configured repo with warm node_modules.
-# Baked at /home/node/repo-template (NOT under workspace/) so the
-# v4 PVC mount at /home/node/workspace doesn't mask it. entrypoint.sh
-# seeds /home/node/workspace/repo from this template on first boot
-# (cold start with empty PVC); subsequent reboots reuse the persisted
-# workspace and just `git fetch` the recent delta.
+# Optionally bake a "recent baseline" repo with warm node_modules.
+# Repo-scoped container-pool workers can also start from this generic image
+# and clone DD_REPO_URL at runtime, so DD_REPO_URL is not required at build time.
 # ============================================================
 WORKDIR /home/node
 ARG DD_REPO_URL
 ARG DD_REPO_REF=dev
 ARG DD_REPO_CACHE_BUST=manual
 RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
-    test -n "$DD_REPO_URL" \
- && mkdir -p /home/node/.ssh \
- && echo "$DD_REPO_CACHE_BUST" > /tmp/dd-repo-cache-bust \
- && cp /run/secrets/github_deploy_key /home/node/.ssh/id_ed25519 \
- && chmod 700 /home/node/.ssh \
- && chmod 600 /home/node/.ssh/id_ed25519 \
- && touch /home/node/.ssh/known_hosts \
- && GIT_SSH_COMMAND="ssh -F /dev/null -i /home/node/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/node/.ssh/known_hosts" \
-    git clone --depth 50 --branch "$DD_REPO_REF" "$DD_REPO_URL" repo-template \
- && cd repo-template \
- && if [ -f package.json ]; then \
-      pnpm install --store-dir /home/node/repo-template/.pnpm-store --frozen-lockfile; \
+    if [ -n "$DD_REPO_URL" ]; then \
+      mkdir -p /home/node/.ssh \
+      && echo "$DD_REPO_CACHE_BUST" > /tmp/dd-repo-cache-bust \
+      && cp /run/secrets/github_deploy_key /home/node/.ssh/id_ed25519 \
+      && chmod 700 /home/node/.ssh \
+      && chmod 600 /home/node/.ssh/id_ed25519 \
+      && touch /home/node/.ssh/known_hosts \
+      && GIT_SSH_COMMAND="ssh -F /dev/null -i /home/node/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/node/.ssh/known_hosts" \
+        git clone --depth 50 --branch "$DD_REPO_REF" "$DD_REPO_URL" repo-template \
+      && cd repo-template \
+      && if [ -f package.json ]; then \
+        pnpm install --store-dir /home/node/repo-template/.pnpm-store --frozen-lockfile; \
+      else \
+        echo "no root package.json in repo-template; skipping pnpm install"; \
+      fi \
+      && rm -f /home/node/.ssh/id_ed25519; \
     else \
-      echo "no root package.json in repo-template; skipping pnpm install"; \
-    fi \
- && rm -f /home/node/.ssh/id_ed25519
+      mkdir -p /home/node/repo-template \
+      && echo "DD_REPO_URL not provided; building generic repo-configured worker base"; \
+    fi
 ENV DD_REPO_REF=$DD_REPO_REF \
     BASE_BRANCH=$DD_REPO_REF
 

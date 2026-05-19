@@ -13,6 +13,12 @@ axum = { version = "0.7", features = ["macros"] }
 # schema.sql immediately surfaces here (instead of silently shipping a
 # stale read or write).
 dd-pg-defs = { path = "../libs/pg-defs/generated/rust" }
+# WAL gateway subscription. The REST API already publishes NATS events
+# from its own write handlers, but CDC gives us a coalesced fan-out for
+# *every* row change — including writes made via psql, direct migrations,
+# or other services — so downstream consumers (gleam-lambda-runner etc.)
+# stay consistent regardless of who wrote the row.
+dd-wal-consumer = { path = "../libs/wal-consumer-rs" }
 once_cell = "1"
 prometheus = "0.13"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls", "stream"] }

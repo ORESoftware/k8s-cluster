@@ -32,6 +32,9 @@ const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [
   // .sql files are codegen INPUTS (consumed by `sqlc generate`), not authoritative DDL — the
   // pg-defs `--check` workflow keeps them locked to schema/schema.sql.
   'remote/libs/pg-defs/generated/go/sqlc',
+  // Billing owns a separate SQLx-managed ledger database; those migrations are
+  // intentionally outside the shared pg-defs RDS schema.
+  'remote/billing-server-rs/migrations',
 ];
 
 const IGNORED_DIRS = new Set([

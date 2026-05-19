@@ -138,6 +138,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(lambdaNats, /NATS_USERNAME/);
   assert.match(lambdaNats, /NATS_PASSWORD/);
   assert.match(lambdaNats, /NATS_TOKEN/);
+  assert.match(lambdaNats, /CONTAINER_POOL_NATS_URL/);
   assert.match(lambdaNats, /auth_token/);
   assert.match(lambdaNats, /parse_nats_url_auth/);
   assert.match(lambdaNats, /SUB /);
@@ -165,6 +166,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /host_command\(<<"bash">>\)/);
   assert.match(erlPort, /host_command_from_env/);
   assert.match(erlPort, /LAMBDA_NODEJS_HOST_COMMAND/);
+  assert.match(erlPort, /CONTAINER_POOL_NATS_URL/);
+  assert.match(erlPort, /CONTAINER_POOL_NATS_SUBJECT_PREFIX/);
   assert.match(erlPort, /LAMBDA_PYTHON3_HOST_COMMAND/);
   assert.match(erlPort, /LAMBDA_RUBY_HOST_COMMAND/);
   assert.match(erlPort, /LAMBDA_BASH_HOST_COMMAND/);
@@ -190,6 +193,13 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /erlang:monitor\(process, Pid\)/);
   assert.match(erlPort, /dd_lambda_runner_child_stdio_bytes_total/);
   assert.match(jsRunner, /new Function\(/);
+  assert.match(jsRunner, /containerPool:\s*Object\.freeze/);
+  assert.match(jsRunner, /dispatchContainerPool/);
+  assert.match(jsRunner, /CONTAINER_POOL_NATS_URL/);
+  assert.match(jsRunner, /CONTAINER_POOL_NATS_SUBJECT_PREFIX/);
+  assert.match(jsRunner, /dd\.remote\.container_pool/);
+  assert.match(jsRunner, /connectTcp/);
+  assert.match(jsRunner, /PUB \$\{subject\} \$\{inbox\}/);
   assert.match(jsRunner, /LAMBDA_FUNCTION_CACHE_MAX/);
   assert.match(jsRunner, /LAMBDA_RESULT_MAX_BYTES/);
   assert.match(jsRunner, /globalThis\.console = safeConsole/);

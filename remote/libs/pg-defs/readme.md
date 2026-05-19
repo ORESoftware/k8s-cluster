@@ -19,7 +19,7 @@ node src/generate.mjs --check
 Run the parser/generator self-tests (no DB connection, no file writes):
 
 ```sh
-node --test src/
+node --test src/*.test.mjs
 ```
 
 Print SQL DDL for review or declarative diff tooling:
@@ -47,9 +47,10 @@ Connection lookup defaults to the shared remote RDS env names first:
 `--database-url-env=NAME` when auditing a service-specific database.
 
 The live diff also checks pg-def owned routines and triggers, including the sharded
-`presence_conv_members` LISTEN/NOTIFY contract (`presence_notify_shards`,
-`notify_presence_member_change`, `presence_shard_of`, and `presence_conv_members_notify`). This is
-intentional: a table-only diff can miss the exact drift that breaks presence cache fan-out.
+`presence_conv_members` LISTEN/NOTIFY + outbox contract (`presence_notify_shards`,
+`notify_presence_member_change`, `presence_shard_of`, `presence_conv_members_notify`, and related
+checkpoint/event tables). This is intentional: a table-only diff can miss the exact drift that
+breaks presence cache fan-out.
 
 For a parser-only sanity check that opens no database connection:
 

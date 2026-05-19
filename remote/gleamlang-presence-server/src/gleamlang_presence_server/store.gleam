@@ -183,22 +183,33 @@ pub fn add_member(
 ) -> Result(Nil, String) {
   case store.mode {
     Configured(conn) -> {
-      // Upsert the conv row first so the FK constraint on
-      // presence_conv_members is always satisfiable. Cheap because of
-      // the unique-active partial index on slug.
+      // Upsert conv + user slug rows first so FK constraints and slug
+      // round-tripping both work. The `presence_to_uuid()` helper means
+      // demo IDs ("conv-1") and real UUIDs both flow through the same
+      // column type. The slug columns (`presence_convs.slug` and
+      // `presence_users.slug`) keep the original human-readable
+      // identifier available so reads can return what the caller
+      // expected.
       let conv_sql =
         "insert into presence_convs(id, slug, display_name)
-         values ($1::uuid, $1::text, $1::text)
+         values (presence_to_uuid($1), $1::text, $1::text)
          on conflict (id) do nothing"
       let _ =
         pog.query(conv_sql)
         |> pog.parameter(pog.text(conv))
         |> pog.execute(conn)
 
+      let user_sql = "select presence_user_upsert($1)"
+      let _ =
+        pog.query(user_sql)
+        |> pog.parameter(pog.text(user))
+        |> pog.execute(conn)
+
       let sql =
         "insert into presence_conv_members
           (conv_id, user_id, role, status, is_soft_deleted)
-        values ($1::uuid, $2::uuid, 'member', 'active', false)
+        values (presence_to_uuid($1), presence_to_uuid($2),
+                'member', 'active', false)
         on conflict (conv_id, user_id) where is_soft_deleted = false
         do update set
           status = 'active',
@@ -227,7 +238,9 @@ pub fn remove_member(
           set is_soft_deleted = true,
               left_at = now(),
               updated_at = now()
-        where conv_id = $1::uuid and user_id = $2::uuid and is_soft_deleted = false"
+        where conv_id = presence_to_uuid($1)
+          and user_id = presence_to_uuid($2)
+          and is_soft_deleted = false"
       pog.query(sql)
       |> pog.parameter(pog.text(conv))
       |> pog.parameter(pog.text(user))
@@ -246,12 +259,16 @@ pub fn remove_member(
 pub fn convs_of(store: Store, user_id user: UserId) -> List(ConvId) {
   case store.mode {
     Configured(conn) -> {
+      // Return slugs (original demo IDs like "conv-1"), not the UUID
+      // hashes — the in-memory cache and ws registry use the slugs as
+      // their key everywhere downstream.
       let sql =
-        "select conv_id::text
-        from presence_conv_members
-        where user_id = $1::uuid
-          and status = 'active'
-          and is_soft_deleted = false"
+        "select c.slug
+        from presence_conv_members m
+        join presence_convs c on c.id = m.conv_id
+        where m.user_id = presence_to_uuid($1)
+          and m.status = 'active'
+          and m.is_soft_deleted = false"
       pog.query(sql)
       |> pog.parameter(pog.text(user))
       |> pog.returning({
@@ -274,11 +291,12 @@ pub fn members_of(store: Store, conv_id conv: ConvId) -> List(UserId) {
   case store.mode {
     Configured(conn) -> {
       let sql =
-        "select user_id::text
-        from presence_conv_members
-        where conv_id = $1::uuid
-          and status = 'active'
-          and is_soft_deleted = false"
+        "select u.slug
+        from presence_conv_members m
+        join presence_users u on u.id = m.user_id
+        where m.conv_id = presence_to_uuid($1)
+          and m.status = 'active'
+          and m.is_soft_deleted = false"
       pog.query(sql)
       |> pog.parameter(pog.text(conv))
       |> pog.returning({
@@ -299,6 +317,17 @@ pub fn describe(store: Store) -> String {
   case store.mode {
     Configured(_) -> "postgres (pog pool)"
     InMemory(_) -> "in-memory actor (PG_DATABASE_URL not set)"
+  }
+}
+
+/// Expose the underlying pog connection for modules that need to issue
+/// SQL outside the store's surface (notably `pg_outbox` for tailing the
+/// `presence_events` table and `pg_wal` for `pg_logical_slot_get_changes`).
+/// Returns `None` when running in the in-memory fallback mode.
+pub fn connection(store: Store) -> Option(Connection) {
+  case store.mode {
+    Configured(conn) -> option.Some(conn)
+    InMemory(_) -> option.None
   }
 }
 

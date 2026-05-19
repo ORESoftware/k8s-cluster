@@ -86,6 +86,7 @@ fn provider_budget(provider: ProviderKind) -> ProviderBudget {
         ProviderKind::CoinbaseCommerce | ProviderKind::CoinbasePrime => {
             ProviderBudget { window_seconds: 60, request_limit: 120 }
         }
+        ProviderKind::Coinflow => ProviderBudget { window_seconds: 60, request_limit: 120 },
         ProviderKind::PlaidBank => ProviderBudget { window_seconds: 60, request_limit: 120 },
         ProviderKind::SwiftWire | ProviderKind::AchDirect | ProviderKind::Wise => {
             ProviderBudget { window_seconds: 60, request_limit: 60 }

@@ -304,6 +304,59 @@ class PresenceConvMembersTable extends Table {
   };
 }
 
+@DataClassName("PresenceUsersData")
+class PresenceUsersTable extends Table {
+  @override String get tableName => "presence_users";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("PresenceEventsData")
+class PresenceEventsTable extends Table {
+  @override String get tableName => "presence_events";
+
+  Int64Column get seq => int64().named("seq").customConstraint("BIGSERIAL")();
+  DateTimeColumn get eventAt => dateTime().named("event_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get op => text().named("op")();
+  TextColumn get convId => text().named("conv_id").customConstraint("UUID")();
+  TextColumn get userId => text().named("user_id").customConstraint("UUID")();
+  TextColumn get convSlug => text().named("conv_slug")();
+  TextColumn get userSlug => text().named("user_slug")();
+  IntColumn get convShard => integer().named("conv_shard")();
+  IntColumn get userShard => integer().named("user_shard")();
+  BoolColumn get softDeleted => boolean().named("soft_deleted").clientDefault(() => false)();
+
+  @override
+  Set<Column> get primaryKey => {
+        seq,
+  };
+}
+
+@DataClassName("PresenceConsumerCheckpointsData")
+class PresenceConsumerCheckpointsTable extends Table {
+  @override String get tableName => "presence_consumer_checkpoints";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get consumerId => text().named("consumer_id")();
+  Int64Column get lastSeq => int64().named("last_seq").clientDefault(() => 0)();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        consumerId,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -318,4 +371,7 @@ const List<Type> registeredDriftTables = <Type>[
   LambdaFunctionTable,
   PresenceConvsTable,
   PresenceConvMembersTable,
+  PresenceUsersTable,
+  PresenceEventsTable,
+  PresenceConsumerCheckpointsTable,
 ];

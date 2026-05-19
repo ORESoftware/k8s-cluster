@@ -6,6 +6,7 @@
 //! webhook ingestors (mostly stubbed in this scaffold).
 
 mod api;
+mod cdc;
 mod config;
 mod crypto;
 mod customers;
@@ -58,6 +59,10 @@ async fn main() -> anyhow::Result<()> {
         let r = runner.clone();
         tokio::spawn(async move { r.run_forever().await });
     }
+
+    // Optional WAL-gateway CDC subscription (silent no-op unless
+    // BILLING_CDC_NATS_URL is set — see src/cdc.rs).
+    cdc::spawn();
 
     let app = api::build_router(state);
 

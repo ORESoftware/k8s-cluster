@@ -8,7 +8,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use maud::{html, Markup, DOCTYPE};
+use maud::{html, Markup, PreEscaped, DOCTYPE};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use serde::Serialize;
@@ -77,697 +77,715 @@ async fn root() -> impl IntoResponse {
 
 async fn home(State(state): State<AppState>) -> impl IntoResponse {
     record_request("GET", "/home", StatusCode::OK);
-    let body = format!(
-        r#"<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>dd-remote-web</title>
-    <style>
-      :root {{
-        color-scheme: dark;
-        --bg: #0b1117;
-        --panel: #111923;
-        --panel-2: #0f1720;
-        --line: rgba(148, 163, 184, 0.24);
-        --text: #eef2f6;
-        --muted: #a8b3c1;
-        --accent: #5eead4;
-        --warn: #fbbf24;
-      }}
-      * {{ box-sizing: border-box; }}
-      body {{
-        margin: 0;
-        min-height: 100vh;
-        background: var(--bg);
-        color: var(--text);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
-        padding: 24px;
-      }}
-      .shell {{ max-width: 1180px; margin: 0 auto; }}
-      h1 {{ margin: 0 0 10px; font-size: 30px; }}
-      h2 {{ margin: 0 0 12px; font-size: 17px; }}
-      p {{ margin: 0 0 14px; color: var(--muted); line-height: 1.5; }}
-      a {{ color: var(--accent); text-decoration: none; }}
-      a:hover {{ text-decoration: underline; }}
-      .grid {{
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 14px;
-        margin: 18px 0;
-      }}
-      .panel {{
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        padding: 14px;
-      }}
-      .label {{
-        display: block;
-        font-size: 11px;
-        color: var(--muted);
-        margin-bottom: 7px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }}
-      .value {{ font-size: 14px; line-height: 1.35; }}
-      .band {{
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel-2);
-        padding: 16px;
-        margin-top: 16px;
-      }}
-      table {{
-        width: 100%;
-        border-collapse: collapse;
-        table-layout: fixed;
-        font-size: 13px;
-      }}
-      th, td {{
-        border-top: 1px solid var(--line);
-        padding: 11px 10px;
-        text-align: left;
-        vertical-align: top;
-        line-height: 1.4;
-      }}
-      th {{ color: var(--muted); font-weight: 600; }}
-      code {{
-        display: inline-block;
-        max-width: 100%;
-        overflow-wrap: anywhere;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 6px;
-        padding: 2px 5px;
-        background: #0a1017;
-        color: #d7fbf4;
-        font-size: 12px;
-      }}
-      .path-links {{
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }}
-      .path-links a {{
-        text-decoration: none;
-      }}
-      .path-links a:hover code,
-      .path-links a:focus-visible code {{
-        border-color: rgba(94, 234, 212, 0.62);
-        background: rgba(94, 234, 212, 0.1);
-      }}
-      .pill {{
-        display: inline-flex;
-        align-items: center;
-        min-height: 24px;
-        border-radius: 999px;
-        border: 1px solid rgba(94, 234, 212, 0.35);
-        padding: 2px 8px;
-        color: var(--accent);
-        background: rgba(94, 234, 212, 0.08);
-        font-size: 12px;
-      }}
-      .pill.warn {{
-        border-color: rgba(251, 191, 36, 0.35);
-        color: var(--warn);
-        background: rgba(251, 191, 36, 0.08);
-      }}
-      .service-actions {{
-        display: flex;
-        flex-wrap: wrap;
-        gap: 7px;
-        align-items: center;
-      }}
-      button {{
-        border: 1px solid rgba(94, 234, 212, 0.34);
-        border-radius: 6px;
-        background: rgba(94, 234, 212, 0.09);
-        color: var(--text);
-        padding: 6px 9px;
-        font: inherit;
-        font-size: 12px;
-        cursor: pointer;
-      }}
-      button:hover,
-      button:focus-visible {{
-        border-color: rgba(94, 234, 212, 0.72);
-        outline: none;
-      }}
-      button:disabled {{
-        cursor: not-allowed;
-        opacity: 0.55;
-      }}
-      .live-toolbar {{
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: center;
-        flex-wrap: wrap;
-        margin-bottom: 12px;
-      }}
-      .live-toolbar h2 {{
-        margin-bottom: 0;
-      }}
-      .container-cell {{
-        display: grid;
-        gap: 8px;
-      }}
-      .container-item {{
-        display: grid;
-        gap: 5px;
-      }}
-      .terminal-dock {{
-        display: grid;
-        gap: 10px;
-        margin-top: 14px;
-      }}
-      .terminal-dock[hidden] {{
-        display: none;
-      }}
-      .terminal-head {{
-        display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        align-items: center;
-      }}
-      .terminal-frame {{
-        width: 100%;
-        height: 460px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #05080d;
-      }}
-      ol {{
-        margin: 8px 0 0;
-        padding-left: 22px;
-        color: var(--muted);
-        line-height: 1.55;
-      }}
-      @media (max-width: 880px) {{
-        .grid {{ grid-template-columns: 1fr; }}
-        table, thead, tbody, th, td, tr {{ display: block; }}
-        th {{ display: none; }}
-        td {{ border-top: 0; padding: 5px 0; }}
-        tr {{ border-top: 1px solid var(--line); padding: 10px 0; }}
-      }}
-    </style>
-  </head>
-  <body>
-    <main class="shell">
-      <h1>dd remote service directory</h1>
-      <p>Public entrypoint for the EC2 Kubernetes runtime. <code>/</code>, <code>/home</code>, <code>/agents/tasks</code>, <code>/agents/threads</code>, <code>/api/agents/tasks</code>, <code>/presence-test</code>, <code>/wss-test</code>, and <code>/webrtc/</code> are open. Authenticated entries include <code>/lambdas/functions</code>, <code>/lambdas/invoke/&lt;function-id&gt;</code>, <code>/scrape</code>, <code>/trading</code>, <code>/container-pools</code>, <code>/bastion</code>, and <code>/builds</code>; ops paths stay behind internal gateway access.</p>
-      <div class="grid">
-        <section class="panel">
-          <span class="label">Web Deployment</span>
-          <div class="value">{}</div>
-        </section>
-        <section class="panel">
-          <span class="label">K8s Routing</span>
-          <div class="value">{}</div>
-        </section>
-        <section class="panel">
-          <span class="label">Workers</span>
-          <div class="value">{}</div>
-        </section>
-        <section class="panel">
-          <span class="label">Queue Consumer</span>
-          <div class="value">{}</div>
-        </section>
-      </div>
-      <section class="band">
-        <h2>Deployments</h2>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 25%">Deployment</th>
-              <th style="width: 22%">Service</th>
-              <th style="width: 16%">Access</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>dd-web-scraper</code></td>
-              <td><code>dd-web-scraper:8097</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Long-running Fastify scraper deployment with <code>SCRAPER_PARSER_WORKERS=2</code>, browser strategies, DOM strategies, native fetch, Cheerio, and Browserless support.</td>
-            </tr>
-            <tr>
-              <td><code>dd-build-server</code></td>
-              <td><code>dd-build-server:8100</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Rust CI/CD server that clones allowlisted repos, builds allowlisted ECR images with <code>nerdctl -n k8s.io build</code>, pushes through ECR login, and applies constrained manifests with <code>kubectl</code>.</td>
-            </tr>
-            <tr>
-              <td><code>dd-ai-ml-pipeline</code></td>
-              <td><code>dd-ai-ml-pipeline.ai-ml:8099</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Python3 online feature pipeline for telemetry risk scoring, anomaly detection, transition hints, and MDP-ready events on <code>dd.remote.telemetry.mdp</code>.</td>
-            </tr>
-            <tr>
-              <td><code>dd-des-simulator</code></td>
-              <td><code>dd-des-simulator:8099</code></td>
-              <td><span class="pill">public</span></td>
-              <td>Rust DES simulator with declared <code>des.v1</code> schema, validation endpoint, async job status, and NATS result publishing.</td>
-            </tr>
-            <tr>
-              <td><code>dd-contract-service</code></td>
-              <td><code>dd-contract-service:8101</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Rust Solana contract gateway for <code>solana.contract.v1</code> validation, signed transaction simulation, metrics, and NATS validation results.</td>
-            </tr>
-            <tr>
-              <td><code>dd-vpn</code></td>
-              <td><code>dd-vpn-ui.vpn:51821</code></td>
-              <td><span class="pill warn">vpn/private</span></td>
-              <td>WireGuard wg-easy VPN server and private admin UI for split-tunnel access to the cluster service and pod CIDRs.</td>
-            </tr>
-            <tr>
-              <td><code>dd-live-mutex</code></td>
-              <td><code>dd-live-mutex:6970</code></td>
-              <td><span class="pill warn">cluster local</span></td>
-              <td>Singleton live-mutex broker deployment for TCP lock coordination.</td>
-            </tr>
-            <tr>
-              <td><code>dd-bastion</code></td>
-              <td><code>dd-bastion.vpn:8111</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Rust bastion/jumphost access broker for VPN profile, kubeconfig export, managed deployment inventory, and browser exec terminals.</td>
-            </tr>
-            <tr>
-              <td><code>dd-redis-cache</code></td>
-              <td><code>dd-redis-cache:6379</code></td>
-              <td><span class="pill warn">cluster local</span></td>
-              <td>Ephemeral Redis cache deployment with bounded memory and Redis health probes.</td>
-            </tr>
-            <tr>
-              <td><code>dd-lock-loadtest-trigger</code></td>
-              <td><code>dd-lock-loadtest-trigger:8110</code></td>
-              <td><span class="pill warn">internal</span></td>
-              <td>Node.js HTTP trigger for live-mutex versus Redis aggregate lock load tests.</td>
-            </tr>
-            <tr>
-              <td><code>dd-trading-server</code></td>
-              <td><code>dd-trading-server:8103</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Rust trading decision service for <code>trading.decision.v1</code> scoring, scraper and AI/ML signals, MDP/POMDP policy hints, risk gates, and NATS order intents.</td>
-            </tr>
-            <tr>
-              <td><code>dd-container-pool</code></td>
-              <td><code>dd-container-pool:8102</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Rust warm container pool service that loads runtime pool config from Postgres and starts local containerd workers through <code>nerdctl</code>.</td>
-            </tr>
-            <tr>
-              <td><code>dd-gleam-lambda-runner</code></td>
-              <td><code>dd-gleam-lambda-runner:8083</code></td>
-              <td><span class="pill warn">server auth</span></td>
-              <td>Gleam child-process runner deployment for <code>POST /lambdas/invoke/&lt;function-id&gt;</code>. It uses its own Argo CD app and <code>dd-gleam-lambda-runner-secrets</code>.</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-      <section class="band">
-        <div class="live-toolbar">
-          <div>
-            <h2>Live containers</h2>
-            <p id="live-containers-status">loading managed deployment pods</p>
-          </div>
-          <button id="live-containers-refresh" type="button">Refresh</button>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 20%">Deployment</th>
-              <th style="width: 14%">Namespace</th>
-              <th style="width: 23%">Pod</th>
-              <th>Containers</th>
-              <th style="width: 13%">Terminal</th>
-            </tr>
-          </thead>
-          <tbody id="live-containers-body">
-            <tr>
-              <td colspan="5" class="muted">Loading live container inventory from <code>/bastion/runtime/deployments</code>.</td>
-            </tr>
-          </tbody>
-        </table>
-        <div id="home-terminal" class="terminal-dock" hidden="hidden">
-          <div class="terminal-head">
-            <div>
-              <h2>Container terminal</h2>
-              <p id="home-terminal-caption">bastion exec session</p>
-            </div>
-            <button id="home-terminal-close" type="button">Close</button>
-          </div>
-          <iframe id="home-terminal-frame" class="terminal-frame" title="Bastion container terminal"></iframe>
-        </div>
-      </section>
-      <section class="band">
-        <h2>Paths</h2>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 27%">Path</th>
-              <th style="width: 25%">Target</th>
-              <th style="width: 16%">Access</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><span class="path-links"><a href="/"><code>/</code></a><a href="/home"><code>/home</code></a><a href="/agents/tasks"><code>/agents/tasks</code></a><a href="/agents/threads"><code>/agents/threads</code></a></span></td>
-              <td>Rust web homepage deployment</td>
-              <td><span class="pill">public</span></td>
-              <td>Service directory plus cluster-served task/thread/PR UI. Browser UIs call JSON APIs for stored state while runtime invocation paths stay separate.</td>
-            </tr>
-              <tr>
-                <td><span class="path-links"><a href="/tasks"><code>/tasks</code></a><a href="/status"><code>/status</code></a><a href="/stream/example-task-id"><code>/stream/&lt;uuid&gt;</code></a></span></td>
-                <td>Node.js Coding Agent Task Manager</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Runs inside the already-selected worker container. It executes prompts, tracks taskIds, streams events, and rejects requests for the wrong pinned thread.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/api/agents/tasks"><code>/api/agents/tasks</code></a><a href="/api/agents/threads/example-thread-id/context"><code>/api/agents/threads/&lt;uuid&gt;/context</code></a></span></td>
-                <td>Rust REST API (JSON only)</td>
-                <td><span class="pill">public</span></td>
-                <td>JSON-only boundary for task snapshots and thread context. The browser UI lives at <code>/agents/tasks</code>; storage can move from RDS to in-cluster Postgres without changing the HTML server.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/lambdas/functions"><code>/lambdas/functions</code></a><a href="/api/lambdas/functions"><code>/api/lambdas/functions</code></a><a href="/lambdas/invoke/00000000-0000-0000-0000-000000000000"><code>POST /lambdas/invoke/&lt;function-id&gt;</code></a></span></td>
-                <td>dd-gleam-lambda-runner deployment + Rust REST API</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/presence-test?user=alice&amp;device=d1&amp;autoconnect=1"><code>/presence-test</code></a></span></td>
-                <td>gleamlang-presence-server browser harness</td>
-                <td><span class="pill">public</span></td>
-                <td>Self-contained page that opens one user-scoped ws plus N conv-scoped ws's against the presence server, with controls for join/leave/broadcast/device-logout. Open in 3 tabs (alice/d1, bob/d2, carol/d3) to see cross-tab fan-out.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/wss-test"><code>/wss-test</code></a><a href="/wss-test?preset=gleam"><code>?preset=gleam</code></a><a href="/wss-test?preset=webrtc"><code>?preset=webrtc</code></a><a href="/wss-test?preset=gcs"><code>?preset=gcs</code></a><a href="/wss-test?preset=fsrx"><code>?preset=fsrx</code></a></span></td>
-                <td>Gateway WebSocket test lab</td>
-                <td><span class="pill">public</span></td>
-                <td>Rust-served browser harness for the Gleam fan-out socket, Rust WebRTC signaling socket, gms/gcs/chat.vibe websocket router, and F# Rx burst endpoint. Uses same-origin gateway paths by default so it tests the production ingress shape.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/auth?return=/home"><code>/auth</code></a></span></td>
-                <td>Rust PIN auth service</td>
-                <td><span class="pill">public</span></td>
-                <td>Sets the temporary <code>dd_auth</code> cookie after PIN auth. The gateway accepts that cookie instead of requiring browsers to send the legacy <code>Auth</code> header.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/bastion/runtime/deployments"><code>/bastion/runtime/deployments</code></a><a href="/bastion/profile"><code>/bastion/profile</code></a><code>/bastion/terminal</code></span></td>
-                <td>Rust bastion/jumphost access broker</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Same-origin gateway access to the bastion inventory and allowlisted browser exec terminals. Service container terminals run through the bastion instead of directly from the public web UI.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><code>dd.remote.thread.*.tasks</code><a href="/api/agents/threads/example-thread-id/prepare"><code>POST /api/agents/threads/&lt;uuid&gt;/prepare</code></a></span></td>
-                <td>Rust NATS Queue Consumer</td>
-                <td><span class="pill warn">internal access</span></td>
-                <td>Shadow consumer deployment <code>dd-remote-queue-consumer</code> reads task messages, keeps thread affinity with queue group <code>dd-remote-thread-preparer</code>, and prepares the matching UUID-bound worker. It does not execute prompts.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/dd-thread/example"><code>/dd-thread/&lt;short&gt;</code></a><a href="/dd-thread/example/tasks"><code>/dd-thread/&lt;short&gt;/tasks</code></a><a href="/dd-thread/example/stream/example-task-id"><code>/dd-thread/&lt;short&gt;/stream/&lt;taskId&gt;</code></a></span></td>
-                <td>Kubernetes per-thread Ingress</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Target shape for chat dispatch: Ingress selects the UUID-bound worker Service; Node.js handles only the task inside that selected container.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/gleam/home"><code>/gleam/home</code></a><a href="/gleam/healthz"><code>/gleam/healthz</code></a><a href="/gleam/metrics"><code>/gleam/metrics</code></a><a href="/wss-test?preset=gleam"><code>/gleam/ws test</code></a></span></td>
-                <td>Gleam WebSocket service</td>
-                <td><span class="pill warn">internal access</span></td>
-                <td>WebSocket endpoint: <code>wss://54.91.17.58/gleam/ws</code>.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/mcp"><code>/mcp</code></a><a href="/mcp/home"><code>/mcp/home</code></a><a href="/mcp/healthz"><code>/mcp/healthz</code></a><a href="/mcp/metrics"><code>/mcp/metrics</code></a></span></td>
-                <td>Gleam MCP service</td>
-                <td><span class="pill warn">internal access</span></td>
-                <td>Dedicated MCP deployment with read-only runtime tools, Prometheus metrics, and Loki-collected stdout logs.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/webrtc/"><code>/webrtc/</code></a><a href="/webrtc/healthz"><code>/webrtc/healthz</code></a><a href="/webrtc/metrics"><code>/webrtc/metrics</code></a><a href="/wss-test?preset=webrtc"><code>/webrtc/signal test</code></a></span></td>
-                <td>Rust WebRTC signaling service</td>
-                <td><span class="pill">public</span></td>
-                <td>Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer; add TURN later for strict NATs.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/mdp/"><code>/mdp/</code></a><a href="/mdp/healthz"><code>/mdp/healthz</code></a><a href="/mdp/metrics"><code>/mdp/metrics</code></a><a href="/mdp/optimize"><code>POST /mdp/optimize</code></a><a href="/mdp/telemetry/learn"><code>POST /mdp/telemetry/learn</code></a><code>dd.remote.mdp.optimize</code><code>dd.remote.telemetry.mdp</code></span></td>
-                <td>Rust MDP/POMDP optimizer</td>
-                <td><span class="pill">public</span></td>
-                <td>Async value-iteration, Q-value, policy, belief-state, and telemetry-risk optimizer. It subscribes to NATS optimization and telemetry jobs, then publishes results/events back to the runtime queue.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/des/"><code>/des/</code></a><a href="/des/healthz"><code>/des/healthz</code></a><a href="/des/metrics"><code>/des/metrics</code></a><a href="/des/model/schema"><code>/des/model/schema</code></a><a href="/des/model/example"><code>/des/model/example</code></a><a href="/des/validate"><code>POST /des/validate</code></a><a href="/des/simulate"><code>POST /des/simulate</code></a><code>dd.remote.des.simulate</code></span></td>
-                <td>Rust discrete event simulator</td>
-                <td><span class="pill">public</span></td>
-                <td>Async DES job runner with declared <code>des.v1</code> model schema, strict model validation, in-memory job status, resource-capacity simulation, metrics, and NATS result publishing.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/contracts/"><code>/contracts/</code></a><a href="/contracts/healthz"><code>/contracts/healthz</code></a><a href="/contracts/metrics"><code>/contracts/metrics</code></a><a href="/contracts/schema"><code>/contracts/schema</code></a><a href="/contracts/example"><code>/contracts/example</code></a><a href="/contracts/validate"><code>POST /contracts/validate</code></a><a href="/contracts/simulate"><code>POST /contracts/simulate</code></a><code>dd.remote.contracts.solana.validate</code></span></td>
-                <td>Rust Solana contract service</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Validates <code>solana.contract.v1</code> instruction envelopes, proxies signed simulation through Solana JSON-RPC, keeps raw send disabled by default, and publishes NATS validation results.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/ml/"><code>/ml/</code></a><a href="/ml/healthz"><code>/ml/healthz</code></a><a href="/ml/metrics"><code>/ml/metrics</code></a><a href="/ml/status"><code>/ml/status</code></a><a href="/ml/analyze"><code>POST /ml/analyze</code></a><a href="/ml/ingest"><code>POST /ml/ingest</code></a><code>dd.remote.telemetry.raw</code><code>dd.remote.ml.features</code></span></td>
-                <td>Python AI/ML feature pipeline</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests for the Rust optimizer.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/trading/"><code>/trading/</code></a><a href="/trading/healthz"><code>/trading/healthz</code></a><a href="/trading/metrics"><code>/trading/metrics</code></a><a href="/trading/schema"><code>/trading/schema</code></a><a href="/trading/example"><code>/trading/example</code></a><a href="/trading/decide"><code>POST /trading/decide</code></a><code>dd.remote.trading.signals</code><code>dd.remote.trading.order_intents</code></span></td>
-                <td>Rust trading decision service</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions. It emits paper/live order intents only; no exchange executor is embedded.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/scrape"><code>POST /scrape</code></a><a href="/scrape/strategies"><code>/scrape/strategies</code></a><a href="/scrape/healthz"><code>/scrape/healthz</code></a><a href="/scrape/metrics"><code>/scrape/metrics</code></a></span></td>
-                <td>dd-web-scraper Fastify deployment</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Long-running strategy router for native fetch, Cheerio, JSDOM, LinkeDOM, Playwright, Puppeteer, and Browserless scraping. Private cluster targets are blocked by default.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/builds"><code>POST /builds</code></a><a href="/builds/example-job"><code>/builds/&lt;jobId&gt;</code></a><a href="/builds/example-job/logs"><code>/builds/&lt;jobId&gt;/logs</code></a></span></td>
-                <td>dd-build-server Rust CI/CD deployment</td>
-                <td><span class="pill warn">server auth</span></td>
-                <td>Authenticated repo build queue. Jobs are <code>build-server.v1</code> JSON, push only to allowlisted ECR prefixes, and deploy only repo-relative manifests in allowlisted namespaces.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/telemetry/"><code>/telemetry/</code></a></span></td>
-                <td>Grafana</td>
-                <td><span class="pill warn">internal access</span></td>
-                <td>Primary HTML dashboard for Prometheus metrics, Loki logs, Tempo traces, and NATS metrics.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/prometheus/"><code>/prometheus/</code></a></span></td>
-                <td>Prometheus</td>
-                <td><span class="pill warn">internal access</span></td>
-                <td>Low-level metrics UI and query surface.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/nats/"><code>/nats/</code></a><a href="/nats-metrics/metrics"><code>/nats-metrics/metrics</code></a></span></td>
-                <td>NATS monitor and exporter</td>
-                <td><span class="pill warn">internal access</span></td>
-                <td>NATS should usually be inspected through Grafana; these paths expose raw health and metrics.</td>
-              </tr>
-              <tr>
-                <td><span class="path-links"><a href="/reaper/"><code>/reaper/</code></a><a href="/cron/"><code>/cron/</code></a></span></td>
-                <td>Runtime service status</td>
-                <td><span class="pill warn">internal access</span></td>
-                <td>Gateway status surfaces for idle reaper and cron scheduler deployments.</td>
-              </tr>
-          </tbody>
-        </table>
-      </section>
-      <section class="band">
-        <h2>Security plan</h2>
-        <ol>
-          <li>Today: the public gateway keeps ops paths behind temporary internal access while bootstrap work is still in flight.</li>
-          <li>Next: put TLS and identity-aware auth in front of the gateway using <code>auth_request</code>, oauth2-proxy, Cloudflare Access, or Tailscale.</li>
-          <li>Keep worker, NATS client, and Kubernetes control services internal; only expose explicit web surfaces.</li>
-          <li>Add Kubernetes NetworkPolicies and least-privilege service accounts so services can only talk to the namespaces they need.</li>
-          <li>Replace the static header with signed JWT/HMAC service tokens for backend calls and SSO sessions for browser use.</li>
-        </ol>
-      </section>
-    </main>
-    <script>
-      (() => {{
-        const body = document.getElementById("live-containers-body");
-        const status = document.getElementById("live-containers-status");
-        const refresh = document.getElementById("live-containers-refresh");
-        const dock = document.getElementById("home-terminal");
-        const frame = document.getElementById("home-terminal-frame");
-        const caption = document.getElementById("home-terminal-caption");
-        const close = document.getElementById("home-terminal-close");
-        const text = (value) => document.createTextNode(value == null || value === "" ? "none" : String(value));
-        const cell = (child) => {{
-          const td = document.createElement("td");
-          if (typeof child === "string") td.appendChild(text(child));
-          else td.appendChild(child);
-          return td;
-        }};
-        const code = (value) => {{
-          const el = document.createElement("code");
-          el.textContent = value == null || value === "" ? "none" : String(value);
-          return el;
-        }};
-        const pill = (value, warn) => {{
-          const el = document.createElement("span");
-          el.className = warn ? "pill warn" : "pill";
-          el.textContent = value;
-          return el;
-        }};
-        const shortContainerId = (value) => String(value || "").replace(/^\w+:\/\//, "").slice(0, 18);
-        const stateText = (container) => {{
-          const state = container?.state || {{}};
-          if (state.running) return "running";
-          if (state.waiting) return "waiting " + (state.waiting.reason || "unknown");
-          if (state.terminated) return "terminated " + (state.terminated.reason || "unknown");
-          return "unknown";
-        }};
-        const safeBastionTerminalUrl = (value) => {{
-          try {{
-            const url = new URL(String(value || ""), window.location.origin);
-            if (url.origin !== window.location.origin || url.pathname !== "/bastion/terminal") return "";
-            for (const key of ["namespace", "deployment", "pod", "container"]) {{
-              if (!url.searchParams.get(key)) return "";
-            }}
-            return `${{url.pathname}}${{url.search}}`;
-          }} catch {{
-            return "";
-          }}
-        }};
-        const openTerminal = (url, label) => {{
-          const targetUrl = safeBastionTerminalUrl(url);
-          if (!targetUrl) {{
-            status.textContent = "ignored unsafe bastion terminal URL";
-            return;
-          }}
-          caption.textContent = label;
-          frame.src = targetUrl;
-          dock.hidden = false;
-          dock.scrollIntoView({{ behavior: "smooth", block: "start" }});
-        }};
-        const renderEmpty = (message) => {{
-          body.textContent = "";
-          const tr = document.createElement("tr");
-          const td = document.createElement("td");
-          td.colSpan = 5;
-          td.className = "muted";
-          td.textContent = message;
-          tr.appendChild(td);
-          body.appendChild(tr);
-        }};
-        const render = (data) => {{
-          body.textContent = "";
-          let rowCount = 0;
-          for (const deployment of data.deployments || []) {{
-            const pods = deployment.pods || [];
-            if (!pods.length) {{
-              const tr = document.createElement("tr");
-              tr.append(
-                cell(deployment.deployment),
-                cell(deployment.namespace),
-                cell("no pods"),
-                cell((deployment.errors || []).join("; ") || "deployment has no selected pods"),
-                cell("none")
-              );
-              body.appendChild(tr);
-              rowCount += 1;
-              continue;
-            }}
-            for (const pod of pods) {{
-              const containers = pod.containers || [];
-              const containerCell = document.createElement("div");
-              containerCell.className = "container-cell";
-              const actions = document.createElement("div");
-              actions.className = "service-actions";
-              for (const container of containers) {{
-                const item = document.createElement("div");
-                item.className = "container-item";
-                const meta = document.createElement("span");
-                meta.append(code(container.name));
-                meta.append(" ");
-                meta.append(pill(stateText(container), !container.ready));
-                meta.append(" restarts ");
-                meta.append(code(container.restartCount || 0));
-                item.appendChild(meta);
-                if (container.containerId) {{
-                  const idLine = document.createElement("span");
-                  idLine.className = "muted";
-                  idLine.append("id ");
-                  idLine.append(code(shortContainerId(container.containerId)));
-                  item.appendChild(idLine);
-                }}
-                containerCell.appendChild(item);
-                const safeTerminalUrl = safeBastionTerminalUrl(container.terminalUrl);
-                const button = document.createElement("button");
-                button.type = "button";
-                button.textContent = "Terminal";
-                button.disabled = !safeTerminalUrl || !data.terminalEnabled;
-                button.title = button.disabled ? "terminal unavailable" : "Open bastion exec terminal";
-                button.addEventListener("click", () => openTerminal(safeTerminalUrl, deployment.namespace + "/" + pod.name + "/" + container.name));
-                actions.appendChild(button);
-              }}
-              const podCell = document.createElement("div");
-              podCell.className = "container-cell";
-              podCell.append(code(pod.name));
-              podCell.append(pill(pod.phase || "unknown", pod.phase !== "Running"));
-              const tr = document.createElement("tr");
-              tr.append(
-                cell(deployment.deployment),
-                cell(deployment.namespace),
-                cell(podCell),
-                cell(containerCell),
-                cell(actions)
-              );
-              body.appendChild(tr);
-              rowCount += 1;
-            }}
-          }}
-          if (!rowCount) renderEmpty("No managed deployment pods returned.");
-          status.textContent = (data.deployments || []).length + " managed deployments · " + (data.terminalEnabled ? "terminal enabled" : "terminal disabled");
-        }};
-        const load = async () => {{
-          status.textContent = "loading managed deployment pods";
-          refresh.disabled = true;
-          try {{
-            const response = await fetch("/bastion/runtime/deployments", {{ cache: "no-store", credentials: "same-origin" }});
-            if (response.status === 401) {{
-              renderEmpty("Sign in through /auth?return=/home to load live containers and bastion terminals.");
-              status.textContent = "auth required";
-              return;
-            }}
-            if (!response.ok) throw new Error("runtime inventory failed " + response.status);
-            render(await response.json());
-          }} catch (error) {{
-            renderEmpty(String(error));
-            status.textContent = "live container inventory unavailable";
-          }} finally {{
-            refresh.disabled = false;
-          }}
-        }};
-        refresh.addEventListener("click", load);
-        close.addEventListener("click", () => {{
-          frame.src = "about:blank";
-          dock.hidden = true;
-        }});
-        load();
-      }})();
-    </script>
-  </body>
-</html>
-"#,
-        state.server_label,
-        state.control_plane_label,
-        state.workers_label,
-        state.queue_consumer_label,
-    );
-    Html(body)
+    home_document(&state)
 }
+
+#[derive(Clone, Copy)]
+struct AccessPill {
+    label: &'static str,
+    warn: bool,
+}
+
+#[derive(Clone, Copy)]
+struct DeploymentRow {
+    deployments: &'static [&'static str],
+    service: &'static [&'static str],
+    service_note: Option<&'static str>,
+    access: AccessPill,
+    notes: &'static str,
+}
+
+#[derive(Clone, Copy)]
+struct PathEntry {
+    label: &'static str,
+    href: Option<&'static str>,
+}
+
+#[derive(Clone, Copy)]
+struct PathRow {
+    paths: &'static [PathEntry],
+    target: &'static str,
+    access: AccessPill,
+    notes: &'static str,
+}
+
+const PUBLIC: AccessPill = AccessPill {
+    label: "public",
+    warn: false,
+};
+const SERVER_AUTH: AccessPill = AccessPill {
+    label: "server auth",
+    warn: true,
+};
+const INTERNAL: AccessPill = AccessPill {
+    label: "internal",
+    warn: true,
+};
+const INTERNAL_ACCESS: AccessPill = AccessPill {
+    label: "internal access",
+    warn: true,
+};
+const CLUSTER_LOCAL: AccessPill = AccessPill {
+    label: "cluster local",
+    warn: true,
+};
+const VPN_PRIVATE: AccessPill = AccessPill {
+    label: "vpn/private",
+    warn: true,
+};
+
+fn home_document(state: &AppState) -> Html<String> {
+    Html(
+        html! {
+            (DOCTYPE)
+            html lang="en" {
+                head {
+                    meta charset="utf-8";
+                    meta name="viewport" content="width=device-width, initial-scale=1";
+                    title { "dd-remote-web" }
+                    style { (PreEscaped(HOME_CSS)) }
+                }
+                body {
+                    main class="shell" {
+                        h1 { "dd remote service directory" }
+                        (home_summary())
+                        (status_grid(state))
+                        (deployments_section())
+                        (live_containers_section())
+                        (paths_section())
+                        (security_plan_section())
+                    }
+                    script { (PreEscaped(HOME_LIVE_CONTAINERS_JS)) }
+                }
+            }
+        }
+        .into_string(),
+    )
+}
+
+fn home_summary() -> Markup {
+    html! {
+        p {
+            "Public entrypoint for the EC2 Kubernetes runtime. Open paths: "
+            code { "/" } ", " code { "/home" } ", " code { "/auth" } ", "
+            code { "/agents/tasks" } ", " code { "/agents/threads" } ", "
+            code { "/api/agents/tasks" } ", " code { "/presence-test" } ", "
+            code { "/wss-test" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
+            code { "/mdp/" } ", and " code { "/des/" } ". Server-auth paths: "
+            code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
+            code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
+            code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
+            code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
+            code { "/builds" } ", " code { "/gleam/" } ", " code { "/mcp" } ", and "
+            code { "/gcs/" } ". Internal-access ops: " code { "/telemetry/" } ", "
+            code { "/prometheus/" } ", " code { "/nats/" } ", " code { "/nats-metrics/" } ", "
+            code { "/reaper/" } ", " code { "/cron/" } ", plus the new "
+            code { "dd-billing-server" } " ledger API and the " code { "dd-wal-gateway" }
+            " Postgres -> NATS CDC pump."
+        }
+    }
+}
+
+fn status_grid(state: &AppState) -> Markup {
+    html! {
+        div class="grid" {
+            (status_panel("Web Deployment", &state.server_label))
+            (status_panel("K8s Routing", &state.control_plane_label))
+            (status_panel("Workers", &state.workers_label))
+            (status_panel("Queue Consumer", &state.queue_consumer_label))
+        }
+    }
+}
+
+fn status_panel(label: &str, value: &str) -> Markup {
+    html! {
+        section class="panel" {
+            span class="label" { (label) }
+            div class="value" { (value) }
+        }
+    }
+}
+
+fn deployments_section() -> Markup {
+    html! {
+        section class="band" {
+            h2 { "Deployments" }
+            table {
+                thead {
+                    tr {
+                        th style="width: 25%" { "Deployment" }
+                        th style="width: 22%" { "Service" }
+                        th style="width: 16%" { "Access" }
+                        th { "Notes" }
+                    }
+                }
+                tbody {
+                    @for row in DEPLOYMENT_ROWS {
+                        (deployment_row(row))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn deployment_row(row: &DeploymentRow) -> Markup {
+    html! {
+        tr {
+            td { (code_list(row.deployments)) }
+            td {
+                (code_list(row.service))
+                @if let Some(note) = row.service_note {
+                    " " (note)
+                }
+            }
+            td { (access_badge(row.access)) }
+            td { (row.notes) }
+        }
+    }
+}
+
+fn live_containers_section() -> Markup {
+    html! {
+        section class="band" {
+            div class="live-toolbar" {
+                div {
+                    h2 { "Live containers" }
+                    p id="live-containers-status" { "loading managed deployment pods" }
+                }
+                button id="live-containers-refresh" type="button" { "Refresh" }
+            }
+            table {
+                thead {
+                    tr {
+                        th style="width: 20%" { "Deployment" }
+                        th style="width: 14%" { "Namespace" }
+                        th style="width: 23%" { "Pod" }
+                        th { "Containers" }
+                        th style="width: 13%" { "Terminal" }
+                    }
+                }
+                tbody id="live-containers-body" {
+                    tr {
+                        td colspan="5" class="muted" {
+                            "Loading live container inventory from " code { "/bastion/runtime/deployments" } "."
+                        }
+                    }
+                }
+            }
+            div id="home-terminal" class="terminal-dock" hidden="hidden" {
+                div class="terminal-head" {
+                    div {
+                        h2 { "Container terminal" }
+                        p id="home-terminal-caption" { "bastion exec session" }
+                    }
+                    button id="home-terminal-close" type="button" { "Close" }
+                }
+                iframe id="home-terminal-frame" class="terminal-frame" title="Bastion container terminal" {}
+            }
+        }
+    }
+}
+
+fn paths_section() -> Markup {
+    html! {
+        section class="band" {
+            h2 { "Paths" }
+            table {
+                thead {
+                    tr {
+                        th style="width: 27%" { "Path" }
+                        th style="width: 25%" { "Target" }
+                        th style="width: 16%" { "Access" }
+                        th { "Notes" }
+                    }
+                }
+                tbody {
+                    @for row in PATH_ROWS {
+                        (path_row(row))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn path_row(row: &PathRow) -> Markup {
+    html! {
+        tr {
+            td {
+                span class="path-links" {
+                    @for path in row.paths {
+                        @if let Some(href) = path.href {
+                            a href=(href) { code { (path.label) } }
+                        } @else {
+                            code { (path.label) }
+                        }
+                    }
+                }
+            }
+            td { (row.target) }
+            td { (access_badge(row.access)) }
+            td { (row.notes) }
+        }
+    }
+}
+
+fn security_plan_section() -> Markup {
+    html! {
+        section class="band" {
+            h2 { "Security plan" }
+            ol {
+                li { "Today: the public gateway keeps ops paths behind temporary internal access while bootstrap work is still in flight." }
+                li {
+                    "Next: put TLS and identity-aware auth in front of the gateway using "
+                    code { "auth_request" } ", oauth2-proxy, Cloudflare Access, or Tailscale."
+                }
+                li { "Keep worker, NATS client, and Kubernetes control services internal; only expose explicit web surfaces." }
+                li { "Add Kubernetes NetworkPolicies and least-privilege service accounts so services can only talk to the namespaces they need." }
+                li { "Replace the static header with signed JWT/HMAC service tokens for backend calls and SSO sessions for browser use." }
+            }
+        }
+    }
+}
+
+fn access_badge(access: AccessPill) -> Markup {
+    html! {
+        span class=(if access.warn { "pill warn" } else { "pill" }) { (access.label) }
+    }
+}
+
+fn code_list(values: &[&str]) -> Markup {
+    html! {
+        @for (index, value) in values.iter().enumerate() {
+            @if index > 0 {
+                " · "
+            }
+            code { (value) }
+        }
+    }
+}
+
+static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
+    DeploymentRow { deployments: &["dd-web-scraper"], service: &["dd-web-scraper:8097"], service_note: None, access: SERVER_AUTH, notes: "Long-running Fastify scraper deployment with scraper parser workers, browser strategies, DOM strategies, native fetch, Cheerio, and Browserless support." },
+    DeploymentRow { deployments: &["dd-build-server"], service: &["dd-build-server:8100"], service_note: None, access: SERVER_AUTH, notes: "Rust CI/CD server that clones allowlisted repos, builds allowlisted ECR images, pushes through ECR login, and applies constrained manifests with kubectl." },
+    DeploymentRow { deployments: &["dd-ai-ml-pipeline"], service: &["dd-ai-ml-pipeline.ai-ml:8099"], service_note: None, access: SERVER_AUTH, notes: "Python3 online feature pipeline for telemetry risk scoring, anomaly detection, transition hints, and MDP-ready events on dd.remote.telemetry.mdp." },
+    DeploymentRow { deployments: &["dd-des-simulator"], service: &["dd-des-simulator:8099"], service_note: None, access: PUBLIC, notes: "Rust DES simulator with declared des.v1 schema, validation endpoint, async job status, and NATS result publishing." },
+    DeploymentRow { deployments: &["dd-contract-service"], service: &["dd-contract-service:8101"], service_note: None, access: SERVER_AUTH, notes: "Rust Solana contract gateway for solana.contract.v1 validation, signed transaction simulation, metrics, and NATS validation results." },
+    DeploymentRow { deployments: &["dd-vpn"], service: &["dd-vpn-ui.vpn:51821"], service_note: None, access: VPN_PRIVATE, notes: "WireGuard wg-easy VPN server and private admin UI for split-tunnel access to the cluster service and pod CIDRs." },
+    DeploymentRow { deployments: &["dd-live-mutex"], service: &["dd-live-mutex:6970"], service_note: None, access: CLUSTER_LOCAL, notes: "Singleton live-mutex broker deployment for TCP lock coordination." },
+    DeploymentRow { deployments: &["dd-bastion"], service: &["dd-bastion.vpn:8111"], service_note: None, access: SERVER_AUTH, notes: "Rust bastion/jumphost access broker for VPN profile, kubeconfig export, managed deployment inventory, and browser exec terminals." },
+    DeploymentRow { deployments: &["dd-redis-cache"], service: &["dd-redis-cache:6379"], service_note: None, access: CLUSTER_LOCAL, notes: "Ephemeral Redis cache deployment with bounded memory and Redis health probes." },
+    DeploymentRow { deployments: &["dd-lock-loadtest-trigger"], service: &["dd-lock-loadtest-trigger:8110"], service_note: None, access: INTERNAL, notes: "Node.js HTTP trigger for live-mutex versus Redis aggregate lock load tests." },
+    DeploymentRow { deployments: &["dd-trading-server"], service: &["dd-trading-server:8103"], service_note: None, access: SERVER_AUTH, notes: "Rust trading decision service for trading.decision.v1 scoring, scraper and AI/ML signals, MDP/POMDP policy hints, risk gates, and NATS order intents." },
+    DeploymentRow { deployments: &["dd-container-pool"], service: &["dd-container-pool:8102"], service_note: None, access: SERVER_AUTH, notes: "Rust warm container pool service that loads runtime pool config from Postgres and starts local containerd workers through nerdctl." },
+    DeploymentRow { deployments: &["dd-gleam-lambda-runner"], service: &["dd-gleam-lambda-runner:8083"], service_note: None, access: SERVER_AUTH, notes: "Gleam child-process runner deployment for POST /lambdas/invoke/<function-id>. It uses its own Argo CD app and dd-gleam-lambda-runner-secrets." },
+    DeploymentRow { deployments: &["dd-remote-gateway"], service: &["dd-remote-gateway:80/443"], service_note: None, access: PUBLIC, notes: "nginx Ingress for the EC2 single-node cluster. Owns hostPort 80/443 and proxies every documented public/auth path into its in-cluster service." },
+    DeploymentRow { deployments: &["dd-remote-web-home"], service: &["dd-remote-web-home:8080"], service_note: None, access: PUBLIC, notes: "This Rust service. Renders /, /home, /agents/tasks, /agents/threads, /lambdas/functions, /presence-test, and /wss-test; also exposes /healthz and /metrics." },
+    DeploymentRow { deployments: &["dd-remote-auth"], service: &["dd-remote-auth:8083"], service_note: None, access: PUBLIC, notes: "Rust PIN auth service. Issues the short-lived dd_auth cookie that the gateway accepts in place of the legacy Auth header for browser sessions." },
+    DeploymentRow { deployments: &["dd-remote-rest-api"], service: &["dd-remote-rest-api:8082"], service_note: None, access: PUBLIC, notes: "Rust REST API boundary for RDS/Postgres-backed agent task data. Serves /api/agents/* and /api/lambdas/* JSON." },
+    DeploymentRow { deployments: &["dd-agent-worker-broker"], service: &["dd-agent-worker-broker:8098"], service_note: None, access: SERVER_AUTH, notes: "Rust NATS-first worker dispatch broker behind /api/agent-worker/. Handles wakeup and direct-if-awake handoff to the UUID-pinned worker." },
+    DeploymentRow { deployments: &["dd-dev-server-api"], service: &["dd-dev-server-api:8080"], service_note: None, access: SERVER_AUTH, notes: "Bootstrap Node.js coding-agent task manager. Backs /tasks, /status, /agents, /healthz, and /stream/<taskId> until per-thread Ingress is the only path." },
+    DeploymentRow { deployments: &["dd-remote-queue-consumer"], service: &["dd-remote-queue-consumer"], service_note: None, access: INTERNAL, notes: "Rust NATS shadow consumer. Reads dd.remote.thread.*.tasks, pins thread affinity, and prepares the matching UUID-bound worker; it does not execute prompts." },
+    DeploymentRow { deployments: &["dd-idle-reaper"], service: &["dd-idle-reaper"], service_note: Some("(no http)"), access: INTERNAL, notes: "Rust maintenance supervisor: idle sweep, 90-minute cluster doctor loop, NATS watchdog, and the 04:00 ET worker-image rebuild for dd-dev-server:dev." },
+    DeploymentRow { deployments: &["dd-billing-server"], service: &["dd-billing-server:80"], service_note: Some("(pod 8087)"), access: CLUSTER_LOCAL, notes: "Rust multi-tenant AR/AP ledger. Serves /v1/tenants/* billing/payable state, ledger primitives, provider connections, OAuth, webhooks, locks, scheduled jobs, and notifications. Not yet exposed through the public gateway." },
+    DeploymentRow { deployments: &["dd-wal-gateway"], service: &["dd-wal-gateway:8104"], service_note: None, access: INTERNAL, notes: "Rust Postgres -> NATS JetStream CDC gateway. Owns one logical replication slot, publishes cdc.<schema>.<table>.<op> envelopes on stream CDC, and exposes /healthz, /readyz, /metrics." },
+    DeploymentRow { deployments: &["dd-gleamlang-server"], service: &["dd-gleamlang-server:8081"], service_note: None, access: SERVER_AUTH, notes: "Gleam/OTP WebSocket fan-out behind /gleam/*. Exposes /gleam/home, /gleam/healthz, /gleam/metrics, and wss://<host>/gleam/ws." },
+    DeploymentRow { deployments: &["presence"], service: &["presence-svc.presence:8080"], service_note: Some("(StatefulSet)"), access: CLUSTER_LOCAL, notes: "Gleam gleamlang-presence-server. Distributed-Erlang StatefulSet that powers user-scoped and conv-scoped websockets driving the /presence-test browser harness." },
+    DeploymentRow { deployments: &["dd-gleam-mcp-server"], service: &["dd-gleam-mcp-server:8090"], service_note: None, access: SERVER_AUTH, notes: "Gleam JSON-RPC MCP service behind /mcp and /mcp/*. Ships read-only runtime tools, Prometheus metrics, and Loki-collected stdout." },
+    DeploymentRow { deployments: &["dd-webrtc-signaling"], service: &["dd-webrtc-signaling:8095"], service_note: None, access: PUBLIC, notes: "Rust WebRTC signaling service behind /webrtc/. Room WebSocket signaling for browser/mobile peer handshakes; media and data channels stay peer-to-peer." },
+    DeploymentRow { deployments: &["dd-mdp-optimizer"], service: &["dd-mdp-optimizer:8096"], service_note: None, access: PUBLIC, notes: "Rust MDP/POMDP/RL optimizer behind /mdp/. Consumes dd.remote.mdp.optimize and dd.remote.telemetry.mdp." },
+    DeploymentRow { deployments: &["dd-akka-ws-server"], service: &["dd-akka-ws-server:8086"], service_note: None, access: INTERNAL, notes: "Scala/Akka WebSocket reference server backing the akka-streams and async-java load-test targets." },
+    DeploymentRow { deployments: &["dd-fsharp-ws-server"], service: &["dd-fsharp-ws-server:8087"], service_note: None, access: PUBLIC, notes: "F# + ASP.NET Core WebSocket server behind /fsws/. Exposes /fsws/healthz, /fsws/livez, /fsws/ws/rx, and /fsws/ws/async." },
+    DeploymentRow { deployments: &["dd-formal-methods-server"], service: &["dd-formal-methods-server:8110"], service_note: None, access: INTERNAL, notes: "Rust formal-methods server. Runs annotation-driven proofs and exposes verification status." },
+    DeploymentRow { deployments: &["dd-formal-methods-service"], service: &["dd-formal-methods-service:8111"], service_note: None, access: INTERNAL, notes: "Rust formal-methods orchestration service. Templates and dispatches verification jobs against dd-formal-methods-server." },
+    DeploymentRow { deployments: &["dd-spark-pipeline-server"], service: &["dd-spark-pipeline-server:8085"], service_note: None, access: INTERNAL, notes: "Java/Spark pipeline server. Coordinates analytical batch/stream jobs against the cluster Spark workers." },
+    DeploymentRow { deployments: &["dd-ws-loadtest-rs", "dd-ws-loadtest-rs-akkaws-akkastreams", "dd-ws-loadtest-rs-akkaws-asyncjava"], service: &["dd-ws-loadtest-rs"], service_note: None, access: INTERNAL, notes: "Rust WebSocket load generator (5k clients) plus akka-streams and async-java variants." },
+    DeploymentRow { deployments: &["dd-gleamlang-ws-loadtest", "dd-gleamlang-ws-loadtest-akkaws-akkastreams", "dd-gleamlang-ws-loadtest-akkaws-asyncjava"], service: &["dd-gleamlang-ws-loadtest"], service_note: None, access: INTERNAL, notes: "Gleam WebSocket load generator (5k clients) that mirrors dd-ws-loadtest-rs against the Gleam fan-out path." },
+    DeploymentRow { deployments: &["dd-nats"], service: &["dd-nats.messaging:4222", "dd-nats.messaging:8222", "dd-nats.messaging:7777"], service_note: None, access: INTERNAL, notes: "NATS + JetStream broker for the cluster. JetStream storage is on the EC2 host under /var/lib/dd/nats." },
+    DeploymentRow { deployments: &["dd-grafana", "dd-prometheus", "dd-loki", "dd-tempo", "dd-jaeger"], service: &["*.observability"], service_note: None, access: SERVER_AUTH, notes: "Observability stack served at /telemetry/ (Grafana), /prometheus/, and the Tempo/Jaeger trace backends. Loki collects container logs through dd-promtail." },
+    DeploymentRow { deployments: &["dd-otel-collector", "dd-promtail"], service: &["dd-otel-collector.observability:4317/4318/8889", "dd-promtail"], service_note: Some("(DaemonSet)"), access: INTERNAL, notes: "OpenTelemetry Collector ingests OTLP traces and scrapes Prometheus metrics from every Rust/Gleam/Node runtime. Promtail tails /var/log/containers into Loki." },
+];
+
+static PATH_ROWS: &[PathRow] = &[
+    PathRow { paths: &[PathEntry { label: "/", href: Some("/") }, PathEntry { label: "/home", href: Some("/home") }, PathEntry { label: "/agents/tasks", href: Some("/agents/tasks") }, PathEntry { label: "/agents/threads", href: Some("/agents/threads") }], target: "Rust web homepage deployment", access: PUBLIC, notes: "Service directory plus cluster-served task/thread/PR UI. Browser UIs call JSON APIs for stored state while runtime invocation paths stay separate." },
+    PathRow { paths: &[PathEntry { label: "/tasks", href: Some("/tasks") }, PathEntry { label: "/status", href: Some("/status") }, PathEntry { label: "/stream/<uuid>", href: Some("/stream/example-task-id") }], target: "Node.js Coding Agent Task Manager", access: SERVER_AUTH, notes: "Runs inside the already-selected worker container. It executes prompts, tracks taskIds, streams events, and rejects requests for the wrong pinned thread." },
+    PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: PUBLIC, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks." },
+    PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
+    PathRow { paths: &[PathEntry { label: "/presence-test", href: Some("/presence-test?user=alice&device=d1&autoconnect=1") }], target: "gleamlang-presence-server browser harness", access: PUBLIC, notes: "Self-contained page that opens one user-scoped ws plus N conv-scoped ws connections against the presence server." },
+    PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness for the Gleam fan-out socket, Rust WebRTC signaling socket, gcs/chat.vibe router, and F# Rx burst endpoint." },
+    PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/login", href: Some("/auth/login") }, PathEntry { label: "/auth/logout", href: Some("/auth/logout") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
+    PathRow { paths: &[PathEntry { label: "/bastion/runtime/deployments", href: Some("/bastion/runtime/deployments") }, PathEntry { label: "/bastion/profile", href: Some("/bastion/profile") }, PathEntry { label: "/bastion/terminal", href: None }], target: "Rust bastion/jumphost access broker", access: SERVER_AUTH, notes: "Same-origin gateway access to bastion inventory and allowlisted browser exec terminals." },
+    PathRow { paths: &[PathEntry { label: "dd.remote.thread.*.tasks", href: None }, PathEntry { label: "POST /api/agents/threads/<uuid>/prepare", href: Some("/api/agents/threads/example-thread-id/prepare") }], target: "Rust NATS Queue Consumer", access: INTERNAL_ACCESS, notes: "Shadow consumer reads task messages, keeps thread affinity, and prepares the matching UUID-bound worker. It does not execute prompts." },
+    PathRow { paths: &[PathEntry { label: "/dd-thread/<short>", href: Some("/dd-thread/example") }, PathEntry { label: "/dd-thread/<short>/tasks", href: Some("/dd-thread/example/tasks") }, PathEntry { label: "/dd-thread/<short>/stream/<taskId>", href: Some("/dd-thread/example/stream/example-task-id") }, PathEntry { label: "/dd-thread/<short>/ws", href: Some("/dd-thread/example/ws") }], target: "Kubernetes per-thread Ingress", access: SERVER_AUTH, notes: "Ingress selects the UUID-bound worker Service; Node.js handles only the task inside that selected container." },
+    PathRow { paths: &[PathEntry { label: "/gleam/home", href: Some("/gleam/home") }, PathEntry { label: "/gleam/healthz", href: Some("/gleam/healthz") }, PathEntry { label: "/gleam/metrics", href: Some("/gleam/metrics") }, PathEntry { label: "/gleam/ws", href: None }], target: "Gleam WebSocket service", access: INTERNAL_ACCESS, notes: "Gleam/OTP fan-out socket behind the gateway; WebSocket endpoint is wss://<host>/gleam/ws." },
+    PathRow { paths: &[PathEntry { label: "/mcp", href: Some("/mcp") }, PathEntry { label: "/mcp/home", href: Some("/mcp/home") }, PathEntry { label: "/mcp/healthz", href: Some("/mcp/healthz") }, PathEntry { label: "/mcp/metrics", href: Some("/mcp/metrics") }], target: "Gleam MCP service", access: INTERNAL_ACCESS, notes: "Dedicated MCP deployment with read-only runtime tools, Prometheus metrics, and Loki-collected stdout logs." },
+    PathRow { paths: &[PathEntry { label: "/webrtc/", href: Some("/webrtc/") }, PathEntry { label: "/webrtc/healthz", href: Some("/webrtc/healthz") }, PathEntry { label: "/webrtc/metrics", href: Some("/webrtc/metrics") }, PathEntry { label: "/webrtc/signal test", href: Some("/wss-test?preset=webrtc") }], target: "Rust WebRTC signaling service", access: PUBLIC, notes: "Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer." },
+    PathRow { paths: &[PathEntry { label: "/mdp/", href: Some("/mdp/") }, PathEntry { label: "/mdp/healthz", href: Some("/mdp/healthz") }, PathEntry { label: "/mdp/metrics", href: Some("/mdp/metrics") }, PathEntry { label: "POST /mdp/optimize", href: Some("/mdp/optimize") }, PathEntry { label: "POST /mdp/telemetry/learn", href: Some("/mdp/telemetry/learn") }, PathEntry { label: "dd.remote.mdp.optimize", href: None }, PathEntry { label: "dd.remote.telemetry.mdp", href: None }], target: "Rust MDP/POMDP optimizer", access: PUBLIC, notes: "Async optimizer that subscribes to NATS optimization and telemetry jobs, then publishes results/events back to the runtime queue." },
+    PathRow { paths: &[PathEntry { label: "/des/", href: Some("/des/") }, PathEntry { label: "/des/healthz", href: Some("/des/healthz") }, PathEntry { label: "/des/metrics", href: Some("/des/metrics") }, PathEntry { label: "/des/model/schema", href: Some("/des/model/schema") }, PathEntry { label: "/des/model/example", href: Some("/des/model/example") }, PathEntry { label: "POST /des/validate", href: Some("/des/validate") }, PathEntry { label: "POST /des/simulate", href: Some("/des/simulate") }, PathEntry { label: "dd.remote.des.simulate", href: None }], target: "Rust discrete event simulator", access: PUBLIC, notes: "Async DES job runner with declared des.v1 model schema, strict validation, in-memory job status, metrics, and NATS result publishing." },
+    PathRow { paths: &[PathEntry { label: "/contracts/", href: Some("/contracts/") }, PathEntry { label: "/contracts/healthz", href: Some("/contracts/healthz") }, PathEntry { label: "/contracts/metrics", href: Some("/contracts/metrics") }, PathEntry { label: "/contracts/schema", href: Some("/contracts/schema") }, PathEntry { label: "/contracts/example", href: Some("/contracts/example") }, PathEntry { label: "POST /contracts/validate", href: Some("/contracts/validate") }, PathEntry { label: "POST /contracts/simulate", href: Some("/contracts/simulate") }, PathEntry { label: "dd.remote.contracts.solana.validate", href: None }], target: "Rust Solana contract service", access: SERVER_AUTH, notes: "Validates solana.contract.v1 instruction envelopes, proxies signed simulation through Solana JSON-RPC, and publishes NATS validation results." },
+    PathRow { paths: &[PathEntry { label: "/ml/", href: Some("/ml/") }, PathEntry { label: "/ml/healthz", href: Some("/ml/healthz") }, PathEntry { label: "/ml/metrics", href: Some("/ml/metrics") }, PathEntry { label: "/ml/status", href: Some("/ml/status") }, PathEntry { label: "POST /ml/analyze", href: Some("/ml/analyze") }, PathEntry { label: "POST /ml/ingest", href: Some("/ml/ingest") }, PathEntry { label: "dd.remote.telemetry.raw", href: None }, PathEntry { label: "dd.remote.ml.features", href: None }], target: "Python AI/ML feature pipeline", access: SERVER_AUTH, notes: "Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests." },
+    PathRow { paths: &[PathEntry { label: "/trading/", href: Some("/trading/") }, PathEntry { label: "/trading/healthz", href: Some("/trading/healthz") }, PathEntry { label: "/trading/metrics", href: Some("/trading/metrics") }, PathEntry { label: "/trading/schema", href: Some("/trading/schema") }, PathEntry { label: "/trading/example", href: Some("/trading/example") }, PathEntry { label: "POST /trading/decide", href: Some("/trading/decide") }, PathEntry { label: "dd.remote.trading.signals", href: None }, PathEntry { label: "dd.remote.trading.order_intents", href: None }], target: "Rust trading decision service", access: SERVER_AUTH, notes: "Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions." },
+    PathRow { paths: &[PathEntry { label: "POST /scrape", href: Some("/scrape") }, PathEntry { label: "/scrape/strategies", href: Some("/scrape/strategies") }, PathEntry { label: "/scrape/healthz", href: Some("/scrape/healthz") }, PathEntry { label: "/scrape/metrics", href: Some("/scrape/metrics") }], target: "dd-web-scraper Fastify deployment", access: SERVER_AUTH, notes: "Long-running strategy router for native fetch, Cheerio, JSDOM, LinkeDOM, Playwright, Puppeteer, and Browserless scraping." },
+    PathRow { paths: &[PathEntry { label: "POST /builds", href: Some("/builds") }, PathEntry { label: "/builds/<jobId>", href: Some("/builds/example-job") }, PathEntry { label: "/builds/<jobId>/logs", href: Some("/builds/example-job/logs") }], target: "dd-build-server Rust CI/CD deployment", access: SERVER_AUTH, notes: "Authenticated repo build queue. Jobs are build-server.v1 JSON, push only to allowlisted ECR prefixes, and deploy only allowlisted manifests/namespaces." },
+    PathRow { paths: &[PathEntry { label: "/telemetry/", href: Some("/telemetry/") }], target: "Grafana", access: INTERNAL_ACCESS, notes: "Primary HTML dashboard for Prometheus metrics, Loki logs, Tempo traces, and NATS metrics." },
+    PathRow { paths: &[PathEntry { label: "/prometheus/", href: Some("/prometheus/") }], target: "Prometheus", access: INTERNAL_ACCESS, notes: "Low-level metrics UI and query surface." },
+    PathRow { paths: &[PathEntry { label: "/nats/", href: Some("/nats/") }, PathEntry { label: "/nats-metrics/metrics", href: Some("/nats-metrics/metrics") }], target: "NATS monitor and exporter", access: INTERNAL_ACCESS, notes: "NATS should usually be inspected through Grafana; these paths expose raw health and metrics." },
+    PathRow { paths: &[PathEntry { label: "/reaper/", href: Some("/reaper/") }, PathEntry { label: "/cron/", href: Some("/cron/") }], target: "Runtime service status", access: INTERNAL_ACCESS, notes: "Gateway status surfaces for idle reaper and cron scheduler deployments." },
+    PathRow { paths: &[PathEntry { label: "/fsws/", href: Some("/fsws/") }, PathEntry { label: "/fsws/healthz", href: Some("/fsws/healthz") }, PathEntry { label: "/fsws/livez", href: Some("/fsws/livez") }, PathEntry { label: "/fsws/ws/rx", href: None }, PathEntry { label: "/fsws/ws/async", href: None }, PathEntry { label: "/wss-test?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "dd-fsharp-ws-server", access: PUBLIC, notes: "F# + ASP.NET Core burst WebSocket server. The gateway strips the /fsws/ prefix before proxying to the upstream." },
+    PathRow { paths: &[PathEntry { label: "/gcs/health", href: Some("/gcs/health") }, PathEntry { label: "/gcs/ws-health", href: Some("/gcs/ws-health") }, PathEntry { label: "/gcs/api/<...>", href: None }, PathEntry { label: "/gcs/ws/conv/<convId>", href: None }, PathEntry { label: "/gcs/ws/user/<userId>", href: None }, PathEntry { label: "/gcs/ws/device/<deviceId>", href: None }, PathEntry { label: "/wss-test?preset=gcs", href: Some("/wss-test?preset=gcs") }], target: "gcs / chat.vibe websocket router", access: SERVER_AUTH, notes: "HTTP API rewrites to /chat/* on gcs; websocket traffic is routed through gcs-router for conv/user/device pinning." },
+    PathRow { paths: &[PathEntry { label: "/v1/tenants", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/customers/by-email/<email>/billing-state", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/vendors/by-email/<email>/payable-state", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/connections", href: None }, PathEntry { label: "POST /v1/oauth/<provider>/start", href: None }, PathEntry { label: "GET /v1/oauth/<provider>/callback", href: None }, PathEntry { label: "POST /v1/webhooks/<provider>", href: None }, PathEntry { label: "GET /v1/verify/tenants/<tenant_id>/postings/<id>", href: None }], target: "dd-billing-server Rust ledger service", access: CLUSTER_LOCAL, notes: "Multi-tenant AR/AP ledger. Public verification needs no auth; provider webhooks update ledger state in seconds." },
+    PathRow { paths: &[PathEntry { label: "cdc.<schema>.<table>.<op>", href: None }, PathEntry { label: "JetStream stream CDC", href: None }, PathEntry { label: "/healthz", href: None }, PathEntry { label: "/readyz", href: None }, PathEntry { label: "/metrics", href: None }], target: "dd-wal-gateway (postgres-to-NATS CDC)", access: INTERNAL_ACCESS, notes: "One advisory-locked logical replication slot pumps wal2json rows into JetStream as cdc.row.v1 envelopes." },
+];
+
+const HOME_CSS: &str = r##"
+:root {
+  color-scheme: dark;
+  --bg: #0b1117;
+  --panel: #111923;
+  --panel-2: #0f1720;
+  --line: rgba(148, 163, 184, 0.24);
+  --text: #eef2f6;
+  --muted: #a8b3c1;
+  --accent: #5eead4;
+  --warn: #fbbf24;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  padding: 24px;
+}
+.shell { max-width: 1180px; margin: 0 auto; }
+h1 { margin: 0 0 10px; font-size: 30px; }
+h2 { margin: 0 0 12px; font-size: 17px; }
+p { margin: 0 0 14px; color: var(--muted); line-height: 1.5; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px;
+}
+.label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.value { font-size: 14px; line-height: 1.35; }
+.band {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 16px;
+  margin-top: 16px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+th, td {
+  border-top: 1px solid var(--line);
+  padding: 11px 10px;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.4;
+}
+th { color: var(--muted); font-weight: 600; }
+code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  padding: 2px 5px;
+  background: #0a1017;
+  color: #d7fbf4;
+  font-size: 12px;
+}
+.path-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.path-links a { text-decoration: none; }
+.path-links a:hover code,
+.path-links a:focus-visible code {
+  border-color: rgba(94, 234, 212, 0.62);
+  background: rgba(94, 234, 212, 0.1);
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(94, 234, 212, 0.35);
+  padding: 2px 8px;
+  color: var(--accent);
+  background: rgba(94, 234, 212, 0.08);
+  font-size: 12px;
+}
+.pill.warn {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.08);
+}
+.service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+button {
+  border: 1px solid rgba(94, 234, 212, 0.34);
+  border-radius: 6px;
+  background: rgba(94, 234, 212, 0.09);
+  color: var(--text);
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button:hover,
+button:focus-visible {
+  border-color: rgba(94, 234, 212, 0.72);
+  outline: none;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.live-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.live-toolbar h2 { margin-bottom: 0; }
+.container-cell {
+  display: grid;
+  gap: 8px;
+}
+.container-item {
+  display: grid;
+  gap: 5px;
+}
+.terminal-dock {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.terminal-dock[hidden] { display: none; }
+.terminal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+.terminal-frame {
+  width: 100%;
+  height: 460px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #05080d;
+}
+ol {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+@media (max-width: 880px) {
+  .grid { grid-template-columns: 1fr; }
+  table, thead, tbody, th, td, tr { display: block; }
+  th { display: none; }
+  td { border-top: 0; padding: 5px 0; }
+  tr { border-top: 1px solid var(--line); padding: 10px 0; }
+}
+"##;
+
+const HOME_LIVE_CONTAINERS_JS: &str = r##"
+(() => {
+  const body = document.getElementById("live-containers-body");
+  const status = document.getElementById("live-containers-status");
+  const refresh = document.getElementById("live-containers-refresh");
+  const dock = document.getElementById("home-terminal");
+  const frame = document.getElementById("home-terminal-frame");
+  const caption = document.getElementById("home-terminal-caption");
+  const close = document.getElementById("home-terminal-close");
+  const text = (value) => document.createTextNode(value == null || value === "" ? "none" : String(value));
+  const cell = (child) => {
+    const td = document.createElement("td");
+    if (typeof child === "string") td.appendChild(text(child));
+    else td.appendChild(child);
+    return td;
+  };
+  const code = (value) => {
+    const el = document.createElement("code");
+    el.textContent = value == null || value === "" ? "none" : String(value);
+    return el;
+  };
+  const pill = (value, warn) => {
+    const el = document.createElement("span");
+    el.className = warn ? "pill warn" : "pill";
+    el.textContent = value;
+    return el;
+  };
+  const shortContainerId = (value) => String(value || "").replace(/^\w+:\/\//, "").slice(0, 18);
+  const stateText = (container) => {
+    const state = container?.state || {};
+    if (state.running) return "running";
+    if (state.waiting) return "waiting " + (state.waiting.reason || "unknown");
+    if (state.terminated) return "terminated " + (state.terminated.reason || "unknown");
+    return "unknown";
+  };
+  const safeBastionTerminalUrl = (value) => {
+    try {
+      const url = new URL(String(value || ""), window.location.origin);
+      if (url.origin !== window.location.origin || url.pathname !== "/bastion/terminal") return "";
+      for (const key of ["namespace", "deployment", "pod", "container"]) {
+        if (!url.searchParams.get(key)) return "";
+      }
+      return `${url.pathname}${url.search}`;
+    } catch {
+      return "";
+    }
+  };
+  const openTerminal = (url, label) => {
+    const targetUrl = safeBastionTerminalUrl(url);
+    if (!targetUrl) {
+      status.textContent = "ignored unsafe bastion terminal URL";
+      return;
+    }
+    caption.textContent = label;
+    frame.src = targetUrl;
+    dock.hidden = false;
+    dock.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const renderEmpty = (message) => {
+    body.textContent = "";
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.className = "muted";
+    td.textContent = message;
+    tr.appendChild(td);
+    body.appendChild(tr);
+  };
+  const render = (data) => {
+    body.textContent = "";
+    let rowCount = 0;
+    for (const deployment of data.deployments || []) {
+      const pods = deployment.pods || [];
+      if (!pods.length) {
+        const tr = document.createElement("tr");
+        tr.append(
+          cell(deployment.deployment),
+          cell(deployment.namespace),
+          cell("no pods"),
+          cell((deployment.errors || []).join("; ") || "deployment has no selected pods"),
+          cell("none")
+        );
+        body.appendChild(tr);
+        rowCount += 1;
+        continue;
+      }
+      for (const pod of pods) {
+        const containers = pod.containers || [];
+        const containerCell = document.createElement("div");
+        containerCell.className = "container-cell";
+        const actions = document.createElement("div");
+        actions.className = "service-actions";
+        for (const container of containers) {
+          const item = document.createElement("div");
+          item.className = "container-item";
+          const meta = document.createElement("span");
+          meta.append(code(container.name));
+          meta.append(" ");
+          meta.append(pill(stateText(container), !container.ready));
+          meta.append(" restarts ");
+          meta.append(code(container.restartCount || 0));
+          item.appendChild(meta);
+          if (container.containerId) {
+            const idLine = document.createElement("span");
+            idLine.className = "muted";
+            idLine.append("id ");
+            idLine.append(code(shortContainerId(container.containerId)));
+            item.appendChild(idLine);
+          }
+          containerCell.appendChild(item);
+          const safeTerminalUrl = safeBastionTerminalUrl(container.terminalUrl);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = "Terminal";
+          button.disabled = !safeTerminalUrl || !data.terminalEnabled;
+          button.title = button.disabled ? "terminal unavailable" : "Open bastion exec terminal";
+          button.addEventListener("click", () => openTerminal(safeTerminalUrl, deployment.namespace + "/" + pod.name + "/" + container.name));
+          actions.appendChild(button);
+        }
+        const podCell = document.createElement("div");
+        podCell.className = "container-cell";
+        podCell.append(code(pod.name));
+        podCell.append(pill(pod.phase || "unknown", pod.phase !== "Running"));
+        const tr = document.createElement("tr");
+        tr.append(
+          cell(deployment.deployment),
+          cell(deployment.namespace),
+          cell(podCell),
+          cell(containerCell),
+          cell(actions)
+        );
+        body.appendChild(tr);
+        rowCount += 1;
+      }
+    }
+    if (!rowCount) renderEmpty("No managed deployment pods returned.");
+    status.textContent = (data.deployments || []).length + " managed deployments · " + (data.terminalEnabled ? "terminal enabled" : "terminal disabled");
+  };
+  const load = async () => {
+    status.textContent = "loading managed deployment pods";
+    refresh.disabled = true;
+    try {
+      const response = await fetch("/bastion/runtime/deployments", { cache: "no-store", credentials: "same-origin" });
+      if (response.status === 401) {
+        renderEmpty("Sign in through /auth?return=/home to load live containers and bastion terminals.");
+        status.textContent = "auth required";
+        return;
+      }
+      if (!response.ok) throw new Error("runtime inventory failed " + response.status);
+      render(await response.json());
+    } catch (error) {
+      renderEmpty(String(error));
+      status.textContent = "live container inventory unavailable";
+    } finally {
+      refresh.disabled = false;
+    }
+  };
+  refresh.addEventListener("click", load);
+  close.addEventListener("click", () => {
+    frame.src = "about:blank";
+    dock.hidden = true;
+  });
+  load();
+})();
+"##;
 
 async fn agents_tasks_page() -> impl IntoResponse {
     record_request("GET", "/agents/tasks", StatusCode::OK);
@@ -952,6 +970,13 @@ fn agents_threads_body() -> Markup {
                                 option value="openai-sdk" { "openai-sdk" }
                                 option value="gemini-sdk" { "gemini-sdk" }
                                 option value="echo" { "echo" }
+                            }
+                        }
+                        label {
+                            span { "Dispatch mode" }
+                            select id="dispatch-mode" {
+                                option value="queued" selected { "queued NATS" }
+                                option value="direct" { "direct REST" }
                             }
                         }
                         label class="field-wide" {
@@ -1591,6 +1616,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         selectedThreadId: null,
         selectedTaskId: null,
         liveSource: null,
+        liveWs: null,
         renderedEvents: new Set(),
         runtimePoll: null,
         lastRuntimeSummary: "",
@@ -1755,6 +1781,31 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         $("status-line").style.color = bad ? "var(--danger)" : "var(--muted)";
       }
 
+      function adminDetailText(value) {
+        if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
+        if (typeof value === "string") return value;
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (_error) {
+          return String(value);
+        }
+      }
+
+      function logAdminDetail(label, value) {
+        try {
+          console.error(`[agents admin] ${label}`, value);
+        } catch (_error) {
+          console.error(`[agents admin] ${label}: ${adminDetailText(value)}`);
+        }
+      }
+
+      function adminPreview(label, value, limit = 1200) {
+        const text = adminDetailText(value);
+        if (text.length <= limit) return text;
+        logAdminDetail(label, value);
+        return `${text.slice(0, limit)}\n\n[truncated in UI; see browser console for full ${label}]`;
+      }
+
       const NEW_REPO_VALUE = "__new__";
       const REPO_URL_HELP = "repo must start with git@, ssh://, or https://; GitHub owner/repo shorthand is also accepted";
       const REPO_URL_PREFIX_PATTERN = /^(git@|ssh:\/\/|https:\/\/)/;
@@ -1813,7 +1864,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       async function fetchPgKnownRepos() {
         const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
-        if (!response.ok) throw new Error(`known repos failed ${response.status}`);
+        if (!response.ok) throw new Error(`known repos failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         return data.repos || [];
       }
@@ -1948,7 +1999,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         const body = await response.text();
         if (!response.ok) {
-          setStatus(`repo URL save failed ${response.status}: ${body.slice(0, 200)}`, true);
+          setStatus(`repo URL save failed ${response.status}: ${adminPreview("repo URL save response body", body, 240)}`, true);
           return;
         }
         setStatus("repo URL saved");
@@ -2088,7 +2139,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (state.selectedThreadId && existingThread(state.selectedThreadId)) setWorkspaceLayout("lower");
         if (state.selectedTaskId) {
           $("task-id").value = state.selectedTaskId;
-          loadTaskEvents(state.selectedTaskId).catch((error) => renderError(`events load failed: ${String(error)}`));
+        loadTaskEvents(state.selectedTaskId).catch((error) => renderError(`events load failed: ${adminPreview("events load error", error)}`, error, "events load error"));
         } else {
           clearStream("No task selected.");
         }
@@ -2101,7 +2152,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setTaskStreamLayout("stream");
         replaceSelectionUrl(state.selectedThreadId, taskId);
         renderTaskList();
-        loadTaskEvents(taskId).catch((error) => renderError(`events load failed: ${String(error)}`));
+        loadTaskEvents(taskId).catch((error) => renderError(`events load failed: ${adminPreview("events load error", error)}`, error, "events load error"));
       }
 
       function terminalIsOpen() {
@@ -2180,18 +2231,35 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
-      function renderError(message) {
+      function renderError(message, detail = null, label = "error") {
+        if (detail !== null) logAdminDetail(label, detail);
         renderEventRow({
           seq: `error-${Date.now()}`,
           eventKind: "error",
-          payload: { kind: "error", message },
+          payload: { kind: "error", message: adminPreview(label, message) },
           createdAt: new Date().toISOString(),
         });
       }
 
+      function renderRealtimePayload(raw, source = "ws") {
+        let parsed = raw;
+        try { parsed = JSON.parse(raw); } catch (_error) {}
+        if (parsed && typeof parsed === "object" && parsed.type === "task-event") {
+          if (parsed.threadId && parsed.threadId !== state.selectedThreadId) return;
+          if (parsed.taskId && parsed.taskId !== state.selectedTaskId) return;
+          renderEventRow({
+            messageId: parsed.messageId || parsed.message_id || parsed.id,
+            seq: parsed.seq ?? `${source}-${Date.now()}`,
+            eventKind: parsed.event?.kind || "message",
+            payload: parsed.event || parsed,
+            createdAt: parsed.emittedAt || new Date().toISOString(),
+          });
+        }
+      }
+
       function renderEventRow(row) {
         const seq = row.seq ?? row.payload?.seq ?? Date.now();
-        const key = `${state.selectedTaskId || "task"}:${seq}:${eventKind(row)}`;
+        const key = row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${eventKind(row)}`;
         if (state.renderedEvents.has(key)) return;
         state.renderedEvents.add(key);
         const kind = eventKind(row);
@@ -2261,7 +2329,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       async function loadRuntimeState(threadId, render = true) {
         if (!threadId) return null;
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/runtime`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`runtime request failed ${response.status}`);
+        if (!response.ok) throw new Error(`runtime request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         const summary = workerRuntimeSummary(data);
         setStatus(summary, Boolean(data.errors?.length));
@@ -2285,9 +2353,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function startRuntimePolling(threadId) {
         stopRuntimePolling();
         state.lastRuntimeSummary = "";
-        loadRuntimeState(threadId).catch((error) => setStatus(String(error), true));
+        loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
         state.runtimePoll = setInterval(() => {
-          loadRuntimeState(threadId).catch((error) => setStatus(String(error), true));
+          loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
         }, 5000);
       }
 
@@ -2301,7 +2369,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         if (!response.ok) {
           button.disabled = false;
-          renderError(`feedback failed ${response.status}`);
+          renderError(`feedback failed ${response.status}: ${adminPreview("feedback response body", await response.text())}`);
           return;
         }
         button.textContent = vote === "up" ? "ok" : "noted";
@@ -2312,7 +2380,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       async function loadTaskEvents(taskId) {
         clearStream("loading events");
         const response = await fetch(`/api/agents/tasks/${encodeURIComponent(taskId)}/events?limit=250`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`events request failed ${response.status}`);
+        if (!response.ok) throw new Error(`events request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         if (data.errors?.length) renderError(data.errors.join("\n"));
         if (!data.events?.length) {
@@ -2350,9 +2418,26 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         };
       }
 
+      function openGleamLiveSocket(threadId, taskId) {
+        if (state.liveWs) state.liveWs.close();
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const wsUrl = `${proto}://${location.host}/gleam/ws?threadId=${encodeURIComponent(threadId)}&taskId=${encodeURIComponent(taskId)}`;
+        const ws = new WebSocket(wsUrl);
+        state.liveWs = ws;
+        ws.onopen = () => {
+          setStreamState("websocket connected", "ok");
+          ws.send(JSON.stringify({ type: "subscribe", threadId, taskId }));
+        };
+        ws.onmessage = (event) => renderRealtimePayload(event.data, "gleam-ws");
+        ws.onerror = () => setStreamState("websocket error", "bad");
+        ws.onclose = () => {
+          if (state.liveWs === ws) state.liveWs = null;
+        };
+      }
+
       async function loadSnapshot() {
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
-        if (!response.ok) throw new Error(`snapshot failed ${response.status}`);
+        if (!response.ok) throw new Error(`snapshot failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         state.snapshot = data;
         state.threads = data.threads || [];
@@ -2382,6 +2467,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const taskId = readUuidInput("task-id", "task UUID", { generate: true });
         const prompt = $("prompt").value.trim();
         const provider = $("provider").value;
+        const dispatchMode = $("dispatch-mode").value;
         const repoValidation = validateCurrentRepoUrl();
         const repo = repoValidation.repo;
         const baseBranch = currentBaseBranch();
@@ -2400,6 +2486,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setTaskStreamLayout("stream");
         replaceSelectionUrl(threadId, taskId);
         clearStream("waking worker");
+        openGleamLiveSocket(threadId, taskId);
         startRuntimePolling(threadId);
         renderEventRow({
           seq: `dispatch-start-${Date.now()}`,
@@ -2439,6 +2526,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
               provider,
               repo,
               baseBranch,
+              dispatchMode,
               threadTitle: prompt.slice(0, 80),
             }),
           });
@@ -2448,7 +2536,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
         const body = await response.text();
         if (!response.ok) {
-          renderError(`dispatch failed ${response.status}: ${body.slice(0, 700)}`);
+          renderError(
+            `dispatch failed ${response.status}: ${adminPreview("dispatch response body", body)}`,
+            body,
+            "dispatch response body",
+          );
           setStatus("dispatch failed", true);
           return;
         }
@@ -2459,13 +2551,13 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           payload: {
             kind: "status",
             status: "dispatch accepted",
-            message: body.slice(0, 700),
+            message: adminPreview("dispatch accepted response body", body),
           },
           createdAt: new Date().toISOString(),
         });
-        await loadRuntimeState(threadId).catch((error) => setStatus(String(error), true));
-        openLiveStream(threadId, taskId);
-        await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${String(error)}`));
+        await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
+        if (dispatchMode !== "queued") openLiveStream(threadId, taskId);
+        await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
       }
 
       async function threadControl(action) {
@@ -2524,17 +2616,19 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           if (pollRuntime) stopRuntimePolling();
         }
         const body = await response.text();
+        const visibleBody = adminPreview(`${routeAction} response body`, body);
         renderEventRow({
           seq: `control-${Date.now()}`,
           eventKind: response.ok ? "status" : "error",
           payload: {
             kind: response.ok ? "status" : "error",
             status: `${routeAction} ${response.status}`,
-            message: body.slice(0, 700),
+            message: visibleBody,
           },
           createdAt: new Date().toISOString(),
         });
         if (!response.ok) {
+          logAdminDetail(`${routeAction} response body`, body);
           setStatus(`${routeAction} failed`, true);
         } else {
           setStatus(`${routeAction} accepted`);
@@ -2542,16 +2636,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           if (routeAction === "terminal") {
             terminalTargetUrl = terminalUrlFromControlResponse(threadId, body);
           }
-          await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${String(error)}`));
+          await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
           if (terminalTargetUrl) openInlineTerminal(terminalTargetUrl);
         }
       }
 
       $("refresh").addEventListener("click", () => {
-        loadKnownRepos().catch((error) => setStatus(String(error), true));
-        loadSnapshot().catch((error) => setStatus(String(error), true));
+        loadKnownRepos().catch((error) => setStatus(adminPreview("known repos load error", error, 240), true));
+        loadSnapshot().catch((error) => setStatus(adminPreview("snapshot load error", error, 240), true));
       });
-      $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(String(error), true)));
+      $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(adminPreview("repo save error", error, 240), true)));
       $("repo-url").addEventListener("change", updateRepoUrlMode);
       $("repo-url-new").addEventListener("blur", validateRepoUrlField);
       $("repo-url-new").addEventListener("input", () => $("repo-url-new").setCustomValidity(""));
@@ -2605,19 +2699,19 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.selectedTaskId = taskId || null;
         replaceSelectionUrl(state.selectedThreadId, state.selectedTaskId);
       });
-      $("send").addEventListener("click", () => dispatchPrompt().catch((error) => renderError(`dispatch error: ${String(error)}`)));
-      $("sleep-thread").addEventListener("click", () => threadControl("sleep").catch((error) => renderError(String(error))));
-      $("archive-thread").addEventListener("click", () => threadControl("archive").catch((error) => renderError(String(error))));
-      $("delete-thread").addEventListener("click", () => threadControl("delete").catch((error) => renderError(String(error))));
-      $("merge-thread").addEventListener("click", () => threadControl("merge").catch((error) => renderError(String(error))));
-      $("commit-thread").addEventListener("click", () => threadControl("commit").catch((error) => renderError(String(error))));
-      $("open-pr-thread").addEventListener("click", () => threadControl("open-pr").catch((error) => renderError(String(error))));
-      $("terminal-thread").addEventListener("click", () => threadControl("terminal").catch((error) => renderError(String(error))));
+      $("send").addEventListener("click", () => dispatchPrompt().catch((error) => renderError(`dispatch error: ${adminPreview("dispatch exception", error)}`, error, "dispatch exception")));
+      $("sleep-thread").addEventListener("click", () => threadControl("sleep").catch((error) => renderError(adminPreview("sleep exception", error), error, "sleep exception")));
+      $("archive-thread").addEventListener("click", () => threadControl("archive").catch((error) => renderError(adminPreview("archive exception", error), error, "archive exception")));
+      $("delete-thread").addEventListener("click", () => threadControl("delete").catch((error) => renderError(adminPreview("delete exception", error), error, "delete exception")));
+      $("merge-thread").addEventListener("click", () => threadControl("merge").catch((error) => renderError(adminPreview("merge exception", error), error, "merge exception")));
+      $("commit-thread").addEventListener("click", () => threadControl("commit").catch((error) => renderError(adminPreview("commit exception", error), error, "commit exception")));
+      $("open-pr-thread").addEventListener("click", () => threadControl("open-pr").catch((error) => renderError(adminPreview("open-pr exception", error), error, "open-pr exception")));
+      $("terminal-thread").addEventListener("click", () => threadControl("terminal").catch((error) => renderError(adminPreview("terminal exception", error), error, "terminal exception")));
 
-      loadKnownRepos().catch((error) => setStatus(String(error), true));
+      loadKnownRepos().catch((error) => setStatus(adminPreview("known repos load error", error, 240), true));
       loadSnapshot().catch((error) => {
         $("snapshot-meta").textContent = "snapshot failed";
-        setStatus(String(error), true);
+        setStatus(adminPreview("snapshot load error", error, 240), true);
       });
 "#;
 
@@ -2897,6 +2991,21 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         return a;
       };
       const setStat = (id, value) => { $(id).textContent = String(value || 0); };
+      const adminDetailText = (value) => {
+        if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
+        if (typeof value === "string") return value;
+        try { return JSON.stringify(value, null, 2); } catch (_error) { return String(value); }
+      };
+      const logAdminDetail = (label, value) => {
+        try { console.error(`[agents admin] ${label}`, value); }
+        catch (_error) { console.error(`[agents admin] ${label}: ${adminDetailText(value)}`); }
+      };
+      const adminPreview = (label, value, limit = 1200) => {
+        const textValue = adminDetailText(value);
+        if (textValue.length <= limit) return textValue;
+        logAdminDetail(label, value);
+        return `${textValue.slice(0, limit)}\n\n[truncated in UI; see browser console for full ${label}]`;
+      };
       const setChatRoute = () => {
         const threadId = $("chat-thread-id").value.trim();
         $("chat-route").textContent = threadId ? `/api/agents/threads/${threadId}/tasks` : "";
@@ -2954,7 +3063,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       };
       const fetchPgKnownRepos = async () => {
         const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
-        if (!response.ok) throw new Error(`known repos request failed (${response.status})`);
+        if (!response.ok) throw new Error(`known repos request failed (${response.status}): ${await response.text()}`);
         const data = await response.json();
         return data.repos || [];
       };
@@ -3071,10 +3180,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         });
         const body = await response.text();
         if (!response.ok) {
-          appendStreamLine(`repo URL save failed ${response.status}: ${body.slice(0, 500)}`);
+          appendStreamLine(`repo URL save failed ${response.status}: ${adminPreview("repo URL save response body", body)}`);
           return;
         }
-        appendStreamLine(`repo URL saved ${body.slice(0, 500)}`);
+        appendStreamLine(`repo URL saved ${adminPreview("repo URL save response body", body)}`);
         await loadKnownRepos();
       };
       const resetTaskId = () => {
@@ -3121,7 +3230,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       };
       const fetchRuntimeSummary = async (threadId) => {
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/runtime`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`runtime request failed ${response.status}`);
+        if (!response.ok) throw new Error(`runtime request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         const summary = runtimeSummary(data);
         setThreadRuntimeState(threadId, data?.summary?.phase || "unknown", { action: "runtime", message: summary });
@@ -3145,11 +3254,11 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         activeTaskKey = `${threadId}:${taskId}`;
         seenStreamEvents = new Set();
       };
-      const shouldRenderEvent = (source, threadId, taskId, seq, kind) => {
+      const shouldRenderEvent = (source, threadId, taskId, seq, kind, messageId = null) => {
         if (activeTaskKey && `${threadId || ""}:${taskId || ""}` !== activeTaskKey) return false;
-        const key = seq === undefined || seq === null
+        const key = messageId || (seq === undefined || seq === null
           ? `${source}:${taskId || "none"}:no-seq:${kind}`
-          : `${taskId || "none"}:${seq}:${kind}`;
+          : `${taskId || "none"}:${seq}:${kind}`);
         if (seenStreamEvents.has(key)) return false;
         seenStreamEvents.add(key);
         return true;
@@ -3162,7 +3271,8 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
           if (event && event.kind === "thread-runtime") {
             setThreadRuntimeState(parsed.threadId, event.status || event.action, event);
           }
-          if (!shouldRenderEvent(source, parsed.threadId, parsed.taskId, parsed.seq, event.kind || kind)) return;
+          const messageId = parsed.messageId || parsed.message_id || parsed.id || null;
+          if (!shouldRenderEvent(source, parsed.threadId, parsed.taskId, parsed.seq, event.kind || kind, messageId)) return;
           const detail = typeof event === "string" ? event : JSON.stringify(event);
           appendStreamLine(`[${new Date().toLocaleTimeString()}] ${source}:${event.kind || kind}: ${detail}`);
           if (event.kind === "done") load();
@@ -3276,13 +3386,13 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
               appendStreamLine(`runtime ${summary}`);
             }
           } catch (error) {
-            appendStreamLine(`runtime ${String(error)}`);
+            appendStreamLine(`runtime ${adminPreview("runtime state error", error)}`);
           }
         }, 5000);
         fetchRuntimeSummary(threadId).then((summary) => {
           lastRuntimeSummary = summary;
           appendStreamLine(`runtime ${summary}`);
-        }).catch((error) => appendStreamLine(`runtime ${String(error)}`));
+        }).catch((error) => appendStreamLine(`runtime ${adminPreview("runtime state error", error)}`));
         let response;
         try {
           response = await fetch(route, {
@@ -3303,10 +3413,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         }
         const textBody = await response.text();
         if (!response.ok) {
-          appendStreamLine(`dispatch failed ${response.status}: ${textBody.slice(0, 500)}`);
+          appendStreamLine(`dispatch failed ${response.status}: ${adminPreview("dispatch response body", textBody)}`);
           return;
         }
-        appendStreamLine(`dispatch accepted ${textBody.slice(0, 500)}`);
+        appendStreamLine(`dispatch accepted ${adminPreview("dispatch accepted response body", textBody)}`);
         fetchRuntimeSummary(threadId).then((summary) => appendStreamLine(`runtime ${summary}`)).catch(() => {});
         openTaskStream(threadId, taskId);
         openWorkerWebSocket(threadId, taskId);
@@ -3391,10 +3501,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         const textBody = await response.text();
         if (!response.ok) {
           if (terminalWindow) terminalWindow.close();
-          appendStreamLine(`${config.label} failed ${response.status}: ${textBody.slice(0, 500)}`);
+          appendStreamLine(`${config.label} failed ${response.status}: ${adminPreview(`${config.label} response body`, textBody)}`);
           return;
         }
-        appendStreamLine(`${config.label} accepted ${textBody.slice(0, 500)}`);
+        appendStreamLine(`${config.label} accepted ${adminPreview(`${config.label} response body`, textBody)}`);
         if (config.action === "terminal") {
           const targetUrl = threadTerminalUrlFromControlResponse(threadId, textBody);
           if (terminalWindow) terminalWindow.location.href = targetUrl;
@@ -3562,43 +3672,43 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       $("new-thread").addEventListener("click", resetThreadId);
       $("new-task").addEventListener("click", resetTaskId);
       $("save-chat-repo").addEventListener("click", () => {
-        saveChatRepo().catch((error) => appendStreamLine(`repo URL save error: ${String(error)}`));
+        saveChatRepo().catch((error) => appendStreamLine(`repo URL save error: ${adminPreview("repo URL save error", error)}`));
       });
       $("chat-repo-url").addEventListener("change", updateChatRepoUrlMode);
       $("chat-repo-url-new").addEventListener("blur", validateChatRepoUrlField);
       $("chat-repo-url-new").addEventListener("input", () => $("chat-repo-url-new").setCustomValidity(""));
       $("thread-sleep").addEventListener("click", () => {
-        runThreadControl("sleep").catch((error) => appendStreamLine(`sleep error: ${String(error)}`));
+        runThreadControl("sleep").catch((error) => appendStreamLine(`sleep error: ${adminPreview("sleep error", error)}`));
       });
       $("thread-archive").addEventListener("click", () => {
-        runThreadControl("archive").catch((error) => appendStreamLine(`archive error: ${String(error)}`));
+        runThreadControl("archive").catch((error) => appendStreamLine(`archive error: ${adminPreview("archive error", error)}`));
       });
       $("thread-delete").addEventListener("click", () => {
-        runThreadControl("delete").catch((error) => appendStreamLine(`delete error: ${String(error)}`));
+        runThreadControl("delete").catch((error) => appendStreamLine(`delete error: ${adminPreview("delete error", error)}`));
       });
       $("thread-merge").addEventListener("click", () => {
-        runThreadControl("merge").catch((error) => appendStreamLine(`merge error: ${String(error)}`));
+        runThreadControl("merge").catch((error) => appendStreamLine(`merge error: ${adminPreview("merge error", error)}`));
       });
       $("thread-commit").addEventListener("click", () => {
-        runThreadControl("makeCommit").catch((error) => appendStreamLine(`commit error: ${String(error)}`));
+        runThreadControl("makeCommit").catch((error) => appendStreamLine(`commit error: ${adminPreview("commit error", error)}`));
       });
       $("thread-open-pr").addEventListener("click", () => {
-        runThreadControl("openPr").catch((error) => appendStreamLine(`open PR error: ${String(error)}`));
+        runThreadControl("openPr").catch((error) => appendStreamLine(`open PR error: ${adminPreview("open PR error", error)}`));
       });
       $("thread-terminal").addEventListener("click", () => {
-        runThreadControl("terminal").catch((error) => appendStreamLine(`terminal error: ${String(error)}`));
+        runThreadControl("terminal").catch((error) => appendStreamLine(`terminal error: ${adminPreview("terminal error", error)}`));
       });
       $("send-chat").addEventListener("click", () => {
-        dispatchChat().catch((error) => appendStreamLine(`dispatch error: ${String(error)}`));
+        dispatchChat().catch((error) => appendStreamLine(`dispatch error: ${adminPreview("dispatch error", error)}`));
       });
       $("chat-thread-id").addEventListener("input", setChatRoute);
       $("refresh").addEventListener("click", () => {
-        loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${String(error)}`));
+        loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${adminPreview("known repos error", error)}`));
         load();
       });
       $("limit").addEventListener("change", load);
       resetThreadId();
-      loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${String(error)}`));
+      loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${adminPreview("known repos error", error)}`));
       load();
       setInterval(load, 10000);
 "#;

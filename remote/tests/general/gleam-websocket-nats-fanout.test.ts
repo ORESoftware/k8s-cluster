@@ -13,6 +13,7 @@ async function readRepoFile(relativePath: string): Promise<string> {
 test('node task workers publish every stream event to nats for websocket fanout', async () => {
   const server = await readRepoFile('remote/dev-server/src/server.ts');
   const publisher = await readRepoFile('remote/dev-server/src/nats-publisher.ts');
+  const wsFanout = await readRepoFile('remote/dev-server/src/ws-fanout.ts');
   const restApi = await readRepoFile('remote/rest-api-rs/src/main.rs');
   const bootstrapDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
@@ -24,7 +25,14 @@ test('node task workers publish every stream event to nats for websocket fanout'
     /natsEventSubject: process\.env\.NATS_EVENT_SUBJECT \?\? 'dd\.remote\.events'/,
   );
   assert.match(server, /type: 'task-event'/);
+  assert.match(server, /messageId: randomUUID\(\)/);
   assert.match(server, /natsPublisher\.publish\(config\.natsEventSubject/);
+  assert.match(server, /new WorkerFanoutWebSocket/);
+  assert.match(server, /workerFanout\.publish\(fanoutPayload\)/);
+  assert.match(wsFanout, /workerFanoutWsUrlFromEnv/);
+  assert.match(wsFanout, /globalThis[\s\S]*WebSocket/);
+  assert.match(wsFanout, /GLEAM_WORKER_WS_SECRET/);
+  assert.match(wsFanout, /dd-gleamlang-server\.default\.svc\.cluster\.local:8081\/worker-ws/);
   assert.match(publisher, /PUB \$\{next\.subject\} \$\{bytes\}/);
   assert.match(publisher, /PONG\\r\\n/);
   assert.match(restApi, /async_nats::connect\(nats_url\(\)\)/);
@@ -63,13 +71,20 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   );
 
   assert.match(broadcaster, /BroadcastJson\(payload: String\)/);
+  assert.match(broadcaster, /const dedupe_ttl_ms = 300_000/);
+  assert.match(broadcaster, /json_message_id\(payload\)/);
+  assert.match(broadcaster, /SeenMessage\(id: message_id, expires_at_ms: now \+ dedupe_ttl_ms\)/);
   assert.match(broadcaster, /dd_gleamlang_nats_messages_total|nats_messages/);
   assert.match(httpServer, /\["broadcast"\] -> broadcast\(req, broker_name\)/);
+  assert.match(httpServer, /\["worker-ws", secret\] -> worker_websocket\(req, broker_name, secret\)/);
   assert.match(httpServer, /mist\.read_body\(req, 1_048_576\)/);
   assert.match(httpServer, /broadcaster\.BroadcastJson\(payload\)/);
   assert.match(httpServer, /env_get\("GLEAM_BROADCAST_SECRET"\)/);
+  assert.match(httpServer, /env_get\("GLEAM_WORKER_WS_SECRET"\)/);
   assert.match(httpServer, /nats_publish\(payload\)/);
   assert.match(env, /publish_nats\/1/);
+  assert.match(env, /json_message_id\/1/);
+  assert.match(env, /now_ms\/0/);
   assert.match(env, /GLEAM_NATS_PUBLISH_URL/);
   assert.match(env, /NATS_PUBLISH_SUBJECT/);
   assert.match(env, /gen_tcp:connect\(Host, Port/);
@@ -83,6 +98,10 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(natsClient, /PONG\\r\\n/);
   assert.match(dockerfile, /apk add --no-cache nodejs/);
   assert.match(bridge, /getNatsClient/);
+  assert.match(bridge, /NATS_BRIDGE_DEDUPE_TTL_MS/);
+  assert.match(bridge, /seenMessageIds/);
+  assert.match(bridge, /dropDuplicate\(payload\)/);
+  assert.match(bridge, /extractMessageId/);
   assert.match(bridge, /NATS_READ_SUBJECT/);
   assert.match(bridge, /NATS_PUBLISH_SUBJECT/);
   assert.match(bridge, /createServer/);
@@ -103,7 +122,7 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
     /name:\s*GLEAM_BROADCAST_SECRET[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*GLEAM_BROADCAST_SECRET/,
   );
   assert.match(minikubeDeployment, /name:\s*nats-bridge/);
-  assert.match(minikubeDeployment, /exec node \/app\/nats-bridge\.mjs/);
+  assert.match(minikubeDeployment, /exec node \/app\/remote\/gleamlang-server\/nats-bridge\.mjs/);
   assert.match(minikubeDeployment, /NATS_READ_SUBJECT[\s\S]*dd\.remote\.events/);
   assert.match(minikubeDeployment, /NATS_PUBLISH_SUBJECT[\s\S]*dd\.remote\.websocket\.events/);
   assert.match(
@@ -120,6 +139,7 @@ test('rust task page opens websocket before dispatch and dedupes with sse fallba
   assert.match(home, /openTaskWebSocket\(threadId, taskId\);[\s\S]*POST \$\{route\}/);
   assert.match(home, /new EventSource\(streamUrl\)/);
   assert.match(home, /seenStreamEvents/);
+  assert.match(home, /messageId/);
   assert.match(home, /const resetRealtimeState = \(threadId, taskId\) =>/);
   assert.match(home, /activeTaskKey = `\$\{threadId\}:\$\{taskId\}`;/);
   assert.match(

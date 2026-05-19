@@ -25,7 +25,9 @@
 //! frozen here so the API + scheduling layer is real today; each provider's
 //! `sync_balance_transactions` lands incrementally.
 
+pub mod coinflow_sync;
 pub mod handler;
 pub mod rate_limit;
+pub mod stripe_sync;
 
 pub use handler::ConnectionSyncJob;

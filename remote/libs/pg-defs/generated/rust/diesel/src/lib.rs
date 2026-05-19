@@ -652,3 +652,99 @@ pub struct PresenceConvMembersDieselInsert {
     pub created_by: Option<Uuid>,
     pub updated_by: Option<Uuid>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    presence_users (id) {
+        id -> Uuid,
+        slug -> Text,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = presence_users)]
+pub struct PresenceUsersDieselRow {
+    pub id: Uuid,
+    pub slug: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = presence_users)]
+pub struct PresenceUsersDieselInsert {
+    pub id: Option<Uuid>,
+    pub slug: Option<String>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    presence_events (id) {
+        seq -> Int8,
+        event_at -> Timestamptz,
+        op -> Text,
+        conv_id -> Uuid,
+        user_id -> Uuid,
+        conv_slug -> Text,
+        user_slug -> Text,
+        conv_shard -> Int4,
+        user_shard -> Int4,
+        soft_deleted -> Bool,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = presence_events)]
+pub struct PresenceEventsDieselRow {
+    pub seq: i64,
+    pub event_at: DateTime<Utc>,
+    pub op: String,
+    pub conv_id: Uuid,
+    pub user_id: Uuid,
+    pub conv_slug: String,
+    pub user_slug: String,
+    pub conv_shard: i32,
+    pub user_shard: i32,
+    pub soft_deleted: bool,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = presence_events)]
+pub struct PresenceEventsDieselInsert {
+    pub seq: Option<i64>,
+    pub event_at: Option<DateTime<Utc>>,
+    pub op: Option<String>,
+    pub conv_id: Option<Uuid>,
+    pub user_id: Option<Uuid>,
+    pub conv_slug: Option<String>,
+    pub user_slug: Option<String>,
+    pub conv_shard: Option<i32>,
+    pub user_shard: Option<i32>,
+    pub soft_deleted: Option<bool>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    presence_consumer_checkpoints (id) {
+        consumer_id -> Text,
+        last_seq -> Int8,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = presence_consumer_checkpoints)]
+pub struct PresenceConsumerCheckpointsDieselRow {
+    pub consumer_id: String,
+    pub last_seq: i64,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = presence_consumer_checkpoints)]
+pub struct PresenceConsumerCheckpointsDieselInsert {
+    pub consumer_id: Option<String>,
+    pub last_seq: Option<i64>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
