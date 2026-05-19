@@ -58,6 +58,7 @@ kubeconfig.*
 # ──────────────────────────────────────────────
 *.pem
 !remote/rest-api-rs/certs/rds-us-east-1-bundle.pem
+!remote/container-pool-rs/certs/rds-us-east-1-bundle.pem
 *.key
 *.p12
 *.pfx
