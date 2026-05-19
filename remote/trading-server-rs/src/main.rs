@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     env,
     error::Error,
+    io::BufReader,
     net::SocketAddr,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -803,6 +804,24 @@ fn row_value(row: &tokio_postgres::Row, column: &str, fallback: Value) -> Value 
     row.try_get::<_, Value>(column).unwrap_or(fallback)
 }
 
+fn add_rds_root_certificates(root_store: &mut rustls::RootCertStore) -> Result<(), String> {
+    let mut reader = BufReader::new(&include_bytes!("../certs/rds-us-east-1-bundle.pem")[..]);
+    let mut added = 0usize;
+
+    for cert in rustls_pemfile::certs(&mut reader) {
+        let cert = cert.map_err(|error| format!("failed to parse RDS CA certificate: {error}"))?;
+        if root_store.add(cert).is_ok() {
+            added += 1;
+        }
+    }
+
+    if added == 0 {
+        return Err("no RDS CA certificates loaded".to_string());
+    }
+
+    Ok(())
+}
+
 async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, String> {
     let database_url = config
         .database_url
@@ -810,6 +829,7 @@ async fn connect_postgres(config: &Config) -> Result<tokio_postgres::Client, Str
         .ok_or_else(|| "trading database URL is not configured".to_string())?;
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    add_rds_root_certificates(&mut root_store)?;
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(root_store)
         .with_no_client_auth();
