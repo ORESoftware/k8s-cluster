@@ -115,6 +115,7 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
     ec2Deployment,
     /cd \/opt\/dd-next-1\/remote\/gleam-mcp-server[\s\S]*gleam clean \|\| true[\s\S]*gleam deps download[\s\S]*exec gleam run/,
   );
+  assert.doesNotMatch(ec2Deployment, /apk add/);
   assert.match(ec2Deployment, /gleam deps download/);
   assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
