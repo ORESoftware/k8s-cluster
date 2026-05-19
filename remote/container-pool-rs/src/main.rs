@@ -69,6 +69,7 @@ struct ServiceConfig {
     server_auth_secret: Option<String>,
     container_memory: Option<String>,
     container_cpus: Option<String>,
+    forward_env_keys: Vec<String>,
     pids_limit: u64,
     nofile_limit: u64,
 }
@@ -116,6 +117,8 @@ struct PoolConfig {
     request_timeout: Duration,
     idle_ttl: Duration,
     nats_subject: Option<String>,
+    read_only: bool,
+    user: String,
     labels: Value,
 }
 
@@ -355,9 +358,37 @@ fn service_config_from_env() -> ServiceConfig {
             .filter(|value| safe_resource_value(value)),
         container_cpus: first_env(&["CONTAINER_POOL_CONTAINER_CPUS"])
             .filter(|value| safe_resource_value(value)),
+        forward_env_keys: forwarded_worker_env_keys(),
         pids_limit: env_u64("CONTAINER_POOL_PIDS_LIMIT", 128).clamp(16, 4096),
         nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 128).clamp(32, 8192),
     }
+}
+
+fn forwarded_worker_env_keys() -> Vec<String> {
+    let configured = first_env(&["CONTAINER_POOL_FORWARD_ENV_KEYS"]).unwrap_or_else(|| {
+        [
+            "SERVER_AUTH_SECRET",
+            "REMOTE_DEV_SERVER_SECRET",
+            "GH_DEPLOY_KEY",
+            "GH_PAT",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GOOGLE_API_KEY",
+            "GEMINI_API_KEY",
+            "EVENT_INGEST_URL",
+            "EVENT_INGEST_SECRET",
+            "GLEAM_WORKER_WS_SECRET",
+            "WORKER_FANOUT_WS_SECRET",
+            "WORKER_FANOUT_WS_BASE_URL",
+        ]
+        .join(",")
+    });
+    configured
+        .split(',')
+        .map(str::trim)
+        .filter(|key| safe_env_key(key))
+        .map(str::to_string)
+        .collect()
 }
 
 fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
@@ -516,6 +547,13 @@ fn json_u64_field(value: &Value, camel_key: &str, snake_key: &str) -> Option<u64
         .and_then(Value::as_u64)
 }
 
+fn json_bool_field(value: &Value, camel_key: &str, snake_key: &str) -> Option<bool> {
+    value
+        .get(camel_key)
+        .or_else(|| value.get(snake_key))
+        .and_then(Value::as_bool)
+}
+
 fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
     let slug = json_string_field(value, "slug", "slug")
         .ok_or_else(|| "container pool config is missing slug".to_string())?;
@@ -586,6 +624,15 @@ fn pool_config_from_json(value: &Value) -> Result<PoolConfig, String> {
                 .clamp(10, 86_400),
         ),
         nats_subject,
+        read_only: json_bool_field(value, "readOnly", "read_only").unwrap_or(true),
+        user: json_string_field(value, "user", "user")
+            .filter(|value| {
+                value.len() <= 64
+                    && value
+                        .chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, ':' | '_' | '-'))
+            })
+            .unwrap_or_else(|| "10001:10001".to_string()),
         labels: value.get("labels").cloned().unwrap_or_else(|| json!([])),
     })
 }
@@ -704,6 +751,8 @@ fn row_to_pool_config(row: &tokio_postgres::Row) -> Result<PoolConfig, String> {
         request_timeout: Duration::from_millis(request_timeout_ms as u64),
         idle_ttl: Duration::from_secs(idle_ttl_seconds as u64),
         nats_subject,
+        read_only: true,
+        user: "10001:10001".to_string(),
         labels: row_value(row, "labels", json!([])),
     })
 }
@@ -985,11 +1034,8 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         format!("dd.container-pool.pool-id={}", pool.id),
         "--label".to_string(),
         format!("dd.container-pool.service={SERVICE_NAME}"),
-        "--read-only".to_string(),
-        "--tmpfs".to_string(),
-        "/tmp:rw,noexec,nosuid,size=64m".to_string(),
         "--user".to_string(),
-        "10001:10001".to_string(),
+        pool.user.clone(),
         "--cap-drop".to_string(),
         "ALL".to_string(),
         "--security-opt".to_string(),
@@ -999,6 +1045,11 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         "--ulimit".to_string(),
         format!("nofile={limit}:{limit}", limit = state.config.nofile_limit),
     ];
+    if pool.read_only {
+        args.push("--read-only".to_string());
+        args.push("--tmpfs".to_string());
+        args.push("/tmp:rw,noexec,nosuid,size=64m".to_string());
+    }
     if let Some(memory) = state.config.container_memory.as_deref() {
         args.push("--memory".to_string());
         args.push(memory.to_string());
@@ -1067,6 +1118,16 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         container_env
             .entry("DD_POOL_NATS_HEARTBEAT_SUBJECT".to_string())
             .or_insert_with(|| format!("dd.remote.container_pool.{}.heartbeats", pool.slug));
+    }
+    for key in &state.config.forward_env_keys {
+        if container_env.contains_key(key) {
+            continue;
+        }
+        if let Ok(value) = env::var(key) {
+            if !value.is_empty() {
+                container_env.insert(key.clone(), value);
+            }
+        }
     }
 
     for (key, value) in &container_env {

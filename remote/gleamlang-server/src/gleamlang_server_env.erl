@@ -1,10 +1,23 @@
 -module(gleamlang_server_env).
--export([getenv/1, publish_nats/1]).
+-export([getenv/1, json_message_id/1, now_ms/0, publish_nats/1]).
 
 getenv(Name) when is_binary(Name) ->
     case os:getenv(binary_to_list(Name)) of
         false -> {error, nil};
         Value -> {ok, unicode:characters_to_binary(Value)}
+    end.
+
+now_ms() ->
+    erlang:system_time(millisecond).
+
+json_message_id(Payload) when is_binary(Payload) ->
+    case re:run(
+        Payload,
+        <<"\"(?:messageId|message_id|id)\"\\s*:\\s*\"([^\"]{1,128})\"">>,
+        [unicode, {capture, [1], binary}]
+    ) of
+        {match, [MessageId]} -> {ok, MessageId};
+        _ -> {error, nil}
     end.
 
 publish_nats(Payload) when is_binary(Payload) ->

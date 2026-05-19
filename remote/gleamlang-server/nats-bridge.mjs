@@ -10,9 +10,14 @@ const broadcastUrl = process.env.GLEAM_BROADCAST_URL ?? 'http://127.0.0.1:8081/b
 const broadcastSecret = requiredEnv('GLEAM_BROADCAST_SECRET');
 const bridgePort = numberEnv('NATS_BRIDGE_HTTP_PORT', 8083);
 const maxBodyBytes = numberEnv('NATS_BRIDGE_MAX_BODY_BYTES', 1_048_576);
+const dedupeTtlMs = numberEnv('NATS_BRIDGE_DEDUPE_TTL_MS', 5 * 60 * 1000);
+const seenMessageIds = new Map();
 
 const nats = getNatsClient({ url: natsUrl, logger: console });
 nats.subscribe(readSubject, (payload) => {
+  if (dropDuplicate(payload)) {
+    return;
+  }
   void broadcast(payload);
 });
 console.info(`[nats-bridge] subscribed ${readSubject}`);
@@ -51,6 +56,37 @@ async function broadcast(payload) {
     console.warn(
       `[nats-bridge] broadcast error: ${error instanceof Error ? error.message : String(error)}`,
     );
+  }
+}
+
+function dropDuplicate(payload) {
+  const messageId = extractMessageId(payload);
+  if (!messageId) return false;
+  const now = Date.now();
+  pruneSeenMessageIds(now);
+  const expiresAt = seenMessageIds.get(messageId);
+  if (expiresAt && expiresAt > now) {
+    return true;
+  }
+  seenMessageIds.set(messageId, now + dedupeTtlMs);
+  return false;
+}
+
+function pruneSeenMessageIds(now = Date.now()) {
+  for (const [messageId, expiresAt] of seenMessageIds.entries()) {
+    if (expiresAt <= now) {
+      seenMessageIds.delete(messageId);
+    }
+  }
+}
+
+function extractMessageId(payload) {
+  try {
+    const parsed = JSON.parse(Buffer.isBuffer(payload) ? payload.toString('utf8') : String(payload));
+    const candidate = parsed?.messageId ?? parsed?.message_id ?? parsed?.id;
+    return typeof candidate === 'string' && candidate.length <= 128 ? candidate : null;
+  } catch {
+    return null;
   }
 }
 

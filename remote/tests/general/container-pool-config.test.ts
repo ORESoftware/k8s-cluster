@@ -42,6 +42,8 @@ function parseContainerPoolAppConfigSeed(seedSql: string): {
     requestPath: string;
     healthPath: string;
     containerPort: number;
+    readOnly?: boolean;
+    user?: string;
     minWarm: number;
     maxWarm: number;
     maxConcurrencyPerContainer: number;
@@ -178,6 +180,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
   const parsed = parseContainerPoolAppConfigSeed(appConfigSeedSql);
   const expectedRuntimes = [
     'nodejs',
+    'nodejs-chat-claude',
     'rust',
     'golang',
     'python3',
@@ -217,24 +220,48 @@ test('container pool app_config seed is a complete runtime contract', async () =
   );
   assert.deepEqual(
     parsed.pools.map((entry) => entry.slug).sort(),
-    [...expectedRuntimes].sort(),
+    [
+      'nodejs',
+      'nodejs-chat-claude-live-mutex-dev',
+      'rust',
+      'golang',
+      'python3',
+      'dart',
+      'gleamlang',
+      'erlang',
+    ].sort(),
   );
 
   const baseImageByRuntime = new Map(parsed.baseImages.map((entry) => [entry.runtime, entry]));
   for (const pool of parsed.pools) {
-    const baseImage = baseImageByRuntime.get(pool.slug);
+    const baseImage =
+      baseImageByRuntime.get(pool.slug) ??
+      (pool.slug.startsWith('nodejs-chat-claude-')
+        ? baseImageByRuntime.get('nodejs-chat-claude')
+        : undefined);
     assert.ok(baseImage, `pool ${pool.slug} should have a matching base image`);
     assert.equal(pool.image, baseImage.image);
-    assert.equal(
-      baseImage.dockerfile,
-      `remote/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
-    );
-    assert.equal(baseImage.buildContext, 'remote/container-pool-rs');
-    assert.equal(pool.requestPath, parsed.runtimeContract.defaultRequestPath);
+    if (pool.slug.startsWith('nodejs-chat-claude-')) {
+      assert.equal(baseImage.dockerfile, 'remote/dev-server/Dockerfile');
+      assert.equal(baseImage.buildContext, 'remote/dev-server');
+      assert.equal(pool.requestPath, '/tasks');
+      assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
+      assert.equal(pool.env.DD_REPO_URL, 'git@github.com:ORESoftware/live-mutex.git');
+      assert.equal(pool.readOnly, false);
+      assert.equal(pool.user, '1000:1000');
+      assert.equal(pool.minWarm, 2);
+    } else {
+      assert.equal(
+        baseImage.dockerfile,
+        `remote/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
+      );
+      assert.equal(baseImage.buildContext, 'remote/container-pool-rs');
+      assert.equal(pool.requestPath, parsed.runtimeContract.defaultRequestPath);
+      assert.equal(pool.env.DD_POOL_RUNTIME, pool.slug);
+      assert.ok(pool.env.DD_POOL_HANDLER.length > 0, `pool ${pool.slug} should define a handler`);
+    }
     assert.equal(pool.healthPath, parsed.runtimeContract.defaultHealthPath);
     assert.equal(pool.containerPort, parsed.runtimeContract.defaultContainerPort);
-    assert.equal(pool.env.DD_POOL_RUNTIME, pool.slug);
-    assert.ok(pool.env.DD_POOL_HANDLER.length > 0, `pool ${pool.slug} should define a handler`);
     assert.ok(pool.minWarm >= 1, `pool ${pool.slug} should keep at least one warm worker`);
     assert.ok(pool.maxWarm >= pool.minWarm, `pool ${pool.slug} maxWarm should cover minWarm`);
     assert.equal(pool.maxConcurrencyPerContainer, 1);

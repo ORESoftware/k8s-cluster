@@ -171,7 +171,25 @@ Use `dd-agent-secrets` for shared remote runtime values:
 - `DD_REPO_URL` and `DD_REPO_REF` for the repo/base branch that the bootstrap Node.js worker is
   pinned to at runtime
 - model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and `OPENAI_API_KEY`
-- GitHub credentials used by the remote dev worker entrypoint and PR creation path
+- GitHub credentials used by the remote dev worker entrypoint and PR creation path:
+  `GH_DEPLOY_KEY`, optional `GH_DEPLOY_KEY_PUBLIC`, and optional `GH_PAT`
+
+GitHub deploy keys must stay in Kubernetes/AWS secrets and must never be baked into
+`dd-dev-server` or any container-pool image. The worker entrypoint writes `GH_DEPLOY_KEY` to
+`GH_DEPLOY_KEY_PATH` at startup with `0600` permissions, then uses it through `GIT_SSH_COMMAND` for
+clone/fetch/push. A safe AWS Secrets Manager value for `dd/remote-dev/agent-secrets` looks like:
+
+```json
+{
+  "SERVER_AUTH_SECRET": "replace-with-long-random-secret",
+  "DD_REPO_URL": "git@github.com:ORESoftware/live-mutex.git",
+  "DD_REPO_REF": "dev",
+  "GH_DEPLOY_KEY": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+  "GH_DEPLOY_KEY_PUBLIC": "ssh-ed25519 ... comment",
+  "GH_PAT": "optional-fine-grained-token-for-gh-cli-prs",
+  "ANTHROPIC_API_KEY": "replace-me"
+}
+```
 
 Use `dd-remote-rest-api-secrets` for RDS-specific values:
 
@@ -261,9 +279,9 @@ The runtime now includes a shadow NATS prepare path for future queue execution:
    Node.js worker also stores taskId receipts under its log directory. Repeated messages are
    accepted idempotently and do not start duplicate agent runs.
 
-This proves the queue handoff and warmup behavior without allowing generic workers to steal
-thread-affine execution. The Node.js worker still executes the task through the direct REST handoff
-until the queue path is promoted from shadow mode.
+This proves the queue handoff and warmup behavior without allowing arbitrary generic workers to
+steal coding-agent execution. Real queued `task.dispatch` messages are routed to repo-scoped
+Node chat/Claude warm pools first, with direct REST fallback to the deterministic thread worker.
 
 `dd-agent-worker-broker` is the additive long-run replacement for REST-owned worker dispatch. Its
 first route, `POST /api/agent-worker/threads/<threadId>/tasks`, publishes the task to JetStream,

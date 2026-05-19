@@ -972,6 +972,13 @@ fn agents_threads_body() -> Markup {
                                 option value="echo" { "echo" }
                             }
                         }
+                        label {
+                            span { "Dispatch mode" }
+                            select id="dispatch-mode" {
+                                option value="queued" selected { "queued NATS" }
+                                option value="direct" { "direct REST" }
+                            }
+                        }
                         label class="field-wide" {
                             span { "Git repo URL" }
                             select id="repo-url" {}
@@ -1609,6 +1616,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         selectedThreadId: null,
         selectedTaskId: null,
         liveSource: null,
+        liveWs: null,
         renderedEvents: new Set(),
         runtimePoll: null,
         lastRuntimeSummary: "",
@@ -1773,6 +1781,31 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         $("status-line").style.color = bad ? "var(--danger)" : "var(--muted)";
       }
 
+      function adminDetailText(value) {
+        if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
+        if (typeof value === "string") return value;
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (_error) {
+          return String(value);
+        }
+      }
+
+      function logAdminDetail(label, value) {
+        try {
+          console.error(`[agents admin] ${label}`, value);
+        } catch (_error) {
+          console.error(`[agents admin] ${label}: ${adminDetailText(value)}`);
+        }
+      }
+
+      function adminPreview(label, value, limit = 1200) {
+        const text = adminDetailText(value);
+        if (text.length <= limit) return text;
+        logAdminDetail(label, value);
+        return `${text.slice(0, limit)}\n\n[truncated in UI; see browser console for full ${label}]`;
+      }
+
       const NEW_REPO_VALUE = "__new__";
       const REPO_URL_HELP = "repo must start with git@, ssh://, or https://; GitHub owner/repo shorthand is also accepted";
       const REPO_URL_PREFIX_PATTERN = /^(git@|ssh:\/\/|https:\/\/)/;
@@ -1831,7 +1864,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       async function fetchPgKnownRepos() {
         const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
-        if (!response.ok) throw new Error(`known repos failed ${response.status}`);
+        if (!response.ok) throw new Error(`known repos failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         return data.repos || [];
       }
@@ -1966,7 +1999,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         const body = await response.text();
         if (!response.ok) {
-          setStatus(`repo URL save failed ${response.status}: ${body.slice(0, 200)}`, true);
+          setStatus(`repo URL save failed ${response.status}: ${adminPreview("repo URL save response body", body, 240)}`, true);
           return;
         }
         setStatus("repo URL saved");
@@ -2106,7 +2139,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (state.selectedThreadId && existingThread(state.selectedThreadId)) setWorkspaceLayout("lower");
         if (state.selectedTaskId) {
           $("task-id").value = state.selectedTaskId;
-          loadTaskEvents(state.selectedTaskId).catch((error) => renderError(`events load failed: ${String(error)}`));
+        loadTaskEvents(state.selectedTaskId).catch((error) => renderError(`events load failed: ${adminPreview("events load error", error)}`, error, "events load error"));
         } else {
           clearStream("No task selected.");
         }
@@ -2119,7 +2152,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setTaskStreamLayout("stream");
         replaceSelectionUrl(state.selectedThreadId, taskId);
         renderTaskList();
-        loadTaskEvents(taskId).catch((error) => renderError(`events load failed: ${String(error)}`));
+        loadTaskEvents(taskId).catch((error) => renderError(`events load failed: ${adminPreview("events load error", error)}`, error, "events load error"));
       }
 
       function terminalIsOpen() {
@@ -2198,18 +2231,35 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
-      function renderError(message) {
+      function renderError(message, detail = null, label = "error") {
+        if (detail !== null) logAdminDetail(label, detail);
         renderEventRow({
           seq: `error-${Date.now()}`,
           eventKind: "error",
-          payload: { kind: "error", message },
+          payload: { kind: "error", message: adminPreview(label, message) },
           createdAt: new Date().toISOString(),
         });
       }
 
+      function renderRealtimePayload(raw, source = "ws") {
+        let parsed = raw;
+        try { parsed = JSON.parse(raw); } catch (_error) {}
+        if (parsed && typeof parsed === "object" && parsed.type === "task-event") {
+          if (parsed.threadId && parsed.threadId !== state.selectedThreadId) return;
+          if (parsed.taskId && parsed.taskId !== state.selectedTaskId) return;
+          renderEventRow({
+            messageId: parsed.messageId || parsed.message_id || parsed.id,
+            seq: parsed.seq ?? `${source}-${Date.now()}`,
+            eventKind: parsed.event?.kind || "message",
+            payload: parsed.event || parsed,
+            createdAt: parsed.emittedAt || new Date().toISOString(),
+          });
+        }
+      }
+
       function renderEventRow(row) {
         const seq = row.seq ?? row.payload?.seq ?? Date.now();
-        const key = `${state.selectedTaskId || "task"}:${seq}:${eventKind(row)}`;
+        const key = row.messageId || row.payload?.messageId || `${state.selectedTaskId || "task"}:${seq}:${eventKind(row)}`;
         if (state.renderedEvents.has(key)) return;
         state.renderedEvents.add(key);
         const kind = eventKind(row);
@@ -2279,7 +2329,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       async function loadRuntimeState(threadId, render = true) {
         if (!threadId) return null;
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/runtime`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`runtime request failed ${response.status}`);
+        if (!response.ok) throw new Error(`runtime request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         const summary = workerRuntimeSummary(data);
         setStatus(summary, Boolean(data.errors?.length));
@@ -2303,9 +2353,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function startRuntimePolling(threadId) {
         stopRuntimePolling();
         state.lastRuntimeSummary = "";
-        loadRuntimeState(threadId).catch((error) => setStatus(String(error), true));
+        loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
         state.runtimePoll = setInterval(() => {
-          loadRuntimeState(threadId).catch((error) => setStatus(String(error), true));
+          loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
         }, 5000);
       }
 
@@ -2319,7 +2369,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         if (!response.ok) {
           button.disabled = false;
-          renderError(`feedback failed ${response.status}`);
+          renderError(`feedback failed ${response.status}: ${adminPreview("feedback response body", await response.text())}`);
           return;
         }
         button.textContent = vote === "up" ? "ok" : "noted";
@@ -2330,7 +2380,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       async function loadTaskEvents(taskId) {
         clearStream("loading events");
         const response = await fetch(`/api/agents/tasks/${encodeURIComponent(taskId)}/events?limit=250`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`events request failed ${response.status}`);
+        if (!response.ok) throw new Error(`events request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         if (data.errors?.length) renderError(data.errors.join("\n"));
         if (!data.events?.length) {
@@ -2368,9 +2418,26 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         };
       }
 
+      function openGleamLiveSocket(threadId, taskId) {
+        if (state.liveWs) state.liveWs.close();
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const wsUrl = `${proto}://${location.host}/gleam/ws?threadId=${encodeURIComponent(threadId)}&taskId=${encodeURIComponent(taskId)}`;
+        const ws = new WebSocket(wsUrl);
+        state.liveWs = ws;
+        ws.onopen = () => {
+          setStreamState("websocket connected", "ok");
+          ws.send(JSON.stringify({ type: "subscribe", threadId, taskId }));
+        };
+        ws.onmessage = (event) => renderRealtimePayload(event.data, "gleam-ws");
+        ws.onerror = () => setStreamState("websocket error", "bad");
+        ws.onclose = () => {
+          if (state.liveWs === ws) state.liveWs = null;
+        };
+      }
+
       async function loadSnapshot() {
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
-        if (!response.ok) throw new Error(`snapshot failed ${response.status}`);
+        if (!response.ok) throw new Error(`snapshot failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         state.snapshot = data;
         state.threads = data.threads || [];
@@ -2400,6 +2467,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const taskId = readUuidInput("task-id", "task UUID", { generate: true });
         const prompt = $("prompt").value.trim();
         const provider = $("provider").value;
+        const dispatchMode = $("dispatch-mode").value;
         const repoValidation = validateCurrentRepoUrl();
         const repo = repoValidation.repo;
         const baseBranch = currentBaseBranch();
@@ -2418,6 +2486,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setTaskStreamLayout("stream");
         replaceSelectionUrl(threadId, taskId);
         clearStream("waking worker");
+        openGleamLiveSocket(threadId, taskId);
         startRuntimePolling(threadId);
         renderEventRow({
           seq: `dispatch-start-${Date.now()}`,
@@ -2457,6 +2526,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
               provider,
               repo,
               baseBranch,
+              dispatchMode,
               threadTitle: prompt.slice(0, 80),
             }),
           });
@@ -2466,7 +2536,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
         const body = await response.text();
         if (!response.ok) {
-          renderError(`dispatch failed ${response.status}: ${body.slice(0, 700)}`);
+          renderError(
+            `dispatch failed ${response.status}: ${adminPreview("dispatch response body", body)}`,
+            body,
+            "dispatch response body",
+          );
           setStatus("dispatch failed", true);
           return;
         }
@@ -2477,13 +2551,13 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           payload: {
             kind: "status",
             status: "dispatch accepted",
-            message: body.slice(0, 700),
+            message: adminPreview("dispatch accepted response body", body),
           },
           createdAt: new Date().toISOString(),
         });
-        await loadRuntimeState(threadId).catch((error) => setStatus(String(error), true));
-        openLiveStream(threadId, taskId);
-        await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${String(error)}`));
+        await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
+        if (dispatchMode !== "queued") openLiveStream(threadId, taskId);
+        await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
       }
 
       async function threadControl(action) {
@@ -2542,17 +2616,19 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           if (pollRuntime) stopRuntimePolling();
         }
         const body = await response.text();
+        const visibleBody = adminPreview(`${routeAction} response body`, body);
         renderEventRow({
           seq: `control-${Date.now()}`,
           eventKind: response.ok ? "status" : "error",
           payload: {
             kind: response.ok ? "status" : "error",
             status: `${routeAction} ${response.status}`,
-            message: body.slice(0, 700),
+            message: visibleBody,
           },
           createdAt: new Date().toISOString(),
         });
         if (!response.ok) {
+          logAdminDetail(`${routeAction} response body`, body);
           setStatus(`${routeAction} failed`, true);
         } else {
           setStatus(`${routeAction} accepted`);
@@ -2560,16 +2636,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           if (routeAction === "terminal") {
             terminalTargetUrl = terminalUrlFromControlResponse(threadId, body);
           }
-          await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${String(error)}`));
+          await loadSnapshot().catch((error) => renderError(`snapshot refresh failed: ${adminPreview("snapshot refresh error", error)}`, error, "snapshot refresh error"));
           if (terminalTargetUrl) openInlineTerminal(terminalTargetUrl);
         }
       }
 
       $("refresh").addEventListener("click", () => {
-        loadKnownRepos().catch((error) => setStatus(String(error), true));
-        loadSnapshot().catch((error) => setStatus(String(error), true));
+        loadKnownRepos().catch((error) => setStatus(adminPreview("known repos load error", error, 240), true));
+        loadSnapshot().catch((error) => setStatus(adminPreview("snapshot load error", error, 240), true));
       });
-      $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(String(error), true)));
+      $("save-repo").addEventListener("click", () => saveKnownRepo().catch((error) => setStatus(adminPreview("repo save error", error, 240), true)));
       $("repo-url").addEventListener("change", updateRepoUrlMode);
       $("repo-url-new").addEventListener("blur", validateRepoUrlField);
       $("repo-url-new").addEventListener("input", () => $("repo-url-new").setCustomValidity(""));
@@ -2623,19 +2699,19 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.selectedTaskId = taskId || null;
         replaceSelectionUrl(state.selectedThreadId, state.selectedTaskId);
       });
-      $("send").addEventListener("click", () => dispatchPrompt().catch((error) => renderError(`dispatch error: ${String(error)}`)));
-      $("sleep-thread").addEventListener("click", () => threadControl("sleep").catch((error) => renderError(String(error))));
-      $("archive-thread").addEventListener("click", () => threadControl("archive").catch((error) => renderError(String(error))));
-      $("delete-thread").addEventListener("click", () => threadControl("delete").catch((error) => renderError(String(error))));
-      $("merge-thread").addEventListener("click", () => threadControl("merge").catch((error) => renderError(String(error))));
-      $("commit-thread").addEventListener("click", () => threadControl("commit").catch((error) => renderError(String(error))));
-      $("open-pr-thread").addEventListener("click", () => threadControl("open-pr").catch((error) => renderError(String(error))));
-      $("terminal-thread").addEventListener("click", () => threadControl("terminal").catch((error) => renderError(String(error))));
+      $("send").addEventListener("click", () => dispatchPrompt().catch((error) => renderError(`dispatch error: ${adminPreview("dispatch exception", error)}`, error, "dispatch exception")));
+      $("sleep-thread").addEventListener("click", () => threadControl("sleep").catch((error) => renderError(adminPreview("sleep exception", error), error, "sleep exception")));
+      $("archive-thread").addEventListener("click", () => threadControl("archive").catch((error) => renderError(adminPreview("archive exception", error), error, "archive exception")));
+      $("delete-thread").addEventListener("click", () => threadControl("delete").catch((error) => renderError(adminPreview("delete exception", error), error, "delete exception")));
+      $("merge-thread").addEventListener("click", () => threadControl("merge").catch((error) => renderError(adminPreview("merge exception", error), error, "merge exception")));
+      $("commit-thread").addEventListener("click", () => threadControl("commit").catch((error) => renderError(adminPreview("commit exception", error), error, "commit exception")));
+      $("open-pr-thread").addEventListener("click", () => threadControl("open-pr").catch((error) => renderError(adminPreview("open-pr exception", error), error, "open-pr exception")));
+      $("terminal-thread").addEventListener("click", () => threadControl("terminal").catch((error) => renderError(adminPreview("terminal exception", error), error, "terminal exception")));
 
-      loadKnownRepos().catch((error) => setStatus(String(error), true));
+      loadKnownRepos().catch((error) => setStatus(adminPreview("known repos load error", error, 240), true));
       loadSnapshot().catch((error) => {
         $("snapshot-meta").textContent = "snapshot failed";
-        setStatus(String(error), true);
+        setStatus(adminPreview("snapshot load error", error, 240), true);
       });
 "#;
 
@@ -2915,6 +2991,21 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         return a;
       };
       const setStat = (id, value) => { $(id).textContent = String(value || 0); };
+      const adminDetailText = (value) => {
+        if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
+        if (typeof value === "string") return value;
+        try { return JSON.stringify(value, null, 2); } catch (_error) { return String(value); }
+      };
+      const logAdminDetail = (label, value) => {
+        try { console.error(`[agents admin] ${label}`, value); }
+        catch (_error) { console.error(`[agents admin] ${label}: ${adminDetailText(value)}`); }
+      };
+      const adminPreview = (label, value, limit = 1200) => {
+        const textValue = adminDetailText(value);
+        if (textValue.length <= limit) return textValue;
+        logAdminDetail(label, value);
+        return `${textValue.slice(0, limit)}\n\n[truncated in UI; see browser console for full ${label}]`;
+      };
       const setChatRoute = () => {
         const threadId = $("chat-thread-id").value.trim();
         $("chat-route").textContent = threadId ? `/api/agents/threads/${threadId}/tasks` : "";
@@ -2972,7 +3063,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       };
       const fetchPgKnownRepos = async () => {
         const response = await fetch("/api/agents/git-repos?limit=100", { cache: "no-store" });
-        if (!response.ok) throw new Error(`known repos request failed (${response.status})`);
+        if (!response.ok) throw new Error(`known repos request failed (${response.status}): ${await response.text()}`);
         const data = await response.json();
         return data.repos || [];
       };
@@ -3089,10 +3180,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         });
         const body = await response.text();
         if (!response.ok) {
-          appendStreamLine(`repo URL save failed ${response.status}: ${body.slice(0, 500)}`);
+          appendStreamLine(`repo URL save failed ${response.status}: ${adminPreview("repo URL save response body", body)}`);
           return;
         }
-        appendStreamLine(`repo URL saved ${body.slice(0, 500)}`);
+        appendStreamLine(`repo URL saved ${adminPreview("repo URL save response body", body)}`);
         await loadKnownRepos();
       };
       const resetTaskId = () => {
@@ -3139,7 +3230,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       };
       const fetchRuntimeSummary = async (threadId) => {
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/runtime`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`runtime request failed ${response.status}`);
+        if (!response.ok) throw new Error(`runtime request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         const summary = runtimeSummary(data);
         setThreadRuntimeState(threadId, data?.summary?.phase || "unknown", { action: "runtime", message: summary });
@@ -3163,11 +3254,11 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         activeTaskKey = `${threadId}:${taskId}`;
         seenStreamEvents = new Set();
       };
-      const shouldRenderEvent = (source, threadId, taskId, seq, kind) => {
+      const shouldRenderEvent = (source, threadId, taskId, seq, kind, messageId = null) => {
         if (activeTaskKey && `${threadId || ""}:${taskId || ""}` !== activeTaskKey) return false;
-        const key = seq === undefined || seq === null
+        const key = messageId || (seq === undefined || seq === null
           ? `${source}:${taskId || "none"}:no-seq:${kind}`
-          : `${taskId || "none"}:${seq}:${kind}`;
+          : `${taskId || "none"}:${seq}:${kind}`);
         if (seenStreamEvents.has(key)) return false;
         seenStreamEvents.add(key);
         return true;
@@ -3180,7 +3271,8 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
           if (event && event.kind === "thread-runtime") {
             setThreadRuntimeState(parsed.threadId, event.status || event.action, event);
           }
-          if (!shouldRenderEvent(source, parsed.threadId, parsed.taskId, parsed.seq, event.kind || kind)) return;
+          const messageId = parsed.messageId || parsed.message_id || parsed.id || null;
+          if (!shouldRenderEvent(source, parsed.threadId, parsed.taskId, parsed.seq, event.kind || kind, messageId)) return;
           const detail = typeof event === "string" ? event : JSON.stringify(event);
           appendStreamLine(`[${new Date().toLocaleTimeString()}] ${source}:${event.kind || kind}: ${detail}`);
           if (event.kind === "done") load();
@@ -3294,13 +3386,13 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
               appendStreamLine(`runtime ${summary}`);
             }
           } catch (error) {
-            appendStreamLine(`runtime ${String(error)}`);
+            appendStreamLine(`runtime ${adminPreview("runtime state error", error)}`);
           }
         }, 5000);
         fetchRuntimeSummary(threadId).then((summary) => {
           lastRuntimeSummary = summary;
           appendStreamLine(`runtime ${summary}`);
-        }).catch((error) => appendStreamLine(`runtime ${String(error)}`));
+        }).catch((error) => appendStreamLine(`runtime ${adminPreview("runtime state error", error)}`));
         let response;
         try {
           response = await fetch(route, {
@@ -3321,10 +3413,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         }
         const textBody = await response.text();
         if (!response.ok) {
-          appendStreamLine(`dispatch failed ${response.status}: ${textBody.slice(0, 500)}`);
+          appendStreamLine(`dispatch failed ${response.status}: ${adminPreview("dispatch response body", textBody)}`);
           return;
         }
-        appendStreamLine(`dispatch accepted ${textBody.slice(0, 500)}`);
+        appendStreamLine(`dispatch accepted ${adminPreview("dispatch accepted response body", textBody)}`);
         fetchRuntimeSummary(threadId).then((summary) => appendStreamLine(`runtime ${summary}`)).catch(() => {});
         openTaskStream(threadId, taskId);
         openWorkerWebSocket(threadId, taskId);
@@ -3409,10 +3501,10 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         const textBody = await response.text();
         if (!response.ok) {
           if (terminalWindow) terminalWindow.close();
-          appendStreamLine(`${config.label} failed ${response.status}: ${textBody.slice(0, 500)}`);
+          appendStreamLine(`${config.label} failed ${response.status}: ${adminPreview(`${config.label} response body`, textBody)}`);
           return;
         }
-        appendStreamLine(`${config.label} accepted ${textBody.slice(0, 500)}`);
+        appendStreamLine(`${config.label} accepted ${adminPreview(`${config.label} response body`, textBody)}`);
         if (config.action === "terminal") {
           const targetUrl = threadTerminalUrlFromControlResponse(threadId, textBody);
           if (terminalWindow) terminalWindow.location.href = targetUrl;
@@ -3580,43 +3672,43 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       $("new-thread").addEventListener("click", resetThreadId);
       $("new-task").addEventListener("click", resetTaskId);
       $("save-chat-repo").addEventListener("click", () => {
-        saveChatRepo().catch((error) => appendStreamLine(`repo URL save error: ${String(error)}`));
+        saveChatRepo().catch((error) => appendStreamLine(`repo URL save error: ${adminPreview("repo URL save error", error)}`));
       });
       $("chat-repo-url").addEventListener("change", updateChatRepoUrlMode);
       $("chat-repo-url-new").addEventListener("blur", validateChatRepoUrlField);
       $("chat-repo-url-new").addEventListener("input", () => $("chat-repo-url-new").setCustomValidity(""));
       $("thread-sleep").addEventListener("click", () => {
-        runThreadControl("sleep").catch((error) => appendStreamLine(`sleep error: ${String(error)}`));
+        runThreadControl("sleep").catch((error) => appendStreamLine(`sleep error: ${adminPreview("sleep error", error)}`));
       });
       $("thread-archive").addEventListener("click", () => {
-        runThreadControl("archive").catch((error) => appendStreamLine(`archive error: ${String(error)}`));
+        runThreadControl("archive").catch((error) => appendStreamLine(`archive error: ${adminPreview("archive error", error)}`));
       });
       $("thread-delete").addEventListener("click", () => {
-        runThreadControl("delete").catch((error) => appendStreamLine(`delete error: ${String(error)}`));
+        runThreadControl("delete").catch((error) => appendStreamLine(`delete error: ${adminPreview("delete error", error)}`));
       });
       $("thread-merge").addEventListener("click", () => {
-        runThreadControl("merge").catch((error) => appendStreamLine(`merge error: ${String(error)}`));
+        runThreadControl("merge").catch((error) => appendStreamLine(`merge error: ${adminPreview("merge error", error)}`));
       });
       $("thread-commit").addEventListener("click", () => {
-        runThreadControl("makeCommit").catch((error) => appendStreamLine(`commit error: ${String(error)}`));
+        runThreadControl("makeCommit").catch((error) => appendStreamLine(`commit error: ${adminPreview("commit error", error)}`));
       });
       $("thread-open-pr").addEventListener("click", () => {
-        runThreadControl("openPr").catch((error) => appendStreamLine(`open PR error: ${String(error)}`));
+        runThreadControl("openPr").catch((error) => appendStreamLine(`open PR error: ${adminPreview("open PR error", error)}`));
       });
       $("thread-terminal").addEventListener("click", () => {
-        runThreadControl("terminal").catch((error) => appendStreamLine(`terminal error: ${String(error)}`));
+        runThreadControl("terminal").catch((error) => appendStreamLine(`terminal error: ${adminPreview("terminal error", error)}`));
       });
       $("send-chat").addEventListener("click", () => {
-        dispatchChat().catch((error) => appendStreamLine(`dispatch error: ${String(error)}`));
+        dispatchChat().catch((error) => appendStreamLine(`dispatch error: ${adminPreview("dispatch error", error)}`));
       });
       $("chat-thread-id").addEventListener("input", setChatRoute);
       $("refresh").addEventListener("click", () => {
-        loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${String(error)}`));
+        loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${adminPreview("known repos error", error)}`));
         load();
       });
       $("limit").addEventListener("change", load);
       resetThreadId();
-      loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${String(error)}`));
+      loadKnownRepos().catch((error) => appendStreamLine(`known repos error: ${adminPreview("known repos error", error)}`));
       load();
       setInterval(load, 10000);
 "#;

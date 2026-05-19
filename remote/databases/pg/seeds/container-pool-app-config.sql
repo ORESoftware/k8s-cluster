@@ -35,6 +35,12 @@ values (
         "buildContext": "remote/container-pool-rs"
       },
       {
+        "runtime": "nodejs-chat-claude",
+        "image": "docker.io/library/dd-dev-server:dev",
+        "dockerfile": "remote/dev-server/Dockerfile",
+        "buildContext": "remote/dev-server"
+      },
+      {
         "runtime": "rust",
         "image": "docker.io/library/dd-container-pool-rust-runtime:dev",
         "dockerfile": "remote/container-pool-rs/runtime-images/rust.Dockerfile",
@@ -91,6 +97,31 @@ values (
         "idleTtlSeconds": 900,
         "natsSubject": "dd.remote.container_pool.nodejs.requests",
         "labels": ["runtime", "nodejs"]
+      },
+      {
+        "slug": "nodejs-chat-claude-live-mutex-dev",
+        "displayName": "Node.js chat/Claude warm workers for ORESoftware/live-mutex dev",
+        "image": "docker.io/library/dd-dev-server:dev",
+        "command": [],
+        "env": {
+          "DD_REPO_URL": "git@github.com:ORESoftware/live-mutex.git",
+          "BASE_BRANCH": "dev",
+          "WORKER_BIND_MODE": "repo",
+          "AGENT_PROVIDER": "claude-sdk",
+          "WORKER_FANOUT_WS_BASE_URL": "ws://dd-gleamlang-server.default.svc.cluster.local:8081/worker-ws"
+        },
+        "requestPath": "/tasks",
+        "healthPath": "/healthz",
+        "containerPort": 8080,
+        "readOnly": false,
+        "user": "1000:1000",
+        "minWarm": 2,
+        "maxWarm": 4,
+        "maxConcurrencyPerContainer": 1,
+        "requestTimeoutMs": 120000,
+        "idleTtlSeconds": 1800,
+        "natsSubject": "dd.remote.container_pool.nodejs-chat-claude-live-mutex-dev.requests",
+        "labels": ["runtime", "nodejs", "agent", "claude", "repo:live-mutex"]
       },
       {
         "slug": "rust",

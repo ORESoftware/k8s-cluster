@@ -35,9 +35,13 @@ test('rest api publishes successful direct dispatches to the nats shadow queue',
   assert.match(server, /RetentionPolicy::WorkQueue/);
   assert.match(server, /fn nats_wakeup_subject/);
   assert.match(server, /dd\.remote\.orchestrator\.wakeup/);
-  assert.match(server, /message_kind: "task\.shadow"/);
-  assert.match(server, /shadow: true/);
-  assert.match(server, /direct_dispatch: true/);
+  assert.match(server, /"task\.shadow"/);
+  assert.match(server, /publish_task_dispatch_to_nats/);
+  assert.match(server, /"task\.dispatch"/);
+  assert.match(server, /dispatch_mode/);
+  assert.match(server, /StatusCode::ACCEPTED/);
+  assert.match(server, /shadow: bool/);
+  assert.match(server, /direct_dispatch: bool/);
   assert.match(server, /publish_task_shadow_to_nats\(&request, branch\.as_deref\(\)\)/);
   assert.match(server, /Duration::from_secs\(2\)/);
 });
@@ -65,6 +69,11 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /dd\.remote\.thread\.\*\.tasks/);
   assert.match(consumer, /DD_REMOTE_TASKS/);
   assert.match(consumer, /QUEUE_CONSUMER_RECEIPTS_DIR/);
+  assert.match(consumer, /CONTAINER_POOL_BASE_URL/);
+  assert.match(consumer, /dispatch_to_container_pool/);
+  assert.match(consumer, /repo_pool_slug/);
+  assert.match(consumer, /nodejs-chat-claude-/);
+  assert.match(consumer, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH/);
   assert.match(consumer, /HashSet/);
   assert.match(consumer, /has_task_receipt/);
   assert.match(consumer, /write_task_receipt/);
@@ -83,6 +92,10 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(
     deployment,
     /REMOTE_REST_API_URL[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+  );
+  assert.match(
+    deployment,
+    /CONTAINER_POOL_BASE_URL[\s\S]*dd-container-pool\.default\.svc\.cluster\.local:8102/,
   );
   assert.match(
     deployment,

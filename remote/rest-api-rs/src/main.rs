@@ -314,6 +314,7 @@ struct DispatchTaskRequest {
     prompt: String,
     provider: Option<String>,
     thread_title: Option<String>,
+    dispatch_mode: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -3043,6 +3044,7 @@ async fn maybe_package_lambda_image(
 async fn persist_runtime_task_to_postgres(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
+    status: &str,
 ) -> Result<(), String> {
     let admin_user_id = agent_tasks_admin_user_id().ok_or_else(|| {
         "AGENT_TASKS_ADMIN_USER_ID or REMOTE_DEV_ADMIN_USER_ID is not configured".to_string()
@@ -3097,7 +3099,7 @@ async fn persist_runtime_task_to_postgres(
             insert into agent_remote_dev_tasks
               (id, thread_id, user_id, docker_task_id, prompt, status, branch, last_event_seq, is_soft_deleted, started_at, created_at, updated_at, created_by, updated_by)
             values
-              ($1::text::uuid, $2::text::uuid, $3::text::uuid, $1::text::uuid, $4, 'running', $5, -1, false, now(), now(), now(), $3::text::uuid, $3::text::uuid)
+              ($1::text::uuid, $2::text::uuid, $3::text::uuid, $1::text::uuid, $4, $6, $5, -1, false, now(), now(), now(), $3::text::uuid, $3::text::uuid)
             on conflict (id) do update set
               prompt = excluded.prompt,
               status = excluded.status,
@@ -3111,6 +3113,7 @@ async fn persist_runtime_task_to_postgres(
                 &admin_user_id,
                 &request.prompt,
                 &branch,
+                &status,
             ],
         )
         .await
@@ -3332,13 +3335,30 @@ async fn publish_task_shadow_to_nats(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
 ) -> Result<(), String> {
+    publish_task_to_nats(request, branch, "task.shadow", true, true).await
+}
+
+async fn publish_task_dispatch_to_nats(
+    request: &DispatchTaskRequest,
+    branch: Option<&str>,
+) -> Result<(), String> {
+    publish_task_to_nats(request, branch, "task.dispatch", false, false).await
+}
+
+async fn publish_task_to_nats(
+    request: &DispatchTaskRequest,
+    branch: Option<&str>,
+    message_kind: &'static str,
+    shadow: bool,
+    direct_dispatch: bool,
+) -> Result<(), String> {
     let repo_config = normalized_repo_config(request)?;
     let message = NatsTaskMessage {
         version: 1,
-        message_kind: "task.shadow",
+        message_kind,
         task_kind: "agent.prompt",
-        shadow: true,
-        direct_dispatch: true,
+        shadow,
+        direct_dispatch,
         thread_id: request.thread_id.clone(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
@@ -3428,9 +3448,7 @@ async fn run_cdc_fanout_subscriptions() {
                  subject=cdc.public.lambda_functions.> -> {}",
                 nats_lambda_functions_subject()
             ),
-            Err(error) => eprintln!(
-                "rest-api cdc lambda subscription failed to start: {error}"
-            ),
+            Err(error) => eprintln!("rest-api cdc lambda subscription failed to start: {error}"),
         }
     }
 
@@ -3478,9 +3496,7 @@ async fn run_cdc_fanout_subscriptions() {
                  subject=cdc.public.known_git_repos.> -> {}",
                 nats_git_repos_changes_subject()
             ),
-            Err(error) => eprintln!(
-                "rest-api cdc git-repo subscription failed to start: {error}"
-            ),
+            Err(error) => eprintln!("rest-api cdc git-repo subscription failed to start: {error}"),
         }
     }
 }
@@ -4060,9 +4076,42 @@ async fn dispatch_thread_task(
         }
     }
 
+    let queued_dispatch = request
+        .dispatch_mode
+        .as_deref()
+        .is_some_and(|mode| matches!(mode, "queued" | "nats" | "async"));
     remember_runtime_task(&request, None);
-    if let Err(error) = persist_runtime_task_to_postgres(&request, None).await {
+    if let Err(error) = persist_runtime_task_to_postgres(
+        &request,
+        None,
+        if queued_dispatch { "queued" } else { "running" },
+    )
+    .await
+    {
         eprintln!("failed to persist remote task before worker wake: {error}");
+    }
+    if queued_dispatch {
+        return match publish_task_dispatch_to_nats(&request, None).await {
+            Ok(()) => (
+                StatusCode::ACCEPTED,
+                Json(json!({
+                    "ok": true,
+                    "mode": "queued",
+                    "threadId": request.thread_id,
+                    "taskId": request.task_id,
+                    "subject": nats_task_subject(&thread_id),
+                })),
+            )
+                .into_response(),
+            Err(error) => {
+                eprintln!("failed to publish queued remote task to nats: {error}");
+                (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({ "error": "failed to queue task", "detail": error })),
+                )
+                    .into_response()
+            }
+        };
     }
 
     let Ok((namespace, name, _results)) =
@@ -4111,7 +4160,7 @@ async fn dispatch_thread_task(
                     .and_then(|value| json_string(&value, "branch"));
                 remember_runtime_task(&request, branch.clone());
                 if let Err(error) =
-                    persist_runtime_task_to_postgres(&request, branch.as_deref()).await
+                    persist_runtime_task_to_postgres(&request, branch.as_deref(), "running").await
                 {
                     eprintln!("failed to persist remote task to postgres: {error}");
                 }

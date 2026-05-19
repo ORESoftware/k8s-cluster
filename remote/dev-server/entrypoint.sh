@@ -37,10 +37,6 @@ if [[ ! -d "$REPO_DIR/.git" && -d "$TEMPLATE_DIR/.git" ]]; then
   cp -a "$TEMPLATE_DIR/." "$REPO_DIR/"
 fi
 
-if [[ -d "$REPO_DIR/.git" ]]; then
-  find "$REPO_DIR/.git" -maxdepth 1 -type f -name index.lock -delete 2>/dev/null || true
-fi
-
 mkdir -p "$SSH_DIR"
 
 if [[ -n "${GH_DEPLOY_KEY:-}" ]]; then
@@ -64,6 +60,19 @@ chmod 600 "$SSH_DIR/config"
 # ssh-keyscan. NEVER weaken to `no` or point at /dev/null — that opens
 # `git push` to MitM substitution of github.com.
 export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY_PATH -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$SSH_DIR/known_hosts"
+
+if [[ ! -d "$REPO_DIR/.git" ]]; then
+  echo "==> Runtime clone: $REPO_URL#$BASE_BRANCH -> $REPO_DIR"
+  mkdir -p "$(dirname "$REPO_DIR")"
+  git clone --depth 50 --branch "$BASE_BRANCH" "$REPO_URL" "$REPO_DIR" 2>&1 || {
+    echo "runtime git clone failed" >&2
+    exit 65
+  }
+fi
+
+if [[ -d "$REPO_DIR/.git" ]]; then
+  find "$REPO_DIR/.git" -maxdepth 1 -type f -name index.lock -delete 2>/dev/null || true
+fi
 
 if [[ -d "$REPO_DIR/.git" ]]; then
   echo "==> git fetch + switch starting"

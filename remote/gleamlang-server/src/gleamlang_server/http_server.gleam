@@ -22,6 +22,7 @@ type WsState {
   WsState(
     tick_subject: process.Subject(broadcaster.StreamMessage),
     broadcaster_subject: process.Subject(broadcaster.Message),
+    can_broadcast: Bool,
   )
 }
 
@@ -45,14 +46,27 @@ fn route(
     ["healthz"] -> healthz()
     ["metrics"] -> metrics(broker_name)
     ["broadcast"] -> broadcast(req, broker_name)
-    ["ws"] -> websocket(req, broker_name)
+    ["worker-ws", secret] -> worker_websocket(req, broker_name, secret)
+    ["ws"] -> websocket(req, broker_name, False)
     _ -> not_found()
+  }
+}
+
+fn worker_websocket(
+  req: request.Request(mist.Connection),
+  broker_name: process.Name(broadcaster.Message),
+  secret: String,
+) -> response.Response(mist.ResponseData) {
+  case secret == worker_ws_secret() {
+    True -> websocket(req, broker_name, True)
+    False -> json_response(401, "{\"error\":\"unauthorized\"}")
   }
 }
 
 fn websocket(
   req: request.Request(mist.Connection),
   broker_name: process.Name(broadcaster.Message),
+  can_broadcast: Bool,
 ) -> response.Response(mist.ResponseData) {
   mist.websocket(
     request: req,
@@ -67,6 +81,7 @@ fn websocket(
         WsState(
           tick_subject: tick_subject,
           broadcaster_subject: broadcaster_subject,
+          can_broadcast: can_broadcast,
         ),
         Some(selector),
       )
@@ -75,6 +90,7 @@ fn websocket(
       let WsState(
         tick_subject: tick_subject,
         broadcaster_subject: broker_subject,
+        can_broadcast: _,
       ) = state
       process.send(broker_subject, broadcaster.Unsubscribe(tick_subject))
     },
@@ -96,12 +112,24 @@ fn ws_handler(
 
     mist.Text(payload) -> {
       process.send(state.broadcaster_subject, broadcaster.RecordWsMessage)
-      let _ = nats_publish(payload)
-      let assert Ok(_) =
-        mist.send_text_frame(
-          conn,
-          "{\"type\":\"ack\",\"message\":\"send 'ping' for pong; ticks stream automatically\"}",
-        )
+      let _ = case state.can_broadcast {
+        True -> {
+          process.send(
+            state.broadcaster_subject,
+            broadcaster.BroadcastJson(payload),
+          )
+          let assert Ok(_) =
+            mist.send_text_frame(conn, "{\"type\":\"ack\",\"broadcast\":true}")
+        }
+        False -> {
+          let _ = nats_publish(payload)
+          let assert Ok(_) =
+            mist.send_text_frame(
+              conn,
+              "{\"type\":\"ack\",\"message\":\"send 'ping' for pong; ticks stream automatically\"}",
+            )
+        }
+      }
       mist.continue(state)
     }
 
@@ -177,6 +205,18 @@ fn broadcast_secret() -> String {
   case secret {
     "" -> panic as "GLEAM_BROADCAST_SECRET must be configured"
     value -> value
+  }
+}
+
+fn worker_ws_secret() -> String {
+  case env_get("GLEAM_WORKER_WS_SECRET") {
+    Ok(secret) -> {
+      case secret {
+        "" -> broadcast_secret()
+        value -> value
+      }
+    }
+    Error(_) -> broadcast_secret()
   }
 }
 

@@ -63,6 +63,7 @@ import {
 import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
+import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 
 // ---------- Config ----------
 
@@ -71,11 +72,11 @@ const config = {
   host: process.env.HOST ?? '0.0.0.0',
   workspaceRepo: process.env.WORKSPACE_REPO ?? '/home/node/workspace/repo',
   repoUrl: process.env.DD_REPO_URL ?? null,
-  // The container is pinned to a single threadId originating from
-  // /u/admin/remote-dev. Set via REMOTE_DEV_THREAD_ID (preferred) or
-  // THREAD_ID (fallback). The server refuses to start without one — see
-  // main().
+  // Per-thread pods set REMOTE_DEV_THREAD_ID. Repo-scoped warm pool workers
+  // leave it unset and accept tasks for any thread in the configured repo.
   threadId: process.env.REMOTE_DEV_THREAD_ID ?? process.env.THREAD_ID ?? null,
+  workerBindMode:
+    process.env.WORKER_BIND_MODE ?? (process.env.REMOTE_DEV_THREAD_ID || process.env.THREAD_ID ? 'thread' : 'repo'),
   userId: process.env.USER_ID ?? null,
   // Each agent run writes publishable files into ${OUTPUTS_DIR}/<taskId>/.
   // After claude exits, runTask scans that dir and uploads each file via
@@ -99,6 +100,9 @@ const config = {
   eventIngestSecret: process.env.EVENT_INGEST_SECRET ?? null,
   natsUrl: process.env.NATS_URL ?? null,
   natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events',
+  workerFanoutWsUrl: workerFanoutWsUrlFromEnv(process.env),
+  workerFanoutWsMaxQueueDepth: Number(process.env.WORKER_FANOUT_WS_MAX_QUEUE_DEPTH ?? 500),
+  workerFanoutWsReconnectMs: Number(process.env.WORKER_FANOUT_WS_RECONNECT_MS ?? 1000),
   threadContextBaseUrl:
     process.env.THREAD_CONTEXT_BASE_URL ??
     process.env.REMOTE_REST_API_BASE_URL ??
@@ -260,6 +264,12 @@ const serverInstanceId = randomUUID();
 // ---- RxJS EventBus — reactive pipeline for events ----
 const eventBus = new EventBus();
 const natsPublisher = new NatsPublisher(config.natsUrl);
+const workerFanout = new WorkerFanoutWebSocket({
+  url: config.workerFanoutWsUrl,
+  logger: console,
+  maxQueueDepth: config.workerFanoutWsMaxQueueDepth,
+  reconnectMs: config.workerFanoutWsReconnectMs,
+});
 
 // ---------- Helpers ----------
 
@@ -680,8 +690,9 @@ function emit(state: TaskState, event: WrappedEvent): void {
     seq: stored.seq,
     event,
   });
-  natsPublisher.publish(config.natsEventSubject, {
+  const fanoutPayload = {
     type: 'task-event',
+    messageId: randomUUID(),
     taskId: state.taskId,
     threadId: state.threadId,
     userId: state.userId,
@@ -690,7 +701,9 @@ function emit(state: TaskState, event: WrappedEvent): void {
     seq: stored.seq,
     emittedAt: new Date().toISOString(),
     event,
-  });
+  };
+  natsPublisher.publish(config.natsEventSubject, fanoutPayload);
+  workerFanout.publish(fanoutPayload);
 }
 
 async function ensureDeployKey(): Promise<void> {
@@ -2577,6 +2590,11 @@ fastify.post('/tasks', async (req, reply) => {
           boundThreadId: config.threadId,
         });
       }
+      if (config.workerBindMode === 'repo' && !threadId) {
+        return reply.code(400).send({
+          error: 'threadId is required for repo-scoped warm workers',
+        });
+      }
       if (config.userId && userId !== config.userId) {
         return reply.code(403).send({
           error: 'container is bound to a different user',
@@ -3042,9 +3060,9 @@ async function discoverOwnIp(): Promise<string> {
 async function main(): Promise<void> {
   initTelemetry();
 
-  if (!config.threadId) {
+  if (!config.threadId && config.workerBindMode !== 'repo') {
     throw new Error(
-      'REMOTE_DEV_THREAD_ID or THREAD_ID is required — the container is pinned to one thread.',
+      'REMOTE_DEV_THREAD_ID or THREAD_ID is required unless WORKER_BIND_MODE=repo.',
     );
   }
   if (!config.repoUrl) {
@@ -3077,6 +3095,9 @@ async function main(): Promise<void> {
   if (config.natsUrl) {
     fastify.log.info(`EventBus: NATS websocket fanout active on ${config.natsEventSubject}`);
   }
+  if (config.workerFanoutWsUrl) {
+    fastify.log.info('EventBus: outbound worker websocket fanout active');
+  }
 
   if (config.threadId && config.idleTimeoutMs > 0) {
     eventBus.startIdleWatchdog(config.idleTimeoutMs, () => {
@@ -3107,12 +3128,15 @@ async function main(): Promise<void> {
     );
   });
 
-  // Pre-warm the thread session so the first task lands on a ready workspace.
-  const bootSession = getOrCreateSession({
-    taskId: config.threadId,
-    threadId: config.threadId,
-  });
-  await bootSession.ready;
+  // Per-thread pods pre-warm their single session. Repo-scoped pool workers
+  // create sessions lazily per task/thread.
+  if (config.threadId) {
+    const bootSession = getOrCreateSession({
+      taskId: config.threadId,
+      threadId: config.threadId,
+    });
+    await bootSession.ready;
+  }
 
   registerWorkerWebSocketUpgrade();
   await fastify.listen({ host: config.host, port: config.port });
@@ -3120,6 +3144,7 @@ async function main(): Promise<void> {
 
 function shutdown(signal: string): void {
   fastify.log.info(`${signal} received — tearing down EventBus + channels`);
+  workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();
   destroyChannelPool();
@@ -3135,6 +3160,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 main().catch((err) => {
   fastify.log.error(err);
+  workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();
   shutdownTelemetry().finally(() => process.exit(1));
