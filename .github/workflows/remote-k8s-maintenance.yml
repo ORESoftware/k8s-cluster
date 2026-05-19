@@ -138,7 +138,7 @@ jobs:
               "echo '=== default pods ==='",
               "sudo -u ec2-user -H bash -lc 'kubectl get pods -n default -o wide'",
               "echo '=== unhealthy app labels ==='",
-              "sudo -u ec2-user -H bash -lc 'for app in dd-remote-gateway dd-fsharp-ws-server dd-webrtc-signaling dd-trading-server dd-remote-web-home dd-gleam-mcp-server dd-gleamlang-server; do echo --- $app; kubectl -n default get pods -l app=$app -o wide || true; done'",
+              "sudo -u ec2-user -H bash -lc 'for app in dd-remote-gateway dd-fsharp-ws-server dd-webrtc-signaling dd-trading-server dd-remote-web-home dd-gleam-mcp-server dd-gleamlang-server dd-container-pool dd-remote-rest-api dd-remote-queue-consumer; do echo --- $app; kubectl -n default get pods -l app=$app -o wide || true; done'",
               "echo '=== gleamlang ExternalSecret ==='",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get externalsecret dd-gleamlang-server-secrets -o yaml || true'",
               "echo '=== selected k8s secrets ==='",
@@ -146,7 +146,7 @@ jobs:
               "echo '=== recent default events ==='",
               "sudo -u ec2-user -H bash -lc 'kubectl get events -n default --sort-by=.lastTimestamp | tail -160'",
               "echo '=== pod describes and logs ==='",
-              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -140\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=140\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=140 2>/dev/null\" || true; done",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server|dd-container-pool|dd-remote-rest-api|dd-remote-queue-consumer'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -160\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=180\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=180 2>/dev/null\" || true; done",
               "echo '=== AWS secret candidates ==='",
               "for s in dd/remote-dev/gleamlang-server-secrets; do aws secretsmanager describe-secret --region us-east-1 --secret-id \"$s\" --query Name --output text 2>/dev/null || true; done"
             ]
