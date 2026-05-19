@@ -47,6 +47,14 @@ function isAgentProvider(value: unknown): value is AgentProvider {
   return typeof value === 'string' && VALID_PROVIDERS.has(value as AgentProvider);
 }
 
+function configuredSecret(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value || value === 'REPLACE_ME' || value.startsWith('REPLACE_ME_')) {
+    return undefined;
+  }
+  return value;
+}
+
 /**
  * Resolve which agent provider to use. Order of precedence:
  *   1. Explicit per-task override (from dispatch payload)
@@ -135,8 +143,9 @@ export function buildAgentEnv(provider: AgentProvider): Record<string, string> {
     }
   }
   if (provider === 'gemini-sdk') {
-    if (process.env.GEMINI_API_KEY) {
-      base.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    const apiKey = configuredSecret('GOOGLE_API_KEY') ?? configuredSecret('GEMINI_API_KEY');
+    if (apiKey) {
+      base.GEMINI_API_KEY = apiKey;
     }
     base.GEMINI_MODEL = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
   }
@@ -244,6 +253,7 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
     probePackage('@openai/agents'),
   ]);
   const hasClaudeSdkExecutable = hasClaudeSdkPackage && !!resolveClaudeCodeExecutable();
+  const hasGeminiApiKey = !!(configuredSecret('GOOGLE_API_KEY') ?? configuredSecret('GEMINI_API_KEY'));
 
   const out: AgentAvailability[] = [
     {
@@ -271,11 +281,11 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
     {
       provider: 'gemini-sdk',
       displayName: geminiSdkRunner.displayName,
-      available: hasGeminiSdk && !!process.env.GEMINI_API_KEY,
+      available: hasGeminiSdk && hasGeminiApiKey,
       reason: !hasGeminiSdk
         ? '@google/genai package not installed'
-        : !process.env.GEMINI_API_KEY
-          ? 'GEMINI_API_KEY not set'
+        : !hasGeminiApiKey
+          ? 'GOOGLE_API_KEY or GEMINI_API_KEY not set'
           : undefined,
     },
     {

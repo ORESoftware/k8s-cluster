@@ -666,8 +666,8 @@ env on the docker.
 | `openai-sdk`       | `@openai/agents` + scoped shell/apply-patch tools   | working SDK path     |
 | `openai-codex-cli` | `codex exec "<prompt>" --json`                      | working CLI fallback |
 
-Each runner gets a **strict env allowlist** — only the API key it needs (`GEMINI_API_KEY` for
-`gemini-sdk`, `ANTHROPIC_API_KEY` for `claude-*`, `OPENAI_API_KEY` for `openai-*`), `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
+Each runner gets a **strict env allowlist** — only the API key it needs (`GOOGLE_API_KEY` or
+`GEMINI_API_KEY` for `gemini-sdk`, `ANTHROPIC_API_KEY` for `claude-*`, `OPENAI_API_KEY` for `openai-*`), `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
 process never sees the GitHub PAT, deploy key, Supabase service role key, or `REMOTE_DEV_*` shared
 secrets.
 
