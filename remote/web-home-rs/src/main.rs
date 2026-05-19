@@ -2397,6 +2397,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function shouldCoalesceAgentText(row, text) {
         if (eventKind(row) !== "claude" || !text.trim()) return false;
+        if (/^model stream\b/i.test(text.trim())) return false;
         const payload = eventPayload(row);
         const raw = payload.raw || payload;
         if (payload.error || raw?.error) return false;

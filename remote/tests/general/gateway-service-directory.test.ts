@@ -1017,6 +1017,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /const AGENT_TEXT_JOIN_DELAY_MS = 1200/);
   assert.match(server, /const AGENT_TEXT_MAX_BUFFER_MS = 3000/);
   assert.match(server, /function shouldCoalesceAgentText\(row, text\) \{/);
+  assert.match(server, /if \(\/\^model stream\\b\/i\.test\(text\.trim\(\)\)\) return false/);
   assert.match(server, /function flushAgentTextBuffer\(\) \{/);
   assert.match(server, /seqLabel: pending\.firstSeq === pending\.lastSeq \? `seq \$\{pending\.firstSeq\}` : `seq \$\{pending\.firstSeq\}-\$\{pending\.lastSeq\}`/);
   assert.match(server, /for \(const event of data\.events\) renderEventRow\(event\);[\s\S]*flushAgentTextBuffer\(\);/);
