@@ -3431,7 +3431,7 @@ async fn publish_task_dispatch_to_nats(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
 ) -> Result<(), String> {
-    publish_task_to_nats(request, branch, "task.dispatch", false, false).await
+    publish_task_to_nats(request, branch, "task.dispatch", false, true).await
 }
 
 async fn publish_task_to_nats(

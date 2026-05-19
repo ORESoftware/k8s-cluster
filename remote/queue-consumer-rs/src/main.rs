@@ -534,7 +534,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             json!({ "consumer": &consumer_name, "subject": &subject }),
         )
         .await;
-        let result = if shadow {
+        let direct_dispatch = task.direct_dispatch.unwrap_or(false);
+        let result = if shadow || direct_dispatch {
+            let (stage, status, message) = if shadow {
+                (
+                    "shadow-prepare",
+                    "preparing shadow worker",
+                    "Shadow handoff is waking the UUID-bound thread worker.",
+                )
+            } else {
+                (
+                    "direct-dispatch-prepare",
+                    "preparing direct-dispatch worker",
+                    "Direct REST dispatch is executing the task; queue consumer is warming the UUID-bound worker only.",
+                )
+            };
             emit_queue_status_event(
                 &http,
                 &nats_client,
@@ -542,10 +556,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 &secret,
                 &task,
                 -930,
-                "shadow-prepare",
-                "preparing shadow worker",
-                "Shadow handoff is waking the UUID-bound thread worker.",
-                json!({}),
+                stage,
+                status,
+                message,
+                json!({ "directDispatch": direct_dispatch }),
             )
             .await;
             prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
@@ -586,9 +600,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     .await;
                     Ok(())
                 }
-                Err(pool_error) if fallback_rest_dispatch => {
+                Err(pool_error) => {
                     eprintln!(
-                        "queue task container pool dispatch failed; falling back to rest dispatch: thread={} task={} error={pool_error}",
+                        "queue task container pool dispatch failed: thread={} task={} error={pool_error}",
                         task.thread_id, task.task_id
                     );
                     emit_queue_status_event(
@@ -600,12 +614,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         -920,
                         "container-pool-failed",
                         "container pool failed",
-                        "Container-pool dispatch failed; queue consumer is falling back to direct REST dispatch.",
+                        "Container-pool dispatch failed before accepting the queued task.",
                         json!({ "poolSlug": &pool, "error": pool_error.to_string() }),
                     )
                     .await;
-                    let fallback = dispatch_to_rest_api(&http, &rest_api_url, &secret, &task).await;
-                    if fallback.is_ok() {
+                    if task.direct_dispatch.unwrap_or(false) {
                         emit_queue_status_event(
                             &http,
                             &nats_client,
@@ -613,16 +626,40 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                             &secret,
                             &task,
                             -910,
-                            "rest-fallback-accepted",
-                            "REST fallback accepted",
-                            "Direct REST fallback accepted the task and is waking the UUID-bound worker.",
+                            "rest-fallback-skipped",
+                            "REST fallback skipped",
+                            "Queue consumer skipped duplicate REST fallback because the REST API is already handling the synchronous worker dispatch.",
                             json!({}),
                         )
                         .await;
+                        Ok(())
+                    } else if fallback_rest_dispatch {
+                        eprintln!(
+                            "queue task falling back to rest dispatch: thread={} task={}",
+                            task.thread_id, task.task_id
+                        );
+                        let fallback =
+                            dispatch_to_rest_api(&http, &rest_api_url, &secret, &task).await;
+                        if fallback.is_ok() {
+                            emit_queue_status_event(
+                                &http,
+                                &nats_client,
+                                &rest_api_url,
+                                &secret,
+                                &task,
+                                -910,
+                                "rest-fallback-accepted",
+                                "REST fallback accepted",
+                                "Direct REST fallback accepted the task and is waking the UUID-bound worker.",
+                                json!({}),
+                            )
+                            .await;
+                        }
+                        fallback
+                    } else {
+                        Err(pool_error)
                     }
-                    fallback
                 }
-                Err(pool_error) => Err(pool_error),
             }
         };
         if let Err(error) = result {

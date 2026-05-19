@@ -44,6 +44,7 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /on conflict \(task_id, seq\) do update set/);
   assert.match(server, /"task\.shadow"/);
   assert.match(server, /publish_task_dispatch_to_nats/);
+  assert.match(server, /publish_task_to_nats\(request, branch, "task\.dispatch", false, true\)/);
   assert.match(server, /"task\.dispatch"/);
   assert.match(server, /dispatch_mode/);
   assert.match(server, /"stage": "nats-publish-failed"/);
@@ -96,8 +97,10 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /publish_queue_status_event/);
   assert.match(consumer, /dd\.remote\.events/);
   assert.match(consumer, /queue-received/);
+  assert.match(consumer, /direct-dispatch-prepare/);
   assert.match(consumer, /container-pool-dispatch/);
   assert.match(consumer, /container-pool-failed/);
+  assert.match(consumer, /rest-fallback-skipped/);
   assert.match(consumer, /rest-fallback-accepted/);
   assert.match(consumer, /queue-acked/);
   assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);
@@ -106,6 +109,7 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(deployment, /NATS_TASK_STREAM[\s\S]*DD_REMOTE_TASKS/);
   assert.match(deployment, /NATS_TASK_CONSUMER[\s\S]*dd-remote-thread-preparer/);
   assert.match(deployment, /NATS_TASK_NAK_DELAY_SECONDS[\s\S]*'15'/);
+  assert.match(deployment, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH[\s\S]*value:\s*'false'/);
   assert.match(deployment, /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/);
   assert.match(
     deployment,
