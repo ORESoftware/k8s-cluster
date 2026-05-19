@@ -226,6 +226,89 @@ pub fn validate_known_git_repos_status(value: String) -> Result(String, String) 
   }
 }
 
+pub const agent_context_blobs_table = "agent_context_blobs"
+pub const agent_context_blobs_select_sql = "select\n      id::text as id,\n      project_id,\n      repo_id::text as repo_id,\n      context_id,\n      context_title,\n      context_blob,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_context_blobs"
+
+pub type AgentContextBlobsStatus {
+  AgentContextBlobsStatusActive
+  AgentContextBlobsStatusPaused
+  AgentContextBlobsStatusArchived
+}
+
+pub fn agent_context_blobs_status_to_string(value: AgentContextBlobsStatus) -> String {
+  case value {
+    AgentContextBlobsStatusActive -> "active"
+    AgentContextBlobsStatusPaused -> "paused"
+    AgentContextBlobsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_agent_context_blobs_status(value: String) -> Result(AgentContextBlobsStatus, String) {
+  case value {
+    "active" -> Ok(AgentContextBlobsStatusActive)
+    "paused" -> Ok(AgentContextBlobsStatusPaused)
+    "archived" -> Ok(AgentContextBlobsStatusArchived)
+    _ -> Error("unsupported agent_context_blobs.status: " <> value)
+  }
+}
+
+pub type AgentContextBlobsRow {
+  AgentContextBlobsRow(
+    id: String,
+    project_id: String,
+    repo_id: Option(String),
+    context_id: String,
+    context_title: String,
+    context_blob: String,
+    status: String,
+    labels_json: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_agent_context_blobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("agent_context_blobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_agent_context_blobs_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported agent_context_blobs.status: " <> value)
+  }
+}
+
+pub const agent_context_embeddings_table = "agent_context_embeddings"
+pub const agent_context_embeddings_select_sql = "select\n      id::text as id,\n      context_blob_id::text as context_blob_id,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      content_sha256,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_context_embeddings"
+
+pub type AgentContextEmbeddingsRow {
+  AgentContextEmbeddingsRow(
+    id: String,
+    context_blob_id: String,
+    embedding_model: String,
+    embedding_json: String,
+    embedding_dimensions: Int,
+    content_sha256: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_agent_context_embeddings_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("agent_context_embeddings.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const agent_remote_dev_threads_table = "agent_remote_dev_threads"
 pub const agent_remote_dev_threads_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      meta::text as meta_json,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads"
 

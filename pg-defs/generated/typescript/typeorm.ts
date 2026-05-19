@@ -174,6 +174,83 @@ export class KnownGitRepoEntity {
 
 }
 
+@Index("agent_context_blobs_project_repo_context_active_uq", ["projectId", "repoId", "contextId"], { unique: true, where: "is_soft_deleted = false" })
+@Index("agent_context_blobs_repo_id_idx", ["repoId"], { where: "is_soft_deleted = false" })
+@Index("agent_context_blobs_project_id_idx", ["projectId"], { where: "is_soft_deleted = false" })
+// agent_context_blobs_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "agent_context_blobs" })
+export class AgentContextBlobsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "project_id", type: "varchar", length: 120, default: () => "'default'" })
+  projectId!: string;
+
+  @Column({ name: "repo_id", type: "uuid", nullable: true })
+  repoId!: string | null;
+
+  @Column({ name: "context_id", type: "varchar", length: 200 })
+  contextId!: string;
+
+  @Column({ name: "context_title", type: "varchar", length: 300 })
+  contextTitle!: string;
+
+  @Column({ name: "context_blob", type: "text" })
+  contextBlob!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "labels", type: "jsonb", default: () => "'[]'::jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("agent_context_embeddings_blob_model_sha_uq", ["contextBlobId", "embeddingModel", "contentSha256"], { unique: true })
+@Index("agent_context_embeddings_blob_id_idx", ["contextBlobId"])
+@Entity({ name: "agent_context_embeddings" })
+export class AgentContextEmbeddingsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "context_blob_id", type: "uuid" })
+  contextBlobId!: string;
+
+  @Column({ name: "embedding_model", type: "varchar", length: 120 })
+  embeddingModel!: string;
+
+  @Column({ name: "embedding", type: "jsonb" })
+  embedding!: unknown[];
+
+  @Column({ name: "embedding_dimensions", type: "integer" })
+  embeddingDimensions!: number;
+
+  @Column({ name: "content_sha256", type: "varchar", length: 64 })
+  contentSha256!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
 @Index("agent_remote_dev_threads_user_id_idx", ["userId"], { where: "is_soft_deleted = false" })
 @Index("agent_remote_dev_threads_known_git_repo_id_idx", ["knownGitRepoId"], { where: "is_soft_deleted = false" })
 @Index("agent_remote_dev_threads_repo_idx", ["repo"], { where: "is_soft_deleted = false" })

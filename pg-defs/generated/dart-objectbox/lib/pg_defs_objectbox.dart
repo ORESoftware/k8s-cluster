@@ -317,6 +317,152 @@ class KnownGitRepoObjectBox {
 }
 
 @Entity()
+class AgentContextBlobsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String projectId;
+
+  String? repoId;
+
+  String contextId;
+
+  String contextTitle;
+
+  String contextBlob;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String labels;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  AgentContextBlobsObjectBox({
+    required this.id,
+    required this.projectId,
+    this.repoId,
+    required this.contextId,
+    required this.contextTitle,
+    required this.contextBlob,
+    required this.status,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "projectId": projectId,
+    "repoId": repoId,
+    "contextId": contextId,
+    "contextTitle": contextTitle,
+    "contextBlob": contextBlob,
+    "status": status,
+    "labels": jsonDecode(labels),
+    "metaData": jsonDecode(metaData),
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static AgentContextBlobsObjectBox fromJson(Map<String, Object?> json) {
+    return AgentContextBlobsObjectBox(
+      id: json["id"] as String,
+      projectId: json["projectId"] as String,
+      repoId: json["repoId"] as String?,
+      contextId: json["contextId"] as String,
+      contextTitle: json["contextTitle"] as String,
+      contextBlob: json["contextBlob"] as String,
+      status: json["status"] as String,
+      labels: json["labels"] is String ? json["labels"] as String : jsonEncode(json["labels"]),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class AgentContextEmbeddingsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String contextBlobId;
+
+  String embeddingModel;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String embedding;
+
+  int embeddingDimensions;
+
+  String contentSha256;
+
+  String createdAt;
+
+
+  AgentContextEmbeddingsObjectBox({
+    required this.id,
+    required this.contextBlobId,
+    required this.embeddingModel,
+    required this.embedding,
+    required this.embeddingDimensions,
+    required this.contentSha256,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "contextBlobId": contextBlobId,
+    "embeddingModel": embeddingModel,
+    "embedding": jsonDecode(embedding),
+    "embeddingDimensions": embeddingDimensions,
+    "contentSha256": contentSha256,
+    "createdAt": createdAt,
+  };
+
+  static AgentContextEmbeddingsObjectBox fromJson(Map<String, Object?> json) {
+    return AgentContextEmbeddingsObjectBox(
+      id: json["id"] as String,
+      contextBlobId: json["contextBlobId"] as String,
+      embeddingModel: json["embeddingModel"] as String,
+      embedding: json["embedding"] is String ? json["embedding"] as String : jsonEncode(json["embedding"]),
+      embeddingDimensions: (json["embeddingDimensions"] as num).toInt(),
+      contentSha256: json["contentSha256"] as String,
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class AgentRemoteDevThreadObjectBox {
   @Id()
   int obxId = 0;

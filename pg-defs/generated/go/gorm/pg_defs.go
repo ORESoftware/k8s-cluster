@@ -21,6 +21,10 @@ var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~
 var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
 var knownGitRepoRepoUrlPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var knownGitRepoDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
+var agentContextBlobsProjectIdPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var agentContextBlobsContextIdPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+var agentContextEmbeddingsEmbeddingModelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var agentContextEmbeddingsContentSha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
@@ -208,6 +212,89 @@ func (value KnownGitRepoGorm) Validate() error {
 	if !knownGitRepoDefaultBranchPattern.MatchString(value.DefaultBranch) { return errors.New("known_git_repos.default_branch does not match the required pattern") }
 	if !containsString(KnownGitRepoStatusValues, value.Status) { return errors.New("unsupported known_git_repos.status") }
 	if !validateJSONString(value.MetaData) { return errors.New("known_git_repos.meta_data must be valid JSON") }
+	return nil
+}
+
+const AgentContextBlobsTable = "agent_context_blobs"
+const AgentContextBlobsSelectSQL = `select
+      id::text as id,
+      project_id,
+      repo_id::text as repo_id,
+      context_id,
+      context_title,
+      context_blob,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from agent_context_blobs`
+
+var AgentContextBlobsStatusValues = []string{"active", "paused", "archived"}
+
+type AgentContextBlobsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ProjectId string `gorm:"column:project_id;type:varchar(120);default:'default';not null" json:"projectId"`
+	RepoId *uuid.UUID `gorm:"column:repo_id;type:uuid" json:"repoId,omitempty"`
+	ContextId string `gorm:"column:context_id;type:varchar(200);not null" json:"contextId"`
+	ContextTitle string `gorm:"column:context_title;type:varchar(300);not null" json:"contextTitle"`
+	ContextBlob string `gorm:"column:context_blob;type:text;not null" json:"contextBlob"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;default:'[]'::jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (AgentContextBlobsGorm) TableName() string { return AgentContextBlobsTable }
+
+func (value AgentContextBlobsGorm) Validate() error {
+	if !agentContextBlobsProjectIdPattern.MatchString(value.ProjectId) { return errors.New("agent_context_blobs.project_id does not match the required pattern") }
+	if !agentContextBlobsContextIdPattern.MatchString(value.ContextId) { return errors.New("agent_context_blobs.context_id does not match the required pattern") }
+	if len([]byte(value.ContextTitle)) > 300 { return errors.New("agent_context_blobs.context_title exceeds 300 bytes") }
+	if len([]byte(value.ContextTitle)) < 1 { return errors.New("agent_context_blobs.context_title is below 1 bytes") }
+	if len([]byte(value.ContextBlob)) > 1048576 { return errors.New("agent_context_blobs.context_blob exceeds 1048576 bytes") }
+	if len([]byte(value.ContextBlob)) < 1 { return errors.New("agent_context_blobs.context_blob is below 1 bytes") }
+	if !containsString(AgentContextBlobsStatusValues, value.Status) { return errors.New("unsupported agent_context_blobs.status") }
+	if !validateJSONString(value.Labels) { return errors.New("agent_context_blobs.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("agent_context_blobs.meta_data must be valid JSON") }
+	return nil
+}
+
+const AgentContextEmbeddingsTable = "agent_context_embeddings"
+const AgentContextEmbeddingsSelectSQL = `select
+      id::text as id,
+      context_blob_id::text as context_blob_id,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      content_sha256,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from agent_context_embeddings`
+
+type AgentContextEmbeddingsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ContextBlobId uuid.UUID `gorm:"column:context_blob_id;type:uuid;not null" json:"contextBlobId"`
+	EmbeddingModel string `gorm:"column:embedding_model;type:varchar(120);not null" json:"embeddingModel"`
+	Embedding datatypes.JSON `gorm:"column:embedding;type:jsonb;not null" json:"embedding"`
+	EmbeddingDimensions int32 `gorm:"column:embedding_dimensions;type:integer;not null" json:"embeddingDimensions"`
+	ContentSha256 string `gorm:"column:content_sha256;type:varchar(64);not null" json:"contentSha256"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (AgentContextEmbeddingsGorm) TableName() string { return AgentContextEmbeddingsTable }
+
+func (value AgentContextEmbeddingsGorm) Validate() error {
+	if !agentContextEmbeddingsEmbeddingModelPattern.MatchString(value.EmbeddingModel) { return errors.New("agent_context_embeddings.embedding_model does not match the required pattern") }
+	if !validateJSONString(value.Embedding) { return errors.New("agent_context_embeddings.embedding must be valid JSON") }
+	if value.EmbeddingDimensions < 1 { return errors.New("agent_context_embeddings.embedding_dimensions is below the minimum") }
+	if !agentContextEmbeddingsContentSha256Pattern.MatchString(value.ContentSha256) { return errors.New("agent_context_embeddings.content_sha256 does not match the required pattern") }
 	return nil
 }
 

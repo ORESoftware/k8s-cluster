@@ -364,6 +364,166 @@ class KnownGitRepoRow {
   }
 }
 
+const agentContextBlobsTable = "agent_context_blobs";
+const agentContextBlobsSelectSql = "select\n      id::text as id,\n      project_id,\n      repo_id::text as repo_id,\n      context_id,\n      context_title,\n      context_blob,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_context_blobs";
+
+const agentContextBlobsStatusValues = <String>["active", "paused", "archived"];
+
+class AgentContextBlobsRow {
+  const AgentContextBlobsRow({
+    required this.id,
+    required this.projectId,
+    this.repoId,
+    required this.contextId,
+    required this.contextTitle,
+    required this.contextBlob,
+    required this.status,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String projectId;
+  final String? repoId;
+  final String contextId;
+  final String contextTitle;
+  final String contextBlob;
+  final String status;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory AgentContextBlobsRow.fromJson(Map<String, Object?> json) {
+    return AgentContextBlobsRow(
+      id: _readRequiredString(json, "id"),
+      projectId: _readRequiredString(json, "projectId"),
+      repoId: _readOptionalString(json, "repoId"),
+      contextId: _readRequiredString(json, "contextId"),
+      contextTitle: _readRequiredString(json, "contextTitle"),
+      contextBlob: _readRequiredString(json, "contextBlob"),
+      status: _readRequiredString(json, "status"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "projectId": projectId,
+    "repoId": repoId,
+    "contextId": contextId,
+    "contextTitle": contextTitle,
+    "contextBlob": contextBlob,
+    "status": status,
+    "labels": labels,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,120}$').hasMatch(projectId)) {
+      errors.add("agent_context_blobs.project_id does not match the required pattern");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,200}$').hasMatch(contextId)) {
+      errors.add("agent_context_blobs.context_id does not match the required pattern");
+    }
+    if (utf8.encode(contextTitle).length > 300) {
+      errors.add("agent_context_blobs.context_title exceeds 300 bytes");
+    }
+    if (utf8.encode(contextTitle).length < 1) {
+      errors.add("agent_context_blobs.context_title is below 1 bytes");
+    }
+    if (utf8.encode(contextBlob).length > 1048576) {
+      errors.add("agent_context_blobs.context_blob exceeds 1048576 bytes");
+    }
+    if (utf8.encode(contextBlob).length < 1) {
+      errors.add("agent_context_blobs.context_blob is below 1 bytes");
+    }
+    if (!agentContextBlobsStatusValues.contains(status)) {
+      errors.add("unsupported agent_context_blobs.status");
+    }
+    return errors;
+  }
+}
+
+const agentContextEmbeddingsTable = "agent_context_embeddings";
+const agentContextEmbeddingsSelectSql = "select\n      id::text as id,\n      context_blob_id::text as context_blob_id,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      content_sha256,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_context_embeddings";
+
+class AgentContextEmbeddingsRow {
+  const AgentContextEmbeddingsRow({
+    required this.id,
+    required this.contextBlobId,
+    required this.embeddingModel,
+    required this.embedding,
+    required this.embeddingDimensions,
+    required this.contentSha256,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String contextBlobId;
+  final String embeddingModel;
+  final List<Object?> embedding;
+  final int embeddingDimensions;
+  final String contentSha256;
+  final String createdAt;
+
+  factory AgentContextEmbeddingsRow.fromJson(Map<String, Object?> json) {
+    return AgentContextEmbeddingsRow(
+      id: _readRequiredString(json, "id"),
+      contextBlobId: _readRequiredString(json, "contextBlobId"),
+      embeddingModel: _readRequiredString(json, "embeddingModel"),
+      embedding: _readRequiredArray(json, "embedding"),
+      embeddingDimensions: _readRequiredInt(json, "embeddingDimensions"),
+      contentSha256: _readRequiredString(json, "contentSha256"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "contextBlobId": contextBlobId,
+    "embeddingModel": embeddingModel,
+    "embedding": embedding,
+    "embeddingDimensions": embeddingDimensions,
+    "contentSha256": contentSha256,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,120}$').hasMatch(embeddingModel)) {
+      errors.add("agent_context_embeddings.embedding_model does not match the required pattern");
+    }
+    if (embeddingDimensions < 1) {
+      errors.add("agent_context_embeddings.embedding_dimensions is below the minimum");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(contentSha256)) {
+      errors.add("agent_context_embeddings.content_sha256 does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
 const agentRemoteDevThreadTable = "agent_remote_dev_threads";
 const agentRemoteDevThreadSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      meta::text as meta_json,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads";
 

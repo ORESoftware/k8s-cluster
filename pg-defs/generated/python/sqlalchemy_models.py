@@ -325,6 +325,144 @@ class KnownGitRepoInsert(BaseModel):
             raise ValueError("known_git_repos.display_name exceeds 200 bytes")
         return value
 
+AgentContextBlobsStatus = Literal["active", "paused", "archived"]
+
+class AgentContextBlobs(Base):
+    __tablename__ = "agent_context_blobs"
+    __table_args__ = (
+        CheckConstraint("project_id ~ '^[A-Za-z0-9._:/-]{1,120}$'", name="agent_context_blobs_project_id_format_chk"),
+        CheckConstraint("context_id ~ '^[A-Za-z0-9._:/-]{1,200}$'", name="agent_context_blobs_context_id_format_chk"),
+        CheckConstraint("octet_length(context_title) between 1 and 300", name="agent_context_blobs_context_title_size_chk"),
+        CheckConstraint("octet_length(context_blob) between 1 and 1048576", name="agent_context_blobs_context_blob_size_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="agent_context_blobs_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="agent_context_blobs_meta_object_chk"),
+        CheckConstraint("status in ('active', 'paused', 'archived')", name="agent_context_blobs_status_chk"),
+        Index("agent_context_blobs_project_repo_context_active_uq", "project_id", "repo_id", "context_id", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_context_blobs_repo_id_idx", "repo_id", postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_context_blobs_project_id_idx", "project_id", postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_context_blobs_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    project_id: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'default'"))
+    repo_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    context_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    context_title: Mapped[str] = mapped_column(String(300), nullable=False)
+    context_blob: Mapped[str] = mapped_column(Text(), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class AgentContextBlobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    projectId: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    repoId: UUID | None = None
+    contextId: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
+    contextTitle: str = Field(..., max_length=300)
+    contextBlob: str
+    status: AgentContextBlobsStatus
+    labels: list[Any]
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("contextTitle")
+    @classmethod
+    def validate_context_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 300:
+            raise ValueError("agent_context_blobs.context_title exceeds 300 bytes")
+        return value
+
+    @field_validator("contextBlob")
+    @classmethod
+    def validate_context_blob(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1048576:
+            raise ValueError("agent_context_blobs.context_blob exceeds 1048576 bytes")
+        return value
+
+class AgentContextBlobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    projectId: str | None = Field("default", max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    repoId: UUID | None = None
+    contextId: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
+    contextTitle: str = Field(..., max_length=300)
+    contextBlob: str
+    status: AgentContextBlobsStatus | None = "active"
+    labels: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("contextTitle")
+    @classmethod
+    def validate_context_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 300:
+            raise ValueError("agent_context_blobs.context_title exceeds 300 bytes")
+        return value
+
+    @field_validator("contextBlob")
+    @classmethod
+    def validate_context_blob(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1048576:
+            raise ValueError("agent_context_blobs.context_blob exceeds 1048576 bytes")
+        return value
+
+class AgentContextEmbeddings(Base):
+    __tablename__ = "agent_context_embeddings"
+    __table_args__ = (
+        CheckConstraint("embedding_model ~ '^[A-Za-z0-9._:/-]{1,120}$'", name="agent_context_embeddings_model_format_chk"),
+        CheckConstraint("embedding_dimensions > 0", name="agent_context_embeddings_dimensions_chk"),
+        CheckConstraint("jsonb_typeof(embedding) = 'array'", name="agent_context_embeddings_array_chk"),
+        CheckConstraint("content_sha256 ~ '^[a-f0-9]{64}$'", name="agent_context_embeddings_sha256_chk"),
+        Index("agent_context_embeddings_blob_model_sha_uq", "context_blob_id", "embedding_model", "content_sha256", unique=True),
+        Index("agent_context_embeddings_blob_id_idx", "context_blob_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    context_blob_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(120), nullable=False)
+    embedding: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    embedding_dimensions: Mapped[int] = mapped_column(Integer(), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class AgentContextEmbeddingsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    contextBlobId: UUID
+    embeddingModel: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    embedding: list[Any]
+    embeddingDimensions: int = Field(..., ge=1)
+    contentSha256: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    createdAt: datetime
+
+class AgentContextEmbeddingsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    contextBlobId: UUID
+    embeddingModel: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    embedding: list[Any]
+    embeddingDimensions: int = Field(..., ge=1)
+    contentSha256: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    createdAt: datetime | None = None
+
 class AgentRemoteDevThread(Base):
     __tablename__ = "agent_remote_dev_threads"
     __table_args__ = (

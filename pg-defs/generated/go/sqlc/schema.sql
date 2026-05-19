@@ -169,6 +169,77 @@ create index if not exists known_git_repos_updated_at_idx
   on known_git_repos (updated_at desc)
   where is_soft_deleted = false;
 
+create table if not exists agent_context_blobs (
+  id uuid primary key default gen_random_uuid(),
+  project_id varchar(120) default 'default' not null,
+  repo_id uuid,
+  context_id varchar(200) not null,
+  context_title varchar(300) not null,
+  context_blob text not null,
+  status varchar(32) default 'active' not null,
+  labels jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint agent_context_blobs_project_id_format_chk
+    check (project_id ~ '^[A-Za-z0-9._:/-]{1,120}$'),
+  constraint agent_context_blobs_context_id_format_chk
+    check (context_id ~ '^[A-Za-z0-9._:/-]{1,200}$'),
+  constraint agent_context_blobs_context_title_size_chk
+    check (octet_length(context_title) between 1 and 300),
+  constraint agent_context_blobs_context_blob_size_chk
+    check (octet_length(context_blob) between 1 and 1048576),
+  constraint agent_context_blobs_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint agent_context_blobs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint agent_context_blobs_status_chk
+    check (status in ('active', 'paused', 'archived'))
+);
+
+create unique index if not exists agent_context_blobs_project_repo_context_active_uq
+  on agent_context_blobs (project_id, repo_id, context_id)
+  where is_soft_deleted = false;
+
+create index if not exists agent_context_blobs_repo_id_idx
+  on agent_context_blobs (repo_id)
+  where is_soft_deleted = false;
+
+create index if not exists agent_context_blobs_project_id_idx
+  on agent_context_blobs (project_id)
+  where is_soft_deleted = false;
+
+create index if not exists agent_context_blobs_updated_at_idx
+  on agent_context_blobs (updated_at desc)
+  where is_soft_deleted = false;
+
+create table if not exists agent_context_embeddings (
+  id uuid primary key default gen_random_uuid(),
+  context_blob_id uuid not null,
+  embedding_model varchar(120) not null,
+  embedding jsonb not null,
+  embedding_dimensions integer not null,
+  content_sha256 varchar(64) not null,
+  created_at timestamptz default now() not null,
+  constraint agent_context_embeddings_model_format_chk
+    check (embedding_model ~ '^[A-Za-z0-9._:/-]{1,120}$'),
+  constraint agent_context_embeddings_dimensions_chk
+    check (embedding_dimensions > 0),
+  constraint agent_context_embeddings_array_chk
+    check (jsonb_typeof(embedding) = 'array'),
+  constraint agent_context_embeddings_sha256_chk
+    check (content_sha256 ~ '^[a-f0-9]{64}$')
+);
+
+create unique index if not exists agent_context_embeddings_blob_model_sha_uq
+  on agent_context_embeddings (context_blob_id, embedding_model, content_sha256);
+
+create index if not exists agent_context_embeddings_blob_id_idx
+  on agent_context_embeddings (context_blob_id);
+
 create table if not exists agent_remote_dev_threads (
   id uuid primary key,
   user_id uuid not null,
@@ -417,6 +488,14 @@ create index if not exists lambda_functions_labels_gin_idx
 alter table if exists agent_remote_dev_threads
   add constraint agent_remote_dev_threads_known_git_repo_fk
   foreign key (known_git_repo_id) references known_git_repos(id);
+
+alter table if exists agent_context_blobs
+  add constraint agent_context_blobs_repo_fk
+  foreign key (repo_id) references known_git_repos(id);
+
+alter table if exists agent_context_embeddings
+  add constraint agent_context_embeddings_blob_fk
+  foreign key (context_blob_id) references agent_context_blobs(id);
 
 alter table if exists agent_remote_dev_tasks
   add constraint agent_remote_dev_tasks_thread_fk

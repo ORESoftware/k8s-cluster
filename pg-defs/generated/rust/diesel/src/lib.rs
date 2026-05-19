@@ -204,6 +204,101 @@ pub struct KnownGitRepoDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    agent_context_blobs (id) {
+        id -> Uuid,
+        project_id -> Varchar,
+        repo_id -> Nullable<Uuid>,
+        context_id -> Varchar,
+        context_title -> Varchar,
+        context_blob -> Text,
+        status -> Varchar,
+        labels -> Jsonb,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = agent_context_blobs)]
+pub struct AgentContextBlobsDieselRow {
+    pub id: Uuid,
+    pub project_id: String,
+    pub repo_id: Option<Uuid>,
+    pub context_id: String,
+    pub context_title: String,
+    pub context_blob: String,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = agent_context_blobs)]
+pub struct AgentContextBlobsDieselInsert {
+    pub id: Option<Uuid>,
+    pub project_id: Option<String>,
+    pub repo_id: Option<Uuid>,
+    pub context_id: Option<String>,
+    pub context_title: Option<String>,
+    pub context_blob: Option<String>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    agent_context_embeddings (id) {
+        id -> Uuid,
+        context_blob_id -> Uuid,
+        embedding_model -> Varchar,
+        embedding -> Jsonb,
+        embedding_dimensions -> Int4,
+        content_sha256 -> Varchar,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = agent_context_embeddings)]
+pub struct AgentContextEmbeddingsDieselRow {
+    pub id: Uuid,
+    pub context_blob_id: Uuid,
+    pub embedding_model: String,
+    pub embedding: Value,
+    pub embedding_dimensions: i32,
+    pub content_sha256: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = agent_context_embeddings)]
+pub struct AgentContextEmbeddingsDieselInsert {
+    pub id: Option<Uuid>,
+    pub context_blob_id: Option<Uuid>,
+    pub embedding_model: Option<String>,
+    pub embedding: Option<Value>,
+    pub embedding_dimensions: Option<i32>,
+    pub content_sha256: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     agent_remote_dev_threads (id) {
         id -> Uuid,
         user_id -> Uuid,
