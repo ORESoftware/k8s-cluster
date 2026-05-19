@@ -525,13 +525,18 @@ function getSessionBranch(
   sessionId: string,
   branchHint?: string | null,
   titleHint?: string | null,
+  promptHint?: string | null,
 ): string {
   const hinted = branchHint?.trim();
   if (hinted) {
     return hinted;
   }
-  const titleSlug = slugifyBranchFragment(titleHint?.trim() || sessionId);
+  const titleSlug = slugifyBranchFragment(titleHint?.trim() || promptHint?.trim() || sessionId);
   return `${config.agentBranchPrefix}/${sessionId}/${titleSlug}`;
+}
+
+function isPlaceholderSessionBranch(sessionId: string, branch: string): boolean {
+  return branch === getSessionBranch(sessionId);
 }
 
 function getSessionLogPath(workspacePath: string): string {
@@ -656,13 +661,24 @@ function getOrCreateSession(input: {
   userId?: string;
   branch?: string;
   threadTitle?: string;
+  prompt?: string;
 }): ThreadSession {
   const sessionId = getSessionId(input.threadId, input.taskId);
+  const desiredBranch = getSessionBranch(sessionId, input.branch, input.threadTitle, input.prompt);
   const existing = sessions.get(sessionId);
   if (existing) {
     existing.lastActiveAt = Date.now();
     if (!existing.userId && input.userId) {
       existing.userId = input.userId;
+    }
+    if (
+      existing.taskIds.size === 0 &&
+      existing.branch !== desiredBranch &&
+      !input.branch?.trim() &&
+      isPlaceholderSessionBranch(sessionId, existing.branch)
+    ) {
+      existing.branch = desiredBranch;
+      existing.ready = existing.ready.catch(() => undefined).then(() => prepareSessionWorkspace(existing));
     }
     return existing;
   }
@@ -672,7 +688,7 @@ function getOrCreateSession(input: {
     sessionId,
     userId: input.userId,
     workspacePath,
-    branch: getSessionBranch(sessionId, input.branch, input.threadTitle),
+    branch: desiredBranch,
     logPath: getSessionLogPath(workspacePath),
     ready: Promise.resolve(),
     queue: Promise.resolve(),
@@ -3110,6 +3126,7 @@ fastify.post('/tasks', async (req, reply) => {
         userId,
         branch: parsed.data.branch ?? undefined,
         threadTitle: parsed.data.threadTitle ?? undefined,
+        prompt,
       });
       session.taskIds.add(taskId);
 

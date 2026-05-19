@@ -108,7 +108,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider/);
   assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*\[configuredAgentFallbackProvider, configuredAgentSecondaryFallbackProvider, 'gemini-sdk'\]/);
   assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
+  assert.match(server, /titleHint\?\.trim\(\) \|\| promptHint\?\.trim\(\) \|\| sessionId/);
   assert.match(server, /return `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
+  assert.match(server, /function isPlaceholderSessionBranch\(sessionId: string, branch: string\): boolean/);
+  assert.match(server, /existing\.taskIds\.size === 0[\s\S]*isPlaceholderSessionBranch\(sessionId, existing\.branch\)/);
+  assert.match(server, /prompt,\s*\}\);/);
   assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
   assert.match(server, /type TaskReceipt/);
