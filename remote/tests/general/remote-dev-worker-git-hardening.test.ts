@@ -27,6 +27,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const telemetry = await readRepoFile('remote/dev-server/src/telemetry.ts');
   const agentTypes = await readRepoFile('remote/dev-server/src/agents/types.ts');
   const agentIndex = await readRepoFile('remote/dev-server/src/agents/index.ts');
+  const genericRunner = await readRepoFile('remote/dev-server/src/agents/generic-ai-sdk.ts');
   const geminiRunner = await readRepoFile('remote/dev-server/src/agents/gemini-sdk.ts');
   const opencodeRunner = await readRepoFile('remote/dev-server/src/agents/opencode-ai-sdk.ts');
   const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
@@ -107,7 +108,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const configuredAgentSecondaryFallbackProvider = configAgentProvider\(/);
   assert.match(server, /agentFallbackProvider: configuredAgentFallbackProvider/);
   assert.match(server, /agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider/);
-  assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*'opencode-ai-sdk'[\s\S]*'gemini-sdk'/);
+  assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*'generic-ai-sdk'[\s\S]*'gemini-sdk'/);
   assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
   assert.match(server, /titleHint\?\.trim\(\) \|\| promptHint\?\.trim\(\) \|\| sessionId/);
   assert.match(server, /return `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
@@ -177,17 +178,26 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /await applyDeterministicWorkspaceEdit\(state\)/);
   assert.match(server, /blockedSegments = new Set\(\['\.git', 'node_modules', '\.pnpm-store', '\.next', '\.turbo'\]\)/);
   assert.match(agentTypes, /\| ['"]gemini-sdk['"]/);
+  assert.match(agentTypes, /\| ['"]generic-ai-sdk['"]/);
   assert.match(agentTypes, /\| ['"]opencode-ai-sdk['"]/);
   assert.doesNotMatch(agentTypes, /\| ['"]echo['"]/);
+  assert.match(agentIndex, /genericAiSdkRunner/);
+  assert.match(agentIndex, /DEFAULT_GENERIC_AI_SDK_SOURCES/);
+  assert.match(agentIndex, /defaultGenericAiSdkModels/);
   assert.match(agentIndex, /import \{ opencodeAiSdkRunner, DEFAULT_OPENCODE_MODELS \} from '\.\/opencode-ai-sdk\.js'/);
+  assert.match(agentIndex, /'generic-ai-sdk': genericAiSdkRunner/);
   assert.match(agentIndex, /'opencode-ai-sdk': opencodeAiSdkRunner/);
   assert.match(agentIndex, /const DEFAULT_GEMINI_MODEL = 'gemini-3\.1-pro-preview'/);
   assert.match(agentIndex, /const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3\.1-flash-lite'/);
   assert.match(agentIndex, /configuredSecretList\('OPENAI_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /configuredSecretList\('ANTHROPIC_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /configuredSecretList\('OPENCODE_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('DEEPSEEK_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('DASHSCOPE_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('XAI_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /configuredSecretList\('GEMINI_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /export function buildAgentEnvCandidates\(provider: AgentProvider\): AgentEnvCandidate\[\]/);
+  assert.match(agentIndex, /if \(provider === 'generic-ai-sdk'\) \{/);
   assert.match(agentIndex, /base\.OPENCODE_BASE_URL = process\.env\.OPENCODE_BASE_URL \?\? 'https:\/\/opencode\.ai\/zen\/v1'/);
   assert.match(agentIndex, /base\.OPENCODE_MODELS =[\s\S]*DEFAULT_OPENCODE_MODELS\.join\(','\)/);
   assert.match(agentIndex, /base\.GEMINI_FALLBACK_MODEL =[\s\S]*DEFAULT_GEMINI_FALLBACK_MODEL/);
@@ -198,7 +208,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /threadTitle:\s*z\.string\(\)\.min\(1\)\.max\(200\)\.nullish\(\)/);
   assert.match(
     server,
-    /provider:\s*z[\s\S]*\.enum\(\[[\s\S]*'opencode-ai-sdk'[\s\S]*'openai-sdk'[\s\S]*\]\)[\s\S]*\.nullish\(\)/,
+    /provider:\s*z[\s\S]*\.enum\(\[[\s\S]*'generic-ai-sdk'[\s\S]*'opencode-ai-sdk'[\s\S]*'openai-sdk'[\s\S]*\]\)[\s\S]*\.nullish\(\)/,
   );
   assert.match(server, /threadTitle:\s*parsed\.data\.threadTitle \?\? undefined/);
   assert.match(server, /resolveAgentProvider\(parsed\.data\.provider \?\? undefined\)/);
@@ -218,15 +228,25 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(opencodeRunner, /const baseURL = opts\.env\.OPENCODE_BASE_URL \?\? DEFAULT_OPENCODE_BASE_URL/);
   assert.match(opencodeRunner, /model: provider\(modelId\)/);
   assert.match(opencodeRunner, /provider: 'opencode-ai-sdk'/);
+  assert.match(genericRunner, /DEFAULT_GENERIC_AI_SDK_SOURCES = \[[\s\S]*id: 'deepseek'[\s\S]*'deepseek-v4-pro'[\s\S]*id: 'qwen'[\s\S]*'qwen3\.6-max-preview'[\s\S]*id: 'xai'[\s\S]*'grok-4\.3'/);
+  assert.match(genericRunner, /createOpenAICompatible/);
+  assert.match(genericRunner, /model: provider\(modelId\)/);
+  assert.match(genericRunner, /provider: 'generic-ai-sdk'/);
   assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'claude-sdk'/);
-  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'openai-sdk,claude-sdk,opencode-ai-sdk,gemini-sdk'/);
+  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'openai-sdk,claude-sdk,generic-ai-sdk,gemini-sdk'/);
   assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
   assert.match(secretsTemplate, /OPENAI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /ANTHROPIC_API_KEYS_JSON/);
   assert.match(secretsTemplate, /OPENCODE_API_KEYS_JSON/);
   assert.match(secretsTemplate, /OPENCODE_MODELS:\s*"big-pickle,deepseek-v4-flash-free,minimax-m2\.5-free,nemotron-3-super-free,qwen3\.6-plus-free"/);
+  assert.match(secretsTemplate, /DEEPSEEK_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /DEEPSEEK_MODELS:\s*"deepseek-v4-pro,deepseek-v4-flash"/);
+  assert.match(secretsTemplate, /DASHSCOPE_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /QWEN_MODELS:\s*"qwen3\.6-max-preview,qwen3\.6-plus,qwen3\.6-flash"/);
+  assert.match(secretsTemplate, /XAI_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /XAI_MODELS:\s*"grok-4\.3,grok-code-fast-1,grok-4-fast"/);
   assert.match(secretsTemplate, /GEMINI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);

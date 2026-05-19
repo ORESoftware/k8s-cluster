@@ -155,7 +155,7 @@ test('dev-server can receive provider and github secrets for scheduled PR work',
   assert.match(runtimeReadme, /- `SERVER_AUTH_SECRET`/);
   assert.match(
     runtimeReadme,
-    /- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, and\s+`OPENCODE_API_KEY`/,
+    /- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`,\s+`OPENCODE_API_KEY`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, and `XAI_API_KEY`/,
   );
   assert.match(
     runtimeReadme,

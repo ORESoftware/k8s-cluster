@@ -1028,6 +1028,7 @@ fn agents_threads_body() -> Markup {
                             select id="provider" {
                                 option value="openai-sdk" selected { "openai-sdk" }
                                 option value="claude-sdk" { "claude-sdk" }
+                                option value="generic-ai-sdk" { "generic-ai-sdk" }
                                 option value="opencode-ai-sdk" { "opencode-ai-sdk" }
                                 option value="gemini-sdk" { "gemini-sdk" }
                             }
@@ -1152,6 +1153,7 @@ fn agents_tasks_body() -> Markup {
                         select id="chat-provider" {
                             option value="openai-sdk" selected="selected" { "openai-sdk" }
                             option value="claude-sdk" { "claude-sdk" }
+                            option value="generic-ai-sdk" { "generic-ai-sdk" }
                             option value="opencode-ai-sdk" { "opencode-ai-sdk" }
                             option value="gemini-sdk" { "gemini-sdk" }
                             option value="claude-cli" { "claude-cli" }

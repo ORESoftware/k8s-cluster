@@ -73,6 +73,7 @@ const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk';
 const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
   'claude-cli',
   'claude-sdk',
+  'generic-ai-sdk',
   'gemini-sdk',
   'opencode-ai-sdk',
   'openai-codex-cli',
@@ -160,7 +161,7 @@ const config = {
     [
       configuredAgentFallbackProvider,
       configuredAgentSecondaryFallbackProvider,
-      'opencode-ai-sdk',
+      'generic-ai-sdk',
       'gemini-sdk',
     ],
   ),
@@ -451,7 +452,7 @@ function gitBranchTarget(branch: string): string {
 }
 
 function providerCanEditWorkspace(provider: AgentProvider): boolean {
-  return provider !== 'gemini-sdk' && provider !== 'opencode-ai-sdk';
+  return provider !== 'gemini-sdk' && provider !== 'opencode-ai-sdk' && provider !== 'generic-ai-sdk';
 }
 
 function providerCanAccessWorkspace(provider: AgentProvider): boolean {
@@ -3119,13 +3120,14 @@ const DispatchSchema = z.object({
   threadTitle: z.string().min(1).max(200).nullish(),
   /**
    * Which agent runner to drive the task. Falls back to AGENT_PROVIDER env
-   * then "opencode-ai-sdk" / "gemini-sdk". Validated by the selector — unknown values fall
+   * then "generic-ai-sdk" / "gemini-sdk". Validated by the selector — unknown values fall
    * back to default rather than 400ing.
    */
   provider: z
     .enum([
       'claude-cli',
       'claude-sdk',
+      'generic-ai-sdk',
       'gemini-sdk',
       'opencode-ai-sdk',
       'openai-codex-cli',

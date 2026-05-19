@@ -149,8 +149,9 @@ workflow without a failing package install.
 The runner that drives each task is pluggable. Default is OpenAI SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
 Each task walks `AGENT_PROVIDER_ROTATION` and every configured key for that provider before moving
-on. The default order is all OpenAI SDK keys, then all Claude SDK keys, then OpenCode Zen keys, then
-Gemini keys. OpenCode and Gemini are skipped for repo-edit/inspection prompts because they are still
+on. The default order is all OpenAI SDK keys, then all Claude SDK keys, then the generic AI SDK
+OpenAI-compatible pool (OpenCode Zen, DeepSeek, Qwen/DashScope, xAI/Grok), then Gemini keys. Generic
+AI SDK, OpenCode, and Gemini are skipped for repo-edit/inspection prompts because they are still
 model-only. Simple append-to-file prompts such as `append "foobar" to todos.md` are handled by a
 deterministic workspace edit path before provider fallback, then committed and pushed like normal
 agent edits.
@@ -158,6 +159,7 @@ agent edits.
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `gemini-sdk`       | working           | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Model-only response runner. It cannot edit the workspace; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
+| `generic-ai-sdk`   | working           | Provider-specific JSON arrays such as `DEEPSEEK_API_KEYS_JSON`, `DASHSCOPE_API_KEYS_JSON`, and `XAI_API_KEYS_JSON` | Uses `ai` + `@ai-sdk/openai-compatible` against OpenCode Zen, DeepSeek V4, Qwen 3.6 Max, and Grok 4.x endpoints. Model-only. |
 | `opencode-ai-sdk`  | working           | `OPENCODE_API_KEY` (+ optional `OPENCODE_MODELS` / `OPENCODE_BASE_URL`) | Uses `ai` + `@ai-sdk/openai-compatible` against OpenCode Zen. Model-only; default model order is `big-pickle`, `deepseek-v4-flash-free`, `minimax-m2.5-free`, `nemotron-3-super-free`, `qwen3.6-plus-free`. |
 | `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
@@ -167,7 +169,7 @@ agent edits.
 | Var                 | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `AGENT_PROVIDER`    | Default runner if the dispatch doesn't specify one. One of `gemini-sdk` / `opencode-ai-sdk` / `claude-sdk` / `claude-cli` / `openai-sdk` / `openai-codex-cli`. |
-| `AGENT_PROVIDER_ROTATION` | Comma/space separated retry order. Defaults to `openai-sdk,claude-sdk,opencode-ai-sdk,gemini-sdk`. The selected provider is appended if absent. |
+| `AGENT_PROVIDER_ROTATION` | Comma/space separated retry order. Defaults to `openai-sdk,claude-sdk,generic-ai-sdk,gemini-sdk`. The selected provider is appended if absent. |
 | `AGENT_FALLBACK_PROVIDER` | First retry provider when the selected runner fails. Defaults to `openai-sdk`.                                                        |
 | `AGENT_SECONDARY_FALLBACK_PROVIDER` | Second retry provider when the selected runner or primary fallback fails. Defaults to `claude-sdk`.                           |
 | `ANTHROPIC_API_KEY` | Required when provider is a `claude-*` runner.                                                                              |
@@ -186,6 +188,9 @@ agent edits.
 | `OPENCODE_API_KEYS_JSON` | Optional JSON array of OpenCode keys. Tried before `OPENCODE_API_KEY`; `OPENCODE_ZEN_API_KEYS_JSON` is also accepted.     |
 | `OPENCODE_BASE_URL` | Optional. Defaults to `https://opencode.ai/zen/v1`.                                                                        |
 | `OPENCODE_MODELS`   | Optional JSON array or comma/newline separated OpenCode model list. Defaults to five free/low-cost Zen models.             |
+| `DEEPSEEK_API_KEYS_JSON` | Optional JSON array of DeepSeek keys. Tried before `DEEPSEEK_API_KEY` by `generic-ai-sdk`. Defaults to `deepseek-v4-pro,deepseek-v4-flash`. |
+| `DASHSCOPE_API_KEYS_JSON` | Optional JSON array of Alibaba Model Studio / DashScope keys. `QWEN_API_KEYS_JSON` and `ALIBABA_API_KEYS_JSON` are also accepted. |
+| `XAI_API_KEYS_JSON` | Optional JSON array of xAI keys. `GROK_API_KEYS_JSON` is also accepted. Defaults to `grok-4.3,grok-code-fast-1,grok-4-fast`. |
 | `THREAD_CONTEXT_BASE_URL` | Optional. Defaults to the in-cluster REST API. Workers call `/api/agents/threads/:threadId/context` before each task. |
 | `THREAD_CONTEXT_LIMIT` | Optional. Defaults to `20` prior tasks.                                                                                  |
 | `THREAD_CONTEXT_MAX_CHARS` | Optional. Defaults to `48000` characters injected into the prompt.                                                   |

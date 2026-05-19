@@ -8,6 +8,7 @@
 // run(), not just process.env):
 //   claude-cli       → ANTHROPIC_API_KEY
 //   claude-sdk       → ANTHROPIC_API_KEY  (after SDK install)
+//   generic-ai-sdk   → GENERIC_AI_SDK_API_KEY + compatible base URL
 //   gemini-sdk       → GEMINI_API_KEY      (after SDK install)
 //   opencode-ai-sdk  → OPENCODE_API_KEY    (via ai + @ai-sdk/openai-compatible)
 //   openai-codex-cli → OPENAI_API_KEY     (and `codex` binary on PATH)
@@ -17,6 +18,11 @@ import { spawn } from 'node:child_process';
 
 import { claudeCliRunner } from './claude-cli.js';
 import { claudeSdkRunner, resolveClaudeCodeExecutable } from './claude-sdk.js';
+import {
+  genericAiSdkRunner,
+  DEFAULT_GENERIC_AI_SDK_SOURCES,
+  defaultGenericAiSdkModels,
+} from './generic-ai-sdk.js';
 import { geminiSdkRunner } from './gemini-sdk.js';
 import { openaiCodexCliRunner } from './openai-codex-cli.js';
 import { opencodeAiSdkRunner, DEFAULT_OPENCODE_MODELS } from './opencode-ai-sdk.js';
@@ -35,6 +41,7 @@ export type AgentEnvCandidate = {
 const RUNNERS: Record<AgentProvider, AgentRunner> = {
   'claude-cli': claudeCliRunner,
   'claude-sdk': claudeSdkRunner,
+  'generic-ai-sdk': genericAiSdkRunner,
   'gemini-sdk': geminiSdkRunner,
   'opencode-ai-sdk': opencodeAiSdkRunner,
   'openai-codex-cli': openaiCodexCliRunner,
@@ -49,6 +56,7 @@ const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 const VALID_PROVIDERS = new Set<AgentProvider>([
   'claude-cli',
   'claude-sdk',
+  'generic-ai-sdk',
   'gemini-sdk',
   'opencode-ai-sdk',
   'openai-codex-cli',
@@ -102,6 +110,83 @@ function uniqueSecrets(values: string[]): string[] {
   return result;
 }
 
+function configuredGenericAiSdkKeys(sourceId: string): string[] {
+  if (sourceId === 'opencode') {
+    return uniqueSecrets([
+      ...configuredSecretList('OPENCODE_API_KEYS_JSON'),
+      ...configuredSecretList('OPENCODE_ZEN_API_KEYS_JSON'),
+      ...configuredSecretList('OPENCODE_API_KEYS'),
+      ...configuredSecretList('OPENCODE_ZEN_API_KEYS'),
+      ...configuredSecretList('OPENCODE_API_KEY'),
+      ...configuredSecretList('OPENCODE_ZEN_API_KEY'),
+    ]);
+  }
+  if (sourceId === 'deepseek') {
+    return uniqueSecrets([
+      ...configuredSecretList('DEEPSEEK_API_KEYS_JSON'),
+      ...configuredSecretList('DEEPSEEK_API_KEYS'),
+      ...configuredSecretList('DEEPSEEK_API_KEY'),
+    ]);
+  }
+  if (sourceId === 'qwen') {
+    return uniqueSecrets([
+      ...configuredSecretList('DASHSCOPE_API_KEYS_JSON'),
+      ...configuredSecretList('QWEN_API_KEYS_JSON'),
+      ...configuredSecretList('ALIBABA_API_KEYS_JSON'),
+      ...configuredSecretList('DASHSCOPE_API_KEYS'),
+      ...configuredSecretList('QWEN_API_KEYS'),
+      ...configuredSecretList('ALIBABA_API_KEYS'),
+      ...configuredSecretList('DASHSCOPE_API_KEY'),
+      ...configuredSecretList('QWEN_API_KEY'),
+      ...configuredSecretList('ALIBABA_API_KEY'),
+    ]);
+  }
+  if (sourceId === 'xai') {
+    return uniqueSecrets([
+      ...configuredSecretList('XAI_API_KEYS_JSON'),
+      ...configuredSecretList('GROK_API_KEYS_JSON'),
+      ...configuredSecretList('XAI_API_KEYS'),
+      ...configuredSecretList('GROK_API_KEYS'),
+      ...configuredSecretList('XAI_API_KEY'),
+      ...configuredSecretList('GROK_API_KEY'),
+    ]);
+  }
+  return [];
+}
+
+function genericAiSdkBaseUrl(sourceId: string, fallback: string): string {
+  if (sourceId === 'opencode') {
+    return process.env.OPENCODE_BASE_URL ?? fallback;
+  }
+  if (sourceId === 'deepseek') {
+    return process.env.DEEPSEEK_BASE_URL ?? fallback;
+  }
+  if (sourceId === 'qwen') {
+    return process.env.DASHSCOPE_BASE_URL ?? process.env.QWEN_BASE_URL ?? fallback;
+  }
+  if (sourceId === 'xai') {
+    return process.env.XAI_BASE_URL ?? process.env.GROK_BASE_URL ?? fallback;
+  }
+  return fallback;
+}
+
+function genericAiSdkModels(sourceId: string): string {
+  const fallback = defaultGenericAiSdkModels(sourceId).join(',');
+  if (sourceId === 'opencode') {
+    return process.env.OPENCODE_MODELS ?? process.env.OPENCODE_MODEL ?? fallback;
+  }
+  if (sourceId === 'deepseek') {
+    return process.env.DEEPSEEK_MODELS ?? process.env.DEEPSEEK_MODEL ?? fallback;
+  }
+  if (sourceId === 'qwen') {
+    return process.env.DASHSCOPE_MODELS ?? process.env.QWEN_MODELS ?? process.env.QWEN_MODEL ?? fallback;
+  }
+  if (sourceId === 'xai') {
+    return process.env.XAI_MODELS ?? process.env.GROK_MODELS ?? process.env.XAI_MODEL ?? process.env.GROK_MODEL ?? fallback;
+  }
+  return fallback;
+}
+
 function configuredProviderApiKeys(provider: AgentProvider): string[] {
   if (provider === 'openai-codex-cli' || provider === 'openai-sdk') {
     return uniqueSecrets([
@@ -139,6 +224,11 @@ function configuredProviderApiKeys(provider: AgentProvider): string[] {
       ...configuredSecretList('OPENCODE_API_KEY'),
       ...configuredSecretList('OPENCODE_ZEN_API_KEY'),
     ]);
+  }
+  if (provider === 'generic-ai-sdk') {
+    return uniqueSecrets(
+      DEFAULT_GENERIC_AI_SDK_SOURCES.flatMap((source) => configuredGenericAiSdkKeys(source.id)),
+    );
   }
   return [];
 }
@@ -252,6 +342,15 @@ export function buildAgentEnv(provider: AgentProvider, apiKey?: string): Record<
       base.OPENCODE_MODEL = process.env.OPENCODE_MODEL;
     }
   }
+  if (provider === 'generic-ai-sdk') {
+    const key = apiKey ?? configuredProviderApiKeys(provider)[0];
+    if (key) {
+      base.GENERIC_AI_SDK_API_KEY = key;
+    }
+    base.GENERIC_AI_SDK_SOURCE = process.env.GENERIC_AI_SDK_SOURCE ?? 'generic';
+    base.GENERIC_AI_SDK_BASE_URL = process.env.GENERIC_AI_SDK_BASE_URL ?? '';
+    base.GENERIC_AI_SDK_MODELS = process.env.GENERIC_AI_SDK_MODELS ?? '';
+  }
   if (provider === 'openai-codex-cli' || provider === 'openai-sdk') {
     const key = apiKey ?? configuredProviderApiKeys(provider)[0];
     if (key) {
@@ -272,6 +371,26 @@ export function buildAgentEnv(provider: AgentProvider, apiKey?: string): Record<
 }
 
 export function buildAgentEnvCandidates(provider: AgentProvider): AgentEnvCandidate[] {
+  if (provider === 'generic-ai-sdk') {
+    const sourceEntries = DEFAULT_GENERIC_AI_SDK_SOURCES.flatMap((source) =>
+      configuredGenericAiSdkKeys(source.id).map((key) => ({
+        source,
+        key,
+      })),
+    );
+    return sourceEntries.map(({ source, key }, index) => {
+      const env = buildAgentEnv(provider, key);
+      env.GENERIC_AI_SDK_SOURCE = source.id;
+      env.GENERIC_AI_SDK_BASE_URL = genericAiSdkBaseUrl(source.id, source.baseURL);
+      env.GENERIC_AI_SDK_MODELS = genericAiSdkModels(source.id);
+      return {
+        provider,
+        env,
+        credentialIndex: index + 1,
+        credentialCount: sourceEntries.length,
+      };
+    });
+  }
   const apiKeys = configuredProviderApiKeys(provider);
   return apiKeys.map((key, index) => ({
     provider,

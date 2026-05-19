@@ -170,8 +170,8 @@ Use `dd-agent-secrets` for shared remote runtime values:
 - `SERVER_AUTH_SECRET`
 - `DD_REPO_URL` and `DD_REPO_REF` for the repo/base branch that the bootstrap Node.js worker is
   pinned to at runtime
-- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, and
-  `OPENCODE_API_KEY`
+- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`,
+  `OPENCODE_API_KEY`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, and `XAI_API_KEY`
 - GitHub credentials used by the remote dev worker entrypoint and PR creation path:
   `GH_DEPLOY_KEY`, optional `GH_DEPLOY_KEY_PUBLIC`, and optional `GH_PAT`
 
@@ -189,7 +189,10 @@ clone/fetch/push. A safe AWS Secrets Manager value for `dd/remote-dev/agent-secr
   "GH_DEPLOY_KEY_PUBLIC": "ssh-ed25519 ... comment",
   "GH_PAT": "optional-fine-grained-token-for-gh-cli-prs",
   "ANTHROPIC_API_KEY": "replace-me",
-  "OPENCODE_API_KEY": "replace-me"
+  "OPENCODE_API_KEY": "replace-me",
+  "DEEPSEEK_API_KEYS_JSON": "[\"replace-me\"]",
+  "DASHSCOPE_API_KEYS_JSON": "[\"replace-me\"]",
+  "XAI_API_KEYS_JSON": "[\"replace-me\"]"
 }
 ```
 

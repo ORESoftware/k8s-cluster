@@ -13,6 +13,7 @@ import type { ChildProcess } from 'node:child_process';
 export type AgentProvider =
   | 'claude-cli'
   | 'claude-sdk'
+  | 'generic-ai-sdk'
   | 'gemini-sdk'
   | 'opencode-ai-sdk'
   | 'openai-codex-cli'
