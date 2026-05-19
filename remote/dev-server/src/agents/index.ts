@@ -32,7 +32,7 @@ const RUNNERS: Record<AgentProvider, AgentRunner> = {
 };
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
-const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 

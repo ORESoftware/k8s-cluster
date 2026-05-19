@@ -152,7 +152,7 @@ If a non-Gemini provider throws before completing, the worker retries once with 
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `gemini-sdk`       | working (default/fallback) | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Uses Google's `@google/genai` SDK. Defaults to `gemini-3.1-pro`; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
+| `gemini-sdk`       | working (default/fallback) | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Uses Google's `@google/genai` SDK. Defaults to `gemini-3.1-pro-preview`; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
 | `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
 | `openai-sdk`       | working           | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace.         |
@@ -165,7 +165,7 @@ If a non-Gemini provider throws before completing, the worker retries once with 
 | `ANTHROPIC_MODEL`   | Optional. Defaults to `claude-opus-4-7`; read by CLI/SDK when set.                                                          |
 | `GOOGLE_API_KEY`    | Preferred API key for `gemini-sdk`; mapped into the runner's strict `GEMINI_API_KEY` allowlist.                              |
 | `GEMINI_API_KEY`    | Alternate API key for `gemini-sdk` when `GOOGLE_API_KEY` is unset.                                                          |
-| `GEMINI_MODEL`      | Optional. Defaults to `gemini-3.1-pro`.                                                                             |
+| `GEMINI_MODEL`      | Optional. Defaults to `gemini-3.1-pro-preview`.                                                                             |
 | `GEMINI_FALLBACK_MODEL` | Optional. Defaults to `gemini-3.1-flash-lite`; used once when the primary Gemini model returns a quota/rate-limit failure. |
 | `OPENAI_API_KEY`    | Required when provider is an `openai-*` runner.                                                                             |
 | `OPENAI_MODEL`      | Optional. Defaults to `gpt-5.5`; read by the SDK runner if set.                                                            |
