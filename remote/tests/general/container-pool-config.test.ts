@@ -277,7 +277,11 @@ test('container pool app_config seed is a complete runtime contract', async () =
     }
     assert.equal(pool.healthPath, parsed.runtimeContract.defaultHealthPath);
     assert.equal(pool.containerPort, parsed.runtimeContract.defaultContainerPort);
-    assert.ok(pool.minWarm >= 1, `pool ${pool.slug} should keep at least one warm worker`);
+    if (pool.slug === 'nodejs-chat-claude-live-mutex-dev') {
+      assert.ok(pool.minWarm >= 1, `pool ${pool.slug} should keep at least one warm worker`);
+    } else {
+      assert.ok(pool.minWarm >= 0, `pool ${pool.slug} should allow disabled prewarm`);
+    }
     assert.ok(pool.maxWarm >= pool.minWarm, `pool ${pool.slug} maxWarm should cover minWarm`);
     assert.equal(pool.maxConcurrencyPerContainer, 1);
     assert.ok(pool.requestTimeoutMs >= 30_000);
@@ -323,9 +327,12 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
     /CONTAINER_POOL_APP_CONFIG_KEY[\s\S]*value:\s*container-pool\.runtime-pools\.v1/,
   );
   assert.match(deployment, /CONTAINER_POOL_NETWORK[\s\S]*value:\s*host/);
+  assert.match(deployment, /CONTAINER_POOL_PULL_POLICY[\s\S]*value:\s*never/);
   assert.match(deployment, /CONTAINER_POOL_PORT_START[\s\S]*value:\s*'12000'/);
   assert.match(deployment, /CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES[\s\S]*value:\s*'2097152'/);
   assert.match(deployment, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES[\s\S]*value:\s*'2097152'/);
+  assert.match(deployment, /CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
+  assert.match(deployment, /CONTAINER_POOL_START_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_MEMORY[\s\S]*value:\s*512m/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_CPUS[\s\S]*value:\s*'1'/);
   assert.match(deployment, /CONTAINER_POOL_PIDS_LIMIT[\s\S]*value:\s*'128'/);

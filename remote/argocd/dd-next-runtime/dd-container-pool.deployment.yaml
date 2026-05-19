@@ -64,6 +64,8 @@ spec:
               value: container-pool.runtime-pools.v1
             - name: CONTAINER_POOL_NETWORK
               value: host
+            - name: CONTAINER_POOL_PULL_POLICY
+              value: never
             - name: CONTAINER_POOL_PORT_START
               value: '12000'
             - name: CONTAINER_POOL_PORT_END
@@ -73,9 +75,9 @@ spec:
             - name: CONTAINER_POOL_RECONCILE_SECONDS
               value: '10'
             - name: CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS
-              value: '120'
+              value: '300'
             - name: CONTAINER_POOL_START_TIMEOUT_SECONDS
-              value: '90'
+              value: '300'
             - name: CONTAINER_POOL_CONTAINER_MEMORY
               value: 512m
             - name: CONTAINER_POOL_CONTAINER_CPUS

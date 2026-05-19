@@ -459,17 +459,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "http://dd-container-pool.default.svc.cluster.local:8102",
     );
     let fallback_rest_dispatch = env_bool("QUEUE_CONSUMER_FALLBACK_REST_DISPATCH", true);
+    let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);
     let receipts_dir = env_value(
         "QUEUE_CONSUMER_RECEIPTS_DIR",
         "/tmp/dd-remote-queue-consumer/tasks",
     );
     let secret = server_auth_secret();
     let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(http_timeout_seconds))
         .build()?;
 
     println!(
-        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} receipts_dir={receipts_dir}"
+        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} http_timeout_seconds={http_timeout_seconds} receipts_dir={receipts_dir}"
     );
     let nats_client = async_nats::connect(nats_url).await?;
     let consumer = build_jetstream_consumer(

@@ -52,7 +52,7 @@ spec:
             - name: NATS_TASK_MAX_ACK_PENDING
               value: '256'
             - name: NATS_TASK_ACK_WAIT_SECONDS
-              value: '120'
+              value: '600'
             - name: NATS_TASK_MAX_DELIVER
               value: '5'
             - name: NATS_TASK_NAK_DELAY_SECONDS
@@ -61,6 +61,8 @@ spec:
               value: http://dd-remote-rest-api.default.svc.cluster.local:8082
             - name: CONTAINER_POOL_BASE_URL
               value: http://dd-container-pool.default.svc.cluster.local:8102
+            - name: QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS
+              value: '420'
             - name: QUEUE_CONSUMER_FALLBACK_REST_DISPATCH
               value: 'false'
             - name: QUEUE_CONSUMER_RECEIPTS_DIR
