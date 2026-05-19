@@ -103,8 +103,8 @@ secret, not committed to Git.
 ## Gateway TLS
 
 `dd-remote-gateway` terminates HTTPS itself with a Kubernetes TLS secret named
-`dd-remote-gateway-tls` in the `default` namespace. HTTP remains enabled for bootstrap access and
-for ACME HTTP-01 challenge renewal.
+`dd-remote-gateway-tls` in the `default` namespace. HTTP remains enabled for ACME HTTP-01
+challenge renewal and redirects browser traffic to HTTPS.
 
 Create or rotate the self-signed certificate on the EC2 host before applying the gateway
 deployment:

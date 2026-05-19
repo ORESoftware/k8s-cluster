@@ -551,6 +551,7 @@ test('gateway terminates self-signed TLS on host port 443', async () => {
 
   assert.match(gateway, /listen 80 default_server/);
   assert.match(gateway, /listen 443 ssl default_server/);
+  assert.match(gateway, /return 308 https:\/\/\$host\$request_uri/);
   assert.match(gateway, /ssl_certificate \/etc\/nginx\/tls\/tls\.crt/);
   assert.match(gateway, /ssl_certificate_key \/etc\/nginx\/tls\/tls\.key/);
   assert.match(gateway, /ssl_protocols TLSv1\.2 TLSv1\.3/);
@@ -569,7 +570,7 @@ test('gateway terminates self-signed TLS on host port 443', async () => {
   assert.match(deployment, /secretName:\s*dd-remote-gateway-tls/);
   assert.match(deployment, /path:\s*\/home\/ec2-user\/dd-acme-webroot/);
   assert.match(deployment, /type:\s*DirectoryOrCreate/);
-  assert.match(runtimeReadme, /HTTP remains enabled for[\s\S]*bootstrap access/);
+  assert.match(runtimeReadme, /HTTP remains enabled for ACME HTTP-01[\s\S]*redirects browser traffic to HTTPS/);
   assert.match(runtimeReadme, /curl -k https:\/\/54\.91\.17\.58\/home/);
   assert.match(runtimeReadme, /\/home\/ec2-user\/dd-acme-webroot/);
   assert.match(runtimeReadme, /--webroot-path \/home\/ec2-user\/dd-acme-webroot/);
@@ -1405,6 +1406,9 @@ test('node worker opens draft PRs only through explicit control action', async (
   assert.match(server, /async function openPullRequestForThread/);
   assert.match(server, /async function ensurePullRequestForSession/);
   assert.match(server, /'--draft'/);
+  assert.match(server, /\['rev-list', '--left-right', '--count', `origin\/\$\{config\.baseBranch\}\.\.\.HEAD`\]/);
+  assert.match(server, /'--allow-empty'/);
+  assert.match(server, /kind: 'open-pr-marker-commit'/);
   assert.match(
     server,
     /const title = rawTitle\.startsWith\('WIP - '\) \? rawTitle : `WIP - \$\{rawTitle\}`/,

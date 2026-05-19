@@ -1382,6 +1382,73 @@ async function ensurePullRequestForSession(input: {
     /* no existing PR */
   }
 
+  await shCapture('git', ['fetch', 'origin', config.baseBranch], input.session.workspacePath, {
+    timeoutMs: TIMEOUT_GIT_NETWORK,
+  });
+  const [behindCountText = '0', aheadCountText = '0'] = (
+    await shCapture(
+      'git',
+      ['rev-list', '--left-right', '--count', `origin/${config.baseBranch}...HEAD`],
+      input.session.workspacePath,
+      { timeoutMs: TIMEOUT_GIT_QUICK },
+    )
+  )
+    .trim()
+    .split(/\s+/);
+  const behindCount = Number.parseInt(behindCountText, 10) || 0;
+  const aheadCount = Number.parseInt(aheadCountText, 10) || 0;
+  if (aheadCount === 0) {
+    const before = (
+      await shCapture('git', ['rev-parse', 'HEAD'], input.session.workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+      })
+    ).trim();
+    if (behindCount > 0) {
+      await shCapture(
+        'git',
+        ['merge', '--ff-only', `origin/${config.baseBranch}`],
+        input.session.workspacePath,
+        { timeoutMs: TIMEOUT_GIT_NETWORK },
+      );
+    }
+    await shCapture(
+      'git',
+      [
+        'commit',
+        '--allow-empty',
+        '--no-verify',
+        '-m',
+        `agent(${input.session.sessionId}): open draft PR`,
+      ],
+      input.session.workspacePath,
+      { timeoutMs: TIMEOUT_GIT_QUICK },
+    );
+    const after = (
+      await shCapture('git', ['rev-parse', 'HEAD'], input.session.workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+      })
+    ).trim();
+    await shCapture(
+      'git',
+      ['push', '--no-verify', '--set-upstream', 'origin', input.session.branch],
+      input.session.workspacePath,
+      { timeoutMs: TIMEOUT_GIT_NETWORK },
+    );
+    await appendFile(
+      input.session.logPath,
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        kind: 'open-pr-marker-commit',
+        sessionId: input.session.sessionId,
+        branch: input.session.branch,
+        baseBranch: config.baseBranch,
+        before,
+        after,
+        fastForwardedBase: behindCount > 0,
+      }) + '\n',
+    );
+  }
+
   const commitTitle = (
     await shCapture('git', ['log', '-1', '--pretty=%s'], input.session.workspacePath, {
       timeoutMs: TIMEOUT_GIT_QUICK,

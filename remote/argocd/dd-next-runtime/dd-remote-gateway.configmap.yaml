@@ -49,6 +49,20 @@ data:
 
     server {
       listen 80 default_server;
+      server_name _;
+
+      location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+        default_type text/plain;
+        try_files $uri =404;
+      }
+
+      location / {
+        return 308 https://$host$request_uri;
+      }
+    }
+
+    server {
       listen 443 ssl default_server;
       server_name _;
 
