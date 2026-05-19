@@ -98,11 +98,11 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /publish_queue_status_event/);
   assert.match(consumer, /dd\.remote\.events/);
   assert.match(consumer, /queue-received/);
-  assert.match(consumer, /direct-dispatch-prepare/);
-  assert.match(consumer, /direct-dispatch-prepare-failed/);
+  assert.match(consumer, /direct-dispatch-observed/);
+  assert.match(consumer, /Synchronous REST dispatch owns worker creation and task execution/);
   assert.match(consumer, /shadow-prepare-failed/);
   assert.match(consumer, /non-executing handoff/);
-  assert.match(consumer, /if shadow \|\| direct_dispatch \{[\s\S]*prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await[\s\S]*\} else \{/);
+  assert.match(consumer, /if direct_dispatch \{[\s\S]*Ok\(\(\)\)[\s\S]*\} else if shadow \{[\s\S]*prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await[\s\S]*\} else \{/);
   assert.match(consumer, /container-pool-dispatch/);
   assert.match(consumer, /let pool = task[\s\S]*repo_pool_slug\(repo, task\.base_branch\.as_deref\(\)\.unwrap_or\("dev"\)\)/);
   assert.match(consumer, /match dispatch_to_container_pool\(&http, &container_pool_url, &secret, &task\)\.await/);

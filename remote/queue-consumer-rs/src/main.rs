@@ -536,20 +536,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .await;
         let direct_dispatch = task.direct_dispatch.unwrap_or(false);
-        let result = if shadow || direct_dispatch {
-            let (stage, status, message) = if shadow {
-                (
-                    "shadow-prepare",
-                    "preparing shadow worker",
-                    "Shadow handoff is waking the UUID-bound thread worker.",
-                )
-            } else {
-                (
-                    "direct-dispatch-prepare",
-                    "preparing direct-dispatch worker",
-                    "Direct REST dispatch is executing the task; queue consumer is warming the UUID-bound worker only.",
-                )
-            };
+        let result = if direct_dispatch {
             emit_queue_status_event(
                 &http,
                 &nats_client,
@@ -557,10 +544,25 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 &secret,
                 &task,
                 -930,
-                stage,
-                status,
-                message,
-                json!({ "directDispatch": direct_dispatch }),
+                "direct-dispatch-observed",
+                "direct dispatch observed",
+                "Synchronous REST dispatch owns worker creation and task execution; queue consumer is recording and acknowledging the duplicate JetStream message only.",
+                json!({ "directDispatch": true }),
+            )
+            .await;
+            Ok(())
+        } else if shadow {
+            emit_queue_status_event(
+                &http,
+                &nats_client,
+                &rest_api_url,
+                &secret,
+                &task,
+                -930,
+                "shadow-prepare",
+                "preparing shadow worker",
+                "Shadow handoff is waking the UUID-bound thread worker.",
+                json!({ "directDispatch": false }),
             )
             .await;
             prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
@@ -664,23 +666,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
         };
         if let Err(error) = result {
-            if shadow || direct_dispatch {
-                let (stage, status, message_text) = if shadow {
-                    (
-                        "shadow-prepare-failed",
-                        "shadow prepare failed",
-                        "Queue consumer could not complete the shadow worker warmup; the original task dispatch already owns execution.",
-                    )
-                } else {
-                    (
-                        "direct-dispatch-prepare-failed",
-                        "direct dispatch warmup failed",
-                        "Queue consumer could not complete the duplicate warmup; synchronous REST dispatch remains responsible for task execution.",
-                    )
-                };
+            if shadow {
                 eprintln!(
-                    "queue task prepare failed for non-executing handoff: thread={} task={} shadow={} direct_dispatch={} error={error}",
-                    task.thread_id, task.task_id, shadow, direct_dispatch
+                    "queue task shadow prepare failed for non-executing handoff: thread={} task={} error={error}",
+                    task.thread_id, task.task_id
                 );
                 emit_queue_status_event(
                     &http,
@@ -689,10 +678,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     &secret,
                     &task,
                     -910,
-                    stage,
-                    status,
-                    message_text,
-                    json!({ "error": error.to_string(), "shadow": shadow, "directDispatch": direct_dispatch }),
+                    "shadow-prepare-failed",
+                    "shadow prepare failed",
+                    "Queue consumer could not complete the shadow worker warmup; the original task dispatch already owns execution.",
+                    json!({ "error": error.to_string(), "shadow": true, "directDispatch": false }),
                 )
                 .await;
                 receipts.insert(task.task_id.clone());
