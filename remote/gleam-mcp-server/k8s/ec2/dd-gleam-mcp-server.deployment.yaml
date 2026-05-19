@@ -38,9 +38,15 @@ spec:
           args:
             - |
               set -eu
-              cd /opt/dd-next-1/remote/gleam-mcp-server
-              gleam clean || true
-              gleam deps download
+              SRC_ROOT=/opt/dd-next-1
+              WORK_ROOT=/tmp/dd-gleam-mcp-server/dd-next-1
+              rm -rf /tmp/dd-gleam-mcp-server
+              mkdir -p \
+                "$WORK_ROOT/remote/gleam-mcp-server" \
+                "$WORK_ROOT/remote/libs/pg-defs/generated"
+              cp -R "$SRC_ROOT/remote/gleam-mcp-server"/. "$WORK_ROOT/remote/gleam-mcp-server"/
+              cp -R "$SRC_ROOT/remote/libs/pg-defs/generated/gleam" "$WORK_ROOT/remote/libs/pg-defs/generated/gleam"
+              cd "$WORK_ROOT/remote/gleam-mcp-server"
               exec gleam run
           env:
             - name: HOST

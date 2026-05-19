@@ -113,10 +113,10 @@ test('Gleam MCP server has EC2 and minikube Kubernetes applications', async () =
   assert.match(ec2Deployment, /ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine/);
   assert.match(
     ec2Deployment,
-    /cd \/opt\/dd-next-1\/remote\/gleam-mcp-server[\s\S]*gleam clean \|\| true[\s\S]*gleam deps download[\s\S]*exec gleam run/,
+    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*WORK_ROOT=\/tmp\/dd-gleam-mcp-server\/dd-next-1[\s\S]*cp -R "\$SRC_ROOT\/remote\/gleam-mcp-server"\/\.[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*exec gleam run/,
   );
   assert.doesNotMatch(ec2Deployment, /apk add/);
-  assert.match(ec2Deployment, /gleam deps download/);
+  assert.doesNotMatch(ec2Deployment, /gleam deps download/);
   assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
   assert.match(ec2Deployment, /capabilities:[\s\S]*drop:[\s\S]*-\s*ALL/);
