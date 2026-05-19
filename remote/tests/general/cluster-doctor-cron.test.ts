@@ -84,7 +84,7 @@ test('argocd reaper deployment runs the rust scheduler with a 90-minute doctor l
   assert.match(deployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
   assert.match(deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
   assert.match(deployment, /mountPath:\s*\/opt\/dd-next-1/);
-  assert.match(deployment, /dd\.dev\/telemetry-revision:\s*['"]2026-05-15-nats-watchdog['"]/);
+  assert.match(deployment, /dd\.dev\/telemetry-revision:\s*['"]2026-05-19-worker-image-rebuild-done['"]/);
   assert.match(runtimeReadme, /dd-idle-reaper-secret` key `CLUSTER_DOCTOR_SERVER_AUTH_SECRET/);
   assert.match(runtimeReadme, /dd-idle-reaper-secret` key `NATS_WATCH_GLEAM_BROADCAST_SECRET/);
   assert.match(runtimeReadme, /adaptive NATS watchdog/);
@@ -155,7 +155,7 @@ test('dev-server can receive provider and github secrets for scheduled PR work',
   assert.match(runtimeReadme, /- `SERVER_AUTH_SECRET`/);
   assert.match(
     runtimeReadme,
-    /- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and `OPENAI_API_KEY`/,
+    /- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, and\s+`OPENCODE_API_KEY`/,
   );
   assert.match(
     runtimeReadme,

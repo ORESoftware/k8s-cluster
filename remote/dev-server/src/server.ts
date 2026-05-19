@@ -74,6 +74,7 @@ const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
   'claude-cli',
   'claude-sdk',
   'gemini-sdk',
+  'opencode-ai-sdk',
   'openai-codex-cli',
   'openai-sdk',
 ]);
@@ -156,7 +157,12 @@ const config = {
   agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider,
   agentProviderRotation: configAgentProviderList(
     process.env.AGENT_PROVIDER_ROTATION,
-    [configuredAgentFallbackProvider, configuredAgentSecondaryFallbackProvider, 'gemini-sdk'],
+    [
+      configuredAgentFallbackProvider,
+      configuredAgentSecondaryFallbackProvider,
+      'opencode-ai-sdk',
+      'gemini-sdk',
+    ],
   ),
   agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
@@ -445,7 +451,7 @@ function gitBranchTarget(branch: string): string {
 }
 
 function providerCanEditWorkspace(provider: AgentProvider): boolean {
-  return provider !== 'gemini-sdk';
+  return provider !== 'gemini-sdk' && provider !== 'opencode-ai-sdk';
 }
 
 function providerCanAccessWorkspace(provider: AgentProvider): boolean {
@@ -762,6 +768,12 @@ function sanitizeEventText(value: string): string {
     'GOOGLE_API_KEY',
     'GOOGLE_API_KEYS',
     'GOOGLE_API_KEYS_JSON',
+    'OPENCODE_API_KEY',
+    'OPENCODE_API_KEYS',
+    'OPENCODE_API_KEYS_JSON',
+    'OPENCODE_ZEN_API_KEY',
+    'OPENCODE_ZEN_API_KEYS',
+    'OPENCODE_ZEN_API_KEYS_JSON',
     'GH_PAT',
     'GH_DEPLOY_KEY',
     'SERVER_AUTH_SECRET',
@@ -777,6 +789,7 @@ function sanitizeEventText(value: string): string {
     .replace(/\bsk-ant-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-anthropic-key]')
     .replace(/\bsk-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-openai-key]')
     .replace(/\bAIza[A-Za-z0-9_*\-]{12,}\b/g, '[redacted-google-key]')
+    .replace(/\bsk-oc-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-opencode-key]')
     .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]');
 }
 
@@ -1611,7 +1624,7 @@ async function runTask(state: TaskState): Promise<void> {
       }
       if (attemptGroups.length === 0) {
         throw new Error(
-          `no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`,
+          `no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, OPENCODE_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`,
         );
       }
 
@@ -2996,11 +3009,18 @@ const DispatchSchema = z.object({
   threadTitle: z.string().min(1).max(200).nullish(),
   /**
    * Which agent runner to drive the task. Falls back to AGENT_PROVIDER env
-   * then "gemini-sdk". Validated by the selector — unknown values fall
+   * then "opencode-ai-sdk" / "gemini-sdk". Validated by the selector — unknown values fall
    * back to default rather than 400ing.
    */
   provider: z
-    .enum(['claude-cli', 'claude-sdk', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'])
+    .enum([
+      'claude-cli',
+      'claude-sdk',
+      'gemini-sdk',
+      'opencode-ai-sdk',
+      'openai-codex-cli',
+      'openai-sdk',
+    ])
     .nullish(),
   containerPool: ContainerPoolTaskSchema.nullish(),
 });

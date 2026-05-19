@@ -168,6 +168,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /Rust bastion\/jumphost access broker/);
   assert.match(home, /allowlisted browser exec terminals/);
   assert.match(home, /option value="openai-sdk" selected \{ "openai-sdk" \}/);
+  assert.match(home, /option value="opencode-ai-sdk" \{ "opencode-ai-sdk" \}/);
   assert.doesNotMatch(home, /option value="echo" \{ "echo" \}/);
   assert.match(home, /Queue Consumer/);
   assert.match(home, /Rust NATS shadow preparer \(dd-remote-queue-consumer\)/);

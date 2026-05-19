@@ -9,6 +9,7 @@
 //   claude-cli       → ANTHROPIC_API_KEY
 //   claude-sdk       → ANTHROPIC_API_KEY  (after SDK install)
 //   gemini-sdk       → GEMINI_API_KEY      (after SDK install)
+//   opencode-ai-sdk  → OPENCODE_API_KEY    (via ai + @ai-sdk/openai-compatible)
 //   openai-codex-cli → OPENAI_API_KEY     (and `codex` binary on PATH)
 //   openai-sdk       → OPENAI_API_KEY     (after SDK install)
 
@@ -18,6 +19,7 @@ import { claudeCliRunner } from './claude-cli.js';
 import { claudeSdkRunner, resolveClaudeCodeExecutable } from './claude-sdk.js';
 import { geminiSdkRunner } from './gemini-sdk.js';
 import { openaiCodexCliRunner } from './openai-codex-cli.js';
+import { opencodeAiSdkRunner, DEFAULT_OPENCODE_MODELS } from './opencode-ai-sdk.js';
 import { openaiSdkRunner } from './openai-sdk.js';
 import type { AgentProvider, AgentRunner } from './types.js';
 
@@ -34,6 +36,7 @@ const RUNNERS: Record<AgentProvider, AgentRunner> = {
   'claude-cli': claudeCliRunner,
   'claude-sdk': claudeSdkRunner,
   'gemini-sdk': geminiSdkRunner,
+  'opencode-ai-sdk': opencodeAiSdkRunner,
   'openai-codex-cli': openaiCodexCliRunner,
   'openai-sdk': openaiSdkRunner,
 };
@@ -47,6 +50,7 @@ const VALID_PROVIDERS = new Set<AgentProvider>([
   'claude-cli',
   'claude-sdk',
   'gemini-sdk',
+  'opencode-ai-sdk',
   'openai-codex-cli',
   'openai-sdk',
 ]);
@@ -124,6 +128,16 @@ function configuredProviderApiKeys(provider: AgentProvider): string[] {
       ...configuredSecretList('GEMINI_API_KEYS'),
       ...configuredSecretList('GOOGLE_API_KEY'),
       ...configuredSecretList('GEMINI_API_KEY'),
+    ]);
+  }
+  if (provider === 'opencode-ai-sdk') {
+    return uniqueSecrets([
+      ...configuredSecretList('OPENCODE_API_KEYS_JSON'),
+      ...configuredSecretList('OPENCODE_ZEN_API_KEYS_JSON'),
+      ...configuredSecretList('OPENCODE_API_KEYS'),
+      ...configuredSecretList('OPENCODE_ZEN_API_KEYS'),
+      ...configuredSecretList('OPENCODE_API_KEY'),
+      ...configuredSecretList('OPENCODE_ZEN_API_KEY'),
     ]);
   }
   return [];
@@ -225,6 +239,18 @@ export function buildAgentEnv(provider: AgentProvider, apiKey?: string): Record<
     base.GEMINI_MODEL = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
     base.GEMINI_FALLBACK_MODEL =
       process.env.GEMINI_FALLBACK_MODEL ?? DEFAULT_GEMINI_FALLBACK_MODEL;
+  }
+  if (provider === 'opencode-ai-sdk') {
+    const key = apiKey ?? configuredProviderApiKeys(provider)[0];
+    if (key) {
+      base.OPENCODE_API_KEY = key;
+    }
+    base.OPENCODE_BASE_URL = process.env.OPENCODE_BASE_URL ?? 'https://opencode.ai/zen/v1';
+    base.OPENCODE_MODELS =
+      process.env.OPENCODE_MODELS ?? process.env.OPENCODE_MODEL ?? DEFAULT_OPENCODE_MODELS.join(',');
+    if (process.env.OPENCODE_MODEL) {
+      base.OPENCODE_MODEL = process.env.OPENCODE_MODEL;
+    }
   }
   if (provider === 'openai-codex-cli' || provider === 'openai-sdk') {
     const key = apiKey ?? configuredProviderApiKeys(provider)[0];
@@ -337,17 +363,28 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
     return cachedAvailability;
   }
 
-  const [hasClaude, hasCodex, hasClaudeSdkPackage, hasGeminiSdk, hasOpenaiSdk] = await Promise.all([
+  const [
+    hasClaude,
+    hasCodex,
+    hasClaudeSdkPackage,
+    hasGeminiSdk,
+    hasOpenaiSdk,
+    hasAiSdk,
+    hasOpenaiCompatibleSdk,
+  ] = await Promise.all([
     probeBinary('claude'),
     probeBinary('codex'),
     probePackage('@anthropic-ai/claude-agent-sdk'),
     probePackage('@google/genai'),
     probePackage('@openai/agents'),
+    probePackage('ai'),
+    probePackage('@ai-sdk/openai-compatible'),
   ]);
   const hasClaudeSdkExecutable = hasClaudeSdkPackage && !!resolveClaudeCodeExecutable();
   const hasAnthropicApiKey = configuredAgentCredentialCount('claude-sdk') > 0;
   const hasGeminiApiKey = configuredAgentCredentialCount('gemini-sdk') > 0;
   const hasOpenaiApiKey = configuredAgentCredentialCount('openai-sdk') > 0;
+  const hasOpenCodeApiKey = configuredAgentCredentialCount('opencode-ai-sdk') > 0;
 
   const out: AgentAvailability[] = [
     {
@@ -381,6 +418,18 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
         : !hasGeminiApiKey
           ? 'GOOGLE_API_KEY or GEMINI_API_KEY not set'
           : undefined,
+    },
+    {
+      provider: 'opencode-ai-sdk',
+      displayName: opencodeAiSdkRunner.displayName,
+      available: hasAiSdk && hasOpenaiCompatibleSdk && hasOpenCodeApiKey,
+      reason: !hasAiSdk
+        ? 'ai package not installed'
+        : !hasOpenaiCompatibleSdk
+          ? '@ai-sdk/openai-compatible package not installed'
+          : !hasOpenCodeApiKey
+            ? 'OPENCODE_API_KEY not set'
+            : undefined,
     },
     {
       provider: 'openai-codex-cli',

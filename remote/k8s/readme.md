@@ -80,7 +80,8 @@ sudo dnf install -y git
 git clone https://github.com/ORESoftware/k8s-cluster.git ~/dd-next-1
 cd ~/dd-next-1/remote/k8s
 
-# Real values for ANTHROPIC_API_KEY, GH_PAT, SUPABASE_*, REMOTE_DEV_REAPER_SECRET, etc.
+# Real values for ANTHROPIC_API_KEY, OPENCODE_API_KEY, GH_PAT, SUPABASE_*,
+# REMOTE_DEV_REAPER_SECRET, etc.
 cp 02-secrets.template.yaml 02-secrets.yaml
 $EDITOR 02-secrets.yaml
 

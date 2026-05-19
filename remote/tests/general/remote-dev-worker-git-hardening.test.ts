@@ -28,6 +28,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const agentTypes = await readRepoFile('remote/dev-server/src/agents/types.ts');
   const agentIndex = await readRepoFile('remote/dev-server/src/agents/index.ts');
   const geminiRunner = await readRepoFile('remote/dev-server/src/agents/gemini-sdk.ts');
+  const opencodeRunner = await readRepoFile('remote/dev-server/src/agents/opencode-ai-sdk.ts');
   const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
   const localDockerfile = await readRepoFile('remote/dev-server-local/Dockerfile');
   const readme = await readRepoFile('remote/dev-server/readme.md');
@@ -106,7 +107,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const configuredAgentSecondaryFallbackProvider = configAgentProvider\(/);
   assert.match(server, /agentFallbackProvider: configuredAgentFallbackProvider/);
   assert.match(server, /agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider/);
-  assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*\[configuredAgentFallbackProvider, configuredAgentSecondaryFallbackProvider, 'gemini-sdk'\]/);
+  assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*'opencode-ai-sdk'[\s\S]*'gemini-sdk'/);
   assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
   assert.match(server, /titleHint\?\.trim\(\) \|\| promptHint\?\.trim\(\) \|\| sessionId/);
   assert.match(server, /return `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
@@ -169,21 +170,28 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /function promptLikelyRequiresWorkspaceChange\(prompt: string\): boolean/);
   assert.match(server, /function providerCanEditWorkspace\(provider: AgentProvider\): boolean/);
   assert.match(agentTypes, /\| ['"]gemini-sdk['"]/);
+  assert.match(agentTypes, /\| ['"]opencode-ai-sdk['"]/);
   assert.doesNotMatch(agentTypes, /\| ['"]echo['"]/);
+  assert.match(agentIndex, /import \{ opencodeAiSdkRunner, DEFAULT_OPENCODE_MODELS \} from '\.\/opencode-ai-sdk\.js'/);
+  assert.match(agentIndex, /'opencode-ai-sdk': opencodeAiSdkRunner/);
   assert.match(agentIndex, /const DEFAULT_GEMINI_MODEL = 'gemini-3\.1-pro-preview'/);
   assert.match(agentIndex, /const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3\.1-flash-lite'/);
   assert.match(agentIndex, /configuredSecretList\('OPENAI_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /configuredSecretList\('ANTHROPIC_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('OPENCODE_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /configuredSecretList\('GEMINI_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /export function buildAgentEnvCandidates\(provider: AgentProvider\): AgentEnvCandidate\[\]/);
+  assert.match(agentIndex, /base\.OPENCODE_BASE_URL = process\.env\.OPENCODE_BASE_URL \?\? 'https:\/\/opencode\.ai\/zen\/v1'/);
+  assert.match(agentIndex, /base\.OPENCODE_MODELS =[\s\S]*DEFAULT_OPENCODE_MODELS\.join\(','\)/);
   assert.match(agentIndex, /base\.GEMINI_FALLBACK_MODEL =[\s\S]*DEFAULT_GEMINI_FALLBACK_MODEL/);
+  assert.match(agentIndex, /OPENCODE_API_KEY not set/);
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
   assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'openai-sdk'/);
   assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
   assert.match(server, /threadTitle:\s*z\.string\(\)\.min\(1\)\.max\(200\)\.nullish\(\)/);
   assert.match(
     server,
-    /provider:\s*z[\s\S]*\.enum\(\['claude-cli', 'claude-sdk', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'\]\)[\s\S]*\.nullish\(\)/,
+    /provider:\s*z[\s\S]*\.enum\(\[[\s\S]*'opencode-ai-sdk'[\s\S]*'openai-sdk'[\s\S]*\]\)[\s\S]*\.nullish\(\)/,
   );
   assert.match(server, /threadTitle:\s*parsed\.data\.threadTitle \?\? undefined/);
   assert.match(server, /resolveAgentProvider\(parsed\.data\.provider \?\? undefined\)/);
@@ -197,13 +205,21 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(geminiRunner, /quota\/rate limit failed; retrying/);
   assert.match(geminiRunner, /MALFORMED_FUNCTION_CALL/);
   assert.match(geminiRunner, /produced no text output/);
+  assert.match(opencodeRunner, /import \{ generateText \} from 'ai'/);
+  assert.match(opencodeRunner, /createOpenAICompatible/);
+  assert.match(opencodeRunner, /DEFAULT_OPENCODE_MODELS = \[[\s\S]*'big-pickle'[\s\S]*'deepseek-v4-flash-free'[\s\S]*'minimax-m2\.5-free'[\s\S]*'nemotron-3-super-free'[\s\S]*'qwen3\.6-plus-free'/);
+  assert.match(opencodeRunner, /const baseURL = opts\.env\.OPENCODE_BASE_URL \?\? DEFAULT_OPENCODE_BASE_URL/);
+  assert.match(opencodeRunner, /model: provider\(modelId\)/);
+  assert.match(opencodeRunner, /provider: 'opencode-ai-sdk'/);
   assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'claude-sdk'/);
-  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'openai-sdk,claude-sdk,gemini-sdk'/);
+  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'openai-sdk,claude-sdk,opencode-ai-sdk,gemini-sdk'/);
   assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
   assert.match(secretsTemplate, /OPENAI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /ANTHROPIC_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /OPENCODE_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /OPENCODE_MODELS:\s*"big-pickle,deepseek-v4-flash-free,minimax-m2\.5-free,nemotron-3-super-free,qwen3\.6-plus-free"/);
   assert.match(secretsTemplate, /GEMINI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);

@@ -149,12 +149,14 @@ workflow without a failing package install.
 The runner that drives each task is pluggable. Default is OpenAI SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
 Each task walks `AGENT_PROVIDER_ROTATION` and every configured key for that provider before moving
-on. The default order is all OpenAI SDK keys, then all Claude SDK keys, then Gemini keys. Gemini is
-skipped for repo-edit prompts because it is still model-only.
+on. The default order is all OpenAI SDK keys, then all Claude SDK keys, then OpenCode Zen keys, then
+Gemini keys. OpenCode and Gemini are skipped for repo-edit/inspection prompts because they are still
+model-only.
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `gemini-sdk`       | working           | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Model-only response runner. It cannot edit the workspace; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
+| `opencode-ai-sdk`  | working           | `OPENCODE_API_KEY` (+ optional `OPENCODE_MODELS` / `OPENCODE_BASE_URL`) | Uses `ai` + `@ai-sdk/openai-compatible` against OpenCode Zen. Model-only; default model order is `big-pickle`, `deepseek-v4-flash-free`, `minimax-m2.5-free`, `nemotron-3-super-free`, `qwen3.6-plus-free`. |
 | `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
 | `openai-sdk`       | working (default/primary fallback) | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace. |
@@ -162,8 +164,8 @@ skipped for repo-edit prompts because it is still model-only.
 
 | Var                 | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `AGENT_PROVIDER`    | Default runner if the dispatch doesn't specify one. One of `gemini-sdk` / `claude-sdk` / `claude-cli` / `openai-sdk` / `openai-codex-cli`. |
-| `AGENT_PROVIDER_ROTATION` | Comma/space separated retry order. Defaults to `openai-sdk,claude-sdk,gemini-sdk`. The selected provider is appended if absent. |
+| `AGENT_PROVIDER`    | Default runner if the dispatch doesn't specify one. One of `gemini-sdk` / `opencode-ai-sdk` / `claude-sdk` / `claude-cli` / `openai-sdk` / `openai-codex-cli`. |
+| `AGENT_PROVIDER_ROTATION` | Comma/space separated retry order. Defaults to `openai-sdk,claude-sdk,opencode-ai-sdk,gemini-sdk`. The selected provider is appended if absent. |
 | `AGENT_FALLBACK_PROVIDER` | First retry provider when the selected runner fails. Defaults to `openai-sdk`.                                                        |
 | `AGENT_SECONDARY_FALLBACK_PROVIDER` | Second retry provider when the selected runner or primary fallback fails. Defaults to `claude-sdk`.                           |
 | `ANTHROPIC_API_KEY` | Required when provider is a `claude-*` runner.                                                                              |
@@ -178,6 +180,10 @@ skipped for repo-edit prompts because it is still model-only.
 | `OPENAI_API_KEYS_JSON` | Optional JSON array of OpenAI keys. Tried before `OPENAI_API_KEY`.                                                         |
 | `OPENAI_MODEL`      | Optional. Defaults to `gpt-5.5`; read by the SDK runner if set.                                                            |
 | `CODEX_MODEL`       | Optional. Defaults to `OPENAI_MODEL`; pins `codex --model <name>` per dispatch.                                            |
+| `OPENCODE_API_KEY`  | Required when provider is `opencode-ai-sdk`; OpenCode Zen key for `https://opencode.ai/zen/v1`.                            |
+| `OPENCODE_API_KEYS_JSON` | Optional JSON array of OpenCode keys. Tried before `OPENCODE_API_KEY`; `OPENCODE_ZEN_API_KEYS_JSON` is also accepted.     |
+| `OPENCODE_BASE_URL` | Optional. Defaults to `https://opencode.ai/zen/v1`.                                                                        |
+| `OPENCODE_MODELS`   | Optional JSON array or comma/newline separated OpenCode model list. Defaults to five free/low-cost Zen models.             |
 | `THREAD_CONTEXT_BASE_URL` | Optional. Defaults to the in-cluster REST API. Workers call `/api/agents/threads/:threadId/context` before each task. |
 | `THREAD_CONTEXT_LIMIT` | Optional. Defaults to `20` prior tasks.                                                                                  |
 | `THREAD_CONTEXT_MAX_CHARS` | Optional. Defaults to `48000` characters injected into the prompt.                                                   |

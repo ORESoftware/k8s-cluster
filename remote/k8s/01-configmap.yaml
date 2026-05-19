@@ -29,7 +29,7 @@ data:
   AGENT_PROVIDER: 'openai-sdk'
   AGENT_FALLBACK_PROVIDER: 'openai-sdk'
   AGENT_SECONDARY_FALLBACK_PROVIDER: 'claude-sdk'
-  AGENT_PROVIDER_ROTATION: 'openai-sdk,claude-sdk,gemini-sdk'
+  AGENT_PROVIDER_ROTATION: 'openai-sdk,claude-sdk,opencode-ai-sdk,gemini-sdk'
   AGENT_BRANCH_PREFIX: 'agent/k8s/openai-5.5'
   THREAD_CONTEXT_BASE_URL: 'http://dd-remote-rest-api.default.svc.cluster.local:8082'
   THREAD_CONTEXT_LIMIT: '20'

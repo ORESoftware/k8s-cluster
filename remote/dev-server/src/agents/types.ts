@@ -14,6 +14,7 @@ export type AgentProvider =
   | 'claude-cli'
   | 'claude-sdk'
   | 'gemini-sdk'
+  | 'opencode-ai-sdk'
   | 'openai-codex-cli'
   | 'openai-sdk';
 
