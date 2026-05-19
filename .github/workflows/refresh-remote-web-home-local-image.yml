@@ -9,6 +9,8 @@ on:
       - "remote/argocd/apps/dd-next-runtime.application.yaml"
       - "remote/argocd/dd-next-runtime/**"
       - "remote/dev-server/**"
+      - "remote/k8s/**"
+      - "remote/rest-api-rs/**"
       - "remote/web-home-rs/**"
   workflow_dispatch:
 

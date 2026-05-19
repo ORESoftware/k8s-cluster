@@ -1295,7 +1295,7 @@ fn render_thread_deployment(
                             { "name": "tmp-convos", "mountPath": "/tmp/convos" }
                         ],
                         "resources": {
-                            "requests": { "cpu": "1m", "memory": "512Mi" },
+                            "requests": { "memory": "512Mi" },
                             "limits": { "cpu": "2", "memory": "4Gi" }
                         },
                         "startupProbe": {
