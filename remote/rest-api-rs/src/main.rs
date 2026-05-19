@@ -2352,7 +2352,10 @@ async fn fetch_agents_from_postgres(
               to_char(th.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
               to_char(th.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
               count(t.id)::bigint as task_count,
-              count(t.id) filter (where t.status in ('queued', 'running', 'streaming'))::bigint as active_task_count,
+              count(t.id) filter (
+                where t.status in ('queued', 'running', 'streaming')
+                  and t.finished_at is null
+              )::bigint as active_task_count,
               to_char(max(t.created_at) at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as latest_task_at
             from agent_remote_dev_threads th
             left join agent_remote_dev_tasks t
@@ -2375,7 +2378,16 @@ async fn fetch_agents_from_postgres(
               t.thread_id::text as thread_id,
               th.title as thread_title,
               t.prompt as prompt,
-              t.status as status,
+              case
+                when t.status in ('pr_open', 'pr_merged', 'pr_closed') then t.status
+                when t.finished_at is not null and coalesce(t.exit_reason, 'completed') = 'completed' then 'done'
+                when t.finished_at is not null and t.exit_reason = 'cancelled' then 'cancelled'
+                when t.finished_at is not null then 'failed'
+                when le.event_kind = 'done' and coalesce(le.payload->>'exitReason', 'completed') = 'completed' then 'done'
+                when le.event_kind = 'done' and le.payload->>'exitReason' = 'cancelled' then 'cancelled'
+                when le.event_kind = 'done' then 'failed'
+                else t.status
+              end as status,
               t.branch as branch,
               t.pr_url as pr_url,
               t.pr_state as pr_state,
@@ -3293,6 +3305,15 @@ async fn persist_runtime_task_to_postgres(
             on conflict (id) do update set
               prompt = agent_remote_dev_tasks.prompt,
               status = case
+                when agent_remote_dev_tasks.status in ('pr_open', 'pr_merged', 'pr_closed')
+                then agent_remote_dev_tasks.status
+                when agent_remote_dev_tasks.finished_at is not null
+                  and excluded.status in ('queued', 'running', 'streaming')
+                then case
+                  when coalesce(agent_remote_dev_tasks.exit_reason, 'completed') = 'completed' then 'done'
+                  when agent_remote_dev_tasks.exit_reason = 'cancelled' then 'cancelled'
+                  else 'failed'
+                end
                 when agent_remote_dev_tasks.status in ('done', 'cancelled', 'failed', 'pr_open', 'pr_merged', 'pr_closed')
                   and excluded.status in ('queued', 'running', 'streaming')
                 then agent_remote_dev_tasks.status
@@ -3813,7 +3834,16 @@ async fn fetch_thread_context_from_postgres(
               t.thread_id::text as thread_id,
               th.title as thread_title,
               t.prompt as prompt,
-              t.status as status,
+              case
+                when t.status in ('pr_open', 'pr_merged', 'pr_closed') then t.status
+                when t.finished_at is not null and coalesce(t.exit_reason, 'completed') = 'completed' then 'done'
+                when t.finished_at is not null and t.exit_reason = 'cancelled' then 'cancelled'
+                when t.finished_at is not null then 'failed'
+                when le.event_kind = 'done' and coalesce(le.payload->>'exitReason', 'completed') = 'completed' then 'done'
+                when le.event_kind = 'done' and le.payload->>'exitReason' = 'cancelled' then 'cancelled'
+                when le.event_kind = 'done' then 'failed'
+                else t.status
+              end as status,
               t.branch as branch,
               t.pr_url as pr_url,
               t.pr_state as pr_state,
