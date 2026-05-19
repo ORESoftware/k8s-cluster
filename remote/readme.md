@@ -656,8 +656,9 @@ admin's events because they subscribe with their own UUID. Three layers of defen
 
 Each task can be driven by Gemini, Claude, or OpenAI. The default is the OpenAI SDK runner;
 override per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`
-env on the docker. Failed runs retry through the configured fallback providers, with
-`openai-sdk` primary and `claude-sdk` secondary by default.
+env on the docker. Failed runs rotate through every key in `AGENT_PROVIDER_ROTATION`, with
+`openai-sdk,claude-sdk,gemini-sdk` as the default order. For repo-edit prompts, Gemini is skipped
+because it is model-only.
 
 | Provider           | Path                                                | Status               |
 | ------------------ | --------------------------------------------------- | -------------------- |
@@ -667,8 +668,9 @@ env on the docker. Failed runs retry through the configured fallback providers, 
 | `openai-sdk`       | `@openai/agents` + scoped shell/apply-patch tools   | working default SDK path |
 | `openai-codex-cli` | `codex exec "<prompt>" --json`                      | working CLI fallback |
 
-Each runner gets a **strict env allowlist** — only the API key it needs (`GOOGLE_API_KEY` or
-`GEMINI_API_KEY` for `gemini-sdk`, `ANTHROPIC_API_KEY` for `claude-*`, `OPENAI_API_KEY` for `openai-*`), model pins such as `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`, `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
+Each runner gets a **strict env allowlist** — only one selected API key per attempt
+(`GEMINI_API_KEY` for `gemini-sdk`, `ANTHROPIC_API_KEY` for `claude-*`, `OPENAI_API_KEY` for
+`openai-*`), model pins such as `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`, `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
 process never sees the GitHub PAT, deploy key, Supabase service role key, or `REMOTE_DEV_*` shared
 secrets.
 

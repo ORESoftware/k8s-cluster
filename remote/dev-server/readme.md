@@ -148,9 +148,9 @@ workflow without a failing package install.
 
 The runner that drives each task is pluggable. Default is OpenAI SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
-If the selected provider throws before completing, the worker tries `AGENT_FALLBACK_PROVIDER`
-and then `AGENT_SECONDARY_FALLBACK_PROVIDER`, skipping duplicate or model-only providers for
-repo-edit tasks.
+Each task walks `AGENT_PROVIDER_ROTATION` and every configured key for that provider before moving
+on. The default order is all OpenAI SDK keys, then all Claude SDK keys, then Gemini keys. Gemini is
+skipped for repo-edit prompts because it is still model-only.
 
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -163,15 +163,19 @@ repo-edit tasks.
 | Var                 | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `AGENT_PROVIDER`    | Default runner if the dispatch doesn't specify one. One of `gemini-sdk` / `claude-sdk` / `claude-cli` / `openai-sdk` / `openai-codex-cli`. |
+| `AGENT_PROVIDER_ROTATION` | Comma/space separated retry order. Defaults to `openai-sdk,claude-sdk,gemini-sdk`. The selected provider is appended if absent. |
 | `AGENT_FALLBACK_PROVIDER` | First retry provider when the selected runner fails. Defaults to `openai-sdk`.                                                        |
 | `AGENT_SECONDARY_FALLBACK_PROVIDER` | Second retry provider when the selected runner or primary fallback fails. Defaults to `claude-sdk`.                           |
 | `ANTHROPIC_API_KEY` | Required when provider is a `claude-*` runner.                                                                              |
+| `ANTHROPIC_API_KEYS_JSON` | Optional JSON array of Anthropic keys. Tried before `ANTHROPIC_API_KEY`; `CLAUDE_API_KEYS_JSON` is also accepted.             |
 | `ANTHROPIC_MODEL`   | Optional. Defaults to `claude-opus-4-7`; read by CLI/SDK when set.                                                          |
 | `GOOGLE_API_KEY`    | Preferred API key for `gemini-sdk`; mapped into the runner's strict `GEMINI_API_KEY` allowlist.                              |
 | `GEMINI_API_KEY`    | Alternate API key for `gemini-sdk` when `GOOGLE_API_KEY` is unset.                                                          |
+| `GEMINI_API_KEYS_JSON` | Optional JSON array of Gemini keys. Tried before single-key env vars; `GOOGLE_API_KEYS_JSON` is also accepted.               |
 | `GEMINI_MODEL`      | Optional. Defaults to `gemini-3.1-pro-preview`.                                                                             |
 | `GEMINI_FALLBACK_MODEL` | Optional. Defaults to `gemini-3.1-flash-lite`; used once when the primary Gemini model returns a quota/rate-limit failure. |
 | `OPENAI_API_KEY`    | Required when provider is an `openai-*` runner.                                                                             |
+| `OPENAI_API_KEYS_JSON` | Optional JSON array of OpenAI keys. Tried before `OPENAI_API_KEY`.                                                         |
 | `OPENAI_MODEL`      | Optional. Defaults to `gpt-5.5`; read by the SDK runner if set.                                                            |
 | `CODEX_MODEL`       | Optional. Defaults to `OPENAI_MODEL`; pins `codex --model <name>` per dispatch.                                            |
 | `THREAD_CONTEXT_BASE_URL` | Optional. Defaults to the in-cluster REST API. Workers call `/api/agents/threads/:threadId/context` before each task. |

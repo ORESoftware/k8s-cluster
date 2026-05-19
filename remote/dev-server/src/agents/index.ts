@@ -23,6 +23,13 @@ import type { AgentProvider, AgentRunner } from './types.js';
 
 export type { AgentProvider, AgentRunner, AgentRunOpts, AgentRunnerEvent } from './types.js';
 
+export type AgentEnvCandidate = {
+  provider: AgentProvider;
+  env: Record<string, string>;
+  credentialIndex: number;
+  credentialCount: number;
+};
+
 const RUNNERS: Record<AgentProvider, AgentRunner> = {
   'claude-cli': claudeCliRunner,
   'claude-sdk': claudeSdkRunner,
@@ -54,6 +61,72 @@ function configuredSecret(name: string): string | undefined {
     return undefined;
   }
   return value;
+}
+
+function configuredSecretList(name: string): string[] {
+  const value = configuredSecret(name);
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === 'string');
+    }
+  } catch {
+    /* fall through to delimited list parsing */
+  }
+  return value
+    .split(/[,\n;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function uniqueSecrets(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const secret = value.trim();
+    if (!secret || secret === 'REPLACE_ME' || secret.startsWith('REPLACE_ME_')) {
+      continue;
+    }
+    if (!seen.has(secret)) {
+      seen.add(secret);
+      result.push(secret);
+    }
+  }
+  return result;
+}
+
+function configuredProviderApiKeys(provider: AgentProvider): string[] {
+  if (provider === 'openai-codex-cli' || provider === 'openai-sdk') {
+    return uniqueSecrets([
+      ...configuredSecretList('OPENAI_API_KEYS_JSON'),
+      ...configuredSecretList('OPENAI_API_KEYS'),
+      ...configuredSecretList('OPENAI_API_KEY'),
+    ]);
+  }
+  if (provider === 'claude-cli' || provider === 'claude-sdk') {
+    return uniqueSecrets([
+      ...configuredSecretList('ANTHROPIC_API_KEYS_JSON'),
+      ...configuredSecretList('CLAUDE_API_KEYS_JSON'),
+      ...configuredSecretList('ANTHROPIC_API_KEYS'),
+      ...configuredSecretList('CLAUDE_API_KEYS'),
+      ...configuredSecretList('ANTHROPIC_API_KEY'),
+      ...configuredSecretList('CLAUDE_API_KEY'),
+    ]);
+  }
+  if (provider === 'gemini-sdk') {
+    return uniqueSecrets([
+      ...configuredSecretList('GOOGLE_API_KEYS_JSON'),
+      ...configuredSecretList('GEMINI_API_KEYS_JSON'),
+      ...configuredSecretList('GOOGLE_API_KEYS'),
+      ...configuredSecretList('GEMINI_API_KEYS'),
+      ...configuredSecretList('GOOGLE_API_KEY'),
+      ...configuredSecretList('GEMINI_API_KEY'),
+    ]);
+  }
+  return [];
 }
 
 /**
@@ -121,7 +194,7 @@ export function getRunner(provider: AgentProvider): AgentRunner {
  * Build the strict subset here so each provider gets exactly what it
  * needs to authenticate to its model and nothing else.
  */
-export function buildAgentEnv(provider: AgentProvider): Record<string, string> {
+export function buildAgentEnv(provider: AgentProvider, apiKey?: string): Record<string, string> {
   const base: Record<string, string> = {
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '/home/node',
@@ -131,8 +204,9 @@ export function buildAgentEnv(provider: AgentProvider): Record<string, string> {
   };
 
   if (provider === 'claude-cli' || provider === 'claude-sdk') {
-    if (process.env.ANTHROPIC_API_KEY) {
-      base.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+    const key = apiKey ?? configuredProviderApiKeys(provider)[0];
+    if (key) {
+      base.ANTHROPIC_API_KEY = key;
     }
     // Pin the model when set (e.g. `claude-opus-4-7`). Without this we
     // get whatever the CLI's config / SDK default picks, which can drift
@@ -144,17 +218,18 @@ export function buildAgentEnv(provider: AgentProvider): Record<string, string> {
     }
   }
   if (provider === 'gemini-sdk') {
-    const apiKey = configuredSecret('GOOGLE_API_KEY') ?? configuredSecret('GEMINI_API_KEY');
-    if (apiKey) {
-      base.GEMINI_API_KEY = apiKey;
+    const key = apiKey ?? configuredProviderApiKeys(provider)[0];
+    if (key) {
+      base.GEMINI_API_KEY = key;
     }
     base.GEMINI_MODEL = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
     base.GEMINI_FALLBACK_MODEL =
       process.env.GEMINI_FALLBACK_MODEL ?? DEFAULT_GEMINI_FALLBACK_MODEL;
   }
   if (provider === 'openai-codex-cli' || provider === 'openai-sdk') {
-    if (process.env.OPENAI_API_KEY) {
-      base.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    const key = apiKey ?? configuredProviderApiKeys(provider)[0];
+    if (key) {
+      base.OPENAI_API_KEY = key;
     }
     base.OPENAI_MODEL = process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
     base.CODEX_MODEL = process.env.CODEX_MODEL ?? base.OPENAI_MODEL;
@@ -168,6 +243,20 @@ export function buildAgentEnv(provider: AgentProvider): Record<string, string> {
   }
 
   return base;
+}
+
+export function buildAgentEnvCandidates(provider: AgentProvider): AgentEnvCandidate[] {
+  const apiKeys = configuredProviderApiKeys(provider);
+  return apiKeys.map((key, index) => ({
+    provider,
+    env: buildAgentEnv(provider, key),
+    credentialIndex: index + 1,
+    credentialCount: apiKeys.length,
+  }));
+}
+
+export function configuredAgentCredentialCount(provider: AgentProvider): number {
+  return configuredProviderApiKeys(provider).length;
 }
 
 // ---------------------------------------------------- availability probe
@@ -256,28 +345,30 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
     probePackage('@openai/agents'),
   ]);
   const hasClaudeSdkExecutable = hasClaudeSdkPackage && !!resolveClaudeCodeExecutable();
-  const hasGeminiApiKey = !!(configuredSecret('GOOGLE_API_KEY') ?? configuredSecret('GEMINI_API_KEY'));
+  const hasAnthropicApiKey = configuredAgentCredentialCount('claude-sdk') > 0;
+  const hasGeminiApiKey = configuredAgentCredentialCount('gemini-sdk') > 0;
+  const hasOpenaiApiKey = configuredAgentCredentialCount('openai-sdk') > 0;
 
   const out: AgentAvailability[] = [
     {
       provider: 'claude-cli',
       displayName: claudeCliRunner.displayName,
-      available: hasClaude && !!process.env.ANTHROPIC_API_KEY,
+      available: hasClaude && hasAnthropicApiKey,
       reason: !hasClaude
         ? '`claude` binary not on PATH (npm i -g @anthropic-ai/claude-code)'
-        : !process.env.ANTHROPIC_API_KEY
+        : !hasAnthropicApiKey
           ? 'ANTHROPIC_API_KEY not set'
           : undefined,
     },
     {
       provider: 'claude-sdk',
       displayName: claudeSdkRunner.displayName,
-      available: hasClaudeSdkPackage && hasClaudeSdkExecutable && !!process.env.ANTHROPIC_API_KEY,
+      available: hasClaudeSdkPackage && hasClaudeSdkExecutable && hasAnthropicApiKey,
       reason: !hasClaudeSdkPackage
         ? '@anthropic-ai/claude-agent-sdk not installed (pnpm add @anthropic-ai/claude-agent-sdk)'
         : !hasClaudeSdkExecutable
           ? 'Claude SDK native executable not found or not executable'
-          : !process.env.ANTHROPIC_API_KEY
+          : !hasAnthropicApiKey
             ? 'ANTHROPIC_API_KEY not set'
             : undefined,
     },
@@ -294,20 +385,20 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
     {
       provider: 'openai-codex-cli',
       displayName: openaiCodexCliRunner.displayName,
-      available: hasCodex && !!process.env.OPENAI_API_KEY,
+      available: hasCodex && hasOpenaiApiKey,
       reason: !hasCodex
         ? '`codex` binary not on PATH (install OpenAI Codex CLI)'
-        : !process.env.OPENAI_API_KEY
+        : !hasOpenaiApiKey
           ? 'OPENAI_API_KEY not set'
           : undefined,
     },
     {
       provider: 'openai-sdk',
       displayName: openaiSdkRunner.displayName,
-      available: hasOpenaiSdk && !!process.env.OPENAI_API_KEY,
+      available: hasOpenaiSdk && hasOpenaiApiKey,
       reason: !hasOpenaiSdk
         ? '@openai/agents package not installed'
-        : !process.env.OPENAI_API_KEY
+        : !hasOpenaiApiKey
           ? 'OPENAI_API_KEY not set'
           : undefined,
     },

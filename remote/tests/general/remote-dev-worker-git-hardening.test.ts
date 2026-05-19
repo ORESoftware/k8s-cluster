@@ -101,8 +101,12 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'openai-sdk'/);
   assert.match(server, /const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk'/);
   assert.match(server, /function configAgentProvider\(value: string \| undefined, fallback: AgentProvider\): AgentProvider/);
-  assert.match(server, /agentFallbackProvider: configAgentProvider\(process\.env\.AGENT_FALLBACK_PROVIDER, AGENT_FALLBACK_PROVIDER\)/);
-  assert.match(server, /agentSecondaryFallbackProvider: configAgentProvider\(/);
+  assert.match(server, /function configAgentProviderList\(value: string \| undefined, fallback: AgentProvider\[\]\): AgentProvider\[\]/);
+  assert.match(server, /const configuredAgentFallbackProvider = configAgentProvider\(/);
+  assert.match(server, /const configuredAgentSecondaryFallbackProvider = configAgentProvider\(/);
+  assert.match(server, /agentFallbackProvider: configuredAgentFallbackProvider/);
+  assert.match(server, /agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider/);
+  assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*\[configuredAgentFallbackProvider, configuredAgentSecondaryFallbackProvider, 'gemini-sdk'\]/);
   assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
   assert.match(server, /return `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
   assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
@@ -132,9 +136,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(entrypoint, /pnpm install --frozen-lockfile --prefer-offline/);
   assert.doesNotMatch(entrypoint, /pnpm install --prefer-offline/);
   assert.match(entrypoint, /find "\$REPO_DIR\/\.git" -maxdepth 1 -type f -name index\.lock -delete/);
-  assert.match(server, /const fallbackProviders = \[[\s\S]*config\.agentFallbackProvider,[\s\S]*config\.agentSecondaryFallbackProvider,[\s\S]*\]\.filter/);
-  assert.match(server, /status: `agent-fallback:\$\{fallbackProvider\}`/);
-  assert.match(server, /await runSelectedAgent\(fallbackProvider\)/);
+  assert.match(server, /const providerOrder = \[\.\.\.config\.agentProviderRotation, state\.provider\]\.filter/);
+  assert.match(server, /const attempts: AgentEnvCandidate\[\] = \[\]/);
+  assert.match(server, /buildAgentEnvCandidates\(provider\)/);
+  assert.match(server, /status: `agent-fallback:\$\{attempt\.provider\}`/);
+  assert.match(server, /await runAgentAttempt\(attempt\)/);
   assert.doesNotMatch(server, /agent-fallback:echo/);
   assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
   assert.match(server, /\['commit', '--no-verify', '-m'/);
@@ -153,7 +159,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(agentTypes, /\| ['"]echo['"]/);
   assert.match(agentIndex, /const DEFAULT_GEMINI_MODEL = 'gemini-3\.1-pro-preview'/);
   assert.match(agentIndex, /const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3\.1-flash-lite'/);
-  assert.match(agentIndex, /configuredSecret\('GOOGLE_API_KEY'\) \?\? configuredSecret\('GEMINI_API_KEY'\)/);
+  assert.match(agentIndex, /configuredSecretList\('OPENAI_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('ANTHROPIC_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('GEMINI_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /export function buildAgentEnvCandidates\(provider: AgentProvider\): AgentEnvCandidate\[\]/);
   assert.match(agentIndex, /base\.GEMINI_FALLBACK_MODEL =[\s\S]*DEFAULT_GEMINI_FALLBACK_MODEL/);
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
   assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'openai-sdk'/);
@@ -177,7 +186,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'openai-sdk'/);
   assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'claude-sdk'/);
+  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'openai-sdk,claude-sdk,gemini-sdk'/);
   assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
+  assert.match(secretsTemplate, /OPENAI_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /ANTHROPIC_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /GEMINI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);
 

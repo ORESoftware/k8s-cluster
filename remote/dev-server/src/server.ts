@@ -43,11 +43,12 @@ import {
 } from './container-pool.js';
 
 import {
-  buildAgentEnv,
+  buildAgentEnvCandidates,
   getCachedAvailability,
   getRunner,
   probeAllProviders,
   resolveAgentProvider,
+  type AgentEnvCandidate,
   type AgentProvider,
   type AgentRunnerEvent,
 } from './agents/index.js';
@@ -81,6 +82,33 @@ const GENERATED_GIT_EXCLUDES = [':!.pnpm-store', ':!node_modules', ':!.next', ':
 function configAgentProvider(value: string | undefined, fallback: AgentProvider): AgentProvider {
   return value && CONFIG_AGENT_PROVIDERS.has(value as AgentProvider) ? (value as AgentProvider) : fallback;
 }
+
+function configAgentProviderList(value: string | undefined, fallback: AgentProvider[]): AgentProvider[] {
+  const requested = value
+    ? value
+        .split(/[,\s]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : fallback;
+  const seen = new Set<AgentProvider>();
+  const providers: AgentProvider[] = [];
+  for (const item of requested) {
+    if (CONFIG_AGENT_PROVIDERS.has(item as AgentProvider) && !seen.has(item as AgentProvider)) {
+      seen.add(item as AgentProvider);
+      providers.push(item as AgentProvider);
+    }
+  }
+  return providers.length > 0 ? providers : fallback;
+}
+
+const configuredAgentFallbackProvider = configAgentProvider(
+  process.env.AGENT_FALLBACK_PROVIDER,
+  AGENT_FALLBACK_PROVIDER,
+);
+const configuredAgentSecondaryFallbackProvider = configAgentProvider(
+  process.env.AGENT_SECONDARY_FALLBACK_PROVIDER,
+  AGENT_SECONDARY_FALLBACK_PROVIDER,
+);
 
 const config = {
   port: Number(process.env.PORT ?? 8080),
@@ -124,10 +152,11 @@ const config = {
     'http://dd-remote-rest-api.default.svc.cluster.local:8082',
   threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
   threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
-  agentFallbackProvider: configAgentProvider(process.env.AGENT_FALLBACK_PROVIDER, AGENT_FALLBACK_PROVIDER),
-  agentSecondaryFallbackProvider: configAgentProvider(
-    process.env.AGENT_SECONDARY_FALLBACK_PROVIDER,
-    AGENT_SECONDARY_FALLBACK_PROVIDER,
+  agentFallbackProvider: configuredAgentFallbackProvider,
+  agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider,
+  agentProviderRotation: configAgentProviderList(
+    process.env.AGENT_PROVIDER_ROTATION,
+    [configuredAgentFallbackProvider, configuredAgentSecondaryFallbackProvider, 'gemini-sdk'],
   ),
   agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
@@ -663,9 +692,20 @@ function sanitizeEventText(value: string): string {
   let output = value;
   for (const key of [
     'OPENAI_API_KEY',
+    'OPENAI_API_KEYS',
+    'OPENAI_API_KEYS_JSON',
     'ANTHROPIC_API_KEY',
+    'ANTHROPIC_API_KEYS',
+    'ANTHROPIC_API_KEYS_JSON',
+    'CLAUDE_API_KEY',
+    'CLAUDE_API_KEYS',
+    'CLAUDE_API_KEYS_JSON',
     'GEMINI_API_KEY',
+    'GEMINI_API_KEYS',
+    'GEMINI_API_KEYS_JSON',
     'GOOGLE_API_KEY',
+    'GOOGLE_API_KEYS',
+    'GOOGLE_API_KEYS_JSON',
     'GH_PAT',
     'GH_DEPLOY_KEY',
     'SERVER_AUTH_SECRET',
@@ -1343,23 +1383,50 @@ async function runTask(state: TaskState): Promise<void> {
       // `printenv` tool call. The runner adds only the API key its model
       // needs.
       const prompt = await buildPromptWithThreadContext(state);
-      const runSelectedAgent = async (provider: AgentProvider): Promise<void> => {
+      const providerOrder = [...config.agentProviderRotation, state.provider].filter(
+        (provider, index, values) => values.indexOf(provider) === index,
+      );
+      const attempts: AgentEnvCandidate[] = [];
+      for (const provider of providerOrder) {
         if (requiresWorkspaceChange && !providerCanEditWorkspace(provider)) {
-          throw new Error(
-            `${provider} is model-only and cannot edit files in ${repoDisplayName()}; choose claude-sdk, claude-cli, openai-sdk, or openai-codex-cli for repo changes`,
-          );
+          emit(state, {
+            kind: 'status',
+            status: `agent-skip:${provider}`,
+            message: `${provider} is model-only and cannot edit files in ${repoDisplayName()}`,
+          });
+          continue;
         }
+        const candidates = buildAgentEnvCandidates(provider);
+        if (candidates.length === 0) {
+          emit(state, {
+            kind: 'status',
+            status: `agent-skip:${provider}`,
+            message: `No configured API keys for ${provider}`,
+          });
+          continue;
+        }
+        attempts.push(...candidates);
+      }
+      if (attempts.length === 0) {
+        throw new Error(
+          `no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`,
+        );
+      }
+
+      const runAgentAttempt = async (attempt: AgentEnvCandidate): Promise<void> => {
         emit(state, {
           kind: 'status',
-          status: `agent-running:${provider}`,
-          message: `Workspace: ${gitBranchTarget(state.branch)}\nBase branch: ${config.baseBranch}`,
+          status: `agent-running:${attempt.provider}`,
+          message:
+            `Workspace: ${gitBranchTarget(state.branch)}\n` +
+            `Base branch: ${config.baseBranch}\n` +
+            `Credential: key ${attempt.credentialIndex}/${attempt.credentialCount}`,
         });
-        const agentEnv = buildAgentEnv(provider);
-        const runner = getRunner(provider);
+        const runner = getRunner(attempt.provider);
         await runner.run({
           prompt,
           cwd: state.worktreePath,
-          env: agentEnv,
+          env: attempt.env,
           signal: state.abortController.signal,
           timeoutMs: config.agentRunTimeoutMs,
           emit: (ev: AgentRunnerEvent) => emit(state, ev),
@@ -1368,55 +1435,38 @@ async function runTask(state: TaskState): Promise<void> {
           },
         });
       };
-      try {
-        await runSelectedAgent(state.provider);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        emit(state, {
-          kind: 'error',
-          message: `${state.provider} failed: ${message}`,
-        });
+
+      let lastErr: unknown = null;
+      let completedAgentRun = false;
+      for (const [index, attempt] of attempts.entries()) {
         if (state.cancelled || state.abortController.signal.aborted) {
-          throw err;
+          throw lastErr ?? new Error('agent run cancelled');
         }
-        const seenFallbackProviders = new Set<AgentProvider>([state.provider]);
-        const fallbackProviders = [
-          config.agentFallbackProvider,
-          config.agentSecondaryFallbackProvider,
-        ].filter((provider) => {
-          if (seenFallbackProviders.has(provider)) {
-            return false;
-          }
-          seenFallbackProviders.add(provider);
-          return !requiresWorkspaceChange || providerCanEditWorkspace(provider);
-        });
-        if (fallbackProviders.length === 0) {
-          throw err;
-        }
-        let lastErr: unknown = err;
-        for (const fallbackProvider of fallbackProviders) {
+        if (index > 0) {
           emit(state, {
             kind: 'status',
-            status: `agent-fallback:${fallbackProvider}`,
-            message: `Retrying against ${gitBranchTarget(state.branch)}`,
+            status: `agent-fallback:${attempt.provider}`,
+            message:
+              `Retrying against ${gitBranchTarget(state.branch)} with ` +
+              `${attempt.provider} key ${attempt.credentialIndex}/${attempt.credentialCount}`,
           });
-          try {
-            await runSelectedAgent(fallbackProvider);
-            lastErr = null;
-            break;
-          } catch (fallbackErr) {
-            lastErr = fallbackErr;
-            const fallbackMessage =
-              fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-            emit(state, {
-              kind: 'error',
-              message: `${fallbackProvider} failed: ${fallbackMessage}`,
-            });
-          }
         }
-        if (lastErr) {
-          throw lastErr;
+        try {
+          await runAgentAttempt(attempt);
+          completedAgentRun = true;
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const message = err instanceof Error ? err.message : String(err);
+          emit(state, {
+            kind: 'error',
+            message: `${attempt.provider} key ${attempt.credentialIndex}/${attempt.credentialCount} failed: ${message}`,
+          });
         }
+      }
+      if (!completedAgentRun) {
+        throw lastErr ?? new Error('all configured agent keys failed');
       }
 
       if (state.cancelled || state.abortController.signal.aborted) {
