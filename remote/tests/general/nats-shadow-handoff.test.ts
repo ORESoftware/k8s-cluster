@@ -39,6 +39,7 @@ test('rest api publishes successful direct dispatches to the nats shadow queue',
   assert.match(server, /dd\.remote\.events/);
   assert.match(server, /persist_task_status_event/);
   assert.match(server, /publish_task_event_to_nats/);
+  assert.match(server, /queued-dispatch-accepted/);
   assert.match(server, /"stage": "nats-published"/);
   assert.match(server, /on conflict \(task_id, seq\) do update set/);
   assert.match(server, /"task\.shadow"/);

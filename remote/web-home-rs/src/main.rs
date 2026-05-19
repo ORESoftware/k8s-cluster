@@ -2447,7 +2447,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (data.errors?.length) renderError(data.errors.join("\n"));
         if (!data.events?.length) {
           if (options.preserveCurrentOnEmpty && state.streamTaskId === taskId && $("stream").childElementCount > 0) {
-            setStreamState("waiting for stored events", "warn");
+            setStreamState("showing live status", "ok");
             return;
           }
           clearStream("no stored events", taskId);

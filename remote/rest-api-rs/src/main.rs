@@ -4178,6 +4178,22 @@ async fn dispatch_thread_task(
         eprintln!("failed to persist remote task before worker wake: {error}");
     }
     if queued_dispatch {
+        if let Err(error) = persist_task_status_event(
+            &request.task_id,
+            -980,
+            "queued dispatch accepted",
+            "REST API accepted the queued task request and is publishing it to NATS.",
+            json!({
+                "source": "dd-remote-rest-api",
+                "stage": "queued-dispatch-accepted",
+                "dispatchMode": &request.dispatch_mode,
+                "subject": nats_task_subject(&thread_id),
+            }),
+        )
+        .await
+        {
+            eprintln!("failed to persist queued dispatch accepted event: {error}");
+        }
         return match publish_task_dispatch_to_nats(&request, None).await {
             Ok(()) => (
                 StatusCode::ACCEPTED,
