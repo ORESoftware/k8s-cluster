@@ -341,15 +341,27 @@ jobs:
               --output text
           )"
           echo "command_id=$command_id"
-          set +e
-          aws ssm wait command-executed \
-            --command-id "$command_id" \
-            --instance-id "$INSTANCE_ID"
-          wait_status=$?
-          set -e
+          status=""
+          for attempt in {1..180}; do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query "Status" \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Cancelled|Cancelling|Failed|TimedOut)
+                break
+                ;;
+            esac
+            echo "SSM command $command_id status=${status:-pending} attempt=$attempt/180"
+            sleep 10
+          done
           aws ssm get-command-invocation \
             --command-id "$command_id" \
             --instance-id "$INSTANCE_ID" \
             --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
-            --output json
-          exit "$wait_status"
+            --output json | tee /tmp/ssm-invocation.json
+          status="$(jq -r '.Status' /tmp/ssm-invocation.json)"
+          test "$status" = "Success"
