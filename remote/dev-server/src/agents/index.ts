@@ -2,13 +2,12 @@
 //   1. Per-task `provider` field on the dispatch payload (untrusted input,
 //      validated against the AgentProvider union).
 //   2. AGENT_PROVIDER env var.
-//   3. Hard-coded default: "claude-sdk" (SDK first; CLI remains fallback via probe).
+//   3. Hard-coded default: "gemini-sdk".
 //
 // Per-runner secret needs (must be present in the env allowlist passed to
 // run(), not just process.env):
 //   claude-cli       → ANTHROPIC_API_KEY
 //   claude-sdk       → ANTHROPIC_API_KEY  (after SDK install)
-//   echo             → no external secret; deterministic fallback/test runner
 //   gemini-sdk       → GEMINI_API_KEY      (after SDK install)
 //   openai-codex-cli → OPENAI_API_KEY     (and `codex` binary on PATH)
 //   openai-sdk       → OPENAI_API_KEY     (after SDK install)
@@ -17,7 +16,6 @@ import { spawn } from 'node:child_process';
 
 import { claudeCliRunner } from './claude-cli.js';
 import { claudeSdkRunner, resolveClaudeCodeExecutable } from './claude-sdk.js';
-import { echoRunner } from './echo.js';
 import { geminiSdkRunner } from './gemini-sdk.js';
 import { openaiCodexCliRunner } from './openai-codex-cli.js';
 import { openaiSdkRunner } from './openai-sdk.js';
@@ -28,20 +26,18 @@ export type { AgentProvider, AgentRunner, AgentRunOpts, AgentRunnerEvent } from 
 const RUNNERS: Record<AgentProvider, AgentRunner> = {
   'claude-cli': claudeCliRunner,
   'claude-sdk': claudeSdkRunner,
-  echo: echoRunner,
   'gemini-sdk': geminiSdkRunner,
   'openai-codex-cli': openaiCodexCliRunner,
   'openai-sdk': openaiSdkRunner,
 };
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
-const DEFAULT_GEMINI_MODEL = 'gemini-3-pro-preview';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro';
 const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
 
 const VALID_PROVIDERS = new Set<AgentProvider>([
   'claude-cli',
   'claude-sdk',
-  'echo',
   'gemini-sdk',
   'openai-codex-cli',
   'openai-sdk',
@@ -56,7 +52,7 @@ function isAgentProvider(value: unknown): value is AgentProvider {
  *   1. Explicit per-task override (from dispatch payload)
  *   2. AGENT_PROVIDER env var
  *   3. Availability adjustment: prefer SDK over CLI when both are available
- *   4. Default: "claude-sdk"
+ *   4. Default: "gemini-sdk"
  *
  * The availability logic checks the cached probe when it exists. It can
  * upgrade a CLI choice to an available SDK or fall back from an unavailable
@@ -68,7 +64,7 @@ export function resolveAgentProvider(perTaskOverride?: string | null): AgentProv
     chosen = perTaskOverride;
   } else {
     const fromEnv = process.env.AGENT_PROVIDER;
-    chosen = isAgentProvider(fromEnv) ? fromEnv : 'claude-sdk';
+    chosen = isAgentProvider(fromEnv) ? fromEnv : 'gemini-sdk';
   }
 
   // Prefer SDK runners when available, but fall back to CLI if the cached
@@ -137,9 +133,6 @@ export function buildAgentEnv(provider: AgentProvider): Record<string, string> {
     if (process.env.ANTHROPIC_BASE_URL) {
       base.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL;
     }
-  }
-  if (provider === 'echo') {
-    base.AGENT_PROVIDER = 'echo';
   }
   if (provider === 'gemini-sdk') {
     if (process.env.GEMINI_API_KEY) {
@@ -274,11 +267,6 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
           : !process.env.ANTHROPIC_API_KEY
             ? 'ANTHROPIC_API_KEY not set'
             : undefined,
-    },
-    {
-      provider: 'echo',
-      displayName: echoRunner.displayName,
-      available: true,
     },
     {
       provider: 'gemini-sdk',

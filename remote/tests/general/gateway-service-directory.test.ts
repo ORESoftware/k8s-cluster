@@ -167,7 +167,8 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assertPathEntry(home, '/bastion/runtime/deployments', '/bastion/runtime/deployments');
   assert.match(home, /Rust bastion\/jumphost access broker/);
   assert.match(home, /allowlisted browser exec terminals/);
-  assert.match(home, /option value="echo" \{ "echo" \}/);
+  assert.match(home, /option value="gemini-sdk" selected \{ "gemini-sdk" \}/);
+  assert.doesNotMatch(home, /option value="echo" \{ "echo" \}/);
   assert.match(home, /Queue Consumer/);
   assert.match(home, /Rust NATS shadow preparer \(dd-remote-queue-consumer\)/);
   assert.match(home, /Rust NATS Queue Consumer/);

@@ -254,6 +254,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
       assert.equal(pool.requestPath, '/tasks');
       assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
       assert.equal(pool.env.DD_REPO_URL, 'git@github.com:ORESoftware/live-mutex.git');
+      assert.equal(pool.env.AGENT_PROVIDER, 'gemini-sdk');
       assert.equal(pool.readOnly, false);
       assert.equal(pool.user, '1000:1000');
       assert.equal(pool.minWarm, 2);

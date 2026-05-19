@@ -26,7 +26,7 @@ data:
   # SDK runners take priority when available (see agents/index.ts);
   # explicit choice wins. Pin models with ANTHROPIC_MODEL/GEMINI_MODEL/
   # OPENAI_MODEL in the secret.
-  AGENT_PROVIDER: 'claude-sdk'
+  AGENT_PROVIDER: 'gemini-sdk'
   THREAD_CONTEXT_BASE_URL: 'http://dd-remote-rest-api.default.svc.cluster.local:8082'
   THREAD_CONTEXT_LIMIT: '20'
   THREAD_CONTEXT_MAX_CHARS: '48000'

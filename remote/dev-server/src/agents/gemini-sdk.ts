@@ -42,7 +42,7 @@ export const geminiSdkRunner: AgentRunner = {
     const genai = (await import('@google/genai')) as GoogleGenAiModule;
     const client = new genai.GoogleGenAI({ apiKey: opts.env.GEMINI_API_KEY });
     const stream = await client.models.generateContentStream({
-      model: opts.env.GEMINI_MODEL ?? 'gemini-3-pro-preview',
+      model: opts.env.GEMINI_MODEL ?? 'gemini-3.1-pro',
       contents: opts.prompt,
     });
 

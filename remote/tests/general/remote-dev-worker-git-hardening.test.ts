@@ -27,7 +27,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const telemetry = await readRepoFile('remote/dev-server/src/telemetry.ts');
   const agentTypes = await readRepoFile('remote/dev-server/src/agents/types.ts');
   const agentIndex = await readRepoFile('remote/dev-server/src/agents/index.ts');
-  const echoRunner = await readRepoFile('remote/dev-server/src/agents/echo.ts');
+  const geminiRunner = await readRepoFile('remote/dev-server/src/agents/gemini-sdk.ts');
   const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
   const localDockerfile = await readRepoFile('remote/dev-server-local/Dockerfile');
   const readme = await readRepoFile('remote/dev-server/readme.md');
@@ -39,6 +39,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const config = await readRepoFile('remote/k8s/01-configmap.yaml');
+  const secretsTemplate = await readRepoFile('remote/k8s/02-secrets.template.yaml');
   const threadTemplate = await readRepoFile('remote/k8s/07-thread-deployment.template.yaml');
   const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
 
@@ -97,7 +98,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /type: 'worker-heartbeat'/);
   assert.match(server, /status: 'waiting-for-task'/);
   assert.match(server, /registerWorkerWebSocketUpgrade\(\);[\s\S]*await fastify\.listen/);
-  assert.match(server, /agentEchoFallback: process\.env\.AGENT_ECHO_FALLBACK !== 'false'/);
+  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'gemini-sdk'/);
+  assert.match(server, /agentFallbackProvider: AGENT_FALLBACK_PROVIDER/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
   assert.match(server, /type TaskReceipt/);
   assert.match(server, /function taskReceiptPath\(taskId: string\): string/);
@@ -124,21 +126,21 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(entrypoint, /pnpm install --frozen-lockfile --prefer-offline/);
   assert.doesNotMatch(entrypoint, /pnpm install --prefer-offline/);
   assert.match(entrypoint, /find "\$REPO_DIR\/\.git" -maxdepth 1 -type f -name index\.lock -delete/);
-  assert.match(
-    server,
-    /!config\.agentEchoFallback[\s\S]*state\.provider === 'echo'[\s\S]*state\.cancelled[\s\S]*state\.abortController\.signal\.aborted/,
-  );
-  assert.match(server, /status: 'agent-fallback:echo'/);
-  assert.match(server, /await runSelectedAgent\('echo'\)/);
+  assert.match(server, /state\.provider === config\.agentFallbackProvider[\s\S]*state\.cancelled[\s\S]*state\.abortController\.signal\.aborted/);
+  assert.match(server, /status: `agent-fallback:\$\{config\.agentFallbackProvider\}`/);
+  assert.match(server, /await runSelectedAgent\(config\.agentFallbackProvider\)/);
+  assert.doesNotMatch(server, /agent-fallback:echo/);
+  assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
   assert.match(server, /\['commit', '--no-verify', '-m'/);
   assert.match(server, /\['push', '--no-verify', '--set-upstream', 'origin'/);
-  assert.match(agentTypes, /\| ['"]echo['"]/);
-  assert.match(agentIndex, /import \{ echoRunner \} from ['"]\.\/echo\.js['"]/);
-  assert.match(agentIndex, /echo: echoRunner/);
-  assert.match(agentIndex, /provider: ['"]echo['"][\s\S]*available: true/);
-  assert.match(echoRunner, /echo\\s\+back/);
-  assert.match(echoRunner, /type: ['"]assistant_response['"]/);
-  assert.match(echoRunner, /provider: ['"]echo['"]/);
+  assert.match(agentTypes, /\| ['"]gemini-sdk['"]/);
+  assert.doesNotMatch(agentTypes, /\| ['"]echo['"]/);
+  assert.match(agentIndex, /const DEFAULT_GEMINI_MODEL = 'gemini-3\.1-pro'/);
+  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'gemini-sdk'/);
+  assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
+  assert.match(geminiRunner, /model: opts\.env\.GEMINI_MODEL \?\? 'gemini-3\.1-pro'/);
+  assert.match(config, /AGENT_PROVIDER:\s*'gemini-sdk'/);
+  assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro"/);
 
   assert.match(dockerfile, /Optionally bake a "recent baseline" repo/);
   assert.match(dockerfile, /corepack prepare pnpm@9\.15\.4 --activate/);

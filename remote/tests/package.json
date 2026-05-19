@@ -14,7 +14,6 @@
     "test:cli:contract-service-config": "pnpm exec tsx --test general/contract-service-config.test.ts",
     "test:cli:des-simulator-config": "pnpm exec tsx --test general/des-simulator-config.test.ts",
     "test:cli:dev-server-container-pool-config": "pnpm exec tsx --test general/dev-server-container-pool-config.test.ts",
-    "test:cli:echo-runner": "pnpm exec tsx --test general/echo-runner.test.ts",
     "test:cli:fsharp-ws-server-config": "pnpm exec tsx --test general/fsharp-ws-server-config.test.ts",
     "test:cli:gateway-service-directory": "pnpm exec tsx --test general/gateway-service-directory.test.ts",
     "test:cli:gleam-lambda-runner-config": "pnpm exec tsx --test general/gleam-lambda-runner-config.test.ts",
@@ -39,7 +38,6 @@
     "test:cli:web-scraper-config": "pnpm exec tsx --test general/web-scraper-config.test.ts",
     "test:cli:ws-loadtest-config": "pnpm exec tsx --test general/ws-loadtest-config.test.ts",
     "test:ui:playwright": "node ui-playwright-smoke.mjs",
-    "test:ui:agent-echo": "node ui-agent-echo-playwright.mjs",
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",
     "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer"
   },

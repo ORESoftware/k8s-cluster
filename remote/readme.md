@@ -654,19 +654,20 @@ admin's events because they subscribe with their own UUID. Three layers of defen
 
 ## Agent providers (pluggable)
 
-Each task can be driven by Claude or OpenAI, via either CLI or SDK. The default is the Claude SDK
-runner; override per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`
+Each task can be driven by Gemini, Claude, or OpenAI. The default is the Gemini SDK runner;
+override per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`
 env on the docker.
 
 | Provider           | Path                                                | Status               |
 | ------------------ | --------------------------------------------------- | -------------------- |
-| `claude-sdk`       | `@anthropic-ai/claude-agent-sdk` `query()` iterator | working (default)    |
+| `gemini-sdk`       | `@google/genai` streaming SDK                       | working (default/fallback) |
+| `claude-sdk`       | `@anthropic-ai/claude-agent-sdk` `query()` iterator | working              |
 | `claude-cli`       | `claude -p ... --output-format stream-json`         | working CLI fallback |
 | `openai-sdk`       | `@openai/agents` + scoped shell/apply-patch tools   | working SDK path     |
 | `openai-codex-cli` | `codex exec "<prompt>" --json`                      | working CLI fallback |
 
-Each runner gets a **strict env allowlist** — only the API key it needs (`ANTHROPIC_API_KEY` for
-`claude-*`, `OPENAI_API_KEY` for `openai-*`), `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
+Each runner gets a **strict env allowlist** — only the API key it needs (`GEMINI_API_KEY` for
+`gemini-sdk`, `ANTHROPIC_API_KEY` for `claude-*`, `OPENAI_API_KEY` for `openai-*`), `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
 process never sees the GitHub PAT, deploy key, Supabase service role key, or `REMOTE_DEV_*` shared
 secrets.
 

@@ -107,7 +107,7 @@ values (
           "DD_REPO_URL": "git@github.com:ORESoftware/live-mutex.git",
           "BASE_BRANCH": "dev",
           "WORKER_BIND_MODE": "repo",
-          "AGENT_PROVIDER": "claude-sdk",
+          "AGENT_PROVIDER": "gemini-sdk",
           "WORKER_FANOUT_WS_BASE_URL": "ws://dd-gleamlang-server.default.svc.cluster.local:8081/worker-ws"
         },
         "requestPath": "/tasks",

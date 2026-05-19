@@ -1026,10 +1026,9 @@ fn agents_threads_body() -> Markup {
                         label {
                             span { "Provider" }
                             select id="provider" {
+                                option value="gemini-sdk" selected { "gemini-sdk" }
                                 option value="claude-sdk" { "claude-sdk" }
                                 option value="openai-sdk" { "openai-sdk" }
-                                option value="gemini-sdk" { "gemini-sdk" }
-                                option value="echo" { "echo" }
                             }
                         }
                         label {
@@ -1149,10 +1148,9 @@ fn agents_tasks_body() -> Markup {
                     label class="field" {
                         span { "Provider" }
                         select id="chat-provider" {
-                            option value="claude-sdk" selected="selected" { "claude-sdk" }
+                            option value="gemini-sdk" selected="selected" { "gemini-sdk" }
+                            option value="claude-sdk" { "claude-sdk" }
                             option value="claude-cli" { "claude-cli" }
-                            option value="echo" { "echo" }
-                            option value="gemini-sdk" { "gemini-sdk" }
                             option value="openai-codex-cli" { "openai-codex-cli" }
                             option value="openai-sdk" { "openai-sdk" }
                         }

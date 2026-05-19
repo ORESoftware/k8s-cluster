@@ -67,6 +67,8 @@ import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js'
 
 // ---------- Config ----------
 
+const AGENT_FALLBACK_PROVIDER: AgentProvider = 'gemini-sdk';
+
 const config = {
   port: Number(process.env.PORT ?? 8080),
   host: process.env.HOST ?? '0.0.0.0',
@@ -109,7 +111,7 @@ const config = {
     'http://dd-remote-rest-api.default.svc.cluster.local:8082',
   threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
   threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
-  agentEchoFallback: process.env.AGENT_ECHO_FALLBACK !== 'false',
+  agentFallbackProvider: AGENT_FALLBACK_PROVIDER,
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
   threadLogRelativePath: process.env.THREAD_LOG_RELATIVE_PATH ?? 'tmp/convos/thread.log',
   skipBootGitSync: process.env.SKIP_BOOT_GIT_SYNC === 'true',
@@ -1278,15 +1280,14 @@ async function runTask(state: TaskState): Promise<void> {
           message: `${state.provider} failed: ${message}`,
         });
         if (
-          !config.agentEchoFallback ||
-          state.provider === 'echo' ||
+          state.provider === config.agentFallbackProvider ||
           state.cancelled ||
           state.abortController.signal.aborted
         ) {
           throw err;
         }
-        emit(state, { kind: 'status', status: 'agent-fallback:echo' });
-        await runSelectedAgent('echo');
+        emit(state, { kind: 'status', status: `agent-fallback:${config.agentFallbackProvider}` });
+        await runSelectedAgent(config.agentFallbackProvider);
       }
 
       if (state.cancelled || state.abortController.signal.aborted) {
@@ -2510,11 +2511,11 @@ const DispatchSchema = z.object({
   threadTitle: z.string().min(1).max(200).optional(),
   /**
    * Which agent runner to drive the task. Falls back to AGENT_PROVIDER env
-   * then "claude-sdk". Validated by the selector — unknown values fall
+   * then "gemini-sdk". Validated by the selector — unknown values fall
    * back to default rather than 400ing.
    */
   provider: z
-    .enum(['claude-cli', 'claude-sdk', 'echo', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'])
+    .enum(['claude-cli', 'claude-sdk', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'])
     .optional(),
   containerPool: ContainerPoolTaskSchema.optional(),
 });

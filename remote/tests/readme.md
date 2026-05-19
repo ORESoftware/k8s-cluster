@@ -12,20 +12,11 @@ Smoke tests for the live remote dev-server on EC2.
 - `DD_EC2_GLEAM_LAMBDA_INTEGRATION=1`: enables the destructive-on-temp-resources EC2 Gleam lambda runner integration test
 - `REMOTE_DEV_K8S_NAMESPACE` (optional): defaults to `default`
 - `REMOTE_DEV_K8S_DEPLOYMENT` (optional): defaults to `dd-dev-server-api`
-- `REMOTE_DEV_ECHO_PROVIDER` (optional): defaults to `claude-sdk` for the browser echo test
-- `REMOTE_DEV_ECHO_PROMPT` (optional): defaults to `please echo back 'hello'`
-- `REMOTE_DEV_ECHO_EXPECTED` (optional): defaults to `hello`
 
 ## Run
 
 ```bash
 pnpm --dir remote/tests run test:all
-```
-
-Run the browser echo test against `/agents/tasks`:
-
-```bash
-pnpm --dir remote/tests run test:ui:agent-echo
 ```
 
 Run the full UUID reuse + sleep/wake lifecycle test:
