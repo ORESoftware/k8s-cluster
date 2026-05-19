@@ -181,11 +181,15 @@ jobs:
               --output text
           )"
           echo "command_id=$command_id"
+          set +e
           aws ssm wait command-executed \
             --command-id "$command_id" \
             --instance-id "$INSTANCE_ID"
+          wait_status=$?
+          set -e
           aws ssm get-command-invocation \
             --command-id "$command_id" \
             --instance-id "$INSTANCE_ID" \
             --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
             --output json
+          exit "$wait_status"
