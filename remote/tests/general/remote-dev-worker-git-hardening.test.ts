@@ -133,6 +133,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
   assert.match(server, /\['commit', '--no-verify', '-m'/);
   assert.match(server, /\['push', '--no-verify', '--set-upstream', 'origin'/);
+  assert.match(server, /status: `opening draft PR against \$\{config\.baseBranch\} from \$\{gitBranchTarget\(session\.branch\)\}`/);
+  assert.match(server, /status: `completed PR request: \$\{result\.reused \? 'reused' : 'created'\} draft PR against \$\{result\.baseBranch\}`/);
+  assert.match(server, /status: `pushing to \$\{gitBranchTarget\(state\.branch\)\}`/);
+  assert.match(server, /status: `pushed to \$\{gitBranchTarget\(state\.branch\)\}`/);
+  assert.match(server, /status: `completed task on \$\{gitBranchTarget\(state\.branch\)\}`/);
   assert.match(server, /const GENERATED_GIT_EXCLUDES = \[':!\.pnpm-store'/);
   assert.match(server, /async function gitWorkspaceStatus\(workspacePath: string\): Promise<string>/);
   assert.match(server, /async function gitAddWorkspaceChanges\(workspacePath: string\): Promise<void>/);
