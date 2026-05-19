@@ -1,13 +1,13 @@
 // Generic OpenAI-compatible runner using Vercel AI SDK.
 //
-// This is model-only for now. It can answer from thread context through
-// OpenCode, DeepSeek, Qwen/DashScope, xAI, or another compatible endpoint,
-// but it does not expose local shell/edit tools.
+// Uses a bounded workspace toolset so OpenAI-compatible models can inspect
+// and edit repo files without receiving broad shell or process env access.
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 
 import type { AgentRunOpts, AgentRunner } from './types.js';
+import { createWorkspaceTools } from './workspace-tools.js';
 
 export const DEFAULT_GENERIC_AI_SDK_SOURCES = [
   {
@@ -130,10 +130,16 @@ export const genericAiSdkRunner: AgentRunner = {
       try {
         const result = await generateText({
           model: provider(modelId),
+          system:
+            'You are editing a git workspace. Use the provided workspace tools for repo inspection and file edits. ' +
+            'Keep changes focused on the user request. Do not claim files were edited unless you used a write tool. ' +
+            'When done, call workspace_status and summarize the changed files.',
           prompt: opts.prompt,
+          tools: createWorkspaceTools(opts.cwd, opts.emit),
+          stopWhen: stepCountIs(8),
           abortSignal: opts.signal,
         });
-        if (!result.text.trim()) {
+        if (!result.text.trim() && result.toolResults.length === 0) {
           throw new Error(`${modelId} produced no text output`);
         }
         opts.emit({
@@ -143,6 +149,8 @@ export const genericAiSdkRunner: AgentRunner = {
             source: sourceId,
             model: modelId,
             text: result.text,
+            toolCalls: result.toolCalls.length,
+            toolResults: result.toolResults.length,
             finishReason: result.finishReason,
             usage: result.usage,
           },

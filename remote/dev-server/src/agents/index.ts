@@ -510,6 +510,7 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
   const hasGeminiApiKey = configuredAgentCredentialCount('gemini-sdk') > 0;
   const hasOpenaiApiKey = configuredAgentCredentialCount('openai-sdk') > 0;
   const hasOpenCodeApiKey = configuredAgentCredentialCount('opencode-ai-sdk') > 0;
+  const hasGenericAiSdkApiKey = configuredAgentCredentialCount('generic-ai-sdk') > 0;
 
   const out: AgentAvailability[] = [
     {
@@ -554,6 +555,18 @@ export async function probeAllProviders(): Promise<AgentAvailability[]> {
           ? '@ai-sdk/openai-compatible package not installed'
           : !hasOpenCodeApiKey
             ? 'OPENCODE_API_KEY not set'
+            : undefined,
+    },
+    {
+      provider: 'generic-ai-sdk',
+      displayName: genericAiSdkRunner.displayName,
+      available: hasAiSdk && hasOpenaiCompatibleSdk && hasGenericAiSdkApiKey,
+      reason: !hasAiSdk
+        ? 'ai package not installed'
+        : !hasOpenaiCompatibleSdk
+          ? '@ai-sdk/openai-compatible package not installed'
+          : !hasGenericAiSdkApiKey
+            ? 'OpenCode, DeepSeek, Qwen/DashScope, or xAI/Grok API key not set'
             : undefined,
     },
     {

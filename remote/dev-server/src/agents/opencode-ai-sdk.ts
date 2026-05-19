@@ -1,13 +1,13 @@
 // OpenCode Zen runner - uses Vercel AI SDK with the OpenAI-compatible adapter.
 //
-// This is model-only for now. It answers from thread context, but it does not
-// expose local shell/edit tools, so server.ts skips it for repo inspection and
-// file-edit prompts.
+// Uses a bounded workspace toolset so OpenCode-compatible models can inspect
+// and edit repo files without receiving broad shell or process env access.
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 
 import type { AgentRunOpts, AgentRunner } from './types.js';
+import { createWorkspaceTools } from './workspace-tools.js';
 
 const DEFAULT_OPENCODE_BASE_URL = 'https://opencode.ai/zen/v1';
 
@@ -93,10 +93,16 @@ export const opencodeAiSdkRunner: AgentRunner = {
       try {
         const result = await generateText({
           model: provider(modelId),
+          system:
+            'You are editing a git workspace. Use the provided workspace tools for repo inspection and file edits. ' +
+            'Keep changes focused on the user request. Do not claim files were edited unless you used a write tool. ' +
+            'When done, call workspace_status and summarize the changed files.',
           prompt: opts.prompt,
+          tools: createWorkspaceTools(opts.cwd, opts.emit),
+          stopWhen: stepCountIs(8),
           abortSignal: opts.signal,
         });
-        if (!result.text.trim()) {
+        if (!result.text.trim() && result.toolResults.length === 0) {
           throw new Error(`${modelId} produced no text output`);
         }
         opts.emit({
@@ -105,6 +111,8 @@ export const opencodeAiSdkRunner: AgentRunner = {
             provider: 'opencode-ai-sdk',
             model: modelId,
             text: result.text,
+            toolCalls: result.toolCalls.length,
+            toolResults: result.toolResults.length,
             finishReason: result.finishReason,
             usage: result.usage,
           },

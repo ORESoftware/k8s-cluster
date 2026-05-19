@@ -165,6 +165,7 @@ const config = {
       configuredAgentFallbackProvider,
       configuredAgentSecondaryFallbackProvider,
       'generic-ai-sdk',
+      'opencode-ai-sdk',
       'gemini-sdk',
     ],
   ),
@@ -470,11 +471,17 @@ function gitBranchTarget(branch: string): string {
 }
 
 function providerCanEditWorkspace(provider: AgentProvider): boolean {
-  return provider !== 'gemini-sdk' && provider !== 'opencode-ai-sdk' && provider !== 'generic-ai-sdk';
+  return provider !== 'gemini-sdk';
 }
 
 function providerCanAccessWorkspace(provider: AgentProvider): boolean {
   return providerCanEditWorkspace(provider);
+}
+
+function promptRequestsPullRequest(prompt: string): boolean {
+  return /\b(?:open|create|submit|make|raise)\s+(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/i.test(
+    prompt,
+  ) || /\b(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt);
 }
 
 function stripNegatedWorkspaceChangePhrases(prompt: string): string {
@@ -1869,7 +1876,18 @@ async function runTask(state: TaskState): Promise<void> {
             }
             attempted += 1;
             try {
+              const statusBeforeAttempt = requiresWorkspaceChange
+                ? await gitWorkspaceStatus(state.worktreePath)
+                : '';
               await runAgentAttempt(attempt);
+              if (requiresWorkspaceChange) {
+                const statusAfterAttempt = await gitWorkspaceStatus(state.worktreePath);
+                if (!statusAfterAttempt.trim() || statusAfterAttempt.trim() === statusBeforeAttempt.trim()) {
+                  throw new Error(
+                    `${attempt.provider} completed without workspace changes for a repo-edit prompt in ${repoDisplayName()}`,
+                  );
+                }
+              }
               completedAgentRun = true;
               lastErr = null;
               break;
@@ -1943,6 +1961,32 @@ async function runTask(state: TaskState): Promise<void> {
           : 'No workspace changes were committed; branch push verified.',
       });
 
+      let completionMessage = 'No PR was opened automatically; use Open draft PR to create one against the base branch.';
+      if (promptRequestsPullRequest(state.prompt)) {
+        emit(state, {
+          kind: 'status',
+          status: `opening draft PR against ${config.baseBranch} from ${gitBranchTarget(state.branch)}`,
+          message: `Prompt requested a PR.\nRepo: ${repoDisplayName()}`,
+        });
+        const pr = await ensurePullRequestForSession({
+          session: state.session,
+          taskId: state.taskId,
+          prompt: state.prompt,
+        });
+        emit(state, {
+          kind: 'pr_open',
+          branch: pr.branch,
+          prUrl: pr.prUrl,
+          draft: pr.draft,
+        });
+        emit(state, {
+          kind: 'status',
+          status: `completed PR request: ${pr.reused ? 'reused' : 'created'} draft PR against ${pr.baseBranch}`,
+          message: `${pr.prUrl}\nHead: ${repoDisplayName()} branch ${pr.branch}`,
+        });
+        completionMessage = `Draft PR ${pr.reused ? 'reused' : 'created'}: ${pr.prUrl}`;
+      }
+
       // Publish any files the agent dropped in the per-task outputs dir.
       // Failures uploading individual files are surfaced as `error` events
       // but do not fail the whole task.
@@ -1951,7 +1995,7 @@ async function runTask(state: TaskState): Promise<void> {
       emit(state, {
         kind: 'status',
         status: `completed task on ${gitBranchTarget(state.branch)}`,
-        message: 'No PR was opened automatically; use Open draft PR to create one against the base branch.',
+        message: completionMessage,
       });
       emit(state, {
         kind: 'done',
@@ -3215,8 +3259,8 @@ const DispatchSchema = z.object({
   threadTitle: z.string().min(1).max(200).nullish(),
   /**
    * Which agent runner to drive the task. Falls back to AGENT_PROVIDER env
-   * then "generic-ai-sdk" / "gemini-sdk". Validated by the selector — unknown values fall
-   * back to default rather than 400ing.
+   * then the configured provider rotation. Validated by the selector —
+   * unknown values fall back to default rather than 400ing.
    */
   provider: z
     .enum([

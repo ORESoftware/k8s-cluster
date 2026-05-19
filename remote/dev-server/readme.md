@@ -151,9 +151,10 @@ The runner that drives each task is pluggable. Default is OpenAI SDK; it can be
 overridden per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`.
 Each task walks `AGENT_PROVIDER_ROTATION` and every configured key for that provider before moving
 on. The default order is all OpenAI SDK keys, then all Claude SDK keys, then the generic AI SDK
-OpenAI-compatible pool (OpenCode Zen, DeepSeek, Qwen/DashScope, xAI/Grok), then Gemini keys. Generic
-AI SDK, OpenCode, and Gemini are skipped for repo-edit/inspection prompts because they are still
-model-only. Simple append-to-file prompts such as `append "foobar" to todos.md` are handled by a
+OpenAI-compatible pool (OpenCode Zen, DeepSeek, Qwen/DashScope, xAI/Grok), then the dedicated
+OpenCode Zen provider, then Gemini keys. Generic AI SDK and OpenCode receive bounded workspace
+tools for repo inspection and file edits; Gemini remains model-only and is skipped for repo-edit
+prompts. Simple append-to-file prompts such as `append "foobar" to todos.md` are handled by a
 deterministic workspace edit path before provider fallback, then committed and pushed like normal
 agent edits.
 
@@ -170,7 +171,7 @@ agent edits.
 | Var                 | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `AGENT_PROVIDER`    | Default runner if the dispatch doesn't specify one. One of `gemini-sdk` / `opencode-ai-sdk` / `claude-sdk` / `claude-cli` / `openai-sdk` / `openai-codex-cli`. |
-| `AGENT_PROVIDER_ROTATION` | Comma/space separated retry order. Defaults to `openai-sdk,claude-sdk,generic-ai-sdk,gemini-sdk`. The selected provider is appended if absent. |
+| `AGENT_PROVIDER_ROTATION` | Comma/space separated retry order. Defaults to `openai-sdk,claude-sdk,generic-ai-sdk,opencode-ai-sdk,gemini-sdk`. The selected provider is appended if absent. |
 | `AGENT_FALLBACK_PROVIDER` | First retry provider when the selected runner fails. Defaults to `openai-sdk`.                                                        |
 | `AGENT_SECONDARY_FALLBACK_PROVIDER` | Second retry provider when the selected runner or primary fallback fails. Defaults to `claude-sdk`.                           |
 | `ANTHROPIC_API_KEY` | Required when provider is a `claude-*` runner.                                                                              |
