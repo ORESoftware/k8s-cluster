@@ -2458,7 +2458,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           $("stream").appendChild(empty);
           return;
         }
-        clearStream("loading events", taskId);
+        if (options.appendOnly) {
+          state.streamTaskId = taskId;
+        } else {
+          clearStream("loading events", taskId);
+        }
         for (const event of data.events) renderEventRow(event);
       }
 
@@ -2785,6 +2789,14 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         $("snapshot-meta").textContent = "snapshot failed";
         setStatus(adminPreview("snapshot load error", error, 240), true);
       });
+      setInterval(() => {
+        if (!state.selectedTaskId) return;
+        loadSnapshot({ preserveStreamForTask: state.selectedTaskId }).catch((error) => setStatus(adminPreview("snapshot poll error", error, 240), true));
+        loadTaskEvents(state.selectedTaskId, {
+          preserveCurrentOnEmpty: true,
+          appendOnly: true,
+        }).catch((error) => setStatus(adminPreview("events poll error", error, 240), true));
+      }, 10000);
 "#;
 
 const AGENTS_TASKS_CSS: &str = r#"      :root {

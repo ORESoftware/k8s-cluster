@@ -1007,9 +1007,11 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /streamTaskId: null/);
   assert.match(server, /async function loadTaskEvents\(taskId, options = \{\}\) \{/);
   assert.match(server, /if \(options\.preserveCurrentOnEmpty && state\.streamTaskId === taskId && \$\("stream"\)\.childElementCount > 0\) \{/);
+  assert.match(server, /if \(options\.appendOnly\) \{[\s\S]*state\.streamTaskId = taskId;[\s\S]*\} else \{[\s\S]*clearStream\("loading events", taskId\);[\s\S]*\}/);
   assert.match(server, /async function loadSnapshot\(options = \{\}\) \{/);
   assert.match(server, /if \(options\.preserveStreamForTask !== state\.selectedTaskId\) \{[\s\S]*await loadTaskEvents\(state\.selectedTaskId, \{[\s\S]*preserveCurrentOnEmpty: state\.streamTaskId === state\.selectedTaskId,[\s\S]*\}\);[\s\S]*\}/);
   assert.match(server, /loadSnapshot\(\{ preserveStreamForTask: taskId \}\)/);
+  assert.match(server, /setInterval\(\(\) => \{[\s\S]*loadSnapshot\(\{ preserveStreamForTask: state\.selectedTaskId \}\)[\s\S]*appendOnly: true,[\s\S]*\}, 10000\);/);
   assert.match(
     server,
     /fetch\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/runtime`, \{ cache: "no-store" \}\)/,

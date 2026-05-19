@@ -35,6 +35,12 @@ test('rest api publishes successful direct dispatches to the nats shadow queue',
   assert.match(server, /RetentionPolicy::WorkQueue/);
   assert.match(server, /fn nats_wakeup_subject/);
   assert.match(server, /dd\.remote\.orchestrator\.wakeup/);
+  assert.match(server, /fn nats_event_subject/);
+  assert.match(server, /dd\.remote\.events/);
+  assert.match(server, /persist_task_status_event/);
+  assert.match(server, /publish_task_event_to_nats/);
+  assert.match(server, /"stage": "nats-published"/);
+  assert.match(server, /on conflict \(task_id, seq\) do update set/);
   assert.match(server, /"task\.shadow"/);
   assert.match(server, /publish_task_dispatch_to_nats/);
   assert.match(server, /"task\.dispatch"/);
@@ -78,6 +84,15 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /has_task_receipt/);
   assert.match(consumer, /write_task_receipt/);
   assert.match(consumer, /queue task skipped duplicate/);
+  assert.match(consumer, /emit_queue_status_event/);
+  assert.match(consumer, /persist_queue_status_event/);
+  assert.match(consumer, /publish_queue_status_event/);
+  assert.match(consumer, /dd\.remote\.events/);
+  assert.match(consumer, /queue-received/);
+  assert.match(consumer, /container-pool-dispatch/);
+  assert.match(consumer, /container-pool-failed/);
+  assert.match(consumer, /rest-fallback-accepted/);
+  assert.match(consumer, /queue-acked/);
   assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);
   assert.match(deployment, /name:\s*dd-remote-queue-consumer/);
   assert.match(deployment, /NATS_QUEUE_GROUP[\s\S]*dd-remote-thread-preparer/);

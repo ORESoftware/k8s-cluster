@@ -1,7 +1,15 @@
-use std::{collections::HashSet, env, error::Error, fs, path::PathBuf, time::Duration};
+use std::{
+    collections::HashSet,
+    env,
+    error::Error,
+    fs,
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use futures_util::StreamExt;
 use serde::Deserialize;
+use serde_json::{json, Value};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,6 +114,125 @@ fn is_shadow_task(task: &QueueTaskMessage) -> bool {
             .message_kind
             .as_deref()
             .is_some_and(|kind| kind == "task.shadow")
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+fn nats_event_subject() -> &'static str {
+    "dd.remote.events"
+}
+
+fn task_message_id(task: &QueueTaskMessage, stage: &str) -> String {
+    format!("{}:{stage}", task.task_id)
+}
+
+fn queue_status_event(
+    task: &QueueTaskMessage,
+    stage: &str,
+    status: &str,
+    message: &str,
+    details: Value,
+) -> Value {
+    json!({
+        "kind": "status",
+        "status": status,
+        "message": message,
+        "source": "dd-remote-queue-consumer",
+        "stage": stage,
+        "messageKind": &task.message_kind,
+        "shadow": task.shadow.unwrap_or(false),
+        "directDispatch": task.direct_dispatch.unwrap_or(false),
+        "details": details,
+        "atMs": now_ms(),
+    })
+}
+
+async fn persist_queue_status_event(
+    http: &reqwest::Client,
+    rest_api_url: &str,
+    secret: &str,
+    task: &QueueTaskMessage,
+    seq: i32,
+    event: &Value,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let base = rest_api_url.trim_end_matches('/');
+    let url = format!("{base}/api/agents/events");
+    let response = http
+        .post(url)
+        .header("X-Agent-Auth", secret)
+        .json(&json!({
+            "taskId": &task.task_id,
+            "seq": seq,
+            "event": event,
+        }))
+        .send()
+        .await?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = response.text().await.unwrap_or_default();
+    Err(format!(
+        "queue status event ingest failed with {status}: {}",
+        body.chars().take(500).collect::<String>()
+    )
+    .into())
+}
+
+async fn publish_queue_status_event(
+    nats: &async_nats::Client,
+    task: &QueueTaskMessage,
+    seq: i32,
+    stage: &str,
+    event: &Value,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let payload = json!({
+        "type": "task-event",
+        "messageId": task_message_id(task, stage),
+        "threadId": &task.thread_id,
+        "taskId": &task.task_id,
+        "seq": seq,
+        "event": event,
+        "emittedAt": now_ms(),
+    });
+    nats.publish(nats_event_subject(), serde_json::to_vec(&payload)?.into())
+        .await?;
+    nats.flush().await?;
+    Ok(())
+}
+
+async fn emit_queue_status_event(
+    http: &reqwest::Client,
+    nats: &async_nats::Client,
+    rest_api_url: &str,
+    secret: &str,
+    task: &QueueTaskMessage,
+    seq: i32,
+    stage: &str,
+    status: &str,
+    message: &str,
+    details: Value,
+) {
+    let event = queue_status_event(task, stage, status, message, details);
+    if let Err(error) =
+        persist_queue_status_event(http, rest_api_url, secret, task, seq, &event).await
+    {
+        eprintln!(
+            "queue status event persist failed: thread={} task={} stage={stage} error={error}",
+            task.thread_id, task.task_id
+        );
+    }
+    if let Err(error) = publish_queue_status_event(nats, task, seq, stage, &event).await {
+        eprintln!(
+            "queue status event nats publish failed: thread={} task={} stage={stage} error={error}",
+            task.thread_id, task.task_id
+        );
+    }
 }
 
 fn sanitize_slug_part(input: &str) -> String {
@@ -343,9 +470,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     println!(
         "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} receipts_dir={receipts_dir}"
     );
-    let client = async_nats::connect(nats_url).await?;
+    let nats_client = async_nats::connect(nats_url).await?;
     let consumer = build_jetstream_consumer(
-        client,
+        nats_client.clone(),
         &stream_name,
         &subject,
         &consumer_name,
@@ -394,17 +521,106 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             shadow,
             task.direct_dispatch.unwrap_or(false),
         );
+        emit_queue_status_event(
+            &http,
+            &nats_client,
+            &rest_api_url,
+            &secret,
+            &task,
+            -940,
+            "queue-received",
+            "queue received",
+            "Queue consumer received the JetStream task message.",
+            json!({ "consumer": &consumer_name, "subject": &subject }),
+        )
+        .await;
         let result = if shadow {
+            emit_queue_status_event(
+                &http,
+                &nats_client,
+                &rest_api_url,
+                &secret,
+                &task,
+                -930,
+                "shadow-prepare",
+                "preparing shadow worker",
+                "Shadow handoff is waking the UUID-bound thread worker.",
+                json!({}),
+            )
+            .await;
             prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
         } else {
+            let pool = task
+                .repo
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|repo| repo_pool_slug(repo, task.base_branch.as_deref().unwrap_or("dev")));
+            emit_queue_status_event(
+                &http,
+                &nats_client,
+                &rest_api_url,
+                &secret,
+                &task,
+                -930,
+                "container-pool-dispatch",
+                "dispatching to container pool",
+                "Queue consumer is asking container-pool for a warm repo worker.",
+                json!({ "poolSlug": &pool }),
+            )
+            .await;
             match dispatch_to_container_pool(&http, &container_pool_url, &secret, &task).await {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    emit_queue_status_event(
+                        &http,
+                        &nats_client,
+                        &rest_api_url,
+                        &secret,
+                        &task,
+                        -920,
+                        "container-pool-accepted",
+                        "container pool accepted",
+                        "Container-pool accepted the task dispatch.",
+                        json!({ "poolSlug": &pool }),
+                    )
+                    .await;
+                    Ok(())
+                }
                 Err(pool_error) if fallback_rest_dispatch => {
                     eprintln!(
                         "queue task container pool dispatch failed; falling back to rest dispatch: thread={} task={} error={pool_error}",
                         task.thread_id, task.task_id
                     );
-                    dispatch_to_rest_api(&http, &rest_api_url, &secret, &task).await
+                    emit_queue_status_event(
+                        &http,
+                        &nats_client,
+                        &rest_api_url,
+                        &secret,
+                        &task,
+                        -920,
+                        "container-pool-failed",
+                        "container pool failed",
+                        "Container-pool dispatch failed; queue consumer is falling back to direct REST dispatch.",
+                        json!({ "poolSlug": &pool, "error": pool_error.to_string() }),
+                    )
+                    .await;
+                    let fallback = dispatch_to_rest_api(&http, &rest_api_url, &secret, &task).await;
+                    if fallback.is_ok() {
+                        emit_queue_status_event(
+                            &http,
+                            &nats_client,
+                            &rest_api_url,
+                            &secret,
+                            &task,
+                            -910,
+                            "rest-fallback-accepted",
+                            "REST fallback accepted",
+                            "Direct REST fallback accepted the task and is waking the UUID-bound worker.",
+                            json!({}),
+                        )
+                        .await;
+                    }
+                    fallback
                 }
                 Err(pool_error) => Err(pool_error),
             }
@@ -414,6 +630,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 "queue task handoff failed: thread={} task={} error={error}",
                 task.thread_id, task.task_id
             );
+            emit_queue_status_event(
+                &http,
+                &nats_client,
+                &rest_api_url,
+                &secret,
+                &task,
+                -910,
+                "queue-handoff-failed",
+                "queue handoff failed",
+                "Queue consumer could not hand the task to container-pool or fallback dispatch.",
+                json!({ "error": error.to_string() }),
+            )
+            .await;
             if let Err(nak_error) = message
                 .ack_with(async_nats::jetstream::AckKind::Nak(Some(
                     Duration::from_secs(nak_delay_seconds),
@@ -436,6 +665,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 "queue task ack failed: thread={} task={} error={error}",
                 task.thread_id, task.task_id
             );
+        } else {
+            emit_queue_status_event(
+                &http,
+                &nats_client,
+                &rest_api_url,
+                &secret,
+                &task,
+                -900,
+                "queue-acked",
+                "queue message acked",
+                "Queue consumer acknowledged the JetStream message.",
+                json!({}),
+            )
+            .await;
         }
     }
 

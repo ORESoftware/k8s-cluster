@@ -644,6 +644,10 @@ fn nats_wakeup_subject() -> &'static str {
     "dd.remote.orchestrator.wakeup"
 }
 
+fn nats_event_subject() -> &'static str {
+    "dd.remote.events"
+}
+
 fn nats_lambda_functions_subject() -> &'static str {
     "dd.remote.lambdas.functions"
 }
@@ -683,10 +687,58 @@ async fn publish_thread_runtime_event_to_nats(
         .await
         .map_err(|error| error.to_string())?;
     client
-        .publish("dd.remote.events", body.into())
+        .publish(nats_event_subject(), body.into())
         .await
         .map_err(|error| error.to_string())?;
     client.flush().await.map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn persist_task_status_event(
+    task_id: &str,
+    seq: i32,
+    status: &str,
+    message: &str,
+    mut event: Value,
+) -> Result<Value, String> {
+    let Some(event_object) = event.as_object_mut() else {
+        return Err("status event payload must be a JSON object".to_string());
+    };
+    event_object.insert("kind".to_string(), json!("status"));
+    event_object.insert("status".to_string(), json!(status));
+    event_object.insert("message".to_string(), json!(message));
+    event_object.insert("atMs".to_string(), json!(now_ms()));
+    let request = AgentEventIngestRequest {
+        task_id: task_id.to_string(),
+        seq,
+        event,
+    };
+    persist_agent_event_to_postgres(&request, "status").await?;
+    Ok(request.event)
+}
+
+async fn publish_task_event_to_nats(
+    client: &async_nats::Client,
+    thread_id: &str,
+    task_id: &str,
+    seq: i32,
+    message_id: &str,
+    event: &Value,
+) -> Result<(), String> {
+    let payload = json!({
+        "type": "task-event",
+        "messageId": message_id,
+        "threadId": thread_id,
+        "taskId": task_id,
+        "seq": seq,
+        "event": event,
+        "emittedAt": now_ms()
+    });
+    let body = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+    client
+        .publish(nats_event_subject(), body.into())
+        .await
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -3142,7 +3194,9 @@ async fn persist_agent_event_to_postgres(
               (task_id, seq, event_kind, payload, created_at)
             values
               ($1::text::uuid, $2, $3, $4, now())
-            on conflict (task_id, seq) do nothing
+            on conflict (task_id, seq) do update set
+              event_kind = excluded.event_kind,
+              payload = excluded.payload
             "#,
             &[&request.task_id, &request.seq, &event_kind, &request.event],
         )
@@ -3379,6 +3433,39 @@ async fn publish_task_to_nats(
         .publish(nats_wakeup_subject(), payload.into())
         .await
         .map_err(|error| error.to_string())?;
+    let status_event = persist_task_status_event(
+        &request.task_id,
+        -950,
+        "nats queued",
+        "REST API published the task to JetStream and emitted the orchestrator wakeup.",
+        json!({
+            "source": "dd-remote-rest-api",
+            "stage": "nats-published",
+            "messageKind": message_kind,
+            "shadow": shadow,
+            "directDispatch": direct_dispatch,
+            "subject": nats_task_subject(&request.thread_id),
+            "wakeupSubject": nats_wakeup_subject(),
+        }),
+    )
+    .await;
+    match status_event {
+        Ok(event) => {
+            if let Err(error) = publish_task_event_to_nats(
+                &client,
+                &request.thread_id,
+                &request.task_id,
+                -950,
+                &format!("{}:{message_kind}:nats-published", request.task_id),
+                &event,
+            )
+            .await
+            {
+                eprintln!("failed to publish task handoff event to nats: {error}");
+            }
+        }
+        Err(error) => eprintln!("failed to persist task handoff event: {error}"),
+    }
     client.flush().await.map_err(|error| error.to_string())?;
     Ok(())
 }
