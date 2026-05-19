@@ -123,7 +123,7 @@ jobs:
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  f"sudo -u ec2-user -H env THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS={shlex.quote(os.environ.get('THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS', '4'))} bash -lc {json.dumps(script)}",
+                  f"sudo -u ec2-user -H env THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS={shlex.quote(os.environ.get('THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS', '4'))} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY
