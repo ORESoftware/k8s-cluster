@@ -46,6 +46,8 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /from app_config/);
   assert.match(source, /rds-us-east-1-bundle\.pem/);
   assert.match(source, /add_rds_root_certificates/);
+  assert.match(source, /is_missing_app_config_table_error/);
+  assert.match(source, /using built-in platform defaults/);
   assert.match(source, /fetch_platform_config_from_app_config/);
   assert.match(source, /refresh_platform_config/);
   assert.match(source, /fn conservative_cap/);

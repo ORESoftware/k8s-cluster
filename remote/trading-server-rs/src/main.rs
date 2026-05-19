@@ -800,6 +800,10 @@ fn platform_snapshot(state: &AppState) -> TradingPlatformConfig {
         })
 }
 
+fn is_missing_app_config_table_error(error: &str) -> bool {
+    error.contains("relation \"app_config\" does not exist")
+}
+
 fn row_value(row: &tokio_postgres::Row, column: &str, fallback: Value) -> Value {
     row.try_get::<_, Value>(column).unwrap_or(fallback)
 }
@@ -877,14 +881,18 @@ async fn fetch_platform_config(config: &Config) -> Result<TradingPlatformConfig,
         return Ok(default_platform_config());
     };
     let client = connect_postgres(config).await?;
-    fetch_platform_config_from_app_config(&client, config)
-        .await?
-        .ok_or_else(|| {
-            format!(
-                "missing active app_config row scope={} key={}",
-                config.app_config_scope, config.app_config_key
-            )
-        })
+    match fetch_platform_config_from_app_config(&client, config).await {
+        Ok(Some(next)) => Ok(next),
+        Ok(None) => Err(format!(
+            "missing active app_config row scope={} key={}",
+            config.app_config_scope, config.app_config_key
+        )),
+        Err(error) if is_missing_app_config_table_error(&error) => {
+            eprintln!("trading app_config table is missing; using built-in platform defaults");
+            Ok(default_platform_config())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn store_platform_config(state: &AppState, next: TradingPlatformConfig) -> Result<(), String> {
