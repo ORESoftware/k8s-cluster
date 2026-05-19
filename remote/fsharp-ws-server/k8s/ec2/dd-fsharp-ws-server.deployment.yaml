@@ -7,6 +7,8 @@ metadata:
     app: dd-fsharp-ws-server
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: dd-fsharp-ws-server
@@ -56,12 +58,16 @@ spec:
               # (and re-deploys) don't trip over each other writing into the
               # read-only repo mount.
               OUT=/tmp/dd-fsharp-ws-server
+              OBJ=/tmp/dd-fsharp-ws-server-obj
               if [ ! -f "$OUT/dd-fsharp-ws-server.dll" ]; then
                 echo "Publishing dd-fsharp-ws-server with dotnet..."
+                mkdir -p "$OUT" "$OBJ"
                 dotnet publish DdFsharpWsServer.fsproj \
                     -c Release \
                     -o "$OUT" \
-                    /p:UseAppHost=false
+                    /p:UseAppHost=false \
+                    /p:BaseIntermediateOutputPath="$OBJ/" \
+                    /p:MSBuildProjectExtensionsPath="$OBJ/"
               fi
               exec dotnet "$OUT/dd-fsharp-ws-server.dll"
           env:

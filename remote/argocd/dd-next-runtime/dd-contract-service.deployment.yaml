@@ -39,6 +39,7 @@ spec:
           args:
             - |
               set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               cd /opt/dd-next-1/remote/contract-service-rs
               export CARGO_HOME=/var/cache/dd-contract-service/cargo
               export CARGO_TARGET_DIR=/var/cache/dd-contract-service/target
@@ -75,7 +76,7 @@ spec:
               containerPort: 8101
           resources:
             requests:
-              cpu: 100m
+              cpu: 50m
               memory: 128Mi
             limits:
               cpu: '1'
