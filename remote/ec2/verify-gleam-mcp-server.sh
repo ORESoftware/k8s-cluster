@@ -176,6 +176,12 @@ curl -fsS "http://127.0.0.1:${local_port}/mcp" | grep -q '"human_access_policy"'
 
 curl -fsS \
   -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":42,"method":"tools/list"}' \
+  "http://127.0.0.1:${local_port}/mcp" \
+  | grep -q '"id":42'
+
+curl -fsS \
+  -H 'content-type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"human_access_policy","arguments":{}}}' \
   "http://127.0.0.1:${local_port}/mcp" \
   | grep -q '"elevatedMcpToolsEnabled":false'

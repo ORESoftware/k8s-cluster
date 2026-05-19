@@ -276,6 +276,8 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Verifier, /kubectl get clusterrolebindings -o json/);
   assert.match(ec2Verifier, /human_access_policy/);
   assert.match(ec2Verifier, /kubernetes_inventory/);
+  assert.match(ec2Verifier, /--data '\{"jsonrpc":"2\.0","id":42,"method":"tools\/list"\}'/);
+  assert.match(ec2Verifier, /grep -q '"id":42'/);
 });
 
 test('Gleam MCP server is exposed through gateway and observability', async () => {
