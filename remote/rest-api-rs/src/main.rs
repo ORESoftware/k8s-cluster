@@ -2439,48 +2439,68 @@ fn configured_secret_list(keys: &[&str]) -> Vec<String> {
     out
 }
 
-fn openai_api_key_for_embeddings() -> Option<String> {
-    configured_secret_list(&["OPENAI_API_KEYS_JSON", "OPENAI_API_KEY"])
-        .into_iter()
-        .next()
-}
-
 async fn embed_context_query(prompt: &str) -> Result<(String, Vec<f64>), String> {
-    let api_key = openai_api_key_for_embeddings()
-        .ok_or_else(|| "no OpenAI key configured for context embeddings".to_string())?;
+    let api_keys = configured_secret_list(&["OPENAI_API_KEYS_JSON", "OPENAI_API_KEY"]);
+    if api_keys.is_empty() {
+        return Err("no OpenAI key configured for context embeddings".to_string());
+    }
     let model = agent_context_embedding_model();
     let base_url = first_env(&["OPENAI_BASE_URL"])
         .unwrap_or_else(|| "https://api.openai.com/v1".to_string())
         .trim_end_matches('/')
         .to_string();
-    let response = reqwest::Client::new()
-        .post(format!("{base_url}/embeddings"))
-        .bearer_auth(api_key)
-        .json(&json!({
-            "model": model,
-            "input": prompt,
-        }))
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    let status = response.status();
-    let body = response.text().await.map_err(|error| error.to_string())?;
-    if !status.is_success() {
-        return Err(format!(
-            "embedding request failed with HTTP {}",
-            status.as_u16()
-        ));
+    let client = reqwest::Client::new();
+    let total_keys = api_keys.len();
+    let mut last_error = String::new();
+    for (index, api_key) in api_keys.into_iter().enumerate() {
+        let response = client
+            .post(format!("{base_url}/embeddings"))
+            .bearer_auth(api_key)
+            .json(&json!({
+                "model": model,
+                "input": prompt,
+            }))
+            .send()
+            .await;
+        let response = match response {
+            Ok(value) => value,
+            Err(error) => {
+                last_error = format!("key {}/{} transport error: {error}", index + 1, total_keys);
+                continue;
+            }
+        };
+        let status = response.status();
+        let body = response.text().await.map_err(|error| error.to_string())?;
+        if !status.is_success() {
+            last_error = format!(
+                "key {}/{} failed with HTTP {}",
+                index + 1,
+                total_keys,
+                status.as_u16()
+            );
+            continue;
+        }
+        let value = serde_json::from_str::<Value>(&body).map_err(|error| error.to_string())?;
+        let Some(embedding) = value
+            .get("data")
+            .and_then(Value::as_array)
+            .and_then(|items| items.first())
+            .and_then(|item| item.get("embedding"))
+            .and_then(json_embedding_to_vec)
+            .filter(|values| !values.is_empty())
+        else {
+            last_error = format!(
+                "key {}/{} returned no numeric embedding vector",
+                index + 1,
+                total_keys
+            );
+            continue;
+        };
+        return Ok((model, embedding));
     }
-    let value = serde_json::from_str::<Value>(&body).map_err(|error| error.to_string())?;
-    let embedding = value
-        .get("data")
-        .and_then(Value::as_array)
-        .and_then(|items| items.first())
-        .and_then(|item| item.get("embedding"))
-        .and_then(json_embedding_to_vec)
-        .filter(|values| !values.is_empty())
-        .ok_or_else(|| "embedding response did not include a numeric vector".to_string())?;
-    Ok((model, embedding))
+    Err(format!(
+        "all {total_keys} OpenAI embedding key(s) failed; last error: {last_error}"
+    ))
 }
 
 fn json_embedding_to_vec(value: &Value) -> Option<Vec<f64>> {
