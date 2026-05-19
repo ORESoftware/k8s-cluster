@@ -8,8 +8,11 @@ on:
       - ".github/workflows/refresh-remote-web-home-local-image.yml"
       - "remote/argocd/apps/dd-next-runtime.application.yaml"
       - "remote/argocd/dd-next-runtime/**"
+      - "remote/container-pool-rs/**"
       - "remote/dev-server/**"
+      - "remote/idle-reaper-rs/**"
       - "remote/k8s/**"
+      - "remote/queue-consumer-rs/**"
       - "remote/rest-api-rs/**"
       - "remote/web-home-rs/**"
   workflow_dispatch:
