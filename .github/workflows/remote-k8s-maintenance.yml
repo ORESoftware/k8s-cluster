@@ -69,9 +69,9 @@ jobs:
               "echo '=== recent default events ==='",
               "sudo -u ec2-user -H bash -lc 'kubectl get events -n default --sort-by=.lastTimestamp | tail -160'",
               "echo '=== pod describes and logs ==='",
-              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -140\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=140\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=140\" || true; done",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -140\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=140\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=140 2>/dev/null\" || true; done",
               "echo '=== AWS secret candidates ==='",
-              "aws secretsmanager list-secrets --region us-east-1 --query 'SecretList[?contains(Name, `gleam`) || contains(Name, `mcp`) || contains(Name, `remote-dev`)].Name' --output text || true"
+              "for s in dd/remote-dev/gleamlang-server-secrets; do aws secretsmanager describe-secret --region us-east-1 --secret-id \"$s\" --query Name --output text 2>/dev/null || true; done"
             ]
           }
           JSON
