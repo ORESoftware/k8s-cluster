@@ -21,6 +21,7 @@ on:
           - seed-container-pool-config
           - sync-agent-gh-pat
           - sync-agent-model-keys
+          - verify-gleam-mcp-server
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false
@@ -296,6 +297,18 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-fsharp-ws-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-gleam-mcp-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-gleam-mcp-server)
+              python3 - <<PY > /tmp/remote-k8s-commands.json
+          import json
+          rev = ${TARGET_REVISION@Q}
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && remote/ec2/verify-gleam-mcp-server.sh'",
           ]
           print(json.dumps({"commands": commands}))
           PY

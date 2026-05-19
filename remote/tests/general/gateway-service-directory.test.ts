@@ -735,6 +735,9 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.doesNotMatch(refreshWorkflow, /kubectl apply -f remote\/argocd\/dd-next-runtime/);
   assert.match(refreshWorkflow, /aws ssm send-command/);
   assert.match(refreshWorkflow, /aws ssm get-command-invocation/);
+  assert.match(maintenanceWorkflow, /-\s*verify-gleam-mcp-server/);
+  assert.match(maintenanceWorkflow, /verify-gleam-mcp-server\)/);
+  assert.match(maintenanceWorkflow, /remote\/ec2\/verify-gleam-mcp-server\.sh/);
   assert.doesNotMatch(deployment, /REMOTE_REST_API_URL/);
   assert.doesNotMatch(deployment, /dd-remote-web-home-secrets/);
   assert.match(restDeployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
