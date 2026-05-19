@@ -257,7 +257,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(opencodeRunner, /provider: 'opencode-ai-sdk'/);
   assert.match(opencodeRunner, /tools: createWorkspaceTools\(opts\.cwd, opts\.emit\)/);
   assert.match(opencodeRunner, /stopWhen: stepCountIs\(8\)/);
-  assert.match(genericRunner, /DEFAULT_GENERIC_AI_SDK_SOURCES = \[[\s\S]*id: 'deepseek'[\s\S]*'deepseek-v4-pro'[\s\S]*id: 'qwen'[\s\S]*'qwen3\.6-max-preview'[\s\S]*id: 'xai'[\s\S]*'grok-4\.3'/);
+  assert.match(genericRunner, /DEFAULT_GENERIC_AI_SDK_SOURCES = \[[\s\S]*id: 'deepseek'[\s\S]*'deepseek-v4-flash'[\s\S]*'deepseek-v4-pro'[\s\S]*id: 'qwen'[\s\S]*'qwen3\.6-max-preview'[\s\S]*id: 'xai'[\s\S]*'grok-4\.3'[\s\S]*'grok-code-fast-1'[\s\S]*'grok-4-fast-reasoning'[\s\S]*'grok-4-fast-non-reasoning'/);
   assert.match(genericRunner, /createOpenAICompatible/);
   assert.match(genericRunner, /model: provider\(modelId\)/);
   assert.match(genericRunner, /provider: 'generic-ai-sdk'/);
@@ -302,11 +302,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(secretsTemplate, /OPENCODE_API_KEYS_JSON/);
   assert.match(secretsTemplate, /OPENCODE_MODELS:\s*"big-pickle,deepseek-v4-flash-free,minimax-m2\.5-free,nemotron-3-super-free,qwen3\.6-plus-free"/);
   assert.match(secretsTemplate, /DEEPSEEK_API_KEYS_JSON/);
-  assert.match(secretsTemplate, /DEEPSEEK_MODELS:\s*"deepseek-v4-pro,deepseek-v4-flash"/);
+  assert.match(secretsTemplate, /DEEPSEEK_MODELS:\s*"deepseek-v4-flash,deepseek-v4-pro"/);
   assert.match(secretsTemplate, /DASHSCOPE_API_KEYS_JSON/);
   assert.match(secretsTemplate, /QWEN_MODELS:\s*"qwen3\.6-max-preview,qwen3\.6-plus,qwen3\.6-flash"/);
   assert.match(secretsTemplate, /XAI_API_KEYS_JSON/);
-  assert.match(secretsTemplate, /XAI_MODELS:\s*"grok-4\.3,grok-code-fast-1,grok-4-fast"/);
+  assert.match(secretsTemplate, /XAI_MODELS:\s*"grok-4\.3,grok-code-fast-1,grok-4-fast-reasoning,grok-4-fast-non-reasoning,grok-4"/);
   assert.match(secretsTemplate, /GEMINI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
   assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);

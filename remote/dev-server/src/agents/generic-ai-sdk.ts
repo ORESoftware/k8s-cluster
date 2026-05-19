@@ -24,9 +24,10 @@ export const DEFAULT_GENERIC_AI_SDK_SOURCES = [
   },
   {
     id: 'deepseek',
-    displayName: 'DeepSeek',
+    displayName: 'DeepSeek V4',
     baseURL: 'https://api.deepseek.com',
-    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+    // V4 Flash is the value default; Pro remains in rotation for harder coding tasks.
+    models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
   },
   {
     id: 'qwen',
@@ -36,9 +37,15 @@ export const DEFAULT_GENERIC_AI_SDK_SOURCES = [
   },
   {
     id: 'xai',
-    displayName: 'xAI Grok',
+    displayName: 'Grok 4.x',
     baseURL: 'https://api.x.ai/v1',
-    models: ['grok-4.3', 'grok-code-fast-1', 'grok-4-fast'],
+    models: [
+      'grok-4.3',
+      'grok-code-fast-1',
+      'grok-4-fast-reasoning',
+      'grok-4-fast-non-reasoning',
+      'grok-4',
+    ],
   },
 ] as const;
 

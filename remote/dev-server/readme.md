@@ -161,8 +161,8 @@ agent edits.
 | Provider           | Status            | Auth                                                      | Notes                                                                                            |
 | ------------------ | ----------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `gemini-sdk`       | working           | `GOOGLE_API_KEY` or `GEMINI_API_KEY` (+ optional `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`) | Model-only response runner. It cannot edit the workspace; quota/rate-limit failures retry once with `gemini-3.1-flash-lite`. |
-| `generic-ai-sdk`   | working           | Provider-specific JSON arrays such as `DEEPSEEK_API_KEYS_JSON`, `DASHSCOPE_API_KEYS_JSON`, and `XAI_API_KEYS_JSON` | Uses `ai` + `@ai-sdk/openai-compatible` against OpenCode Zen, DeepSeek V4, Qwen 3.6 Max, and Grok 4.x endpoints. Model-only. |
-| `opencode-ai-sdk`  | working           | `OPENCODE_API_KEY` (+ optional `OPENCODE_MODELS` / `OPENCODE_BASE_URL`) | Uses `ai` + `@ai-sdk/openai-compatible` against OpenCode Zen. Model-only; default model order is `big-pickle`, `deepseek-v4-flash-free`, `minimax-m2.5-free`, `nemotron-3-super-free`, `qwen3.6-plus-free`. |
+| `generic-ai-sdk`   | working           | Provider-specific JSON arrays such as `DEEPSEEK_API_KEYS_JSON`, `DASHSCOPE_API_KEYS_JSON`, and `XAI_API_KEYS_JSON` | Uses `ai` + `@ai-sdk/openai-compatible` against OpenCode Zen, DeepSeek V4, Qwen 3.6 Max, and Grok 4.x endpoints with bounded workspace tools for file inspection and edits. |
+| `opencode-ai-sdk`  | working           | `OPENCODE_API_KEY` (+ optional `OPENCODE_MODELS` / `OPENCODE_BASE_URL`) | Uses `ai` + `@ai-sdk/openai-compatible` against OpenCode Zen with bounded workspace tools; default model order is `big-pickle`, `deepseek-v4-flash-free`, `minimax-m2.5-free`, `nemotron-3-super-free`, `qwen3.6-plus-free`. |
 | `claude-sdk`       | working           | `ANTHROPIC_API_KEY`                                       | Uses `@anthropic-ai/claude-agent-sdk` with structured streaming and an explicit tool allowlist.  |
 | `claude-cli`       | working           | `ANTHROPIC_API_KEY`                                       | Spawns the `claude` binary installed in the Dockerfile. Good fallback if SDK behavior regresses. |
 | `openai-sdk`       | working (default/primary fallback) | `OPENAI_API_KEY` (+ optional `OPENAI_MODEL`)              | Uses `@openai/agents` with local shell/apply-patch tools scoped to the thread workspace. |
@@ -190,9 +190,9 @@ agent edits.
 | `OPENCODE_API_KEYS_JSON` | Optional JSON array of OpenCode keys. Tried before `OPENCODE_API_KEY`; `OPENCODE_ZEN_API_KEYS_JSON` is also accepted.     |
 | `OPENCODE_BASE_URL` | Optional. Defaults to `https://opencode.ai/zen/v1`.                                                                        |
 | `OPENCODE_MODELS`   | Optional JSON array or comma/newline separated OpenCode model list. Defaults to five free/low-cost Zen models.             |
-| `DEEPSEEK_API_KEYS_JSON` | Optional JSON array of DeepSeek keys. Tried before `DEEPSEEK_API_KEY` by `generic-ai-sdk`. Defaults to `deepseek-v4-pro,deepseek-v4-flash`. |
+| `DEEPSEEK_API_KEYS_JSON` | Optional JSON array of DeepSeek keys. Tried before `DEEPSEEK_API_KEY` by `generic-ai-sdk`. Defaults to `deepseek-v4-flash,deepseek-v4-pro`. |
 | `DASHSCOPE_API_KEYS_JSON` | Optional JSON array of Alibaba Model Studio / DashScope keys. `QWEN_API_KEYS_JSON` and `ALIBABA_API_KEYS_JSON` are also accepted. |
-| `XAI_API_KEYS_JSON` | Optional JSON array of xAI keys. `GROK_API_KEYS_JSON` is also accepted. Defaults to `grok-4.3,grok-code-fast-1,grok-4-fast`. |
+| `XAI_API_KEYS_JSON` | Optional JSON array of xAI keys. `GROK_API_KEYS_JSON` is also accepted. Defaults to `grok-4.3,grok-code-fast-1,grok-4-fast-reasoning,grok-4-fast-non-reasoning,grok-4`. |
 | `THREAD_CONTEXT_BASE_URL` | Optional. Defaults to the in-cluster REST API. Workers call `/api/agents/threads/:threadId/context` before each task. |
 | `THREAD_CONTEXT_LIMIT` | Optional. Defaults to `20` prior tasks.                                                                                  |
 | `THREAD_CONTEXT_MAX_CHARS` | Optional. Defaults to `48000` characters injected into the prompt.                                                   |
