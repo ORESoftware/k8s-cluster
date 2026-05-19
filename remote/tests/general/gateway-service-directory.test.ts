@@ -506,6 +506,12 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     authDeployment,
     /name:\s*DD_AUTH_COOKIE_VALUE[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_COOKIE_VALUE/,
   );
+  assert.match(authDeployment, /name:\s*DD_AUTH_COOKIE_MAX_AGE_SECONDS[\s\S]*value:\s*'3600'/);
+  assert.match(
+    authDeployment,
+    /name:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*optional:\s*true/,
+  );
+  assert.match(authDeployment, /name:\s*DD_AUTH_TOTP_WINDOW_STEPS[\s\S]*value:\s*'1'/);
   const authPinEnvBlock =
     authDeployment.match(/- name: DD_AUTH_PIN[\s\S]*?(?=\n\s*- name:|\n\s*ports:)/)?.[0] ?? '';
   const authCookieValueEnvBlock =
@@ -525,6 +531,9 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(authServer, /fn auth_pin\(\) -> String/);
   assert.match(authServer, /fn cookie_name\(\) -> String/);
   assert.match(authServer, /fn cookie_value\(\) -> String/);
+  assert.match(authServer, /fn valid_totp_code/);
+  assert.match(authServer, /DD_AUTH_TOTP_SECRET_BASE32/);
+  assert.match(authServer, /constant_time_eq/);
   assert.match(authServer, /fn validate_required_config\(\)/);
   assert.match(authServer, /validate_required_config\(\);/);
   assert.doesNotMatch(authServer, /DD_AUTH_PIN"\)\.unwrap_or_else/);

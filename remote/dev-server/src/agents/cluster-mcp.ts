@@ -3,7 +3,9 @@ export const CLUSTER_MCP_SERVER_NAME = 'dd_cluster';
 export const CLUSTER_MCP_TOOL_NAMES = [
   'cluster_status',
   'service_directory',
+  'kubernetes_inventory',
   'kubernetes_deployments',
+  'human_access_policy',
   'telemetry_targets',
   'telemetry_summary',
   'observability_health',
@@ -33,11 +35,12 @@ export function clusterMcpPromptSection(url: string | null | undefined): string 
   }
 
   return [
-    `A read-only DD cluster MCP server is configured as ${CLUSTER_MCP_SERVER_NAME}.`,
+    `A read-only DD EC2 Kubernetes cluster MCP server is configured as ${CLUSTER_MCP_SERVER_NAME}.`,
     `Endpoint: ${url}`,
     'Use it before guessing Kubernetes runtime state, deployment inventory, service wiring, telemetry, or logs.',
     `Available tools: ${CLUSTER_MCP_TOOL_NAMES.join(', ')}.`,
-    'The kubernetes_deployments tool reads all apps/v1 Deployments across namespaces via the MCP service account.',
+    'The kubernetes_inventory tool reads bounded Kubernetes metadata across namespaces via the MCP service account.',
+    'The MCP server is read-only by default; human access for sensitive operations goes through the authenticated gateway, VPN, and bastion flow.',
   ].join('\n');
 }
 

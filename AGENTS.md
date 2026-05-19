@@ -23,10 +23,11 @@ Agents launched by `remote/dev-server` may receive selected Postgres context blo
 the prompt. Treat those as task-specific memory, and treat this file plus the docs above
 as persistent repo memory.
 
-When the cluster MCP server is configured as `dd_cluster`, use it before guessing live
-Kubernetes deployment state, service wiring, or observability status. The MCP surface is
+When the cluster MCP server is configured as `dd_cluster`, use it before guessing live EC2
+Kubernetes deployment state, service wiring, inventory, or observability status. The MCP surface is
 read-only by default; do not add write-capable AWS or Kubernetes tools without a separate
-auth and audit design.
+short-lived human grant, auth, and audit design. Treat minikube overlays as local mirrors only, not
+as the live runtime source of truth.
 
 ## Access Posture
 
@@ -37,5 +38,7 @@ preferred operator path is:
 - Agents receive only the strict env allowlist defined in `remote/dev-server/src/agents`.
 - Humans use the WireGuard VPN plus `dd-bastion` for private cluster access and read-only
   kubeconfig retrieval.
+- Browser access to protected public gateway paths goes through `dd-remote-auth`; configure
+  the optional TOTP seed there when a passphrase plus one-time code is required.
 - Public gateway paths must stay authenticated; avoid exposing MCP or bastion routes as
   unauthenticated Internet services.

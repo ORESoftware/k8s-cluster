@@ -97,8 +97,10 @@ built-in `node` user; mounted workspaces live under `/home/node/workspace`.
 Protected ops paths accept either the legacy `Auth` request header or the browser `dd_auth` cookie.
 Browser document requests redirect to `/auth?return=<original path>`; API/curl callers still
 receive the redacted JSON `{"error":"unauthorized","errMessage":"missing required dd header"}`
-response. The PIN and cookie value must be provided by the `dd-remote-auth-secrets` Kubernetes
-secret, not committed to Git.
+response. The operator passphrase, optional TOTP seed, and cookie value must be provided by the
+`dd-remote-auth-secrets` Kubernetes secret, not committed to Git. When
+`DD_AUTH_TOTP_SECRET_BASE32` is present, `/auth` requires both the passphrase and a current
+six-digit one-time code before setting the short-lived browser cookie.
 
 ## Gateway TLS
 
@@ -221,10 +223,11 @@ passing through the REST API. The runner reads `LAMBDA_DATABASE_URL` from
 definition.
 
 Model-provider keys, GitHub credentials, gateway/shared-auth values, and REST database URLs should
-be updated in AWS Secrets Manager, not in Git. The auth service consumes `DD_AUTH_PIN` and
-`DD_AUTH_COOKIE_VALUE` from `dd-remote-auth-secrets`; rotate those values through AWS Secrets
-Manager or the matching External Secrets path before applying this deployment. After rotation,
-restart the deployments that consume the changed secret so env vars reload.
+be updated in AWS Secrets Manager, not in Git. The auth service consumes `DD_AUTH_PIN`,
+`DD_AUTH_COOKIE_VALUE`, and optional `DD_AUTH_TOTP_SECRET_BASE32` from `dd-remote-auth-secrets`;
+rotate those values through AWS Secrets Manager or the matching External Secrets path before
+applying this deployment. After rotation, restart the deployments that consume the changed secret so
+env vars reload.
 
 ## Reaper and cluster doctor
 

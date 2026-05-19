@@ -95,6 +95,25 @@ function writeMockResponse(req: IncomingMessage, res: ServerResponse): void {
         ],
       }),
     },
+    '/api/v1/pods': {
+      contentType: 'application/json',
+      body: JSON.stringify({
+        apiVersion: 'meta.k8s.io/v1',
+        kind: 'PartialObjectMetadataList',
+        items: [
+          { metadata: { name: 'dd-dev-server-api-abc', namespace: 'default' } },
+          { metadata: { name: 'dd-gleam-mcp-server-def', namespace: 'default' } },
+        ],
+      }),
+    },
+    '/api/v1/namespaces': {
+      contentType: 'application/json',
+      body: JSON.stringify({
+        apiVersion: 'meta.k8s.io/v1',
+        kind: 'PartialObjectMetadataList',
+        items: [{ metadata: { name: 'default' } }, { metadata: { name: 'observability' } }],
+      }),
+    },
   };
   const response = responses[path] ?? {
     status: 404,
@@ -178,6 +197,7 @@ async function withMcpServer(baseUrl: string, callback: (port: number) => Promis
       MCP_OBSERVABILITY_BODY_LIMIT_BYTES: '4096',
       MCP_KUBERNETES_TIMEOUT_MS: '500',
       MCP_KUBERNETES_BODY_LIMIT_BYTES: '4096',
+      MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES: '4096',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -230,7 +250,9 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
       });
       const toolNames = listed.result.tools.map((tool: { name: string }) => tool.name);
       assert.ok(toolNames.includes('telemetry_summary'));
+      assert.ok(toolNames.includes('kubernetes_inventory'));
       assert.ok(toolNames.includes('kubernetes_deployments'));
+      assert.ok(toolNames.includes('human_access_policy'));
       assert.ok(toolNames.includes('grafana_inventory'));
       assert.ok(toolNames.includes('nats_metrics'));
 
@@ -287,6 +309,24 @@ test('Gleam MCP server reads bounded telemetry from observability and NATS endpo
       assert.equal(deployments.result.structuredContent.readOnly, true);
       assert.equal(deployments.result.structuredContent.response.ok, true);
       assert.match(deployments.result.structuredContent.response.sample, /dd-dev-server-api/);
+
+      const inventory = await fetchJson(port, '/mcp', {
+        method: 'POST',
+        body: rpcBody('kubernetes_inventory'),
+        headers: { 'content-type': 'application/json' },
+      });
+      assert.equal(inventory.result.structuredContent.readOnly, true);
+      assert.equal(inventory.result.structuredContent.metadataOnlyRequest, true);
+      assert.match(JSON.stringify(inventory.result.structuredContent.resources), /dd-dev-server-api-abc/);
+      assert.match(JSON.stringify(inventory.result.structuredContent.excluded), /secrets/);
+
+      const accessPolicy = await fetchJson(port, '/mcp', {
+        method: 'POST',
+        body: rpcBody('human_access_policy'),
+        headers: { 'content-type': 'application/json' },
+      });
+      assert.equal(accessPolicy.result.structuredContent.elevatedMcpToolsEnabled, false);
+      assert.match(accessPolicy.result.structuredContent.recommendedHumanProof, /TOTP/);
     });
   });
 });

@@ -90,6 +90,8 @@ spec:
               value: '1500'
             - name: MCP_KUBERNETES_BODY_LIMIT_BYTES
               value: '262144'
+            - name: MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES
+              value: '32768'
           envFrom:
             - secretRef:
                 name: dd-gleam-mcp-server-secrets

@@ -1,8 +1,8 @@
 # DD Gleam MCP Server
 
-This is a standalone Gleam/OTP MCP service for the remote Kubernetes runtime. It runs as its own
-Kubernetes Deployment and Argo CD Application, separate from the Rust web UI, Rust REST API,
-Node.js coding-agent workers, and the Gleam WebSocket service.
+This is a standalone Gleam/OTP MCP service for the EC2 Kubernetes runtime. It runs as its own
+Kubernetes Deployment and Argo CD Application on the EC2 cluster, separate from the Rust web UI,
+Rust REST API, Node.js coding-agent workers, and the Gleam WebSocket service.
 
 ## HTTP Surface
 
@@ -106,7 +106,9 @@ The tools are intentionally read-only:
 
 - `cluster_status`
 - `service_directory`
+- `kubernetes_inventory`
 - `kubernetes_deployments`
+- `human_access_policy`
 - `telemetry_targets`
 - `telemetry_summary`
 - `observability_health`
@@ -116,9 +118,20 @@ The tools are intentionally read-only:
 - `nats_metrics`
 - `trace_backends`
 
-`kubernetes_deployments` reads all `apps/v1` Deployments visible to the MCP service account through
-the in-cluster Kubernetes API. The shipped RBAC grants only `get` and `list` on Deployments and does
-not grant Kubernetes Secret access, pod exec, or mutation verbs.
+`kubernetes_inventory` reads bounded `PartialObjectMetadata` snapshots from the in-cluster
+Kubernetes API for namespaces, nodes, pods, services, endpoints, PVCs/PVs, service accounts, events,
+apps workloads, batch jobs, ingresses, network policies, HPAs, storage classes, and CRDs.
+`kubernetes_deployments` remains the narrower all-Deployment view. The shipped RBAC grants only
+`get` and `list` for the inventory resources. It does not grant Kubernetes Secret access, ConfigMap
+data access, pod logs, pod exec, or mutation verbs. The client requests only
+`PartialObjectMetadataList`; if the API server cannot serve metadata-only content for a resource, the
+tool reports that API error instead of falling back to full objects.
+
+`human_access_policy` describes the human-authenticated gateway/VPN/bastion policy. It never returns
+secret values and does not mint elevated grants. The public gateway already requires either the
+legacy `Auth` header or the `dd_auth` HttpOnly cookie from `dd-remote-auth`; configure
+`DD_AUTH_TOTP_SECRET_BASE32` on that auth service to require passphrase plus a six-digit TOTP code at
+the beginning of a browser session.
 
 | Env var | Default |
 | --- | --- |
@@ -128,6 +141,7 @@ not grant Kubernetes Secret access, pod exec, or mutation verbs.
 | `MCP_KUBERNETES_CA_PATH` | `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt` |
 | `MCP_KUBERNETES_TIMEOUT_MS` | `1500` |
 | `MCP_KUBERNETES_BODY_LIMIT_BYTES` | `262144` |
+| `MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES` | `32768` |
 
 `telemetry_summary`, `observability_health`, `prometheus_up`, `loki_labels`,
 `grafana_inventory`, `nats_metrics`, and `trace_backends` make bounded
@@ -174,14 +188,23 @@ future read-only PG-backed MCP tools.
 
 ## Kubernetes
 
-EC2:
+EC2 is the production/canonical target for MCP:
 
 ```sh
 kubectl apply -f remote/argocd/apps/dd-gleam-mcp-server.application.yaml
 ```
 
-Minikube:
+That Argo CD application must point at `remote/gleam-mcp-server/k8s/ec2` and deploy to namespace
+`default`. From the EC2 host, or from any shell whose kubeconfig points at the EC2 cluster, run:
 
 ```sh
-kubectl apply -f remote/argocd/apps/dd-gleam-mcp-server-minikube.application.yaml
+remote/ec2/verify-gleam-mcp-server.sh
 ```
+
+The verifier refuses obvious local contexts such as `minikube` unless
+`ALLOW_NON_EC2_CONTEXT=true` is set explicitly. It applies the EC2 Argo app, checks that the app
+tracks the EC2 overlay, validates the read-only RBAC shape, waits for rollout, and calls
+`human_access_policy` plus `kubernetes_inventory` through the in-cluster service.
+
+The minikube overlay is only a local mirror for development/rendering. Do not use it for live MCP
+cluster context, agent runtime defaults, or gateway-facing MCP work.

@@ -37,8 +37,6 @@ data:
   USER_ID: "00000000-0000-4000-8000-000000000002"
   IDLE_TIMEOUT_MS: "3600000"
   SKIP_BOOT_GIT_SYNC: "true"
-  AGENT_MCP_URL: "http://dd-gleam-mcp-server.dd-dev-local.svc.cluster.local:8090/mcp"
-  AGENT_MCP_CONNECT_TIMEOUT_MS: "3000"
 ---
 apiVersion: v1
 kind: Secret

@@ -45,8 +45,9 @@ The baseline Kubernetes runtime bundle lives in
 when bootstrapping Argo, then let Git + Argo own runtime Deployment, Service, ConfigMap, and gateway
 changes.
 
-There are also two Gleam/OTP services with their own ArgoCD Application manifests for both Minikube
-and EC2 k8s paths:
+There are also two Gleam/OTP services with their own ArgoCD Application manifests for the EC2 k8s
+runtime. Local minikube mirrors may exist for rendering or development checks, but the live MCP and
+agent cluster-context path is EC2:
 
 - [`gleamlang-server/`](./gleamlang-server/) — WebSocket streaming service.
 - [`gleam-mcp-server/`](./gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools

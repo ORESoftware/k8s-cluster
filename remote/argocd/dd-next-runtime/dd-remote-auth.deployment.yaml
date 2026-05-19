@@ -55,6 +55,16 @@ spec:
                 secretKeyRef:
                   name: dd-remote-auth-secrets
                   key: DD_AUTH_COOKIE_VALUE
+            - name: DD_AUTH_COOKIE_MAX_AGE_SECONDS
+              value: '3600'
+            - name: DD_AUTH_TOTP_SECRET_BASE32
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-auth-secrets
+                  key: DD_AUTH_TOTP_SECRET_BASE32
+                  optional: true
+            - name: DD_AUTH_TOTP_WINDOW_STEPS
+              value: '1'
           ports:
             - name: http
               containerPort: 8083

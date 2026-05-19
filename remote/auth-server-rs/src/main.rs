@@ -2,6 +2,7 @@ use std::{
     env,
     net::SocketAddr,
     sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -11,7 +12,10 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use data_encoding::{BASE32, BASE32_NOPAD};
+use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
+use sha1::Sha1;
 
 static HTTP_REQUESTS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static AUTH_SUCCESSES_TOTAL: AtomicU64 = AtomicU64::new(0);
@@ -26,6 +30,7 @@ struct AuthQuery {
 #[derive(Deserialize)]
 struct PinForm {
     pin: String,
+    totp: Option<String>,
     return_to: Option<String>,
 }
 
@@ -54,9 +59,115 @@ fn cookie_value() -> String {
     required_env("DD_AUTH_COOKIE_VALUE")
 }
 
+fn cookie_max_age_seconds() -> u64 {
+    env::var("DD_AUTH_COOKIE_MAX_AGE_SECONDS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0 && *value <= 86_400)
+        .unwrap_or(3600)
+}
+
+fn totp_secret_base32() -> Option<String> {
+    env::var("DD_AUTH_TOTP_SECRET_BASE32")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn validate_required_config() {
     let _ = auth_pin();
     let _ = cookie_value();
+    if let Some(secret) = totp_secret_base32() {
+        decode_totp_secret(&secret).expect("DD_AUTH_TOTP_SECRET_BASE32 must be valid base32");
+    }
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let max_len = left.len().max(right.len());
+    let mut diff = left.len() ^ right.len();
+    for index in 0..max_len {
+        let left_byte = *left.get(index).unwrap_or(&0);
+        let right_byte = *right.get(index).unwrap_or(&0);
+        diff |= usize::from(left_byte ^ right_byte);
+    }
+    diff == 0
+}
+
+fn normalize_totp_secret(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+fn decode_totp_secret(value: &str) -> Result<Vec<u8>, String> {
+    let normalized = normalize_totp_secret(value);
+    BASE32_NOPAD
+        .decode(normalized.as_bytes())
+        .or_else(|_| BASE32.decode(normalized.as_bytes()))
+        .map_err(|error| format!("invalid TOTP secret: {error}"))
+}
+
+fn current_totp_counter() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        / 30
+}
+
+fn totp_code(secret: &[u8], counter: u64) -> Option<String> {
+    type HmacSha1 = Hmac<Sha1>;
+    let mut mac = HmacSha1::new_from_slice(secret).ok()?;
+    mac.update(&counter.to_be_bytes());
+    let digest = mac.finalize().into_bytes();
+    let offset = usize::from(digest[19] & 0x0f);
+    let binary = (u32::from(digest[offset] & 0x7f) << 24)
+        | (u32::from(digest[offset + 1]) << 16)
+        | (u32::from(digest[offset + 2]) << 8)
+        | u32::from(digest[offset + 3]);
+    Some(format!("{:06}", binary % 1_000_000))
+}
+
+fn valid_totp_code(submitted: Option<&str>, secret_base32: &str) -> bool {
+    let Some(submitted) = submitted.map(str::trim).filter(|value| value.len() == 6) else {
+        return false;
+    };
+    if !submitted.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let Ok(secret) = decode_totp_secret(secret_base32) else {
+        return false;
+    };
+    let counter = current_totp_counter();
+    let window = env::var("DD_AUTH_TOTP_WINDOW_STEPS")
+        .ok()
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|value| *value >= 0 && *value <= 2)
+        .unwrap_or(1);
+    for offset in -window..=window {
+        let Some(candidate_counter) = counter.checked_add_signed(offset) else {
+            continue;
+        };
+        if let Some(candidate) = totp_code(&secret, candidate_counter) {
+            if constant_time_eq(submitted, &candidate) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn auth_form_is_valid(form: &PinForm) -> bool {
+    let pin_ok = constant_time_eq(form.pin.trim(), auth_pin().trim());
+    let totp_ok = match totp_secret_base32() {
+        Some(secret) => valid_totp_code(form.totp.as_deref(), &secret),
+        None => true,
+    };
+    pin_ok && totp_ok
 }
 
 fn safe_return_to(value: Option<String>) -> String {
@@ -142,13 +253,17 @@ fn login_page(return_to: &str, error: Option<&str>) -> Html<String> {
   <body>
     <main>
       <h1>Remote runtime auth</h1>
-      <p>Enter the operator PIN to set the browser cookie and return to <code>{escaped_return}</code>.</p>
+      <p>Enter the operator passphrase to set the browser cookie and return to <code>{escaped_return}</code>.</p>
       {error_html}
       <form method="post" action="/auth">
         <input type="hidden" name="return_to" value="{escaped_return}" />
         <label>
-          PIN
-          <input name="pin" inputmode="numeric" autocomplete="one-time-code" autofocus />
+          Operator passphrase
+          <input name="pin" autocomplete="current-password" autofocus />
+        </label>
+        <label>
+          One-time code
+          <input name="totp" inputmode="numeric" autocomplete="one-time-code" />
         </label>
         <button type="submit">Continue</button>
       </form>
@@ -166,21 +281,22 @@ async fn auth_form(Query(query): Query<AuthQuery>) -> impl IntoResponse {
 
 async fn auth_submit(Form(form): Form<PinForm>) -> Response {
     HTTP_REQUESTS_TOTAL.fetch_add(1, Ordering::Relaxed);
-    let return_to = safe_return_to(form.return_to);
-    if form.pin.trim() != auth_pin() {
+    let return_to = safe_return_to(form.return_to.clone());
+    if !auth_form_is_valid(&form) {
         AUTH_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
         return (
             StatusCode::UNAUTHORIZED,
-            login_page(&return_to, Some("Incorrect PIN")),
+            login_page(&return_to, Some("Incorrect passphrase or one-time code")),
         )
             .into_response();
     }
     AUTH_SUCCESSES_TOTAL.fetch_add(1, Ordering::Relaxed);
 
     let cookie = format!(
-        "{}={}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax; Secure",
+        "{}={}; Path=/; Max-Age={}; HttpOnly; SameSite=Lax; Secure",
         cookie_name(),
-        cookie_value()
+        cookie_value(),
+        cookie_max_age_seconds()
     );
     let mut response = Response::new(axum::body::Body::empty());
     *response.status_mut() = StatusCode::SEE_OTHER;

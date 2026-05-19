@@ -1,6 +1,6 @@
 -module(gleam_mcp_k8s).
 
--export([deployments_json/0]).
+-export([deployments_json/0, human_access_policy_json/0, inventory_json/0]).
 
 -define(DEFAULT_API_URL, <<"https://kubernetes.default.svc">>).
 -define(DEFAULT_DEPLOYMENTS_PATH, <<"/apis/apps/v1/deployments?limit=500">>).
@@ -8,21 +8,100 @@
 -define(DEFAULT_CA_PATH, <<"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt">>).
 -define(DEFAULT_TIMEOUT_MS, 1500).
 -define(DEFAULT_BODY_LIMIT_BYTES, 262144).
+-define(DEFAULT_INVENTORY_BODY_LIMIT_BYTES, 32768).
 
 deployments_json() ->
-    Url = join_url(
-        env_bin("MCP_KUBERNETES_API_URL", ?DEFAULT_API_URL),
-        env_bin("MCP_KUBERNETES_DEPLOYMENTS_PATH", ?DEFAULT_DEPLOYMENTS_PATH)
-    ),
+    Base = env_bin("MCP_KUBERNETES_API_URL", ?DEFAULT_API_URL),
     Limit = env_pos_int("MCP_KUBERNETES_BODY_LIMIT_BYTES", ?DEFAULT_BODY_LIMIT_BYTES),
+    Path = env_bin("MCP_KUBERNETES_DEPLOYMENTS_PATH", ?DEFAULT_DEPLOYMENTS_PATH),
+    resource_json(Base, Limit, <<"deployments">>, <<"all-namespaces">>, Path).
+
+inventory_json() ->
+    Base = env_bin("MCP_KUBERNETES_API_URL", ?DEFAULT_API_URL),
+    Limit = env_pos_int("MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES", ?DEFAULT_INVENTORY_BODY_LIMIT_BYTES),
+    Resources = [resource_entry(Base, Limit, Target) || Target <- inventory_targets()],
+    json_obj([
+        {<<"source">>, <<"kubernetes-api">>},
+        {<<"scope">>, <<"cluster inventory metadata">>},
+        {<<"readOnly">>, true},
+        {<<"metadataOnlyRequest">>, true},
+        {<<"resources">>, {array, Resources}},
+        {<<"excluded">>, {array, [
+            <<"secrets">>,
+            <<"configmaps data">>,
+            <<"pods/exec">>,
+            <<"pods/log">>,
+            <<"mutation verbs">>
+        ]}}
+    ]).
+
+human_access_policy_json() ->
+    json_obj([
+        {<<"source">>, <<"mcp-policy">>},
+        {<<"readOnlyByDefault">>, true},
+        {<<"humanAuthRequiredForPublicGateway">>, true},
+        {<<"humanAuthPath">>, <<"/auth?return=/mcp/home">>},
+        {<<"acceptedGatewayProofs">>, {array, [
+            <<"dd_auth HttpOnly cookie from dd-remote-auth">>,
+            <<"Auth header with the gateway secret for non-browser callers">>
+        ]}},
+        {<<"recommendedHumanProof">>, <<"operator passphrase plus optional TOTP on dd-remote-auth">>},
+        {<<"elevatedMcpToolsEnabled">>, false},
+        {<<"sensitiveKubernetesAccess">>, {array, [
+            <<"Do not expose Kubernetes Secrets through MCP">>,
+            <<"Do not expose pod exec through MCP">>,
+            <<"Use VPN plus dd-bastion or SSM/SSH for human shell access">>
+        ]}},
+        {<<"auditExpectation">>, <<"Add a separate short-lived grant service before enabling any write, secret, log, or exec-capable MCP tool.">>}
+    ]).
+
+inventory_targets() ->
+    [
+        {<<"namespaces">>, <<"cluster">>, <<"/api/v1/namespaces?limit=500">>},
+        {<<"nodes">>, <<"cluster">>, <<"/api/v1/nodes?limit=500">>},
+        {<<"persistentvolumes">>, <<"cluster">>, <<"/api/v1/persistentvolumes?limit=500">>},
+        {<<"serviceaccounts">>, <<"all-namespaces">>, <<"/api/v1/serviceaccounts?limit=500">>},
+        {<<"pods">>, <<"all-namespaces">>, <<"/api/v1/pods?limit=500">>},
+        {<<"services">>, <<"all-namespaces">>, <<"/api/v1/services?limit=500">>},
+        {<<"endpoints">>, <<"all-namespaces">>, <<"/api/v1/endpoints?limit=500">>},
+        {<<"persistentvolumeclaims">>, <<"all-namespaces">>, <<"/api/v1/persistentvolumeclaims?limit=500">>},
+        {<<"events">>, <<"all-namespaces">>, <<"/api/v1/events?limit=500">>},
+        {<<"deployments">>, <<"all-namespaces">>, <<"/apis/apps/v1/deployments?limit=500">>},
+        {<<"daemonsets">>, <<"all-namespaces">>, <<"/apis/apps/v1/daemonsets?limit=500">>},
+        {<<"replicasets">>, <<"all-namespaces">>, <<"/apis/apps/v1/replicasets?limit=500">>},
+        {<<"statefulsets">>, <<"all-namespaces">>, <<"/apis/apps/v1/statefulsets?limit=500">>},
+        {<<"jobs">>, <<"all-namespaces">>, <<"/apis/batch/v1/jobs?limit=500">>},
+        {<<"cronjobs">>, <<"all-namespaces">>, <<"/apis/batch/v1/cronjobs?limit=500">>},
+        {<<"ingresses">>, <<"all-namespaces">>, <<"/apis/networking.k8s.io/v1/ingresses?limit=500">>},
+        {<<"networkpolicies">>, <<"all-namespaces">>, <<"/apis/networking.k8s.io/v1/networkpolicies?limit=500">>},
+        {<<"horizontalpodautoscalers">>, <<"all-namespaces">>, <<"/apis/autoscaling/v2/horizontalpodautoscalers?limit=500">>},
+        {<<"storageclasses">>, <<"cluster">>, <<"/apis/storage.k8s.io/v1/storageclasses?limit=500">>},
+        {<<"customresourcedefinitions">>, <<"cluster">>, <<"/apis/apiextensions.k8s.io/v1/customresourcedefinitions?limit=500">>}
+    ].
+
+resource_json(Base, Limit, Name, Scope, Path) ->
+    Url = join_url(Base, Path),
     Result = kubernetes_get(Url, Limit),
     json_obj([
         {<<"source">>, <<"kubernetes-api">>},
-        {<<"scope">>, <<"all-namespaces deployments">>},
+        {<<"resource">>, Name},
+        {<<"scope">>, Scope},
         {<<"url">>, Url},
         {<<"readOnly">>, true},
+        {<<"metadataOnlyRequest">>, true},
         {<<"response">>, raw(Result)}
     ]).
+
+resource_entry(Base, Limit, {Name, Scope, Path}) ->
+    Url = join_url(Base, Path),
+    Result = kubernetes_get(Url, Limit),
+    raw(json_obj([
+        {<<"name">>, Name},
+        {<<"scope">>, Scope},
+        {<<"path">>, Path},
+        {<<"url">>, Url},
+        {<<"response">>, raw(Result)}
+    ])).
 
 kubernetes_get(UrlBin, Limit) ->
     _ = application:ensure_all_started(inets),
@@ -36,7 +115,7 @@ kubernetes_get(UrlBin, Limit) ->
         {ok, Token0} ->
             Token = binary:replace(Token0, <<"\n">>, <<>>, [global]),
             Headers = [
-                {"accept", "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1, application/json"},
+                {"accept", "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"},
                 {"authorization", binary_to_list(<<"Bearer ", Token/binary>>)}
             ],
             HttpOptions = [
@@ -132,6 +211,8 @@ json_pair(Key, Value) ->
 
 json_value(Value) when is_binary(Value) -> json_string(Value);
 json_value({raw, Value}) -> Value;
+json_value({array, Values}) ->
+    <<"[", (join([json_value(Value) || Value <- Values], <<",">>))/binary, "]">>;
 json_value(Value) when is_integer(Value) -> integer_to_binary(Value);
 json_value(true) -> <<"true">>;
 json_value(false) -> <<"false">>;

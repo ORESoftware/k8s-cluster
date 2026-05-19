@@ -250,9 +250,12 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(genericRunner, /model: provider\(modelId\)/);
   assert.match(genericRunner, /provider: 'generic-ai-sdk'/);
   assert.match(clusterMcp, /CLUSTER_MCP_SERVER_NAME = 'dd_cluster'/);
+  assert.match(clusterMcp, /kubernetes_inventory/);
   assert.match(clusterMcp, /kubernetes_deployments/);
+  assert.match(clusterMcp, /human_access_policy/);
   assert.match(clusterMcp, /AGENT_MCP_URL/);
-  assert.match(clusterMcp, /read-only DD cluster MCP server/);
+  assert.match(clusterMcp, /read-only DD EC2 Kubernetes cluster MCP server/);
+  assert.match(clusterMcp, /authenticated gateway, VPN, and bastion flow/);
   assert.match(openaiSdkRunner, /MCPServerStreamableHttp/);
   assert.match(openaiSdkRunner, /connectMcpServers/);
   assert.match(openaiSdkRunner, /mcpServers/);
@@ -390,7 +393,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   );
   assert.doesNotMatch(restServer, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(restServer, /apt-get update/);
-  assert.match(localMinikube, /AGENT_MCP_URL:\s*"http:\/\/dd-gleam-mcp-server\.dd-dev-local\.svc\.cluster\.local:8090\/mcp"/);
+  assert.doesNotMatch(localMinikube, /AGENT_MCP_URL|AGENT_MCP_CONNECT_TIMEOUT_MS/);
   assert.match(agentsMd, /docs\/\*\.md/);
   assert.match(agentsMd, /agents\/\*\.md/);
   assert.match(agentsMd, /dd_cluster/);
