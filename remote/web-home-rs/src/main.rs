@@ -2371,6 +2371,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (data?.errors?.length) return `worker state unavailable: ${data.errors[0]}`;
         if (!deployment.name) return "worker deployment not created yet";
         if (summary.desiredReplicas === 0) return "worker sleeping: desired replicas 0";
+        const unscheduled = pods.map((pod) => ({
+          pod: pod.name,
+          condition: (pod.conditions || []).find((condition) => condition.type === "PodScheduled" && condition.status === "False"),
+        })).find((item) => item.condition);
+        if (unscheduled) {
+          const reason = unscheduled.condition.reason || "unscheduled";
+          const message = unscheduled.condition.message || "scheduler has not placed this pod yet";
+          return `worker pending: ${unscheduled.pod} ${reason}: ${message}`;
+        }
         const waiting = pods.flatMap((pod) => (pod.containers || []).map((container) => ({
           pod: pod.name,
           name: container.name,

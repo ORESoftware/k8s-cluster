@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-19-queued-ui-events'
+        dd.dev/telemetry-revision: '2026-05-19-worker-scheduling-diagnostics'
       labels:
         app: dd-remote-queue-consumer
     spec:

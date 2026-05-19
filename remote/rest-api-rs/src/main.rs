@@ -1075,6 +1075,39 @@ fn summarize_service(service: &Value) -> Value {
 }
 
 fn summarize_pod(pod: &Value) -> Value {
+    let conditions = json_at(pod, &["status", "conditions"])
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|condition| {
+                    json!({
+                        "type": json_string(condition, "type"),
+                        "status": json_string(condition, "status"),
+                        "reason": json_string(condition, "reason"),
+                        "message": json_string(condition, "message"),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let init_containers = json_at(pod, &["status", "initContainerStatuses"])
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|container| {
+                    json!({
+                        "name": json_string(container, "name"),
+                        "ready": container.get("ready").and_then(Value::as_bool).unwrap_or(false),
+                        "restartCount": json_at_i64(container, &["restartCount"]).unwrap_or(0),
+                        "state": container.get("state").cloned().unwrap_or_else(|| json!({})),
+                        "lastState": container.get("lastState").cloned().unwrap_or_else(|| json!({})),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let containers = json_at(pod, &["status", "containerStatuses"])
         .and_then(Value::as_array)
         .map(|items| {
@@ -1100,6 +1133,8 @@ fn summarize_pod(pod: &Value) -> Value {
         "hostIp": json_at_string(pod, &["status", "hostIP"]),
         "startTime": json_at_string(pod, &["status", "startTime"]),
         "deletionTimestamp": json_at_string(pod, &["metadata", "deletionTimestamp"]),
+        "conditions": conditions,
+        "initContainers": init_containers,
         "containers": containers,
     })
 }
@@ -1245,7 +1280,7 @@ fn render_thread_deployment(
                             { "name": "tmp-convos", "mountPath": "/tmp/convos" }
                         ],
                         "resources": {
-                            "requests": { "cpu": "1", "memory": "2Gi" },
+                            "requests": { "cpu": "250m", "memory": "768Mi" },
                             "limits": { "cpu": "2", "memory": "4Gi" }
                         },
                         "startupProbe": {

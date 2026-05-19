@@ -46,10 +46,10 @@ remote/dev-server/
 
 ## Build
 
-The build needs a GitHub deploy key with read access to the configured repo so the image can
-pre-clone that repo and run `pnpm install`. Use BuildKit's `--secret` flag — never `--build-arg`
-— so the key never lands in any image layer. `DD_REPO_URL` is intentionally required; there is no
-default repo baked into this image.
+The build can optionally receive a GitHub deploy key and `DD_REPO_URL` so the image can
+pre-clone that repo and run `pnpm install`. Use BuildKit's `--secret` flag for the key, never
+`--build-arg`, so the key never lands in any image layer. If `DD_REPO_URL` is omitted, the image
+is a generic worker base and the container clones the configured repo at runtime.
 
 ```bash
 DOCKER_BUILDKIT=1 docker build \
@@ -127,7 +127,7 @@ workflow without a failing package install.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY`  | Auth for the `claude` CLI the server spawns.                                                                                 |
 | `SERVER_AUTH_SECRET` | Shared secret presented by Vercel in `X-Server-Auth`. Random, ≥ 32 chars.                                                    |
-| `DD_REPO_URL`        | Git URL for the repo this image and thread container are pinned to. Required at build and runtime.                          |
+| `DD_REPO_URL`        | Git URL for the repo this thread container is pinned to. Required at runtime; optional at build time for a generic worker image. |
 | `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against `DD_REPO_URL`. The server writes this to `~/.ssh/id_ed25519` at boot. |
 | `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope it to the configured repo with Contents + Pull Requests.            |
 

@@ -34,6 +34,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const lockfile = await readRepoFile('remote/dev-server/pnpm-lock.yaml');
   const brokerServer = await readRepoFile('remote/agent-worker-broker-rs/src/main.rs');
   const idleReaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
+  const webHome = await readRepoFile('remote/web-home-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
@@ -139,14 +140,16 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(echoRunner, /type: ['"]assistant_response['"]/);
   assert.match(echoRunner, /provider: ['"]echo['"]/);
 
-  assert.match(dockerfile, /Baked at \/home\/node\/repo-template \(NOT under workspace\/\)/);
+  assert.match(dockerfile, /Optionally bake a "recent baseline" repo/);
   assert.match(dockerfile, /corepack prepare pnpm@9\.15\.4 --activate/);
   assert.doesNotMatch(dockerfile, /corepack prepare pnpm@9 --activate/);
   assert.match(dockerfile, /ARG DD_REPO_CACHE_BUST=manual/);
   assert.match(dockerfile, /ARG DD_REPO_URL\s*\n/);
   assert.doesNotMatch(dockerfile, /ARG DD_REPO_URL=git@github\.com/);
   assert.doesNotMatch(dockerfile, /ENV DD_REPO_URL=/);
-  assert.match(dockerfile, /test -n "\$DD_REPO_URL"/);
+  assert.doesNotMatch(dockerfile, /test -n "\$DD_REPO_URL"/);
+  assert.match(dockerfile, /if \[ -n "\$DD_REPO_URL" \]; then/);
+  assert.match(dockerfile, /DD_REPO_URL not provided; building generic repo-configured worker base/);
   assert.match(localDockerfile, /ARG DD_REPO_URL\s*\n/);
   assert.doesNotMatch(localDockerfile, /ARG DD_REPO_URL=git@github\.com/);
   assert.match(localDockerfile, /test -n "\$DD_REPO_URL"/);
@@ -219,7 +222,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(restServer, /docker\.io\/library\/dd-dev-server:dev/);
   assert.match(restServer, /"mountPath": "\/home\/node\/workspace"/);
   assert.match(restServer, /"runAsUser": 1000/);
+  assert.match(restServer, /"requests": \{ "cpu": "250m", "memory": "768Mi" \}/);
+  assert.match(restServer, /"limits": \{ "cpu": "2", "memory": "4Gi" \}/);
   assert.match(restServer, /"startupProbe": \{[\s\S]*"failureThreshold": 180/);
+  assert.match(webHome, /PodScheduled/);
+  assert.match(webHome, /worker pending:/);
   assert.match(restServer, /"THREAD_CONTEXT_BASE_URL", "value": "http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082"/);
   assert.match(restServer, /"NATS_EVENT_SUBJECT", "value": "dd\.remote\.events"/);
   assert.match(restServer, /"envFrom": \[/);
