@@ -2277,10 +2277,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           return out;
         }
         if (typeof value === "object") {
-          for (const key of ["text", "content", "outputText", "output_text", "delta", "message", "result", "summary", "status", "error"]) {
-            if (Object.prototype.hasOwnProperty.call(value, key)) collectText(value[key], out, depth + 1);
+          const textKeys = ["text", "content", "outputText", "output_text", "delta", "message", "result", "summary", "status", "error"];
+          let sawTextKey = false;
+          for (const key of textKeys) {
+            if (Object.prototype.hasOwnProperty.call(value, key)) {
+              sawTextKey = true;
+              collectText(value[key], out, depth + 1);
+            }
           }
-          if (!out.length) {
+          if (!out.length && !sawTextKey) {
             for (const item of Object.values(value).slice(0, 10)) collectText(item, out, depth + 1);
           }
         }
@@ -2300,6 +2305,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (text.length) {
           const values = options.preserveWhitespace ? text : text.map((value) => value.trim());
           return [...new Set(values)].join("\n").trim();
+        }
+        if (payload.kind === "claude" && raw && typeof raw === "object") {
+          const finishReason = raw.finishReason || raw.candidates?.[0]?.finishReason;
+          if (finishReason) return `model stream ${String(finishReason).toLowerCase()}`;
         }
         try {
           return JSON.stringify(payload, null, 2);

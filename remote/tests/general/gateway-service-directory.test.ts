@@ -1011,6 +1011,9 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.doesNotMatch(threadsJs, /terminalWindow/);
   assert.match(server, /sendFeedback\(seq, vote, button\)/);
   assert.match(server, /collectText\(raw\)/);
+  assert.match(server, /let sawTextKey = false/);
+  assert.match(server, /if \(!out\.length && !sawTextKey\) \{/);
+  assert.match(server, /model stream \$\{String\(finishReason\)\.toLowerCase\(\)\}/);
   assert.match(server, /const AGENT_TEXT_JOIN_DELAY_MS = 1200/);
   assert.match(server, /const AGENT_TEXT_MAX_BUFFER_MS = 3000/);
   assert.match(server, /function shouldCoalesceAgentText\(row, text\) \{/);
