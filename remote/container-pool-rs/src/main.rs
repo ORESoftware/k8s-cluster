@@ -2493,7 +2493,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         eprintln!("container pool initial config refresh failed: {error}");
         record_config_error(&state, error).await;
     }
-    reconcile_all(&state).await;
+    let initial_reconcile_state = state.clone();
+    tokio::spawn(async move {
+        reconcile_all(&initial_reconcile_state).await;
+    });
 
     tokio::spawn(run_config_refresh_loop(state.clone()));
     tokio::spawn(run_reconcile_loop(state.clone()));
