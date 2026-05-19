@@ -57,6 +57,7 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /shadow: bool/);
   assert.match(server, /direct_dispatch: bool/);
   assert.match(server, /publish_task_shadow_to_nats\(&request, branch\.as_deref\(\)\)/);
+  assert.match(server, /reqwest::Client::builder\(\)[\s\S]*\.timeout\(std::time::Duration::from_secs\(2\)\)/);
   assert.match(server, /Duration::from_secs\(2\)/);
 });
 
