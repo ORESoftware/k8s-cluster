@@ -170,6 +170,8 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'sudo ss -ltnp | grep -E \":8102\\\\b\" || true'",
               "echo '=== managed nerdctl workers ==='",
               "sudo -u ec2-user -H bash -lc 'sudo nerdctl -n k8s.io ps -a --format \"{{.ID}} {{.Status}} {{.Names}}\" | grep -E \"dd-pool|dd-container-pool\" || true'",
+              "echo '=== managed worker container details ==='",
+              "sudo -u ec2-user -H bash -lc 'for c in $(sudo nerdctl -n k8s.io ps -a --format \"{{.Names}}\" | grep \"^dd-pool\" || true); do echo === $c ===; sudo nerdctl -n k8s.io inspect \"$c\" 2>/dev/null | jq -r \".[0] | {Name:.Name, Image:.Image, Created:.Created, Args:.Args, State:.State, Status:.Status}\" || true; echo --- logs; sudo nerdctl -n k8s.io logs --tail 80 \"$c\" 2>&1 || true; done'",
               "echo '=== container-pool /pools snapshot ==='",
               "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath=\"{.items[0].metadata.name}\"); kubectl -n default exec \"$pod\" -- bash -lc '\\''secret=\"${SERVER_AUTH_SECRET:-}\"; curl -fsS -H \"X-Server-Auth: $secret\" http://127.0.0.1:8102/pools || true'\\'''",
               "echo '=== container-pool deployment ==='",
