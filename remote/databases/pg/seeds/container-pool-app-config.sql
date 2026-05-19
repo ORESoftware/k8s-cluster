@@ -124,6 +124,31 @@ values (
         "labels": ["runtime", "nodejs", "agent", "claude", "repo:live-mutex"]
       },
       {
+        "slug": "nodejs-chat-claude-k8s-cluster-dev",
+        "displayName": "Node.js chat/Claude warm workers for ORESoftware/k8s-cluster dev",
+        "image": "docker.io/library/dd-dev-server:dev",
+        "command": [],
+        "env": {
+          "DD_REPO_URL": "git@github.com:ORESoftware/k8s-cluster.git",
+          "BASE_BRANCH": "dev",
+          "WORKER_BIND_MODE": "repo",
+          "AGENT_PROVIDER": "gemini-sdk",
+          "WORKER_FANOUT_WS_BASE_URL": "ws://dd-gleamlang-server.default.svc.cluster.local:8081/worker-ws"
+        },
+        "requestPath": "/tasks",
+        "healthPath": "/healthz",
+        "containerPort": 8080,
+        "readOnly": false,
+        "user": "1000:1000",
+        "minWarm": 1,
+        "maxWarm": 2,
+        "maxConcurrencyPerContainer": 1,
+        "requestTimeoutMs": 120000,
+        "idleTtlSeconds": 1800,
+        "natsSubject": "dd.remote.container_pool.nodejs-chat-claude-k8s-cluster-dev.requests",
+        "labels": ["runtime", "nodejs", "agent", "claude", "repo:k8s-cluster"]
+      },
+      {
         "slug": "rust",
         "displayName": "Rust warm runtime",
         "image": "docker.io/library/dd-container-pool-rust-runtime:dev",

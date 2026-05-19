@@ -604,6 +604,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     Ok(())
                 }
                 Err(pool_error) => {
+                    let pool_error_summary =
+                        pool_error.to_string().chars().take(300).collect::<String>();
+                    let pool_error_message =
+                        format!("Container-pool dispatch failed: {pool_error_summary}");
                     eprintln!(
                         "queue task container pool dispatch failed: thread={} task={} error={pool_error}",
                         task.thread_id, task.task_id
@@ -617,7 +621,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         -920,
                         "container-pool-failed",
                         "container pool failed",
-                        "Container-pool dispatch failed before accepting the queued task.",
+                        &pool_error_message,
                         json!({ "poolSlug": &pool, "affinityKey": &task.thread_id, "error": pool_error.to_string() }),
                     )
                     .await;

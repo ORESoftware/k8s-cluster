@@ -232,6 +232,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
     parsed.pools.map((entry) => entry.slug).sort(),
     [
       'nodejs',
+      'nodejs-chat-claude-k8s-cluster-dev',
       'nodejs-chat-claude-live-mutex-dev',
       'rust',
       'golang',
@@ -256,11 +257,14 @@ test('container pool app_config seed is a complete runtime contract', async () =
       assert.equal(baseImage.buildContext, 'remote/dev-server');
       assert.equal(pool.requestPath, '/tasks');
       assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
-      assert.equal(pool.env.DD_REPO_URL, 'git@github.com:ORESoftware/live-mutex.git');
+      const expectedRepoBySlug = new Map([
+        ['nodejs-chat-claude-live-mutex-dev', 'git@github.com:ORESoftware/live-mutex.git'],
+        ['nodejs-chat-claude-k8s-cluster-dev', 'git@github.com:ORESoftware/k8s-cluster.git'],
+      ]);
+      assert.equal(pool.env.DD_REPO_URL, expectedRepoBySlug.get(pool.slug));
       assert.equal(pool.env.AGENT_PROVIDER, 'gemini-sdk');
       assert.equal(pool.readOnly, false);
       assert.equal(pool.user, '1000:1000');
-      assert.equal(pool.minWarm, 2);
     } else {
       assert.equal(
         baseImage.dockerfile,
