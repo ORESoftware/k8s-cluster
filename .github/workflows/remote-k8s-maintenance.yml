@@ -1,0 +1,120 @@
+name: Remote K8s maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Maintenance operation to run on the EC2 Kubernetes host.
+        required: true
+        type: choice
+        options:
+          - inspect-unhealthy
+          - reconcile-runtime
+      target_revision:
+        description: Git revision or branch to sync on the EC2 host.
+        required: false
+        default: dev
+
+concurrency:
+  group: remote-k8s-maintenance
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_revision || 'dev' }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run maintenance command through SSM
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          OPERATION: ${{ inputs.operation }}
+          TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
+        run: |
+          set -euo pipefail
+
+          case "$OPERATION" in
+            inspect-unhealthy)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== context ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl config current-context; kubectl get nodes -o wide'",
+              "echo '=== default pods ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get pods -n default -o wide'",
+              "echo '=== unhealthy app labels ==='",
+              "sudo -u ec2-user -H bash -lc 'for app in dd-remote-gateway dd-fsharp-ws-server dd-webrtc-signaling dd-trading-server dd-remote-web-home dd-gleam-mcp-server dd-gleamlang-server; do echo --- $app; kubectl -n default get pods -l app=$app -o wide || true; done'",
+              "echo '=== gleamlang ExternalSecret ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get externalsecret dd-gleamlang-server-secrets -o yaml || true'",
+              "echo '=== selected k8s secrets ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get secret dd-gleamlang-server-secrets dd-gleam-mcp-server-secrets dd-agent-secrets dd-remote-auth-secrets --ignore-not-found'",
+              "echo '=== recent default events ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get events -n default --sort-by=.lastTimestamp | tail -160'",
+              "echo '=== pod describes and logs ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -140\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=140\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=140\" || true; done",
+              "echo '=== AWS secret candidates ==='",
+              "aws secretsmanager list-secrets --region us-east-1 --query 'SecretList[?contains(Name, `gleam`) || contains(Name, `mcp`) || contains(Name, `remote-dev`)].Name' --output text || true"
+            ]
+          }
+          JSON
+              ;;
+            reconcile-runtime)
+              python3 - <<PY > /tmp/remote-k8s-commands.json
+          import json
+          rev = ${TARGET_REVISION@Q}
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-secrets.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-gleam-mcp-server.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd annotate application/dd-secrets application/dd-next-runtime application/dd-fsharp-ws-server application/dd-gleam-mcp-server argocd.argoproj.io/refresh=hard --overwrite || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-remote-gateway --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-webrtc-signaling --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-fsharp-ws-server --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-remote-gateway deployment/dd-webrtc-signaling deployment/dd-trading-server deployment/dd-remote-web-home || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-fsharp-ws-server || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-gleam-mcp-server || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            *)
+              echo "Unsupported operation: $OPERATION" >&2
+              exit 64
+              ;;
+          esac
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Remote K8s maintenance: $OPERATION" \
+              --parameters file:///tmp/remote-k8s-commands.json \
+              --query "Command.CommandId" \
+              --output text
+          )"
+          echo "command_id=$command_id"
+          aws ssm wait command-executed \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
+            --output json
+
