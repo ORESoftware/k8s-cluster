@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-19-worker-image-rebuild'
+        dd.dev/telemetry-revision: '2026-05-19-worker-image-rebuild-done'
       labels:
         app: dd-idle-reaper
     spec:
