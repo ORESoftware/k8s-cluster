@@ -46,4 +46,5 @@ resources:
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
   - dd-idle-reaper.configmap.yaml
+  - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml

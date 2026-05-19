@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: presence
+  labels:
+    name: presence
+    purpose: websocket-presence-fanout

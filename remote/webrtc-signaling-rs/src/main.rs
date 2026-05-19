@@ -19,6 +19,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, TextEncoder};
 use serde::{Deserialize, Serialize};
@@ -64,8 +65,11 @@ static ACTIVE_CONNECTIONS: Lazy<IntGauge> = Lazy::new(|| {
     gauge
 });
 static ACTIVE_ROOMS: Lazy<IntGauge> = Lazy::new(|| {
-    let gauge = IntGauge::new("dd_webrtc_active_rooms", "Currently active signaling rooms.")
-        .expect("failed to create dd_webrtc_active_rooms");
+    let gauge = IntGauge::new(
+        "dd_webrtc_active_rooms",
+        "Currently active signaling rooms.",
+    )
+    .expect("failed to create dd_webrtc_active_rooms");
     prometheus::default_registry()
         .register(Box::new(gauge.clone()))
         .expect("failed to register dd_webrtc_active_rooms");
@@ -159,6 +163,29 @@ fn record_http(method: &str, path: &str, status: StatusCode) {
             .with_label_values(&[method, path, status.as_str()])
             .inc();
     }
+}
+
+fn env_string(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn nats_url() -> String {
+    env_string("NATS_URL")
+        .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string())
+}
+
+fn runtime_admin_subject() -> String {
+    env_string("RUNTIME_ADMIN_EVENT_SUBJECT").unwrap_or_else(|| "dd.remote.events".to_string())
+}
+
+fn authorized_admin_ws(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-dd-admin")
+        .and_then(|value| value.to_str().ok())
+        == Some("1")
 }
 
 fn normalize_id(value: Option<String>, fallback_prefix: &str) -> Result<String, String> {
@@ -338,7 +365,9 @@ async fn handle_signal_text(
             true
         }
         "bye" => {
-            SIGNAL_MESSAGES.with_label_values(&["bye", "broadcast"]).inc();
+            SIGNAL_MESSAGES
+                .with_label_values(&["bye", "broadcast"])
+                .inc();
             let frame = json!({
                 "type": "signal",
                 "signalType": "bye",
@@ -517,6 +546,125 @@ async fn signal_socket(
     remove_peer(&state, &room_id, &peer_id).await;
 }
 
+async fn admin_runtime_socket(mut socket: WebSocket) {
+    let subject = runtime_admin_subject();
+    let nats = match async_nats::connect(nats_url()).await {
+        Ok(client) => client,
+        Err(error) => {
+            let _ = socket
+                .send(json_text(json!({
+                    "type": "error",
+                    "code": "nats_connect_failed",
+                    "message": error.to_string(),
+                    "atMs": now_ms(),
+                })))
+                .await;
+            return;
+        }
+    };
+    let mut subscription = match nats.subscribe(subject.clone()).await {
+        Ok(subscription) => subscription,
+        Err(error) => {
+            let _ = socket
+                .send(json_text(json!({
+                    "type": "error",
+                    "code": "nats_subscribe_failed",
+                    "subject": subject,
+                    "message": error.to_string(),
+                    "atMs": now_ms(),
+                })))
+                .await;
+            return;
+        }
+    };
+    let _ = socket
+        .send(json_text(json!({
+            "type": "welcome",
+            "mode": "admin-runtime-nats",
+            "subject": subject,
+            "atMs": now_ms(),
+        })))
+        .await;
+    let mut heartbeat = tokio::time::interval(Duration::from_secs(25));
+
+    loop {
+        tokio::select! {
+            maybe_message = subscription.next() => {
+                let Some(message) = maybe_message else {
+                    let _ = socket
+                        .send(json_text(json!({
+                            "type": "error",
+                            "code": "nats_subscription_closed",
+                            "subject": subject,
+                            "atMs": now_ms(),
+                        })))
+                        .await;
+                    break;
+                };
+                let text = String::from_utf8_lossy(&message.payload);
+                let should_forward = serde_json::from_str::<Value>(&text)
+                    .ok()
+                    .and_then(|value| value.get("type").and_then(Value::as_str).map(str::to_string))
+                    .is_some_and(|message_type| message_type == "k8s-runtime-event");
+                if should_forward && socket.send(Message::Text(text.to_string())).await.is_err() {
+                    break;
+                }
+            }
+            inbound = socket.recv() => {
+                match inbound {
+                    Some(Ok(Message::Text(text))) if text == "ping" => {
+                        if socket.send(json_text(json!({"type": "pong", "atMs": now_ms()}))).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Text(text))) => {
+                        let parsed = serde_json::from_str::<Value>(&text).ok();
+                        if parsed
+                            .as_ref()
+                            .and_then(|value| value.get("type"))
+                            .and_then(Value::as_str)
+                            == Some("ping")
+                            && socket.send(json_text(json!({"type": "pong", "atMs": now_ms()}))).await.is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        if socket.send(Message::Pong(payload)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Pong(_))) | Some(Ok(Message::Binary(_))) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+            _ = heartbeat.tick() => {
+                if socket
+                    .send(json_text(json!({
+                        "type": "heartbeat",
+                        "mode": "admin-runtime-nats",
+                        "atMs": now_ms(),
+                    })))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn admin_runtime_ws(ws: WebSocketUpgrade, headers: HeaderMap) -> Response {
+    if !authorized_admin_ws(&headers) {
+        record_http("GET", "/webrtc/runtime/ws", StatusCode::UNAUTHORIZED);
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    record_http("GET", "/webrtc/runtime/ws", StatusCode::SWITCHING_PROTOCOLS);
+    ws.on_upgrade(admin_runtime_socket)
+}
+
 async fn signal_ws(
     ws: WebSocketUpgrade,
     Query(query): Query<SignalQuery>,
@@ -647,6 +795,8 @@ async fn main() {
         .route("/webrtc/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/webrtc/metrics", get(metrics))
+        .route("/runtime/ws", get(admin_runtime_ws))
+        .route("/webrtc/runtime/ws", get(admin_runtime_ws))
         .route("/signal", get(signal_ws))
         .route("/webrtc/signal", get(signal_ws))
         .with_state(state);

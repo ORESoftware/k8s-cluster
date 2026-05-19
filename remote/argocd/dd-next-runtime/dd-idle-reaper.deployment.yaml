@@ -19,7 +19,8 @@ spec:
       labels:
         app: dd-idle-reaper
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: dd-idle-reaper
+      automountServiceAccountToken: true
       terminationGracePeriodSeconds: 20
       containers:
         - name: reaper

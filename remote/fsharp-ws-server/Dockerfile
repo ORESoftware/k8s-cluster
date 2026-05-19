@@ -19,8 +19,17 @@ COPY remote/fsharp-ws-server/RxPipeline.fs       ./RxPipeline.fs
 COPY remote/fsharp-ws-server/AsyncPipeline.fs    ./AsyncPipeline.fs
 COPY remote/fsharp-ws-server/RxAdvanced.fs       ./RxAdvanced.fs
 COPY remote/fsharp-ws-server/BenchmarkRunner.fs  ./BenchmarkRunner.fs
+COPY remote/fsharp-ws-server/PgSchema.fs         ./PgSchema.fs
+COPY remote/fsharp-ws-server/PgListen.fs         ./PgListen.fs
+COPY remote/fsharp-ws-server/PgWal.fs            ./PgWal.fs
+COPY remote/fsharp-ws-server/PgOutbox.fs         ./PgOutbox.fs
+COPY remote/fsharp-ws-server/NatsRx.fs           ./NatsRx.fs
+COPY remote/fsharp-ws-server/PresenceFanIn.fs    ./PresenceFanIn.fs
 COPY remote/fsharp-ws-server/WsRoutes.fs         ./WsRoutes.fs
 COPY remote/fsharp-ws-server/Program.fs          ./Program.fs
+# SQL schema is read at boot by PgSchema.fs; CopyToOutputDirectory in the
+# fsproj puts it next to the publish output.
+COPY remote/fsharp-ws-server/sql/                ./sql/
 RUN dotnet publish DdFsharpWsServer.fsproj \
         -c Release \
         -o /out \

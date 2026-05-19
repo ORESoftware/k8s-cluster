@@ -177,7 +177,8 @@ fn home_summary() -> Markup {
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
             code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
             code { "/builds" } ", " code { "/gleam/" } ", " code { "/mcp" } ", and "
-            code { "/gcs/" } ". Internal-access ops: " code { "/telemetry/" } ", "
+            code { "/gcs/" } ". Internal-access ops: " code { "/headlamp/" } ", "
+            code { "/telemetry/" } ", "
             code { "/prometheus/" } ", " code { "/nats/" } ", " code { "/nats-metrics/" } ", "
             code { "/reaper/" } ", " code { "/cron/" } ", plus the new "
             code { "dd-billing-server" } " ledger API and the " code { "dd-wal-gateway" }
@@ -379,6 +380,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-lock-loadtest-trigger"], service: &["dd-lock-loadtest-trigger:8110"], service_note: None, access: INTERNAL, notes: "Node.js HTTP trigger for live-mutex versus Redis aggregate lock load tests." },
     DeploymentRow { deployments: &["dd-trading-server"], service: &["dd-trading-server:8103"], service_note: None, access: SERVER_AUTH, notes: "Rust trading decision service for trading.decision.v1 scoring, scraper and AI/ML signals, MDP/POMDP policy hints, risk gates, and NATS order intents." },
     DeploymentRow { deployments: &["dd-container-pool"], service: &["dd-container-pool:8102"], service_note: None, access: SERVER_AUTH, notes: "Rust warm container pool service that loads runtime pool config from Postgres and starts local containerd workers through nerdctl." },
+    DeploymentRow { deployments: &["headlamp"], service: &["headlamp.headlamp:80"], service_note: Some("(pod 4466)"), access: SERVER_AUTH, notes: "Kubernetes web UI served at /headlamp/. Use the headlamp-viewer service-account token for read-only pod, container, log, workload, Argo CD, KEDA, and External Secrets inspection." },
     DeploymentRow { deployments: &["dd-gleam-lambda-runner"], service: &["dd-gleam-lambda-runner:8083"], service_note: None, access: SERVER_AUTH, notes: "Gleam child-process runner deployment for POST /lambdas/invoke/<function-id>. It uses its own Argo CD app and dd-gleam-lambda-runner-secrets." },
     DeploymentRow { deployments: &["dd-remote-gateway"], service: &["dd-remote-gateway:80/443"], service_note: None, access: PUBLIC, notes: "nginx Ingress for the EC2 single-node cluster. Owns hostPort 80/443 and proxies every documented public/auth path into its in-cluster service." },
     DeploymentRow { deployments: &["dd-remote-web-home"], service: &["dd-remote-web-home:8080"], service_note: None, access: PUBLIC, notes: "This Rust service. Renders /, /home, /agents/tasks, /agents/threads, /lambdas/functions, /presence-test, and /wss-test; also exposes /healthz and /metrics." },
@@ -416,6 +418,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness for the Gleam fan-out socket, Rust WebRTC signaling socket, gcs/chat.vibe router, and F# Rx burst endpoint." },
     PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/login", href: Some("/auth/login") }, PathEntry { label: "/auth/logout", href: Some("/auth/logout") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
     PathRow { paths: &[PathEntry { label: "/bastion/runtime/deployments", href: Some("/bastion/runtime/deployments") }, PathEntry { label: "/bastion/profile", href: Some("/bastion/profile") }, PathEntry { label: "/bastion/terminal", href: None }], target: "Rust bastion/jumphost access broker", access: SERVER_AUTH, notes: "Same-origin gateway access to bastion inventory and allowlisted browser exec terminals." },
+    PathRow { paths: &[PathEntry { label: "/headlamp/", href: Some("/headlamp/") }], target: "Headlamp Kubernetes UI", access: SERVER_AUTH, notes: "Read-only cluster browser for workload, pod, container, logs, node, Argo CD, KEDA, and External Secrets state. Paste a token from `kubectl -n headlamp create token headlamp-viewer`." },
     PathRow { paths: &[PathEntry { label: "dd.remote.thread.*.tasks", href: None }, PathEntry { label: "POST /api/agents/threads/<uuid>/prepare", href: Some("/api/agents/threads/example-thread-id/prepare") }], target: "Rust NATS Queue Consumer", access: INTERNAL_ACCESS, notes: "Shadow consumer reads task messages, keeps thread affinity, and prepares the matching UUID-bound worker. It does not execute prompts." },
     PathRow { paths: &[PathEntry { label: "/dd-thread/<short>", href: Some("/dd-thread/example") }, PathEntry { label: "/dd-thread/<short>/tasks", href: Some("/dd-thread/example/tasks") }, PathEntry { label: "/dd-thread/<short>/stream/<taskId>", href: Some("/dd-thread/example/stream/example-task-id") }, PathEntry { label: "/dd-thread/<short>/ws", href: Some("/dd-thread/example/ws") }], target: "Kubernetes per-thread Ingress", access: SERVER_AUTH, notes: "Ingress selects the UUID-bound worker Service; Node.js handles only the task inside that selected container." },
     PathRow { paths: &[PathEntry { label: "/gleam/home", href: Some("/gleam/home") }, PathEntry { label: "/gleam/healthz", href: Some("/gleam/healthz") }, PathEntry { label: "/gleam/metrics", href: Some("/gleam/metrics") }, PathEntry { label: "/gleam/ws", href: None }], target: "Gleam WebSocket service", access: INTERNAL_ACCESS, notes: "Gleam/OTP fan-out socket behind the gateway; WebSocket endpoint is wss://<host>/gleam/ws." },
@@ -630,6 +633,20 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   const frame = document.getElementById("home-terminal-frame");
   const caption = document.getElementById("home-terminal-caption");
   const close = document.getElementById("home-terminal-close");
+  let inventoryStatus = "loading managed deployment pods";
+  let reloadTimer = 0;
+  const wsStatus = { gleam: "idle", rust: "idle" };
+  const renderStatus = () => {
+    status.textContent = `${inventoryStatus} · gleam ws ${wsStatus.gleam} · rust ws ${wsStatus.rust}`;
+  };
+  const setStatus = (message) => {
+    inventoryStatus = message;
+    renderStatus();
+  };
+  const setWsStatus = (name, message) => {
+    wsStatus[name] = message;
+    renderStatus();
+  };
   const text = (value) => document.createTextNode(value == null || value === "" ? "none" : String(value));
   const cell = (child) => {
     const td = document.createElement("td");
@@ -671,7 +688,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   const openTerminal = (url, label) => {
     const targetUrl = safeBastionTerminalUrl(url);
     if (!targetUrl) {
-      status.textContent = "ignored unsafe bastion terminal URL";
+      setStatus("ignored unsafe bastion terminal URL");
       return;
     }
     caption.textContent = label;
@@ -757,26 +774,68 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       }
     }
     if (!rowCount) renderEmpty("No managed deployment pods returned.");
-    status.textContent = (data.deployments || []).length + " managed deployments · " + (data.terminalEnabled ? "terminal enabled" : "terminal disabled");
+    setStatus((data.deployments || []).length + " managed deployments · " + (data.terminalEnabled ? "terminal enabled" : "terminal disabled"));
   };
   const load = async () => {
-    status.textContent = "loading managed deployment pods";
+    setStatus("loading managed deployment pods");
     refresh.disabled = true;
     try {
       const response = await fetch("/bastion/runtime/deployments", { cache: "no-store", credentials: "same-origin" });
       if (response.status === 401) {
         renderEmpty("Sign in through /auth?return=/home to load live containers and bastion terminals.");
-        status.textContent = "auth required";
+        setStatus("auth required");
         return;
       }
       if (!response.ok) throw new Error("runtime inventory failed " + response.status);
       render(await response.json());
     } catch (error) {
       renderEmpty(String(error));
-      status.textContent = "live container inventory unavailable";
+      setStatus("live container inventory unavailable");
     } finally {
       refresh.disabled = false;
     }
+  };
+  const scheduleRuntimeReload = (label, event) => {
+    const kind = event.kind || "runtime";
+    const name = event.name || "resource";
+    setStatus(`${label} update ${kind}/${name}; refreshing`);
+    window.clearTimeout(reloadTimer);
+    reloadTimer = window.setTimeout(load, 700);
+  };
+  const handleRuntimeMessage = (label, event) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (parsed.type === "k8s-runtime-event") {
+      scheduleRuntimeReload(label, parsed);
+    }
+  };
+  const openRuntimeSocket = (name, path, attempt = 0) => {
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${protocol}://${window.location.host}${path}`);
+    setWsStatus(name, "connecting");
+    ws.onopen = () => {
+      setWsStatus(name, "connected");
+      if (name === "gleam") ws.send("ping");
+      if (name === "rust") ws.send(JSON.stringify({ type: "ping" }));
+    };
+    ws.onmessage = (event) => handleRuntimeMessage(name, event);
+    ws.onerror = () => setWsStatus(name, "error");
+    ws.onclose = () => {
+      setWsStatus(name, "closed");
+      if (attempt < 8) {
+        const delay = Math.min(30000, 1000 * (attempt + 1));
+        window.setTimeout(() => openRuntimeSocket(name, path, attempt + 1), delay);
+      }
+    };
+  };
+  const connectRuntimeSockets = () => {
+    const clientId = Math.random().toString(36).slice(2);
+    openRuntimeSocket("gleam", `/admin/gleam/ws?channel=k8s-runtime-admin&client=home-${clientId}`);
+    openRuntimeSocket("rust", `/admin/webrtc/runtime/ws?client=home-${clientId}`);
   };
   refresh.addEventListener("click", load);
   close.addEventListener("click", () => {
@@ -784,6 +843,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     dock.hidden = true;
   });
   load();
+  connectRuntimeSockets();
 })();
 "##;
 
