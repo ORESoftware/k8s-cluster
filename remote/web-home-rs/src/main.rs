@@ -1679,6 +1679,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         streamTaskId: null,
         runtimePoll: null,
         lastRuntimeSummary: "",
+        lastRuntimeData: null,
         threadUiMode: "empty",
         snapshotFailures: 0,
         snapshotRetryTimer: null,
@@ -2312,6 +2313,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }, delay);
       }
 
+      async function readableFetchError(response, label) {
+        const body = await response.text();
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("text/html") || /^\s*</.test(body)) {
+          return `${label} failed ${response.status}: gateway returned HTML; retrying`;
+        }
+        return `${label} failed ${response.status}: ${adminPreview(label, body, 240)}`;
+      }
+
       function handleSnapshotError(error, options = {}) {
         state.snapshotFailures += 1;
         logAdminDetail("snapshot load error", error);
@@ -2422,12 +2432,43 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return `worker ${summary.phase || "creating"}: desired ${summary.desiredReplicas}, ready ${summary.readyReplicas || 0}`;
       }
 
+      function workerRuntimeWaitDetails(data) {
+        if (!data) return "runtime snapshot pending";
+        const summary = data.summary || {};
+        const pods = data.pods || [];
+        const lines = [
+          `runtime phase=${summary.phase || "unknown"} desired=${summary.desiredReplicas ?? "?"} readyReplicas=${summary.readyReplicas ?? 0} pods=${summary.readyPodCount ?? 0}/${summary.podCount ?? pods.length}`,
+        ];
+        if (data.errors?.length) lines.push(`runtime error=${data.errors[0]}`);
+        for (const pod of pods.slice(0, 3)) {
+          const unscheduled = (pod.conditions || []).find((condition) => condition.type === "PodScheduled" && condition.status === "False");
+          if (unscheduled) {
+            lines.push(`${pod.name}: ${unscheduled.reason || "Unscheduled"}: ${unscheduled.message || "scheduler has not placed this pod yet"}`);
+            continue;
+          }
+          const waiting = [...(pod.initContainers || []), ...(pod.containers || [])].find((container) => container.state?.waiting);
+          if (waiting) {
+            lines.push(`${pod.name}/${waiting.name}: waiting ${waiting.state.waiting.reason || "unknown"}${waiting.state.waiting.message ? `: ${waiting.state.waiting.message}` : ""}`);
+            continue;
+          }
+          const unready = (pod.containers || []).find((container) => !container.ready);
+          if (unready) {
+            const running = unready.state?.running?.startedAt ? ` running since ${unready.state.running.startedAt}` : "";
+            lines.push(`${pod.name}/${unready.name}: not ready${running}; restarts=${unready.restartCount || 0}`);
+            continue;
+          }
+          if (pod.name) lines.push(`${pod.name}: ${pod.phase || "unknown"} ready`);
+        }
+        return lines.join("\n");
+      }
+
       async function loadRuntimeState(threadId, render = true) {
         if (!threadId) return null;
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/runtime`, { cache: "no-store" });
         if (!response.ok) throw new Error(`runtime request failed ${response.status}: ${await response.text()}`);
         const data = await response.json();
         const summary = workerRuntimeSummary(data);
+        state.lastRuntimeData = data;
         setStatus(summary, Boolean(data.errors?.length));
         if (render && summary !== state.lastRuntimeSummary) {
           state.lastRuntimeSummary = summary;
@@ -2542,7 +2583,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       async function loadSnapshot(options = {}) {
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
-        if (!response.ok) throw new Error(`snapshot failed ${response.status}: ${await response.text()}`);
+        if (!response.ok) throw new Error(await readableFetchError(response, "snapshot"));
         const data = await response.json();
         state.snapshotFailures = 0;
         if (state.snapshotRetryTimer !== null) {
@@ -2617,14 +2658,20 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const keepRuntimePolling = dispatchMode === "queued";
         const waitTicker = setInterval(() => {
           const elapsed = Math.round((Date.now() - startedAt) / 1000);
-          setStatus(`dispatch still waiting after ${elapsed}s; worker cold-start may still be running`);
+          const runtimeSummary = state.lastRuntimeSummary || "runtime snapshot pending";
+          const runtimeDetails = workerRuntimeWaitDetails(state.lastRuntimeData);
+          setStatus(`dispatch waiting ${elapsed}s · ${runtimeSummary}`);
           renderEventRow({
             seq: `dispatch-wait-${elapsed}`,
             eventKind: "status",
             payload: {
               kind: "status",
               status: `still waiting (${elapsed}s)`,
-              message: "The REST API is waiting for the thread worker readiness check before it forwards the task.",
+              message: [
+                "The REST API is waiting for the thread worker readiness check before it forwards the task.",
+                runtimeSummary,
+                runtimeDetails,
+              ].filter(Boolean).join("\n"),
             },
             createdAt: new Date().toISOString(),
           });

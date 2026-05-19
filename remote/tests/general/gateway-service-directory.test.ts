@@ -1003,7 +1003,13 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /sendFeedback\(seq, vote, button\)/);
   assert.match(server, /collectText\(raw\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
-  assert.match(server, /dispatch still waiting after/);
+  assert.match(server, /lastRuntimeData: null/);
+  assert.match(server, /async function readableFetchError\(response, label\) \{/);
+  assert.match(server, /gateway returned HTML; retrying/);
+  assert.match(server, /function workerRuntimeWaitDetails\(data\) \{/);
+  assert.match(server, /runtime phase=\$\{summary\.phase \|\| "unknown"\}/);
+  assert.match(server, /dispatch waiting \$\{elapsed\}s · \$\{runtimeSummary\}/);
+  assert.match(server, /workerRuntimeWaitDetails\(state\.lastRuntimeData\)/);
   assert.match(server, /dispatch accepted/);
   assert.match(server, /streamTaskId: null/);
   assert.match(server, /async function loadTaskEvents\(taskId, options = \{\}\) \{/);
@@ -1093,6 +1099,15 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
     /async fn dispatch_thread_task\(\s*Path\(thread_id\): Path<String>,\s*Json\(request\): Json<DispatchTaskRequest>,\s*\) -> Response \{/s,
   );
   assert.match(restServer, /threadId path\/body mismatch/);
+  assert.match(restServer, /THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED/);
+  assert.match(restServer, /THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS/);
+  assert.match(restServer, /async fn prune_awake_thread_workers_for_capacity/);
+  assert.match(restServer, /labelSelector=app\.kubernetes\.io%2Fcomponent%3Dthread-pod/);
+  assert.match(restServer, /"spec": \{ "replicas": 0 \}/);
+  assert.match(
+    restServer,
+    /prune_awake_thread_workers_for_capacity\(&namespace, &name\)\.await/,
+  );
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,

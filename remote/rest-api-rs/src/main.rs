@@ -425,6 +425,14 @@ fn env_bool(name: &str, default: bool) -> bool {
         .unwrap_or(default)
 }
 
+fn env_usize(name: &str, default: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
 fn postgres_database_url() -> Option<String> {
     first_env(&[
         "AGENT_TASKS_RDS_DATABASE_URL",
@@ -1198,6 +1206,75 @@ fn summarize_thread_runtime(deployment: Option<&Value>, pods: &[Value]) -> Value
     })
 }
 
+async fn prune_awake_thread_workers_for_capacity(
+    namespace: &str,
+    current_name: &str,
+) -> Result<Vec<String>, String> {
+    if !env_bool("THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED", true) {
+        return Ok(Vec::new());
+    }
+    let max_awake = env_usize("THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS", 16);
+    let value = match k8s_get_value(format!(
+        "/apis/apps/v1/namespaces/{namespace}/deployments?labelSelector=app.kubernetes.io%2Fcomponent%3Dthread-pod"
+    ))
+    .await?
+    {
+        Some(value) => value,
+        None => return Ok(Vec::new()),
+    };
+    let mut awake = json_at(&value, &["items"])
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|deployment| {
+                    let name = json_at_string(deployment, &["metadata", "name"])?;
+                    let desired = json_at_i64(deployment, &["spec", "replicas"]).unwrap_or(0);
+                    if desired <= 0 || name == current_name {
+                        return None;
+                    }
+                    let created_at = json_at_string(deployment, &["metadata", "creationTimestamp"])
+                        .unwrap_or_default();
+                    Some((created_at, name))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let current_awake_slots = 1usize;
+    if awake.len() + current_awake_slots <= max_awake {
+        return Ok(Vec::new());
+    }
+    awake.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
+    let keep_other_awake = max_awake.saturating_sub(current_awake_slots);
+    let mut slept = Vec::new();
+    for (_created_at, name) in awake.into_iter().skip(keep_other_awake) {
+        let path = format!("/apis/apps/v1/namespaces/{namespace}/deployments/{name}/scale");
+        match k8s_json_request(
+            reqwest::Method::PATCH,
+            path,
+            Some(json!({ "spec": { "replicas": 0 } })),
+            "application/merge-patch+json",
+        )
+        .await
+        {
+            Ok(result) if result.ok => slept.push(name),
+            Ok(result) => eprintln!(
+                "thread capacity prune scale failed: {} status={} body={}",
+                result.resource, result.status, result.body
+            ),
+            Err(error) => eprintln!("thread capacity prune failed for {name}: {error}"),
+        }
+    }
+    if !slept.is_empty() {
+        eprintln!(
+            "thread capacity prune slept {} old workers before waking {current_name}: {}",
+            slept.len(),
+            slept.join(", ")
+        );
+    }
+    Ok(slept)
+}
+
 fn render_thread_service(namespace: &str, name: &str, thread_id: &str) -> Value {
     json!({
         "apiVersion": "v1",
@@ -1343,6 +1420,9 @@ async fn ensure_thread_worker(
     let namespace = thread_runtime_namespace();
     let name = thread_resource_name(thread_id);
     let mut results = Vec::new();
+    if let Err(error) = prune_awake_thread_workers_for_capacity(&namespace, &name).await {
+        eprintln!("thread capacity prune skipped before waking {name}: {error}");
+    }
     let deployment = render_thread_deployment(&namespace, &name, thread_id, repo_url, base_branch);
 
     results.push(
