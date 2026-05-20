@@ -1322,19 +1322,14 @@ async fn run_command(
 }
 
 async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
+    let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(5));
     let args = vec![
         "-n".to_string(),
         state.config.containerd_namespace.clone(),
         "inspect".to_string(),
         name.to_string(),
     ];
-    let output = match run_command(
-        &state.config.nerdctl_bin,
-        &args,
-        state.config.command_timeout,
-    )
-    .await
-    {
+    let output = match run_command(&state.config.nerdctl_bin, &args, inspect_timeout).await {
         Ok(output) => output,
         Err(error) => {
             let lower = error.to_ascii_lowercase();
