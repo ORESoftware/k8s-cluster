@@ -108,15 +108,15 @@ test('generated Gleam package keeps the path-dep contract used by all gleam serv
   assert.match(gleamToml, /target = "erlang"/);
 
   const consumers = [
-    'remote/gleam-lambda-runner/gleam.toml',
-    'remote/gleam-mcp-server/gleam.toml',
-    'remote/gleamlang-server/gleam.toml',
+    'remote/deployments/gleam-lambda-runner/gleam.toml',
+    'remote/deployments/gleam-mcp-server/gleam.toml',
+    'remote/deployments/gleamlang-server/gleam.toml',
   ];
   for (const consumer of consumers) {
     const toml = await readRepoFile(consumer);
     assert.match(
       toml,
-      /dd_pg_defs = \{ path = "\.\.\/libs\/pg-defs\/generated\/gleam" \}/,
+      /dd_pg_defs = \{ path = "\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam" \}/,
       `${consumer} must consume dd_pg_defs via the local path dep so the gleam package compiles inside the EC2 repo mount.`,
     );
   }
@@ -124,28 +124,28 @@ test('generated Gleam package keeps the path-dep contract used by all gleam serv
 
 test('gleam services expose a single pg_contract module rather than hand-rolling SQL', async () => {
   const mcpContract = await readRepoFile(
-    'remote/gleam-mcp-server/src/gleam_mcp_server/pg_contract.gleam',
+    'remote/deployments/gleam-mcp-server/src/gleam_mcp_server/pg_contract.gleam',
   );
   assert.match(mcpContract, /import pg_defs/);
   assert.match(mcpContract, /pg_defs\.app_config_select_sql/);
   assert.match(mcpContract, /pg_defs\.lambda_functions_select_sql/);
 
-  const mcpMain = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_server.gleam');
+  const mcpMain = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_server.gleam');
   assert.match(mcpMain, /import gleam_mcp_server\/pg_contract/);
   assert.match(mcpMain, /pg_contract\.app_config_table\(\)/);
 
   const wsContract = await readRepoFile(
-    'remote/gleamlang-server/src/gleamlang_server/pg_contract.gleam',
+    'remote/deployments/gleamlang-server/src/gleamlang_server/pg_contract.gleam',
   );
   assert.match(wsContract, /import pg_defs/);
   assert.match(wsContract, /pg_defs\.app_config_select_sql/);
 
-  const wsMain = await readRepoFile('remote/gleamlang-server/src/gleamlang_server.gleam');
+  const wsMain = await readRepoFile('remote/deployments/gleamlang-server/src/gleamlang_server.gleam');
   assert.match(wsMain, /import gleamlang_server\/pg_contract/);
   assert.match(wsMain, /pg_contract\.app_config_table\(\)/);
 
   const lambdaContract = await readRepoFile(
-    'remote/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam',
+    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam',
   );
   assert.match(lambdaContract, /import pg_defs/);
   assert.match(lambdaContract, /pg_defs\.lambda_functions_select_sql/);
@@ -161,22 +161,22 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
   }> = [
     {
       name: 'dd-gleam-lambda-runner',
-      ec2: 'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
-      minikube: 'remote/gleam-lambda-runner/k8s/minikube/dd-gleam-lambda-runner.deployment.yaml',
+      ec2: 'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
+      minikube: 'remote/deployments/gleam-lambda-runner/k8s/minikube/dd-gleam-lambda-runner.deployment.yaml',
       secret: 'dd-gleam-lambda-runner-secrets',
       primaryUrlKey: 'LAMBDA_DATABASE_URL',
     },
     {
       name: 'dd-gleam-mcp-server',
-      ec2: 'remote/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml',
-      minikube: 'remote/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.deployment.yaml',
+      ec2: 'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml',
+      minikube: 'remote/deployments/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.deployment.yaml',
       secret: 'dd-gleam-mcp-server-secrets',
       primaryUrlKey: 'RDS_DATABASE_URL',
     },
     {
       name: 'dd-gleamlang-server',
-      ec2: 'remote/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
-      minikube: 'remote/gleamlang-server/k8s/minikube/dd-gleamlang-server.deployment.yaml',
+      ec2: 'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
+      minikube: 'remote/deployments/gleamlang-server/k8s/minikube/dd-gleamlang-server.deployment.yaml',
       secret: 'dd-gleamlang-server-secrets',
       primaryUrlKey: 'RDS_DATABASE_URL',
     },
@@ -226,10 +226,10 @@ test('each gleam runtime secret has an ExternalSecret backing it', async () => {
 
 test('presence LISTEN/NOTIFY deployment receives a narrow RDS URL secret', async () => {
   const statefulSet = await readRepoFile(
-    'remote/gleamlang-presence-server/k8s/40-statefulset.yaml',
+    'remote/deployments/gleamlang-presence-server/k8s/40-statefulset.yaml',
   );
   const externalSecret = await readRepoFile(
-    'remote/gleamlang-presence-server/k8s/25-postgres-externalsecret.yaml',
+    'remote/deployments/gleamlang-presence-server/k8s/25-postgres-externalsecret.yaml',
   );
 
   assert.match(statefulSet, /name:\s*PG_DATABASE_URL[\s\S]*name:\s*presence-pg[\s\S]*key:\s*url/);

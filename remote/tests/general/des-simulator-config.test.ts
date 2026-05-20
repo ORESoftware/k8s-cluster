@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/des-simulator-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/des-simulator-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust discrete event simulator declares, validates, and runs async DES jobs', async () => {
-  const cargo = await readRepoFile('remote/des-simulator-rs/Cargo.toml');
-  const source = await readRepoFile('remote/des-simulator-rs/src/main.rs');
-  const readme = await readRepoFile('remote/des-simulator-rs/readme.md');
+  const cargo = await readRepoFile('remote/deployments/des-simulator-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/des-simulator-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/des-simulator-rs/readme.md');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-des-simulator.deployment.yaml',
   );
@@ -36,7 +36,7 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(cargo, /name = "dd-des-simulator"/);
@@ -79,7 +79,7 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   assert.match(readme, /schemaVersion": "des\.v1"/);
 
   assert.match(deployment, /name:\s*dd-des-simulator/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/des-simulator-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/des-simulator-rs/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8099'/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
   assert.match(deployment, /DES_SIMULATE_SUBJECT[\s\S]*dd\.remote\.des\.simulate/);

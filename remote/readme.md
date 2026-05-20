@@ -6,17 +6,17 @@ spawn child processes that outlive an HTTP request, or all three.
 
 Today there are several key runtime services:
 
-- [`dev-server/`](./dev-server/) — Node worker/API runtime for task dispatch, streaming, and agent
+- [`deployments/dev-server/`](./deployments/dev-server/) — Node worker/API runtime for task dispatch, streaming, and agent
   execution
-- [`web-home-rs/`](./web-home-rs/) — Rust public web layer for `/` + `/home`
-- [`rest-api-rs/`](./rest-api-rs/) — Rust REST API boundary for RDS/Postgres-backed agent task data
-- [`build-server-rs/`](./build-server-rs/) — Rust CI/CD server for authenticated repo image builds
+- [`deployments/web-home-rs/`](./deployments/web-home-rs/) — Rust public web layer for `/` + `/home`
+- [`deployments/rest-api-rs/`](./deployments/rest-api-rs/) — Rust REST API boundary for RDS/Postgres-backed agent task data
+- [`deployments/build-server-rs/`](./deployments/build-server-rs/) — Rust CI/CD server for authenticated repo image builds
   and controlled Kubernetes deploys
-- [`contract-service-rs/`](./contract-service-rs/) — Rust Solana contract gateway for validated
+- [`deployments/contract-service-rs/`](./deployments/contract-service-rs/) — Rust Solana contract gateway for validated
   instruction envelopes, signed transaction simulation, and NATS validation results.
-- [`ai-ml-pipeline/`](./ai-ml-pipeline/) — Python3 online feature pipeline for telemetry analysis
+- [`deployments/ai-ml-pipeline/`](./deployments/ai-ml-pipeline/) — Python3 online feature pipeline for telemetry analysis
   and MDP-ready AI/ML signals.
-- [`trading-server-rs/`](./trading-server-rs/) — Rust trading decision service that turns scraper,
+- [`deployments/trading-server-rs/`](./deployments/trading-server-rs/) — Rust trading decision service that turns scraper,
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
 
@@ -25,11 +25,11 @@ etc.) would live as siblings.
 
 There are also runtime siblings for queueing, scheduling, and optimization:
 
-- [`queue-consumer-rs/`](./queue-consumer-rs/) — Rust NATS shadow consumer that prepares UUID-bound
+- [`deployments/queue-consumer-rs/`](./deployments/queue-consumer-rs/) — Rust NATS shadow consumer that prepares UUID-bound
   thread workers and de-dupes taskIds.
-- [`idle-reaper-rs/`](./idle-reaper-rs/) — Rust maintenance supervisor for idle sweeping, cluster
+- [`deployments/idle-reaper-rs/`](./deployments/idle-reaper-rs/) — Rust maintenance supervisor for idle sweeping, cluster
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
-- [`mdp-optimizer-rs/`](./mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
+- [`deployments/mdp-optimizer-rs/`](./deployments/mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
 
 The AI/ML platform seed layer lives in
@@ -49,8 +49,8 @@ There are also two Gleam/OTP services with their own ArgoCD Application manifest
 runtime. Local minikube mirrors may exist for rendering or development checks, but the live MCP and
 agent cluster-context path is EC2:
 
-- [`gleamlang-server/`](./gleamlang-server/) — WebSocket streaming service.
-- [`gleam-mcp-server/`](./gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools
+- [`deployments/gleamlang-server/`](./deployments/gleamlang-server/) — WebSocket streaming service.
+- [`deployments/gleam-mcp-server/`](./deployments/gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools
   and Prometheus metrics.
 
 The cluster observability stack lives in [`argocd/observability/`](./argocd/observability/) and is
@@ -391,14 +391,14 @@ The EC2 k8s cluster has a separate observability plane:
 
 Runtime telemetry is deliberately explicit:
 
-- Node `remote/dev-server` does **not** use OpenTelemetry auto-instrumentation or monkey-patching.
+- Node `remote/deployments/dev-server` does **not** use OpenTelemetry auto-instrumentation or monkey-patching.
   It emits direct OTLP/HTTP spans from local calls in `src/telemetry.ts` and exposes `/metrics`.
-- Rust `remote/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
-- Rust `remote/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
+- Rust `remote/deployments/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
+- Rust `remote/deployments/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-remote-rest-api`.
-- Gleam `remote/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
+- Gleam `remote/deployments/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
   message counters at `/metrics`.
-- Gleam `remote/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
+- Gleam `remote/deployments/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-gleam-mcp-server`.
 
 Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, which tracks request
@@ -442,7 +442,7 @@ The container keeps only hot runtime state. NeonDB remains the source of truth f
 threads/tasks/events/artifacts; the thread branch and PR let a restarted container resume from
 GitHub when needed.
 
-See [`dev-server/readme.md`](./dev-server/readme.md) for build, run, and the full env-var
+See [`deployments/dev-server/readme.md`](./deployments/dev-server/readme.md) for build, run, and the full env-var
 reference.
 
 ## Control plane vs worker plane
@@ -455,9 +455,9 @@ The repo already splits remote-dev into two cooperating pieces:
    admin UI, tracks thread UUIDs, resolves a UUID to a live pod through Redis first and the
    Kubernetes API second, and wakes a sleeping pod by scaling its Deployment from `replicas: 0` to
    `1`.
-2. **Worker plane**: one `remote/dev-server/` runtime per thread. That container fetches
+2. **Worker plane**: one `remote/deployments/dev-server/` runtime per thread. That container fetches
    `origin/dev`, accepts new commands, updates PRs, and runs tests. Public `/` and `/home` now come
-   from `remote/web-home-rs`, not the worker runtime.
+   from `remote/deployments/web-home-rs`, not the worker runtime.
 
 That split is why the cluster can safely sleep idle pods and still bring back the matching
 UUID-bound worker when the next request arrives. Kubernetes Ingress/Service selection owns UUID
@@ -489,7 +489,7 @@ mismatches.
    │                           │             │
    ▼                           │             ▼
 ┌─────────────────────────────────────┐  ┌────────────────┐
-│  remote/dev-server/  (Docker)       │  │   NeonDB       │
+│  remote/deployments/dev-server/  (Docker)       │  │   NeonDB       │
 │  • git worktree per task            │  │ agent_remote_  │
 │  • runs OpenAI SDK by default       │  │  dev_threads   │
 │  • streams events                   │  │  …_tasks       │
@@ -586,7 +586,7 @@ Schema lives in
 
 ## Required environment variables
 
-The full reference is in [`dev-server/readme.md`](./dev-server/readme.md). Quick sanity-check table
+The full reference is in [`deployments/dev-server/readme.md`](./deployments/dev-server/readme.md). Quick sanity-check table
 for core k8s routing + shared secrets:
 
 | Var                                                                  | Where set           | Purpose                                                                                                                                                          |
@@ -629,9 +629,9 @@ The live `dd-idle-reaper` pod also owns the 90-minute cluster doctor loop:
 - `CLUSTER_DOCTOR_TASK_URL=http://dd-dev-server-api.default.svc.cluster.local:8080/tasks`
 - `CLUSTER_DOCTOR_THREAD_ID=00000000-0000-4000-8000-000000000001`
 
-The prompt is inline in [`idle-reaper-rs/src/main.rs`](./idle-reaper-rs/src/main.rs) for now. It
+The prompt is inline in [`deployments/idle-reaper-rs/src/main.rs`](./deployments/idle-reaper-rs/src/main.rs) for now. It
 asks the remote-dev agent to query Prometheus, Loki, Grafana, NATS, and runtime health endpoints,
-patch concrete issues under `remote/`, run targeted tests, and rely on `remote/dev-server` to
+patch concrete issues under `remote/`, run targeted tests, and rely on `remote/deployments/dev-server` to
 push/open the PR.
 
 The same `dd-idle-reaper` deployment owns the daily worker image cron. At 4am America/New_York it
@@ -702,11 +702,11 @@ secrets.
 The structural plumbing — schema, zod shapes, event flow, UI, auth, thread runtime routing, and
 SDK/CLI provider selection — is in place end-to-end. The only thing between us and a real cloud
 upload is the storage SDK install + adapter implementation, all clearly marked `TODO(remote-dev)`
-in [`dev-server/src/storage/`](./dev-server/src/storage/).
+in [`deployments/dev-server/src/storage/`](./deployments/dev-server/src/storage/).
 
 ## Deployment cadence and container shape
 
-The warm-image path is now the default for Kubernetes: `remote/dev-server` builds an image with
+The warm-image path is now the default for Kubernetes: `remote/deployments/dev-server` builds an image with
 git, OpenSSH, GitHub CLI, provider CLIs, the compiled Node server, and a warm `dd-next-1`
 repo-template already installed. The image runs as the built-in `node` user and stores mutable
 thread state under `/home/node/workspace`.
@@ -764,13 +764,14 @@ surface — review before broadening access.
   HMAC-sign the body with per-task derivation so injected events for unknown tasks 4xx.
 - **Image storage adapters S3/R2/GCS/Drive are stubs.** They throw on call until the corresponding
   SDK is wired in (`@aws-sdk/client-s3`, `@google-cloud/storage`, `googleapis`). Each TODO block in
-  [`dev-server/src/storage/`](./dev-server/src/storage/) has the exact code to drop in.
+  [`deployments/dev-server/src/storage/`](./deployments/dev-server/src/storage/) has the exact code to drop in.
 
 ## Adding more services here later
 
-A new long-running service should be a sibling directory with its own `Dockerfile`, `package.json`,
-and `readme.md` — for example, `remote/queue-worker/` or `remote/eval-runner/`. Try to reuse the
-same patterns dev-server uses:
+A new long-running service should be a directory under `remote/deployments/` with its own
+`Dockerfile`, `package.json`, and `readme.md` — for example,
+`remote/deployments/queue-worker/` or `remote/deployments/eval-runner/`. Try to reuse the same
+patterns dev-server uses:
 
 - All credentials in `process.env`, never baked into the image.
 - Talk to Vercel via shared-secret HTTP, not direct DB access.

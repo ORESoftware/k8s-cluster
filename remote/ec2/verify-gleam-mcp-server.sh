@@ -10,7 +10,7 @@ app_name="${MCP_ARGO_APP_NAME:-dd-gleam-mcp-server}"
 service_name="${MCP_SERVICE_NAME:-dd-gleam-mcp-server}"
 deployment_name="${MCP_DEPLOYMENT_NAME:-dd-gleam-mcp-server}"
 service_account="${MCP_SERVICE_ACCOUNT:-system:serviceaccount:${namespace}:dd-gleam-mcp-server}"
-expected_app_path="${MCP_EXPECTED_APP_PATH:-remote/gleam-mcp-server/k8s/ec2}"
+expected_app_path="${MCP_EXPECTED_APP_PATH:-remote/deployments/gleam-mcp-server/k8s/ec2}"
 local_port="${MCP_LOCAL_PORT:-18090}"
 rollout_timeout="${MCP_ROLLOUT_TIMEOUT:-300s}"
 

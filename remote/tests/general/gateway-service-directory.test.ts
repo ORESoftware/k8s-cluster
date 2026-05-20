@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/web-home-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/web-home-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -49,7 +49,7 @@ function assertPathEntry(source: string, label: string, href?: string): void {
 }
 
 test('rust homepage lists public task paths and protected ops paths', async () => {
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(home, /dd remote service directory/);
   assert.match(home, /Public entrypoint for the EC2 Kubernetes runtime\. Open paths:/);
@@ -242,7 +242,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   const authService = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-auth.service.yaml',
   );
-  const authServer = await readRepoFile('remote/auth-server-rs/src/main.rs');
+  const authServer = await readRepoFile('remote/deployments/auth-server-rs/src/main.rs');
   const webrtcDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-webrtc-signaling.deployment.yaml',
   );
@@ -268,10 +268,10 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     'remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml',
   );
   const lambdaDeployment = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
   );
   const lambdaService = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
   );
   const lambdaApp = await readRepoFile(
     'remote/argocd/apps/dd-gleam-lambda-runner.application.yaml',
@@ -461,18 +461,18 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(kustomization, /dd-build-server\.service\.yaml/);
   assert.match(kustomization, /dd-build-server\.networkpolicy\.yaml/);
   assert.match(webrtcDeployment, /name:\s*dd-webrtc-signaling/);
-  assert.match(webrtcDeployment, /cd \/opt\/dd-next-1\/remote\/webrtc-signaling-rs/);
+  assert.match(webrtcDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/webrtc-signaling-rs/);
   assert.match(webrtcDeployment, /containerPort:\s*8095/);
   assert.match(webrtcService, /name:\s*dd-webrtc-signaling/);
   assert.match(webrtcService, /port:\s*8095/);
   assert.match(scraperDeployment, /name:\s*dd-web-scraper/);
-  assert.match(scraperDeployment, /cd \/opt\/dd-next-1\/remote\/web-scraper-service/);
+  assert.match(scraperDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/web-scraper-service/);
   assert.match(scraperDeployment, /containerPort:\s*8097/);
   assert.match(scraperService, /name:\s*dd-web-scraper/);
   assert.match(scraperService, /port:\s*8097/);
   assert.match(buildServerDeployment, /name:\s*dd-build-server/);
   assert.match(buildServerDeployment, /serviceAccountName:\s*dd-build-server/);
-  assert.match(buildServerDeployment, /cd \/opt\/dd-next-1\/remote\/build-server-rs/);
+  assert.match(buildServerDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/build-server-rs/);
   assert.match(buildServerDeployment, /containerPort:\s*8100/);
   assert.match(
     buildServerDeployment,
@@ -497,11 +497,11 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(buildServerNetworkPolicy, /app:\s*dd-build-server/);
   assert.match(buildServerNetworkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(lambdaDeployment, /name:\s*dd-gleam-lambda-runner/);
-  assert.match(lambdaDeployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
+  assert.match(lambdaDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/gleam-lambda-runner/);
   assert.match(lambdaDeployment, /containerPort:\s*8083/);
   assert.match(lambdaService, /name:\s*dd-gleam-lambda-runner/);
   assert.match(lambdaService, /port:\s*8083/);
-  assert.match(lambdaApp, /path:\s*remote\/gleam-lambda-runner\/k8s\/ec2/);
+  assert.match(lambdaApp, /path:\s*remote\/deployments\/gleam-lambda-runner\/k8s\/ec2/);
   assert.match(authDeployment, /name:\s*dd-remote-auth/);
   assert.match(
     authDeployment,
@@ -645,13 +645,13 @@ test("gateway Let's Encrypt renewal script stays aligned with the ACME webroot f
 });
 
 test('rust agent tasks page fetches the REST API directly', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const cargo = await readRepoFile('remote/web-home-rs/Cargo.toml');
-  const readme = await readRepoFile('remote/web-home-rs/readme.md');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/web-home-rs/Cargo.toml');
+  const readme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml',
   );
-  const dockerfile = await readRepoFile('remote/web-home-rs/Dockerfile');
+  const dockerfile = await readRepoFile('remote/deployments/web-home-rs/Dockerfile');
   const refreshWorkflow = await readRepoFile(
     '.github/workflows/refresh-remote-web-home-local-image.yml',
   );
@@ -665,8 +665,8 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   const restRbac = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-rest-api-rbac.yaml',
   );
-  const restReadme = await readRepoFile('remote/rest-api-rs/readme.md');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const restReadme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(server, /\/agents\/tasks/);
   assert.match(server, /Thread chat/);
@@ -704,7 +704,7 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/dd-remote-web-home"\]/);
   assert.match(refreshWorkflow, /name: Refresh remote web-home local image/);
   assert.match(refreshWorkflow, /push:[\s\S]*branches:[\s\S]*-\s*dev/);
-  assert.match(refreshWorkflow, /remote\/web-home-rs\/\*\*/);
+  assert.match(refreshWorkflow, /remote\/deployments\/web-home-rs\/\*\*/);
   assert.match(refreshWorkflow, /workflow_dispatch:/);
   assert.match(refreshWorkflow, /group: refresh-remote-web-home-local-image/);
   assert.match(refreshWorkflow, /ref: dev/);
@@ -715,7 +715,7 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(refreshWorkflow, /aws-region: \$\{\{ vars\.AWS_REGION \|\| secrets\.AWS_REGION \|\| 'us-east-1' \}\}/);
   assert.match(
     refreshWorkflow,
-    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/web-home-rs/,
+    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/deployments\/web-home-rs/,
   );
   assert.match(
     refreshWorkflow,
@@ -861,7 +861,7 @@ test('otel collector scrapes the rust REST API', async () => {
 });
 
 test('rust agent tasks page keeps the direct REST fetch error contract', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.doesNotMatch(server, /agent_remote_dev_threads/);
   assert.doesNotMatch(server, /SUPABASE_SERVICE_ROLE_KEY/);
@@ -895,9 +895,9 @@ test('rust agent tasks page keeps the direct REST fetch error contract', async (
 });
 
 test('rust agent threads page renders stored response events and feedback controls', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const readme = await readRepoFile('remote/web-home-rs/readme.md');
-  const restReadme = await readRepoFile('remote/rest-api-rs/readme.md');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
+  const restReadme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
   const threadsJs = server.slice(
     server.indexOf('const AGENTS_THREADS_JS'),
     server.indexOf('const AGENTS_TASKS_CSS'),
@@ -933,7 +933,7 @@ test('rust agent threads page renders stored response events and feedback contro
   );
   assert.match(
     server,
-    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*max-height: min\(58dvh, 560px\);[\s\S]*overflow: hidden auto;/,
+    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*min-height: 154px;[\s\S]*max-height: none;[\s\S]*overflow: visible;/,
   );
   assert.match(server, /\.main\.control-top #thread-control-panel \{[\s\S]*order: 1;/);
   assert.match(server, /\.main\.control-bottom #thread-control-panel \{[\s\S]*order: 2;/);
@@ -1124,7 +1124,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(
     server,
-    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*max-height: min\(58dvh, 560px\);[\s\S]*overflow: hidden auto;[\s\S]*z-index: 1;/,
+    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*min-height: 154px;[\s\S]*max-height: none;[\s\S]*overflow: visible;[\s\S]*z-index: 1;/,
   );
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
@@ -1152,8 +1152,8 @@ test('rust agent threads page renders stored response events and feedback contro
 });
 
 test('rust thread chat dispatch keeps worker proxy transport errors server-side', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(
     server,
@@ -1204,8 +1204,8 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
 });
 
 test('rust agent tasks page exposes runtime thread controls without collapsing admin archival semantics', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(
     server,
@@ -1378,7 +1378,7 @@ test('prometheus is configured for gateway subpath hosting', async () => {
 
 test('gleam websocket homepage honors the gateway prefix', async () => {
   const server = await readRepoFile(
-    'remote/gleamlang-server/src/gleamlang_server/http_server.gleam',
+    'remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam',
   );
 
   assert.match(server, /startsWith\('\/gleam\/'\)/);
@@ -1386,8 +1386,8 @@ test('gleam websocket homepage honors the gateway prefix', async () => {
 });
 
 test('claude sdk runner pins a runnable native executable before dispatch', async () => {
-  const runner = await readRepoFile('remote/dev-server/src/agents/claude-sdk.ts');
-  const selector = await readRepoFile('remote/dev-server/src/agents/index.ts');
+  const runner = await readRepoFile('remote/deployments/dev-server/src/agents/claude-sdk.ts');
+  const selector = await readRepoFile('remote/deployments/dev-server/src/agents/index.ts');
 
   assert.match(runner, /resolveClaudeCodeExecutable/);
   assert.match(runner, /function isRunnableExecutable\(executable: string\): boolean/);
@@ -1408,11 +1408,11 @@ test('claude sdk runner pins a runnable native executable before dispatch', asyn
 });
 
 test('node worker image is baked with git/ssh and runs as the node user', async () => {
-  const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
+  const dockerfile = await readRepoFile('remote/deployments/dev-server/Dockerfile');
   const bootstrapDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(dockerfile, /apt-get install -y --no-install-recommends[\s\S]*git openssh-client/);
   assert.match(dockerfile, /USER node/);
@@ -1450,9 +1450,9 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
 });
 
 test('node worker opens draft PRs only through explicit control action', async () => {
-  const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
-  const webHome = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(server, /POST \/thread\/open-pr/);
   assert.match(server, /fastify\.post\('\/thread\/open-pr'/);
@@ -1478,8 +1478,8 @@ test('node worker opens draft PRs only through explicit control action', async (
 });
 
 test('node worker exposes manual commit and terminal controls for pinned threads', async () => {
-  const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
+  const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const dockerfile = await readRepoFile('remote/deployments/dev-server/Dockerfile');
 
   assert.match(server, /POST \/thread\/make-commit/);
   assert.match(server, /GET  \/terminal/);

@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-akka-ws-server
+  namespace: default
+  labels:
+    app: dd-akka-ws-server
+spec:
+  replicas: 1
+  # Zero-surge rollout: don't start a new pod until the old one is fully gone. The single-node
+  # cluster doesn't have headroom to run two replicas during a deploy. Same shape as the
+  # gcs-router fix in commit 98f9ada.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-akka-ws-server
+  template:
+    metadata:
+      labels:
+        app: dd-akka-ws-server
+      annotations:
+        dd.dev/code-revision: '2026-05-18-telemetry'
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: akka-ws-server
+          image: docker.io/library/maven:3.9.9-eclipse-temurin-21
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          # `set -o pipefail` is bash-only. The maven base image ships dash as /bin/sh, which
+          # rejects it (see commit b7b3c1b for the same fix on fsharp-ws-server).
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/akka-ws-server
+              echo "Building dd-akka-ws-server with Maven..."
+              mvn -B -e -DskipTests package
+              exec java $JAVA_OPTS -jar target/dd-akka-ws-server.jar
+          env:
+            - name: HTTP_HOST
+              value: 0.0.0.0
+            - name: HTTP_PORT
+              value: '8086'
+            - name: JAVA_OPTS
+              value: -XX:+UseG1GC -XX:MaxRAMPercentage=70 -Dfile.encoding=UTF-8
+            # The pinned-at-30 workaround was removed once async-java/async.java#9 landed
+            # the CounterLimit AtomicInteger fix. With the fix the live /v1/benchmark endpoint
+            # runs the full 200 iterations and returns p50/p95/p99 + throughput from a
+            # statistically meaningful sample size.
+            - name: BENCHMARK_ITERATIONS
+              value: '200'
+            - name: BENCHMARK_PAYLOAD
+              value: '{"id":"bench","payload":"a benchmark message body"}'
+          ports:
+            - name: http
+              containerPort: 8086
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              # Single-node cluster is request-pressured. WS handler pod is mostly idle awaiting
+              # frames; trim baseline to 50m so it actually schedules. Burst budget (limits)
+              # stays at 2 CPUs.
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

@@ -65,7 +65,7 @@ test('observability stack scrapes nats exporter and dashboards nats metrics', as
 });
 
 test('future remote task queue design keeps thread affinity and shadow rollout constraints', async () => {
-  const design = await readRepoFile('remote/nats/future.md');
+  const design = await readRepoFile('remote/deployments/nats/future.md');
 
   assert.match(design, /current production path should\s+stay direct/i);
   assert.match(design, /Do not put all Node\.js workers in one generic queue group/);

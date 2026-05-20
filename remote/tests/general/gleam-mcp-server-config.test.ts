@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/gleam-mcp-server/gleam.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/gleam-mcp-server/gleam.toml'))) {
       return candidate;
     }
   }
@@ -21,22 +21,22 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('Gleam MCP server is a standalone OTP runtime', async () => {
-  const gleamToml = await readRepoFile('remote/gleam-mcp-server/gleam.toml');
-  const main = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_server.gleam');
+  const gleamToml = await readRepoFile('remote/deployments/gleam-mcp-server/gleam.toml');
+  const main = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_server.gleam');
   const httpServer = await readRepoFile(
-    'remote/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam',
+    'remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam',
   );
-  const metrics = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_server/metrics.gleam');
+  const metrics = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_server/metrics.gleam');
   const observability = await readRepoFile(
-    'remote/gleam-mcp-server/src/gleam_mcp_server/observability.gleam',
+    'remote/deployments/gleam-mcp-server/src/gleam_mcp_server/observability.gleam',
   );
-  const k8s = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_server/k8s.gleam');
+  const k8s = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_server/k8s.gleam');
   const observabilityFfi = await readRepoFile(
-    'remote/gleam-mcp-server/src/gleam_mcp_observability.erl',
+    'remote/deployments/gleam-mcp-server/src/gleam_mcp_observability.erl',
   );
-  const k8sFfi = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_k8s.erl');
-  const runtimeEnv = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_runtime_env.erl');
-  const jsonFfi = await readRepoFile('remote/gleam-mcp-server/src/gleam_mcp_json.erl');
+  const k8sFfi = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_k8s.erl');
+  const runtimeEnv = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_runtime_env.erl');
+  const jsonFfi = await readRepoFile('remote/deployments/gleam-mcp-server/src/gleam_mcp_json.erl');
 
   assert.match(gleamToml, /name = "gleam_mcp_server"/);
   assert.match(gleamToml, /mist = ">= 6\.0\.0 and < 7\.0\.0"/);
@@ -121,31 +121,31 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
 
 test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async () => {
   const ec2Deployment = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml',
   );
   const ec2Service = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.service.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.service.yaml',
   );
   const ec2NetworkPolicy = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.networkpolicy.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.networkpolicy.yaml',
   );
   const ec2Rbac = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server-rbac.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server-rbac.yaml',
   );
   const ec2Kustomization = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/ec2/kustomization.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/ec2/kustomization.yaml',
   );
   const minikubeDeployment = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.deployment.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.deployment.yaml',
   );
   const minikubeNetworkPolicy = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.networkpolicy.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.networkpolicy.yaml',
   );
   const minikubeRbac = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server-rbac.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server-rbac.yaml',
   );
   const minikubeKustomization = await readRepoFile(
-    'remote/gleam-mcp-server/k8s/minikube/kustomization.yaml',
+    'remote/deployments/gleam-mcp-server/k8s/minikube/kustomization.yaml',
   );
   const ec2App = await readRepoFile('remote/argocd/apps/dd-gleam-mcp-server.application.yaml');
   const minikubeApp = await readRepoFile(
@@ -157,7 +157,7 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Deployment, /ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine/);
   assert.match(
     ec2Deployment,
-    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*WORK_ROOT=\/tmp\/dd-gleam-mcp-server\/dd-next-1[\s\S]*cp -R "\$SRC_ROOT\/remote\/gleam-mcp-server"\/\.[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*exec gleam run/,
+    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*WORK_ROOT=\/tmp\/dd-gleam-mcp-server\/dd-next-1[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\.[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*exec gleam run/,
   );
   assert.doesNotMatch(ec2Deployment, /apk add/);
   assert.doesNotMatch(ec2Deployment, /gleam deps download/);
@@ -254,11 +254,11 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(minikubeNetworkPolicy, /port:\s*7777/);
   assert.match(minikubeNetworkPolicy, /port:\s*8222/);
   assert.match(minikubeNetworkPolicy, /port:\s*443/);
-  assert.match(ec2App, /path:\s*remote\/gleam-mcp-server\/k8s\/ec2/);
-  assert.match(minikubeApp, /path:\s*remote\/gleam-mcp-server\/k8s\/minikube/);
+  assert.match(ec2App, /path:\s*remote\/deployments\/gleam-mcp-server\/k8s\/ec2/);
+  assert.match(minikubeApp, /path:\s*remote\/deployments\/gleam-mcp-server\/k8s\/minikube/);
   assert.match(ec2Verifier, /^#!\/usr\/bin\/env bash/m);
   assert.match(ec2Verifier, /remote\/argocd\/apps\/dd-gleam-mcp-server\.application\.yaml/);
-  assert.match(ec2Verifier, /MCP_EXPECTED_APP_PATH:-remote\/gleam-mcp-server\/k8s\/ec2/);
+  assert.match(ec2Verifier, /MCP_EXPECTED_APP_PATH:-remote\/deployments\/gleam-mcp-server\/k8s\/ec2/);
   assert.match(ec2Verifier, /\*minikube\*\|\*kind\*\|\*docker-desktop\*\|\*colima\*/);
   assert.match(ec2Verifier, /ALLOW_NON_EC2_CONTEXT=true/);
   assert.match(ec2Verifier, /kubectl -n "\$\{argocd_namespace\}" get application "\$\{app_name\}"/);
@@ -304,9 +304,9 @@ test('Gleam MCP server is exposed through gateway and observability', async () =
 
 test('Gleam MCP server exposes read-only observability tools', async () => {
   const httpServer = await readRepoFile(
-    'remote/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam',
+    'remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam',
   );
-  const readme = await readRepoFile('remote/gleam-mcp-server/readme.md');
+  const readme = await readRepoFile('remote/deployments/gleam-mcp-server/readme.md');
 
   assert.match(httpServer, /k8s\.deployments_json\(\)/);
   assert.match(httpServer, /observability\.health_json\(\)/);

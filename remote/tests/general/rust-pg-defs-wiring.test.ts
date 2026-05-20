@@ -22,21 +22,21 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('dd-remote-rest-api declares dd-pg-defs as a local path dependency', async () => {
-  const cargoToml = await readRepoFile('remote/rest-api-rs/Cargo.toml');
+  const cargoToml = await readRepoFile('remote/deployments/rest-api-rs/Cargo.toml');
   // Single source of truth for the shared RDS Postgres contract. Without
   // this path-dep the service can drift from schema.sql.
   assert.match(
     cargoToml,
-    /dd-pg-defs\s*=\s*\{\s*path\s*=\s*"\.\.\/libs\/pg-defs\/generated\/rust"\s*\}/,
-    'remote/rest-api-rs/Cargo.toml is missing the dd-pg-defs path-dep entry.',
+    /dd-pg-defs\s*=\s*\{\s*path\s*=\s*"\.\.\/\.\.\/libs\/pg-defs\/generated\/rust"\s*\}/,
+    'remote/deployments/rest-api-rs/Cargo.toml is missing the dd-pg-defs path-dep entry.',
   );
 });
 
 test('dd-remote-rest-api exposes a pg_contract module that re-exports dd_pg_defs', async () => {
-  const pgContractPath = resolve(repoRoot, 'remote/rest-api-rs/src/pg_contract.rs');
+  const pgContractPath = resolve(repoRoot, 'remote/deployments/rest-api-rs/src/pg_contract.rs');
   assert.ok(
     existsSync(pgContractPath),
-    'remote/rest-api-rs/src/pg_contract.rs is missing. See the file in remote/rest-api-rs for the reference pattern (re-export + assert_canonical_schema_matches_local_reads).',
+    'remote/deployments/rest-api-rs/src/pg_contract.rs is missing. See the file in remote/deployments/rest-api-rs for the reference pattern (re-export + assert_canonical_schema_matches_local_reads).',
   );
   const source = await readFile(pgContractPath, 'utf8');
   assert.match(
@@ -59,7 +59,7 @@ test('dd-remote-rest-api exposes a pg_contract module that re-exports dd_pg_defs
 });
 
 test('dd-remote-rest-api wires pg_contract::assert into main()', async () => {
-  const source = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const source = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   assert.match(
     source,
     /^mod pg_contract;$/m,
@@ -78,9 +78,9 @@ test('dd-remote-web-home stays free of direct Postgres dependencies', async () =
   // wants to read Postgres directly from web-home should route through
   // dd-remote-rest-api instead (so the canonical pg-defs surface stays
   // single). If you must add a direct PG client, also add a pg_contract
-  // module like remote/rest-api-rs/src/pg_contract.rs and update this
+  // module like remote/deployments/rest-api-rs/src/pg_contract.rs and update this
   // test to enforce the same wiring.
-  const cargoToml = await readRepoFile('remote/web-home-rs/Cargo.toml');
+  const cargoToml = await readRepoFile('remote/deployments/web-home-rs/Cargo.toml');
   for (const forbidden of [
     'tokio-postgres',
     'sqlx',
@@ -91,17 +91,17 @@ test('dd-remote-web-home stays free of direct Postgres dependencies', async () =
     assert.doesNotMatch(
       cargoToml,
       new RegExp(`^\\s*${forbidden.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}`, 'm'),
-      `remote/web-home-rs/Cargo.toml unexpectedly declares ${forbidden}. If web-home truly needs direct DB access, wire it through a new pg_contract module against dd-pg-defs (mirror remote/rest-api-rs/src/pg_contract.rs) and update this test accordingly.`,
+      `remote/deployments/web-home-rs/Cargo.toml unexpectedly declares ${forbidden}. If web-home truly needs direct DB access, wire it through a new pg_contract module against dd-pg-defs (mirror remote/deployments/rest-api-rs/src/pg_contract.rs) and update this test accordingly.`,
     );
   }
-  const source = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const source = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   // No direct PG client usage in the Rust source either; web-home stays
   // a pure HTML server today.
   for (const forbidden of [/tokio_postgres::/, /use tokio_postgres/, /::Postgres\b/]) {
     assert.doesNotMatch(
       source,
       forbidden,
-      `remote/web-home-rs/src/main.rs imports a Postgres client (${forbidden}). Route DB reads through dd-remote-rest-api instead, or wire pg_contract.`,
+      `remote/deployments/web-home-rs/src/main.rs imports a Postgres client (${forbidden}). Route DB reads through dd-remote-rest-api instead, or wire pg_contract.`,
     );
   }
 });
@@ -120,7 +120,7 @@ test('cargo check passes for dd-remote-rest-api (proves dd-pg-defs path-dep reso
     'cargo',
     ['check', '--quiet', '--message-format=short'],
     {
-      cwd: resolve(repoRoot, 'remote/rest-api-rs'),
+      cwd: resolve(repoRoot, 'remote/deployments/rest-api-rs'),
       encoding: 'utf8',
       timeout: 540_000,
     },
@@ -143,7 +143,7 @@ test('cargo test passes the pg_contract unit suite (column subset + table name +
     'cargo',
     ['test', '--quiet', '--bin', 'dd-remote-rest-api', 'pg_contract'],
     {
-      cwd: resolve(repoRoot, 'remote/rest-api-rs'),
+      cwd: resolve(repoRoot, 'remote/deployments/rest-api-rs'),
       encoding: 'utf8',
       timeout: 540_000,
     },

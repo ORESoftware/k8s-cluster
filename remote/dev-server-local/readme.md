@@ -4,7 +4,7 @@ Node.js + TypeScript HTTP server that lives inside a Docker container, keeps a w
 configured git repo, and streams agent events back to the app and directly to the browser.
 
 This folder is the **local minikube** variant. Keep production EC2 Kubernetes work in
-`remote/dev-server` and `remote/k8s`; keep laptop cluster iteration here. The local container is
+`remote/deployments/dev-server` and `remote/k8s`; keep laptop cluster iteration here. The local container is
 still pinned to one thread via `REMOTE_DEV_THREAD_ID`, but the minikube manifest uses a single
 reusable local thread id so you can verify the chat/runtime loop without creating production
 per-thread stacks.

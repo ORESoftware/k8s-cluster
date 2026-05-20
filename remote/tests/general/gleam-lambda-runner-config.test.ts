@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/gleam-lambda-runner/gleam.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/gleam-lambda-runner/gleam.toml'))) {
       return candidate;
     }
   }
@@ -21,38 +21,38 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('gleam lambda runner keeps child-process and database contracts explicit', async () => {
-  const gleamToml = await readRepoFile('remote/gleam-lambda-runner/gleam.toml');
+  const gleamToml = await readRepoFile('remote/deployments/gleam-lambda-runner/gleam.toml');
   const httpServer = await readRepoFile(
-    'remote/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam',
+    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam',
   );
-  const main = await readRepoFile('remote/gleam-lambda-runner/src/gleam_lambda_runner.gleam');
+  const main = await readRepoFile('remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner.gleam');
   const natsModule = await readRepoFile(
-    'remote/gleam-lambda-runner/src/gleam_lambda_runner/nats.gleam',
+    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/nats.gleam',
   );
   const childProcess = await readRepoFile(
-    'remote/gleam-lambda-runner/src/gleam_lambda_runner/child_process.gleam',
+    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/child_process.gleam',
   );
-  const lambdaNats = await readRepoFile('remote/gleam-lambda-runner/src/lambda_nats.erl');
-  const runtimeEnv = await readRepoFile('remote/gleam-lambda-runner/src/lambda_runtime_env.erl');
+  const lambdaNats = await readRepoFile('remote/deployments/gleam-lambda-runner/src/lambda_nats.erl');
+  const runtimeEnv = await readRepoFile('remote/deployments/gleam-lambda-runner/src/lambda_runtime_env.erl');
   const pgContract = await readRepoFile(
-    'remote/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam',
+    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam',
   );
   const pgDefsToml = await readRepoFile('remote/libs/pg-defs/generated/gleam/gleam.toml');
-  const erlPort = await readRepoFile('remote/gleam-lambda-runner/src/lambda_child_runner.erl');
+  const erlPort = await readRepoFile('remote/deployments/gleam-lambda-runner/src/lambda_child_runner.erl');
   const jsRunner = await readRepoFile(
-    'remote/gleam-lambda-runner/child-runtimes/js-function-runner.mjs',
+    'remote/deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs',
   );
   const pythonRunner = await readRepoFile(
-    'remote/gleam-lambda-runner/child-runtimes/python-function-runner.py',
+    'remote/deployments/gleam-lambda-runner/child-runtimes/python-function-runner.py',
   );
   const rubyRunner = await readRepoFile(
-    'remote/gleam-lambda-runner/child-runtimes/ruby-function-runner.rb',
+    'remote/deployments/gleam-lambda-runner/child-runtimes/ruby-function-runner.rb',
   );
   const bashRunner = await readRepoFile(
-    'remote/gleam-lambda-runner/child-runtimes/bash-function-runner.mjs',
+    'remote/deployments/gleam-lambda-runner/child-runtimes/bash-function-runner.mjs',
   );
-  const restApi = await readRepoFile('remote/rest-api-rs/src/main.rs');
-  const webHome = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const gateway = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
   );
@@ -62,28 +62,28 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   // Single source of truth for shared table DDL; per-table dupes were retired.
   const tableSql = await readRepoFile('remote/libs/pg-defs/schema/schema.sql');
   const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
-  const manifest = await readRepoFile('remote/gleam-lambda-runner/manifest.toml');
-  const dockerfile = await readRepoFile('remote/gleam-lambda-runner/Dockerfile');
+  const manifest = await readRepoFile('remote/deployments/gleam-lambda-runner/manifest.toml');
+  const dockerfile = await readRepoFile('remote/deployments/gleam-lambda-runner/Dockerfile');
   const nodeRuntimeDockerfile = await readRepoFile(
-    'remote/gleam-lambda-runner/runtime-images/nodejs.Dockerfile',
+    'remote/deployments/gleam-lambda-runner/runtime-images/nodejs.Dockerfile',
   );
   const bashRuntimeDockerfile = await readRepoFile(
-    'remote/gleam-lambda-runner/runtime-images/bash.Dockerfile',
+    'remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile',
   );
 
   assert.match(gleamToml, /name = "gleam_lambda_runner"/);
-  assert.match(gleamToml, /dd_pg_defs = \{ path = "\.\.\/libs\/pg-defs\/generated\/gleam" \}/);
-  assert.match(manifest, /name = "dd_pg_defs"[\s\S]*source = "local"[\s\S]*path = "\.\.\/libs\/pg-defs\/generated\/gleam"/);
+  assert.match(gleamToml, /dd_pg_defs = \{ path = "\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam" \}/);
+  assert.match(manifest, /name = "dd_pg_defs"[\s\S]*source = "local"[\s\S]*path = "\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam"/);
   assert.doesNotMatch(pgDefsToml, /\bpog\b/);
   assert.doesNotMatch(manifest, /\bpgo\b|\bpog\b/);
   assert.match(dockerfile, /COPY remote\/libs\/pg-defs\/generated\/gleam \.\/remote\/libs\/pg-defs\/generated\/gleam/);
-  assert.match(dockerfile, /COPY remote\/gleam-lambda-runner\/src \.\/remote\/gleam-lambda-runner\/src/);
+  assert.match(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner\/src \.\/remote\/deployments\/gleam-lambda-runner\/src/);
   assert.match(dockerfile, /python3/);
   assert.match(dockerfile, /ruby/);
   assert.match(dockerfile, /bash/);
-  assert.match(dockerfile, /COPY remote\/gleam-lambda-runner\/runtime-images \.\/remote\/gleam-lambda-runner\/runtime-images/);
-  assert.doesNotMatch(dockerfile, /COPY remote\/gleam-lambda-runner \.\/remote\/gleam-lambda-runner/);
-  assert.match(dockerfile, /WORKDIR \/app\/remote\/gleam-lambda-runner/);
+  assert.match(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner\/runtime-images \.\/remote\/deployments\/gleam-lambda-runner\/runtime-images/);
+  assert.doesNotMatch(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner \.\/remote\/deployments\/gleam-lambda-runner/);
+  assert.match(dockerfile, /WORKDIR \/app\/remote\/deployments\/gleam-lambda-runner/);
   assert.match(nodeRuntimeDockerfile, /nodejs-current/);
   assert.match(bashRuntimeDockerfile, /nodejs-current/);
   assert.doesNotMatch(nodeRuntimeDockerfile, /node:22-alpine/);
@@ -286,23 +286,23 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
 
 test('gleam lambda runner ships ec2 and minikube service manifests', async () => {
   const ec2Deployment = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
   );
   const ec2Service = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
   );
   const ec2Rbac = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner-rbac.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner-rbac.yaml',
   );
   const ec2NetworkPolicy = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.networkpolicy.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.networkpolicy.yaml',
   );
-  const ec2Kustomization = await readRepoFile('remote/gleam-lambda-runner/k8s/ec2/kustomization.yaml');
+  const ec2Kustomization = await readRepoFile('remote/deployments/gleam-lambda-runner/k8s/ec2/kustomization.yaml');
   const minikubeDeployment = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/minikube/dd-gleam-lambda-runner.deployment.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/minikube/dd-gleam-lambda-runner.deployment.yaml',
   );
   const minikubeService = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/minikube/dd-gleam-lambda-runner.service.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/minikube/dd-gleam-lambda-runner.service.yaml',
   );
 
   assert.match(ec2Deployment, /name:\s*dd-gleam-lambda-runner/);
@@ -318,7 +318,7 @@ test('gleam lambda runner ships ec2 and minikube service manifests', async () =>
   assert.match(ec2Deployment, /gcompat/);
   assert.match(ec2Deployment, /libc6-compat/);
   assert.match(ec2Deployment, /rebar3/);
-  assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
+  assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/gleam-lambda-runner/);
   assert.match(ec2Deployment, /gleam deps download \|\| \{ sleep 10; gleam deps download; \}/);
   assert.match(ec2Deployment, /gleam build/);
   assert.match(ec2Deployment, /hpack\.app/);

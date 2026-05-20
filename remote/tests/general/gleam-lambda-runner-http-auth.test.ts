@@ -7,7 +7,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/gleam-lambda-runner/gleam.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/gleam-lambda-runner/gleam.toml'))) {
       return candidate;
     }
   }
@@ -16,7 +16,7 @@ function findRepoRoot(): string {
 }
 
 const repoRoot = findRepoRoot();
-const runnerCwd = resolve(repoRoot, 'remote/gleam-lambda-runner');
+const runnerCwd = resolve(repoRoot, 'remote/deployments/gleam-lambda-runner');
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));

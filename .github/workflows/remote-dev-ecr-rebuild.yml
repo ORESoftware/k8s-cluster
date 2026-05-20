@@ -67,8 +67,8 @@ jobs:
         if: steps.cadence.outputs.run_build == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: remote/dev-server
-          file: remote/dev-server/Dockerfile
+          context: remote/deployments/dev-server
+          file: remote/deployments/dev-server/Dockerfile
           push: true
           build-args: |
             DD_REPO_URL=git@github.com:dancing-dragons/dd-next-1.git

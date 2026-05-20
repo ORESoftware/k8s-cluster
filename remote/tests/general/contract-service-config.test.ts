@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/contract-service-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/contract-service-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust solana contract service is deployed, scraped, and guarded', async () => {
-  const cargo = await readRepoFile('remote/contract-service-rs/Cargo.toml');
-  const source = await readRepoFile('remote/contract-service-rs/src/main.rs');
-  const readme = await readRepoFile('remote/contract-service-rs/readme.md');
+  const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/contract-service-rs/readme.md');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-contract-service.deployment.yaml',
   );
@@ -36,7 +36,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(cargo, /name = "dd-contract-service"/);
@@ -75,7 +75,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(readme, /SOLANA_ALLOW_PRIVATE_RPC=true/);
 
   assert.match(deployment, /name:\s*dd-contract-service/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/contract-service-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/contract-service-rs/);
   assert.match(deployment, /CARGO_HOME=\/var\/cache\/dd-contract-service\/cargo/);
   assert.match(deployment, /cargo run --release --locked/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8101'/);

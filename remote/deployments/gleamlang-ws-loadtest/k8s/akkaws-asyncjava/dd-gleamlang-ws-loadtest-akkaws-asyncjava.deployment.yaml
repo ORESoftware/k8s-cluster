@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleamlang-ws-loadtest-akkaws-asyncjava
+  namespace: default
+  labels:
+    app: dd-gleamlang-ws-loadtest-akkaws-asyncjava
+    role: loadtest
+    target: dd-akka-ws-server
+    pipeline: asyncjava
+    runtime: gleam-js
+spec:
+  # Gleam/Node companion to dd-ws-loadtest-rs-akkaws-asyncjava. Same shape, different
+  # client runtime — useful for cross-checking the comparison results aren't an
+  # artifact of the Rust loadtest's tokio scheduling.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleamlang-ws-loadtest-akkaws-asyncjava
+  template:
+    metadata:
+      labels:
+        app: dd-gleamlang-ws-loadtest-akkaws-asyncjava
+        role: loadtest
+        target: dd-akka-ws-server
+        pipeline: asyncjava
+        runtime: gleam-js
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-node-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-loadtest
+              npm install --omit=dev
+              exec gleam run --target javascript
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-akka-ws-server.default.svc.cluster.local:8086/ws/asyncjava
+            - name: LOAD_MODE
+              value: pipeline
+            - name: CLIENT_COUNT
+              value: "50"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "10"
+            - name: MESSAGE_PAYLOAD
+              value: a benchmark message body
+            - name: HOLD_SECONDS
+              value: "3600"
+            - name: CONNECT_TIMEOUT_MS
+              value: "20000"
+            - name: RECONNECT_DELAY_MS
+              value: "1000"
+            - name: RAMP_DELAY_MS
+              value: "10"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "30"
+            - name: CORRELATION_TIMEOUT_MS
+              value: "10000"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

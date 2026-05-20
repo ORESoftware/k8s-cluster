@@ -10,18 +10,21 @@ task instead of relying only on prompt history.
 - Read `agents/*.md` if that directory exists in a checkout. Treat it as agent-specific
   operating context, not application source.
 - Read nested `AGENTS.md` files when working inside a subdirectory that defines one.
+- Read `docs/agent-context-memory.md` for the remote-agent memory and autonomy contract.
 - For this repo, the highest-value runtime runbooks are:
   - `remote/readme.md`
-  - `remote/dev-server/readme.md`
-  - `remote/gleam-mcp-server/readme.md`
+  - `remote/deployments/dev-server/readme.md`
+  - `remote/deployments/gleam-mcp-server/readme.md`
   - `remote/argocd/vpn/readme.md`
   - `remote/ec2/README.md`
 
 ## Runtime Context
 
-Agents launched by `remote/dev-server` may receive selected Postgres context blobs in
+Agents launched by `remote/deployments/dev-server` may receive selected Postgres context blobs in
 the prompt. Treat those as task-specific memory, and treat this file plus the docs above
 as persistent repo memory.
+They also receive the previous local `tmp/convos/thread.log` tail when it exists; use that as the
+per-thread breadcrumb trail for earlier prompts, events, failures, and summaries.
 
 When the cluster MCP server is configured as `dd_cluster`, use it before guessing live EC2
 Kubernetes deployment state, service wiring, inventory, or observability status. The MCP surface is
@@ -35,7 +38,7 @@ Do not put raw AWS keys, model keys, GitHub tokens, or gateway secrets in Git. T
 preferred operator path is:
 
 - External Secrets reads AWS Secrets Manager and syncs Kubernetes secrets.
-- Agents receive only the strict env allowlist defined in `remote/dev-server/src/agents`.
+- Agents receive only the strict env allowlist defined in `remote/deployments/dev-server/src/agents`.
 - Humans use the WireGuard VPN plus `dd-bastion` for private cluster access and read-only
   kubeconfig retrieval.
 - Browser access to protected public gateway paths goes through `dd-remote-auth`; configure

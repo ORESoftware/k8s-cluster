@@ -533,7 +533,7 @@ data:
       #
       # All path-family decisions are made inside gcs-router; the
       # gateway just forwards the WS upgrade with the path intact (minus
-      # the /gcs/ws prefix). See remote/gcs/k8s/ec2/gcs-router.configmap.yaml.
+      # the /gcs/ws prefix). See remote/deployments/gcs/k8s/ec2/gcs-router.configmap.yaml.
       #
       # proxy_read/send_timeout: 3600s here matches gcs-router's own
       # timeouts. 900s (pre-change) would have closed long-running chat

@@ -21,7 +21,7 @@
     "minikube:port-forward": "kubectl -n dd-dev-local port-forward svc/dd-dev-server-local 8080:8080",
     "minikube:render-ec2-mirror": "kubectl kustomize ../minikube/ec2-mirror",
     "minikube:build-ec2-web-home": "minikube image build -t dd-remote-web-home:dev ../web-home-rs",
-    "minikube:build-ec2-dev-server": "bash -lc 'eval \"$(minikube docker-env)\" && DOCKER_BUILDKIT=1 docker build --build-arg DD_REPO_URL=\"${DD_REPO_URL:-git@github.com:ORESoftware/k8s-cluster.git}\" --build-arg DD_REPO_REF=\"${DD_REPO_REF:-dev}\" --secret id=github_deploy_key,src=\"${GH_DEPLOY_KEY_PATH:-$HOME/.ssh/id_ed25519}\" -t dd-dev-server:dev ../dev-server'",
+    "minikube:build-ec2-dev-server": "bash -lc 'eval \"$(minikube docker-env)\" && DOCKER_BUILDKIT=1 docker build --build-arg DD_REPO_URL=\"${DD_REPO_URL:-git@github.com:ORESoftware/k8s-cluster.git}\" --build-arg DD_REPO_REF=\"${DD_REPO_REF:-dev}\" --secret id=github_deploy_key,src=\"${GH_DEPLOY_KEY_PATH:-$HOME/.ssh/id_ed25519}\" -t dd-dev-server:dev ../deployments/dev-server'",
     "minikube:build-ec2-mirror-images": "pnpm run minikube:build-ec2-web-home && pnpm run minikube:build-ec2-dev-server",
     "minikube:apply-ec2-mirror": "kubectl apply -k ../minikube/ec2-mirror",
     "minikube:port-forward-ec2-mirror": "kubectl -n default port-forward deployment/dd-remote-gateway 8080:80 8443:443",

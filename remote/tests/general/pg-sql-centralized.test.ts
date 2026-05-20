@@ -34,11 +34,11 @@ const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [
   'remote/libs/pg-defs/generated/go/sqlc',
   // Billing owns a separate SQLx-managed ledger database; those migrations are
   // intentionally outside the shared pg-defs RDS schema.
-  'remote/billing-server-rs/migrations',
+  'remote/deployments/billing-server-rs/migrations',
   // The F# websocket demo owns a service-local PostgreSQL data plane and runs
   // this idempotent schema at boot. It is intentionally disjoint from shared
   // RDS pg-defs tables.
-  'remote/fsharp-ws-server/sql',
+  'remote/deployments/fsharp-ws-server/sql',
 ];
 
 const IGNORED_DIRS = new Set([

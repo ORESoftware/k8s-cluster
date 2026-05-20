@@ -34,7 +34,7 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              cd /opt/dd-next-1/remote/rest-api-rs
+              cd /opt/dd-next-1/remote/deployments/rest-api-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST

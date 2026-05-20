@@ -49,12 +49,12 @@ kubeadm, containerd, and the language runtimes are pre-baked.
 
 | Role            | Instance     | Why                                                                                                                        |
 | --------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| single-node × 1 | `x8i.2xlarge` | 8 vCPU / 128 GiB — the closest x86 fit to the target 100-120 GiB RAM band, with enough headroom for kube-system, ingress-nginx, ArgoCD, and the host-side `remote/dev-server` controls page |
+| single-node × 1 | `x8i.2xlarge` | 8 vCPU / 128 GiB — the closest x86 fit to the target 100-120 GiB RAM band, with enough headroom for kube-system, ingress-nginx, ArgoCD, and the host-side `remote/deployments/dev-server` controls page |
 
 Sizing notes:
 
 - `t3.xlarge` (4 vCPU / 16 GiB) works for prereqs-only smoke tests — fine for validating the bootstrap path.
-- For real thread pods plus the host-side `remote/dev-server`, stay on the larger x86 shape (`x8i.2xlarge` or a comparable 128 GiB class) before considering multi-node — single-node is simpler to operate and the workload is bursty.
+- For real thread pods plus the host-side `remote/deployments/dev-server`, stay on the larger x86 shape (`x8i.2xlarge` or a comparable 128 GiB class) before considering multi-node — single-node is simpler to operate and the workload is bursty.
 - If you scale the box, edit the matching values in
   [`05-resource-quota.yaml`](./05-resource-quota.yaml) so the quota reflects allocatable capacity.
 
@@ -254,7 +254,7 @@ thread activity before scaling to zero.
 
 You can run either scheduler shape:
 
-1. `10-idle-reaper-deployment.yaml` — Rust binary loop (`remote/idle-reaper-rs`) posting to the
+1. `10-idle-reaper-deployment.yaml` — Rust binary loop (`remote/deployments/idle-reaper-rs`) posting to the
    sweep endpoint every `REAPER_INTERVAL_SECONDS`.
 2. `11` + `12` — Linux cron-service pod (`crond`) that executes shell jobs (default: once/minute
    sweep call via `curl`).

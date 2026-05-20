@@ -31,50 +31,50 @@ values (
       {
         "runtime": "nodejs",
         "image": "docker.io/library/dd-container-pool-nodejs-runtime:dev",
-        "dockerfile": "remote/container-pool-rs/runtime-images/nodejs.Dockerfile",
-        "buildContext": "remote/container-pool-rs"
+        "dockerfile": "remote/deployments/container-pool-rs/runtime-images/nodejs.Dockerfile",
+        "buildContext": "remote/deployments/container-pool-rs"
       },
       {
         "runtime": "nodejs-chat-openai",
         "image": "docker.io/library/dd-dev-server:dev",
-        "dockerfile": "remote/dev-server/Dockerfile",
-        "buildContext": "remote/dev-server"
+        "dockerfile": "remote/deployments/dev-server/Dockerfile",
+        "buildContext": "remote/deployments/dev-server"
       },
       {
         "runtime": "rust",
         "image": "docker.io/library/dd-container-pool-rust-runtime:dev",
-        "dockerfile": "remote/container-pool-rs/runtime-images/rust.Dockerfile",
-        "buildContext": "remote/container-pool-rs"
+        "dockerfile": "remote/deployments/container-pool-rs/runtime-images/rust.Dockerfile",
+        "buildContext": "remote/deployments/container-pool-rs"
       },
       {
         "runtime": "golang",
         "image": "docker.io/library/dd-container-pool-golang-runtime:dev",
-        "dockerfile": "remote/container-pool-rs/runtime-images/golang.Dockerfile",
-        "buildContext": "remote/container-pool-rs"
+        "dockerfile": "remote/deployments/container-pool-rs/runtime-images/golang.Dockerfile",
+        "buildContext": "remote/deployments/container-pool-rs"
       },
       {
         "runtime": "python3",
         "image": "docker.io/library/dd-container-pool-python3-runtime:dev",
-        "dockerfile": "remote/container-pool-rs/runtime-images/python3.Dockerfile",
-        "buildContext": "remote/container-pool-rs"
+        "dockerfile": "remote/deployments/container-pool-rs/runtime-images/python3.Dockerfile",
+        "buildContext": "remote/deployments/container-pool-rs"
       },
       {
         "runtime": "dart",
         "image": "docker.io/library/dd-container-pool-dart-runtime:dev",
-        "dockerfile": "remote/container-pool-rs/runtime-images/dart.Dockerfile",
-        "buildContext": "remote/container-pool-rs"
+        "dockerfile": "remote/deployments/container-pool-rs/runtime-images/dart.Dockerfile",
+        "buildContext": "remote/deployments/container-pool-rs"
       },
       {
         "runtime": "gleamlang",
         "image": "docker.io/library/dd-container-pool-gleamlang-runtime:dev",
-        "dockerfile": "remote/container-pool-rs/runtime-images/gleamlang.Dockerfile",
-        "buildContext": "remote/container-pool-rs"
+        "dockerfile": "remote/deployments/container-pool-rs/runtime-images/gleamlang.Dockerfile",
+        "buildContext": "remote/deployments/container-pool-rs"
       },
       {
         "runtime": "erlang",
         "image": "docker.io/library/dd-container-pool-erlang-runtime:dev",
-        "dockerfile": "remote/container-pool-rs/runtime-images/erlang.Dockerfile",
-        "buildContext": "remote/container-pool-rs"
+        "dockerfile": "remote/deployments/container-pool-rs/runtime-images/erlang.Dockerfile",
+        "buildContext": "remote/deployments/container-pool-rs"
       }
     ],
     "pools": [

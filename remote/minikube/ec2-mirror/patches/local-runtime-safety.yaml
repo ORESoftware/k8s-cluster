@@ -10,6 +10,48 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: dd-build-server
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: build-server
+          volumeMounts:
+            - mountPath: /run/containerd/containerd.sock
+              $patch: delete
+            - mountPath: /usr/local/bin/nerdctl
+              $patch: delete
+      volumes:
+        - name: containerd-sock
+          $patch: delete
+        - name: nerdctl-bin
+          $patch: delete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-container-pool
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: container-pool
+          volumeMounts:
+            - mountPath: /run/containerd/containerd.sock
+              $patch: delete
+            - mountPath: /usr/local/bin/nerdctl
+              $patch: delete
+      volumes:
+        - name: containerd-sock
+          $patch: delete
+        - name: nerdctl-bin
+          $patch: delete
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: dd-idle-reaper
   namespace: default
 spec:

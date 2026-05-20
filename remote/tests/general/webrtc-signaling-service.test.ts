@@ -10,9 +10,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust webrtc signaling service is a signaling-only deployment', async () => {
-  const server = await readRepoFile('remote/webrtc-signaling-rs/src/main.rs');
-  const readme = await readRepoFile('remote/webrtc-signaling-rs/readme.md');
-  const cargo = await readRepoFile('remote/webrtc-signaling-rs/Cargo.toml');
+  const server = await readRepoFile('remote/deployments/webrtc-signaling-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/webrtc-signaling-rs/readme.md');
+  const cargo = await readRepoFile('remote/deployments/webrtc-signaling-rs/Cargo.toml');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-webrtc-signaling.deployment.yaml',
   );
@@ -53,7 +53,7 @@ test('rust webrtc signaling service is a signaling-only deployment', async () =>
   assert.match(readme, /Browser to browser, browser to mobile, and mobile to mobile all use the same/);
   assert.match(readme, /Add a\s+TURN server such as coturn/);
   assert.match(deployment, /name:\s*dd-webrtc-signaling/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/webrtc-signaling-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/webrtc-signaling-rs/);
   assert.match(deployment, /containerPort:\s*8095/);
   assert.match(service, /name:\s*dd-webrtc-signaling/);
   assert.match(service, /port:\s*8095/);

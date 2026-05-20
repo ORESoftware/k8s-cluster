@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev
-    path: remote/gleam-mcp-server/k8s/minikube
+    path: remote/deployments/gleam-mcp-server/k8s/minikube
   destination:
     server: https://kubernetes.default.svc
     namespace: dd-dev-local

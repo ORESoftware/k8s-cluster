@@ -10,8 +10,8 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust reaper includes the inline cluster doctor prompt', async () => {
-  const reaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
-  const cargo = await readRepoFile('remote/idle-reaper-rs/Cargo.toml');
+  const reaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/idle-reaper-rs/Cargo.toml');
 
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
   assert.match(cargo, /chrono-tz/);
@@ -71,7 +71,7 @@ test('argocd reaper deployment runs the rust scheduler with a 90-minute doctor l
   assert.doesNotMatch(config, /NATS_WATCH_GLEAM_BROADCAST_SECRET:/);
   assert.doesNotMatch(config, /CLUSTER_DOCTOR_SERVER_AUTH_SECRET:/);
   assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/idle-reaper-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/idle-reaper-rs/);
   assert.match(deployment, /cargo run --release/);
   assert.match(deployment, /name:\s*dd-idle-reaper-config/);
   assert.match(deployment, /name:\s*CLUSTER_DOCTOR_SERVER_AUTH_SECRET/);
@@ -114,8 +114,8 @@ test('argocd runtime exposes a native headlamp cron sentinel', async () => {
 });
 
 test('reaper nats watchdog backstops worker prepare and websocket fanout', async () => {
-  const reaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
-  const readme = await readRepoFile('remote/idle-reaper-rs/README.md');
+  const reaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/idle-reaper-rs/README.md');
 
   assert.match(reaper, /struct NatsWatchJob/);
   assert.match(reaper, /NATS_WATCH_ACTIVE_INTERVAL_SECONDS", 5/);
@@ -138,7 +138,7 @@ test('dev-server can receive provider and github secrets for scheduled PR work',
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
-  const restApi = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(deployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
   assert.match(deployment, /envFrom:[\s\S]*secretRef:[\s\S]*name:\s*dd-agent-secrets/);

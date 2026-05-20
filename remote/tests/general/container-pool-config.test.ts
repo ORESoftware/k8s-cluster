@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/container-pool-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/container-pool-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -60,9 +60,9 @@ function parseContainerPoolAppConfigSeed(seedSql: string): {
 }
 
 test('rust container pool reads Postgres config and dispatches over HTTP or NATS', async () => {
-  const cargoToml = await readRepoFile('remote/container-pool-rs/Cargo.toml');
-  const source = await readRepoFile('remote/container-pool-rs/src/main.rs');
-  const readme = await readRepoFile('remote/container-pool-rs/readme.md');
+  const cargoToml = await readRepoFile('remote/deployments/container-pool-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/container-pool-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/container-pool-rs/readme.md');
   // schema/schema.sql is the single source of truth for every shared table
   // (app_config + container_pool_configs + lambda_functions + agent_remote_dev_*),
   // and drives every adapter under remote/libs/pg-defs/generated/. Per-table
@@ -160,7 +160,7 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(appConfigSeedSql, /"runtimeContract": \{/);
   assert.match(appConfigSeedSql, /"defaultHealthPath": "\/healthz"/);
   assert.match(appConfigSeedSql, /"baseImages": \[/);
-  assert.match(appConfigSeedSql, /"dockerfile": "remote\/container-pool-rs\/runtime-images\/nodejs\.Dockerfile"/);
+  assert.match(appConfigSeedSql, /"dockerfile": "remote\/deployments\/container-pool-rs\/runtime-images\/nodejs\.Dockerfile"/);
   assert.match(appConfigSeedSql, /dd-container-pool-nodejs-runtime:dev/);
   assert.match(appConfigSeedSql, /dd-container-pool-rust-runtime:dev/);
   assert.match(appConfigSeedSql, /dd-container-pool-golang-runtime:dev/);
@@ -253,8 +253,8 @@ test('container pool app_config seed is a complete runtime contract', async () =
     assert.ok(baseImage, `pool ${pool.slug} should have a matching base image`);
     assert.equal(pool.image, baseImage.image);
     if (pool.slug.startsWith('nodejs-chat-openai-')) {
-      assert.equal(baseImage.dockerfile, 'remote/dev-server/Dockerfile');
-      assert.equal(baseImage.buildContext, 'remote/dev-server');
+      assert.equal(baseImage.dockerfile, 'remote/deployments/dev-server/Dockerfile');
+      assert.equal(baseImage.buildContext, 'remote/deployments/dev-server');
       assert.equal(pool.requestPath, '/tasks');
       assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
       const expectedRepoBySlug = new Map([
@@ -268,9 +268,9 @@ test('container pool app_config seed is a complete runtime contract', async () =
     } else {
       assert.equal(
         baseImage.dockerfile,
-        `remote/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
+        `remote/deployments/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
       );
-      assert.equal(baseImage.buildContext, 'remote/container-pool-rs');
+      assert.equal(baseImage.buildContext, 'remote/deployments/container-pool-rs');
       assert.equal(pool.requestPath, parsed.runtimeContract.defaultRequestPath);
       assert.equal(pool.env.DD_POOL_RUNTIME, pool.slug);
       assert.ok(pool.env.DD_POOL_HANDLER.length > 0, `pool ${pool.slug} should define a handler`);
@@ -313,7 +313,7 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(deployment, /hostNetwork:\s*true/);
   assert.match(deployment, /dnsPolicy:\s*ClusterFirstWithHostNet/);
   assert.match(deployment, /securityContext:\s*\n\s*privileged:\s*true/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/container-pool-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/container-pool-rs/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8102'/);
   assert.match(
     deployment,
@@ -385,16 +385,16 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
 });
 
 test('container pool runtime base images cover the supported language pools', async () => {
-  const worker = await readRepoFile('remote/container-pool-rs/runtime-images/common/worker.py');
-  const shim = await readRepoFile('remote/container-pool-rs/scripts/nerdctl-process-shim.py');
-  const runtimeReadme = await readRepoFile('remote/container-pool-rs/runtime-images/readme.md');
+  const worker = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/worker.py');
+  const shim = await readRepoFile('remote/deployments/container-pool-rs/scripts/nerdctl-process-shim.py');
+  const runtimeReadme = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/readme.md');
   const dockerfiles = new Map(
     await Promise.all(
       ['nodejs', 'rust', 'golang', 'python3', 'dart', 'gleamlang', 'erlang'].map(
         async (runtime) =>
           [
             runtime,
-            await readRepoFile(`remote/container-pool-rs/runtime-images/${runtime}.Dockerfile`),
+            await readRepoFile(`remote/deployments/container-pool-rs/runtime-images/${runtime}.Dockerfile`),
           ] as const,
       ),
     ),

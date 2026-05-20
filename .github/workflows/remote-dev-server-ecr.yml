@@ -79,8 +79,8 @@ jobs:
         env:
           REMOTE_DEV_GITHUB_DEPLOY_KEY: ${{ secrets.REMOTE_DEV_GITHUB_DEPLOY_KEY }}
         with:
-          context: remote/dev-server
-          file: remote/dev-server/Dockerfile
+          context: remote/deployments/dev-server
+          file: remote/deployments/dev-server/Dockerfile
           push: true
           build-args: |
             DD_REPO_URL=${{ env.DD_REPO_URL }}

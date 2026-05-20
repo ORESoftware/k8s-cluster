@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/bastion-rs/src/main.rs'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/bastion-rs/src/main.rs'))) {
       return candidate;
     }
   }
@@ -21,10 +21,10 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust bastion serves authenticated vpn cluster access profile and kubeconfig', async () => {
-  const source = await readRepoFile('remote/bastion-rs/src/main.rs');
-  const cargo = await readRepoFile('remote/bastion-rs/Cargo.toml');
-  const dockerfile = await readRepoFile('remote/bastion-rs/Dockerfile');
-  const readme = await readRepoFile('remote/bastion-rs/readme.md');
+  const source = await readRepoFile('remote/deployments/bastion-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/bastion-rs/Cargo.toml');
+  const dockerfile = await readRepoFile('remote/deployments/bastion-rs/Dockerfile');
+  const readme = await readRepoFile('remote/deployments/bastion-rs/readme.md');
 
   assert.match(cargo, /name = "dd-bastion"/);
   assert.match(cargo, /axum/);
@@ -115,7 +115,7 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
 
   assert.match(deployment, /name:\s*dd-bastion/);
   assert.match(deployment, /serviceAccountName:\s*dd-bastion/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/bastion-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/bastion-rs/);
   assert.match(deployment, /export PATH=\/usr\/local\/cargo\/bin/);
   assert.match(deployment, /PATH[\s\S]*\/usr\/local\/cargo\/bin/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8111'/);

@@ -11,10 +11,10 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('node task workers publish every stream event to nats for websocket fanout', async () => {
-  const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const publisher = await readRepoFile('remote/dev-server/src/nats-publisher.ts');
-  const wsFanout = await readRepoFile('remote/dev-server/src/ws-fanout.ts');
-  const restApi = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const publisher = await readRepoFile('remote/deployments/dev-server/src/nats-publisher.ts');
+  const wsFanout = await readRepoFile('remote/deployments/dev-server/src/ws-fanout.ts');
+  const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   const bootstrapDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
@@ -54,20 +54,20 @@ test('node task workers publish every stream event to nats for websocket fanout'
 
 test('gleam websocket deployment bridges nats tcp events into browser websockets', async () => {
   const broadcaster = await readRepoFile(
-    'remote/gleamlang-server/src/gleamlang_server/broadcaster.gleam',
+    'remote/deployments/gleamlang-server/src/gleamlang_server/broadcaster.gleam',
   );
   const httpServer = await readRepoFile(
-    'remote/gleamlang-server/src/gleamlang_server/http_server.gleam',
+    'remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam',
   );
-  const env = await readRepoFile('remote/gleamlang-server/src/gleamlang_server_env.erl');
-  const bridge = await readRepoFile('remote/gleamlang-server/nats-bridge.mjs');
-  const natsClient = await readRepoFile('remote/gleamlang-server/nats-client.mjs');
-  const dockerfile = await readRepoFile('remote/gleamlang-server/Dockerfile');
+  const env = await readRepoFile('remote/deployments/gleamlang-server/src/gleamlang_server_env.erl');
+  const bridge = await readRepoFile('remote/deployments/gleamlang-server/nats-bridge.mjs');
+  const natsClient = await readRepoFile('remote/deployments/gleamlang-server/nats-client.mjs');
+  const dockerfile = await readRepoFile('remote/deployments/gleamlang-server/Dockerfile');
   const deployment = await readRepoFile(
-    'remote/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
+    'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
   );
   const minikubeDeployment = await readRepoFile(
-    'remote/gleamlang-server/k8s/minikube/dd-gleamlang-server.deployment.yaml',
+    'remote/deployments/gleamlang-server/k8s/minikube/dd-gleamlang-server.deployment.yaml',
   );
 
   assert.match(broadcaster, /BroadcastJson\(payload: String\)/);
@@ -122,7 +122,7 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
     /name:\s*GLEAM_BROADCAST_SECRET[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*GLEAM_BROADCAST_SECRET/,
   );
   assert.match(minikubeDeployment, /name:\s*nats-bridge/);
-  assert.match(minikubeDeployment, /exec node \/app\/remote\/gleamlang-server\/nats-bridge\.mjs/);
+  assert.match(minikubeDeployment, /exec node \/app\/remote\/deployments\/gleamlang-server\/nats-bridge\.mjs/);
   assert.match(minikubeDeployment, /NATS_READ_SUBJECT[\s\S]*dd\.remote\.events/);
   assert.match(minikubeDeployment, /NATS_PUBLISH_SUBJECT[\s\S]*dd\.remote\.websocket\.events/);
   assert.match(
@@ -132,7 +132,7 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
 });
 
 test('rust task page opens websocket before dispatch and dedupes with sse fallback', async () => {
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(home, /new WebSocket\(wsUrl\)/);
   assert.match(home, /\/gleam\/ws\?threadId=/);

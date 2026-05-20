@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/mdp-optimizer-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/mdp-optimizer-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,8 +21,8 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust mdp optimizer is deployed, scraped, and connected to nats', async () => {
-  const cargo = await readRepoFile('remote/mdp-optimizer-rs/Cargo.toml');
-  const source = await readRepoFile('remote/mdp-optimizer-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/mdp-optimizer-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/mdp-optimizer-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-mdp-optimizer.deployment.yaml',
   );
@@ -35,7 +35,7 @@ test('rust mdp optimizer is deployed, scraped, and connected to nats', async () 
   );
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(cargo, /name\s*=\s*"dd-mdp-optimizer"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);

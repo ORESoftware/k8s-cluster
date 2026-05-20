@@ -30,7 +30,7 @@ test('minikube EC2 mirror imports the EC2 stack and renders local-safe patches',
   assert.match(kustomization, /\.\.\/\.\.\/argocd\/dd-next-runtime/);
   assert.match(kustomization, /\.\.\/\.\.\/argocd\/messaging/);
   assert.match(kustomization, /\.\.\/\.\.\/argocd\/observability/);
-  assert.match(kustomization, /\.\.\/\.\.\/gleam-lambda-runner\/k8s\/ec2/);
+  assert.match(kustomization, /\.\.\/\.\.\/deployments\/gleam-lambda-runner\/k8s\/ec2/);
   assert.match(kustomization, /patches\/repo-hostpath\.yaml/);
   assert.match(kustomization, /patches\/gateway-local-tls\.json/);
 

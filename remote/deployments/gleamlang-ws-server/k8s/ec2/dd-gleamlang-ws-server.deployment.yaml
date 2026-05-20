@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleamlang-ws-server
+  namespace: default
+  labels:
+    app: dd-gleamlang-ws-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleamlang-ws-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-18-merged-presence-broadcaster'
+      labels:
+        app: dd-gleamlang-ws-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gleamlang-ws-server
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              if ! apk add --no-cache postgresql-client >/tmp/dd-gleamlang-apk.log 2>&1; then
+                cat /tmp/dd-gleamlang-apk.log
+                exit 1
+              fi
+              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-server
+              gleam clean || true
+              gleam deps download
+              exec gleam run
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-ws-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
+            - name: GLEAM_NATS_PUBLISH_URL
+              value: http://127.0.0.1:8083/publish
+            - name: NATS_PUBLISH_SUBJECT
+              value: dd.remote.websocket.events
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-ws-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-ws-server-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-gleamlang-ws-server-secrets
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: '1'
+              memory: 1Gi
+            limits:
+              cpu: '4'
+              memory: 8Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+        - name: nats-bridge
+          image: docker.io/library/node:22-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              exec node /opt/dd-next-1/remote/deployments/gleamlang-ws-server/nats-bridge.mjs
+          env:
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_READ_SUBJECT
+              value: dd.remote.events
+            - name: NATS_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: NATS_PUBLISH_SUBJECT
+              value: dd.remote.websocket.events
+            - name: NATS_BRIDGE_HTTP_PORT
+              value: '8083'
+            - name: GLEAM_BROADCAST_URL
+              value: http://127.0.0.1:8081/broadcast
+            - name: GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-ws-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

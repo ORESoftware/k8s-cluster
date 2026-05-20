@@ -10,7 +10,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/gleam-mcp-server/gleam.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/gleam-mcp-server/gleam.toml'))) {
       return candidate;
     }
   }
@@ -19,7 +19,7 @@ function findRepoRoot(): string {
 }
 
 const repoRoot = findRepoRoot();
-const mcpCwd = resolve(repoRoot, 'remote/gleam-mcp-server');
+const mcpCwd = resolve(repoRoot, 'remote/deployments/gleam-mcp-server');
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));

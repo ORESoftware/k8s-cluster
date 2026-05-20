@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.oresoftware.dd</groupId>
+    <artifactId>spark-pipeline-server</artifactId>
+    <version>0.1.0</version>
+    <packaging>jar</packaging>
+
+    <name>dd-spark-pipeline-server</name>
+    <description>
+        Vert.x-based Java service that orchestrates Spark and other JVM-ecosystem data pipeline
+        jobs. Uses the async-java/async.java library for callback flow control (Series, Parallel,
+        Waterfall, Queue) so that long-running multi-stage pipelines stay non-blocking on the
+        Vert.x event loop.
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+
+        <vertx.version>4.5.10</vertx.version>
+        <jackson.version>2.17.2</jackson.version>
+        <logback.version>1.5.6</logback.version>
+        <slf4j.version>2.0.13</slf4j.version>
+        <junit.version>5.10.3</junit.version>
+
+        <!--
+          Postgres / jOOQ versions are pinned to whatever
+          remote/libs/pg-defs/generated/jvm/jooq/build.gradle declares, so the generated
+          Tables.java compiles cleanly against the same jOOQ API surface. If you bump the
+          version in pg-defs's build.gradle, bump it here too.
+        -->
+        <jooq.version>3.19.10</jooq.version>
+        <postgresql.version>42.7.4</postgresql.version>
+        <hikaricp.version>5.1.0</hikaricp.version>
+
+        <!--
+          Latest async-java tag consumed through JitPack.
+
+          v0.2.9 includes the v0.2.8 shorthand / AsyncFut composition work plus the
+          NeoWhilst race fix and Concat `? extends` widening pinned by the submodule
+          at remote/libs/async-java. The library pom now declares the future Central
+          coordinate `io.github.async-java:async-java:0.2.9`, but Maven Central did
+          not yet expose that artifact during the 2026-05-18 audit. Keep the runtime
+          dependency on JitPack until Central metadata confirms the release.
+        -->
+        <async-java.version>v0.2.9</async-java.version>
+
+        <main.class>com.oresoftware.dd.sparkpipeline.App</main.class>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-stack-depchain</artifactId>
+                <version>${vertx.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <repositories>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-health-check</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-micrometer-metrics</artifactId>
+        </dependency>
+        <!--
+          Pinned to 1.12.x because vertx-micrometer-metrics 4.5.x reflectively looks up the
+          legacy package `io.micrometer.prometheus.PrometheusMeterRegistry` to wire its Vert.x
+          backend; the 1.13.x artifact relocated that class to
+          `io.micrometer.prometheusmetrics`, which breaks Vert.x's backend registry boot path.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <version>1.12.13</version>
+        </dependency>
+
+        <!--
+          JitPack publishes async-java/async.java under com.github.<org>:<repo>:<ref>
+          regardless of what the project's own pom declares for its release coordinate.
+          The Java package (org.ores.async) is unchanged so source code imports
+          stay verbatim.
+        -->
+        <dependency>
+            <groupId>com.github.async-java</groupId>
+            <artifactId>async.java</artifactId>
+            <version>${async-java.version}</version>
+        </dependency>
+
+        <!--
+          Postgres + jOOQ + HikariCP for talking to the canonical dd_pg_defs database.
+
+          The generated jOOQ Tables.java in remote/libs/pg-defs/generated/jvm/jooq is added
+          to this module's source set below (build-helper-maven-plugin), so a single jar
+          ships with both the Vert.x service code and the pg-defs adapter classes.
+        -->
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq</artifactId>
+            <version>${jooq.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+            <version>${hikaricp.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>dd-spark-pipeline-server</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+
+            <!--
+              Compile the generated jOOQ Tables.java directly from the pg-defs source tree
+              instead of consuming it as a pre-built artifact. The pg-defs jvm/jooq module
+              ships a build.gradle (not a pom.xml), so we don't have a published Maven
+              coordinate to depend on. Compiling the sources in-place keeps a single source
+              of truth — pg-defs's generator regenerates that file, and Maven picks the new
+              version up on the next build with no manual install step.
+
+              Path is relative to this module's basedir; absolute build context is the
+              k8s-cluster repo root.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>add-pg-defs-jooq-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.basedir}/../../libs/pg-defs/generated/jvm/jooq/src/main/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Main-Class>${main.class}</Main-Class>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

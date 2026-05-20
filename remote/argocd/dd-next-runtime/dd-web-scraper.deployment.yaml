@@ -44,7 +44,7 @@ spec:
               export COREPACK_HOME=/tmp/corepack
               export npm_config_cache=/tmp/.npm
               mkdir -p "$PNPM_HOME" "$COREPACK_HOME" "$XDG_CACHE_HOME" "$npm_config_cache"
-              cd /opt/dd-next-1/remote/web-scraper-service
+              cd /opt/dd-next-1/remote/deployments/web-scraper-service
               corepack prepare pnpm@9.15.4 --activate
               corepack pnpm install --frozen-lockfile --ignore-workspace --prod=false
               corepack pnpm run build

@@ -33,7 +33,7 @@ minikube mount "$PWD:/workspace/k8s-cluster"
 Build the two local images the EC2 manifests expect as node-local images:
 
 ```bash
-minikube image build -t dd-remote-web-home:dev remote/web-home-rs
+minikube image build -t dd-remote-web-home:dev remote/deployments/web-home-rs
 
 eval "$(minikube docker-env)"
 DOCKER_BUILDKIT=1 docker build \
@@ -41,7 +41,7 @@ DOCKER_BUILDKIT=1 docker build \
   --build-arg DD_REPO_REF=dev \
   --secret id=github_deploy_key,src="${GH_DEPLOY_KEY_PATH:-$HOME/.ssh/id_ed25519}" \
   -t dd-dev-server:dev \
-  remote/dev-server
+  remote/deployments/dev-server
 ```
 
 `local-secrets.yaml` intentionally contains only placeholder values. Do not commit real credentials

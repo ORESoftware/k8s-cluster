@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/rest-api-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/rest-api-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,8 +21,8 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rest api publishes queued handoffs while preserving direct worker dispatch', async () => {
-  const cargo = await readRepoFile('remote/rest-api-rs/Cargo.toml');
-  const server = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/rest-api-rs/Cargo.toml');
+  const server = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
   assert.match(server, /struct NatsTaskMessage/);
@@ -66,8 +66,8 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
 });
 
 test('queue consumer is deployed and prepares deterministic thread workers', async () => {
-  const cargo = await readRepoFile('remote/queue-consumer-rs/Cargo.toml');
-  const consumer = await readRepoFile('remote/queue-consumer-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/queue-consumer-rs/Cargo.toml');
+  const consumer = await readRepoFile('remote/deployments/queue-consumer-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml',
   );
@@ -165,8 +165,8 @@ test('keda is declared for event-driven queue consumer scaling', async () => {
 });
 
 test('rest api exposes an internal prepare route for queue warmup', async () => {
-  const server = await readRepoFile('remote/rest-api-rs/src/main.rs');
-  const readme = await readRepoFile('remote/rest-api-rs/readme.md');
+  const server = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
 
   assert.match(server, /async fn prepare_thread/);
   assert.match(server, /authorized_internal_request/);

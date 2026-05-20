@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/dev-server/package.json'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/dev-server/package.json'))) {
       return candidate;
     }
   }
@@ -21,7 +21,7 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('node thread workers can dispatch tasks through the warm container pool service', async () => {
-  for (const root of ['remote/dev-server', 'remote/dev-server-local']) {
+  for (const root of ['remote/deployments/dev-server', 'remote/dev-server-local']) {
     const source = await readRepoFile(`${root}/src/server.ts`);
     const client = await readRepoFile(`${root}/src/container-pool.ts`);
 
@@ -33,7 +33,7 @@ test('node thread workers can dispatch tasks through the warm container pool ser
     assert.match(source, /container-pool-dispatch:\$\{state\.containerPool\.pool\}/);
     assert.match(source, /ContainerPoolRequestSchema/);
     assert.match(source, /ContainerPoolTaskSchema/);
-    assert.match(source, /containerPool:\s*ContainerPoolTaskSchema\.optional\(\)/);
+    assert.match(source, /containerPool:\s*ContainerPoolTaskSchema\.(?:optional|nullish)\(\)/);
     assert.match(source, /fastify\.post\(["']\/container-pools\/:pool\/dispatch["']/);
     assert.match(source, /poolSlug:\s*parsed\.data\.poolSlug \?\? params\.data\.pool/);
     assert.match(source, /poolSlug:\s*state\.containerPool\.request\.poolSlug \?\? state\.containerPool\.pool/);

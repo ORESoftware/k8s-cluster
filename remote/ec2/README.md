@@ -23,7 +23,7 @@ The bootstrap script can install prerequisites on a smaller instance for
 smoke testing, but it refuses the cluster phase below about 2 GiB RAM unless
 `--force-small-instance` or `DD_ALLOW_UNDERSIZED=1` is set. A `t3.micro` is
 useful for validating clone and package setup, not for reliable remote-dev
-thread pods or the long-lived `remote/dev-server` service.
+thread pods or the long-lived `remote/deployments/dev-server` service.
 
 ## Operator Access
 

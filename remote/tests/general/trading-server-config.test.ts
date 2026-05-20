@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/trading-server-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/trading-server-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust trading server scores signals and emits gated order intents', async () => {
-  const cargo = await readRepoFile('remote/trading-server-rs/Cargo.toml');
-  const source = await readRepoFile('remote/trading-server-rs/src/main.rs');
-  const readme = await readRepoFile('remote/trading-server-rs/readme.md');
+  const cargo = await readRepoFile('remote/deployments/trading-server-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/trading-server-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/trading-server-rs/readme.md');
   const appConfigSeed = await readRepoFile(
     'remote/databases/pg/seeds/trading-platform-app-config.sql',
   );
@@ -126,7 +126,7 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
 

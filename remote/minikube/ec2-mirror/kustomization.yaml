@@ -6,9 +6,9 @@ resources:
   - ../../argocd/messaging
   - ../../argocd/observability
   - ../../argocd/dd-next-runtime
-  - ../../gleam-lambda-runner/k8s/ec2
-  - ../../gleamlang-server/k8s/ec2
-  - ../../gleam-mcp-server/k8s/ec2
+  - ../../deployments/gleam-lambda-runner/k8s/ec2
+  - ../../deployments/gleamlang-server/k8s/ec2
+  - ../../deployments/gleam-mcp-server/k8s/ec2
 
 patches:
   - path: patches/repo-hostpath.yaml

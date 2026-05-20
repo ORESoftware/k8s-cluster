@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/ai-ml-pipeline/src/dd_ai_ml_pipeline.py'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('python ai/ml pipeline turns telemetry into MDP-ready feature events', async () => {
-  const source = await readRepoFile('remote/ai-ml-pipeline/src/dd_ai_ml_pipeline.py');
-  const readme = await readRepoFile('remote/ai-ml-pipeline/readme.md');
-  const dockerfile = await readRepoFile('remote/ai-ml-pipeline/Dockerfile');
+  const source = await readRepoFile('remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py');
+  const readme = await readRepoFile('remote/deployments/ai-ml-pipeline/readme.md');
+  const dockerfile = await readRepoFile('remote/deployments/ai-ml-pipeline/Dockerfile');
 
   assert.match(source, /SERVICE_NAME = "dd-ai-ml-pipeline"/);
   assert.match(source, /OnlineTelemetryModel/);
@@ -127,7 +127,7 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /serviceAccountName:\s*dd-ai-ml-pipeline/);
   assert.match(deployment, /python:3\.12-slim/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/ai-ml-pipeline/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/ai-ml-pipeline/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8099'/);
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /ML_ALLOW_UNAUTHENTICATED[\s\S]*value:\s*'false'/);
@@ -197,7 +197,7 @@ test('gateway, observability, and homepage expose the ai/ml pipeline', async () 
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
 
@@ -217,7 +217,7 @@ test('gateway, observability, and homepage expose the ai/ml pipeline', async () 
   );
   assert.match(home, /dd-ai-ml-pipeline/);
   assert.match(home, /Python3 online feature pipeline/);
-  assert.match(home, /href="\/ml\/"/);
+  assert.match(home, /PathEntry \{ label: "\/ml\/", href: Some\("\/ml\/"\) \}/);
   assert.match(home, /dd\.remote\.ml\.features/);
   assert.match(runtimeReadme, /AI\/ML feature pipeline/);
   assert.match(

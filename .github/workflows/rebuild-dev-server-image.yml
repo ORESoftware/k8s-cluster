@@ -89,7 +89,7 @@ jobs:
         if: steps.meta.outputs.should_build == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: remote/dev-server
+          context: remote/deployments/dev-server
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           build-args: |

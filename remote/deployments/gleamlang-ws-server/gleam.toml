@@ -1,0 +1,18 @@
+name = "gleamlang_ws_server"
+version = "0.1.0"
+target = "erlang"
+description = "Unified Gleam websocket service: a broadcaster ticker with NATS-bridge-fed `/broadcast` fanout, a Prometheus `/metrics` endpoint, and a multi-node BEAM presence cluster (ETS subject registry + Erlang `pg` cross-node membership + Postgres-backed conversations + sharded LISTEN/NOTIFY + wal2json CDC + native NATS transport + k8s pod discovery)."
+
+[dependencies]
+dd_pg_defs = { path = "../../libs/pg-defs/generated/gleam" }
+gleam_stdlib = ">= 0.68.0 and < 2.0.0"
+gleam_erlang = ">= 1.3.0 and < 2.0.0"
+gleam_http = ">= 4.0.0 and < 5.0.0"
+gleam_httpc = ">= 5.0.0 and < 6.0.0"
+gleam_json = ">= 2.0.0 and < 4.0.0"
+gleam_otp = ">= 1.2.0 and < 2.0.0"
+mist = ">= 6.0.0 and < 7.0.0"
+pog = ">= 4.0.0 and < 5.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"

@@ -12,7 +12,7 @@ spec:
   source:
     repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev
-    path: remote/ws-loadtest-rs/k8s/akkaws-akkastreams
+    path: remote/deployments/ws-loadtest-rs/k8s/akkaws-akkastreams
   destination:
     server: https://kubernetes.default.svc
     namespace: default

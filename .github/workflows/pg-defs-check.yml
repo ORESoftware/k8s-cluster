@@ -5,11 +5,11 @@ on:
     paths:
       - 'remote/libs/pg-defs/**'
       - 'remote/databases/pg/**'
-      - 'remote/gleam-lambda-runner/**'
-      - 'remote/gleam-mcp-server/**'
-      - 'remote/gleamlang-server/**'
-      - 'remote/rest-api-rs/**'
-      - 'remote/web-home-rs/**'
+      - 'remote/deployments/gleam-lambda-runner/**'
+      - 'remote/deployments/gleam-mcp-server/**'
+      - 'remote/deployments/gleamlang-server/**'
+      - 'remote/deployments/rest-api-rs/**'
+      - 'remote/deployments/web-home-rs/**'
       - 'remote/tests/general/pg-defs-bindings.test.ts'
       - 'remote/tests/general/pg-sql-centralized.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
@@ -22,11 +22,11 @@ on:
     paths:
       - 'remote/libs/pg-defs/**'
       - 'remote/databases/pg/**'
-      - 'remote/gleam-lambda-runner/**'
-      - 'remote/gleam-mcp-server/**'
-      - 'remote/gleamlang-server/**'
-      - 'remote/rest-api-rs/**'
-      - 'remote/web-home-rs/**'
+      - 'remote/deployments/gleam-lambda-runner/**'
+      - 'remote/deployments/gleam-mcp-server/**'
+      - 'remote/deployments/gleamlang-server/**'
+      - 'remote/deployments/rest-api-rs/**'
+      - 'remote/deployments/web-home-rs/**'
       - 'remote/tests/general/pg-defs-bindings.test.ts'
       - 'remote/tests/general/pg-sql-centralized.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
@@ -154,9 +154,9 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            remote/rest-api-rs/target
+            remote/deployments/rest-api-rs/target
             remote/libs/pg-defs/generated/rust/target
-          key: ${{ runner.os }}-cargo-pg-defs-${{ hashFiles('remote/rest-api-rs/Cargo.lock', 'remote/libs/pg-defs/generated/rust/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-pg-defs-${{ hashFiles('remote/deployments/rest-api-rs/Cargo.lock', 'remote/libs/pg-defs/generated/rust/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-pg-defs-
 

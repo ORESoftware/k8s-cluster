@@ -86,10 +86,10 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
 
 test("websocket comparison services expose prometheus metrics", async () => {
   const akkaRoutes = await readRepoFile(
-    "remote/akka-ws-server/src/main/java/com/oresoftware/dd/akkaws/WsRoutes.java",
+    "remote/deployments/akka-ws-server/src/main/java/com/oresoftware/dd/akkaws/WsRoutes.java",
   );
-  const fsharpProgram = await readRepoFile("remote/fsharp-ws-server/Program.fs");
-  const fsharpRoutes = await readRepoFile("remote/fsharp-ws-server/WsRoutes.fs");
+  const fsharpProgram = await readRepoFile("remote/deployments/fsharp-ws-server/Program.fs");
+  const fsharpRoutes = await readRepoFile("remote/deployments/fsharp-ws-server/WsRoutes.fs");
 
   assert.match(akkaRoutes, /path\("metrics"/);
   assert.match(akkaRoutes, /dd_akka_ws_async_java_messages_in_total/);
@@ -100,13 +100,13 @@ test("websocket comparison services expose prometheus metrics", async () => {
 });
 
 test("supporting runtime services expose prometheus metrics", async () => {
-  const agentWorker = await readRepoFile("remote/agent-worker-broker-rs/src/main.rs");
-  const authServer = await readRepoFile("remote/auth-server-rs/src/main.rs");
-  const billingApi = await readRepoFile("remote/billing-server-rs/src/api/mod.rs");
+  const agentWorker = await readRepoFile("remote/deployments/agent-worker-broker-rs/src/main.rs");
+  const authServer = await readRepoFile("remote/deployments/auth-server-rs/src/main.rs");
+  const billingApi = await readRepoFile("remote/deployments/billing-server-rs/src/api/mod.rs");
   const formalMethodsService = await readRepoFile(
-    "remote/formal-methods-service-rs/src/routes/mod.rs",
+    "remote/deployments/formal-methods-service-rs/src/routes/mod.rs",
   );
-  const lockLoadtest = await readRepoFile("remote/live-mutex-loadtest-node/src/server.js");
+  const lockLoadtest = await readRepoFile("remote/deployments/live-mutex-loadtest-node/src/server.js");
   const agentWorkerDeployment = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-agent-worker-broker.deployment.yaml",
   );
@@ -114,13 +114,13 @@ test("supporting runtime services expose prometheus metrics", async () => {
     "remote/argocd/dd-next-runtime/dd-remote-auth.deployment.yaml",
   );
   const billingDeployment = await readRepoFile(
-    "remote/billing-server-rs/k8s/ec2/dd-billing-server.deployment.yaml",
+    "remote/deployments/billing-server-rs/k8s/ec2/dd-billing-server.deployment.yaml",
   );
   const formalDeployment = await readRepoFile(
-    "remote/formal-methods-service-rs/k8s/ec2/dd-formal-methods-service.deployment.yaml",
+    "remote/deployments/formal-methods-service-rs/k8s/ec2/dd-formal-methods-service.deployment.yaml",
   );
   const lockDeployment = await readRepoFile(
-    "remote/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.deployment.yaml",
+    "remote/deployments/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.deployment.yaml",
   );
 
   assert.match(agentWorker, /\.route\("\/metrics", get\(metrics\)\)/);
@@ -151,8 +151,8 @@ test("public gateway exposes grafana under /telemetry", async () => {
 });
 
 test("node worker uses explicit OTLP endpoint without opentelemetry sdk deps", async () => {
-  const packageJson = await readRepoFile("remote/dev-server/package.json");
-  const telemetry = await readRepoFile("remote/dev-server/src/telemetry.ts");
+  const packageJson = await readRepoFile("remote/deployments/dev-server/package.json");
+  const telemetry = await readRepoFile("remote/deployments/dev-server/src/telemetry.ts");
   const deployment = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml",
   );
@@ -168,7 +168,7 @@ test("rust public web telemetry keeps aligned service metadata", async () => {
   const deployment = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml",
   );
-  const webHome = await readRepoFile("remote/web-home-rs/src/main.rs");
+  const webHome = await readRepoFile("remote/deployments/web-home-rs/src/main.rs");
 
   assert.match(deployment, /dd\.dev\/telemetry-revision/);
   assert.match(webHome, /service:\s*"dd-remote-web-home"\.to_string\(\)/);

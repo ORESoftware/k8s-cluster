@@ -91,7 +91,7 @@ Gateway path map:
 
 The Node.js worker image is pre-baked as `docker.io/library/dd-dev-server:dev` on the EC2
 containerd node. It already contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
-`remote/dev-server` server, and a warm `dd-next-1` checkout template. The container runs as the
+`remote/deployments/dev-server` server, and a warm `dd-next-1` checkout template. The container runs as the
 built-in `node` user; mounted workspaces live under `/home/node/workspace`.
 
 Protected ops paths accept either the legacy `Auth` request header or the browser `dd_auth` cookie.
@@ -231,7 +231,7 @@ env vars reload.
 
 ## Reaper and cluster doctor
 
-The reaper deployment runs `remote/idle-reaper-rs`.
+The reaper deployment runs `remote/deployments/idle-reaper-rs`.
 
 Idle sweep is enabled only when both values exist:
 
@@ -251,9 +251,9 @@ Cluster doctor is configured in `dd-idle-reaper-config`:
 - `dd-idle-reaper-secret` key `CLUSTER_DOCTOR_SERVER_AUTH_SECRET`
 - `dd-idle-reaper-secret` key `NATS_WATCH_GLEAM_BROADCAST_SECRET`
 
-Every 90 minutes it dispatches the inline prompt from `remote/idle-reaper-rs/src/main.rs` to
+Every 90 minutes it dispatches the inline prompt from `remote/deployments/idle-reaper-rs/src/main.rs` to
 `dd-dev-server-api`. The agent inspects Prometheus, Loki, Grafana, NATS, and runtime service
-health, then makes a narrow repo fix when there is an actionable issue. `remote/dev-server` pushes
+health, then makes a narrow repo fix when there is an actionable issue. `remote/deployments/dev-server` pushes
 the branch and opens/reuses the PR.
 
 The same deployment also runs an adaptive NATS watchdog. It listens to copies of
@@ -264,7 +264,7 @@ to 15 seconds.
 
 The reaper is also the cron supervisor for the local worker image. Every day at 4am America/New_York
 it fetches/fast-forwards the EC2 checkout, runs `nerdctl -n k8s.io build` for
-`remote/dev-server`, and overwrites the local image tag `docker.io/library/dd-dev-server:dev`. New
+`remote/deployments/dev-server`, and overwrites the local image tag `docker.io/library/dd-dev-server:dev`. New
 thread workers use that tag via `imagePullPolicy: IfNotPresent`, so the next created pod picks up
 the newest local image on the EC2 Kubernetes node. This is intentionally a Rust scheduler inside
 the reaper deployment, not Linux `cron`/`at`; Kubernetes keeps the supervisor process alive, and
@@ -326,7 +326,7 @@ The generic Postgres config contract is the shared `app_config` block in
 `remote/libs/pg-defs/schema/schema.sql` (the single source of truth for every shared
 table). The default runtime pool seed is
 `remote/databases/pg/seeds/container-pool-app-config.sql`. The seed points at multi-stage runtime
-images under `remote/container-pool-rs/runtime-images` for `nodejs`, `rust`, `golang`, `python3`,
+images under `remote/deployments/container-pool-rs/runtime-images` for `nodejs`, `rust`, `golang`, `python3`,
 `dart`, `gleamlang`, and `erlang`. Dispatch requests never supply a shell command; image, command,
 env, request path, warm size, timeout, and NATS subject all come from trusted database config.
 
@@ -375,7 +375,7 @@ queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 
 ## Solana contract service
 
-`dd-contract-service` runs `remote/contract-service-rs` as a Rust Solana contract gateway. It serves
+`dd-contract-service` runs `remote/deployments/contract-service-rs` as a Rust Solana contract gateway. It serves
 `/contracts/healthz`, `/contracts/metrics`, `/contracts/status`, `/contracts/schema`,
 `/contracts/example`, `POST /contracts/validate`, `POST /contracts/simulate`, and
 `POST /contracts/send`. The service validates `solana.contract.v1` instruction envelopes, checks
@@ -391,7 +391,7 @@ emits compact lifecycle events on `dd.remote.events`.
 
 ## AI/ML feature pipeline
 
-`dd-ai-ml-pipeline` runs `remote/ai-ml-pipeline` as a long-lived Python3 service in the `ai-ml`
+`dd-ai-ml-pipeline` runs `remote/deployments/ai-ml-pipeline` as a long-lived Python3 service in the `ai-ml`
 namespace. It accepts raw telemetry through `POST /ml/analyze`, `POST /ml/ingest`, or the
 `dd.remote.telemetry.raw` NATS subject. The online model turns metrics into normalized features,
 EWMA baselines, z-score anomaly scores, state/risk summaries, action-impact hints, and transition
@@ -411,7 +411,7 @@ Metaflow, LlamaIndex, Qdrant, and Airbyte.
 
 ## Web scraper service
 
-`dd-web-scraper` runs `remote/web-scraper-service` as a long-lived Node.js/Fastify service from the
+`dd-web-scraper` runs `remote/deployments/web-scraper-service` as a long-lived Node.js/Fastify service from the
 Playwright browser image. It exposes `GET /healthz`, `GET /metrics`, `GET /strategies`, and
 `POST /scrape`; the gateway mirrors those as `/scrape/healthz`, `/scrape/metrics`,
 `/scrape/strategies`, and `POST /scrape`.

@@ -8,13 +8,13 @@ on:
       - ".github/workflows/refresh-remote-web-home-local-image.yml"
       - "remote/argocd/apps/dd-next-runtime.application.yaml"
       - "remote/argocd/dd-next-runtime/**"
-      - "remote/container-pool-rs/**"
-      - "remote/dev-server/**"
-      - "remote/idle-reaper-rs/**"
+      - "remote/deployments/container-pool-rs/**"
+      - "remote/deployments/dev-server/**"
+      - "remote/deployments/idle-reaper-rs/**"
       - "remote/k8s/**"
-      - "remote/queue-consumer-rs/**"
-      - "remote/rest-api-rs/**"
-      - "remote/web-home-rs/**"
+      - "remote/deployments/queue-consumer-rs/**"
+      - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/web-home-rs/**"
   workflow_dispatch:
 
 concurrency:
@@ -50,8 +50,8 @@ jobs:
                 "set -euo pipefail",
                 "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin dev; git merge --ff-only origin/dev; git rev-parse --short HEAD'\''",
                 "cd /home/ec2-user/codes/dd/dd-next-1",
-                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-dev-server:dev remote/dev-server",
-                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/web-home-rs",
+                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-dev-server:dev remote/deployments/dev-server",
+                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/deployments/web-home-rs",
                 "sudo -u ec2-user -H bash -lc '\''cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-next-runtime'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite'\''",

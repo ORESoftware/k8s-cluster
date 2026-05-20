@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/dev-server/src/server.ts'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/dev-server/src/server.ts'))) {
       return candidate;
     }
   }
@@ -21,26 +21,26 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('remote dev worker keeps branch-safe git setup and ssh command contracts', async () => {
-  const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const entrypoint = await readRepoFile('remote/dev-server/entrypoint.sh');
-  const packageJson = await readRepoFile('remote/dev-server/package.json');
-  const telemetry = await readRepoFile('remote/dev-server/src/telemetry.ts');
-  const agentTypes = await readRepoFile('remote/dev-server/src/agents/types.ts');
-  const agentIndex = await readRepoFile('remote/dev-server/src/agents/index.ts');
-  const genericRunner = await readRepoFile('remote/dev-server/src/agents/generic-ai-sdk.ts');
-  const geminiRunner = await readRepoFile('remote/dev-server/src/agents/gemini-sdk.ts');
-  const opencodeRunner = await readRepoFile('remote/dev-server/src/agents/opencode-ai-sdk.ts');
-  const openaiSdkRunner = await readRepoFile('remote/dev-server/src/agents/openai-sdk.ts');
-  const claudeSdkRunner = await readRepoFile('remote/dev-server/src/agents/claude-sdk.ts');
-  const clusterMcp = await readRepoFile('remote/dev-server/src/agents/cluster-mcp.ts');
-  const workspaceTools = await readRepoFile('remote/dev-server/src/agents/workspace-tools.ts');
-  const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
+  const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const entrypoint = await readRepoFile('remote/deployments/dev-server/entrypoint.sh');
+  const packageJson = await readRepoFile('remote/deployments/dev-server/package.json');
+  const telemetry = await readRepoFile('remote/deployments/dev-server/src/telemetry.ts');
+  const agentTypes = await readRepoFile('remote/deployments/dev-server/src/agents/types.ts');
+  const agentIndex = await readRepoFile('remote/deployments/dev-server/src/agents/index.ts');
+  const genericRunner = await readRepoFile('remote/deployments/dev-server/src/agents/generic-ai-sdk.ts');
+  const geminiRunner = await readRepoFile('remote/deployments/dev-server/src/agents/gemini-sdk.ts');
+  const opencodeRunner = await readRepoFile('remote/deployments/dev-server/src/agents/opencode-ai-sdk.ts');
+  const openaiSdkRunner = await readRepoFile('remote/deployments/dev-server/src/agents/openai-sdk.ts');
+  const claudeSdkRunner = await readRepoFile('remote/deployments/dev-server/src/agents/claude-sdk.ts');
+  const clusterMcp = await readRepoFile('remote/deployments/dev-server/src/agents/cluster-mcp.ts');
+  const workspaceTools = await readRepoFile('remote/deployments/dev-server/src/agents/workspace-tools.ts');
+  const dockerfile = await readRepoFile('remote/deployments/dev-server/Dockerfile');
   const localDockerfile = await readRepoFile('remote/dev-server-local/Dockerfile');
-  const readme = await readRepoFile('remote/dev-server/readme.md');
-  const lockfile = await readRepoFile('remote/dev-server/pnpm-lock.yaml');
-  const brokerServer = await readRepoFile('remote/agent-worker-broker-rs/src/main.rs');
-  const idleReaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
-  const webHome = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/dev-server/readme.md');
+  const lockfile = await readRepoFile('remote/deployments/dev-server/pnpm-lock.yaml');
+  const brokerServer = await readRepoFile('remote/deployments/agent-worker-broker-rs/src/main.rs');
+  const idleReaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
+  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
@@ -48,7 +48,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const localMinikube = await readRepoFile('remote/dev-server-local/k8s/minikube-dev-server.yaml');
   const secretsTemplate = await readRepoFile('remote/k8s/02-secrets.template.yaml');
   const threadTemplate = await readRepoFile('remote/k8s/07-thread-deployment.template.yaml');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   const agentsMd = await readRepoFile('AGENTS.md');
 
   assert.match(server, /async function remoteBranchExists\(branch: string\): Promise<boolean>/);
@@ -128,7 +128,18 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
   assert.match(server, /import \{ clusterMcpPromptSection \} from '\.\/agents\/cluster-mcp\.js'/);
+  assert.match(server, /repoContextMaxChars: Number\(process\.env\.REPO_CONTEXT_MAX_CHARS \?\? 24_000\)/);
+  assert.match(server, /agentOptimisticMode: process\.env\.AGENT_OPTIMISTIC_MODE !== 'false'/);
   assert.match(server, /agentMcpUrl: process\.env\.AGENT_MCP_ENABLED === 'false' \? null : process\.env\.AGENT_MCP_URL \?\? null/);
+  assert.match(server, /async function readRepoContextEntrypoint\(workspacePath: string\): Promise<string>/);
+  assert.match(server, /const rootAgents = await existingContextFiles\(workspacePath, \['AGENTS\.md'\]\)/);
+  assert.match(server, /const agentDocs = await listMarkdownChildren\(workspacePath, 'agents'\)/);
+  assert.match(server, /const docs = await listMarkdownChildren\(workspacePath, 'docs'\)/);
+  assert.match(server, /thread-context:repo-files/);
+  assert.match(server, /<repo_context_files>/);
+  assert.match(server, /<agent_operating_mode>/);
+  assert.match(server, /Do not stop to ask the human user a question before acting/);
+  assert.match(server, /<local_thread_log_tail>/);
   assert.match(server, /const runtimeContext = clusterMcpPromptSection\(config\.agentMcpUrl\)/);
   assert.match(server, /thread-context:cluster-mcp/);
   assert.match(server, /<runtime_context>/);
@@ -160,6 +171,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const providerOrder = \[state\.provider, \.\.\.config\.agentProviderRotation\]\.filter/);
   assert.match(server, /const attemptGroups: \{ provider: AgentProvider; candidates: AgentEnvCandidate\[\] \}\[\] = \[\]/);
   assert.match(server, /buildAgentEnvCandidates\(provider\)/);
+  assert.match(server, /DEEPSEEK_API_KEYS_JSON, XAI_API_KEYS_JSON/);
   assert.match(server, /status: `agent-fallback:\$\{group\.provider\}`/);
   assert.match(server, /promptLikelyRequiresWorkspaceAccess\(state\.prompt\)/);
   assert.match(server, /providerCanAccessWorkspace\(provider\)/);
@@ -221,7 +233,12 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(agentIndex, /configuredSecretList\('XAI_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /configuredSecretList\('GEMINI_API_KEYS_JSON'\)/);
   assert.match(agentIndex, /export function buildAgentEnvCandidates\(provider: AgentProvider\): AgentEnvCandidate\[\]/);
+  assert.match(agentIndex, /if \(provider === 'opencode-ai-sdk'\) \{/);
   assert.match(agentIndex, /if \(provider === 'generic-ai-sdk'\) \{/);
+  assert.match(agentIndex, /env\.OPENCODE_SOURCE = source\.id/);
+  assert.match(agentIndex, /env\.OPENCODE_BASE_URL = genericAiSdkBaseUrl\(source\.id, source\.baseURL\)/);
+  assert.match(agentIndex, /env\.OPENCODE_MODELS = genericAiSdkModels\(source\.id\)/);
+  assert.match(agentIndex, /hasOpenCodeCompatibleApiKey/);
   assert.match(agentIndex, /hasGenericAiSdkApiKey/);
   assert.match(agentIndex, /OpenCode, DeepSeek, Qwen\/DashScope, or xAI\/Grok API key not set/);
   assert.match(agentIndex, /base\.OPENCODE_BASE_URL = process\.env\.OPENCODE_BASE_URL \?\? 'https:\/\/opencode\.ai\/zen\/v1'/);
@@ -230,7 +247,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(agentIndex, /AGENT_MCP_ENABLED/);
   assert.match(agentIndex, /AGENT_MCP_URL/);
   assert.match(agentIndex, /AGENT_MCP_CONNECT_TIMEOUT_MS/);
-  assert.match(agentIndex, /OPENCODE_API_KEY not set/);
+  assert.doesNotMatch(agentIndex, /OPENCODE_API_KEY not set/);
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
   assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'openai-sdk'/);
   assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
@@ -257,6 +274,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(opencodeRunner, /createOpenAICompatible/);
   assert.match(opencodeRunner, /DEFAULT_OPENCODE_MODELS = \[[\s\S]*'big-pickle'[\s\S]*'deepseek-v4-flash-free'[\s\S]*'minimax-m2\.5-free'[\s\S]*'nemotron-3-super-free'[\s\S]*'qwen3\.6-plus-free'/);
   assert.match(opencodeRunner, /const baseURL = opts\.env\.OPENCODE_BASE_URL \?\? DEFAULT_OPENCODE_BASE_URL/);
+  assert.match(opencodeRunner, /const source = opts\.env\.OPENCODE_SOURCE \?\? 'opencode'/);
+  assert.match(opencodeRunner, /name: source/);
   assert.match(opencodeRunner, /model: provider\(modelId\)/);
   assert.match(opencodeRunner, /provider: 'opencode-ai-sdk'/);
   assert.match(opencodeRunner, /tools: createWorkspaceTools\(opts\.cwd, opts\.emit\)/);
@@ -367,9 +386,15 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(readme, /Before the first build you need a `pnpm-lock\.yaml`/);
   assert.match(readme, /cluster-mcp\.ts/);
   assert.match(readme, /AGENT_MCP_URL/);
+  assert.match(readme, /REPO_CONTEXT_MAX_CHARS/);
+  assert.match(readme, /AGENT_OPTIMISTIC_MODE/);
+  assert.match(readme, /AGENTS\.md`\/`agents\/\*\.md`\/`docs\/\*\.md/);
+  assert.match(readme, /local `tmp\/convos\/thread\.log` tail/);
   assert.match(readme, /Generic AI SDK and OpenCode receive bounded workspace\s+tools/);
   assert.match(readme, /dd_cluster/);
   assert.match(readme, /CLI runners still get the prompt hint/);
+  assert.match(agentsMd, /docs\/agent-context-memory\.md/);
+  assert.match(agentsMd, /tmp\/convos\/thread\.log/);
   assert.match(lockfile, /^lockfileVersion: '9\.0'$/m);
   assert.match(lockfile, /^importers:\s*$/m);
 

@@ -57,6 +57,34 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: dd-build-server
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-container-pool
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: dd-remote-queue-consumer
   namespace: default
 spec:
@@ -85,6 +113,34 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: dd-des-simulator
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-contract-service
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: dd-web-scraper
   namespace: default
 spec:
@@ -100,6 +156,20 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dd-webrtc-signaling
+  namespace: default
+spec:
+  template:
+    spec:
+      volumes:
+        - name: repo
+          hostPath:
+            path: /workspace/k8s-cluster
+            type: Directory
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-trading-server
   namespace: default
 spec:
   template:

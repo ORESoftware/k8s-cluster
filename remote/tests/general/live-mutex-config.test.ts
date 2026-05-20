@@ -48,22 +48,22 @@ test('live-mutex broker is deployed as a singleton cluster-local TCP service', a
 });
 
 test('node lock loadtest is request-triggered and can compare live-mutex with redis', async () => {
-  const packageJson = await readRepoFile('remote/live-mutex-loadtest-node/package.json');
-  const packageLock = await readRepoFile('remote/live-mutex-loadtest-node/package-lock.json');
-  const config = await readRepoFile('remote/live-mutex-loadtest-node/src/config.js');
-  const server = await readRepoFile('remote/live-mutex-loadtest-node/src/server.js');
-  const supervisor = await readRepoFile('remote/live-mutex-loadtest-node/src/main.js');
-  const worker = await readRepoFile('remote/live-mutex-loadtest-node/src/worker.js');
-  const compare = await readRepoFile('remote/live-mutex-loadtest-node/src/compare.js');
-  const readme = await readRepoFile('remote/live-mutex-loadtest-node/README.md');
+  const packageJson = await readRepoFile('remote/deployments/live-mutex-loadtest-node/package.json');
+  const packageLock = await readRepoFile('remote/deployments/live-mutex-loadtest-node/package-lock.json');
+  const config = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/config.js');
+  const server = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/server.js');
+  const supervisor = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/main.js');
+  const worker = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/worker.js');
+  const compare = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/compare.js');
+  const readme = await readRepoFile('remote/deployments/live-mutex-loadtest-node/README.md');
   const triggerDeployment = await readRepoFile(
-    'remote/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.deployment.yaml',
+    'remote/deployments/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.deployment.yaml',
   );
   const triggerService = await readRepoFile(
-    'remote/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.service.yaml',
+    'remote/deployments/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.service.yaml',
   );
   const kustomization = await readRepoFile(
-    'remote/live-mutex-loadtest-node/k8s/ec2/kustomization.yaml',
+    'remote/deployments/live-mutex-loadtest-node/k8s/ec2/kustomization.yaml',
   );
   const app = await readRepoFile('remote/argocd/apps/dd-lock-loadtest-node.application.yaml');
 
@@ -136,5 +136,5 @@ test('node lock loadtest is request-triggered and can compare live-mutex with re
   assert.doesNotMatch(kustomization, /dd-live-mutex-loadtest-node\.deployment\.yaml/);
   assert.doesNotMatch(kustomization, /dd-redis-lock-loadtest-node\.deployment\.yaml/);
   assert.match(app, /name:\s*dd-lock-loadtest-node/);
-  assert.match(app, /path:\s*remote\/live-mutex-loadtest-node\/k8s\/ec2/);
+  assert.match(app, /path:\s*remote\/deployments\/live-mutex-loadtest-node\/k8s\/ec2/);
 });

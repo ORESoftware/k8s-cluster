@@ -1,0 +1,22 @@
+[package]
+name = "dd-trading-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+# Subscribes to the central WAL gateway's CDC stream so config changes
+# arrive sub-second instead of waiting up to TRADING_CONFIG_REFRESH_SECONDS
+# for the next poll. The poll loop is still on as a belt-and-braces
+# fallback (interval extended once CDC is enabled).
+dd-wal-consumer = { path = "../../libs/wal-consumer-rs" }
+futures-util = "0.3"
+rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "=2.2.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tokio-postgres = { version = "=0.7.12", features = ["with-serde_json-1"] }
+tokio-postgres-rustls = "=0.12.0"
+webpki-roots = "=0.26.7"

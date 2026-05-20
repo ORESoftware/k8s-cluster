@@ -43,7 +43,7 @@ spec:
               export CARGO_TARGET_DIR=/tmp/dd-build-server-target
               export HOME=/tmp
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
-              cd /opt/dd-next-1/remote/build-server-rs
+              cd /opt/dd-next-1/remote/deployments/build-server-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOME

@@ -22,13 +22,13 @@ function yamlScalar(value: string): string {
 
 test('ws loadtest manifests configure 5k + 5k clients against websocket endpoint', async () => {
   const rustDeployment = await readRepoFile(
-    'remote/ws-loadtest-rs/k8s/ec2/dd-ws-loadtest-rs.deployment.yaml',
+    'remote/deployments/ws-loadtest-rs/k8s/ec2/dd-ws-loadtest-rs.deployment.yaml',
   );
   const gleamDeployment = await readRepoFile(
-    'remote/gleamlang-ws-loadtest/k8s/ec2/dd-gleamlang-ws-loadtest.deployment.yaml',
+    'remote/deployments/gleamlang-ws-loadtest/k8s/ec2/dd-gleamlang-ws-loadtest.deployment.yaml',
   );
   const gleamServerDeployment = await readRepoFile(
-    'remote/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
+    'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
   );
 
   const rustCount = parseNumericEnv(rustDeployment, 'CLIENT_COUNT');
@@ -91,24 +91,24 @@ test('argo applications point to both websocket loadtest deployments', async () 
 
   assert.match(
     rustApp,
-    /path:\s*remote\/ws-loadtest-rs\/k8s\/ec2/,
+    /path:\s*remote\/deployments\/ws-loadtest-rs\/k8s\/ec2/,
     'rust app should source rust loadtest kustomization',
   );
   assert.match(
     gleamApp,
-    /path:\s*remote\/gleamlang-ws-loadtest\/k8s\/ec2/,
+    /path:\s*remote\/deployments\/gleamlang-ws-loadtest\/k8s\/ec2/,
     'gleam app should source gleam loadtest kustomization',
   );
 });
 
 test('websocket loadtest clients include container-pool smoke mode', async () => {
-  const rustCargo = await readRepoFile('remote/ws-loadtest-rs/Cargo.toml');
-  const rustSource = await readRepoFile('remote/ws-loadtest-rs/src/main.rs');
-  const rustReadme = await readRepoFile('remote/ws-loadtest-rs/README.md');
+  const rustCargo = await readRepoFile('remote/deployments/ws-loadtest-rs/Cargo.toml');
+  const rustSource = await readRepoFile('remote/deployments/ws-loadtest-rs/src/main.rs');
+  const rustReadme = await readRepoFile('remote/deployments/ws-loadtest-rs/README.md');
   const gleamClient = await readRepoFile(
-    'remote/gleamlang-ws-loadtest/src/gleamlang_ws_loadtest/client.mjs',
+    'remote/deployments/gleamlang-ws-loadtest/src/gleamlang_ws_loadtest/client.mjs',
   );
-  const gleamReadme = await readRepoFile('remote/gleamlang-ws-loadtest/README.md');
+  const gleamReadme = await readRepoFile('remote/deployments/gleamlang-ws-loadtest/README.md');
 
   assert.match(rustCargo, /reqwest/);
   assert.match(rustCargo, /serde_json/);
