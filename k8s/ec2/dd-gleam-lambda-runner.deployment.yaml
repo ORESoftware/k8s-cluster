@@ -13,7 +13,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-16-lambda-runner'
+        dd.dev/telemetry-revision: '2026-05-20-lambda-backend-checks'
       labels:
         app: dd-gleam-lambda-runner
     spec:
