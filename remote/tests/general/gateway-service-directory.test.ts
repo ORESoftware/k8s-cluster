@@ -1070,7 +1070,11 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /queueing container-pool task/);
   assert.match(server, /thread UUID as the affinity key/);
   assert.match(server, /lastRuntimeData: null/);
-  assert.match(server, /async function readableFetchError\(response, label\) \{/);
+  assert.match(server, /async function readableFetchFailure\(response, label\) \{/);
+  assert.match(server, /retryableGatewayHtml/);
+  assert.match(server, /warnAdminDetail\("snapshot load retrying", failure\.message\);/);
+  assert.match(server, /updateSnapshotRetryState\(failure\.message, options, false\);/);
+  assert.match(server, /function clearSnapshotRetryStatus\(\) \{/);
   assert.match(server, /gateway returned HTML; retrying/);
   assert.match(server, /function workerRuntimeWaitDetails\(data\) \{/);
   assert.match(server, /runtime phase=\$\{summary\.phase \|\| "unknown"\}/);

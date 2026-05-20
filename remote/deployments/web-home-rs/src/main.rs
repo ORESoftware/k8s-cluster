@@ -2658,6 +2658,14 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
+      function warnAdminDetail(label, value) {
+        try {
+          console.warn(`[agents admin] ${label}`, value);
+        } catch (_error) {
+          console.warn(`[agents admin] ${label}: ${adminDetailText(value)}`);
+        }
+      }
+
       function adminPreview(label, value, limit = 1200) {
         const text = adminDetailText(value);
         if (text.length <= limit) return text;
@@ -3370,25 +3378,38 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }, delay);
       }
 
-      async function readableFetchError(response, label) {
+      async function readableFetchFailure(response, label) {
         const body = await response.text();
         const contentType = response.headers.get("content-type") || "";
-        if (contentType.includes("text/html") || /^\s*</.test(body)) {
-          return `${label} failed ${response.status}: gateway returned HTML; retrying`;
-        }
-        return `${label} failed ${response.status}: ${adminPreview(label, body, 240)}`;
+        const retryableGatewayHtml = contentType.includes("text/html") || /^\s*</.test(body);
+        const message = retryableGatewayHtml
+          ? `${label} failed ${response.status}: gateway returned HTML; retrying`
+          : `${label} failed ${response.status}: ${adminPreview(label, body, 240)}`;
+        return { message, retryableGatewayHtml };
       }
 
-      function handleSnapshotError(error, options = {}) {
+      function updateSnapshotRetryState(message, options = {}, bad = false) {
         state.snapshotFailures += 1;
-        logAdminDetail("snapshot load error", error);
         const hasSnapshot = Boolean(state.snapshot || state.threads.length || state.tasks.length);
         const summary = hasSnapshot
           ? `${state.threads.length} threads · ${state.tasks.length} tasks · snapshot retrying`
           : "snapshot unavailable · retrying";
         $("snapshot-meta").textContent = summary;
-        setStatus(adminPreview("snapshot temporarily unavailable; retrying", error, 180), true);
+        setStatus(message, bad);
         scheduleSnapshotRetry(options);
+      }
+
+      function handleSnapshotError(error, options = {}) {
+        logAdminDetail("snapshot load error", error);
+        const message = adminPreview("snapshot temporarily unavailable; retrying", error, 180);
+        updateSnapshotRetryState(message, options, true);
+      }
+
+      function clearSnapshotRetryStatus() {
+        const statusLine = $("status-line");
+        if (/^snapshot (failed|temporarily unavailable)/.test(statusLine.textContent || "")) {
+          setStatus("snapshot recovered");
+        }
       }
 
       function renderRealtimePayload(raw, source = "ws") {
@@ -3842,7 +3863,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       async function loadSnapshot(options = {}) {
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
-        if (!response.ok) throw new Error(await readableFetchError(response, "snapshot"));
+        if (!response.ok) {
+          const failure = await readableFetchFailure(response, "snapshot");
+          if (failure.retryableGatewayHtml) {
+            warnAdminDetail("snapshot load retrying", failure.message);
+            updateSnapshotRetryState(failure.message, options, false);
+            return;
+          }
+          throw new Error(failure.message);
+        }
         const data = await response.json();
         state.snapshotFailures = 0;
         if (state.snapshotRetryTimer !== null) {
@@ -3855,6 +3884,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         for (const thread of state.threads) state.optimisticThreads.delete(thread.id);
         for (const task of state.tasks) state.optimisticTasks.delete(task.id);
         $("snapshot-meta").textContent = `${allThreads().length} threads · ${allTasks().length} tasks · ${data.source || "unknown"}`;
+        clearSnapshotRetryStatus();
         const params = new URLSearchParams(window.location.search);
         const requestedThread = queryUuid(params, "thread");
         const requestedTask = queryUuid(params, "task");
