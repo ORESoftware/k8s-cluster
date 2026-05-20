@@ -160,10 +160,9 @@ STDIN.each_line do |line|
   begin
     write_result(invoke(line, console))
   rescue StandardError, SyntaxError => e
-    STDERR.write("#{e.class}: #{e.message}\n")
-    STDERR.write(e.backtrace.join("\n")) if e.backtrace
-    STDERR.write("\n")
-    STDERR.flush
+    # The Erlang parent merges stderr into stdout and treats the first
+    # newline-delimited record as the response. Keep handled errors in the JSON
+    # response line so diagnostics cannot corrupt the protocol.
     write_result(ok: false, error: e.message)
   end
 end

@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import sys
-import traceback
 import urllib.request
 
 
@@ -212,7 +211,9 @@ def main():
         try:
             write_result(invoke(line))
         except Exception as error:
-            traceback.print_exc(file=sys.stderr)
+            # The Erlang parent merges stderr into stdout and treats the first
+            # newline-delimited record as the response. Keep handled errors in
+            # the JSON response line so diagnostics cannot corrupt the protocol.
             write_result({"ok": False, "error": str(error)})
 
 

@@ -147,5 +147,10 @@ test('lambda child runtimes reject invalid source during checkOnly', { timeout: 
     assert.equal(result.body.ok, false, `${runtimeCase.name} should reject invalid source`);
     assert.equal(typeof result.body.error, 'string', `${runtimeCase.name} should include an error`);
     assert.notEqual(result.body.error?.trim(), '', `${runtimeCase.name} error should not be empty`);
+    assert.equal(
+      result.stderr.trim(),
+      '',
+      `${runtimeCase.name} checkOnly errors must not write stderr before the JSON response`,
+    );
   }
 });
