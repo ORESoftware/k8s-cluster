@@ -701,7 +701,6 @@ worker_start(Parent, Command) ->
     try open_port({spawn_executable, "/bin/sh"}, [
         binary,
         exit_status,
-        stderr_to_stdout,
         use_stdio,
         {args, ["-c", ShellCommand]}
     ]) of

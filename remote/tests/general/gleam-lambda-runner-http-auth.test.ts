@@ -200,3 +200,46 @@ test('gleam lambda runner direct HTTP routes require the shared auth header', { 
     assert.equal((authorized.body as { ok?: boolean }).ok, false);
   });
 });
+
+test('gleam lambda runner check route keeps child stderr out of protocol output', { timeout: 60_000 }, async () => {
+  const secret = 'gleam-http-check-stderr-test-secret';
+  const cases = [
+    {
+      runtime: 'python3',
+      functionBody: 'if :\n  result = 1',
+    },
+    {
+      runtime: 'ruby',
+      functionBody: 'def broken(',
+    },
+  ];
+
+  await withRunner(
+    {
+      SERVER_AUTH_SECRET: secret,
+      LAMBDA_ALLOW_HOST_RUNTIMES: 'nodejs,python3,ruby,bash',
+    },
+    async (port) => {
+      for (const testCase of cases) {
+        const checked = await fetchJson(port, '/check', {
+          method: 'POST',
+          body: JSON.stringify({
+            slug: `invalid-${testCase.runtime}`,
+            runtime: testCase.runtime,
+            functionBody: testCase.functionBody,
+            containerized: false,
+            status: 'draft',
+          }),
+          headers: {
+            'content-type': 'application/json',
+            'X-Server-Auth': secret,
+          },
+        });
+
+        assert.equal(checked.status, 422, `${testCase.runtime} invalid check should use HTTP 422`);
+        assert.equal((checked.body as { ok?: boolean }).ok, false);
+        assert.equal(typeof (checked.body as { error?: string }).error, 'string');
+      }
+    },
+  );
+});
