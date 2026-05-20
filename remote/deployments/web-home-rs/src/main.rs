@@ -1068,6 +1068,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   let lastUpdatedAt = "";
   let loading = false;
   let reloadTimer = 0;
+  let liveInventoryEnabled = false;
   let runtimeSocketsStarted = false;
   const wsStatus = { gleam: "idle", rust: "idle" };
   const renderStatus = () => {
@@ -1224,6 +1225,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       if (response.status === 401) {
         renderEmpty("Sign in through /auth?return=/home to load live containers and bastion terminals.");
         setStatus("auth required");
+        liveInventoryEnabled = false;
         return;
       }
       if (!response.ok) throw new Error("runtime inventory failed " + response.status);
@@ -1283,15 +1285,19 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   };
   const startTimedReload = () => {
     window.setInterval(() => {
-      if (document.visibilityState === "visible") load();
+      if (liveInventoryEnabled && document.visibilityState === "visible") load();
     }, runtimeReloadIntervalMs);
   };
-  refresh.addEventListener("click", load);
+  refresh.addEventListener("click", () => {
+    liveInventoryEnabled = true;
+    load();
+  });
   close.addEventListener("click", () => {
     frame.src = "about:blank";
     dock.hidden = true;
   });
-  load();
+  renderEmpty("Sign in through /auth?return=/home, then refresh to load live containers and bastion terminals.");
+  setStatus("auth required for live container inventory");
   startTimedReload();
 })();
 "##;
