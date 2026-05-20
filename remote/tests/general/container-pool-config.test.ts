@@ -107,6 +107,11 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /"run"\.to_string\(\)/);
   assert.match(source, /wait_container_ready/);
   assert.match(source, /inspect_container_running/);
+  assert.match(source, /retire_stale_starting_containers/);
+  assert.match(source, /container\.status == ContainerStatus::Starting/);
+  assert.match(source, /retire_stale_starting_containers\(state, Some\(pool_id\)\)\.await/);
+  assert.match(source, /retire_stale_starting_containers\(state, None\)\.await/);
+  assert.match(source, /"starting container is not running"/);
   assert.match(source, /probe_container_health/);
   assert.match(source, /retire_container/);
   assert.match(source, /prune_unhealthy_containers/);

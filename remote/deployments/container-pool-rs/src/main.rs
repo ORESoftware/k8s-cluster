@@ -982,6 +982,8 @@ async fn allocate_container_slot(
     state: &AppState,
     pool_id: &str,
 ) -> Result<(PoolConfig, WarmContainer), String> {
+    retire_stale_starting_containers(state, Some(pool_id)).await;
+
     let mut registry = state.registry.lock().await;
     let pool = registry
         .configs
@@ -1359,6 +1361,37 @@ async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool,
     Ok(status.eq_ignore_ascii_case("running"))
 }
 
+async fn retire_stale_starting_containers(state: &AppState, pool_id: Option<&str>) {
+    let now = now_ms();
+    let candidates = {
+        let registry = state.registry.lock().await;
+        registry
+            .containers
+            .values()
+            .filter(|container| container.in_flight == 0)
+            .filter(|container| container.status == ContainerStatus::Starting)
+            .filter(|container| pool_id.map(|id| id == container.pool_id).unwrap_or(true))
+            .filter(|container| {
+                Duration::from_millis(now.saturating_sub(container.launched_at_ms) as u64)
+                    >= state.config.unhealthy_grace
+            })
+            .map(|container| container.name.clone())
+            .collect::<Vec<_>>()
+    };
+
+    for name in candidates {
+        match inspect_container_running(state, &name).await {
+            Ok(false) => {
+                retire_container(state, &name, "starting container is not running").await;
+            }
+            Ok(true) => {}
+            Err(error) => {
+                eprintln!("failed to inspect starting warm container {name}: {error}");
+            }
+        }
+    }
+}
+
 async fn probe_container_health(
     state: &AppState,
     pool: &PoolConfig,
@@ -1414,6 +1447,8 @@ async fn retire_container(state: &AppState, name: &str, reason: &str) {
 }
 
 async fn prune_unhealthy_containers(state: &AppState) {
+    retire_stale_starting_containers(state, None).await;
+
     let now = now_ms();
     let candidates = {
         let registry = state.registry.lock().await;
