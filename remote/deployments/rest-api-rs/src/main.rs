@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+mod db_routes;
 mod pg_contract;
 
 use axum::{
@@ -4203,8 +4204,22 @@ async fn publish_task_dispatch_to_nats(
     publish_task_to_nats(request, branch, "task.dispatch", false).await
 }
 
-fn dispatch_mode_value(request: &DispatchTaskRequest) -> &str {
-    request.dispatch_mode.as_deref().unwrap_or("direct").trim()
+fn default_dispatch_mode() -> String {
+    first_env(&[
+        "REST_API_DEFAULT_DISPATCH_MODE",
+        "REMOTE_REST_DEFAULT_DISPATCH_MODE",
+    ])
+    .unwrap_or_else(|| "queued".to_string())
+}
+
+fn dispatch_mode_value(request: &DispatchTaskRequest) -> String {
+    request
+        .dispatch_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|mode| !mode.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(default_dispatch_mode)
 }
 
 fn is_queued_dispatch_mode(mode: &str) -> bool {
@@ -5084,8 +5099,8 @@ async fn dispatch_thread_task(
     }
 
     let dispatch_mode = dispatch_mode_value(&request);
-    let queued_dispatch = is_queued_dispatch_mode(dispatch_mode);
-    let container_pool_dispatch = is_container_pool_dispatch_mode(dispatch_mode);
+    let queued_dispatch = is_queued_dispatch_mode(&dispatch_mode);
+    let container_pool_dispatch = is_container_pool_dispatch_mode(&dispatch_mode);
     remember_runtime_task(&request, None);
     if let Err(error) = persist_runtime_task_to_postgres(
         &request,
@@ -5105,7 +5120,8 @@ async fn dispatch_thread_task(
             json!({
                 "source": "dd-remote-rest-api",
                 "stage": "queued-dispatch-accepted",
-                "dispatchMode": &request.dispatch_mode,
+                "dispatchMode": &dispatch_mode,
+                "requestedDispatchMode": &request.dispatch_mode,
                 "subject": nats_task_subject(&thread_id),
             }),
         )
@@ -5135,7 +5151,8 @@ async fn dispatch_thread_task(
                     json!({
                         "source": "dd-remote-rest-api",
                         "stage": "nats-publish-failed",
-                        "dispatchMode": &request.dispatch_mode,
+                        "dispatchMode": &dispatch_mode,
+                        "requestedDispatchMode": &request.dispatch_mode,
                         "subject": nats_task_subject(&thread_id),
                         "error": error,
                     }),
@@ -5540,26 +5557,8 @@ async fn metrics() -> impl IntoResponse {
     )
 }
 
-#[tokio::main]
-async fn main() {
-    // Fail fast at startup if `remote/libs/pg-defs/schema/schema.sql`
-    // has drifted away from what this service reads or writes against
-    // RDS Postgres. The CI workflow `pg-defs-check` also enforces this
-    // at PR time, but the runtime assertion guarantees the wiring is
-    // exercised every time the binary boots (so a broken local build
-    // can't ship even if CI was skipped).
-    pg_contract::assert_canonical_schema_matches_local_reads();
-
-    tokio::spawn(run_cdc_fanout_subscriptions());
-
-    let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-    let port = env::var("PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(8082);
-
-    let app = Router::new()
-        .route("/healthz", get(healthz))
+fn code_first_router() -> Router {
+    Router::new()
         .route("/api/agents/tasks", get(agents_tasks))
         .route(
             "/api/agents/git-repos",
@@ -5628,7 +5627,35 @@ async fn main() {
             "/api/agents/threads/:thread_id/terminal",
             post(terminal_thread),
         )
-        .route("/metrics", get(metrics));
+}
+
+fn app_router() -> Router {
+    Router::new()
+        .route("/healthz", get(healthz))
+        .merge(code_first_router())
+        .nest("/api/db", db_routes::router())
+        .route("/metrics", get(metrics))
+}
+
+#[tokio::main]
+async fn main() {
+    // Fail fast at startup if `remote/libs/pg-defs/schema/schema.sql`
+    // has drifted away from what this service reads or writes against
+    // RDS Postgres. The CI workflow `pg-defs-check` also enforces this
+    // at PR time, but the runtime assertion guarantees the wiring is
+    // exercised every time the binary boots (so a broken local build
+    // can't ship even if CI was skipped).
+    pg_contract::assert_canonical_schema_matches_local_reads();
+
+    tokio::spawn(run_cdc_fanout_subscriptions());
+
+    let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = env::var("PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(8082);
+
+    let app = app_router();
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

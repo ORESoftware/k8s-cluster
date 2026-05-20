@@ -34,6 +34,29 @@ The public webserver in `remote/deployments/web-home-rs` serves HTML and calls t
 | `POST /api/agents/threads/:threadId/merge-upstream`  | scale the thread worker up if needed, wait for readiness, then ask it to merge its configured base branch           |
 | `POST /api/agents/threads/:threadId/open-pr`         | scale the worker up if needed, wait for readiness, then ask it to open or reuse a draft WIP PR                      |
 | `GET /api/lambdas/functions/:idOrSlug`               | fetch one lambda definition over HTTP so non-REST deployments do not need direct RDS TCP credentials                |
+| `GET /api/db/contract/tables`                        | code-generated table/column contract from `remote/libs/pg-defs`                                                     |
+| `GET /api/db/tables?schema=public`                   | discover live RDS tables/views through `information_schema` and compare them to `pg-defs`                           |
+| `GET /api/db/tables/:table`                          | metadata for one `public` schema table                                                                             |
+| `GET /api/db/tables/:table/rows?limit=100`           | list rows for one `public` schema table                                                                            |
+| `POST /api/db/tables/:table/rows`                    | insert one row into one `public` schema base table                                                                  |
+| `GET /api/db/tables/:table/rows/:id`                 | fetch one row by a single-column primary key                                                                        |
+| `PATCH /api/db/tables/:table/rows/:id`               | patch one row by a single-column primary key                                                                        |
+| `DELETE /api/db/tables/:table/rows/:id`              | delete one row by a single-column primary key                                                                       |
+| `GET /api/db/schemas/:schema/tables/:table[/rows]`   | same db-first table/row routes for an explicit non-system schema                                                    |
+
+Route families are intentionally split:
+
+- Code-first routes (`/api/agents/*`, `/api/lambdas/*`) keep hand-shaped product behavior,
+  validation, fan-out, and orchestration.
+- DB-first routes (`/api/db/*`) discover RDS at request time and work from table metadata first.
+  `remote/libs/pg-defs` remains the code-side contract; db-first metadata marks live tables as
+  known/unknown and reports missing or extra columns against that contract.
+
+All `/api/db/*` routes require `X-Agent-Auth` or `X-Server-Auth` to match
+`REMOTE_DEV_SERVER_SECRET` / `SERVER_AUTH_SECRET`, including reads. Generic database access should
+not be exposed as an unauthenticated public gateway path. Row writes accept either a bare JSON
+object using database column names or `{ "row": { ... } }`; views are read-only, unknown columns are
+rejected, and `/rows/:id` operations currently require a single-column primary key.
 
 ## Data sources
 
@@ -60,13 +83,16 @@ During migration, the service also supports Supabase REST fallback:
 - `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_KEY`
 
-NATS is configured separately through `NATS_URL`. Direct dispatch and queued dispatch are mutually
-exclusive: successful direct dispatch calls the deterministic thread worker and does not publish a
-task message to NATS. Requests may set `dispatchMode: "queued"` to persist the task, publish a real
-`task.dispatch` message to `dd.remote.thread.<threadId>.tasks`, emit
-`dd.remote.orchestrator.wakeup`, and return `202 Accepted` without waiting for a worker container.
-Queued dispatch relies on the NATS consumer to hand the task to a repo-scoped warm Node chat/Claude
-pool with `threadId` affinity.
+NATS is configured separately through `NATS_URL`. Task dispatch is NATS-first by default:
+when `dispatchMode` is omitted the service uses `REST_API_DEFAULT_DISPATCH_MODE` or `queued`,
+persists the task, publishes a real `task.dispatch` message to
+`dd.remote.thread.<threadId>.tasks`, emits `dd.remote.orchestrator.wakeup`, and returns
+`202 Accepted` without waiting for a worker container. Direct dispatch remains an explicit escape
+hatch: `dispatchMode: "direct"` calls the deterministic thread worker and does not publish a task
+message to NATS. Queued dispatch relies on the NATS consumer to hand the task to a repo-scoped warm
+Node chat/Claude pool with `threadId` affinity.
+The internal prepare route remains for legacy shadow task messages that only warm the deterministic
+thread worker and do not own real task execution.
 
 Status events are not NATS-only. When the REST API accepts a queued task, publishes the NATS handoff,
 or records a NATS publish failure, it also best-effort posts the same `task-event` envelope directly

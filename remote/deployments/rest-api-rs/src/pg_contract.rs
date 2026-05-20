@@ -28,17 +28,24 @@
 
 pub use dd_pg_defs::{
     AgentContextBlobsRow, AgentContextBlobsStatus, AgentContextEmbeddingsRow,
-    AgentRemoteDevArtifactRow, AgentRemoteDevEventRow, AgentRemoteDevTaskRow,
-    AgentRemoteDevTaskStatus, AgentRemoteDevThreadRow, AppConfigRow, AppConfigStatus,
-    ContainerPoolConfigsRow, KnownGitRepoRow, KnownGitRepoStatus,
+    AgentRemoteDevArtifactRow, AgentRemoteDevEventRow, AgentRemoteDevRuntimeLockRow,
+    AgentRemoteDevTaskRow, AgentRemoteDevTaskStatus, AgentRemoteDevThreadRow, AppConfigRow,
+    AppConfigStatus, ContainerPoolConfigsRow, KnownGitRepoRow, KnownGitRepoStatus,
     LambdaFunctionContainerBuildStatus, LambdaFunctionRow, LambdaFunctionStatus,
-    AGENT_CONTEXT_BLOBS_COLUMNS, AGENT_CONTEXT_BLOBS_TABLE, AGENT_CONTEXT_EMBEDDINGS_COLUMNS,
-    AGENT_CONTEXT_EMBEDDINGS_TABLE, AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS,
-    AGENT_REMOTE_DEV_ARTIFACTS_TABLE, AGENT_REMOTE_DEV_EVENTS_COLUMNS,
-    AGENT_REMOTE_DEV_EVENTS_TABLE, AGENT_REMOTE_DEV_TASKS_COLUMNS, AGENT_REMOTE_DEV_TASKS_TABLE,
-    AGENT_REMOTE_DEV_THREADS_COLUMNS, AGENT_REMOTE_DEV_THREADS_TABLE, APP_CONFIG_COLUMNS,
-    APP_CONFIG_TABLE, KNOWN_GIT_REPOS_COLUMNS, KNOWN_GIT_REPOS_TABLE, LAMBDA_FUNCTIONS_COLUMNS,
-    LAMBDA_FUNCTIONS_TABLE,
+    PresenceConsumerCheckpointsRow, PresenceConvMembersRow, PresenceConvsRow, PresenceEventsRow,
+    PresenceUsersRow, AGENT_CONTEXT_BLOBS_COLUMNS, AGENT_CONTEXT_BLOBS_TABLE,
+    AGENT_CONTEXT_EMBEDDINGS_COLUMNS, AGENT_CONTEXT_EMBEDDINGS_TABLE,
+    AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS, AGENT_REMOTE_DEV_ARTIFACTS_TABLE,
+    AGENT_REMOTE_DEV_EVENTS_COLUMNS, AGENT_REMOTE_DEV_EVENTS_TABLE,
+    AGENT_REMOTE_DEV_RUNTIME_LOCKS_COLUMNS, AGENT_REMOTE_DEV_RUNTIME_LOCKS_TABLE,
+    AGENT_REMOTE_DEV_TASKS_COLUMNS, AGENT_REMOTE_DEV_TASKS_TABLE, AGENT_REMOTE_DEV_THREADS_COLUMNS,
+    AGENT_REMOTE_DEV_THREADS_TABLE, APP_CONFIG_COLUMNS, APP_CONFIG_TABLE,
+    CONTAINER_POOL_CONFIGS_COLUMNS, CONTAINER_POOL_CONFIGS_TABLE, KNOWN_GIT_REPOS_COLUMNS,
+    KNOWN_GIT_REPOS_TABLE, LAMBDA_FUNCTIONS_COLUMNS, LAMBDA_FUNCTIONS_TABLE,
+    PRESENCE_CONSUMER_CHECKPOINTS_COLUMNS, PRESENCE_CONSUMER_CHECKPOINTS_TABLE,
+    PRESENCE_CONVS_COLUMNS, PRESENCE_CONVS_TABLE, PRESENCE_CONV_MEMBERS_COLUMNS,
+    PRESENCE_CONV_MEMBERS_TABLE, PRESENCE_EVENTS_COLUMNS, PRESENCE_EVENTS_TABLE,
+    PRESENCE_USERS_COLUMNS, PRESENCE_USERS_TABLE,
 };
 
 /// Columns the local SELECT in `lambda_select_sql()` returns and that
@@ -94,6 +101,89 @@ pub const LOCAL_READABLE_TABLES: &[&str] = &[
     LAMBDA_FUNCTIONS_TABLE,
 ];
 
+#[derive(Clone, Copy)]
+pub struct CanonicalTable {
+    pub name: &'static str,
+    pub columns: &'static [&'static str],
+}
+
+/// Full public-table contract generated from `remote/libs/pg-defs`.
+/// Runtime database-first routes use this as contract metadata while
+/// still discovering the live table surface directly from RDS.
+pub const CANONICAL_TABLES: &[CanonicalTable] = &[
+    CanonicalTable {
+        name: APP_CONFIG_TABLE,
+        columns: APP_CONFIG_COLUMNS,
+    },
+    CanonicalTable {
+        name: CONTAINER_POOL_CONFIGS_TABLE,
+        columns: CONTAINER_POOL_CONFIGS_COLUMNS,
+    },
+    CanonicalTable {
+        name: KNOWN_GIT_REPOS_TABLE,
+        columns: KNOWN_GIT_REPOS_COLUMNS,
+    },
+    CanonicalTable {
+        name: AGENT_CONTEXT_BLOBS_TABLE,
+        columns: AGENT_CONTEXT_BLOBS_COLUMNS,
+    },
+    CanonicalTable {
+        name: AGENT_CONTEXT_EMBEDDINGS_TABLE,
+        columns: AGENT_CONTEXT_EMBEDDINGS_COLUMNS,
+    },
+    CanonicalTable {
+        name: AGENT_REMOTE_DEV_THREADS_TABLE,
+        columns: AGENT_REMOTE_DEV_THREADS_COLUMNS,
+    },
+    CanonicalTable {
+        name: AGENT_REMOTE_DEV_TASKS_TABLE,
+        columns: AGENT_REMOTE_DEV_TASKS_COLUMNS,
+    },
+    CanonicalTable {
+        name: AGENT_REMOTE_DEV_EVENTS_TABLE,
+        columns: AGENT_REMOTE_DEV_EVENTS_COLUMNS,
+    },
+    CanonicalTable {
+        name: AGENT_REMOTE_DEV_ARTIFACTS_TABLE,
+        columns: AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS,
+    },
+    CanonicalTable {
+        name: AGENT_REMOTE_DEV_RUNTIME_LOCKS_TABLE,
+        columns: AGENT_REMOTE_DEV_RUNTIME_LOCKS_COLUMNS,
+    },
+    CanonicalTable {
+        name: LAMBDA_FUNCTIONS_TABLE,
+        columns: LAMBDA_FUNCTIONS_COLUMNS,
+    },
+    CanonicalTable {
+        name: PRESENCE_CONVS_TABLE,
+        columns: PRESENCE_CONVS_COLUMNS,
+    },
+    CanonicalTable {
+        name: PRESENCE_CONV_MEMBERS_TABLE,
+        columns: PRESENCE_CONV_MEMBERS_COLUMNS,
+    },
+    CanonicalTable {
+        name: PRESENCE_USERS_TABLE,
+        columns: PRESENCE_USERS_COLUMNS,
+    },
+    CanonicalTable {
+        name: PRESENCE_EVENTS_TABLE,
+        columns: PRESENCE_EVENTS_COLUMNS,
+    },
+    CanonicalTable {
+        name: PRESENCE_CONSUMER_CHECKPOINTS_TABLE,
+        columns: PRESENCE_CONSUMER_CHECKPOINTS_COLUMNS,
+    },
+];
+
+pub fn canonical_table_columns(table: &str) -> Option<&'static [&'static str]> {
+    CANONICAL_TABLES
+        .iter()
+        .find(|item| item.name == table)
+        .map(|item| item.columns)
+}
+
 fn assert_columns_subset(local: &[&str], canonical: &[&str], table: &str) {
     for &column in local {
         assert!(
@@ -129,22 +219,15 @@ pub fn assert_canonical_schema_matches_local_reads() {
     // The other tables don't have a strict-subset column contract yet
     // (they're served by inline SQL today). For now we lock in the
     // table-name surface so a rename in schema.sql trips us at startup.
-    let canonical_tables: &[&str] = &[
-        APP_CONFIG_TABLE,
-        AGENT_REMOTE_DEV_ARTIFACTS_TABLE,
-        AGENT_REMOTE_DEV_EVENTS_TABLE,
-        AGENT_REMOTE_DEV_TASKS_TABLE,
-        AGENT_REMOTE_DEV_THREADS_TABLE,
-        AGENT_CONTEXT_BLOBS_TABLE,
-        AGENT_CONTEXT_EMBEDDINGS_TABLE,
-        KNOWN_GIT_REPOS_TABLE,
-        LAMBDA_FUNCTIONS_TABLE,
-    ];
+    let canonical_tables = CANONICAL_TABLES
+        .iter()
+        .map(|table| table.name)
+        .collect::<Vec<_>>();
     for &table in LOCAL_READABLE_TABLES {
-        assert_table_in_canonical_set(table, canonical_tables);
+        assert_table_in_canonical_set(table, &canonical_tables);
     }
     for &table in LOCAL_WRITABLE_TABLES {
-        assert_table_in_canonical_set(table, canonical_tables);
+        assert_table_in_canonical_set(table, &canonical_tables);
     }
 }
 

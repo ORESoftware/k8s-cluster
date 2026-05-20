@@ -71,6 +71,7 @@ Gateway path map:
   (internal auth required)
 - `/lambdas/functions` -> `dd-remote-web-home:8080`
 - `/api/lambdas/functions` -> `dd-remote-rest-api:8082`
+- `/api/db/*` -> `dd-remote-rest-api:8082` (server auth required; generic RDS table access)
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
 - `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` -> `dd-webrtc-signaling:8095`
 - `/des/`, `/des/model/schema`, `/des/model/example`, `POST /des/validate`,
@@ -88,6 +89,15 @@ Gateway path map:
 - `/dd-thread/<short>/...` -> target per-thread Kubernetes Ingress shape; the selected Node.js
   worker is pinned to one thread and does not route UUIDs itself. `/dd-thread/<short>/ws` is the
   direct worker WebSocket for replay/live task events.
+
+Availability guardrail for `/agents/tasks`: the HTML route is owned by
+`dd-remote-web-home`, so it should keep `replicas: 2`, rolling updates with
+`maxUnavailable: 0`, readiness probes, and the `dd-remote-web-home` PodDisruptionBudget. That keeps
+at least one ready web pod behind the Service during normal rollouts and voluntary disruptions. The
+gateway also retries transient upstream `502`/`503`/`504` failures before surfacing them to the
+browser. Do not scale `dd-remote-gateway` above one pod on the current single-node `hostPort`
+deployment; gateway HA needs either multiple nodes with a DaemonSet/load balancer shape or an
+external load balancer in front of multiple gateway instances.
 
 The Node.js worker image is pre-baked as `docker.io/library/dd-dev-server:dev` on the EC2
 containerd node. It already contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
@@ -265,6 +275,11 @@ watchdog so they stay owned by `dd-remote-queue-consumer`, and event messages ar
 Gleam websocket fanout endpoint. When a window has activity it checks again after 5 seconds; quiet
 windows back off to 15 seconds.
 
+The reaper also runs the runtime floor reconciler every 20 seconds. That loop creates or verifies
+the JetStream `DD_REMOTE_TASKS` stream and durable consumer `dd-remote-thread-preparer`, keeps the
+`dd-remote-queue-consumer` Deployment scaled to at least one replica, and calls `dd-container-pool`
+to warm any configured pool whose idle workers are below `min_warm`.
+
 The reaper is also the cron supervisor for the local worker image. Every day at 4am America/New_York
 it fetches/fast-forwards the EC2 checkout, runs `nerdctl -n k8s.io build` for
 `remote/deployments/dev-server`, and overwrites the local image tag `docker.io/library/dd-dev-server:dev`. New
@@ -280,9 +295,10 @@ above still live in `dd-idle-reaper`.
 
 ## NATS queued execution path
 
-The runtime now includes a NATS queued execution path:
+The runtime now uses a NATS queued execution path by default:
 
-1. Direct dispatch posts only to the selected thread worker and does not publish a task to NATS.
+1. REST dispatch without `dispatchMode` resolves to `queued`; explicit `dispatchMode: "direct"`
+   posts only to the selected thread worker and does not publish a task to NATS.
 2. Queued dispatch publishes the task payload through JetStream to
    `dd.remote.thread.<threadId>.tasks`, emits `dd.remote.orchestrator.wakeup`, and returns `202`.
 3. `dd-remote-queue-consumer` reads the durable pull consumer `dd-remote-thread-preparer` on the
