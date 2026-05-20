@@ -3257,8 +3257,21 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         };
       }
 
-      function openGleamLiveSocket(threadId, taskId) {
+      async function gleamTaskSocketAvailable() {
+        try {
+          const response = await fetch("/gleam/healthz", {
+            cache: "no-store",
+            credentials: "same-origin",
+          });
+          return response.ok && !response.redirected;
+        } catch (_error) {
+          return false;
+        }
+      }
+
+      async function openGleamLiveSocket(threadId, taskId) {
         if (state.liveWs) state.liveWs.close();
+        if (!(await gleamTaskSocketAvailable())) return;
         const proto = location.protocol === "https:" ? "wss" : "ws";
         const wsUrl = `${proto}://${location.host}/gleam/ws?threadId=${encodeURIComponent(threadId)}&taskId=${encodeURIComponent(taskId)}`;
         const ws = new WebSocket(wsUrl);
@@ -4289,9 +4302,22 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
           }
         };
       };
-      const openTaskWebSocket = (threadId, taskId) => {
+      const gleamTaskSocketAvailable = async () => {
+        try {
+          const response = await fetch("/gleam/healthz", {
+            cache: "no-store",
+            credentials: "same-origin",
+          });
+          return response.ok && !response.redirected;
+        } catch (_error) {
+          return false;
+        }
+      };
+
+      const openTaskWebSocket = async (threadId, taskId) => {
         if (activeWs) activeWs.close();
         resetRealtimeState(threadId, taskId);
+        if (!(await gleamTaskSocketAvailable())) return;
         const proto = location.protocol === "https:" ? "wss" : "ws";
         const wsUrl = `${proto}://${location.host}/gleam/ws?threadId=${encodeURIComponent(threadId)}&taskId=${encodeURIComponent(taskId)}`;
         activeWs = new WebSocket(wsUrl);
