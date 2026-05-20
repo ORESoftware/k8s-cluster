@@ -215,6 +215,17 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
+async fn api_docs_html() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl axum::response::IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = Arc::new(Config::from_env().map_err(|error| {
@@ -241,6 +252,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let app = Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics_handler))
         .with_state(state.clone());
@@ -458,9 +472,7 @@ async fn pump_loop(
                             // a wedged JetStream can't lock the pump forever.
                             match tokio::time::timeout(config.publish_timeout, ack_future).await {
                                 Ok(Ok(_ack)) => {
-                                    metrics
-                                        .rows_published_total
-                                        .fetch_add(1, Ordering::Relaxed);
+                                    metrics.rows_published_total.fetch_add(1, Ordering::Relaxed);
                                 }
                                 Ok(Err(error)) => {
                                     metrics
@@ -591,7 +603,12 @@ impl ChangeOp {
 
 impl ParsedChange {
     fn subject(&self, prefix: &str) -> String {
-        format!("{prefix}.{}.{}.{}", self.schema, self.table, self.op.as_str())
+        format!(
+            "{prefix}.{}.{}.{}",
+            self.schema,
+            self.table,
+            self.op.as_str()
+        )
     }
 }
 
@@ -622,10 +639,9 @@ fn parse_wal2json_row(json_line: &str) -> Option<ParsedChange> {
     let mut pk_names = Vec::new();
     if let Some(items) = obj.get("columns").and_then(Value::as_array) {
         for item in items {
-            if let (Some(name), Some(value)) = (
-                item.get("name").and_then(Value::as_str),
-                item.get("value"),
-            ) {
+            if let (Some(name), Some(value)) =
+                (item.get("name").and_then(Value::as_str), item.get("value"))
+            {
                 columns.insert(name.to_string(), value.clone());
             }
         }
@@ -633,10 +649,9 @@ fn parse_wal2json_row(json_line: &str) -> Option<ParsedChange> {
     let mut identity = BTreeMap::new();
     if let Some(items) = obj.get("identity").and_then(Value::as_array) {
         for item in items {
-            if let (Some(name), Some(value)) = (
-                item.get("name").and_then(Value::as_str),
-                item.get("value"),
-            ) {
+            if let (Some(name), Some(value)) =
+                (item.get("name").and_then(Value::as_str), item.get("value"))
+            {
                 identity.insert(name.to_string(), value.clone());
                 pk_names.push(name.to_string());
             }
@@ -690,9 +705,9 @@ fn build_envelope<'a>(parsed: &'a ParsedChange, lsn: &'a str) -> Envelope<'a> {
         ChangeOp::Delete => Value::Object(parsed.identity.clone().into_iter().collect()),
     };
     let previous_row = match parsed.op {
-        ChangeOp::Update | ChangeOp::Delete => Some(Value::Object(
-            parsed.identity.clone().into_iter().collect(),
-        )),
+        ChangeOp::Update | ChangeOp::Delete => {
+            Some(Value::Object(parsed.identity.clone().into_iter().collect()))
+        }
         ChangeOp::Insert => None,
     };
     Envelope {
@@ -820,7 +835,10 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
         eprintln!("{SERVICE_NAME} metrics encode failed: {error}");
     }
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
         buffer,
     )
 }

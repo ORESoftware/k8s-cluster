@@ -16,9 +16,9 @@ pub struct BankCoordinates {
     pub bank_name: String,
     pub account_holder: String,
     pub account_number: String,
-    pub routing_number: Option<String>,   // US ABA
-    pub swift_bic: Option<String>,        // International
-    pub iban: Option<String>,             // Europe
+    pub routing_number: Option<String>, // US ABA
+    pub swift_bic: Option<String>,      // International
+    pub iban: Option<String>,           // Europe
     pub intermediary_bank: Option<String>,
     pub statement_feed_kind: StatementFeedKind,
     pub statement_feed_settings: serde_json::Value,

@@ -15,7 +15,9 @@ pub struct LedgerService {
 }
 
 impl LedgerService {
-    pub fn new(pool: PgPool) -> Self { Self { pool } }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
 
     /// Ensure a "system" account exists for the tenant, e.g. `clearing/stripe`,
     /// `cash/chase_main`, `revenue/saas`, `fees/stripe`. Idempotent.
@@ -302,8 +304,7 @@ fn row_to_account(row: &sqlx::postgres::PgRow) -> AppResult<Account> {
         kind: row.try_get("kind")?,
         normal_side: row.try_get("normal_side")?,
         code: row.try_get("code")?,
-        currency: Currency::new(&currency_str)
-            .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?,
+        currency: Currency::new(&currency_str).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?,
         metadata,
         created_at: row.try_get("created_at")?,
     })

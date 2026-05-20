@@ -1186,8 +1186,10 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,
-    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None, !container_pool_dispatch\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
+    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
   );
+  assert.match(restServer, /fn default_dispatch_mode/);
+  assert.match(restServer, /REST_API_DEFAULT_DISPATCH_MODE/);
   assert.match(restServer, /fn is_container_pool_dispatch_mode\(mode: &str\) -> bool/);
   assert.match(restServer, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
   assert.match(restServer, /StatusCode::ACCEPTED/);

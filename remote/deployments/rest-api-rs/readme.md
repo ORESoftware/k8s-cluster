@@ -15,6 +15,10 @@ The public webserver in `remote/deployments/web-home-rs` serves HTML and calls t
 
 ## Routes
 
+The served route docs are generated from source by `remote/tools/generate-api-docs.mjs`; this
+README is narrative context, not the route inventory source of truth. HTML is available at
+`/docs/api` and `/api/docs`; JSON metadata is available at `/api/docs.json`.
+
 | Route                                                | Purpose                                                                                                             |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `GET /healthz`                                       | liveness/readiness check                                                                                            |
@@ -34,29 +38,43 @@ The public webserver in `remote/deployments/web-home-rs` serves HTML and calls t
 | `POST /api/agents/threads/:threadId/merge-upstream`  | scale the thread worker up if needed, wait for readiness, then ask it to merge its configured base branch           |
 | `POST /api/agents/threads/:threadId/open-pr`         | scale the worker up if needed, wait for readiness, then ask it to open or reuse a draft WIP PR                      |
 | `GET /api/lambdas/functions/:idOrSlug`               | fetch one lambda definition over HTTP so non-REST deployments do not need direct RDS TCP credentials                |
-| `GET /api/db/contract/tables`                        | code-generated table/column contract from `remote/libs/pg-defs`                                                     |
-| `GET /api/db/tables?schema=public`                   | discover live RDS tables/views through `information_schema` and compare them to `pg-defs`                           |
-| `GET /api/db/tables/:table`                          | metadata for one `public` schema table                                                                             |
-| `GET /api/db/tables/:table/rows?limit=100`           | list rows for one `public` schema table                                                                            |
-| `POST /api/db/tables/:table/rows`                    | insert one row into one `public` schema base table                                                                  |
-| `GET /api/db/tables/:table/rows/:id`                 | fetch one row by a single-column primary key                                                                        |
-| `PATCH /api/db/tables/:table/rows/:id`               | patch one row by a single-column primary key                                                                        |
-| `DELETE /api/db/tables/:table/rows/:id`              | delete one row by a single-column primary key                                                                       |
-| `GET /api/db/schemas/:schema/tables/:table[/rows]`   | same db-first table/row routes for an explicit non-system schema                                                    |
 
-Route families are intentionally split:
+The public REST API is intentionally domain/code-first:
 
 - Code-first routes (`/api/agents/*`, `/api/lambdas/*`) keep hand-shaped product behavior,
-  validation, fan-out, and orchestration.
-- DB-first routes (`/api/db/*`) discover RDS at request time and work from table metadata first.
-  `remote/libs/pg-defs` remains the code-side contract; db-first metadata marks live tables as
-  known/unknown and reports missing or extra columns against that contract.
+  validation, fan-out, orchestration, aggregation, and domain joins.
+- There is no generic table-shaped `/api/db/*` product surface.
 
-All `/api/db/*` routes require `X-Agent-Auth` or `X-Server-Auth` to match
-`REMOTE_DEV_SERVER_SECRET` / `SERVER_AUTH_SECRET`, including reads. Generic database access should
-not be exposed as an unauthenticated public gateway path. Row writes accept either a bare JSON
-object using database column names or `{ "row": { ... } }`; views are read-only, unknown columns are
-rejected, and `/rows/:id` operations currently require a single-column primary key.
+Generic database inspection remains an operator-only escape hatch under `/internal/db/*`, disabled
+by default. To mount it for a trusted internal environment, set
+`REST_API_INTERNAL_DB_ROUTES_ENABLED=true` or `REST_API_ENABLE_INTERNAL_DB_ROUTES=true`. These routes
+still require `X-Agent-Auth` or `X-Server-Auth` to match `REMOTE_DEV_SERVER_SECRET` /
+`SERVER_AUTH_SECRET`, including reads, and they must not be exposed as public gateway paths.
+
+The internal `/internal/db/join` route supports basic safe joins without making clients write SQL:
+
+- `left`, `right`: table names; default schema is `public`
+- `leftSchema`, `rightSchema`: optional explicit non-system schemas
+- `leftColumn`, `rightColumn`: validated column names for an equality join
+- `join`: `inner`, `left`, `right`, or `full`; default is `inner`
+- `leftColumns`, `rightColumns`: optional comma-separated column allowlists
+- `order`: `left.<column>` / `right.<column>`, with optional `-`, `.desc`, or `:desc`
+- `limit`, `offset`: capped the same way as row listing
+
+The route only accepts table/column identifiers discovered from `information_schema`; it does not
+accept raw SQL fragments.
+
+Do not generate SQL or migrations from this Rust code. If a code-first route needs a new table,
+column, index, or constraint, update `remote/libs/pg-defs/schema/schema.sql` manually, regenerate
+`remote/libs/pg-defs`, and update the Rust implementation to match.
+
+For RDS drift checks, use `node scripts/pg/diff/rds-vs-pg-defs.mjs`. It compares live RDS catalog
+state to `remote/libs/pg-defs/schema/schema.sql` and emits a report only; it does not generate
+`.sql` migration files.
+
+`node remote/tests/check-rest-api-route-parity.mjs` checks the generated docs output, the
+code-first route classifications, and the internal DB route boundary. It is a checker only; it must
+not become a SQL generator.
 
 ## Data sources
 

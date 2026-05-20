@@ -67,7 +67,9 @@ pub struct LockService {
 }
 
 impl LockService {
-    pub fn new(pool: PgPool) -> Self { Self { pool } }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
 
     /// Atomic acquire with TTL. Returns 409 (Conflict) if held + not expired.
     pub async fn acquire(
@@ -351,13 +353,11 @@ impl LockService {
         .execute(&self.pool)
         .await?;
 
-        let n = sqlx::query(
-            r#"DELETE FROM tenant_locks WHERE expires_at <= $1"#,
-        )
-        .bind(cutoff)
-        .execute(&self.pool)
-        .await?
-        .rows_affected();
+        let n = sqlx::query(r#"DELETE FROM tenant_locks WHERE expires_at <= $1"#)
+            .bind(cutoff)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
 
         Ok(n)
     }

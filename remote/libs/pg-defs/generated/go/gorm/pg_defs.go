@@ -554,7 +554,7 @@ type LambdaFunctionGorm struct {
 	DisplayName string `gorm:"column:display_name;type:varchar(200);not null" json:"displayName"`
 	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
 	Runtime string `gorm:"column:runtime;type:varchar(40);default:'nodejs';not null" json:"runtime"`
-	EntryCommand string `gorm:"column:entry_command;type:text;default:'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs';not null" json:"entryCommand"`
+	EntryCommand string `gorm:"column:entry_command;type:text;default:'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs';not null" json:"entryCommand"`
 	FunctionBody string `gorm:"column:function_body;type:text;not null" json:"functionBody"`
 	ReuseKey *string `gorm:"column:reuse_key;type:varchar(200)" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `gorm:"column:idle_timeout_seconds;type:integer;default:300;not null" json:"idleTimeoutSeconds"`

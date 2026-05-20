@@ -545,7 +545,7 @@ type LambdaFunctionBun struct {
 	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
 	Description string `bun:"description,type:text,default:''" json:"description"`
 	Runtime string `bun:"runtime,type:varchar(40),default:'nodejs'" json:"runtime"`
-	EntryCommand string `bun:"entry_command,type:text,default:'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'" json:"entryCommand"`
+	EntryCommand string `bun:"entry_command,type:text,default:'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" json:"entryCommand"`
 	FunctionBody string `bun:"function_body,type:text" json:"functionBody"`
 	ReuseKey *string `bun:"reuse_key,type:varchar(200),nullzero" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `bun:"idle_timeout_seconds,type:integer,default:300" json:"idleTimeoutSeconds"`

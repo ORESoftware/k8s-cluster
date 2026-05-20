@@ -26,6 +26,7 @@ test("runtime kustomization includes split web/api/gateway resources", async () 
   assert.match(kustomization, /dd-dev-server-home\.deployment\.yaml/);
   assert.match(kustomization, /dd-dev-server-api\.service\.yaml/);
   assert.match(kustomization, /dd-remote-web-home\.deployment\.yaml/);
+  assert.match(kustomization, /dd-remote-web-home\.pdb\.yaml/);
   assert.match(kustomization, /dd-remote-web-home\.service\.yaml/);
   assert.match(kustomization, /dd-remote-gateway\.configmap\.yaml/);
   assert.match(kustomization, /dd-remote-gateway\.deployment\.yaml/);
@@ -87,4 +88,33 @@ test("gateway routes homepage to rust and worker control paths to node api", asy
     gatewayConfig,
     /location\s+\/\s*\{[\s\S]*dd-remote-web-home\.default\.svc\.cluster\.local:8080/,
   );
+});
+
+test("web home route has rollout and gateway guards against transient 502s", async () => {
+  const deployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml",
+  );
+  const pdb = await readRepoFile("remote/argocd/dd-next-runtime/dd-remote-web-home.pdb.yaml");
+  const gatewayConfig = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+
+  assert.match(deployment, /replicas:\s*2/);
+  assert.match(deployment, /minReadySeconds:\s*5/);
+  assert.match(deployment, /type:\s*RollingUpdate/);
+  assert.match(deployment, /maxSurge:\s*1/);
+  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
+
+  assert.match(pdb, /kind:\s*PodDisruptionBudget/);
+  assert.match(pdb, /name:\s*dd-remote-web-home/);
+  assert.match(pdb, /minAvailable:\s*1/);
+  assert.match(pdb, /matchLabels:[\s\S]*app:\s*dd-remote-web-home/);
+
+  assert.match(
+    gatewayConfig,
+    /proxy_next_upstream\s+error timeout invalid_header http_502 http_503 http_504;/,
+  );
+  assert.match(gatewayConfig, /proxy_next_upstream_tries\s+3;/);
+  assert.match(gatewayConfig, /proxy_connect_timeout\s+5s;/);
 });

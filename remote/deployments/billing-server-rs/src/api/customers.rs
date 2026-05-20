@@ -1,5 +1,5 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -14,16 +14,20 @@ pub struct CurrencyQuery {
     pub currency: String,
 }
 
-fn default_currency() -> String { "USD".into() }
+fn default_currency() -> String {
+    "USD".into()
+}
 
 pub async fn billing_state(
     State(state): State<AppState>,
     Path((tenant_id, email)): Path<(Uuid, String)>,
     Query(q): Query<CurrencyQuery>,
 ) -> AppResult<Json<BillingState>> {
-    let currency = Currency::new(&q.currency).map_err(|e| {
-        crate::error::AppError::BadRequest(format!("invalid currency: {e}"))
-    })?;
-    let bs = state.customers.billing_state(tenant_id, &email, currency).await?;
+    let currency = Currency::new(&q.currency)
+        .map_err(|e| crate::error::AppError::BadRequest(format!("invalid currency: {e}")))?;
+    let bs = state
+        .customers
+        .billing_state(tenant_id, &email, currency)
+        .await?;
     Ok(Json(bs))
 }

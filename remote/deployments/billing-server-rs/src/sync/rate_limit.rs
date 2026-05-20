@@ -80,18 +80,38 @@ fn provider_budget(provider: ProviderKind) -> ProviderBudget {
     match provider {
         // Conservative shared budgets. Provider HTTP implementations can add
         // endpoint-specific budgets before they call more expensive APIs.
-        ProviderKind::Stripe => ProviderBudget { window_seconds: 60, request_limit: 1_200 },
-        ProviderKind::Paypal => ProviderBudget { window_seconds: 60, request_limit: 120 },
-        ProviderKind::Braintree => ProviderBudget { window_seconds: 60, request_limit: 120 },
-        ProviderKind::CoinbaseCommerce | ProviderKind::CoinbasePrime => {
-            ProviderBudget { window_seconds: 60, request_limit: 120 }
-        }
-        ProviderKind::Coinflow => ProviderBudget { window_seconds: 60, request_limit: 120 },
-        ProviderKind::PlaidBank => ProviderBudget { window_seconds: 60, request_limit: 120 },
-        ProviderKind::SwiftWire | ProviderKind::AchDirect | ProviderKind::Wise => {
-            ProviderBudget { window_seconds: 60, request_limit: 60 }
-        }
-        ProviderKind::SolanaWallet => ProviderBudget { window_seconds: 60, request_limit: 240 },
+        ProviderKind::Stripe => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 1_200,
+        },
+        ProviderKind::Paypal => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 120,
+        },
+        ProviderKind::Braintree => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 120,
+        },
+        ProviderKind::CoinbaseCommerce | ProviderKind::CoinbasePrime => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 120,
+        },
+        ProviderKind::Coinflow => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 120,
+        },
+        ProviderKind::PlaidBank => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 120,
+        },
+        ProviderKind::SwiftWire | ProviderKind::AchDirect | ProviderKind::Wise => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 60,
+        },
+        ProviderKind::SolanaWallet => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 240,
+        },
     }
 }
 

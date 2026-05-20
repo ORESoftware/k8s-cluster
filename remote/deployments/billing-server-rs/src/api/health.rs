@@ -1,7 +1,7 @@
-use axum::extract::State;
-use axum::http::{header, StatusCode};
-use axum::response::{IntoResponse, Response};
 use axum::Json;
+use axum::extract::State;
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
 use crate::state::AppState;
@@ -22,7 +22,10 @@ pub async fn healthz() -> Json<HealthBody> {
 }
 
 pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBody>) {
-    match sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(&state.pool).await {
+    match sqlx::query_scalar::<_, i32>("SELECT 1")
+        .fetch_one(&state.pool)
+        .await
+    {
         Ok(_) => (
             StatusCode::OK,
             Json(HealthBody {

@@ -426,7 +426,7 @@ create table if not exists lambda_functions (
   display_name varchar(200) not null,
   description text default '' not null,
   runtime varchar(40) default 'nodejs' not null,
-  entry_command text default 'env -i PATH="$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs' not null,
+  entry_command text default 'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs' not null,
   function_body text not null,
   reuse_key varchar(200),
   idle_timeout_seconds integer default 300 not null,

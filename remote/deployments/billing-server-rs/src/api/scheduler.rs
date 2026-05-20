@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -15,7 +15,10 @@ pub async fn create(
 ) -> AppResult<(StatusCode, Json<ScheduledJob>)> {
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
-    let job = state.scheduler.create(Some(tenant_id), Some(region), input).await?;
+    let job = state
+        .scheduler
+        .create(Some(tenant_id), Some(region), input)
+        .await?;
     Ok((StatusCode::CREATED, Json(job)))
 }
 
@@ -40,7 +43,9 @@ pub struct RunsQuery {
     #[serde(default = "default_runs_limit")]
     pub limit: i64,
 }
-fn default_runs_limit() -> i64 { 50 }
+fn default_runs_limit() -> i64 {
+    50
+}
 
 pub async fn list_runs(
     State(state): State<AppState>,

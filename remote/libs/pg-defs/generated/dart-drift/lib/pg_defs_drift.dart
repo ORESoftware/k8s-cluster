@@ -275,7 +275,7 @@ class LambdaFunctionTable extends Table {
   TextColumn get displayName => text().named("display_name").withLength(max: 200)();
   TextColumn get description => text().named("description").clientDefault(() => '')();
   TextColumn get runtime => text().named("runtime").clientDefault(() => 'nodejs')();
-  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => 'env -i PATH="\$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs')();
+  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => 'env -i PATH="\$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs')();
   TextColumn get functionBody => text().named("function_body")();
   TextColumn get reuseKey => text().named("reuse_key").withLength(max: 200).nullable()();
   IntColumn get idleTimeoutSeconds => integer().named("idle_timeout_seconds").clientDefault(() => 300)();

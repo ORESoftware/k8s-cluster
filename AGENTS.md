@@ -32,6 +32,33 @@ read-only by default; do not add write-capable AWS or Kubernetes tools without a
 short-lived human grant, auth, and audit design. Treat minikube overlays as local mirrors only, not
 as the live runtime source of truth.
 
+## Postgres Contract
+
+RDS Postgres plus `remote/libs/pg-defs/schema/schema.sql` are the database contract. Do not generate
+SQL, migrations, or table DDL from Rust code, API route handlers, Rust structs, or other application
+code. If application code needs a schema change, update the Postgres contract manually in
+`remote/libs/pg-defs/schema/schema.sql`, regenerate/check `remote/libs/pg-defs`, and then update the
+custom code to match that contract.
+
+Treat public REST routes as domain/code-first behavior for authorization, orchestration, joins,
+aggregation, side effects, and product logic. Do not expose generic table-shaped CRUD as the public
+API contract. If generic database inspection is needed for operators, keep it behind an explicitly
+enabled internal route such as `/internal/db/*`, with service/operator auth, and keep it out of
+public gateway paths.
+
+Use `scripts/pg/diff/rds-vs-pg-defs.mjs` for declarative RDS-vs-pg-defs drift reports. The script
+compares live RDS catalog state to `remote/libs/pg-defs/schema/schema.sql` and does not generate
+`.sql` migration files. Treat its output as review context for human-owned manual migration work,
+not as an executable migration artifact.
+
+## API Docs Contract
+
+HTTP API deployments should expose generated API docs at `/docs/api` and `/api/docs`, with
+machine-readable metadata at `/api/docs.json`. Docs must be derived from route declarations or
+equivalent runtime source using `remote/tools/generate-api-docs.mjs`; do not maintain manual route
+inventories for API docs. Non-Rust runtimes may use runtime-specific generated artifacts or modules,
+but they should still come from source scanning and be checked with `--check` in CI.
+
 ## Access Posture
 
 Do not put raw AWS keys, model keys, GitHub tokens, or gateway secrets in Git. The

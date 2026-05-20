@@ -8,6 +8,7 @@ import gleam/int
 import gleam/io
 import gleam/result
 import gleam/string
+import gleam_mcp_server/api_docs
 import gleam_mcp_server/k8s
 import gleam_mcp_server/metrics
 import gleam_mcp_server/observability
@@ -60,6 +61,9 @@ fn route(
   case req.method, request.path_segments(req) {
     Get, [] -> redirect("/home")
     Get, ["home"] -> home_page()
+    Get, ["docs", "api"] -> api_docs.html()
+    Get, ["api", "docs"] -> api_docs.html()
+    Get, ["api", "docs.json"] -> api_docs.json()
     Get, ["healthz"] -> healthz()
     Get, ["metrics"] -> metrics_response(metrics_name)
     Get, ["observability"] -> observability_response()

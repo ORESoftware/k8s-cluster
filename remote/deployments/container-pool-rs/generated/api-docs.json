@@ -1,0 +1,171 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "container-pool-rs",
+  "language": "rust",
+  "routeCount": 9,
+  "routeTypeCounts": {
+    "service": 5,
+    "user-generated": 4
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pools",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_pools"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pools/:pool",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "get_pool"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pools/:pool/dispatch",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "dispatch_pool"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/pools/:pool/warm",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "warm_pool"
+      ],
+      "sourceFiles": [
+        "remote/deployments/container-pool-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

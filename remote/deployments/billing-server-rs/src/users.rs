@@ -40,7 +40,9 @@ pub struct UserService {
 }
 
 impl UserService {
-    pub fn new(pool: PgPool) -> Self { Self { pool } }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
 
     pub async fn upsert(
         &self,

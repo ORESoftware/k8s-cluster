@@ -190,3 +190,17 @@ test('the tables/ folder is fully retired (no orphan tracking files)', async () 
     );
   }
 });
+
+test('AGENTS.md makes pg-defs the schema source instead of Rust route code', async () => {
+  const agentContext = await readFile(resolve(repoRoot, 'AGENTS.md'), 'utf8');
+  assert.match(
+    agentContext,
+    /RDS Postgres plus `remote\/libs\/pg-defs\/schema\/schema\.sql` are the database contract\./,
+    'AGENTS.md must name RDS plus remote/libs/pg-defs/schema/schema.sql as the database contract.',
+  );
+  assert.match(
+    agentContext,
+    /Do not generate\s+SQL, migrations, or table DDL from Rust code, API route handlers, Rust structs, or other application\s+code\./,
+    'AGENTS.md must keep the global rule: never generate SQL from Rust/API code.',
+  );
+});

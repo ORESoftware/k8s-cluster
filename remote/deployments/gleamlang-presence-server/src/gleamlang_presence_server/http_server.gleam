@@ -34,6 +34,7 @@ import gleam/result
 import gleam/string
 import gleam/string_tree
 import mist.{type Connection, type ResponseData, Bytes}
+import gleamlang_presence_server/api_docs
 import gleamlang_presence_server/connection.{type ConnScope, ConvScope, UserScope}
 import gleamlang_presence_server/conversations.{type Conversations}
 import gleamlang_presence_server/fanout.{type Fanout}
@@ -101,6 +102,9 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
       |> response.set_body(Bytes(bytes_tree.from_string("")))
 
     Get, [] -> help()
+    Get, ["docs", "api"] -> api_docs.html()
+    Get, ["api", "docs"] -> api_docs.html()
+    Get, ["api", "docs.json"] -> api_docs.json()
     Get, ["healthz"] -> healthz(deps)
     Get, ["nodes"] -> nodes_text()
     Get, ["ws"] -> handle_ws_upgrade(deps, req)

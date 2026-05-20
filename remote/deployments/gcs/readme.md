@@ -68,8 +68,10 @@ Health checks use:
 
 The EC2 kustomize app includes small in-cluster backing services:
 
-- `gcs-mongodb` on `27017`, running as a single-node replica set (`rs0`) so
-  chat.vibe transaction-backed REST handlers work in the EC2 dev cluster.
+- `gcs-mongodb` on `27017`, running as a single-node StatefulSet replica set
+  (`rs0`) so chat.vibe transaction-backed REST handlers work in the EC2 dev
+  cluster. The stable member address is provided by
+  `gcs-mongodb-headless`.
 - `gcs-rabbitmq` on `5672`, with management on `15672`
 - `gcs-kafka` on `9092`, with a single KRaft controller/broker
 - existing `dd-redis-cache` on `6379`

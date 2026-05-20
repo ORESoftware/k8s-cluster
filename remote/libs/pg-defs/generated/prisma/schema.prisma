@@ -235,7 +235,7 @@ model LambdaFunction {
   displayName String @map("display_name") @db.VarChar(200)
   description String @default("") @db.Text
   runtime String @default("nodejs") @db.VarChar(40)
-  entryCommand String @map("entry_command") @default("env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs") @db.Text
+  entryCommand String @map("entry_command") @default("env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs") @db.Text
   functionBody String @map("function_body") @db.Text
   reuseKey String? @map("reuse_key") @db.VarChar(200)
   idleTimeoutSeconds Int @map("idle_timeout_seconds") @default(300)

@@ -63,8 +63,8 @@ pub fn verify_wallet_signature(
         .try_into()
         .map_err(|_| "Solana signature must decode to 64 bytes".to_string())?;
 
-    let key = VerifyingKey::from_bytes(&pubkey)
-        .map_err(|e| format!("invalid ed25519 pubkey: {e}"))?;
+    let key =
+        VerifyingKey::from_bytes(&pubkey).map_err(|e| format!("invalid ed25519 pubkey: {e}"))?;
     let sig = Signature::from_bytes(&signature);
     key.verify(challenge.as_bytes(), &sig)
         .map_err(|_| "wallet signature did not verify challenge".to_string())

@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - gcs-mongodb.deployment.yaml
   - gcs-mongodb.service.yaml
+  - gcs-mongodb-headless.service.yaml
   - gcs-rabbitmq.deployment.yaml
   - gcs-rabbitmq.service.yaml
   - gcs-kafka.deployment.yaml

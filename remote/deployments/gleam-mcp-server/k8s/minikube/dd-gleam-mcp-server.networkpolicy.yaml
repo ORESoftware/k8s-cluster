@@ -18,6 +18,15 @@ spec:
           podSelector:
             matchLabels:
               app: dd-remote-gateway
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app: dd-dev-server-api
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dd-remote-dev
+              app.kubernetes.io/component: thread-pod
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

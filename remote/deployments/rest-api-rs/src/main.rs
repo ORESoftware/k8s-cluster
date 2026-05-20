@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+mod api_docs;
 mod db_routes;
 mod pg_contract;
 
@@ -5629,12 +5630,25 @@ fn code_first_router() -> Router {
         )
 }
 
+fn internal_db_routes_enabled() -> bool {
+    env_bool("REST_API_INTERNAL_DB_ROUTES_ENABLED", false)
+        || env_bool("REST_API_ENABLE_INTERNAL_DB_ROUTES", false)
+}
+
 fn app_router() -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs::html))
+        .route("/api/docs", get(api_docs::html))
+        .route("/api/docs.json", get(api_docs::json))
         .merge(code_first_router())
-        .nest("/api/db", db_routes::router())
-        .route("/metrics", get(metrics))
+        .route("/metrics", get(metrics));
+
+    if internal_db_routes_enabled() {
+        router.nest("/internal/db", db_routes::router())
+    } else {
+        router
+    }
 }
 
 #[tokio::main]

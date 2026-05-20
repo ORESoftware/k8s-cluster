@@ -14,16 +14,17 @@
 //! in is the bulk of the actual engineering work; the surface around them
 //! (sealing, replay, breaks, anchoring) is already in place.
 
-pub mod connection;
-pub mod oauth_common;
-pub mod stripe;
-pub mod paypal;
 pub mod braintree;
 pub mod coinbase;
 pub mod coinflow;
+pub mod connection;
+pub mod oauth_common;
+pub mod paypal;
 pub mod plaid;
-pub mod swift;
 pub mod solana;
+pub mod stripe;
+pub mod swift;
+pub mod wise;
 
 use serde::{Deserialize, Serialize};
 
@@ -63,8 +64,12 @@ impl ProviderKind {
 
     pub fn auth_kind(self) -> ProviderAuthKind {
         match self {
-            Self::Stripe | Self::Paypal | Self::Braintree | Self::PlaidBank => ProviderAuthKind::OAuth2,
-            Self::CoinbaseCommerce | Self::CoinbasePrime | Self::Wise | Self::Coinflow => ProviderAuthKind::ApiKey,
+            Self::Stripe | Self::Paypal | Self::Braintree | Self::PlaidBank => {
+                ProviderAuthKind::OAuth2
+            }
+            Self::CoinbaseCommerce | Self::CoinbasePrime | Self::Wise | Self::Coinflow => {
+                ProviderAuthKind::ApiKey
+            }
             Self::SwiftWire | Self::AchDirect => ProviderAuthKind::BankCoordinates,
             Self::SolanaWallet => ProviderAuthKind::WalletPubkey,
         }

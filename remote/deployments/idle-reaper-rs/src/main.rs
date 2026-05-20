@@ -92,6 +92,24 @@ struct NatsWatchJob {
 }
 
 #[derive(Clone)]
+struct RuntimeFloorJob {
+    nats_url: String,
+    task_subject: String,
+    task_stream: String,
+    task_consumer: String,
+    task_ack_wait_seconds: u64,
+    task_max_ack_pending: i64,
+    task_max_deliver: i64,
+    container_pool_url: String,
+    server_auth_secret: String,
+    interval_seconds: u64,
+    k8s_namespace: String,
+    queue_consumer_deployment: String,
+    min_queue_consumer_replicas: i64,
+    min_queue_consumer_ready: i64,
+}
+
+#[derive(Clone)]
 struct WorkerImageBuildJob {
     repo_dir: String,
     repo_url: String,
@@ -126,6 +144,22 @@ struct QueueTaskMessage {
     task_id: String,
     shadow: Option<bool>,
     direct_dispatch: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeFloorPoolsResponse {
+    pools: Vec<RuntimeFloorPoolSummary>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeFloorPoolSummary {
+    slug: String,
+    min_warm: usize,
+    idle_containers: usize,
+    active_containers: usize,
+    unhealthy_containers: usize,
 }
 
 fn is_shadow_task(task: &QueueTaskMessage) -> bool {
@@ -178,6 +212,14 @@ fn env_u64(name: &str, default_value: u64) -> u64 {
     env::var(name)
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(default_value)
+}
+
+fn env_i64(name: &str, default_value: i64) -> i64 {
+    env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
         .filter(|v| *v > 0)
         .unwrap_or(default_value)
 }
@@ -291,6 +333,47 @@ fn nats_watch_job_from_env() -> Option<NatsWatchJob> {
         gleam_broadcast_secret: gleam_broadcast_secret.expect("checked above"),
         active_interval_seconds: env_u64("NATS_WATCH_ACTIVE_INTERVAL_SECONDS", 5),
         idle_interval_seconds: env_u64("NATS_WATCH_IDLE_INTERVAL_SECONDS", 15),
+    })
+}
+
+fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
+    if !env_bool("RUNTIME_FLOOR_ENABLED", false) {
+        println!("runtime floor disabled: RUNTIME_FLOOR_ENABLED is false");
+        return None;
+    }
+
+    let server_auth_secret = server_auth_secret_from_env();
+    if server_auth_secret.is_none() {
+        println!(
+            "runtime floor disabled: NATS_WATCH_SERVER_AUTH_SECRET, CLUSTER_DOCTOR_SERVER_AUTH_SECRET, or SERVER_AUTH_SECRET missing"
+        );
+        return None;
+    }
+
+    Some(RuntimeFloorJob {
+        nats_url: env_string("NATS_URL")
+            .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
+        task_subject: env_string("RUNTIME_FLOOR_NATS_TASK_SUBJECT")
+            .or_else(|| env_string("NATS_WATCH_TASK_SUBJECT"))
+            .unwrap_or_else(|| "dd.remote.thread.*.tasks".to_string()),
+        task_stream: env_string("RUNTIME_FLOOR_NATS_TASK_STREAM")
+            .unwrap_or_else(|| "DD_REMOTE_TASKS".to_string()),
+        task_consumer: env_string("RUNTIME_FLOOR_NATS_TASK_CONSUMER")
+            .unwrap_or_else(|| "dd-remote-thread-preparer".to_string()),
+        task_ack_wait_seconds: env_u64("RUNTIME_FLOOR_NATS_TASK_ACK_WAIT_SECONDS", 600),
+        task_max_ack_pending: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_ACK_PENDING", 256),
+        task_max_deliver: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_DELIVER", 5),
+        container_pool_url: env_string("RUNTIME_FLOOR_CONTAINER_POOL_URL").unwrap_or_else(|| {
+            "http://dd-container-pool.default.svc.cluster.local:8102".to_string()
+        }),
+        server_auth_secret: server_auth_secret.expect("checked above"),
+        interval_seconds: env_u64("RUNTIME_FLOOR_INTERVAL_SECONDS", 20),
+        k8s_namespace: env_string("RUNTIME_FLOOR_K8S_NAMESPACE")
+            .unwrap_or_else(|| "default".to_string()),
+        queue_consumer_deployment: env_string("RUNTIME_FLOOR_QUEUE_CONSUMER_DEPLOYMENT")
+            .unwrap_or_else(|| "dd-remote-queue-consumer".to_string()),
+        min_queue_consumer_replicas: env_i64("RUNTIME_FLOOR_QUEUE_CONSUMER_MIN_REPLICAS", 1),
+        min_queue_consumer_ready: env_i64("RUNTIME_FLOOR_QUEUE_CONSUMER_MIN_READY", 1),
     })
 }
 
@@ -857,6 +940,62 @@ async fn k8s_get_list(
     serde_json::from_str::<Value>(&body).map_err(|error| format!("k8s list invalid json: {error}"))
 }
 
+async fn k8s_get_object(
+    client: &Client,
+    base_url: &str,
+    token: &str,
+    path: String,
+) -> Result<Value, String> {
+    let response = client
+        .get(format!("{base_url}{path}"))
+        .bearer_auth(token.trim())
+        .header(reqwest::header::ACCEPT, "application/json")
+        .send()
+        .await
+        .map_err(|error| format!("k8s get request failed: {error}"))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!(
+            "k8s get failed status={} body={}",
+            status,
+            body.chars().take(500).collect::<String>()
+        ));
+    }
+    serde_json::from_str::<Value>(&body).map_err(|error| format!("k8s get invalid json: {error}"))
+}
+
+async fn k8s_patch_merge(
+    client: &Client,
+    base_url: &str,
+    token: &str,
+    path: String,
+    body: Value,
+) -> Result<Value, String> {
+    let response = client
+        .patch(format!("{base_url}{path}"))
+        .bearer_auth(token.trim())
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/merge-patch+json",
+        )
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("k8s patch request failed: {error}"))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!(
+            "k8s patch failed status={} body={}",
+            status,
+            body.chars().take(500).collect::<String>()
+        ));
+    }
+    serde_json::from_str::<Value>(&body).map_err(|error| format!("k8s patch invalid json: {error}"))
+}
+
 async fn publish_k8s_runtime_event(
     nats: &async_nats::Client,
     subject: &str,
@@ -1307,6 +1446,285 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
     }
 }
 
+async fn ensure_runtime_floor_nats(job: &RuntimeFloorJob) -> Result<async_nats::Client, String> {
+    let client = async_nats::connect(job.nats_url.clone())
+        .await
+        .map_err(|error| format!("runtime floor nats connect failed: {error}"))?;
+    let jetstream = async_nats::jetstream::new(client.clone());
+    let stream = jetstream
+        .get_or_create_stream(async_nats::jetstream::stream::Config {
+            name: job.task_stream.clone(),
+            subjects: vec![job.task_subject.clone()],
+            retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+            max_age: Duration::from_secs(60 * 60 * 24 * 14),
+            max_message_size: 8 * 1024 * 1024,
+            ..Default::default()
+        })
+        .await
+        .map_err(|error| format!("runtime floor stream ensure failed: {error}"))?;
+
+    stream
+        .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
+            &job.task_consumer,
+            async_nats::jetstream::consumer::pull::Config {
+                durable_name: Some(job.task_consumer.clone()),
+                filter_subject: job.task_subject.clone(),
+                ack_wait: Duration::from_secs(job.task_ack_wait_seconds),
+                max_ack_pending: job.task_max_ack_pending,
+                max_deliver: job.task_max_deliver,
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|error| format!("runtime floor consumer ensure failed: {error}"))?;
+
+    Ok(client)
+}
+
+async fn publish_runtime_floor_event(
+    nats: Option<&async_nats::Client>,
+    job: &RuntimeFloorJob,
+    status: &str,
+    message: &str,
+    details: Value,
+) {
+    let Some(nats) = nats else {
+        return;
+    };
+    let payload = json!({
+        "type": "runtime-floor",
+        "scope": "admin",
+        "source": "dd-idle-reaper",
+        "status": status,
+        "message": message,
+        "queueConsumerDeployment": &job.queue_consumer_deployment,
+        "queueConsumerNamespace": &job.k8s_namespace,
+        "taskStream": &job.task_stream,
+        "taskConsumer": &job.task_consumer,
+        "atMs": now_ms(),
+        "details": details,
+    });
+    match serde_json::to_vec(&payload) {
+        Ok(body) => {
+            if let Err(error) = nats.publish(job.event_subject(), body.into()).await {
+                eprintln!("runtime floor event publish failed: {error}");
+            }
+        }
+        Err(error) => eprintln!("runtime floor event encode failed: {error}"),
+    }
+}
+
+impl RuntimeFloorJob {
+    fn event_subject(&self) -> String {
+        env_string("RUNTIME_FLOOR_EVENT_SUBJECT")
+            .or_else(|| env_string("NATS_WATCH_EVENT_SUBJECT"))
+            .unwrap_or_else(|| "dd.remote.events".to_string())
+    }
+}
+
+async fn reconcile_queue_consumer_floor(job: &RuntimeFloorJob) -> Result<Value, String> {
+    let timeout_seconds = job.interval_seconds.min(20).max(5);
+    let (client, base_url, token) = k8s_runtime_client(timeout_seconds).await?;
+    let deployment_path = format!(
+        "/apis/apps/v1/namespaces/{}/deployments/{}",
+        job.k8s_namespace, job.queue_consumer_deployment
+    );
+    let deployment = k8s_get_object(&client, &base_url, &token, deployment_path).await?;
+    let desired = json_at_i64(&deployment, &["spec", "replicas"]).unwrap_or(0);
+    let ready = json_at_i64(&deployment, &["status", "readyReplicas"]).unwrap_or(0);
+    let available = json_at_i64(&deployment, &["status", "availableReplicas"]).unwrap_or(0);
+    let updated = json_at_i64(&deployment, &["status", "updatedReplicas"]).unwrap_or(0);
+    let mut scaled = false;
+
+    if desired < job.min_queue_consumer_replicas {
+        let scale_path = format!(
+            "/apis/apps/v1/namespaces/{}/deployments/{}/scale",
+            job.k8s_namespace, job.queue_consumer_deployment
+        );
+        k8s_patch_merge(
+            &client,
+            &base_url,
+            &token,
+            scale_path,
+            json!({ "spec": { "replicas": job.min_queue_consumer_replicas } }),
+        )
+        .await?;
+        scaled = true;
+    }
+
+    Ok(json!({
+        "ok": ready >= job.min_queue_consumer_ready,
+        "scaled": scaled,
+        "desiredReplicas": desired.max(job.min_queue_consumer_replicas),
+        "readyReplicas": ready,
+        "availableReplicas": available,
+        "updatedReplicas": updated,
+        "minReady": job.min_queue_consumer_ready,
+    }))
+}
+
+async fn reconcile_container_pool_floor(
+    http: &Client,
+    job: &RuntimeFloorJob,
+) -> Result<Value, String> {
+    let base = job.container_pool_url.trim_end_matches('/');
+    let response = http
+        .get(format!("{base}/pools"))
+        .header("X-Server-Auth", &job.server_auth_secret)
+        .send()
+        .await
+        .map_err(|error| format!("container pool list failed: {error}"))?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!(
+            "container pool list failed status={} body={}",
+            status,
+            body.chars().take(500).collect::<String>()
+        ));
+    }
+
+    let pools = serde_json::from_str::<RuntimeFloorPoolsResponse>(&body)
+        .map_err(|error| format!("container pool list invalid json: {error}"))?
+        .pools;
+    let mut warm_requests = Vec::new();
+    let mut errors = Vec::new();
+    let mut ready_pools = 0usize;
+    for pool in pools.iter().filter(|pool| pool.min_warm > 0) {
+        if pool.idle_containers >= pool.min_warm {
+            ready_pools += 1;
+            continue;
+        }
+        let warm_response = http
+            .post(format!("{base}/pools/{}/warm", pool.slug))
+            .header("X-Server-Auth", &job.server_auth_secret)
+            .send()
+            .await;
+        match warm_response {
+            Ok(response) if response.status().is_success() => {
+                warm_requests.push(json!({
+                    "pool": &pool.slug,
+                    "idleContainers": pool.idle_containers,
+                    "minWarm": pool.min_warm,
+                    "activeContainers": pool.active_containers,
+                    "unhealthyContainers": pool.unhealthy_containers,
+                }));
+            }
+            Ok(response) => {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                errors.push(json!({
+                    "pool": &pool.slug,
+                    "status": status.as_u16(),
+                    "body": body.chars().take(500).collect::<String>(),
+                }));
+            }
+            Err(error) => {
+                errors.push(json!({
+                    "pool": &pool.slug,
+                    "error": error.to_string(),
+                }));
+            }
+        }
+    }
+
+    Ok(json!({
+        "ok": errors.is_empty(),
+        "readyPools": ready_pools,
+        "configuredWarmPools": pools.iter().filter(|pool| pool.min_warm > 0).count(),
+        "warmRequests": warm_requests,
+        "errors": errors,
+    }))
+}
+
+async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
+    let nats = match ensure_runtime_floor_nats(job).await {
+        Ok(client) => Some(client),
+        Err(error) => {
+            eprintln!("{error}");
+            None
+        }
+    };
+
+    match reconcile_queue_consumer_floor(job).await {
+        Ok(summary) => {
+            if summary.get("ok").and_then(Value::as_bool) != Some(true) {
+                eprintln!("runtime floor queue consumer below ready floor: {summary}");
+                publish_runtime_floor_event(
+                    nats.as_ref(),
+                    job,
+                    "warning",
+                    "queue consumer is below its ready floor",
+                    summary,
+                )
+                .await;
+            }
+        }
+        Err(error) => {
+            eprintln!("runtime floor queue consumer reconcile failed: {error}");
+            publish_runtime_floor_event(
+                nats.as_ref(),
+                job,
+                "error",
+                "queue consumer reconcile failed",
+                json!({ "error": error }),
+            )
+            .await;
+        }
+    }
+
+    match reconcile_container_pool_floor(http, job).await {
+        Ok(summary) => {
+            let has_errors = summary
+                .get("errors")
+                .and_then(Value::as_array)
+                .is_some_and(|errors| !errors.is_empty());
+            let has_warm_requests = summary
+                .get("warmRequests")
+                .and_then(Value::as_array)
+                .is_some_and(|requests| !requests.is_empty());
+            if has_errors || has_warm_requests {
+                publish_runtime_floor_event(
+                    nats.as_ref(),
+                    job,
+                    if has_errors { "warning" } else { "ok" },
+                    "container pool warm floor reconciled",
+                    summary,
+                )
+                .await;
+            }
+        }
+        Err(error) => {
+            eprintln!("runtime floor container pool reconcile failed: {error}");
+            publish_runtime_floor_event(
+                nats.as_ref(),
+                job,
+                "error",
+                "container pool reconcile failed",
+                json!({ "error": error }),
+            )
+            .await;
+        }
+    }
+}
+
+async fn run_runtime_floor_loop(client: Client, job: RuntimeFloorJob) {
+    println!(
+        "runtime floor starting: interval={}s stream={} consumer={} queueDeployment={}/{} containerPool={}",
+        job.interval_seconds,
+        job.task_stream,
+        job.task_consumer,
+        job.k8s_namespace,
+        job.queue_consumer_deployment,
+        job.container_pool_url
+    );
+
+    loop {
+        run_runtime_floor_once(&client, &job).await;
+        sleep(Duration::from_secs(job.interval_seconds)).await;
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let timeout_seconds = env_u64("REAPER_TIMEOUT_SECONDS", 25);
@@ -1318,6 +1736,7 @@ async fn main() {
     let sweep_job = sweep_job_from_env();
     let cluster_doctor_job = cluster_doctor_job_from_env();
     let nats_watch_job = nats_watch_job_from_env();
+    let runtime_floor_job = runtime_floor_job_from_env();
     let worker_image_build_job = worker_image_build_job_from_env();
     let k8s_runtime_watch_job = k8s_runtime_watch_job_from_env();
 
@@ -1335,6 +1754,10 @@ async fn main() {
     if let Some(nats_watch) = nats_watch_job {
         enabled_jobs += 1;
         tokio::spawn(run_nats_watch_loop(client.clone(), nats_watch));
+    }
+    if let Some(runtime_floor) = runtime_floor_job {
+        enabled_jobs += 1;
+        tokio::spawn(run_runtime_floor_loop(client.clone(), runtime_floor));
     }
     if let Some(worker_image_build) = worker_image_build_job {
         enabled_jobs += 1;

@@ -182,9 +182,20 @@ and metrics endpoints without Kubernetes API permissions for that telemetry path
 The Deployment also has a read-only service account for Deployment inventory.
 It does not expose write-capable telemetry, Kubernetes, AWS, or secret-management
 operations. The deployment includes a NetworkPolicy that permits ingress from the
-gateway and metrics scrapers, DNS egress, bounded egress to observability and
-NATS telemetry ports, Kubernetes API egress on TCP 443, and database egress for
-future read-only PG-backed MCP tools.
+gateway, the dev-server supervisor (`app: dd-dev-server-api`), per-thread agent
+worker pods (`app.kubernetes.io/part-of: dd-remote-dev` +
+`app.kubernetes.io/component: thread-pod`), and metrics scrapers in the
+`observability` namespace. Egress is restricted to DNS, observability and NATS
+telemetry ports, Kubernetes API on TCP 443, and database TCP 5432 for future
+read-only PG-backed MCP tools.
+
+If you add a new in-cluster MCP caller, give its pod template one of those
+labels (or extend the NetworkPolicy ingress in
+`remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.networkpolicy.yaml`).
+The most common symptom of a missing entry is the OpenAI Agents SDK runner
+emitting `openai-sdk: MCP server dd_cluster unavailable at
+http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp` because the TCP
+SYN is dropped at the CNI before reaching the MCP pod.
 
 ## Kubernetes
 

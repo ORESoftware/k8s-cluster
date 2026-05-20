@@ -1,0 +1,205 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "bastion-rs",
+  "language": "rust",
+  "routeCount": 11,
+  "routeTypeCounts": {
+    "service": 4,
+    "user-generated": 7
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "profile"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/deployments",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "runtime_deployments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/kubeconfig",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "kubeconfig"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/profile",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "profile"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/runtime/deployments",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "runtime_deployments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/terminal",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "terminal_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/terminal/ws",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "terminal_ws"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

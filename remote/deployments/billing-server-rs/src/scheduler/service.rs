@@ -13,7 +13,9 @@ pub struct SchedulerService {
 }
 
 impl SchedulerService {
-    pub fn new(pool: PgPool) -> Self { Self { pool } }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
 
     pub async fn create(
         &self,
@@ -144,13 +146,11 @@ impl SchedulerService {
     }
 
     pub async fn set_enabled(&self, id: Uuid, enabled: bool) -> AppResult<()> {
-        sqlx::query(
-            r#"UPDATE scheduled_jobs SET enabled = $2, updated_at = now() WHERE id = $1"#,
-        )
-        .bind(id)
-        .bind(enabled)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query(r#"UPDATE scheduled_jobs SET enabled = $2, updated_at = now() WHERE id = $1"#)
+            .bind(id)
+            .bind(enabled)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -231,9 +231,8 @@ fn validate_schedule(s: &CreateScheduledJob) -> AppResult<()> {
             let expr = s.cron_expr.as_deref().ok_or_else(|| {
                 AppError::BadRequest("cron_expr required for schedule_kind=cron".into())
             })?;
-            cron::Schedule::try_from(expr).map_err(|e| {
-                AppError::BadRequest(format!("invalid cron_expr {expr:?}: {e}"))
-            })?;
+            cron::Schedule::try_from(expr)
+                .map_err(|e| AppError::BadRequest(format!("invalid cron_expr {expr:?}: {e}")))?;
         }
         ScheduleKind::Interval => {
             let secs = s.interval_seconds.ok_or_else(|| {
@@ -254,9 +253,10 @@ fn validate_schedule(s: &CreateScheduledJob) -> AppResult<()> {
         }
     }
     if !s.timezone.is_empty() {
-        let _: chrono_tz::Tz = s.timezone.parse().map_err(|_| {
-            AppError::BadRequest(format!("unknown IANA timezone: {}", s.timezone))
-        })?;
+        let _: chrono_tz::Tz = s
+            .timezone
+            .parse()
+            .map_err(|_| AppError::BadRequest(format!("unknown IANA timezone: {}", s.timezone)))?;
     }
     Ok(())
 }
@@ -272,13 +272,12 @@ pub fn compute_next_run(
 ) -> AppResult<DateTime<Utc>> {
     match kind {
         ScheduleKind::Cron => {
-            let tz: chrono_tz::Tz = timezone.parse().map_err(|_| {
-                AppError::BadRequest(format!("unknown timezone {timezone}"))
-            })?;
+            let tz: chrono_tz::Tz = timezone
+                .parse()
+                .map_err(|_| AppError::BadRequest(format!("unknown timezone {timezone}")))?;
             let expr = cron_expr.ok_or_else(|| AppError::BadRequest("missing cron_expr".into()))?;
-            let sched = cron::Schedule::try_from(expr).map_err(|e| {
-                AppError::BadRequest(format!("invalid cron_expr: {e}"))
-            })?;
+            let sched = cron::Schedule::try_from(expr)
+                .map_err(|e| AppError::BadRequest(format!("invalid cron_expr: {e}")))?;
             let after_tz = after.with_timezone(&tz);
             let next = sched
                 .after(&after_tz)

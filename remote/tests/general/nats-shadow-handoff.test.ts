@@ -42,25 +42,26 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /queued-dispatch-accepted/);
   assert.match(server, /"stage": "nats-published"/);
   assert.match(server, /on conflict \(task_id, seq\) do update set/);
-  assert.match(server, /"task\.shadow"/);
   assert.match(server, /publish_task_dispatch_to_nats/);
-  assert.match(server, /publish_task_to_nats\(request, branch, "task\.dispatch", false, direct_dispatch\)/);
+  assert.match(server, /publish_task_to_nats\(request, branch, "task\.dispatch", false\)\.await/);
+  assert.match(server, /fn default_dispatch_mode/);
+  assert.match(server, /REST_API_DEFAULT_DISPATCH_MODE/);
+  assert.match(server, /unwrap_or_else\(\|\| "queued"\.to_string\(\)\)/);
   assert.match(server, /fn is_container_pool_dispatch_mode/);
   assert.match(server, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
-  assert.match(server, /publish_task_dispatch_to_nats\(&request, None, !container_pool_dispatch\)\.await/);
+  assert.match(server, /publish_task_dispatch_to_nats\(&request, None\)\.await/);
   assert.match(server, /"directDispatch": false/);
   assert.match(server, /"task\.dispatch"/);
   assert.match(server, /dispatch_mode/);
   assert.match(server, /"stage": "nats-publish-failed"/);
-  assert.match(server, /continuing with synchronous worker dispatch/);
+  assert.match(server, /requestedDispatchMode/);
   assert.ok(
-    server.indexOf('publish_task_dispatch_to_nats(&request, None, !container_pool_dispatch).await')
+    server.indexOf('publish_task_dispatch_to_nats(&request, None).await')
       < server.indexOf('ensure_thread_worker(&thread_id'),
     'queued NATS publish must happen before the synchronous worker wake path',
   );
   assert.match(server, /shadow: bool/);
   assert.match(server, /direct_dispatch: bool/);
-  assert.match(server, /publish_task_shadow_to_nats\(&request, branch\.as_deref\(\)\)/);
   assert.match(server, /reqwest::Client::builder\(\)[\s\S]*\.timeout\(std::time::Duration::from_secs\(2\)\)/);
   assert.match(server, /Duration::from_secs\(2\)/);
 });
@@ -93,7 +94,6 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /repo_pool_slug/);
   assert.match(consumer, /nodejs-chat-openai-/);
   assert.match(consumer, /"affinityKey": &task\.thread_id/);
-  assert.match(consumer, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH/);
   assert.match(consumer, /HashSet/);
   assert.match(consumer, /has_task_receipt/);
   assert.match(consumer, /write_task_receipt/);
@@ -114,8 +114,6 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /container-pool-failed/);
   assert.match(consumer, /"affinityKey": &task\.thread_id/);
   assert.match(consumer, /queue-handoff-ok/);
-  assert.match(consumer, /rest-fallback-skipped/);
-  assert.match(consumer, /rest-fallback-accepted/);
   assert.match(consumer, /queue-acked/);
   assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);
   assert.match(deployment, /name:\s*dd-remote-queue-consumer/);
@@ -125,7 +123,6 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(deployment, /NATS_TASK_ACK_WAIT_SECONDS[\s\S]*'600'/);
   assert.match(deployment, /NATS_TASK_NAK_DELAY_SECONDS[\s\S]*'15'/);
   assert.match(deployment, /QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS[\s\S]*value:\s*'420'/);
-  assert.match(deployment, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH[\s\S]*value:\s*'false'/);
   assert.match(deployment, /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/);
   assert.match(
     deployment,
@@ -196,6 +193,7 @@ test('runtime deployments avoid routing to half-started rust services', async ()
   assert.match(restDeployment, /readinessProbe:[\s\S]*path: \/healthz/);
   assert.match(restDeployment, /livenessProbe:[\s\S]*path: \/healthz/);
   assert.match(restDeployment, /NATS_TASK_STREAM[\s\S]*DD_REMOTE_TASKS/);
+  assert.match(restDeployment, /REST_API_DEFAULT_DISPATCH_MODE[\s\S]*queued/);
   assert.match(
     consumerDeployment,
     /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/,

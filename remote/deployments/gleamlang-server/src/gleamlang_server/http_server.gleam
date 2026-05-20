@@ -5,6 +5,7 @@ import gleam/http/request
 import gleam/http/response
 import gleam/int
 import gleam/option.{Some}
+import gleamlang_server/api_docs
 import gleamlang_server/broadcaster
 import mist
 
@@ -43,6 +44,9 @@ fn route(
   case request.path_segments(req) {
     [] -> redirect("/home")
     ["home"] -> home_page()
+    ["docs", "api"] -> api_docs.html()
+    ["api", "docs"] -> api_docs.html()
+    ["api", "docs.json"] -> api_docs.json()
     ["healthz"] -> healthz()
     ["metrics"] -> metrics(broker_name)
     ["broadcast"] -> broadcast(req, broker_name)

@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
 
 import { getNatsClient } from './nats-client.mjs';
 
@@ -12,6 +13,8 @@ const bridgePort = numberEnv('NATS_BRIDGE_HTTP_PORT', 8083);
 const maxBodyBytes = numberEnv('NATS_BRIDGE_MAX_BODY_BYTES', 1_048_576);
 const dedupeTtlMs = numberEnv('NATS_BRIDGE_DEDUPE_TTL_MS', 5 * 60 * 1000);
 const seenMessageIds = new Map();
+const apiDocsHtml = readFileSync(new URL('./generated/api-docs.nats-bridge.html', import.meta.url), 'utf8');
+const apiDocsJson = readFileSync(new URL('./generated/api-docs.nats-bridge.json', import.meta.url), 'utf8');
 
 const nats = getNatsClient({ url: natsUrl, logger: console });
 nats.subscribe(readSubject, (payload) => {
@@ -106,6 +109,18 @@ async function handlePublishRequest(request, response) {
 
   if (request.method === 'GET' && url.pathname === '/healthz') {
     respond(response, 200, { ok: true, readSubject, publishSubject });
+    return;
+  }
+
+  if (request.method === 'GET' && (url.pathname === '/docs/api' || url.pathname === '/api/docs')) {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(apiDocsHtml);
+    return;
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/docs.json') {
+    response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    response.end(apiDocsJson);
     return;
   }
 

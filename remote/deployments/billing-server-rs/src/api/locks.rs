@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 use uuid::Uuid;
 
 use crate::error::AppResult;
@@ -25,7 +25,10 @@ pub async fn renew(
 ) -> AppResult<Json<Lease>> {
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
-    let lease = state.locks.renew(tenant_id, region, None, &resource, req).await?;
+    let lease = state
+        .locks
+        .renew(tenant_id, region, None, &resource, req)
+        .await?;
     Ok(Json(lease))
 }
 
@@ -36,7 +39,10 @@ pub async fn release(
 ) -> AppResult<StatusCode> {
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
-    state.locks.release(tenant_id, region, None, &resource, req).await?;
+    state
+        .locks
+        .release(tenant_id, region, None, &resource, req)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

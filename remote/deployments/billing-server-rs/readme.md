@@ -63,7 +63,7 @@ src/
   vendors.rs           # Q2 — payable-state aggregation + rail selection
   providers/           # OAuth/API-key/wallet connection model + stubs
     stripe.rs paypal.rs braintree.rs coinbase.rs
-    plaid.rs swift.rs solana.rs
+    plaid.rs swift.rs solana.rs wise.rs
     connection.rs      # sealed-credential storage
   solana/              # anchor service + RPC client + merkle + verify
   api/                 # axum router + handlers
@@ -95,6 +95,14 @@ export BILLING_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 export BILLING_MASTER_SEAL_KEY="$(openssl rand -base64 32)"
 export SOLANA_RPC_URL=https://api.devnet.solana.com
 export SOLANA_CLUSTER=devnet
+export STRIPE_API_VERSION=2026-04-22.dahlia
+# OAuth app secret, used only for Stripe Connect code exchange.
+export STRIPE_CLIENT_SECRET=...
+# Stripe platform API key, used for Stripe API reads with Stripe-Account.
+export STRIPE_API_KEY=...
+# Provider webhook secrets are optional locally; set strict mode in shared envs.
+export STRIPE_WEBHOOK_SECRET=whsec_...
+export BILLING_REQUIRE_WEBHOOK_SIGNATURES=false
 export RUST_LOG=info,sqlx=warn
 
 # 3. Run
@@ -152,20 +160,56 @@ curl -s -X POST $BASE/v1/tenants/$TENANT/transactions \
 curl -s "$BASE/v1/tenants/$TENANT/customers/by-email/alice%40example.com/billing-state"
 ```
 
+## Provider connection payloads
+
+`POST /v1/tenants/{tenant_id}/connections/{connection_id}/attach-api-key`
+validates the known API-key providers before sealing credentials:
+
+- `coinflow`: `{ "api_key", "merchant_id", "environment", "webhook_validation_key" }`
+- `coinbase_commerce` / `coinbase_prime`: `{ "api_key", "webhook_secret", "variant" }`
+- `wise`: `{ "api_token", "profile_id", "environment" }`
+
+`environment` is `production` or `sandbox`. For Coinflow and Wise the server
+derives `external_account_id` from the credential payload when the caller does
+not provide it.
+
+## Webhook posture
+
+Inbound webhook payloads are stored with `signature_ok`, `payload_sha256`,
+`verification_error`, `tenant_id`, `connection_id`, and the provider external
+account id when it can be inferred. Set
+`BILLING_REQUIRE_WEBHOOK_SIGNATURES=true` outside local development; unsigned
+or unverifiable deliveries are recorded and then rejected with `401`.
+
+Implemented verification:
+
+- Stripe `Stripe-Signature` HMAC with timestamp replay tolerance.
+- PayPal `verify-webhook-signature` API using `PAYPAL_WEBHOOK_ID`.
+- Coinbase Commerce HMAC via `x-cc-webhook-signature`.
+- Coinflow HMAC via `x-coinflow-signature`.
+
+Plaid webhook JWT verification is not enabled yet; Plaid events are recorded
+as unverified, and strict mode rejects them. Backstop/on-demand
+`/transactions/sync` remains the safe path until the ES256/JWK verifier lands.
+
 ## What is intentionally stubbed in this scaffold
 
 - Provider OAuth code-exchange bodies (Stripe / PayPal / Braintree / Plaid)
-  — surface and storage are real; the actual HTTP POST to each provider's
-  `/oauth/token` endpoint returns `Provider::stub` until you wire it.
-- Webhook signature verification — events are recorded but `signature_ok`
-  is `false` until per-provider HMAC checks land. The ingestor must not act
-  on unverified events.
+  — surface and storage are real; Stripe, PayPal, Braintree, and Plaid token
+  exchanges are wired, while each provider still needs broader end-to-end
+  sandbox coverage.
+- Plaid webhook JWT verification — this needs a vetted ES256/JWK library and
+  cache. The ingestor must not act on unverified events.
 - Solana memo submission — the anchor service computes the Merkle root and
   persists the `anchors` row, but the on-chain transaction body and signing
   loop is the next piece of work. Verification falls back to "not yet
   anchored" until that lands.
-- Plaid `/transactions/sync` polling loop — connection storage is real;
-  the worker that polls each Plaid item on a schedule is the next piece.
+- Plaid `/transactions/sync` posting loop — connection storage is real;
+  the worker contract is present, but the exact transaction normalization is
+  still pending.
+- Wise balance-statement parser — the current Wise sync scans profile
+  activities and opens reconciliation breaks for unposted activity; exact
+  postings should come from Wise balance statements, not display strings.
 
 These are all deliberately structured as "fill in the function body" tasks
 rather than "rearchitect the module" — the boundaries and types are stable.

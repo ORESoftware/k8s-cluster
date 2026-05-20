@@ -31,7 +31,10 @@ pub struct RuleEvaluatorJob {
 
 impl RuleEvaluatorJob {
     pub fn new(pool: PgPool, notifications: Arc<NotificationService>) -> Self {
-        Self { pool, notifications }
+        Self {
+            pool,
+            notifications,
+        }
     }
 }
 
@@ -42,11 +45,11 @@ impl JobHandler for RuleEvaluatorJob {
         // or tenant-scoped (tenant_id Some -> just that one).
         let tenant_ids: Vec<Uuid> = match ctx.tenant_id {
             Some(t) => vec![t],
-            None => sqlx::query_scalar(
-                r#"SELECT id FROM tenants WHERE status = 'active'"#,
-            )
-            .fetch_all(&self.pool)
-            .await?,
+            None => {
+                sqlx::query_scalar(r#"SELECT id FROM tenants WHERE status = 'active'"#)
+                    .fetch_all(&self.pool)
+                    .await?
+            }
         };
 
         let mut total_evaluated: i64 = 0;
@@ -71,8 +74,8 @@ impl JobHandler for RuleEvaluatorJob {
                 total_evaluated += 1;
 
                 let matches = match rule.kind.as_str() {
-                    "balance_negative"     => self.eval_balance_negative(tid, &rule).await?,
-                    "payment_overdue"      => self.eval_payment_overdue(tid, &rule).await?,
+                    "balance_negative" => self.eval_balance_negative(tid, &rule).await?,
+                    "payment_overdue" => self.eval_payment_overdue(tid, &rule).await?,
                     "reconciliation_break_opened" => self.eval_recon_break(tid, &rule).await?,
                     other => {
                         tracing::warn!(rule = %rule.id, kind = %other,
@@ -84,7 +87,11 @@ impl JobHandler for RuleEvaluatorJob {
                 for m in matches {
                     if self
                         .notifications
-                        .would_throttle(rule.id, m.target_resource.as_deref(), rule.throttle_per_day)
+                        .would_throttle(
+                            rule.id,
+                            m.target_resource.as_deref(),
+                            rule.throttle_per_day,
+                        )
                         .await?
                     {
                         total_throttled += 1;
@@ -160,13 +167,11 @@ struct Match {
 
 impl RuleEvaluatorJob {
     async fn tenant_region(&self, tenant_id: Uuid) -> AppResult<Region> {
-        let row = sqlx::query(
-            r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#,
-        )
-        .bind(tenant_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id}")))?;
+        let row = sqlx::query(r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#)
+            .bind(tenant_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id}")))?;
         let cc: String = row.try_get("country_code")?;
         let st: Option<String> = row.try_get("us_state")?;
         Region::from_codes(&cc, st.as_deref()).map_err(|e| AppError::BadRequest(e.to_string()))
@@ -227,7 +232,11 @@ impl RuleEvaluatorJob {
         tenant_id: Uuid,
         rule: &NotificationRule,
     ) -> AppResult<Vec<Match>> {
-        let days = rule.params.get("days").and_then(|v| v.as_i64()).unwrap_or(30);
+        let days = rule
+            .params
+            .get("days")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(30);
 
         let rows = sqlx::query(
             r#"

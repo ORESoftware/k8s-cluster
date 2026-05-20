@@ -628,6 +628,17 @@ async fn dispatch_task(
         .into_response()
 }
 
+async fn api_docs_html() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl axum::response::IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
 #[tokio::main]
 async fn main() {
     rustls::crypto::ring::default_provider()
@@ -645,6 +656,9 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         .route(
             "/api/agent-worker/threads/:thread_id/tasks",

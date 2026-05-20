@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-remote-web-home
+  namespace: default
+  labels:
+    app: dd-remote-web-home
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-remote-web-home

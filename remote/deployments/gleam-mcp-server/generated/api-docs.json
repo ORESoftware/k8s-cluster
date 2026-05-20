@@ -1,0 +1,155 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "gleam-mcp-server",
+  "language": "gleam",
+  "routeCount": 9,
+  "routeTypeCounts": {
+    "service": 6,
+    "user-generated": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/mcp",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/observability",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    }
+  ]
+}

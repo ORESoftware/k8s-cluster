@@ -40,6 +40,7 @@ import gleam/result
 import gleam/string
 import gleam/string_tree
 import mist.{type Connection, type ResponseData, Bytes}
+import gleamlang_ws_server/api_docs
 import gleamlang_ws_server/broadcaster
 import gleamlang_ws_server/connection.{type ConnScope, ConvScope, UserScope}
 import gleamlang_ws_server/conversations.{type Conversations}
@@ -118,6 +119,9 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
 
     Get, [] -> help()
     Get, ["home"] -> home_page()
+    Get, ["docs", "api"] -> api_docs.html()
+    Get, ["api", "docs"] -> api_docs.html()
+    Get, ["api", "docs.json"] -> api_docs.json()
     Get, ["healthz"] -> healthz(deps)
     Get, ["nodes"] -> nodes_text()
     Get, ["metrics"] -> metrics(deps)

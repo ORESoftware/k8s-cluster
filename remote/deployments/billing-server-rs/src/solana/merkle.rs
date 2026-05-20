@@ -21,9 +21,9 @@ pub fn posting_leaf_hash(
     posting_id: i64,
     transaction_id: uuid::Uuid,
     account_id: uuid::Uuid,
-    direction: &str,           // "debit" | "credit"
-    amount_minor: &str,        // canonical decimal string from NUMERIC(38,0)
-    currency: &str,            // 3-letter uppercase
+    direction: &str,    // "debit" | "credit"
+    amount_minor: &str, // canonical decimal string from NUMERIC(38,0)
+    currency: &str,     // 3-letter uppercase
     source: &str,
     source_event_id: &str,
     posted_at_unix_ms: i64,

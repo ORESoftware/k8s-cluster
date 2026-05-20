@@ -13,8 +13,12 @@ from hmac import compare_digest
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
+
+
+GENERATED_DOCS_DIR = Path(__file__).resolve().parents[1] / "generated"
 
 
 def read_int_env(
@@ -1062,6 +1066,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, self.server.app.status())
         elif path == "/metrics":
             self._text(HTTPStatus.OK, self.server.app.metrics.prometheus(), "text/plain; version=0.0.4")
+        elif path in {"/docs/api", "/api/docs"}:
+            self._text(
+                HTTPStatus.OK,
+                (GENERATED_DOCS_DIR / "api-docs.html").read_text(encoding="utf-8"),
+                "text/html; charset=utf-8",
+            )
+        elif path == "/api/docs.json":
+            self._text(
+                HTTPStatus.OK,
+                (GENERATED_DOCS_DIR / "api-docs.json").read_text(encoding="utf-8"),
+                "application/json; charset=utf-8",
+            )
         else:
             self._json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
 

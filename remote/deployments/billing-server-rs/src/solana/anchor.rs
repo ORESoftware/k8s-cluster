@@ -41,18 +41,22 @@ pub struct AnchorResult {
 
 impl AnchorService {
     pub fn new(pool: PgPool, solana: SolanaClient) -> Self {
-        Self { pool, solana, max_batch: 10_000, max_age_seconds: 60 }
+        Self {
+            pool,
+            solana,
+            max_batch: 10_000,
+            max_age_seconds: 60,
+        }
     }
 
     /// Compute and submit the next anchor batch for one tenant.
     /// Returns None if there are no new postings to anchor.
     pub async fn anchor_tenant_once(&self, tenant_id: Uuid) -> AppResult<Option<AnchorResult>> {
-        let last_to_id: Option<i64> = sqlx::query_scalar(
-            r#"SELECT MAX(to_posting_id) FROM anchors WHERE tenant_id = $1"#,
-        )
-        .bind(tenant_id)
-        .fetch_one(&self.pool)
-        .await?;
+        let last_to_id: Option<i64> =
+            sqlx::query_scalar(r#"SELECT MAX(to_posting_id) FROM anchors WHERE tenant_id = $1"#)
+                .bind(tenant_id)
+                .fetch_one(&self.pool)
+                .await?;
         let start_after = last_to_id.unwrap_or(0);
 
         let rows = sqlx::query(
@@ -97,7 +101,15 @@ impl AnchorService {
             let posted_unix_ms: i64 = row.try_get("posted_unix_ms")?;
 
             leaves.push(posting_leaf_hash(
-                posting_id, txid, acct_id, &dir, &amt, &cur, &src, &src_evt, posted_unix_ms,
+                posting_id,
+                txid,
+                acct_id,
+                &dir,
+                &amt,
+                &cur,
+                &src,
+                &src_evt,
+                posted_unix_ms,
             ));
         }
 
@@ -166,11 +178,10 @@ impl AnchorService {
     }
 
     pub async fn sweep_all_tenants(&self) -> AppResult<()> {
-        let tenants: Vec<Uuid> = sqlx::query_scalar(
-            r#"SELECT id FROM tenants WHERE status = 'active'"#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let tenants: Vec<Uuid> =
+            sqlx::query_scalar(r#"SELECT id FROM tenants WHERE status = 'active'"#)
+                .fetch_all(&self.pool)
+                .await?;
 
         for tid in tenants {
             match self.anchor_tenant_once(tid).await {

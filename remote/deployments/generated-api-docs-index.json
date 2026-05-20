@@ -1,0 +1,279 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "services": [
+    {
+      "service": "agent-worker-broker-rs",
+      "language": "rust",
+      "routeCount": 6,
+      "routeTypeCounts": {
+        "user-generated": 1,
+        "service": 5
+      },
+      "generated": [
+        "remote/deployments/agent-worker-broker-rs/generated/api-docs.json",
+        "remote/deployments/agent-worker-broker-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "ai-ml-pipeline",
+      "language": "python",
+      "routeCount": 11,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 4
+      },
+      "generated": [
+        "remote/deployments/ai-ml-pipeline/generated/api-docs.json",
+        "remote/deployments/ai-ml-pipeline/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "auth-server-rs",
+      "language": "rust",
+      "routeCount": 7,
+      "routeTypeCounts": {
+        "service": 5,
+        "user-generated": 2
+      },
+      "generated": [
+        "remote/deployments/auth-server-rs/generated/api-docs.json",
+        "remote/deployments/auth-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "bastion-rs",
+      "language": "rust",
+      "routeCount": 11,
+      "routeTypeCounts": {
+        "service": 4,
+        "user-generated": 7
+      },
+      "generated": [
+        "remote/deployments/bastion-rs/generated/api-docs.json",
+        "remote/deployments/bastion-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "build-server-rs",
+      "language": "rust",
+      "routeCount": 9,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/build-server-rs/generated/api-docs.json",
+        "remote/deployments/build-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "container-pool-rs",
+      "language": "rust",
+      "routeCount": 9,
+      "routeTypeCounts": {
+        "service": 5,
+        "user-generated": 4
+      },
+      "generated": [
+        "remote/deployments/container-pool-rs/generated/api-docs.json",
+        "remote/deployments/container-pool-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "contract-service-rs",
+      "language": "rust",
+      "routeCount": 12,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 6
+      },
+      "generated": [
+        "remote/deployments/contract-service-rs/generated/api-docs.json",
+        "remote/deployments/contract-service-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "des-simulator-rs",
+      "language": "rust",
+      "routeCount": 13,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 7
+      },
+      "generated": [
+        "remote/deployments/des-simulator-rs/generated/api-docs.json",
+        "remote/deployments/des-simulator-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "formal-methods-server-rs",
+      "language": "rust",
+      "routeCount": 12,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 6
+      },
+      "generated": [
+        "remote/deployments/formal-methods-server-rs/generated/api-docs.json",
+        "remote/deployments/formal-methods-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "formal-methods-service-rs",
+      "language": "rust",
+      "routeCount": 7,
+      "routeTypeCounts": {
+        "service": 4,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
+        "remote/deployments/formal-methods-service-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "gleam-lambda-runner",
+      "language": "gleam",
+      "routeCount": 9,
+      "routeTypeCounts": {
+        "service": 5,
+        "user-generated": 4
+      },
+      "generated": [
+        "remote/deployments/gleam-lambda-runner/generated/api-docs.json",
+        "remote/deployments/gleam-lambda-runner/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "gleam-mcp-server",
+      "language": "gleam",
+      "routeCount": 9,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/gleam-mcp-server/generated/api-docs.json",
+        "remote/deployments/gleam-mcp-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "gleamlang-presence-server",
+      "language": "gleam",
+      "routeCount": 14,
+      "routeTypeCounts": {
+        "service": 5,
+        "user-generated": 9
+      },
+      "generated": [
+        "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
+        "remote/deployments/gleamlang-presence-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "gleamlang-server",
+      "language": "gleam",
+      "routeCount": 9,
+      "routeTypeCounts": {
+        "service": 5,
+        "user-generated": 4
+      },
+      "generated": [
+        "remote/deployments/gleamlang-server/generated/api-docs.json",
+        "remote/deployments/gleamlang-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "gleamlang-server-nats-bridge",
+      "language": "node",
+      "routeCount": 5,
+      "routeTypeCounts": {
+        "service": 4,
+        "user-generated": 1
+      },
+      "generated": [
+        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.json",
+        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.html"
+      ]
+    },
+    {
+      "service": "gleamlang-ws-server",
+      "language": "gleam",
+      "routeCount": 18,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 12
+      },
+      "generated": [
+        "remote/deployments/gleamlang-ws-server/generated/api-docs.json",
+        "remote/deployments/gleamlang-ws-server/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "mdp-optimizer-rs",
+      "language": "rust",
+      "routeCount": 8,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 2
+      },
+      "generated": [
+        "remote/deployments/mdp-optimizer-rs/generated/api-docs.json",
+        "remote/deployments/mdp-optimizer-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "rest-api-rs",
+      "language": "rust",
+      "routeCount": 35,
+      "routeTypeCounts": {
+        "user-generated": 20,
+        "service": 5,
+        "internal-db": 10
+      },
+      "generated": [
+        "remote/deployments/rest-api-rs/generated/api-docs.json",
+        "remote/deployments/rest-api-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "trading-server-rs",
+      "language": "rust",
+      "routeCount": 10,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/trading-server-rs/generated/api-docs.json",
+        "remote/deployments/trading-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "wal-gateway-rs",
+      "language": "rust",
+      "routeCount": 7,
+      "routeTypeCounts": {
+        "service": 7
+      },
+      "generated": [
+        "remote/deployments/wal-gateway-rs/generated/api-docs.json",
+        "remote/deployments/wal-gateway-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "webrtc-signaling-rs",
+      "language": "rust",
+      "routeCount": 16,
+      "routeTypeCounts": {
+        "service": 8,
+        "user-generated": 8
+      },
+      "generated": [
+        "remote/deployments/webrtc-signaling-rs/generated/api-docs.json",
+        "remote/deployments/webrtc-signaling-rs/generated/api-docs.html"
+      ]
+    }
+  ]
+}

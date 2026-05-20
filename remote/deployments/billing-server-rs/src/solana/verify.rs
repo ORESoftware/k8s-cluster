@@ -47,7 +47,9 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    pub fn new(pool: PgPool, solana: SolanaClient) -> Self { Self { pool, solana } }
+    pub fn new(pool: PgPool, solana: SolanaClient) -> Self {
+        Self { pool, solana }
+    }
 
     pub async fn verify_posting(
         &self,
@@ -97,7 +99,15 @@ impl Verifier {
         let posted_unix_ms: i64 = p.try_get("posted_unix_ms")?;
 
         let leaf = posting_leaf_hash(
-            posting_id, txid, acct_id, &dir, &amt, &cur, &src, &src_evt, posted_unix_ms,
+            posting_id,
+            txid,
+            acct_id,
+            &dir,
+            &amt,
+            &cur,
+            &src,
+            &src_evt,
+            posted_unix_ms,
         );
         let leaf_hex = hex::encode(leaf);
 

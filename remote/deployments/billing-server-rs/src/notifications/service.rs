@@ -12,7 +12,9 @@ pub struct NotificationService {
 }
 
 impl NotificationService {
-    pub fn new(pool: PgPool) -> Self { Self { pool } }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
 
     pub async fn create_rule(
         &self,

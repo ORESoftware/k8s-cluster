@@ -50,7 +50,9 @@ pub struct CoinflowCredential {
     /// tenants attach the API key first and configure webhooks later.
     pub webhook_validation_key: Option<String>,
 }
-fn default_env() -> String { "production".into() }
+fn default_env() -> String {
+    "production".into()
+}
 
 impl CoinflowCredential {
     pub fn base_url(&self) -> &'static str {
@@ -105,7 +107,10 @@ struct WebhookListResponse {
 
 impl CoinflowApi {
     pub fn new(cred: CoinflowCredential) -> Self {
-        Self { cred, http: reqwest::Client::new() }
+        Self {
+            cred,
+            http: reqwest::Client::new(),
+        }
     }
 
     /// `GET /api/merchant/webhooks` with date-range + pagination.
@@ -117,10 +122,8 @@ impl CoinflowApi {
         page: u32,
         limit: u32,
     ) -> AppResult<(Vec<CoinflowWebhookEvent>, bool)> {
-        let mut params: Vec<(&str, String)> = vec![
-            ("page",  page.to_string()),
-            ("limit", limit.to_string()),
-        ];
+        let mut params: Vec<(&str, String)> =
+            vec![("page", page.to_string()), ("limit", limit.to_string())];
         if let Some(d) = start_date {
             params.push(("startDate", d.to_rfc3339()));
         }
@@ -225,7 +228,9 @@ fn parse_provided(header: &str) -> String {
 fn constant_time_eq_str(a: &str, b: &str) -> bool {
     let ab = a.as_bytes();
     let bb = b.as_bytes();
-    if ab.len() != bb.len() { return false; }
+    if ab.len() != bb.len() {
+        return false;
+    }
     let mut diff: u8 = 0;
     for (x, y) in ab.iter().zip(bb.iter()) {
         diff |= x ^ y;
@@ -411,7 +416,11 @@ pub fn normalize_event(
         postings,
     };
 
-    Ok(NormalizedCoinflowEvent { draft, accounts_to_ensure: accounts, recognized })
+    Ok(NormalizedCoinflowEvent {
+        draft,
+        accounts_to_ensure: accounts,
+        recognized,
+    })
 }
 
 fn signed_amount_human(amount_cents: i64, currency: &str) -> String {
@@ -424,7 +433,9 @@ fn signed_amount_human(amount_cents: i64, currency: &str) -> String {
 
 // Silence: TimeZone import becomes unused if posted_at parsing changes shape.
 #[allow(dead_code)]
-fn _silence_tz(_: chrono::Utc) -> Option<chrono::Utc> { None }
+fn _silence_tz(_: chrono::Utc) -> Option<chrono::Utc> {
+    None
+}
 
 // Compile-time hint that TimeZone is genuinely referenced (for future use
 // when we read Unix timestamps from Coinflow's API).

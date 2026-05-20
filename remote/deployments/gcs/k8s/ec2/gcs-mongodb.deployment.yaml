@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: gcs-mongodb
   namespace: default
@@ -7,8 +7,9 @@ metadata:
     app: gcs-mongodb
 spec:
   replicas: 1
-  strategy:
-    type: Recreate
+  serviceName: gcs-mongodb-headless
+  updateStrategy:
+    type: RollingUpdate
   selector:
     matchLabels:
       app: gcs-mongodb
@@ -41,7 +42,7 @@ spec:
                     until mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' >/dev/null 2>&1; do
                       sleep 2
                     done
-                    mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"gcs-mongodb.default.svc.cluster.local:27017"}]}).ok }' >/dev/null
+                    mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"gcs-mongodb-0.gcs-mongodb-headless.default.svc.cluster.local:27017"}]}).ok }' >/dev/null
           resources:
             requests:
               cpu: 100m

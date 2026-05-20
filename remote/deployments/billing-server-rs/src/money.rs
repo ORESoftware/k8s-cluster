@@ -27,23 +27,37 @@ impl Currency {
         std::str::from_utf8(&self.0).expect("currency is 3 ascii letters")
     }
 
-    pub fn usd() -> Self { Self(*b"USD") }
-    pub fn eur() -> Self { Self(*b"EUR") }
-    pub fn usdc() -> Self { Self(*b"USC") } // canonicalize USDC-on-X as 'USC' (3 chars)
-    pub fn sol() -> Self { Self(*b"SOL") }
+    pub fn usd() -> Self {
+        Self(*b"USD")
+    }
+    pub fn eur() -> Self {
+        Self(*b"EUR")
+    }
+    pub fn usdc() -> Self {
+        Self(*b"USC")
+    } // canonicalize USDC-on-X as 'USC' (3 chars)
+    pub fn sol() -> Self {
+        Self(*b"SOL")
+    }
 }
 
 impl FromStr for Currency {
     type Err = anyhow::Error;
-    fn from_str(s: &str) -> anyhow::Result<Self> { Self::new(s) }
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        Self::new(s)
+    }
 }
 
 impl fmt::Debug for Currency {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.as_str()) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 impl fmt::Display for Currency {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.as_str()) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 /// An exact monetary amount stored in minor units. NEVER use floats for money.
@@ -57,26 +71,40 @@ pub struct Money {
 }
 
 impl Money {
-    pub fn new(minor: i128, currency: Currency) -> Self { Self { minor, currency } }
+    pub fn new(minor: i128, currency: Currency) -> Self {
+        Self { minor, currency }
+    }
 
-    pub fn zero(currency: Currency) -> Self { Self { minor: 0, currency } }
+    pub fn zero(currency: Currency) -> Self {
+        Self { minor: 0, currency }
+    }
 
     pub fn checked_add(self, other: Self) -> anyhow::Result<Self> {
         if self.currency != other.currency {
             anyhow::bail!("currency mismatch: {} vs {}", self.currency, other.currency);
         }
-        let minor = self.minor.checked_add(other.minor)
+        let minor = self
+            .minor
+            .checked_add(other.minor)
             .ok_or_else(|| anyhow::anyhow!("money overflow"))?;
-        Ok(Self { minor, currency: self.currency })
+        Ok(Self {
+            minor,
+            currency: self.currency,
+        })
     }
 
     pub fn checked_sub(self, other: Self) -> anyhow::Result<Self> {
         if self.currency != other.currency {
             anyhow::bail!("currency mismatch: {} vs {}", self.currency, other.currency);
         }
-        let minor = self.minor.checked_sub(other.minor)
+        let minor = self
+            .minor
+            .checked_sub(other.minor)
             .ok_or_else(|| anyhow::anyhow!("money overflow"))?;
-        Ok(Self { minor, currency: self.currency })
+        Ok(Self {
+            minor,
+            currency: self.currency,
+        })
     }
 }
 

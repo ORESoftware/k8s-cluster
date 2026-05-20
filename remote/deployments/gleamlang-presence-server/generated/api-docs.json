@@ -1,0 +1,229 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "gleamlang-presence-server",
+  "language": "gleam",
+  "routeCount": 14,
+  "routeTypeCounts": {
+    "service": 5,
+    "user-generated": 9
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Help text.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/conv/:conv_id/broadcast",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Body is broadcast to every conv-scoped",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/conv/:conv_id/members",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "List members (PG-backed).",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/conv/:conv_id/members/:user_id",
+      "methods": [
+        "POST",
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Add user to conv (PG + cache + cluster broadcast).",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "JSON health check.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/nodes",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Plain text list of connected BEAM peers.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/user/:user_id/broadcast",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Body is broadcast to every user-scoped ws",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/user/:user_id/devices/:device_id/logout",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Closes every ws (user- and conv-scoped) of",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws?user=:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Upgrade to a user-scoped ws.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws?user=:id&conv=:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Upgrade to a conv-scoped ws (must be a member).",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      ],
+      "notes": ""
+    }
+  ]
+}

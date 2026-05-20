@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-const repoRoot = resolve(process.cwd(), '..', '..');
+function findRepoRoot(): string {
+  for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
+    if (existsSync(resolve(candidate, 'remote/deployments/idle-reaper-rs/Cargo.toml'))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Unable to locate repo root from ${process.cwd()}`);
+}
+
+const repoRoot = findRepoRoot();
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
@@ -68,6 +79,22 @@ test('argocd reaper deployment runs the rust scheduler with a 90-minute doctor l
     config,
     /NATS_WATCH_GLEAM_BROADCAST_URL:\s*['"]http:\/\/dd-gleamlang-server\.default\.svc\.cluster\.local:8081\/broadcast['"]/,
   );
+  assert.match(config, /RUNTIME_FLOOR_ENABLED:\s*['"]true['"]/);
+  assert.match(config, /RUNTIME_FLOOR_INTERVAL_SECONDS:\s*['"]20['"]/);
+  assert.match(config, /RUNTIME_FLOOR_NATS_TASK_STREAM:\s*['"]DD_REMOTE_TASKS['"]/);
+  assert.match(
+    config,
+    /RUNTIME_FLOOR_NATS_TASK_CONSUMER:\s*['"]dd-remote-thread-preparer['"]/,
+  );
+  assert.match(
+    config,
+    /RUNTIME_FLOOR_CONTAINER_POOL_URL:\s*['"]http:\/\/dd-container-pool\.default\.svc\.cluster\.local:8102['"]/,
+  );
+  assert.match(
+    config,
+    /RUNTIME_FLOOR_QUEUE_CONSUMER_DEPLOYMENT:\s*['"]dd-remote-queue-consumer['"]/,
+  );
+  assert.match(config, /RUNTIME_FLOOR_QUEUE_CONSUMER_MIN_READY:\s*['"]1['"]/);
   assert.doesNotMatch(config, /NATS_WATCH_GLEAM_BROADCAST_SECRET:/);
   assert.doesNotMatch(config, /CLUSTER_DOCTOR_SERVER_AUTH_SECRET:/);
   assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
@@ -84,10 +111,11 @@ test('argocd reaper deployment runs the rust scheduler with a 90-minute doctor l
   assert.match(deployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
   assert.match(deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
   assert.match(deployment, /mountPath:\s*\/opt\/dd-next-1/);
-  assert.match(deployment, /dd\.dev\/telemetry-revision:\s*['"]2026-05-19-worker-image-rebuild-done['"]/);
+  assert.match(deployment, /dd\.dev\/telemetry-revision:\s*['"]2026-05-20-runtime-floor['"]/);
   assert.match(runtimeReadme, /dd-idle-reaper-secret` key `CLUSTER_DOCTOR_SERVER_AUTH_SECRET/);
   assert.match(runtimeReadme, /dd-idle-reaper-secret` key `NATS_WATCH_GLEAM_BROADCAST_SECRET/);
   assert.match(runtimeReadme, /adaptive NATS watchdog/);
+  assert.match(runtimeReadme, /runtime floor reconciler every 20 seconds/);
   assert.match(runtimeReadme, /Every day at\s+4am America\/New_York/);
   assert.match(runtimeReadme, /docker\.io\/library\/dd-dev-server:dev/);
 });
@@ -124,12 +152,18 @@ test('reaper nats watchdog backstops worker prepare and websocket fanout', async
   assert.match(reaper, /dd\.remote\.events/);
   assert.match(reaper, /prepare_thread_from_nats/);
   assert.match(reaper, /broadcast_event_from_nats/);
+  assert.match(reaper, /struct RuntimeFloorJob/);
+  assert.match(reaper, /RUNTIME_FLOOR_INTERVAL_SECONDS", 20/);
+  assert.match(reaper, /ensure_runtime_floor_nats/);
+  assert.match(reaper, /reconcile_queue_consumer_floor/);
+  assert.match(reaper, /reconcile_container_pool_floor/);
   assert.match(reaper, /broadcaster|GLEAM_BROADCAST_URL|gleam_broadcast_url/);
   assert.match(reaper, /NATS_WATCH_GLEAM_BROADCAST_SECRET/);
   assert.match(reaper, /nats watchdog disabled: NATS_WATCH_GLEAM_BROADCAST_SECRET missing/);
   assert.doesNotMatch(reaper, /dd-k8s-home/);
   assert.match(readme, /NATS watchdog/);
   assert.match(readme, /backstop worker/);
+  assert.match(readme, /runtime floor/);
   assert.match(readme, /`NATS_WATCH_GLEAM_BROADCAST_SECRET` \| yes, when enabled \| — \|/);
 });
 

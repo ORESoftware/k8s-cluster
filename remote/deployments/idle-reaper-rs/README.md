@@ -6,6 +6,9 @@ Tiny Rust worker that runs cluster maintenance loops:
 - cluster doctor: `POST /tasks` on `dd-dev-server-api` every 90 minutes
 - NATS watchdog: copy-subscribe to task/event subjects and backstop worker
   prepare plus Gleam websocket fanout
+- runtime floor: every 20 seconds, make sure the NATS task stream/durable consumer exist, the
+  queue-consumer Deployment is scaled to at least one replica, and configured warm pools are
+  reconciled back toward their `min_warm` ready floor
 - worker-image cron: build `docker.io/library/dd-dev-server:dev` every day at
   4am America/New_York from the latest `dev` branch
 
@@ -27,6 +30,15 @@ Tiny Rust worker that runs cluster maintenance loops:
 | `NATS_WATCH_GLEAM_BROADCAST_SECRET` | yes, when enabled | — |
 | `NATS_WATCH_ACTIVE_INTERVAL_SECONDS` | no | `5` |
 | `NATS_WATCH_IDLE_INTERVAL_SECONDS` | no | `15` |
+| `RUNTIME_FLOOR_ENABLED` | no | `false` |
+| `RUNTIME_FLOOR_INTERVAL_SECONDS` | no | `20` |
+| `RUNTIME_FLOOR_NATS_TASK_SUBJECT` | no | `dd.remote.thread.*.tasks` |
+| `RUNTIME_FLOOR_NATS_TASK_STREAM` | no | `DD_REMOTE_TASKS` |
+| `RUNTIME_FLOOR_NATS_TASK_CONSUMER` | no | `dd-remote-thread-preparer` |
+| `RUNTIME_FLOOR_CONTAINER_POOL_URL` | no | `http://dd-container-pool.default.svc.cluster.local:8102` |
+| `RUNTIME_FLOOR_QUEUE_CONSUMER_DEPLOYMENT` | no | `dd-remote-queue-consumer` |
+| `RUNTIME_FLOOR_QUEUE_CONSUMER_MIN_REPLICAS` | no | `1` |
+| `RUNTIME_FLOOR_QUEUE_CONSUMER_MIN_READY` | no | `1` |
 | `CLUSTER_DOCTOR_ENABLED` | no | `false` |
 | `CLUSTER_DOCTOR_INTERVAL_SECONDS` | no | `5400` |
 | `CLUSTER_DOCTOR_RUN_ON_START` | no | `false` |

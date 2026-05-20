@@ -28,6 +28,29 @@ struct DbRowsQuery {
     order: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DbJoinQuery {
+    left: Option<String>,
+    right: Option<String>,
+    #[serde(alias = "left_schema")]
+    left_schema: Option<String>,
+    #[serde(alias = "right_schema")]
+    right_schema: Option<String>,
+    #[serde(alias = "leftOn", alias = "left_column")]
+    left_column: Option<String>,
+    #[serde(alias = "rightOn", alias = "right_column")]
+    right_column: Option<String>,
+    join: Option<String>,
+    #[serde(alias = "left_columns")]
+    left_columns: Option<String>,
+    #[serde(alias = "right_columns")]
+    right_columns: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    order: Option<String>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DbColumnMetadata {
@@ -113,6 +136,37 @@ struct DbRowResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct DbJoinTableRef {
+    schema: String,
+    name: String,
+    columns: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DbJoinMetadata {
+    join_type: String,
+    left: DbJoinTableRef,
+    right: DbJoinTableRef,
+    left_column: String,
+    right_column: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DbJoinResponse {
+    ok: bool,
+    source: String,
+    generated_at_ms: u128,
+    join: DbJoinMetadata,
+    limit: i64,
+    offset: i64,
+    rows: Vec<Value>,
+    errors: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DbContractTable {
     schema: String,
     name: String,
@@ -133,6 +187,7 @@ pub fn router() -> Router {
         .route("/contract/tables", get(contract_tables))
         .route("/pg-defs/tables", get(contract_tables))
         .route("/tables", get(list_tables))
+        .route("/join", get(join_rows))
         .route("/tables/:table", get(table_metadata_default_schema))
         .route(
             "/tables/:table/rows",
@@ -161,7 +216,7 @@ pub fn router() -> Router {
 }
 
 async fn contract_tables(headers: HeaderMap) -> Response {
-    super::record_request("GET", "/api/db/contract/tables", StatusCode::OK);
+    super::record_request("GET", "/internal/db/contract/tables", StatusCode::OK);
     if let Some(response) = require_db_route_access(&headers, false) {
         return response;
     }
@@ -189,7 +244,7 @@ async fn contract_tables(headers: HeaderMap) -> Response {
 }
 
 async fn list_tables(headers: HeaderMap, Query(query): Query<DbTablesQuery>) -> Response {
-    super::record_request("GET", "/api/db/tables", StatusCode::OK);
+    super::record_request("GET", "/internal/db/tables", StatusCode::OK);
     if let Some(response) = require_db_route_access(&headers, true) {
         return response;
     }
@@ -202,7 +257,7 @@ async fn list_tables(headers: HeaderMap, Query(query): Query<DbTablesQuery>) -> 
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("db-first table discovery failed to connect to postgres: {error}");
+            eprintln!("internal DB table discovery failed to connect to postgres: {error}");
             return db_error_response("table discovery");
         }
     };
@@ -224,7 +279,7 @@ async fn list_tables(headers: HeaderMap, Query(query): Query<DbTablesQuery>) -> 
         })
         .into_response(),
         Err(error) => {
-            eprintln!("db-first table discovery failed: {error}");
+            eprintln!("internal DB table discovery failed: {error}");
             db_error_response("table discovery")
         }
     }
@@ -318,7 +373,7 @@ async fn delete_row_explicit_schema(
 }
 
 async fn table_metadata(headers: HeaderMap, schema: String, table: String) -> Response {
-    super::record_request("GET", "/api/db/tables/:table", StatusCode::OK);
+    super::record_request("GET", "/internal/db/tables/:table", StatusCode::OK);
     if let Some(response) = require_db_route_access(&headers, true) {
         return response;
     }
@@ -330,7 +385,7 @@ async fn table_metadata(headers: HeaderMap, schema: String, table: String) -> Re
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("db-first table metadata failed to connect to postgres: {error}");
+            eprintln!("internal DB table metadata failed to connect to postgres: {error}");
             return db_error_response("table metadata");
         }
     };
@@ -345,7 +400,7 @@ async fn table_metadata(headers: HeaderMap, schema: String, table: String) -> Re
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} was not found")),
         Err(error) => {
-            eprintln!("db-first table metadata failed: {error}");
+            eprintln!("internal DB table metadata failed: {error}");
             db_error_response("table metadata")
         }
     }
@@ -357,7 +412,7 @@ async fn list_rows(
     table: String,
     query: DbRowsQuery,
 ) -> Response {
-    super::record_request("GET", "/api/db/tables/:table/rows", StatusCode::OK);
+    super::record_request("GET", "/internal/db/tables/:table/rows", StatusCode::OK);
     if let Some(response) = require_db_route_access(&headers, true) {
         return response;
     }
@@ -371,7 +426,7 @@ async fn list_rows(
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("db-first row list failed to connect to postgres: {error}");
+            eprintln!("internal DB row list failed to connect to postgres: {error}");
             return db_error_response("row list");
         }
     };
@@ -401,14 +456,14 @@ async fn list_rows(
         })
         .into_response(),
         Err(error) => {
-            eprintln!("db-first row list failed: {error}");
+            eprintln!("internal DB row list failed: {error}");
             db_error_response("row list")
         }
     }
 }
 
 async fn get_row(headers: HeaderMap, schema: String, table: String, id: String) -> Response {
-    super::record_request("GET", "/api/db/tables/:table/rows/:id", StatusCode::OK);
+    super::record_request("GET", "/internal/db/tables/:table/rows/:id", StatusCode::OK);
     if let Some(response) = require_db_route_access(&headers, true) {
         return response;
     }
@@ -420,7 +475,7 @@ async fn get_row(headers: HeaderMap, schema: String, table: String, id: String) 
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("db-first row fetch failed to connect to postgres: {error}");
+            eprintln!("internal DB row fetch failed to connect to postgres: {error}");
             return db_error_response("row fetch");
         }
     };
@@ -451,14 +506,14 @@ async fn get_row(headers: HeaderMap, schema: String, table: String, id: String) 
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} row was not found")),
         Err(error) => {
-            eprintln!("db-first row fetch failed: {error}");
+            eprintln!("internal DB row fetch failed: {error}");
             db_error_response("row fetch")
         }
     }
 }
 
 async fn insert_row(headers: HeaderMap, schema: String, table: String, body: Value) -> Response {
-    super::record_request("POST", "/api/db/tables/:table/rows", StatusCode::OK);
+    super::record_request("POST", "/internal/db/tables/:table/rows", StatusCode::OK);
     if let Some(response) = require_db_route_access(&headers, true) {
         return response;
     }
@@ -474,7 +529,7 @@ async fn insert_row(headers: HeaderMap, schema: String, table: String, body: Val
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("db-first row insert failed to connect to postgres: {error}");
+            eprintln!("internal DB row insert failed to connect to postgres: {error}");
             return db_error_response("row insert");
         }
     };
@@ -528,7 +583,7 @@ async fn insert_row(headers: HeaderMap, schema: String, table: String, body: Val
         })
         .into_response(),
         Err(error) => {
-            eprintln!("db-first row insert failed: {error}");
+            eprintln!("internal DB row insert failed: {error}");
             db_error_response("row insert")
         }
     }
@@ -541,7 +596,11 @@ async fn update_row(
     id: String,
     body: Value,
 ) -> Response {
-    super::record_request("PATCH", "/api/db/tables/:table/rows/:id", StatusCode::OK);
+    super::record_request(
+        "PATCH",
+        "/internal/db/tables/:table/rows/:id",
+        StatusCode::OK,
+    );
     if let Some(response) = require_db_route_access(&headers, true) {
         return response;
     }
@@ -557,7 +616,7 @@ async fn update_row(
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("db-first row update failed to connect to postgres: {error}");
+            eprintln!("internal DB row update failed to connect to postgres: {error}");
             return db_error_response("row update");
         }
     };
@@ -609,7 +668,7 @@ async fn update_row(
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} row was not found")),
         Err(error) => {
-            eprintln!("db-first row update failed: {error}");
+            eprintln!("internal DB row update failed: {error}");
             db_error_response("row update")
         }
     }
@@ -621,7 +680,11 @@ async fn delete_row_by_id(
     table: String,
     id: String,
 ) -> Response {
-    super::record_request("DELETE", "/api/db/tables/:table/rows/:id", StatusCode::OK);
+    super::record_request(
+        "DELETE",
+        "/internal/db/tables/:table/rows/:id",
+        StatusCode::OK,
+    );
     if let Some(response) = require_db_route_access(&headers, true) {
         return response;
     }
@@ -633,7 +696,7 @@ async fn delete_row_by_id(
     let client = match super::connect_postgres().await {
         Ok(client) => client,
         Err(error) => {
-            eprintln!("db-first row delete failed to connect to postgres: {error}");
+            eprintln!("internal DB row delete failed to connect to postgres: {error}");
             return db_error_response("row delete");
         }
     };
@@ -667,8 +730,149 @@ async fn delete_row_by_id(
         .into_response(),
         Ok(None) => not_found(format!("{schema}.{table} row was not found")),
         Err(error) => {
-            eprintln!("db-first row delete failed: {error}");
+            eprintln!("internal DB row delete failed: {error}");
             db_error_response("row delete")
+        }
+    }
+}
+
+async fn join_rows(headers: HeaderMap, Query(query): Query<DbJoinQuery>) -> Response {
+    super::record_request("GET", "/internal/db/join", StatusCode::OK);
+    if let Some(response) = require_db_route_access(&headers, true) {
+        return response;
+    }
+
+    let left_schema = match normalize_identifier(
+        query.left_schema.as_deref().unwrap_or(DEFAULT_SCHEMA),
+        "leftSchema",
+    ) {
+        Ok(value) => value,
+        Err(error) => return bad_request(error),
+    };
+    let right_schema = match normalize_identifier(
+        query.right_schema.as_deref().unwrap_or(DEFAULT_SCHEMA),
+        "rightSchema",
+    ) {
+        Ok(value) => value,
+        Err(error) => return bad_request(error),
+    };
+    let left_table = match required_identifier(query.left.as_deref(), "left", "left table") {
+        Ok(value) => value,
+        Err(error) => return bad_request(error),
+    };
+    let right_table = match required_identifier(query.right.as_deref(), "right", "right table") {
+        Ok(value) => value,
+        Err(error) => return bad_request(error),
+    };
+    let left_column =
+        match required_identifier(query.left_column.as_deref(), "leftColumn", "left column") {
+            Ok(value) => value,
+            Err(error) => return bad_request(error),
+        };
+    let right_column =
+        match required_identifier(query.right_column.as_deref(), "rightColumn", "right column") {
+            Ok(value) => value,
+            Err(error) => return bad_request(error),
+        };
+    let join_type = match normalize_join_type(query.join.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return bad_request(error),
+    };
+    let limit = join_limit(&query);
+    let offset = join_offset(&query);
+
+    let client = match super::connect_postgres().await {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("internal DB join failed to connect to postgres: {error}");
+            return db_error_response("join");
+        }
+    };
+    let left_metadata = match require_table_metadata(&client, &left_schema, &left_table).await {
+        Ok(table) => table,
+        Err(response) => return response,
+    };
+    let right_metadata = match require_table_metadata(&client, &right_schema, &right_table).await {
+        Ok(table) => table,
+        Err(response) => return response,
+    };
+    if !column_exists(&left_metadata, &left_column) {
+        return bad_request(format!(
+            "unknown leftColumn `{left_column}` for {left_schema}.{left_table}"
+        ));
+    }
+    if !column_exists(&right_metadata, &right_column) {
+        return bad_request(format!(
+            "unknown rightColumn `{right_column}` for {right_schema}.{right_table}"
+        ));
+    }
+
+    let left_columns = match requested_join_columns(
+        &left_metadata,
+        query.left_columns.as_deref(),
+        "leftColumns",
+    ) {
+        Ok(columns) => columns,
+        Err(error) => return bad_request(error),
+    };
+    let right_columns = match requested_join_columns(
+        &right_metadata,
+        query.right_columns.as_deref(),
+        "rightColumns",
+    ) {
+        Ok(columns) => columns,
+        Err(error) => return bad_request(error),
+    };
+    let order_clause =
+        match join_order_clause(&left_metadata, &right_metadata, query.order.as_deref()) {
+            Ok(value) => value,
+            Err(error) => return bad_request(error),
+        };
+
+    let left_name = qualified_name(&left_schema, &left_table);
+    let right_name = qualified_name(&right_schema, &right_table);
+    let left_projection = join_row_projection("l", &left_columns);
+    let right_projection = join_row_projection("r", &right_columns);
+    let join_keyword = join_sql_keyword(join_type);
+    let sql = format!(
+        "select jsonb_build_object('left', {left_projection}, 'right', {right_projection}) as row \
+         from {left_name} l \
+         {join_keyword} {right_name} r on l.{} = r.{} \
+         {order_clause} \
+         limit $1 offset $2",
+        quote_identifier(&left_column),
+        quote_identifier(&right_column)
+    );
+
+    match client.query(&sql, &[&limit, &offset]).await {
+        Ok(rows) => Json(DbJoinResponse {
+            ok: true,
+            source: SOURCE.to_string(),
+            generated_at_ms: super::now_ms(),
+            join: DbJoinMetadata {
+                join_type: join_type.to_string(),
+                left: DbJoinTableRef {
+                    schema: left_schema,
+                    name: left_table,
+                    columns: response_join_columns(&left_metadata, &left_columns),
+                },
+                right: DbJoinTableRef {
+                    schema: right_schema,
+                    name: right_table,
+                    columns: response_join_columns(&right_metadata, &right_columns),
+                },
+                left_column,
+                right_column,
+            },
+            limit,
+            offset,
+            rows: rows.iter().map(row_json_value).collect(),
+            errors: Vec::new(),
+        })
+        .into_response(),
+        Err(error) => {
+            eprintln!("internal DB join failed: {error}");
+            db_error_response("join")
         }
     }
 }
@@ -744,7 +948,7 @@ async fn require_table_metadata(
         Ok(Some(metadata)) => Ok(metadata),
         Ok(None) => Err(not_found(format!("{schema}.{table} was not found"))),
         Err(error) => {
-            eprintln!("db-first table metadata lookup failed: {error}");
+            eprintln!("internal DB table metadata lookup failed: {error}");
             Err(db_error_response("table metadata"))
         }
     }
@@ -901,6 +1105,14 @@ fn rows_offset(query: &DbRowsQuery) -> i64 {
     query.offset.unwrap_or_default().clamp(0, 100_000)
 }
 
+fn join_limit(query: &DbJoinQuery) -> i64 {
+    query.limit.unwrap_or(100).clamp(1, 500)
+}
+
+fn join_offset(query: &DbJoinQuery) -> i64 {
+    query.offset.unwrap_or_default().clamp(0, 100_000)
+}
+
 fn order_clause(table: &DbTableMetadata, requested: Option<&str>) -> Result<String, String> {
     let Some(raw) = requested.map(str::trim).filter(|value| !value.is_empty()) else {
         let default_column = table
@@ -954,6 +1166,46 @@ fn order_clause(table: &DbTableMetadata, requested: Option<&str>) -> Result<Stri
     ))
 }
 
+fn join_order_clause(
+    left: &DbTableMetadata,
+    right: &DbTableMetadata,
+    requested: Option<&str>,
+) -> Result<String, String> {
+    let Some(raw) = requested.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(String::new());
+    };
+
+    let (raw, direction) = if let Some(value) = raw.strip_prefix('-') {
+        (value, "desc")
+    } else if let Some(value) = raw.strip_suffix(".desc") {
+        (value, "desc")
+    } else if let Some(value) = raw.strip_suffix(":desc") {
+        (value, "desc")
+    } else if let Some(value) = raw.strip_suffix(".asc") {
+        (value, "asc")
+    } else if let Some(value) = raw.strip_suffix(":asc") {
+        (value, "asc")
+    } else {
+        (raw, "asc")
+    };
+    let (side, column) = raw
+        .split_once('.')
+        .ok_or_else(|| "join order must be left.<column> or right.<column>".to_string())?;
+    let column = normalize_identifier(column, "order column")?;
+    let (alias, table) = match side {
+        "left" | "l" => ("l", left),
+        "right" | "r" => ("r", right),
+        _ => return Err("join order side must be left or right".to_string()),
+    };
+    if !column_exists(table, &column) {
+        return Err(format!("unknown join order column `{side}.{column}`"));
+    }
+    Ok(format!(
+        "order by {alias}.{} {direction}",
+        quote_identifier(&column)
+    ))
+}
+
 fn single_primary_key(table: &DbTableMetadata) -> Result<&str, String> {
     match table.primary_key.as_slice() {
         [column] => Ok(column),
@@ -968,6 +1220,95 @@ fn single_primary_key(table: &DbTableMetadata) -> Result<&str, String> {
             columns.join(", ")
         )),
     }
+}
+
+fn required_identifier(value: Option<&str>, parameter: &str, kind: &str) -> Result<String, String> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Err(format!("{parameter} is required"));
+    };
+    normalize_identifier(value, kind)
+}
+
+fn normalize_join_type(value: Option<&str>) -> Result<&'static str, String> {
+    let normalized = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("inner")
+        .to_ascii_lowercase()
+        .replace('-', "_");
+    match normalized.as_str() {
+        "inner" => Ok("inner"),
+        "left" | "left_outer" => Ok("left"),
+        "right" | "right_outer" => Ok("right"),
+        "full" | "full_outer" => Ok("full"),
+        _ => Err("join must be inner, left, right, or full".to_string()),
+    }
+}
+
+fn join_sql_keyword(join_type: &str) -> &'static str {
+    match join_type {
+        "left" => "left join",
+        "right" => "right join",
+        "full" => "full join",
+        _ => "join",
+    }
+}
+
+fn column_exists(table: &DbTableMetadata, column: &str) -> bool {
+    table.columns.iter().any(|item| item.name == column)
+}
+
+fn requested_join_columns(
+    table: &DbTableMetadata,
+    raw: Option<&str>,
+    parameter: &str,
+) -> Result<Vec<String>, String> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    let mut columns = Vec::new();
+    for value in raw.split(',') {
+        let column = normalize_identifier(value, parameter)?;
+        if !column_exists(table, &column) {
+            return Err(format!(
+                "unknown {parameter} value `{column}` for {}.{}",
+                table.schema, table.name
+            ));
+        }
+        if !columns.contains(&column) {
+            columns.push(column);
+        }
+    }
+    Ok(columns)
+}
+
+fn join_row_projection(alias: &str, columns: &[String]) -> String {
+    if columns.is_empty() {
+        return format!("to_jsonb({alias})");
+    }
+    let pairs = columns
+        .iter()
+        .map(|column| {
+            format!(
+                "{}, {alias}.{}",
+                quote_string_literal(column),
+                quote_identifier(column)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("jsonb_build_object({pairs})")
+}
+
+fn response_join_columns(table: &DbTableMetadata, selected: &[String]) -> Vec<String> {
+    if selected.is_empty() {
+        return table
+            .columns
+            .iter()
+            .map(|column| column.name.clone())
+            .collect();
+    }
+    selected.to_vec()
 }
 
 fn body_columns(
@@ -1079,6 +1420,10 @@ fn quote_identifier(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "\"\""))
 }
 
+fn quote_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 fn row_json_value(row: &tokio_postgres::Row) -> Value {
     row.try_get::<_, Value>("row").unwrap_or_else(|_| json!({}))
 }
@@ -1152,5 +1497,22 @@ mod tests {
             super::super::pg_contract::LAMBDA_FUNCTIONS_TABLE
         )
         .is_some_and(|columns| columns.contains(&"function_body")));
+    }
+
+    #[test]
+    fn normalizes_basic_join_types() {
+        assert_eq!(normalize_join_type(None).unwrap(), "inner");
+        assert_eq!(normalize_join_type(Some("left_outer")).unwrap(), "left");
+        assert_eq!(normalize_join_type(Some("right-outer")).unwrap(), "right");
+        assert!(normalize_join_type(Some("cross")).is_err());
+    }
+
+    #[test]
+    fn join_projection_uses_validated_column_names() {
+        assert_eq!(join_row_projection("l", &[]), "to_jsonb(l)");
+        assert_eq!(
+            join_row_projection("r", &["id".to_string(), "display_name".to_string()]),
+            "jsonb_build_object('id', r.\"id\", 'display_name', r.\"display_name\")"
+        );
     }
 }

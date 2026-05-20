@@ -352,7 +352,12 @@ fn resolve_bin(name: &str) -> String {
 
 fn env_bool(key: &str, fallback: bool) -> bool {
     first_env(&[key])
-        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"))
+        .map(|v| {
+            matches!(
+                v.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
         .unwrap_or(fallback)
 }
 
@@ -861,7 +866,11 @@ fn expr_to_smt(expr: &Expr) -> Result<String, String> {
         Expr::Var(name) => Ok(name.clone()),
         Expr::IntLit(value) => Ok(value.clone()),
         Expr::RealLit(value) => Ok(value.clone()),
-        Expr::BoolLit(value) => Ok(if *value { "true".into() } else { "false".into() }),
+        Expr::BoolLit(value) => Ok(if *value {
+            "true".into()
+        } else {
+            "false".into()
+        }),
         Expr::Unary(op, inner) => Ok(format!("({op} {})", expr_to_smt(inner)?)),
         Expr::Binary(op, lhs, rhs) => {
             let lhs_s = expr_to_smt(lhs)?;
@@ -998,9 +1007,7 @@ fn parse_var_decl(body: &str, line: usize) -> Result<VarDecl, String> {
     if name.is_empty() {
         return Err("missing variable name in @var".to_string());
     }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         || name.chars().next().map_or(true, |c| c.is_ascii_digit())
     {
         return Err(format!("invalid @var name {name:?}"));
@@ -1009,7 +1016,11 @@ fn parse_var_decl(body: &str, line: usize) -> Result<VarDecl, String> {
         "int" | "integer" | "i64" | "i32" | "u64" | "u32" => SortHint::Int,
         "real" | "float" | "double" | "f64" | "f32" => SortHint::Real,
         "bool" | "boolean" => SortHint::Bool,
-        other => return Err(format!("unsupported @var sort {other:?} (use Int|Real|Bool)")),
+        other => {
+            return Err(format!(
+                "unsupported @var sort {other:?} (use Int|Real|Bool)"
+            ))
+        }
     };
     Ok(VarDecl {
         name: name.to_string(),
@@ -1156,7 +1167,10 @@ async fn run_z3(config: &Config, script: &str) -> Result<SmtResult, String> {
     let mut child = Command::new(&config.z3_bin)
         .args(["-in", "-smt2", "-T:5"])
         .env_clear()
-        .env("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+        .env(
+            "PATH",
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1198,11 +1212,7 @@ async fn run_z3(config: &Config, script: &str) -> Result<SmtResult, String> {
     } else {
         BTreeMap::new()
     };
-    Ok(SmtResult {
-        status,
-        model,
-        raw,
-    })
+    Ok(SmtResult { status, model, raw })
 }
 
 fn parse_model(output: &str) -> BTreeMap<String, String> {
@@ -1423,8 +1433,13 @@ async fn verify_block(
     }
 
     // ensures and asserts: try to falsify the goal.
-    let mut goal_units: Vec<(&'static str, FindingKind, Severity, &AnnotatedExpr, &'static str)> =
-        Vec::new();
+    let mut goal_units: Vec<(
+        &'static str,
+        FindingKind,
+        Severity,
+        &AnnotatedExpr,
+        &'static str,
+    )> = Vec::new();
     for ann in &block.ensures {
         goal_units.push((
             "ensures",
@@ -1517,19 +1532,24 @@ async fn verify_block(
                 // proved -- intentionally no finding.
             }
             SmtStatus::Unknown => {
-                findings.push(ctx.finding(
-                    FindingKind::SolverUnknown,
-                    Severity::Info,
-                    &block.file,
-                    ann.line,
-                    ann.line,
-                    format!("solver returned unknown for @{label}"),
-                    Some("Z3 could not prove or refute this goal within the configured budget.".to_string()),
-                    Some(ann.raw.clone()),
-                    Some(&result),
-                    Some(script),
-                    reasoning,
-                ));
+                findings.push(
+                    ctx.finding(
+                        FindingKind::SolverUnknown,
+                        Severity::Info,
+                        &block.file,
+                        ann.line,
+                        ann.line,
+                        format!("solver returned unknown for @{label}"),
+                        Some(
+                            "Z3 could not prove or refute this goal within the configured budget."
+                                .to_string(),
+                        ),
+                        Some(ann.raw.clone()),
+                        Some(&result),
+                        Some(script),
+                        reasoning,
+                    ),
+                );
             }
             SmtStatus::Error => {
                 z3_failures.fetch_add(1, Ordering::Relaxed);
@@ -1609,22 +1629,25 @@ async fn verify_block(
         }
         match result.status {
             SmtStatus::Sat => {
-                findings.push(ctx.finding(
-                    FindingKind::LoopInvariantNotEstablished,
-                    Severity::Error,
-                    &block.file,
-                    ann.line,
-                    ann.line,
-                    "loop @invariant does not follow from the preceding @requires/@assume"
-                        .to_string(),
-                    Some(
-                        "Induction base step: the invariant must hold on loop entry.".to_string(),
+                findings.push(
+                    ctx.finding(
+                        FindingKind::LoopInvariantNotEstablished,
+                        Severity::Error,
+                        &block.file,
+                        ann.line,
+                        ann.line,
+                        "loop @invariant does not follow from the preceding @requires/@assume"
+                            .to_string(),
+                        Some(
+                            "Induction base step: the invariant must hold on loop entry."
+                                .to_string(),
+                        ),
+                        Some(ann.raw.clone()),
+                        Some(&result),
+                        Some(script),
+                        "induction: base-step refutation",
                     ),
-                    Some(ann.raw.clone()),
-                    Some(&result),
-                    Some(script),
-                    "induction: base-step refutation",
-                ));
+                );
             }
             SmtStatus::Unknown => {
                 findings.push(ctx.finding(
@@ -1679,22 +1702,24 @@ async fn verify_block(
         z3_calls.fetch_add(1, Ordering::Relaxed);
         let result = ctx.check_unsat(&script).await;
         if result.status == SmtStatus::Sat {
-            findings.push(ctx.finding(
-                FindingKind::LoopVariantNotDecreasing,
-                Severity::Warning,
-                &block.file,
-                variant.line,
-                variant.line,
-                "@variant can be negative under the declared invariants".to_string(),
-                Some(
-                    "Termination measures must remain non-negative on entry to each iteration."
-                        .to_string(),
+            findings.push(
+                ctx.finding(
+                    FindingKind::LoopVariantNotDecreasing,
+                    Severity::Warning,
+                    &block.file,
+                    variant.line,
+                    variant.line,
+                    "@variant can be negative under the declared invariants".to_string(),
+                    Some(
+                        "Termination measures must remain non-negative on entry to each iteration."
+                            .to_string(),
+                    ),
+                    Some(variant.raw.clone()),
+                    Some(&result),
+                    Some(script),
+                    "induction: termination measure",
                 ),
-                Some(variant.raw.clone()),
-                Some(&result),
-                Some(script),
-                "induction: termination measure",
-            ));
+            );
         }
     }
 
@@ -1843,26 +1868,33 @@ async fn heuristic_checks(
                 *line_no,
                 *line_no,
                 format!("nested `if ({cond_raw})` is unreachable from outer branch"),
-                Some("The conjunction of outer path conditions contradicts this guard.".to_string()),
+                Some(
+                    "The conjunction of outer path conditions contradicts this guard.".to_string(),
+                ),
                 Some(cond_raw.to_string()),
                 Some(&r_false),
                 Some(script_false.clone()),
                 "deduction: ⋀ outer ∧ cond ⊢ ⊥",
             ));
         } else if always_false {
-            findings.push(ctx.finding(
-                FindingKind::TautologyAlwaysFalse,
-                Severity::Warning,
-                &parsed.file,
-                *line_no,
-                *line_no,
-                format!("`if ({cond_raw})` is always false for declared variables"),
-                Some("This condition is a contradiction over the declared variable sorts.".to_string()),
-                Some(cond_raw.to_string()),
-                Some(&r_false),
-                Some(script_false.clone()),
-                "deduction: cond ⊢ ⊥",
-            ));
+            findings.push(
+                ctx.finding(
+                    FindingKind::TautologyAlwaysFalse,
+                    Severity::Warning,
+                    &parsed.file,
+                    *line_no,
+                    *line_no,
+                    format!("`if ({cond_raw})` is always false for declared variables"),
+                    Some(
+                        "This condition is a contradiction over the declared variable sorts."
+                            .to_string(),
+                    ),
+                    Some(cond_raw.to_string()),
+                    Some(&r_false),
+                    Some(script_false.clone()),
+                    "deduction: cond ⊢ ⊥",
+                ),
+            );
         }
 
         if !always_true && !always_false {
@@ -2002,8 +2034,7 @@ async fn analyze_tree(
         }
 
         for block in &parsed.blocks {
-            let mut block_findings =
-                verify_block(&ctx, block, z3_calls, z3_failures).await;
+            let mut block_findings = verify_block(&ctx, block, z3_calls, z3_failures).await;
             findings.append(&mut block_findings);
             if findings.len() >= state.config.max_findings_per_job {
                 break;
@@ -2013,8 +2044,7 @@ async fn analyze_tree(
             break;
         }
         if heuristics_enabled && !decls_lookup.is_empty() {
-            let mut h =
-                heuristic_checks(&ctx, &parsed, &decls_lookup, z3_calls, z3_failures).await;
+            let mut h = heuristic_checks(&ctx, &parsed, &decls_lookup, z3_calls, z3_failures).await;
             findings.append(&mut h);
         }
 
@@ -2176,8 +2206,7 @@ async fn clone_repo(
     git_ref: Option<&str>,
 ) -> Result<PathBuf, String> {
     let repo_dir = job_dir.join("repo");
-    let mut clone_args: Vec<String> =
-        vec!["clone".into(), "--depth".into(), "1".into()];
+    let mut clone_args: Vec<String> = vec!["clone".into(), "--depth".into(), "1".into()];
     if let Some(git_ref) = git_ref {
         clone_args.push("--branch".into());
         clone_args.push(git_ref.to_string());
@@ -2185,7 +2214,15 @@ async fn clone_repo(
     clone_args.push(repo_url.to_string());
     clone_args.push(repo_dir.to_string_lossy().to_string());
     let arg_refs: Vec<&str> = clone_args.iter().map(String::as_str).collect();
-    let outcome = run_git(config, log_path, job_dir, &arg_refs, config.job_timeout, true).await?;
+    let outcome = run_git(
+        config,
+        log_path,
+        job_dir,
+        &arg_refs,
+        config.job_timeout,
+        true,
+    )
+    .await?;
     if !outcome.status.success() {
         return Err(format!("git clone exited with status {}", outcome.status));
     }
@@ -2232,7 +2269,15 @@ async fn clone_for_pr(
     )
     .await;
 
-    let init = run_git(config, log_path, &repo_dir, &["init", "-q"], Duration::from_secs(30), true).await?;
+    let init = run_git(
+        config,
+        log_path,
+        &repo_dir,
+        &["init", "-q"],
+        Duration::from_secs(30),
+        true,
+    )
+    .await?;
     if !init.status.success() {
         return Err(format!("git init failed: {}", init.stderr));
     }
@@ -2447,7 +2492,9 @@ fn render_pr_comment_body(
         pr.head_sha, pr.base_sha, job_id, files_scanned, z3_queries
     ));
     if let Some(n) = diff_only_paths {
-        body.push_str(&format!("- analysis scope: {n} changed paths (base..head diff)\n"));
+        body.push_str(&format!(
+            "- analysis scope: {n} changed paths (base..head diff)\n"
+        ));
     } else {
         body.push_str("- analysis scope: whole tree (diff fallback)\n");
     }
@@ -2460,9 +2507,18 @@ fn render_pr_comment_body(
         return body;
     }
 
-    let errors = findings.iter().filter(|f| f.severity == Severity::Error).count();
-    let warnings = findings.iter().filter(|f| f.severity == Severity::Warning).count();
-    let infos = findings.iter().filter(|f| f.severity == Severity::Info).count();
+    let errors = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .count();
+    let warnings = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Warning)
+        .count();
+    let infos = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Info)
+        .count();
     body.push_str(&format!(
         "🔎 {} finding(s): {} error · {} warning · {} info\n\n",
         findings.len(),
@@ -2618,78 +2674,78 @@ async fn execute_job(state: &AppState, job: &JobRecord) -> Result<JobOutcome, St
     let z3_failures = AtomicU64::new(0);
     let heuristics_enabled = request.heuristics.unwrap_or(true);
 
-    let (findings, files_scanned, changed_paths) = if let Some(source) =
-        request.inline_source.as_deref()
-    {
-        let file_label = request
-            .inline_filename
-            .as_deref()
-            .unwrap_or("inline.txt")
-            .to_string();
-        let ctx = VerifyContext { config };
-        let parsed = parse_annotations(&file_label, source);
-        let mut decls_lookup = HashMap::new();
-        for block in &parsed.blocks {
-            for decl in &block.decls {
-                decls_lookup.insert(decl.name.clone(), decl.sort.clone());
-            }
-        }
-        let mut findings = Vec::new();
-        for block in &parsed.blocks {
-            let mut block_findings = verify_block(&ctx, block, &z3_calls, &z3_failures).await;
-            findings.append(&mut block_findings);
-        }
-        if heuristics_enabled && !decls_lookup.is_empty() {
-            let mut h = heuristic_checks(&ctx, &parsed, &decls_lookup, &z3_calls, &z3_failures).await;
-            findings.append(&mut h);
-        }
-        (findings, 1usize, None)
-    } else if let Some(pr) = request.pull_request.as_ref() {
-        let (repo_dir, changed) = clone_for_pr(config, &log_path, &job_dir, pr).await?;
-        if config.pr_diff_only && path_filter.is_none() {
-            if let Some(changed_paths) = changed.as_ref() {
-                let cleaned: Vec<PathBuf> = changed_paths
-                    .iter()
-                    .filter_map(|p| validate_relative_path("changed_paths[]", p).ok())
-                    .collect();
-                if !cleaned.is_empty() {
-                    path_filter = Some(cleaned);
+    let (findings, files_scanned, changed_paths) =
+        if let Some(source) = request.inline_source.as_deref() {
+            let file_label = request
+                .inline_filename
+                .as_deref()
+                .unwrap_or("inline.txt")
+                .to_string();
+            let ctx = VerifyContext { config };
+            let parsed = parse_annotations(&file_label, source);
+            let mut decls_lookup = HashMap::new();
+            for block in &parsed.blocks {
+                for decl in &block.decls {
+                    decls_lookup.insert(decl.name.clone(), decl.sort.clone());
                 }
             }
-        }
-        let (findings, files_scanned) = analyze_tree(
-            state,
-            &repo_dir,
-            &languages_filter,
-            &path_filter,
-            heuristics_enabled,
-            &log_path,
-            &z3_calls,
-            &z3_failures,
-        )
-        .await;
-        (findings, files_scanned, changed)
-    } else {
-        let repo_url = request
-            .repo_url
-            .as_deref()
-            .ok_or_else(|| "repoUrl missing".to_string())?;
-        let git_ref = clean_optional(request.git_ref.as_deref());
-        let repo_dir =
-            clone_repo(config, &log_path, &job_dir, repo_url, git_ref.as_deref()).await?;
-        let (findings, files_scanned) = analyze_tree(
-            state,
-            &repo_dir,
-            &languages_filter,
-            &path_filter,
-            heuristics_enabled,
-            &log_path,
-            &z3_calls,
-            &z3_failures,
-        )
-        .await;
-        (findings, files_scanned, None)
-    };
+            let mut findings = Vec::new();
+            for block in &parsed.blocks {
+                let mut block_findings = verify_block(&ctx, block, &z3_calls, &z3_failures).await;
+                findings.append(&mut block_findings);
+            }
+            if heuristics_enabled && !decls_lookup.is_empty() {
+                let mut h =
+                    heuristic_checks(&ctx, &parsed, &decls_lookup, &z3_calls, &z3_failures).await;
+                findings.append(&mut h);
+            }
+            (findings, 1usize, None)
+        } else if let Some(pr) = request.pull_request.as_ref() {
+            let (repo_dir, changed) = clone_for_pr(config, &log_path, &job_dir, pr).await?;
+            if config.pr_diff_only && path_filter.is_none() {
+                if let Some(changed_paths) = changed.as_ref() {
+                    let cleaned: Vec<PathBuf> = changed_paths
+                        .iter()
+                        .filter_map(|p| validate_relative_path("changed_paths[]", p).ok())
+                        .collect();
+                    if !cleaned.is_empty() {
+                        path_filter = Some(cleaned);
+                    }
+                }
+            }
+            let (findings, files_scanned) = analyze_tree(
+                state,
+                &repo_dir,
+                &languages_filter,
+                &path_filter,
+                heuristics_enabled,
+                &log_path,
+                &z3_calls,
+                &z3_failures,
+            )
+            .await;
+            (findings, files_scanned, changed)
+        } else {
+            let repo_url = request
+                .repo_url
+                .as_deref()
+                .ok_or_else(|| "repoUrl missing".to_string())?;
+            let git_ref = clean_optional(request.git_ref.as_deref());
+            let repo_dir =
+                clone_repo(config, &log_path, &job_dir, repo_url, git_ref.as_deref()).await?;
+            let (findings, files_scanned) = analyze_tree(
+                state,
+                &repo_dir,
+                &languages_filter,
+                &path_filter,
+                heuristics_enabled,
+                &log_path,
+                &z3_calls,
+                &z3_failures,
+            )
+            .await;
+            (findings, files_scanned, None)
+        };
 
     let z3_calls_final = z3_calls.load(Ordering::Relaxed);
     let z3_failures_final = z3_failures.load(Ordering::Relaxed);
@@ -2762,9 +2818,7 @@ async fn run_job(state: AppState, id: String) {
                 .fetch_add(outcome.findings.len() as u64, Ordering::Relaxed);
 
             let pr = job_snapshot.as_ref().and_then(|j| j.pull_request.clone());
-            let log_path = job_snapshot
-                .as_ref()
-                .map(|j| PathBuf::from(&j.log_path));
+            let log_path = job_snapshot.as_ref().map(|j| PathBuf::from(&j.log_path));
 
             let comment_status = if let Some(pr) = pr.as_ref() {
                 if state.config.pr_comment_enabled && state.config.github_api_token.is_some() {
@@ -2901,12 +2955,8 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         .count();
     let mut allowed_repo_prefixes = state.config.allowed_repo_prefixes.clone();
     allowed_repo_prefixes.sort();
-    let mut allowed_extensions: Vec<String> = state
-        .config
-        .allowed_extensions
-        .iter()
-        .cloned()
-        .collect();
+    let mut allowed_extensions: Vec<String> =
+        state.config.allowed_extensions.iter().cloned().collect();
     allowed_extensions.sort();
     let z3_available = which_exists(&state.config.z3_bin).await;
     Json(HealthResponse {
@@ -3150,10 +3200,7 @@ async fn handle_pull_request_event(state: AppState, body: &[u8]) -> Response {
                 .into_response();
         }
     };
-    let action = payload
-        .get("action")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
     if !matches!(
         action,
         "opened" | "synchronize" | "reopened" | "ready_for_review"
@@ -3363,13 +3410,11 @@ async fn validate_inline(
     }
     let mut findings = Vec::new();
     for block in &parsed.blocks {
-        let mut block_findings =
-            verify_block(&ctx, block, &z3_calls, &z3_failures).await;
+        let mut block_findings = verify_block(&ctx, block, &z3_calls, &z3_failures).await;
         findings.append(&mut block_findings);
     }
     if request.heuristics.unwrap_or(true) && !decls_lookup.is_empty() {
-        let mut h =
-            heuristic_checks(&ctx, &parsed, &decls_lookup, &z3_calls, &z3_failures).await;
+        let mut h = heuristic_checks(&ctx, &parsed, &decls_lookup, &z3_calls, &z3_failures).await;
         findings.append(&mut h);
     }
     let z3_calls_final = z3_calls.load(Ordering::Relaxed);
@@ -3409,6 +3454,17 @@ fn pretty(value: &Value) -> String {
 // main
 // ---------------------------------------------------------------------------
 
+async fn api_docs_html() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl axum::response::IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
 #[tokio::main]
 async fn main() {
     let config = Arc::new(config_from_env());
@@ -3439,16 +3495,16 @@ async fn main() {
     let app = Router::new()
         .route("/", get(descriptor))
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         .route("/analyses", get(list_analyses).post(submit_analysis))
         .route("/analyses/:job_id", get(get_analysis))
         .route("/analyses/:job_id/logs", get(get_analysis_logs))
         .route("/validate", post(validate_inline))
         .route("/webhooks/github", post(github_webhook))
-        .route(
-            "/pulls/:owner/:repo/:number",
-            get(get_pull_request_status),
-        )
+        .route("/pulls/:owner/:repo/:number", get(get_pull_request_status))
         .with_state(state);
 
     let address: SocketAddr = format!("{host}:{port}")
@@ -3586,15 +3642,10 @@ fn add(x: i64, y: i64) -> i64 { x + y }
         let secret = "It's a Secret to Everybody";
         let body = b"Hello, World!";
         // Pre-computed HMAC-SHA256 from GitHub's docs example.
-        let expected =
-            "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17";
+        let expected = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17";
         assert!(verify_github_signature(secret, body, expected));
         assert!(!verify_github_signature(secret, b"tampered", expected));
-        assert!(!verify_github_signature(
-            "wrong",
-            body,
-            expected,
-        ));
+        assert!(!verify_github_signature("wrong", body, expected,));
         assert!(!verify_github_signature(secret, body, "sha256=deadbeef"));
         assert!(!verify_github_signature(secret, body, "not-a-prefix"));
     }
@@ -3626,10 +3677,7 @@ fn add(x: i64, y: i64) -> i64 { x + y }
         assert_eq!(pr.number, 42);
         assert_eq!(pr.head_sha.len(), 40);
         assert_eq!(pr.base_sha.len(), 40);
-        assert_eq!(
-            pr.head_clone_url,
-            "https://github.com/example/repo.git"
-        );
+        assert_eq!(pr.head_clone_url, "https://github.com/example/repo.git");
         assert_eq!(pr.head_ref.as_deref(), Some("feature/x"));
         assert_eq!(pr.sender.as_deref(), Some("octocat"));
     }
@@ -3637,9 +3685,7 @@ fn add(x: i64, y: i64) -> i64 { x + y }
     #[test]
     fn is_sha_like_matches_short_and_long_hex() {
         assert!(is_sha_like("deadbeef"));
-        assert!(is_sha_like(
-            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-        ));
+        assert!(is_sha_like("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"));
         assert!(!is_sha_like("not-a-sha"));
         assert!(!is_sha_like("abc"));
         assert!(!is_sha_like(""));

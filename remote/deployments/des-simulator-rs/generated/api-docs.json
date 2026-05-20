@@ -1,0 +1,239 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "des-simulator-rs",
+  "language": "rust",
+  "routeCount": 13,
+  "routeTypeCounts": {
+    "service": 6,
+    "user-generated": 7
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "root"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/model/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "example_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/model/examples",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "examples_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/model/examples/:name",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "named_example_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/model/schema",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "schema_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/simulate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "simulate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/simulations/:job_id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "job_status"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/validate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "validate_with_metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/des-simulator-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

@@ -42,7 +42,9 @@ pub struct TenantService {
 }
 
 impl TenantService {
-    pub fn new(pool: PgPool) -> Self { Self { pool } }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
 
     pub async fn create(&self, input: CreateTenant) -> AppResult<Tenant> {
         // Validate region early so we fail fast on bad country/state codes.

@@ -1919,6 +1919,17 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     }
 }
 
+async fn api_docs_html() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl axum::response::IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
@@ -1945,6 +1956,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let app = Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         .route("/model/schema", get(schema_http))
         .route("/model/example", get(example_http))

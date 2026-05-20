@@ -2458,6 +2458,17 @@ async fn run_nats_loop(state: AppState) {
     }
 }
 
+async fn api_docs_html() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl axum::response::IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = Arc::new(service_config_from_env());
@@ -2514,6 +2525,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         .route("/pools", get(list_pools))
         .route("/pools/:pool", get(get_pool))

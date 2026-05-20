@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
@@ -74,11 +74,19 @@ impl IntoResponse for AppError {
             }
         };
 
-        let mut response =
-            (status, Json(ErrBody { error: code, message: self.to_string() })).into_response();
+        let mut response = (
+            status,
+            Json(ErrBody {
+                error: code,
+                message: self.to_string(),
+            }),
+        )
+            .into_response();
         if let Some(seconds) = retry_after {
             if let Ok(value) = seconds.to_string().parse() {
-                response.headers_mut().insert(axum::http::header::RETRY_AFTER, value);
+                response
+                    .headers_mut()
+                    .insert(axum::http::header::RETRY_AFTER, value);
             }
         }
         response
@@ -88,9 +96,10 @@ impl IntoResponse for AppError {
 impl AppError {
     pub fn retry_after_seconds(&self) -> Option<i64> {
         match self {
-            AppError::ProviderRateLimited { retry_after_seconds, .. } => {
-                Some((*retry_after_seconds).clamp(1, 3600))
-            }
+            AppError::ProviderRateLimited {
+                retry_after_seconds,
+                ..
+            } => Some((*retry_after_seconds).clamp(1, 3600)),
             _ => None,
         }
     }

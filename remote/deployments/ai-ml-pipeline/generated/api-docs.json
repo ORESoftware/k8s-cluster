@@ -1,0 +1,205 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "ai-ml-pipeline",
+  "language": "python",
+  "routeCount": 11,
+  "routeTypeCounts": {
+    "service": 7,
+    "user-generated": 4
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/analyze",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "do_POST"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ingest",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "do_POST"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/mdp/features",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "do_POST"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "do_GET"
+      ],
+      "sourceFiles": [
+        "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
+      ],
+      "notes": ""
+    }
+  ]
+}

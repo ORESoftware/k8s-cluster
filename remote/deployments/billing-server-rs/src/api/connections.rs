@@ -1,12 +1,15 @@
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::providers::connection::{CreateConnection, ProviderConnection, UpsertCredential};
 use crate::providers::ProviderAuthKind;
+use crate::providers::connection::{CreateConnection, ProviderConnection, UpsertCredential};
+use crate::providers::{
+    ProviderKind, coinbase::CoinbaseCredential, coinflow::CoinflowCredential, wise::WiseCredential,
+};
 use crate::scheduler::{CreateScheduledJob, ScheduleKind, ScheduledJob};
 use crate::state::AppState;
 
@@ -81,7 +84,10 @@ pub async fn sync_now(
         "/v1/tenants/{tenant_id}/scheduled-jobs/{}/runs?limit=1",
         job.id
     );
-    Ok((StatusCode::ACCEPTED, Json(SyncNowResponse { job, runs_url })))
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(SyncNowResponse { job, runs_url }),
+    ))
 }
 
 // --- API-key attach (Coinflow / Coinbase / Wise / any non-OAuth provider) --
@@ -134,9 +140,10 @@ pub async fn attach_api_key(
         )));
     }
 
-    let plaintext = serde_json::to_vec(&req.credential).map_err(|e| AppError::BadRequest(
-        format!("credential must be a JSON object: {e}"),
-    ))?;
+    let derived_external_account_id = validate_api_key_credential(conn.provider, &req.credential)?;
+
+    let plaintext = serde_json::to_vec(&req.credential)
+        .map_err(|e| AppError::BadRequest(format!("credential must be a JSON object: {e}")))?;
 
     let _ = state
         .connections
@@ -151,17 +158,23 @@ pub async fn attach_api_key(
         )
         .await?;
 
-    if let Some(ext) = req.external_account_id.as_deref() {
-        let _ = state.connections.set_external_account(connection_id, ext).await;
+    let external_account_id = req
+        .external_account_id
+        .as_deref()
+        .map(str::to_string)
+        .or(derived_external_account_id);
+
+    if let Some(ext) = external_account_id.as_deref() {
+        let _ = state
+            .connections
+            .set_external_account(connection_id, ext)
+            .await;
     }
 
     if let Some(env) = req.environment.as_deref() {
         let _ = state
             .connections
-            .merge_metadata(
-                connection_id,
-                serde_json::json!({ "environment": env }),
-            )
+            .merge_metadata(connection_id, serde_json::json!({ "environment": env }))
             .await;
     }
 
@@ -198,4 +211,58 @@ pub async fn attach_api_key(
             backstop_job_id: backstop.id,
         }),
     ))
+}
+
+fn validate_api_key_credential(
+    provider: ProviderKind,
+    credential: &serde_json::Value,
+) -> AppResult<Option<String>> {
+    match provider {
+        ProviderKind::Coinflow => {
+            let cred: CoinflowCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid coinflow credential: {e}")))?;
+            require_non_empty("coinflow.api_key", &cred.api_key)?;
+            require_non_empty("coinflow.merchant_id", &cred.merchant_id)?;
+            validate_environment("coinflow.environment", &cred.environment)?;
+            Ok(Some(cred.merchant_id))
+        }
+        ProviderKind::CoinbaseCommerce | ProviderKind::CoinbasePrime => {
+            let cred: CoinbaseCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid coinbase credential: {e}")))?;
+            require_non_empty("coinbase.api_key", &cred.api_key)?;
+            require_non_empty("coinbase.webhook_secret", &cred.webhook_secret)?;
+            Ok(None)
+        }
+        ProviderKind::Wise => {
+            let cred: WiseCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid wise credential: {e}")))?;
+            require_non_empty("wise.api_token", &cred.api_token)?;
+            require_non_empty("wise.profile_id", &cred.profile_id)?;
+            validate_environment("wise.environment", &cred.environment)?;
+            Ok(Some(cred.profile_id))
+        }
+        ProviderKind::Stripe
+        | ProviderKind::Paypal
+        | ProviderKind::Braintree
+        | ProviderKind::PlaidBank
+        | ProviderKind::SwiftWire
+        | ProviderKind::AchDirect
+        | ProviderKind::SolanaWallet => Ok(None),
+    }
+}
+
+fn require_non_empty(field: &str, value: &str) -> AppResult<()> {
+    if value.trim().is_empty() {
+        return Err(AppError::BadRequest(format!("{field} must not be empty")));
+    }
+    Ok(())
+}
+
+fn validate_environment(field: &str, value: &str) -> AppResult<()> {
+    match value.to_ascii_lowercase().as_str() {
+        "production" | "sandbox" => Ok(()),
+        other => Err(AppError::BadRequest(format!(
+            "{field} must be production or sandbox, got {other}"
+        ))),
+    }
 }

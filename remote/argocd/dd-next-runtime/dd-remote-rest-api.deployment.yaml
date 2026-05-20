@@ -47,6 +47,8 @@ spec:
               value: dd.remote.thread.*.tasks
             - name: NATS_TASK_STREAM
               value: DD_REMOTE_TASKS
+            - name: REST_API_DEFAULT_DISPATCH_MODE
+              value: queued
             - name: REST_STATUS_GLEAM_BROADCAST_URL
               value: http://dd-gleamlang-server.default.svc.cluster.local:8081/broadcast
             - name: REST_STATUS_RUST_BROADCAST_URL

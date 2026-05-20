@@ -31,7 +31,7 @@ func (LambdaFunction) Fields() []ent.Field {
 		field.String("display_name").MinLen(1).MaxLen(200).StorageKey("display_name"),
 		field.String("description").Default("").StorageKey("description"),
 		field.Enum("runtime").Values("nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell").StorageKey("runtime"),
-		field.String("entry_command").Default("env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs").StorageKey("entry_command"),
+		field.String("entry_command").Default("env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs").StorageKey("entry_command"),
 		field.String("function_body").MinLen(1).StorageKey("function_body"),
 		field.String("reuse_key").MaxLen(200).Optional().Nillable().StorageKey("reuse_key"),
 		field.Int32("idle_timeout_seconds").Min(1).Max(3600).Default(300).StorageKey("idle_timeout_seconds"),

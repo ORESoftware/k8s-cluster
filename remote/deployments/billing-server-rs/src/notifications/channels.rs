@@ -39,7 +39,11 @@ pub async fn deliver_webhook(
         req = req.header("x-billing-signature", format!("v1={}", hex::encode(tag)));
     }
 
-    let resp = req.body(body).send().await.map_err(|e| format!("http: {e}"))?;
+    let resp = req
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| format!("http: {e}"))?;
     let status = resp.status();
     if !status.is_success() {
         return Err(format!("webhook returned {}", status));
@@ -88,7 +92,10 @@ pub async fn deliver_slack(
     if !status.is_success() {
         return Err(format!("slack returned {}", status));
     }
-    Ok(WebhookDeliveryResult { provider_message_id: None, http_status: status.as_u16() })
+    Ok(WebhookDeliveryResult {
+        provider_message_id: None,
+        http_status: status.as_u16(),
+    })
 }
 
 pub async fn deliver_sms(

@@ -1446,6 +1446,17 @@ async fn get_build_logs(
     }
 }
 
+async fn api_docs_html() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl axum::response::IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
 #[tokio::main]
 async fn main() {
     let config = Arc::new(config_from_env());
@@ -1468,6 +1479,9 @@ async fn main() {
     let app = Router::new()
         .route("/", get(descriptor))
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         .route("/builds", get(list_builds).post(submit_build))
         .route("/builds/:job_id", get(get_build))

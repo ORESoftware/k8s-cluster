@@ -5,6 +5,7 @@ import gleam/http/request
 import gleam/http/response
 import gleam/int
 import gleam/string
+import gleam_lambda_runner/api_docs
 import gleam_lambda_runner/child_process
 import mist
 
@@ -55,6 +56,9 @@ fn route(
   case request.path_segments(req) {
     [] -> redirect("/home")
     ["home"] -> home_page()
+    ["docs", "api"] -> api_docs.html()
+    ["api", "docs"] -> api_docs.html()
+    ["api", "docs.json"] -> api_docs.json()
     ["healthz"] -> healthz()
     ["metrics"] -> metrics()
     ["invoke", function_id] ->

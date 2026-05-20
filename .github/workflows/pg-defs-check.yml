@@ -8,12 +8,22 @@ on:
       - 'remote/deployments/gleam-lambda-runner/**'
       - 'remote/deployments/gleam-mcp-server/**'
       - 'remote/deployments/gleamlang-server/**'
+      - 'remote/deployments/**/src/**'
+      - 'remote/deployments/**/nats-bridge.mjs'
       - 'remote/deployments/rest-api-rs/**'
       - 'remote/deployments/web-home-rs/**'
       - 'remote/tests/general/pg-defs-bindings.test.ts'
+      - 'remote/tests/general/pg-declarative-diff.test.ts'
       - 'remote/tests/general/pg-sql-centralized.test.ts'
+      - 'remote/tests/general/rest-api-route-parity.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
       - 'remote/tests/general/rust-pg-defs-wiring.test.ts'
+      - 'remote/tests/check-rest-api-route-parity.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'scripts/pg/diff/**'
+      - 'remote/deployments/**/generated/api-docs.*'
+      - 'remote/deployments/generated-api-docs-index.json'
+      - 'AGENTS.md'
       - '.github/workflows/pg-defs-check.yml'
   push:
     branches:
@@ -25,12 +35,22 @@ on:
       - 'remote/deployments/gleam-lambda-runner/**'
       - 'remote/deployments/gleam-mcp-server/**'
       - 'remote/deployments/gleamlang-server/**'
+      - 'remote/deployments/**/src/**'
+      - 'remote/deployments/**/nats-bridge.mjs'
       - 'remote/deployments/rest-api-rs/**'
       - 'remote/deployments/web-home-rs/**'
       - 'remote/tests/general/pg-defs-bindings.test.ts'
+      - 'remote/tests/general/pg-declarative-diff.test.ts'
       - 'remote/tests/general/pg-sql-centralized.test.ts'
+      - 'remote/tests/general/rest-api-route-parity.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
       - 'remote/tests/general/rust-pg-defs-wiring.test.ts'
+      - 'remote/tests/check-rest-api-route-parity.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'scripts/pg/diff/**'
+      - 'remote/deployments/**/generated/api-docs.*'
+      - 'remote/deployments/generated-api-docs-index.json'
+      - 'AGENTS.md'
       - '.github/workflows/pg-defs-check.yml'
 
 jobs:
@@ -80,6 +100,10 @@ jobs:
 
       - name: Enforce SQL file centralization
         run: pnpm run test:cli:pg-sql-centralized
+        working-directory: remote/tests
+
+      - name: Verify report-only declarative RDS diff tooling
+        run: pnpm run test:cli:pg-declarative-diff
         working-directory: remote/tests
 
       - name: Verify generated bindings are still consumed by every service
@@ -173,4 +197,8 @@ jobs:
       #   6. cargo test pg_contract passes (subset + table-name + status round-trip)
       - name: Verify Rust services compile + test against dd-pg-defs
         run: pnpm run test:cli:rust-pg-defs-wiring
+        working-directory: remote/tests
+
+      - name: Verify REST API route parity
+        run: pnpm run test:cli:rest-api-route-parity
         working-directory: remote/tests
