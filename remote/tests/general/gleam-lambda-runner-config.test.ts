@@ -88,6 +88,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(dockerfile, /WORKDIR \/app\/remote\/deployments\/gleam-lambda-runner/);
   assert.match(nodeRuntimeDockerfile, /nodejs-current/);
   assert.match(bashRuntimeDockerfile, /nodejs-current/);
+  assert.match(nodeRuntimeDockerfile, /ENV NODE_NO_WARNINGS=1/);
+  assert.match(bashRuntimeDockerfile, /ENV NODE_NO_WARNINGS=1/);
   assert.match(nodeRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "\/opt\/dd-lambda\/runner\.mjs"\]/);
   assert.match(bashRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "--allow-child-process", "\/opt\/dd-lambda\/runner\.mjs"\]/);
   assert.doesNotMatch(nodeRuntimeDockerfile, /"--allow-net"/);
@@ -121,6 +123,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(httpServer, /authConfigured/);
   assert.match(runtimeEnv, /-module\(lambda_runtime_env\)/);
   assert.match(runtimeEnv, /os:getenv\(Name\)/);
+  assert.match(httpServer, /NODE_NO_WARNINGS=1/);
   assert.match(httpServer, /node --permission --allow-net child-runtimes\/js-function-runner\.mjs/);
   assert.match(
     httpServer,
@@ -180,6 +183,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /host_command\(<<"bash">>\)/);
   assert.match(erlPort, /host_command_from_env/);
   assert.match(erlPort, /LAMBDA_NODEJS_HOST_COMMAND/);
+  assert.match(erlPort, /NODE_NO_WARNINGS=1/);
   assert.match(erlPort, /CONTAINER_POOL_NATS_URL/);
   assert.match(erlPort, /CONTAINER_POOL_NATS_SUBJECT_PREFIX/);
   assert.match(erlPort, /LAMBDA_PYTHON3_HOST_COMMAND/);
@@ -249,6 +253,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(restApi, /LAMBDA_IMAGE_BUILD_ENABLED/);
   assert.match(restApi, /LAMBDA_ALLOW_HOST_RUNTIMES/);
   assert.match(restApi, /nodejs-current/);
+  assert.match(restApi, /NODE_NO_WARNINGS=1/);
   assert.doesNotMatch(restApi, /node:22-alpine/);
   assert.match(restApi, /normalize_lambda_runtime_alias/);
   assert.match(restApi, /filter_map\(normalize_lambda_runtime_alias\)/);

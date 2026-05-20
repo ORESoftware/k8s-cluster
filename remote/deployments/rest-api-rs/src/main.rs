@@ -3242,10 +3242,10 @@ fn lambda_entry_command_for_runtime(runtime: &str) -> String {
         }
         "ruby" => "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
         "bash" => {
-            "env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs"
+            "env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs"
         }
         _ => {
-            "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
+            "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
         }
     }
     .to_string()
@@ -3662,6 +3662,7 @@ WORKDIR /opt/dd-lambda
 COPY runner.mjs ./runner.mjs
 COPY definition.json ./definition.json
 {label}
+ENV NODE_NO_WARNINGS=1
 USER 10001:10001
 ENTRYPOINT ["node", "--permission", "--allow-net", "--allow-child-process", "/opt/dd-lambda/runner.mjs"]
 "#
@@ -3678,6 +3679,7 @@ WORKDIR /opt/dd-lambda
 COPY runner.mjs ./runner.mjs
 COPY definition.json ./definition.json
 {label}
+ENV NODE_NO_WARNINGS=1
 USER 10001:10001
 ENTRYPOINT ["node", "--permission", "--allow-net", "/opt/dd-lambda/runner.mjs"]
 "#

@@ -271,7 +271,7 @@ supported_runtime(Runtime) ->
 host_command(<<"nodejs">>) ->
     host_command_from_env(
         "LAMBDA_NODEJS_HOST_COMMAND",
-        <<"env -i PATH=\"$PATH\" NODE_ENV=production NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net child-runtimes/js-function-runner.mjs">>
+        <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net child-runtimes/js-function-runner.mjs">>
     );
 host_command(<<"python3">>) ->
     host_command_from_env(
@@ -286,7 +286,7 @@ host_command(<<"ruby">>) ->
 host_command(<<"bash">>) ->
     host_command_from_env(
         "LAMBDA_BASH_HOST_COMMAND",
-        <<"env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs">>
+        <<"env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs">>
     );
 host_command(Runtime) ->
     {error, iolist_to_binary(["unsupported lambda runtime: ", Runtime])}.

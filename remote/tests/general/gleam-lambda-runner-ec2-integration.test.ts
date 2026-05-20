@@ -47,12 +47,12 @@ type BlockedCase = {
 
 const entryCommands: Record<RuntimeName, string> = {
   nodejs:
-    'env -i PATH="$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs',
+    'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs',
   python3:
     'env -i PATH="$PATH" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py',
   ruby: 'env -i PATH="$PATH" ruby child-runtimes/ruby-function-runner.rb',
   bash:
-    'env -i PATH="$PATH" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs',
+    'env -i PATH="$PATH" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs',
 };
 
 function shellQuote(value: string): string {
