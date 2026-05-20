@@ -303,11 +303,12 @@ jobs:
           PY
               ;;
             deploy-lambda-ui)
-              python3 - <<PY > /tmp/remote-k8s-commands.json
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
+          import os
           import shlex
 
-          rev = ${TARGET_REVISION@Q}
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
           script = r'''set -euo pipefail
           repo=/home/ec2-user/codes/dd/dd-next-1
           cd "$repo"
