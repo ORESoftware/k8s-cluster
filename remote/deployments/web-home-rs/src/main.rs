@@ -5470,6 +5470,7 @@ const WSS_TEST_CSS: &str = r###":root {
   --ok: #86efac;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   min-height: 100vh;
@@ -5666,7 +5667,7 @@ textarea {
 }
 .row {
   display: grid;
-  grid-template-columns: 92px 42px minmax(0, 1fr);
+  grid-template-columns: 116px 42px minmax(0, 1fr);
   gap: 8px;
   padding: 3px 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.08);
@@ -5676,11 +5677,15 @@ textarea {
 .row.warn { color: var(--warn); }
 .row.bad { color: var(--danger); }
 .row.meta { color: var(--muted); }
-.ts { color: var(--muted); }
+.ts {
+  color: var(--muted);
+  white-space: nowrap;
+}
 .dir {
   color: var(--text);
   opacity: 0.72;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 .msg {
   min-width: 0;
@@ -5706,7 +5711,7 @@ code {
 }
 @media (max-width: 560px) {
   .metrics { grid-template-columns: 1fr; }
-  .row { grid-template-columns: 82px 36px minmax(0, 1fr); }
+  .row { grid-template-columns: 104px 36px minmax(0, 1fr); }
 }
 "###;
 
