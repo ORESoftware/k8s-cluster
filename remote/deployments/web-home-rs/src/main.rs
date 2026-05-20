@@ -5460,6 +5460,7 @@ const WSS_TEST_CSS: &str = r###":root {
   --panel: #111923;
   --panel-2: #0f1720;
   --field: #0e1520;
+  --field-2: #0a1017;
   --line: rgba(148, 163, 184, 0.24);
   --text: #eef2f6;
   --muted: #a8b3c1;
@@ -5476,6 +5477,7 @@ body {
   color: var(--text);
   font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+a { color: inherit; text-decoration: none; }
 header {
   position: sticky;
   top: 0;
@@ -5505,8 +5507,17 @@ input, select, textarea, button {
 input:focus, select:focus, textarea:focus, button:focus { outline: 1px solid var(--accent); }
 button { cursor: pointer; background: var(--panel-2); }
 button:hover { background: #182032; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+  color: var(--muted);
+  border-color: var(--line);
+}
+button:disabled:hover { background: var(--panel-2); }
 button.primary { border-color: var(--accent); color: var(--accent); }
 button.danger { border-color: var(--danger); color: var(--danger); }
+#base { width: min(36vw, 320px); }
+#path { width: min(44vw, 460px); }
 .pill {
   display: inline-flex;
   align-items: center;
@@ -5526,11 +5537,54 @@ button.danger { border-color: var(--danger); color: var(--danger); }
   gap: 8px;
   flex-wrap: wrap;
 }
+.url-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+#url-preview {
+  display: block;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+#url-preview.bad { color: var(--danger); }
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(112px, 1fr));
+  gap: 8px;
+}
+.metric {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 23, 32, 0.72);
+}
+.metric strong {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.metric span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 0.78fr) minmax(420px, 1.22fr);
   gap: 14px;
   padding: 16px;
+  align-items: start;
 }
 .panel {
   min-width: 0;
@@ -5539,42 +5593,100 @@ button.danger { border-color: var(--danger); color: var(--danger); }
   background: var(--panel);
   overflow: hidden;
 }
-.panel h2 {
-  margin: 0;
+.panel.full { grid-column: 1 / -1; }
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 10px 12px;
-  font-size: 13px;
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
 }
-.panel-body { display: grid; gap: 10px; padding: 12px; }
+.panel h2 {
+  margin: 0;
+  font-size: 13px;
+}
+.panel > h2 {
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+.panel-body { display: grid; gap: 12px; padding: 12px; }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .field-wide { grid-column: 1 / -1; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.quick-links code { color: #d7fbf4; }
+.detail {
+  display: block;
+  min-height: 30px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--field-2);
+  overflow-wrap: anywhere;
+}
+.payload-tools {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.checkline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.checkline input { width: auto; margin: 0; }
+.log-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+.log-tools select { min-width: 108px; }
 textarea {
   width: 100%;
-  min-height: 168px;
+  min-height: 248px;
   resize: vertical;
   line-height: 1.45;
 }
 .log {
   margin: 0;
-  min-height: 488px;
-  max-height: calc(100vh - 210px);
+  min-height: 432px;
+  max-height: calc(100vh - 248px);
   overflow: auto;
-  padding: 10px;
+  padding: 8px 10px 12px;
   background: #090f16;
   color: var(--text);
-  border-top: 1px solid var(--line);
   white-space: pre-wrap;
   word-break: break-word;
 }
-.row { padding: 2px 0; }
+.row {
+  display: grid;
+  grid-template-columns: 92px 42px minmax(0, 1fr);
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
 .row.in { color: var(--ok); }
 .row.out { color: var(--accent); }
 .row.warn { color: var(--warn); }
 .row.bad { color: var(--danger); }
 .row.meta { color: var(--muted); }
 .ts { color: var(--muted); }
+.dir {
+  color: var(--text);
+  opacity: 0.72;
+  text-transform: uppercase;
+}
+.msg {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 code {
   display: inline-block;
   max-width: 100%;
@@ -5587,14 +5699,20 @@ code {
 }
 @media (max-width: 860px) {
   .grid { grid-template-columns: 1fr; }
+  .metrics { grid-template-columns: 1fr 1fr; }
   .fields { grid-template-columns: 1fr; }
+  #base, #path { width: 100%; }
   .log { min-height: 320px; max-height: none; }
+}
+@media (max-width: 560px) {
+  .metrics { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 82px 36px minmax(0, 1fr); }
 }
 "###;
 
 const WSS_TEST_BODY: &str = r###"<header>
   <div class="topline">
-    <h1>wss test lab</h1>
+    <h1>websocket lab</h1>
     <label>preset
       <select id="preset">
         <option value="gleam">Gleam fan-out</option>
@@ -5604,18 +5722,27 @@ const WSS_TEST_BODY: &str = r###"<header>
       </select>
     </label>
     <label>base
-      <input id="base" placeholder="same origin" style="width: 260px" />
+      <input id="base" placeholder="same origin" />
     </label>
     <label>path
-      <input id="path" style="width: 330px" />
+      <input id="path" />
     </label>
     <span id="status" class="pill warn">idle</span>
+    <span id="health-pill" class="pill warn">health unchecked</span>
     <span id="counter" class="pill">0 frames</span>
     <span id="sent-counter" class="pill">0 sent</span>
     <span id="recv-counter" class="pill">0 recv</span>
   </div>
-  <div class="topline">
+  <div class="url-strip">
+    <span>target</span>
     <code id="url-preview">ws://...</code>
+  </div>
+  <div class="metrics">
+    <div class="metric"><strong>ready state</strong><span id="ready-state">closed</span></div>
+    <div class="metric"><strong>latency</strong><span id="latency">-</span></div>
+    <div class="metric"><strong>uptime</strong><span id="uptime">-</span></div>
+    <div class="metric"><strong>interval</strong><span id="interval-state">stopped</span></div>
+    <div class="metric"><strong>last event</strong><span id="last-event">idle</span></div>
   </div>
 </header>
 
@@ -5624,16 +5751,16 @@ const WSS_TEST_BODY: &str = r###"<header>
     <h2>connection</h2>
     <div class="panel-body">
       <div class="fields">
-        <label>thread id<input id="thread-id" /></label>
-        <label>task id<input id="task-id" /></label>
-        <label>room<input id="room-id" /></label>
-        <label>peer<input id="peer-id" /></label>
-        <label>user id<input id="user-id" /></label>
-        <label>device id<input id="device-id" /></label>
-        <label>conversation id<input id="conv-id" /></label>
+        <label class="preset-field" data-presets="gleam">thread id<input id="thread-id" /></label>
+        <label class="preset-field" data-presets="gleam">task id<input id="task-id" /></label>
+        <label class="preset-field" data-presets="webrtc">room<input id="room-id" /></label>
+        <label class="preset-field" data-presets="webrtc">peer<input id="peer-id" /></label>
+        <label class="preset-field" data-presets="gcs fsrx">user id<input id="user-id" /></label>
+        <label class="preset-field" data-presets="gcs fsrx">device id<input id="device-id" /></label>
+        <label class="preset-field" data-presets="gcs fsrx">conversation id<input id="conv-id" /></label>
         <label>burst count<input id="burst-count" type="number" min="1" max="500" value="12" /></label>
         <label>interval ms<input id="interval-ms" type="number" min="50" max="60000" value="1000" /></label>
-        <label>gcs route
+        <label class="preset-field" data-presets="gcs">gcs route
           <select id="gcs-route">
             <option value="conv">conv</option>
             <option value="user">user</option>
@@ -5648,7 +5775,8 @@ const WSS_TEST_BODY: &str = r###"<header>
         <button id="check-health" type="button">health</button>
         <button id="clear" type="button">clear</button>
       </div>
-      <div class="actions">
+      <output id="health-detail" class="detail">health unchecked</output>
+      <div class="actions quick-links">
         <a href="/presence-test?user=alice&amp;device=d1&amp;autoconnect=1"><code>/presence-test</code></a>
         <a href="/gleam/home"><code>/gleam/home</code></a>
         <a href="/webrtc/"><code>/webrtc/</code></a>
@@ -5662,6 +5790,13 @@ const WSS_TEST_BODY: &str = r###"<header>
     <h2>frames</h2>
     <div class="panel-body">
       <textarea id="payload" spellcheck="false"></textarea>
+      <div class="payload-tools">
+        <div class="actions">
+          <button id="format-payload" type="button">format JSON</button>
+          <button id="compact-payload" type="button">compact JSON</button>
+          <button id="copy-payload" type="button">copy payload</button>
+        </div>
+      </div>
       <div class="actions">
         <button id="send" class="primary" type="button">send</button>
         <button id="send-ping" type="button">ping</button>
@@ -5674,8 +5809,24 @@ const WSS_TEST_BODY: &str = r###"<header>
     </div>
   </section>
 
-  <section class="panel" style="grid-column: 1 / -1">
-    <h2>log</h2>
+  <section class="panel full">
+    <div class="panel-title">
+      <h2>log</h2>
+      <div class="log-tools">
+        <label>filter
+          <select id="log-filter">
+            <option value="all">all</option>
+            <option value="in">in</option>
+            <option value="out">out</option>
+            <option value="meta">meta</option>
+            <option value="warn">warn</option>
+            <option value="bad">bad</option>
+          </select>
+        </label>
+        <label class="checkline"><input id="autoscroll" type="checkbox" checked />autoscroll</label>
+        <button id="copy-log" type="button">copy log</button>
+      </div>
+    </div>
     <pre id="log" class="log"></pre>
   </section>
 </main>"###;
@@ -5691,17 +5842,31 @@ const defaults = {
   deviceId: "65c48f2f47d56fec05a41b39",
   convId: "65c48f2f47d56fec05a41b3a",
 };
-const state = { ws: null, frames: 0, sent: 0, received: 0, intervalTimer: null };
+const presets = ["gleam", "webrtc", "gcs", "fsrx"];
+const sendControlIds = ["send", "send-ping", "send-hello", "send-sample", "send-burst", "start-interval"];
+const state = {
+  ws: null,
+  frames: 0,
+  sent: 0,
+  received: 0,
+  intervalTimer: null,
+  uptimeTimer: null,
+  openedAt: 0,
+  connectStartedAt: 0,
+  lastSentAt: 0,
+  latencyMs: null,
+  lastEvent: "idle",
+};
 
 function sameOriginWsBase() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}`;
 }
 function httpToWs(value) {
-  return value.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
+  return value.replace(/^http:\/\//i, "ws://").replace(/^https:\/\//i, "wss://");
 }
 function wsToHttp(value) {
-  return value.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://");
+  return value.replace(/^ws:\/\//i, "http://").replace(/^wss:\/\//i, "https://");
 }
 function trimSlash(value) {
   return value.replace(/\/+$/, "");
@@ -5709,24 +5874,109 @@ function trimSlash(value) {
 function ensureLeadingSlash(value) {
   return value.startsWith("/") ? value : "/" + value;
 }
+function normalizeWsBase(value) {
+  let raw = value.trim() || sameOriginWsBase();
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    raw = `${location.protocol === "https:" ? "wss" : "ws"}://${raw}`;
+  }
+  return trimSlash(httpToWs(raw));
+}
 function ts() {
   const d = new Date();
   return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
 }
-function log(text, cls = "meta") {
+function rowKindLabel(kind) {
+  return ({ in: "in", out: "out", meta: "meta", warn: "warn", bad: "bad" })[kind] || kind;
+}
+function shouldShowRow(row) {
+  const filter = $("log-filter").value;
+  return filter === "all" || row.dataset.kind === filter;
+}
+function applyLogFilter() {
+  for (const row of $("log").children) row.hidden = !shouldShowRow(row);
+}
+function setLastEvent(text) {
+  state.lastEvent = String(text || "idle").replace(/\s+/g, " ").slice(0, 96);
+  $("last-event").textContent = state.lastEvent;
+}
+function log(text, kind = "meta") {
   const row = document.createElement("div");
-  row.className = "row " + cls;
+  row.className = "row " + kind;
+  row.dataset.kind = kind;
   const stamp = document.createElement("span");
   stamp.className = "ts";
-  stamp.textContent = ts() + " ";
-  row.append(stamp, document.createTextNode(text));
+  stamp.textContent = ts();
+  const dir = document.createElement("span");
+  dir.className = "dir";
+  dir.textContent = rowKindLabel(kind);
+  const msg = document.createElement("span");
+  msg.className = "msg";
+  msg.textContent = String(text);
+  row.dataset.copy = `${stamp.textContent} ${dir.textContent} ${msg.textContent}`;
+  row.append(stamp, dir, msg);
   $("log").appendChild(row);
-  while ($("log").childNodes.length > 500) $("log").removeChild($("log").firstChild);
-  $("log").scrollTop = $("log").scrollHeight;
+  while ($("log").childNodes.length > 600) $("log").removeChild($("log").firstChild);
+  row.hidden = !shouldShowRow(row);
+  if ($("autoscroll").checked) $("log").scrollTop = $("log").scrollHeight;
+  setLastEvent(`${dir.textContent} ${msg.textContent}`);
+}
+function formatDuration(ms) {
+  if (!ms || ms < 0) return "-";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainder}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+function readyStateText() {
+  if (!state.ws) return "closed";
+  return ["connecting", "open", "closing", "closed"][state.ws.readyState] || "unknown";
+}
+function refreshMetrics() {
+  $("ready-state").textContent = readyStateText();
+  $("latency").textContent = state.latencyMs === null ? "-" : `${state.latencyMs} ms`;
+  $("uptime").textContent = state.openedAt ? formatDuration(Date.now() - state.openedAt) : "-";
+  $("interval-state").textContent = state.intervalTimer === null ? "stopped" : "running";
+  $("last-event").textContent = state.lastEvent;
+}
+function startUptimeTimer() {
+  stopUptimeTimer();
+  state.openedAt = Date.now();
+  state.uptimeTimer = setInterval(refreshMetrics, 1000);
+  refreshMetrics();
+}
+function stopUptimeTimer() {
+  if (state.uptimeTimer !== null) clearInterval(state.uptimeTimer);
+  state.uptimeTimer = null;
+  state.openedAt = 0;
+  refreshMetrics();
+}
+function setDisabled(id, disabled) {
+  const el = $(id);
+  if (el) el.disabled = disabled;
+}
+function updateControls() {
+  const ready = state.ws ? state.ws.readyState : WebSocket.CLOSED;
+  const isOpen = ready === WebSocket.OPEN;
+  setDisabled("connect", ready === WebSocket.CONNECTING || isOpen);
+  setDisabled("disconnect", !state.ws || ready === WebSocket.CLOSED);
+  for (const id of sendControlIds) setDisabled(id, !isOpen);
+  setDisabled("start-interval", !isOpen || state.intervalTimer !== null);
+  setDisabled("stop-interval", state.intervalTimer === null);
+  refreshMetrics();
 }
 function setStatus(text, cls = "warn") {
   $("status").textContent = text;
   $("status").className = "pill " + cls;
+  setLastEvent(text);
+  updateControls();
+}
+function setHealth(text, cls = "warn", detail = text) {
+  $("health-pill").textContent = text;
+  $("health-pill").className = "pill " + cls;
+  $("health-detail").textContent = detail;
 }
 function updateCounters() {
   $("counter").textContent = `${state.frames} frames`;
@@ -5740,15 +5990,28 @@ function countFrame(direction) {
   updateCounters();
 }
 function pretty(raw) {
-  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (_) { return String(raw); }
+  if (typeof raw !== "string") return String(raw);
+  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (_) { return raw; }
+}
+function updatePresetFields() {
+  const preset = $("preset").value;
+  for (const field of document.querySelectorAll("[data-presets]")) {
+    field.hidden = !field.dataset.presets.split(/\s+/).includes(preset);
+  }
+}
+function gcsRouteId() {
+  const route = $("gcs-route").value;
+  if (route === "user") return $("user-id").value;
+  if (route === "device") return $("device-id").value;
+  return $("conv-id").value;
 }
 function setGcsPath() {
   $("path").value = `/gcs/ws/${$("gcs-route").value}/${encodeURIComponent(gcsRouteId())}`;
 }
-
 function applyPreset() {
   const preset = $("preset").value;
-  if (!$("base").value) $("base").placeholder = sameOriginWsBase();
+  $("base").placeholder = sameOriginWsBase();
+  updatePresetFields();
   if (preset === "gleam") {
     $("path").value = "/gleam/ws";
     $("payload").value = "ping";
@@ -5776,20 +6039,13 @@ function applyPreset() {
     }, null, 2);
   }
   updateUrlPreview();
+  updateControls();
 }
-
-function gcsRouteId() {
-  const route = $("gcs-route").value;
-  if (route === "user") return $("user-id").value;
-  if (route === "device") return $("device-id").value;
-  return $("conv-id").value;
-}
-
 function buildUrl() {
   const preset = $("preset").value;
-  const base = trimSlash(httpToWs($("base").value.trim() || sameOriginWsBase()));
+  const base = normalizeWsBase($("base").value);
   if (preset === "gcs") setGcsPath();
-  const path = ensureLeadingSlash($("path").value.trim());
+  const path = ensureLeadingSlash($("path").value.trim() || "/");
   const url = new URL(base + path);
 
   if (preset === "gleam") {
@@ -5806,11 +6062,15 @@ function buildUrl() {
 
   return url.toString();
 }
-
 function updateUrlPreview() {
-  $("url-preview").textContent = buildUrl();
+  try {
+    $("url-preview").textContent = buildUrl();
+    $("url-preview").classList.remove("bad");
+  } catch (error) {
+    $("url-preview").textContent = "invalid target: " + String(error.message || error);
+    $("url-preview").classList.add("bad");
+  }
 }
-
 function healthPath() {
   const preset = $("preset").value;
   if (preset === "gleam") return "/gleam/healthz";
@@ -5818,77 +6078,122 @@ function healthPath() {
   if (preset === "gcs") return "/gcs/ws-health";
   return "/fsws/healthz";
 }
-
 function httpBase() {
-  const raw = $("base").value.trim();
-  if (!raw) return location.origin;
-  return trimSlash(wsToHttp(httpToWs(raw)));
+  return trimSlash(wsToHttp(normalizeWsBase($("base").value)));
 }
-
 async function checkHealth() {
   const url = httpBase() + healthPath();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
+  setHealth("checking", "warn", url);
   log("GET " + url, "meta");
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
     const text = await response.text();
-    log(`health ${response.status}: ${text.slice(0, 600)}`, response.ok ? "in" : "bad");
+    const summary = text.slice(0, 600) || response.statusText;
+    setHealth(`health ${response.status}`, response.ok ? "ok" : "bad", summary);
+    log(`health ${response.status}: ${summary}`, response.ok ? "in" : "bad");
   } catch (error) {
-    log("health error: " + String(error), "bad");
+    const message = "health error: " + String(error);
+    setHealth("health error", "bad", message);
+    log(message, "bad");
+  } finally {
+    clearTimeout(timeout);
   }
 }
-
 function connect() {
-  disconnect();
-  const url = buildUrl();
+  let url;
+  try {
+    url = buildUrl();
+  } catch (error) {
+    log("invalid target: " + String(error.message || error), "bad");
+    updateUrlPreview();
+    return;
+  }
+  if (state.ws && state.ws.readyState !== WebSocket.CLOSED) disconnect();
   const ws = new WebSocket(url);
   state.ws = ws;
+  state.connectStartedAt = performance.now();
+  state.latencyMs = null;
   setStatus("connecting", "warn");
   log("open " + url, "meta");
   ws.onopen = () => {
+    if (state.ws !== ws) return;
+    state.latencyMs = Math.round(performance.now() - state.connectStartedAt);
+    startUptimeTimer();
     setStatus("open", "ok");
-    log("connected", "meta");
+    log(`connected in ${state.latencyMs}ms`, "meta");
     if ($("preset").value === "webrtc") sendHello();
   };
   ws.onmessage = (event) => {
+    if (state.ws !== ws) return;
+    if (state.lastSentAt) {
+      state.latencyMs = Math.round(performance.now() - state.lastSentAt);
+      state.lastSentAt = 0;
+      refreshMetrics();
+    }
     countFrame("in");
-    log("in  " + pretty(event.data), "in");
+    log(pretty(event.data), "in");
   };
   ws.onerror = () => {
+    if (state.ws !== ws) return;
     setStatus("error", "bad");
-    log("websocket error; check browser devtools network panel", "bad");
+    log("websocket error", "bad");
   };
   ws.onclose = (event) => {
+    if (state.ws !== ws) return;
     stopInterval();
+    state.ws = null;
+    stopUptimeTimer();
     setStatus(`closed ${event.code}`, event.code === 1000 ? "warn" : "bad");
-    log(`closed code=${event.code} reason="${event.reason || ""}"`, "warn");
-    if (state.ws === ws) state.ws = null;
+    log(`closed code=${event.code} reason="${event.reason || ""}"`, event.code === 1000 ? "warn" : "bad");
+    updateControls();
   };
+  updateControls();
 }
-
 function disconnect() {
   stopInterval();
-  if (state.ws) {
-    try { state.ws.close(1000, "ui disconnect"); } catch (_) {}
-    state.ws = null;
-  }
-  setStatus("idle", "warn");
-}
-
-function sendRaw(raw) {
-  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-    log("not connected", "bad");
+  if (!state.ws) {
+    stopUptimeTimer();
+    setStatus("idle", "warn");
     return;
   }
-  state.ws.send(raw);
-  countFrame("out");
-  log("out " + pretty(raw), "out");
+  if (state.ws.readyState === WebSocket.CLOSED) {
+    state.ws = null;
+    stopUptimeTimer();
+    setStatus("idle", "warn");
+    return;
+  }
+  stopUptimeTimer();
+  setStatus("closing", "warn");
+  try { state.ws.close(1000, "ui disconnect"); } catch (_) {}
+  updateControls();
 }
-
+function isOpen() {
+  return state.ws && state.ws.readyState === WebSocket.OPEN;
+}
+function sendRaw(raw) {
+  if (!isOpen()) {
+    log("not connected", "bad");
+    updateControls();
+    return false;
+  }
+  try {
+    state.ws.send(raw);
+  } catch (error) {
+    log("send error: " + String(error), "bad");
+    return false;
+  }
+  state.lastSentAt = performance.now();
+  countFrame("out");
+  log(pretty(raw), "out");
+  updateControls();
+  return true;
+}
 function sendPayload() {
   const raw = $("payload").value;
   if (raw.trim()) sendRaw(raw);
 }
-
 function sendPing() {
   if ($("preset").value === "webrtc") {
     sendRaw(JSON.stringify({ type: "ping" }));
@@ -5896,7 +6201,6 @@ function sendPing() {
     sendRaw("ping");
   }
 }
-
 function sendHello() {
   if ($("preset").value === "webrtc") {
     sendRaw(JSON.stringify({
@@ -5907,7 +6211,6 @@ function sendHello() {
     sendRaw("hello from web-home-rs/wss-test");
   }
 }
-
 function sampleFrame(index = null) {
   if ($("preset").value === "gleam") {
     return JSON.stringify({
@@ -5945,34 +6248,56 @@ function sampleFrame(index = null) {
     payload: index === null ? "sample from wss-test" : `burst payload ${index}`
   });
 }
-
 function sendSample() {
   sendRaw(sampleFrame());
 }
-
 function sendBurst() {
-  const count = Math.min(500, Math.max(1, Number.parseInt($("burst-count").value, 10) || 1));
-  for (let i = 0; i < count; i += 1) {
-    sendRaw(sampleFrame(i + 1));
+  if (!isOpen()) {
+    log("not connected", "bad");
+    return;
   }
+  const count = Math.min(500, Math.max(1, Number.parseInt($("burst-count").value, 10) || 1));
+  for (let i = 0; i < count; i += 1) sendRaw(sampleFrame(i + 1));
 }
-
 function stopInterval() {
   if (state.intervalTimer !== null) {
     clearInterval(state.intervalTimer);
     state.intervalTimer = null;
     log("interval stopped", "meta");
+    updateControls();
   }
 }
-
 function startInterval() {
+  if (!isOpen()) {
+    log("not connected", "bad");
+    return;
+  }
   stopInterval();
   const ms = Math.min(60000, Math.max(50, Number.parseInt($("interval-ms").value, 10) || 1000));
   state.intervalTimer = setInterval(sendSample, ms);
   log(`interval started ${ms}ms`, "meta");
+  updateControls();
+}
+function formatPayload(compact = false) {
+  try {
+    const parsed = JSON.parse($("payload").value);
+    $("payload").value = JSON.stringify(parsed, null, compact ? 0 : 2);
+    log(compact ? "payload compacted" : "payload formatted", "meta");
+  } catch (error) {
+    log("payload is not JSON: " + String(error.message || error), "bad");
+  }
+}
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    log(`copied ${label}`, "meta");
+  } catch (error) {
+    log(`copy ${label} failed: ${String(error.message || error)}`, "bad");
+  }
 }
 
-$("preset").value = params.get("preset") || "gleam";
+const requestedPreset = params.get("preset") || "gleam";
+$("preset").value = presets.includes(requestedPreset) ? requestedPreset : "gleam";
 $("base").value = params.get("base") || "";
 $("thread-id").value = params.get("threadId") || defaults.threadId;
 $("task-id").value = params.get("taskId") || defaults.taskId;
@@ -5983,12 +6308,15 @@ $("device-id").value = params.get("deviceId") || defaults.deviceId;
 $("conv-id").value = params.get("convId") || defaults.convId;
 
 $("preset").addEventListener("change", applyPreset);
-$("gcs-route").addEventListener("change", applyPreset);
+$("gcs-route").addEventListener("change", () => {
+  if ($("preset").value === "gcs") setGcsPath();
+  updateUrlPreview();
+});
 for (const id of ["base", "path", "thread-id", "task-id", "room-id", "peer-id", "user-id", "device-id", "conv-id"]) {
   $(id).addEventListener("input", updateUrlPreview);
 }
 for (const id of ["burst-count", "interval-ms"]) {
-  $(id).addEventListener("input", updateUrlPreview);
+  $(id).addEventListener("input", updateControls);
 }
 $("connect").onclick = connect;
 $("disconnect").onclick = disconnect;
@@ -5999,6 +6327,10 @@ $("send-sample").onclick = sendSample;
 $("send-burst").onclick = sendBurst;
 $("start-interval").onclick = startInterval;
 $("stop-interval").onclick = stopInterval;
+$("format-payload").onclick = () => formatPayload(false);
+$("compact-payload").onclick = () => formatPayload(true);
+$("copy-payload").onclick = () => copyText($("payload").value, "payload");
+$("copy-log").onclick = () => copyText(Array.from($("log").children).map((row) => row.dataset.copy || row.textContent).join("\n"), "log");
 $("check-health").onclick = () => { checkHealth().catch((error) => log("health error: " + String(error), "bad")); };
 $("clear").onclick = () => {
   $("log").textContent = "";
@@ -6006,20 +6338,27 @@ $("clear").onclick = () => {
   state.sent = 0;
   state.received = 0;
   updateCounters();
+  setLastEvent("cleared");
 };
-$("copy-url").onclick = async () => {
+$("copy-url").onclick = () => {
   try {
-    await navigator.clipboard.writeText(buildUrl());
-    log("copied url", "meta");
-  } catch (_) {
-    log("copy failed", "bad");
+    copyText(buildUrl(), "url");
+  } catch (error) {
+    log("copy url failed: " + String(error.message || error), "bad");
   }
 };
+$("log-filter").addEventListener("change", applyLogFilter);
+$("autoscroll").addEventListener("change", () => {
+  if ($("autoscroll").checked) $("log").scrollTop = $("log").scrollHeight;
+});
 $("payload").addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") sendPayload();
 });
 
 applyPreset();
+updateCounters();
+setHealth("health unchecked", "warn");
+log("ready", "meta");
 window.addEventListener("beforeunload", disconnect);
 if (params.get("autoconnect") === "1") setTimeout(connect, 50);
 "###;
