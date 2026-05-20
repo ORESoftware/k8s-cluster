@@ -1,0 +1,162 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "gleam-lambda-runner",
+  "language": "gleam",
+  "routeCount": 9,
+  "routeTypeCounts": {
+    "service": 5,
+    "user-generated": 4
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/check",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/destroy/:reuse_key",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/home",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/invoke/:function_id",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": "Method is inferred from route body; inspect source for exact method guard."
+    }
+  ]
+}
