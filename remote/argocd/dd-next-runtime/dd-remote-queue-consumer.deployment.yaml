@@ -49,6 +49,8 @@ spec:
               value: DD_REMOTE_TASKS
             - name: NATS_TASK_CONSUMER
               value: dd-remote-thread-preparer
+            - name: NATS_EVENT_SUBJECT
+              value: dd.remote.events
             - name: NATS_TASK_MAX_ACK_PENDING
               value: '256'
             - name: NATS_TASK_ACK_WAIT_SECONDS
@@ -63,8 +65,6 @@ spec:
               value: http://dd-container-pool.default.svc.cluster.local:8102
             - name: QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS
               value: '420'
-            - name: QUEUE_CONSUMER_FALLBACK_REST_DISPATCH
-              value: 'false'
             - name: QUEUE_CONSUMER_RECEIPTS_DIR
               value: /tmp/dd-remote-queue-consumer/tasks
           envFrom:

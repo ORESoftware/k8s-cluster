@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-19-worker-scheduling-diagnostics'
+        dd.dev/telemetry-revision: '2026-05-19-status-ws-direct-fanout'
       labels:
         app: dd-remote-rest-api
     spec:
@@ -47,6 +47,22 @@ spec:
               value: dd.remote.thread.*.tasks
             - name: NATS_TASK_STREAM
               value: DD_REMOTE_TASKS
+            - name: REST_STATUS_GLEAM_BROADCAST_URL
+              value: http://dd-gleamlang-server.default.svc.cluster.local:8081/broadcast
+            - name: REST_STATUS_RUST_BROADCAST_URL
+              value: http://dd-webrtc-signaling.default.svc.cluster.local:8095/runtime/broadcast
+            - name: REST_STATUS_GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
+                  optional: true
+            - name: REST_STATUS_RUST_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
             - name: THREAD_RUNTIME_NAMESPACE
               value: default
             - name: THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED

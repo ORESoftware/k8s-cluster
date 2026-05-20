@@ -6,11 +6,10 @@ This service is intentionally named a broker, not a proxy. It owns the long-run 
 between browser/API calls and per-thread worker Deployments:
 
 - accepts authenticated task dispatch requests from the gateway
-- publishes the task to NATS JetStream on `dd.remote.thread.<threadId>.tasks`
-- emits `dd.remote.orchestrator.wakeup`
 - checks whether the deterministic `dd-thread-<short>` worker is already healthy
-- direct-posts to that worker only when it is awake
-- scales the worker Deployment to `1` when it is not awake
+- direct-posts to that worker only when it is awake, without also publishing a task to NATS
+- otherwise publishes the task to NATS JetStream on `dd.remote.thread.<threadId>.tasks`
+- emits `dd.remote.orchestrator.wakeup` only for the queued path
 
 Initial public route:
 

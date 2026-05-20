@@ -117,7 +117,7 @@ RUN --mount=type=secret,id=github_deploy_key,uid=1000,mode=0600 \
       && chmod 600 /home/node/.ssh/id_ed25519 \
       && touch /home/node/.ssh/known_hosts \
       && GIT_SSH_COMMAND="ssh -F /dev/null -i /home/node/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/node/.ssh/known_hosts" \
-        git clone --depth 50 --branch "$DD_REPO_REF" "$DD_REPO_URL" repo-template \
+        git clone --depth 1 --branch "$DD_REPO_REF" "$DD_REPO_URL" repo-template \
       && cd repo-template \
       && if [ -f package.json ]; then \
         pnpm install --store-dir /home/node/repo-template/.pnpm-store --frozen-lockfile; \
@@ -138,8 +138,8 @@ COPY --from=builder --chown=node:node /build/package.json /build/pnpm-lock.yaml 
 COPY --from=builder --chown=node:node /build/node_modules ./node_modules
 COPY --from=builder --chown=node:node /build/dist ./dist
 
-# Container entrypoint — handles git fetch + workspace sync on start, then
-# launches the server. See entrypoint.sh for the full flow.
+# Container entrypoint — writes runtime credentials, refreshes remote refs,
+# then launches the server. See entrypoint.sh for the full flow.
 COPY --chown=node:node --chmod=0755 entrypoint.sh ./entrypoint.sh
 
 # --- Runtime config ---

@@ -25,8 +25,8 @@ etc.) would live as siblings.
 
 There are also runtime siblings for queueing, scheduling, and optimization:
 
-- [`deployments/queue-consumer-rs/`](./deployments/queue-consumer-rs/) — Rust NATS shadow consumer that prepares UUID-bound
-  thread workers and de-dupes taskIds.
+- [`deployments/queue-consumer-rs/`](./deployments/queue-consumer-rs/) — Rust NATS queue consumer that hands
+  queued tasks to repo-scoped warm workers and de-dupes taskIds.
 - [`deployments/idle-reaper-rs/`](./deployments/idle-reaper-rs/) — Rust maintenance supervisor for idle sweeping, cluster
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
 - [`deployments/mdp-optimizer-rs/`](./deployments/mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
@@ -167,10 +167,16 @@ cluster, only the REST API needs to point at that internal service.
 
 `dd-agent-worker-broker` is the intended long-run home for Node.js worker lifecycle dispatch. The
 REST API still owns the existing `/api/agents/threads/:threadId/tasks` path during migration, while
-the broker exposes `/api/agent-worker/threads/:threadId/tasks` for NATS-first dispatch, wakeup, and
-direct-if-awake handoff to the pinned worker. Until the UI is moved over, it is acceptable for the
-REST API to keep brokering worker calls; after the broker path is proven, the REST API should shed
-worker wake/dispatch/stream responsibilities and stay focused on data/API ownership.
+the broker exposes `/api/agent-worker/threads/:threadId/tasks` and chooses either direct-if-awake
+handoff to the pinned worker or NATS queued dispatch, never both. Until the UI is moved over, it is
+acceptable for the REST API to keep brokering worker calls; after the broker path is proven, the
+REST API should shed worker wake/dispatch/stream responsibilities and stay focused on data/API
+ownership.
+
+For queued dispatch, REST status visibility is not NATS-only. The REST API also posts `task-event`
+status envelopes directly to the Gleam websocket broadcaster and the Rust WebRTC runtime broadcaster;
+the `/agents/threads` client listens to both and filters/dedupes by `threadId`, `taskId`, and
+`messageId`.
 
 Temporary gateway auth is intentionally simple during bootstrap: protected ops paths only pass when
 the request includes the configured dd gateway auth header. Public responses must not reveal that

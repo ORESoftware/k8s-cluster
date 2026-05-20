@@ -193,7 +193,16 @@ const config = {
 type ClaudeWrappedEvent = BusEvent['event'] & Extract<AgentRunnerEvent, { kind: 'claude' }>;
 
 type WrappedEvent =
-  | (BusEvent['event'] & { kind: 'status'; status: string; message?: string })
+  | (BusEvent['event'] & {
+      kind: 'status';
+      status: string;
+      message?: string;
+      queueDepth?: number;
+      queuePosition?: number;
+      blockedByTaskId?: string;
+      blockedByTaskIds?: string[];
+      sessionId?: string;
+    })
   | ClaudeWrappedEvent
   | (BusEvent['event'] & { kind: 'stderr'; text: string })
   | (BusEvent['event'] & { kind: 'error'; message: string })
@@ -233,6 +242,8 @@ type ThreadSession = {
   ready: Promise<void>;
   queue: Promise<void>;
   taskIds: Set<string>;
+  queuedTaskIds: string[];
+  runningTaskId?: string;
   createdAt: number;
   lastActiveAt: number;
 };
@@ -350,6 +361,52 @@ const workerFanout = new WorkerFanoutWebSocket({
 });
 
 // ---------- Helpers ----------
+
+function pruneSessionQueueState(session: ThreadSession): void {
+  if (session.runningTaskId) {
+    const running = tasks.get(session.runningTaskId);
+    if (!running || running.finished) {
+      session.runningTaskId = undefined;
+    }
+  }
+  session.queuedTaskIds = session.queuedTaskIds.filter((id) => {
+    const task = tasks.get(id);
+    return Boolean(task && !task.finished && session.runningTaskId !== id);
+  });
+}
+
+function sessionBlockingTaskIds(session: ThreadSession): string[] {
+  pruneSessionQueueState(session);
+  const ids = [
+    session.runningTaskId,
+    ...session.queuedTaskIds,
+  ].filter((id): id is string => Boolean(id));
+  return Array.from(new Set(ids));
+}
+
+function totalQueuedTaskCount(): number {
+  let count = 0;
+  for (const session of sessions.values()) {
+    pruneSessionQueueState(session);
+    count += session.queuedTaskIds.length;
+  }
+  return count;
+}
+
+function taskQueueSnapshot(task: TaskState): {
+  running: boolean;
+  queued: boolean;
+  queuePosition?: number;
+} {
+  const session = task.session;
+  pruneSessionQueueState(session);
+  const queuedIndex = session.queuedTaskIds.indexOf(task.taskId);
+  return {
+    running: session.runningTaskId === task.taskId && !task.finished,
+    queued: queuedIndex >= 0 && !task.finished,
+    queuePosition: queuedIndex >= 0 ? queuedIndex + 1 : undefined,
+  };
+}
 
 interface ShCaptureOptions {
   /** Hard timeout (ms) after which the child is SIGKILLed. */
@@ -469,6 +526,23 @@ function repoDisplayName(): string {
   return repo;
 }
 
+function assertSafeGitBranchName(branch: string, label = 'branch'): void {
+  const invalid =
+    !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch) ||
+    branch.startsWith('-') ||
+    branch.startsWith('/') ||
+    branch.endsWith('/') ||
+    branch.endsWith('.lock') ||
+    branch.includes('..') ||
+    branch.includes('//') ||
+    branch.includes('@{') ||
+    branch.includes('\\') ||
+    branch.split('/').some((part) => !part || part === '.' || part === '..' || part.endsWith('.lock'));
+  if (invalid) {
+    throw new Error(`invalid git ${label}: ${branch}`);
+  }
+}
+
 function gitBranchTarget(branch: string): string {
   return `${repoDisplayName()} branch ${branch}`;
 }
@@ -479,6 +553,15 @@ function providerCanEditWorkspace(provider: AgentProvider): boolean {
 
 function providerCanAccessWorkspace(provider: AgentProvider): boolean {
   return providerCanEditWorkspace(provider);
+}
+
+function providerCanUseShell(provider: AgentProvider): boolean {
+  return (
+    provider === 'openai-sdk' ||
+    provider === 'openai-codex-cli' ||
+    provider === 'claude-sdk' ||
+    provider === 'claude-cli'
+  );
 }
 
 function promptRequestsPullRequest(prompt: string): boolean {
@@ -527,6 +610,19 @@ function promptLikelyRequiresWorkspaceAccess(prompt: string): boolean {
       workspacePrompt,
   );
   return hasWorkspaceNoun && hasInspectionVerb;
+}
+
+function promptLikelyRequiresShellAccess(prompt: string): boolean {
+  const workspacePrompt = stripNegatedWorkspaceChangePhrases(prompt);
+  return (
+    /\bgit\s+(?:fetch|merge|push|commit|branch)\b/i.test(workspacePrompt) ||
+    /\b(?:fetch|push)\s+(?:origin|the\s+current\s+branch|current\s+branch|branches?)\b/i.test(workspacePrompt) ||
+    /\bcommit\s+(?:the\s+integrated\s+result|current\s+changes?|workspace\s+changes?|merge\s+result)\b/i.test(
+      workspacePrompt,
+    ) ||
+    /\bmerge\s+(?:with\s+)?sibling\b/i.test(workspacePrompt) ||
+    /\bsibling\s+feature\s+branches?\b/i.test(workspacePrompt)
+  );
 }
 
 type DeterministicAppendFileEdit = {
@@ -643,6 +739,146 @@ async function gitWorkspaceStatus(workspacePath: string): Promise<string> {
   );
 }
 
+async function fetchRemoteBranch(workspacePath: string, branch: string, depth = 1): Promise<void> {
+  assertSafeGitBranchName(branch, 'remote branch');
+  await shCapture(
+    'git',
+    [
+      'fetch',
+      '--quiet',
+      '--prune',
+      `--depth=${depth}`,
+      'origin',
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ],
+    workspacePath,
+    { timeoutMs: TIMEOUT_GIT_NETWORK },
+  );
+}
+
+async function deepenRemoteBranch(
+  workspacePath: string,
+  branch: string,
+  commits: number,
+): Promise<void> {
+  assertSafeGitBranchName(branch, 'remote branch');
+  await shCapture(
+    'git',
+    [
+      'fetch',
+      '--quiet',
+      `--deepen=${commits}`,
+      'origin',
+      `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ],
+    workspacePath,
+    { timeoutMs: TIMEOUT_GIT_NETWORK },
+  );
+}
+
+async function currentGitBranch(workspacePath: string): Promise<string | null> {
+  try {
+    const out = await shCapture('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], workspacePath, {
+      timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function currentGitCommit(workspacePath: string): Promise<string> {
+  return (
+    await shCapture('git', ['rev-parse', 'HEAD'], workspacePath, {
+      timeoutMs: TIMEOUT_GIT_QUICK,
+    })
+  ).trim();
+}
+
+async function assertSessionOnFeatureBranch(session: ThreadSession): Promise<void> {
+  if (session.branch === config.baseBranch || session.branch === `origin/${config.baseBranch}`) {
+    throw new Error(
+      `refusing to run ${session.sessionId} on parent branch ${config.baseBranch}; expected a feature branch`,
+    );
+  }
+
+  const branch = await currentGitBranch(session.workspacePath);
+  if (branch === config.baseBranch) {
+    throw new Error(
+      `workspace is still on parent branch ${config.baseBranch}; refusing to start queued task for ${session.branch}`,
+    );
+  }
+  if (branch !== session.branch) {
+    const commit = await currentGitCommit(session.workspacePath).catch(() => 'unknown');
+    throw new Error(
+      `workspace branch mismatch: expected ${session.branch}, got ${branch ?? `detached at ${commit}`}`,
+    );
+  }
+}
+
+async function ensureMergeBaseWithBaseBranch(session: ThreadSession): Promise<void> {
+  const deepenSteps = [50, 200, 1000];
+  for (let attempt = 0; attempt <= deepenSteps.length; attempt += 1) {
+    try {
+      await shCapture(
+        'git',
+        ['merge-base', 'HEAD', `origin/${config.baseBranch}`],
+        session.workspacePath,
+        { timeoutMs: TIMEOUT_GIT_QUICK },
+      );
+      return;
+    } catch (err) {
+      if (attempt >= deepenSteps.length) {
+        throw err;
+      }
+      const deepenBy = deepenSteps[attempt]!;
+      await deepenRemoteBranch(session.workspacePath, config.baseBranch, deepenBy);
+      if (await remoteBranchExists(session.branch)) {
+        await deepenRemoteBranch(session.workspacePath, session.branch, deepenBy);
+      }
+    }
+  }
+}
+
+async function gitUnmergedFiles(workspacePath: string): Promise<string[]> {
+  const out = await shCapture('git', ['diff', '--name-only', '--diff-filter=U'], workspacePath, {
+    timeoutMs: TIMEOUT_GIT_QUICK,
+  });
+  return out
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+async function abortMergeIfInProgress(workspacePath: string): Promise<void> {
+  try {
+    await shCapture('git', ['rev-parse', '--quiet', '--verify', 'MERGE_HEAD'], workspacePath, {
+      timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+  } catch {
+    return;
+  }
+  try {
+    await shCapture('git', ['merge', '--abort'], workspacePath, {
+      timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+  } catch (err) {
+    process.stderr.write(
+      `[remote-dev] merge --abort failed: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  }
+}
+
+async function pushSessionBranch(session: ThreadSession): Promise<void> {
+  assertSafeGitBranchName(session.branch, 'session branch');
+  await shCapture(
+    'git',
+    ['push', '--no-verify', '--set-upstream', 'origin', session.branch],
+    session.workspacePath,
+    { timeoutMs: TIMEOUT_GIT_NETWORK },
+  );
+}
+
 async function gitAddWorkspaceChanges(workspacePath: string): Promise<void> {
   await shCapture('git', ['add', '-A', '--', '.'], workspacePath, {
     timeoutMs: TIMEOUT_GIT_QUICK,
@@ -672,10 +908,13 @@ function getSessionBranch(
 ): string {
   const hinted = branchHint?.trim();
   if (hinted) {
+    assertSafeGitBranchName(hinted, 'session branch');
     return hinted;
   }
   const titleSlug = slugifyBranchFragment(titleHint?.trim() || promptHint?.trim() || sessionId);
-  return `${config.agentBranchPrefix}/${sessionId}/${titleSlug}`;
+  const branch = `${config.agentBranchPrefix}/${sessionId}/${titleSlug}`;
+  assertSafeGitBranchName(branch, 'session branch');
+  return branch;
 }
 
 function isPlaceholderSessionBranch(sessionId: string, branch: string): boolean {
@@ -687,6 +926,7 @@ function getSessionLogPath(workspacePath: string): string {
 }
 
 async function remoteBranchExists(branch: string): Promise<boolean> {
+  assertSafeGitBranchName(branch, 'remote branch');
   const out = await shCapture(
     'git',
     ['ls-remote', '--heads', 'origin', branch],
@@ -751,31 +991,43 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
     return;
   }
 
-  await shCapture('git', ['fetch', '--quiet', 'origin', config.baseBranch], config.workspaceRepo, {
-    timeoutMs: TIMEOUT_GIT_NETWORK,
-  });
+  await fetchRemoteBranch(config.workspaceRepo, config.baseBranch, 1);
 
   const hasRemoteBranch = await remoteBranchExists(session.branch);
-  let switchSource = `origin/${config.baseBranch}`;
+  const switchSource = hasRemoteBranch ? `origin/${session.branch}` : `origin/${config.baseBranch}`;
   if (hasRemoteBranch) {
-    await shCapture('git', ['fetch', '--quiet', 'origin', session.branch], config.workspaceRepo, {
-      timeoutMs: TIMEOUT_GIT_NETWORK,
-    });
-    switchSource = 'FETCH_HEAD';
+    await fetchRemoteBranch(config.workspaceRepo, session.branch, 1);
   }
 
-  await shCapture(
-    'git',
-    [
-      'switch',
-      '--discard-changes',
-      '-C',
-      session.branch,
-      switchSource,
-    ],
-    config.workspaceRepo,
-    { timeoutMs: TIMEOUT_GIT_QUICK },
-  );
+  const currentBranch = await currentGitBranch(session.workspacePath);
+  if (currentBranch !== session.branch) {
+    const status = await gitWorkspaceStatus(session.workspacePath);
+    if (status.trim()) {
+      throw new Error(
+        `workspace has uncommitted changes while on ${currentBranch ?? 'detached HEAD'}; refusing to switch to ${session.branch}`,
+      );
+    }
+    await shCapture(
+      'git',
+      [
+        'switch',
+        '--discard-changes',
+        '-C',
+        session.branch,
+        switchSource,
+      ],
+      config.workspaceRepo,
+      { timeoutMs: TIMEOUT_GIT_QUICK },
+    );
+  }
+
+  await assertSessionOnFeatureBranch(session);
+  const preInstallStatus = await gitWorkspaceStatus(session.workspacePath);
+  if (preInstallStatus.trim()) {
+    throw new Error(
+      `workspace has uncommitted changes before dependency preparation on ${session.branch}; refusing to discard them`,
+    );
+  }
 
   const installResult = await installWorkspaceDependencies(session.workspacePath);
   await resetDependencyInstallArtifacts(session.workspacePath);
@@ -836,6 +1088,7 @@ function getOrCreateSession(input: {
     ready: Promise.resolve(),
     queue: Promise.resolve(),
     taskIds: new Set(),
+    queuedTaskIds: [],
     createdAt: Date.now(),
     lastActiveAt: Date.now(),
   };
@@ -1196,6 +1449,13 @@ async function ensureDeployKey(): Promise<void> {
   await writeFile(config.ghDeployKeyPath, config.ghDeployKey, { mode: 0o600 });
 }
 
+function githubCliEnv(): Record<string, string> {
+  if (!config.ghPat) {
+    throw new Error('GH_PAT is required for GitHub CLI pull request creation');
+  }
+  return { GH_TOKEN: config.ghPat };
+}
+
 async function configureGitIdentity(cwd: string): Promise<void> {
   await shCapture('git', ['config', 'user.name', config.prAuthor.name], cwd, {
     timeoutMs: TIMEOUT_GIT_QUICK,
@@ -1206,8 +1466,9 @@ async function configureGitIdentity(cwd: string): Promise<void> {
 }
 
 async function waitForBootGitReady(): Promise<void> {
-  // If the container started via entrypoint.sh, the git fetch + switch
-  // runs as a background process. Wait for it to finish before we proceed.
+  // Older entrypoints exposed a background git-ready PID. Keep the wait
+  // path for rolling deploy compatibility; the current entrypoint runs
+  // synchronously before Node starts.
   const gitReadyPid = process.env.GIT_READY_PID;
   if (!gitReadyPid) {
     return;
@@ -1281,29 +1542,39 @@ async function mergeUpstreamForThread(input: {
           timeoutMs: TIMEOUT_GIT_QUICK,
         })
       ).trim();
-      await shCapture(
-        'git',
-        ['fetch', '--quiet', 'origin', config.baseBranch],
-        session.workspacePath,
-        { timeoutMs: TIMEOUT_GIT_NETWORK },
-      );
-      await shCapture(
-        'git',
-        ['merge', '--no-edit', `origin/${config.baseBranch}`],
-        session.workspacePath,
-        { timeoutMs: TIMEOUT_GIT_QUICK },
-      );
+      await assertSessionOnFeatureBranch(session);
+      const status = await gitWorkspaceStatus(session.workspacePath);
+      if (status.trim()) {
+        throw new Error(
+          `workspace has uncommitted changes before merging ${config.baseBranch}: ${status.trim()}`,
+        );
+      }
+      await fetchRemoteBranch(session.workspacePath, config.baseBranch, 1);
+      await ensureMergeBaseWithBaseBranch(session);
+      try {
+        await shCapture(
+          'git',
+          ['merge', '--no-edit', `origin/${config.baseBranch}`],
+          session.workspacePath,
+          { timeoutMs: TIMEOUT_GIT_QUICK },
+        );
+      } catch (err) {
+        const conflicts = await gitUnmergedFiles(session.workspacePath).catch(() => []);
+        await abortMergeIfInProgress(session.workspacePath);
+        throw new Error(
+          conflicts.length > 0
+            ? `merge-upstream hit conflicts and was aborted: ${conflicts.join(', ')}`
+            : err instanceof Error
+              ? err.message
+              : String(err),
+        );
+      }
       const after = (
         await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
           timeoutMs: TIMEOUT_GIT_QUICK,
         })
       ).trim();
-      await shCapture(
-        'git',
-        ['push', '--no-verify', '--set-upstream', 'origin', session.branch],
-        session.workspacePath,
-        { timeoutMs: TIMEOUT_GIT_NETWORK },
-      );
+      await pushSessionBranch(session);
       await appendFile(
         session.logPath,
         JSON.stringify({
@@ -1417,12 +1688,8 @@ async function makeCommitForThread(input: {
           timeoutMs: TIMEOUT_GIT_QUICK,
         })
       ).trim();
-      await shCapture(
-        'git',
-        ['push', '--no-verify', '--set-upstream', 'origin', session.branch],
-        session.workspacePath,
-        { timeoutMs: TIMEOUT_GIT_NETWORK },
-      );
+      await assertSessionOnFeatureBranch(session);
+      await pushSessionBranch(session);
       await appendFile(
         session.logPath,
         JSON.stringify({
@@ -1831,6 +2098,253 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
   return promptSections.join('\n');
 }
 
+async function runInternalWorkspaceAgent(input: {
+  state: TaskState;
+  prompt: string;
+  purpose: string;
+  requireWorkspaceChange?: boolean;
+  requireShellAccess?: boolean;
+}): Promise<void> {
+  const providerOrder = [input.state.provider, ...config.agentProviderRotation].filter(
+    (provider, index, values) => values.indexOf(provider) === index,
+  );
+  const attemptGroups: { provider: AgentProvider; candidates: AgentEnvCandidate[] }[] = [];
+  for (const provider of providerOrder) {
+    if (!providerCanEditWorkspace(provider)) {
+      emit(input.state, {
+        kind: 'status',
+        status: `agent-skip:${provider}`,
+        message: `${provider} cannot edit files for ${input.purpose} in ${repoDisplayName()}`,
+      });
+      continue;
+    }
+    if (input.requireShellAccess && !providerCanUseShell(provider)) {
+      emit(input.state, {
+        kind: 'status',
+        status: `agent-skip:${provider}`,
+        message: `${provider} cannot run shell/git commands for ${input.purpose} in ${repoDisplayName()}`,
+      });
+      continue;
+    }
+    const candidates = buildAgentEnvCandidates(provider);
+    if (candidates.length === 0) {
+      emit(input.state, {
+        kind: 'status',
+        status: `agent-skip:${provider}`,
+        message: `No configured API keys for ${provider}`,
+      });
+      continue;
+    }
+    attemptGroups.push({ provider, candidates });
+  }
+
+  if (attemptGroups.length === 0) {
+    throw new Error(
+      `no configured workspace-capable agent API keys for ${input.purpose} in ${repoDisplayName()}`,
+    );
+  }
+
+  let lastErr: unknown = null;
+  for (const [groupIndex, group] of attemptGroups.entries()) {
+    if (input.state.cancelled || input.state.abortController.signal.aborted) {
+      throw lastErr ?? new Error(`${input.purpose} cancelled`);
+    }
+    if (groupIndex > 0) {
+      emit(input.state, {
+        kind: 'status',
+        status: `agent-fallback:${group.provider}`,
+        message: `Switching to ${group.provider} for ${input.purpose}`,
+      });
+    }
+    emit(input.state, {
+      kind: 'status',
+      status: `agent-running:${group.provider}`,
+      message:
+        `${input.purpose}\n` +
+        `Workspace: ${gitBranchTarget(input.state.branch)}\n` +
+        `Base branch: ${config.baseBranch}\n` +
+        `Credentials: ${group.candidates.length} configured key(s)`,
+    });
+    const failures = new Map<string, number>();
+    let attempted = 0;
+    for (const attempt of group.candidates) {
+      attempted += 1;
+      try {
+        const statusBeforeAttempt = input.requireWorkspaceChange
+          ? await gitWorkspaceStatus(input.state.worktreePath)
+          : '';
+        const runner = getRunner(attempt.provider);
+        await runner.run({
+          prompt: input.prompt,
+          cwd: input.state.worktreePath,
+          env: attempt.env,
+          signal: input.state.abortController.signal,
+          timeoutMs: config.agentRunTimeoutMs,
+          emit: (ev: AgentRunnerEvent) => {
+            if (shouldForwardAgentRunnerEvent(ev)) {
+              emit(input.state, ev);
+            }
+          },
+          setChild: (child: ChildProcess) => {
+            input.state.child = child;
+          },
+        });
+        if (input.requireWorkspaceChange) {
+          const statusAfterAttempt = await gitWorkspaceStatus(input.state.worktreePath);
+          if (!statusAfterAttempt.trim() || statusAfterAttempt.trim() === statusBeforeAttempt.trim()) {
+            throw new Error(`${attempt.provider} completed without workspace changes for ${input.purpose}`);
+          }
+        }
+        return;
+      } catch (err) {
+        lastErr = err;
+        const reason = compactAgentErrorMessage(attempt.provider, err);
+        failures.set(reason, (failures.get(reason) ?? 0) + 1);
+      }
+    }
+    if (attempted > 0) {
+      emit(input.state, {
+        kind: 'error',
+        message: formatAgentFailureSummary(
+          group.provider,
+          failures,
+          attempted,
+          group.candidates.length,
+        ),
+      });
+    }
+  }
+  throw lastErr ?? new Error(`${input.purpose} failed`);
+}
+
+async function resolveMergeConflictsSemantically(
+  state: TaskState,
+  conflictedFiles: string[],
+): Promise<void> {
+  const conflictPrompt = [
+    `Resolve the current Git merge conflicts in ${repoDisplayName()} before task ${state.taskId} starts.`,
+    '',
+    `The worker already ran: git merge --no-edit origin/${config.baseBranch}`,
+    `Feature branch: ${state.branch}`,
+    `Base branch: ${config.baseBranch}`,
+    '',
+    'Resolve only the merge conflicts. Preserve the intended changes from both the base branch and the feature branch, remove all conflict markers, and do not implement the user task yet.',
+    'Leave the repository ready for the server to stage and commit the merge resolution.',
+    '',
+    'Conflicted files:',
+    ...conflictedFiles.map((file) => `- ${file}`),
+  ].join('\n');
+
+  await runInternalWorkspaceAgent({
+    state,
+    prompt: conflictPrompt,
+    purpose: 'merge-conflict-resolution',
+  });
+
+  await gitAddWorkspaceChanges(state.worktreePath);
+  const remainingConflicts = await gitUnmergedFiles(state.worktreePath);
+  if (remainingConflicts.length > 0) {
+    throw new Error(`merge conflicts remain after agent resolution: ${remainingConflicts.join(', ')}`);
+  }
+  await shCapture('git', ['diff', '--cached', '--check'], state.worktreePath, {
+    timeoutMs: TIMEOUT_GIT_QUICK,
+  });
+  await shCapture('git', ['commit', '--no-verify', '--no-edit'], state.worktreePath, {
+    timeoutMs: TIMEOUT_GIT_QUICK,
+  });
+}
+
+async function mergeBaseBranchBeforeTask(state: TaskState): Promise<void> {
+  const session = state.session;
+  emit(state, {
+    kind: 'status',
+    status: 'verifying-thread-feature-branch',
+    message: `Expected feature branch: ${session.branch}\nParent branch: ${config.baseBranch}`,
+  });
+  await assertSessionOnFeatureBranch(session);
+
+  const statusBeforeMerge = await gitWorkspaceStatus(session.workspacePath);
+  if (statusBeforeMerge.trim()) {
+    throw new Error(
+      `workspace has uncommitted changes before starting task ${state.taskId}; commit or resolve them before queue execution continues`,
+    );
+  }
+
+  await appendThreadLog(state, {
+    kind: 'merge-base-before-task-start',
+    branch: session.branch,
+    baseBranch: config.baseBranch,
+  });
+  emit(state, {
+    kind: 'status',
+    status: `fetching ${config.baseBranch} before task`,
+    message: 'Using a depth-1 fetch first; the worker deepens only if Git needs more history to merge.',
+  });
+  await fetchRemoteBranch(session.workspacePath, config.baseBranch, 1);
+  await ensureMergeBaseWithBaseBranch(session);
+
+  const before = await currentGitCommit(session.workspacePath);
+  try {
+    await shCapture(
+      'git',
+      ['merge', '--no-edit', `origin/${config.baseBranch}`],
+      session.workspacePath,
+      { timeoutMs: TIMEOUT_GIT_QUICK },
+    );
+  } catch (err) {
+    const conflicts = await gitUnmergedFiles(session.workspacePath).catch(() => []);
+    if (conflicts.length === 0) {
+      throw err;
+    }
+    emit(state, {
+      kind: 'status',
+      status: 'merge-conflict:resolving-before-task',
+      message: `Resolving ${conflicts.length} conflicted file(s) before starting the user task.`,
+    });
+    await appendThreadLog(state, {
+      kind: 'merge-base-conflicts-before-task',
+      branch: session.branch,
+      baseBranch: config.baseBranch,
+      conflicts,
+    });
+    try {
+      await resolveMergeConflictsSemantically(state, conflicts);
+    } catch (resolveErr) {
+      await abortMergeIfInProgress(session.workspacePath);
+      throw new Error(
+        `failed to resolve upstream merge conflicts before task ${state.taskId}: ${
+          resolveErr instanceof Error ? resolveErr.message : String(resolveErr)
+        }`,
+      );
+    }
+  }
+
+  await assertSessionOnFeatureBranch(session);
+  const after = await currentGitCommit(session.workspacePath);
+  const statusAfterMerge = await gitWorkspaceStatus(session.workspacePath);
+  if (statusAfterMerge.trim()) {
+    throw new Error(
+      `upstream merge preflight left uncommitted changes before task ${state.taskId}: ${statusAfterMerge.trim()}`,
+    );
+  }
+  if (before !== after) {
+    await pushSessionBranch(session);
+  }
+  await appendThreadLog(state, {
+    kind: 'merge-base-before-task-done',
+    branch: session.branch,
+    baseBranch: config.baseBranch,
+    before,
+    after,
+    pushed: before !== after,
+  });
+  emit(state, {
+    kind: 'status',
+    status: before === after ? 'base-branch-already-merged' : 'base-branch-merged-before-task',
+    message: `Feature branch ${session.branch} is ready for task ${state.taskId}.`,
+  });
+}
+
 // ---------- Per-task workflow ----------
 
 async function runTask(state: TaskState): Promise<void> {
@@ -1864,6 +2378,7 @@ async function runTask(state: TaskState): Promise<void> {
       emit(state, { kind: 'status', status: 'syncing-thread-workspace' });
       await state.session.ready;
       state.session.lastActiveAt = Date.now();
+      await mergeBaseBranchBeforeTask(state);
 
       // Per-task outputs dir — the agent writes publishable files here.
       // After claude exits we scan it and upload each file via the storage
@@ -1919,6 +2434,7 @@ async function runTask(state: TaskState): Promise<void> {
 
       const requiresWorkspaceChange = promptLikelyRequiresWorkspaceChange(state.prompt);
       const requiresWorkspaceAccess = promptLikelyRequiresWorkspaceAccess(state.prompt);
+      const requiresShellAccess = promptLikelyRequiresShellAccess(state.prompt);
       const requestsPullRequest = promptRequestsPullRequest(state.prompt);
       const pullRequestOnly = requestsPullRequest && !requiresWorkspaceChange && !requiresWorkspaceAccess;
       // Strict env allowlist owned by the runner module. Inheriting the full
@@ -1961,6 +2477,14 @@ async function runTask(state: TaskState): Promise<void> {
             });
             continue;
           }
+          if (requiresShellAccess && !providerCanUseShell(provider)) {
+            emit(state, {
+              kind: 'status',
+              status: `agent-skip:${provider}`,
+              message: `${provider} cannot run shell/git commands required for this task in ${repoDisplayName()}`,
+            });
+            continue;
+          }
           const candidates = buildAgentEnvCandidates(provider);
           if (candidates.length === 0) {
             emit(state, {
@@ -1973,6 +2497,11 @@ async function runTask(state: TaskState): Promise<void> {
           attemptGroups.push({ provider, candidates });
         }
         if (attemptGroups.length === 0) {
+          if (requiresShellAccess) {
+            throw new Error(
+              `no configured shell-capable agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON or ANTHROPIC_API_KEYS_JSON`,
+            );
+          }
           throw new Error(
             `no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, OPENCODE_API_KEYS_JSON, DEEPSEEK_API_KEYS_JSON, XAI_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`,
           );
@@ -2095,12 +2624,8 @@ async function runTask(state: TaskState): Promise<void> {
           { timeoutMs: TIMEOUT_GIT_QUICK },
         );
       }
-      await shCapture(
-        'git',
-        ['push', '--no-verify', '--set-upstream', 'origin', state.branch],
-        state.worktreePath,
-        { timeoutMs: TIMEOUT_GIT_NETWORK },
-      );
+      await assertSessionOnFeatureBranch(state.session);
+      await pushSessionBranch(state.session);
       emit(state, {
         kind: 'status',
         status: `pushed to ${gitBranchTarget(state.branch)}`,
@@ -2160,7 +2685,7 @@ async function ensurePullRequestForSession(input: {
   threadTitle?: string;
   prompt?: string;
 }): Promise<OpenPullRequestResult> {
-  const ghEnv = config.ghPat ? { GH_TOKEN: config.ghPat } : undefined;
+  const ghEnv = githubCliEnv();
   try {
     const existing = await shCapture(
       'gh',
@@ -2199,9 +2724,9 @@ async function ensurePullRequestForSession(input: {
     /* no existing PR */
   }
 
-  await shCapture('git', ['fetch', 'origin', config.baseBranch], input.session.workspacePath, {
-    timeoutMs: TIMEOUT_GIT_NETWORK,
-  });
+  await assertSessionOnFeatureBranch(input.session);
+  await fetchRemoteBranch(input.session.workspacePath, config.baseBranch, 1);
+  await ensureMergeBaseWithBaseBranch(input.session);
   const [behindCountText = '0', aheadCountText = '0'] = (
     await shCapture(
       'git',
@@ -2245,12 +2770,7 @@ async function ensurePullRequestForSession(input: {
         timeoutMs: TIMEOUT_GIT_QUICK,
       })
     ).trim();
-    await shCapture(
-      'git',
-      ['push', '--no-verify', '--set-upstream', 'origin', input.session.branch],
-      input.session.workspacePath,
-      { timeoutMs: TIMEOUT_GIT_NETWORK },
-    );
+    await pushSessionBranch(input.session);
     await appendFile(
       input.session.logPath,
       JSON.stringify({
@@ -2460,10 +2980,19 @@ function renderMetrics(): string {
       'dd_runtime_tasks_total',
       'Task dispatches accepted by the dd remote runtime.',
     ),
+    ...renderCounter(
+      'dd_runtime_tasks_queued_behind_total',
+      'Task dispatches accepted while another task was running or already queued for the same worker session.',
+    ),
     ...renderGauge(
       'dd_runtime_inflight_tasks',
       'Tasks that are currently not finished.',
       Array.from(tasks.values()).filter((t) => !t.finished).length,
+    ),
+    ...renderGauge(
+      'dd_runtime_queued_tasks',
+      'Accepted tasks waiting behind a per-session workspace queue.',
+      totalQueuedTaskCount(),
     ),
     ...renderGauge(
       'dd_runtime_tracked_tasks',
@@ -2601,6 +3130,7 @@ class WorkerWebSocketClient {
         taskId: this.taskId,
         pinnedThreadId: config.threadId,
         inFlightCount: Array.from(tasks.values()).filter((task) => !task.finished).length,
+        queuedTaskCount: totalQueuedTaskCount(),
         totalTracked: tasks.size,
         sessionCount: sessions.size,
         atMs: Date.now(),
@@ -2620,6 +3150,7 @@ class WorkerWebSocketClient {
       taskId: this.taskId,
       pinnedThreadId: config.threadId,
       inFlightCount: Array.from(tasks.values()).filter((task) => !task.finished).length,
+      queuedTaskCount: totalQueuedTaskCount(),
       totalTracked: tasks.size,
       sessionCount: sessions.size,
       atMs: Date.now(),
@@ -2726,6 +3257,7 @@ class WorkerWebSocketClient {
         pinnedThreadId: config.threadId,
         taskExists: this.taskId ? tasks.has(this.taskId) : undefined,
         inFlightCount: Array.from(tasks.values()).filter((task) => !task.finished).length,
+        queuedTaskCount: totalQueuedTaskCount(),
         totalTracked: tasks.size,
         sessionCount: sessions.size,
         atMs: Date.now(),
@@ -3267,6 +3799,7 @@ fastify.get('/healthz', async () => ({
   pinnedThreadId: config.threadId,
   pinnedUserId: config.userId,
   inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
+  queuedTaskCount: totalQueuedTaskCount(),
   totalTracked: tasks.size,
   sessionCount: sessions.size,
   containerPoolConfigured: containerPoolConfigured(config.containerPool),
@@ -3284,6 +3817,7 @@ fastify.get('/status', async () => ({
   pinnedThreadId: config.threadId,
   pinnedUserId: config.userId,
   inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
+  queuedTaskCount: totalQueuedTaskCount(),
   totalTracked: tasks.size,
   sessionCount: sessions.size,
   containerPoolConfigured: containerPoolConfigured(config.containerPool),
@@ -3329,17 +3863,23 @@ fastify.get('/agents', async () => {
 // what's in NeonDB — so the UI shows the absolute latest state even if the
 // last few events haven't been written through to NeonDB yet.
 fastify.get('/tasks', async () => {
-  const snapshot = Array.from(tasks.values()).map((t) => ({
-    taskId: t.taskId,
-    threadId: t.threadId,
-    userId: t.userId,
-    branch: t.branch,
-    sessionId: t.session.sessionId,
-    finished: t.finished,
-    finishedAt: t.finishedAt,
-    eventCount: t.events.length,
-    lastSeq: t.events.length > 0 ? t.events[t.events.length - 1]!.seq : -1,
-  }));
+  const snapshot = Array.from(tasks.values()).map((t) => {
+    const queue = taskQueueSnapshot(t);
+    return {
+      taskId: t.taskId,
+      threadId: t.threadId,
+      userId: t.userId,
+      branch: t.branch,
+      sessionId: t.session.sessionId,
+      running: queue.running,
+      queued: queue.queued,
+      queuePosition: queue.queuePosition,
+      finished: t.finished,
+      finishedAt: t.finishedAt,
+      eventCount: t.events.length,
+      lastSeq: t.events.length > 0 ? t.events[t.events.length - 1]!.seq : -1,
+    };
+  });
   return { tasks: snapshot, serverStartedAt };
 });
 
@@ -3558,31 +4098,34 @@ fastify.post('/tasks', async (req, reply) => {
         prompt,
       });
       session.taskIds.add(taskId);
+      const blockingTaskIds = sessionBlockingTaskIds(session);
+      const queuedBehind = blockingTaskIds.length > 0;
+      const queuePosition = blockingTaskIds.length + 1;
 
       const state: TaskState = {
-    taskId,
-    prompt,
-    userId,
-    threadId,
-    provider: resolveAgentProvider(parsed.data.provider ?? undefined),
-    contextMode: parsed.data.contextMode ?? undefined,
-    contextIds: parsed.data.contextIds ?? undefined,
-    contextBlobs: parsed.data.contextBlobs ?? undefined,
-    containerPool: parsed.data.containerPool
-      ? {
-          pool: parsed.data.containerPool.pool,
-          request: {
-            requestId: parsed.data.containerPool.requestId,
-            poolId: parsed.data.containerPool.poolId,
-            poolSlug: parsed.data.containerPool.poolSlug ?? parsed.data.containerPool.pool,
-            path: parsed.data.containerPool.path,
-            headers: parsed.data.containerPool.headers,
-            payload: parsed.data.containerPool.payload,
-            body: parsed.data.containerPool.body,
-          },
-        }
-      : undefined,
-    session,
+        taskId,
+        prompt,
+        userId,
+        threadId,
+        provider: resolveAgentProvider(parsed.data.provider ?? undefined),
+        contextMode: parsed.data.contextMode ?? undefined,
+        contextIds: parsed.data.contextIds ?? undefined,
+        contextBlobs: parsed.data.contextBlobs ?? undefined,
+        containerPool: parsed.data.containerPool
+          ? {
+              pool: parsed.data.containerPool.pool,
+              request: {
+                requestId: parsed.data.containerPool.requestId,
+                poolId: parsed.data.containerPool.poolId,
+                poolSlug: parsed.data.containerPool.poolSlug ?? parsed.data.containerPool.pool,
+                path: parsed.data.containerPool.path,
+                headers: parsed.data.containerPool.headers,
+                payload: parsed.data.containerPool.payload,
+                body: parsed.data.containerPool.body,
+              },
+            }
+          : undefined,
+        session,
         abortController: new AbortController(),
         events: [],
         event$: new ReplaySubject<StoredEvent>(),
@@ -3594,17 +4137,58 @@ fastify.post('/tasks', async (req, reply) => {
       };
       span.setAttribute('dd.remote.provider', state.provider);
       span.setAttribute('dd.remote.branch', state.branch);
+      span.setAttribute('dd.remote.queue_position', queuePosition);
+      span.setAttribute('dd.remote.queued_behind', queuedBehind);
       tasks.set(taskId, state);
-      await writeTaskReceipt({
-        taskId,
-        threadId,
-        branch: state.branch,
-        provider: state.provider,
-        acceptedAt: new Date().toISOString(),
+      session.queuedTaskIds.push(taskId);
+      emit(state, {
+        kind: 'status',
+        status: 'queued',
+        queueDepth: blockingTaskIds.length + 1,
+        queuePosition,
+        sessionId: session.sessionId,
       });
-      emit(state, { kind: 'status', status: 'queued' });
+      if (queuedBehind) {
+        incCounter('dd_runtime_tasks_queued_behind_total', {
+          service: 'dd-dev-server-api',
+          provider: state.provider,
+        });
+        emit(state, {
+          kind: 'status',
+          status: 'queued-behind-active-task',
+          message:
+            `Task is queued behind ${blockingTaskIds.length} active task(s) for thread ${session.sessionId}. ` +
+            `It will start after the workspace queue drains.`,
+          queueDepth: blockingTaskIds.length + 1,
+          queuePosition,
+          blockedByTaskId: blockingTaskIds[0],
+          blockedByTaskIds: blockingTaskIds.slice(0, 20),
+          sessionId: session.sessionId,
+        });
+      }
 
-      const queuedRun = session.queue.catch(() => undefined).then(() => runTask(state));
+      const queuedRun = session.queue
+        .catch(() => undefined)
+        .then(async () => {
+          session.queuedTaskIds = session.queuedTaskIds.filter((id) => id !== taskId);
+          session.runningTaskId = taskId;
+          emit(state, {
+            kind: 'status',
+            status: 'dequeued-starting',
+            message: `Task has acquired the thread workspace queue for ${session.sessionId}.`,
+            queueDepth: session.queuedTaskIds.length + 1,
+            queuePosition: 1,
+            sessionId: session.sessionId,
+          });
+          try {
+            await runTask(state);
+          } finally {
+            if (session.runningTaskId === taskId) {
+              session.runningTaskId = undefined;
+            }
+            pruneSessionQueueState(session);
+          }
+        });
       session.queue = queuedRun.catch(() => undefined);
 
       queuedRun.catch((err: unknown) => {
@@ -3619,7 +4203,22 @@ fastify.post('/tasks', async (req, reply) => {
         }
       });
 
-      return { taskId, branch: state.branch };
+      try {
+        await writeTaskReceipt({
+          taskId,
+          threadId,
+          branch: state.branch,
+          provider: state.provider,
+          acceptedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        emit(state, {
+          kind: 'stderr',
+          text: `task receipt write failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+
+      return { taskId, branch: state.branch, queuedBehind, queuePosition };
     },
   );
 });
@@ -3887,16 +4486,22 @@ async function sendHeartbeat(): Promise<void> {
   if (!cachedOwnIp) {
     cachedOwnIp = await discoverOwnIp();
   }
-  const inFlight = Array.from(tasks.values()).map((t) => ({
-    taskId: t.taskId,
-    threadId: t.threadId,
-    userId: t.userId,
-    branch: t.branch,
-    finished: t.finished,
-    finishedAt: t.finishedAt,
-    eventCount: t.events.length,
-    lastSeq: t.events.length > 0 ? t.events[t.events.length - 1]!.seq : -1,
-  }));
+  const inFlight = Array.from(tasks.values()).map((t) => {
+    const queue = taskQueueSnapshot(t);
+    return {
+      taskId: t.taskId,
+      threadId: t.threadId,
+      userId: t.userId,
+      branch: t.branch,
+      running: queue.running,
+      queued: queue.queued,
+      queuePosition: queue.queuePosition,
+      finished: t.finished,
+      finishedAt: t.finishedAt,
+      eventCount: t.events.length,
+      lastSeq: t.events.length > 0 ? t.events[t.events.length - 1]!.seq : -1,
+    };
+  });
   const containerInfo = config.threadId
     ? {
         threadId: config.threadId,
@@ -3924,6 +4529,7 @@ async function sendHeartbeat(): Promise<void> {
         serverStartedAt,
         sentAt: new Date().toISOString(),
         inFlight,
+        queuedTaskCount: totalQueuedTaskCount(),
         container: containerInfo,
       }),
     });
@@ -3980,8 +4586,12 @@ async function main(): Promise<void> {
   if (!config.repoUrl) {
     throw new Error('DD_REPO_URL is required — the container must be pinned to one git repo.');
   }
+  assertSafeGitBranchName(config.baseBranch, 'base branch');
   if (!config.serverAuthSecret) {
     fastify.log.warn('SERVER_AUTH_SECRET is not set — all non-healthz requests will 401');
+  }
+  if (!config.ghPat) {
+    fastify.log.warn('GH_PAT is not set — /thread/open-pr and PR-requesting tasks will fail closed');
   }
   await ensureDeployKey();
   await mkdir(config.outputsDir, { recursive: true });

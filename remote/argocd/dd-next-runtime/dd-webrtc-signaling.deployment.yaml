@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-15-webrtc-signaling'
+        dd.dev/telemetry-revision: '2026-05-19-runtime-direct-broadcast'
       labels:
         app: dd-webrtc-signaling
     spec:
@@ -47,6 +47,12 @@ spec:
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: RUNTIME_ADMIN_EVENT_SUBJECT
               value: dd.remote.events
+            - name: RUNTIME_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: http
               containerPort: 8095

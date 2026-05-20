@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # entrypoint.sh - dd-dev-server container lifecycle.
 #
-# The container refreshes the mounted workspace before starting the server.
-# Keeping this synchronous avoids a boot-time race where git fetch/switch and
-# the first server-side task preparation both try to take .git/index.lock.
+# The container materializes credentials and refreshes remote refs before
+# starting the server. Branch switching is handled by server-side session
+# preparation so warm workspaces are not reset to the parent branch on boot.
 set -euo pipefail
 
 REPO_DIR="${WORKSPACE_REPO:-/home/node/workspace/repo}"
@@ -84,7 +84,7 @@ export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY_PATH -o StrictHostKeyChecking=yes -o 
 if [[ ! -d "$REPO_DIR/.git" ]]; then
   echo "==> Runtime clone: $GIT_REPO_URL#$BASE_BRANCH -> $REPO_DIR"
   mkdir -p "$(dirname "$REPO_DIR")"
-  git clone --depth 50 --branch "$BASE_BRANCH" "$GIT_REPO_URL" "$REPO_DIR" 2>&1 || {
+  git clone --depth 1 --branch "$BASE_BRANCH" "$GIT_REPO_URL" "$REPO_DIR" 2>&1 || {
     echo "runtime git clone failed" >&2
     exit 65
   }
@@ -95,18 +95,12 @@ if [[ -d "$REPO_DIR/.git" ]]; then
 fi
 
 if [[ -d "$REPO_DIR/.git" ]]; then
-  echo "==> git fetch + switch starting"
+  echo "==> git fetch starting"
   cd "$REPO_DIR"
   git remote set-url origin "$GIT_REPO_URL" 2>&1 || echo "git remote set-url failed (non-fatal)"
-  git fetch --quiet origin "$BASE_BRANCH" --depth=50 2>&1 || echo "git fetch failed (non-fatal)"
-  git switch --discard-changes --detach "origin/$BASE_BRANCH" 2>&1 || echo "git switch failed (non-fatal)"
-  git clean -fdx \
-    --exclude=node_modules \
-    --exclude=.pnpm-store \
-    --exclude=.next \
-    --exclude=.turbo 2>&1 || true
+  git fetch --quiet --depth=1 origin "+refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH" 2>&1 || echo "git fetch failed (non-fatal)"
 
-  if [[ -f package.json ]]; then
+  if [[ "${ENTRYPOINT_INSTALL_DEPS:-false}" == "true" && -f package.json ]]; then
     PNPM_VERSION="$(pnpm --version 2>/dev/null || true)"
     PNPM_STORE_PATH="$(pnpm store path --store-dir "$PNPM_STORE_DIR" 2>/dev/null || true)"
     echo "==> pnpm install starting (version=${PNPM_VERSION:-unknown} store=${PNPM_STORE_PATH:-unknown})"
@@ -117,10 +111,12 @@ if [[ -d "$REPO_DIR/.git" ]]; then
         pnpm install --store-dir "$PNPM_STORE_DIR" --prefer-offline 2>&1 || echo "fallback pnpm install failed (non-fatal)"
       fi
     fi
+  elif [[ -f package.json ]]; then
+    echo "==> dependency install deferred to server branch preparation"
   else
     echo "==> no root package.json in workspace; skipping pnpm install"
   fi
-  echo "==> git refresh complete at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "==> git fetch/dependency refresh complete at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 
 LOG_BASE="${CONVO_LOG_DIR:-/tmp/convos}"

@@ -48,7 +48,7 @@ remote/deployments/dev-server/
 ## Build
 
 The build can optionally receive a GitHub deploy key and `DD_REPO_URL` so the image can
-pre-clone that repo and run `pnpm install`. Use BuildKit's `--secret` flag for the key, never
+pre-clone that repo at `--depth=1` and run `pnpm install`. Use BuildKit's `--secret` flag for the key, never
 `--build-arg`, so the key never lands in any image layer. If `DD_REPO_URL` is omitted, the image
 is a generic worker base and the container clones the configured repo at runtime.
 
@@ -100,9 +100,10 @@ Runtime split in the baseline Argo app:
 `/api/admin/remote-dev/sign-token`.
 
 `POST /thread/merge-upstream` is server-authenticated and runs inside the single UUID-pinned
-worker. It fetches `origin/$BASE_BRANCH`, merges it into the thread branch with
-`git merge --no-edit origin/$BASE_BRANCH` (no rebase), and pushes the branch so the existing
-GitHub PR updates.
+worker. It verifies the workspace is on the feature branch, fetches `origin/$BASE_BRANCH` with a
+shallow fetch, deepens only when Git needs more history, merges with
+`git merge --no-edit origin/$BASE_BRANCH` (no rebase), and pushes the branch so the existing GitHub
+PR updates.
 
 `POST /thread/make-commit` is server-authenticated and runs inside the pinned worker. It stages all
 workspace changes, creates a manual commit when the tree is dirty, and pushes the thread branch.
@@ -130,7 +131,7 @@ workflow without a failing package install.
 | `SERVER_AUTH_SECRET` | Shared secret presented by Vercel in `X-Server-Auth`. Random, ≥ 32 chars.                                                    |
 | `DD_REPO_URL`        | Git URL for the repo this thread container is pinned to. Required at runtime; optional at build time for a generic worker image. GitHub HTTPS URLs are converted to SSH at boot when `GH_DEPLOY_KEY` is present so branch pushes use the deploy key. |
 | `GH_DEPLOY_KEY`      | OpenSSH private key for `git fetch` / `git push` against `DD_REPO_URL`. The server writes this to `~/.ssh/id_ed25519` at boot. |
-| `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope it to the configured repo with Contents + Pull Requests.            |
+| `GH_PAT`             | GitHub fine-grained token used by `gh pr create`. Scope it to the configured repo with Contents + Pull Requests. PR creation fails closed when this is unset. |
 
 ### Required — event ingestion
 
@@ -253,6 +254,7 @@ route reports "alive" if either a fresh heartbeat or a live `/healthz` ping succ
 | `OUTPUTS_DIR`                 | `/home/node/workspace/outputs`  | Where the agent writes publishable files (markdown, PDF, etc.); scanned + uploaded after the agent run exits.                         |
 | `REMOTE_DEV_THREAD_ID`        | unset                           | **Required.** The UUID created by `/u/admin/remote-dev` for the conversation. The container is pinned to one thread for its lifetime. |
 | `IDLE_TIMEOUT_MS`             | `1800000`                       | In-process idle watchdog. For k8s thread pods we set this to `0` and let the control-plane reaper scale Deployment replicas to 0/1.   |
+| `ENTRYPOINT_INSTALL_DEPS`     | `false`                         | Set to `true` only when the entrypoint should run `pnpm install` before the server starts. Default defers dependency install until the server has prepared the feature branch, avoiding warm-boot base-branch resets. |
 | `THREAD_LOG_RELATIVE_PATH`    | `tmp/convos/thread.log`         | Every prompt/event is appended as JSONL here inside the thread workspace. `tmp/` is gitignored.                                       |
 | `DEFAULT_STORAGE_PROVIDER`    | `local`                         | One of `local` / `s3` / `r2` / `gcs` / `drive`.                                                                                       |
 | `GH_DEPLOY_KEY_PATH`          | `/home/node/.ssh/id_ed25519`    | Where `GH_DEPLOY_KEY` is materialised at boot.                                                                                        |
@@ -330,7 +332,7 @@ from `src/telemetry.ts` and exposes Prometheus metrics at `/metrics`.
 | `GET`  | `/healthz`              | none                              | Liveness — returns `{ ok, startedAt, inFlightCount, totalTracked }`.                                                                                                            |
 | `GET`  | `/metrics`              | none                              | Prometheus metrics scraped by the OpenTelemetry Collector.                                                                                                                      |
 | `GET`  | `/tasks`                | `X-Server-Auth`                   | Snapshot of every task in memory (used by Vercel to merge with NeonDB on first load).                                                                                           |
-| `POST` | `/tasks`                | `X-Server-Auth`                   | Body `{ taskId, prompt, repo?, baseBranch?, userId?, threadId?, provider?, branch?, threadTitle? }`. Queues the run into the thread workspace and rejects a different repo/base branch than the container is pinned to. |
+| `POST` | `/tasks`                | `X-Server-Auth`                   | Body `{ taskId, prompt, repo?, baseBranch?, userId?, threadId?, provider?, branch?, threadTitle? }`. Queues the run into the thread workspace, returns `queuedBehind` / `queuePosition`, and rejects a different repo/base branch than the container is pinned to. |
 | `GET`  | `/stream/:taskId`       | `X-Server-Auth` **or** `?token=…` | Server-Sent Events. `Last-Event-ID` resumes.                                                                                                                                    |
 | `GET`  | `/ws`                   | `X-Server-Auth`                   | Worker WebSocket for the pinned thread. Use `/dd-thread/<short>/ws?threadId=<uuid>&taskId=<uuid>` through the gateway; it replays task events and streams new worker events faster than the NATS/Gleam fanout path. |
 | `GET`  | `/terminal`             | `X-Server-Auth`                   | Browser terminal for the pinned worker. Use `/dd-thread/<short>/terminal?threadId=<uuid>` through the gateway.                                                                  |
@@ -346,26 +348,39 @@ sides share `REMOTE_DEV_TOKEN_SECRET`.
 
 For each new thread, the container/workspace:
 
-1. `git fetch origin <BASE_BRANCH>` against the warm base repo.
+1. Runtime clone or baked-template clone uses `git clone --depth=1 --branch <BASE_BRANCH>`.
+   Warm boots only refresh `origin/<BASE_BRANCH>` with a depth-1 fetch; the entrypoint does not
+   detach or reset a reused workspace back to the parent branch.
 2. Choose the session branch. If dispatch provides `branch`, reuse it; otherwise derive one as
-   `agent/k8s/openai-5.5/<threadId>/<slugified-thread-title>`. If that remote branch already exists, switch from it;
-   otherwise create from `origin/<BASE_BRANCH>` and hard-reset to that base. This keeps a restarted
-   thread container resumable while still making a brand-new thread start from fresh `origin/<BASE_BRANCH>`.
-3. `pnpm install --ignore-workspace --frozen-lockfile` from `remote/deployments/dev-server` so the worker installs
-   this standalone package instead of the root workspace.
+   `agent/k8s/openai-5.5/<threadId>/<slugified-thread-title>`. If that remote branch already
+   exists, fetch it shallowly and switch from it; otherwise create the feature branch from
+   `origin/<BASE_BRANCH>`. If a reused workspace is still on the parent branch, the worker fails
+   closed instead of running a task on `BASE_BRANCH`.
+3. Install repo dependencies only after the feature branch is prepared. Dependency/cache artifacts
+   are then restored/cleaned with generated dirs excluded.
 4. Start listening after the thread workspace is ready in `thread` mode.
 
 For each `POST /tasks` in that thread:
 
-1. Append prompt/event metadata to `tmp/convos/thread.log` as JSONL.
-2. `mkdir -p $OUTPUTS_DIR/<taskId>` so the agent has a place to write.
-3. Build the shared context prompt from repo files, Postgres context, and the thread-log tail.
-4. Apply any supported deterministic workspace edit, otherwise run the selected provider
+1. Add the task to the in-process per-session promise queue. If another task is running or queued,
+   emit `queued-behind-active-task` with `queueDepth`, `queuePosition`, and blocker task IDs. That
+   status goes through the normal event pipeline: thread log, metrics, NATS fanout, worker
+   WebSocket fanout, and SSE replay.
+2. When the task reaches the front of the queue, assert the workspace is on the feature branch.
+   If it is on the parent branch or detached, fail the task instead of continuing.
+3. Fetch `origin/<BASE_BRANCH>` with `--depth=1`, deepen only if Git cannot find a merge base, then
+   merge `origin/<BASE_BRANCH>` into the feature branch before the user task starts. If conflicts
+   occur, a workspace-capable provider gets a pre-task conflict-resolution prompt; unresolved
+   conflicts abort the task.
+4. Append prompt/event metadata to `tmp/convos/thread.log` as JSONL.
+5. `mkdir -p $OUTPUTS_DIR/<taskId>` so the agent has a place to write.
+6. Build the shared context prompt from repo files, Postgres context, and the thread-log tail.
+7. Apply any supported deterministic workspace edit, otherwise run the selected provider
    (`openai-sdk` by default, with Claude/Gemini overrides available).
-5. Stage workspace changes while excluding generated dependency/cache dirs, then commit and push `origin <session-branch>`.
-6. **Walk `$OUTPUTS_DIR/<taskId>/`** — every regular file (one level deep) is uploaded via the
+8. Stage workspace changes while excluding generated dependency/cache dirs, then commit and push `origin <session-branch>`.
+9. **Walk `$OUTPUTS_DIR/<taskId>/`** — every regular file (one level deep) is uploaded via the
    configured storage adapter, emitting one `artifact` event per file with the resulting URL.
-7. Emit terminal `done` event.
+10. Emit terminal `done` event.
 
 PR creation is intentionally separate. The UI must call `/thread/open-pr` (through the Rust REST
 API or Next.js admin API) when the operator wants a PR. New PRs are always created with `--draft`,

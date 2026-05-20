@@ -19,7 +19,7 @@ spec:
       labels:
         app: dd-agent-worker-broker
     spec:
-      serviceAccountName: dd-agent-worker-broker
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: agent-worker-broker
@@ -54,8 +54,6 @@ spec:
             - name: THREAD_RUNTIME_NAMESPACE
               value: default
             - name: DIRECT_DISPATCH_ENABLED
-              value: 'true'
-            - name: WAKE_ON_DISPATCH
               value: 'true'
             - name: SERVER_AUTH_SECRET
               valueFrom:

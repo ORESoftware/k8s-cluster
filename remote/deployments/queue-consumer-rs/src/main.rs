@@ -61,18 +61,6 @@ fn server_auth_secret() -> String {
         .unwrap_or_else(|| "dd-k8s-home".to_string())
 }
 
-fn env_bool(key: &str, fallback: bool) -> bool {
-    env::var(key)
-        .ok()
-        .map(|value| {
-            matches!(
-                value.trim(),
-                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
-            )
-        })
-        .unwrap_or(fallback)
-}
-
 fn receipt_path(base_dir: &str, task_id: &str) -> PathBuf {
     let safe_task_id = task_id
         .chars()
@@ -125,8 +113,8 @@ fn now_ms() -> u128 {
         .unwrap_or(0)
 }
 
-fn nats_event_subject() -> &'static str {
-    "dd.remote.events"
+fn nats_event_subject() -> String {
+    env_value("NATS_EVENT_SUBJECT", "dd.remote.events")
 }
 
 fn task_message_id(task: &QueueTaskMessage, stage: &str) -> String {
@@ -169,6 +157,7 @@ async fn persist_queue_status_event(
         .header("X-Agent-Auth", secret)
         .json(&json!({
             "taskId": &task.task_id,
+            "threadId": &task.thread_id,
             "seq": seq,
             "event": event,
         }))
@@ -328,60 +317,6 @@ async fn dispatch_to_container_pool(
     .into())
 }
 
-async fn dispatch_to_rest_api(
-    http: &reqwest::Client,
-    rest_api_url: &str,
-    secret: &str,
-    task: &QueueTaskMessage,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let repo = task
-        .repo
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or("queued task missing repo")?;
-    let base_branch = task
-        .base_branch
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("dev");
-    let prompt = task
-        .prompt
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or("queued task missing prompt")?;
-    let base = rest_api_url.trim_end_matches('/');
-    let url = format!("{base}/api/agents/threads/{}/tasks", task.thread_id);
-    let response = http
-        .post(url)
-        .header("X-Agent-Auth", secret)
-        .json(&serde_json::json!({
-            "taskId": &task.task_id,
-            "threadId": &task.thread_id,
-            "repo": repo,
-            "baseBranch": base_branch,
-            "prompt": prompt,
-            "provider": &task.provider,
-            "threadTitle": &task.thread_title,
-            "contextMode": &task.context_mode,
-            "contextIds": &task.context_ids,
-        }))
-        .send()
-        .await?;
-    let status = response.status();
-    if status.is_success() {
-        return Ok(());
-    }
-    let body = response.text().await.unwrap_or_default();
-    Err(format!(
-        "rest fallback dispatch failed with {status}: {}",
-        body.chars().take(500).collect::<String>()
-    )
-    .into())
-}
-
 async fn prepare_thread(
     http: &reqwest::Client,
     rest_api_url: &str,
@@ -460,11 +395,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "REMOTE_REST_API_URL",
         "http://dd-remote-rest-api.default.svc.cluster.local:8082",
     );
+    let event_subject = nats_event_subject();
     let container_pool_url = env_value(
         "CONTAINER_POOL_BASE_URL",
         "http://dd-container-pool.default.svc.cluster.local:8102",
     );
-    let fallback_rest_dispatch = env_bool("QUEUE_CONSUMER_FALLBACK_REST_DISPATCH", true);
     let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);
     let receipts_dir = env_value(
         "QUEUE_CONSUMER_RECEIPTS_DIR",
@@ -476,7 +411,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .build()?;
 
     println!(
-        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} http_timeout_seconds={http_timeout_seconds} receipts_dir={receipts_dir}"
+        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} event_subject={event_subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} http_timeout_seconds={http_timeout_seconds} receipts_dir={receipts_dir}"
     );
     let nats_client = async_nats::connect(nats_url).await?;
     let consumer = build_jetstream_consumer(
@@ -632,47 +567,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         json!({ "poolSlug": &pool, "affinityKey": &task.thread_id, "error": pool_error.to_string() }),
                     )
                     .await;
-                    if task.direct_dispatch.unwrap_or(false) {
-                        emit_queue_status_event(
-                            &http,
-                            &nats_client,
-                            &rest_api_url,
-                            &secret,
-                            &task,
-                            -910,
-                            "rest-fallback-skipped",
-                            "REST fallback skipped",
-                            "Queue consumer skipped duplicate REST fallback because the REST API is already handling the synchronous worker dispatch.",
-                            json!({}),
-                        )
-                        .await;
-                        Ok(())
-                    } else if fallback_rest_dispatch {
-                        eprintln!(
-                            "queue task falling back to rest dispatch: thread={} task={}",
-                            task.thread_id, task.task_id
-                        );
-                        let fallback =
-                            dispatch_to_rest_api(&http, &rest_api_url, &secret, &task).await;
-                        if fallback.is_ok() {
-                            emit_queue_status_event(
-                                &http,
-                                &nats_client,
-                                &rest_api_url,
-                                &secret,
-                                &task,
-                                -910,
-                                "rest-fallback-accepted",
-                                "REST fallback accepted",
-                                "Direct REST fallback accepted the task and is waking the UUID-bound worker.",
-                                json!({}),
-                            )
-                            .await;
-                        }
-                        fallback
-                    } else {
-                        Err(pool_error)
-                    }
+                    Err(pool_error)
                 }
             }
         };
@@ -737,7 +632,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 -910,
                 "queue-handoff-failed",
                 "queue handoff failed",
-                "Queue consumer could not hand the task to container-pool or fallback dispatch.",
+                "Queue consumer could not hand the task to container-pool.",
                 json!({ "error": error.to_string() }),
             )
             .await;

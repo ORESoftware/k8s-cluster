@@ -16,7 +16,7 @@ use axum::{
     },
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use futures_util::StreamExt;
@@ -107,6 +107,7 @@ static SIGNAL_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
 #[derive(Clone)]
 struct AppState {
     rooms: Arc<RwLock<HashMap<String, RoomState>>>,
+    admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -181,11 +182,31 @@ fn runtime_admin_subject() -> String {
     env_string("RUNTIME_ADMIN_EVENT_SUBJECT").unwrap_or_else(|| "dd.remote.events".to_string())
 }
 
+fn runtime_broadcast_secret() -> Option<String> {
+    env_string("RUNTIME_BROADCAST_SECRET")
+        .or_else(|| env_string("REMOTE_DEV_SERVER_SECRET"))
+        .or_else(|| env_string("SERVER_AUTH_SECRET"))
+}
+
 fn authorized_admin_ws(headers: &HeaderMap) -> bool {
     headers
         .get("x-dd-admin")
         .and_then(|value| value.to_str().ok())
         == Some("1")
+}
+
+fn authorized_runtime_broadcast(headers: &HeaderMap) -> bool {
+    let Some(secret) = runtime_broadcast_secret() else {
+        return false;
+    };
+    ["x-server-auth", "x-dd-internal-auth", "x-agent-auth"]
+        .iter()
+        .any(|header_name| {
+            headers
+                .get(*header_name)
+                .and_then(|value| value.to_str().ok())
+                == Some(secret.as_str())
+        })
 }
 
 fn normalize_id(value: Option<String>, fallback_prefix: &str) -> Result<String, String> {
@@ -217,6 +238,46 @@ fn json_text(value: Value) -> Message {
 
 fn send_json(tx: &mpsc::UnboundedSender<Message>, value: Value) {
     let _ = tx.send(json_text(value));
+}
+
+fn should_forward_admin_runtime_message(text: &str) -> bool {
+    serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("type")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .is_some_and(|message_type| {
+            matches!(message_type.as_str(), "k8s-runtime-event" | "task-event")
+        })
+}
+
+async fn broadcast_to_admin_runtime(state: &AppState, payload: Value) -> usize {
+    let text = payload.to_string();
+    let targets = {
+        let clients = state.admin_runtime_clients.read().await;
+        clients
+            .iter()
+            .map(|(client_id, tx)| (*client_id, tx.clone()))
+            .collect::<Vec<_>>()
+    };
+    let mut sent = 0;
+    let mut closed = Vec::new();
+    for (client_id, tx) in targets {
+        match tx.send(Message::Text(text.clone())) {
+            Ok(()) => sent += 1,
+            Err(_) => closed.push(client_id),
+        }
+    }
+    if !closed.is_empty() {
+        let mut clients = state.admin_runtime_clients.write().await;
+        for client_id in closed {
+            clients.remove(&client_id);
+        }
+    }
+    sent
 }
 
 async fn set_room_gauge(state: &AppState) {
@@ -546,67 +607,96 @@ async fn signal_socket(
     remove_peer(&state, &room_id, &peer_id).await;
 }
 
-async fn admin_runtime_socket(mut socket: WebSocket) {
+async fn admin_runtime_nats_bridge(tx: mpsc::UnboundedSender<Message>) {
     let subject = runtime_admin_subject();
     let nats = match async_nats::connect(nats_url()).await {
         Ok(client) => client,
         Err(error) => {
-            let _ = socket
-                .send(json_text(json!({
+            send_json(
+                &tx,
+                json!({
                     "type": "error",
                     "code": "nats_connect_failed",
                     "message": error.to_string(),
                     "atMs": now_ms(),
-                })))
-                .await;
+                }),
+            );
             return;
         }
     };
     let mut subscription = match nats.subscribe(subject.clone()).await {
         Ok(subscription) => subscription,
         Err(error) => {
-            let _ = socket
-                .send(json_text(json!({
+            send_json(
+                &tx,
+                json!({
                     "type": "error",
                     "code": "nats_subscribe_failed",
                     "subject": subject,
                     "message": error.to_string(),
                     "atMs": now_ms(),
-                })))
-                .await;
+                }),
+            );
             return;
         }
     };
-    let _ = socket
-        .send(json_text(json!({
-            "type": "welcome",
+    send_json(
+        &tx,
+        json!({
+            "type": "nats-subscribed",
             "mode": "admin-runtime-nats",
             "subject": subject,
+            "forwardedTypes": ["k8s-runtime-event", "task-event"],
             "atMs": now_ms(),
-        })))
-        .await;
+        }),
+    );
+
+    while let Some(message) = subscription.next().await {
+        let text = String::from_utf8_lossy(&message.payload);
+        if should_forward_admin_runtime_message(&text)
+            && tx.send(Message::Text(text.to_string())).is_err()
+        {
+            break;
+        }
+    }
+    send_json(
+        &tx,
+        json!({
+            "type": "error",
+            "code": "nats_subscription_closed",
+            "subject": subject,
+            "atMs": now_ms(),
+        }),
+    );
+}
+
+async fn admin_runtime_socket(mut socket: WebSocket, state: AppState) {
+    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let client_id = PEER_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    {
+        let mut clients = state.admin_runtime_clients.write().await;
+        clients.insert(client_id, tx.clone());
+    }
+    WS_CONNECTIONS_TOTAL.inc();
+    ACTIVE_CONNECTIONS.inc();
+    send_json(
+        &tx,
+        json!({
+            "type": "welcome",
+            "mode": "admin-runtime-fanout",
+            "clientId": client_id,
+            "directBroadcast": true,
+            "natsSubject": runtime_admin_subject(),
+            "atMs": now_ms(),
+        }),
+    );
+    tokio::spawn(admin_runtime_nats_bridge(tx.clone()));
     let mut heartbeat = tokio::time::interval(Duration::from_secs(25));
 
     loop {
         tokio::select! {
-            maybe_message = subscription.next() => {
-                let Some(message) = maybe_message else {
-                    let _ = socket
-                        .send(json_text(json!({
-                            "type": "error",
-                            "code": "nats_subscription_closed",
-                            "subject": subject,
-                            "atMs": now_ms(),
-                        })))
-                        .await;
-                    break;
-                };
-                let text = String::from_utf8_lossy(&message.payload);
-                let should_forward = serde_json::from_str::<Value>(&text)
-                    .ok()
-                    .and_then(|value| value.get("type").and_then(Value::as_str).map(str::to_string))
-                    .is_some_and(|message_type| message_type == "k8s-runtime-event");
-                if should_forward && socket.send(Message::Text(text.to_string())).await.is_err() {
+            Some(outbound) = rx.recv() => {
+                if socket.send(outbound).await.is_err() {
                     break;
                 }
             }
@@ -640,13 +730,13 @@ async fn admin_runtime_socket(mut socket: WebSocket) {
                 }
             }
             _ = heartbeat.tick() => {
-                if socket
+                if tx
                     .send(json_text(json!({
                         "type": "heartbeat",
-                        "mode": "admin-runtime-nats",
+                        "mode": "admin-runtime-fanout",
+                        "clientId": client_id,
                         "atMs": now_ms(),
                     })))
-                    .await
                     .is_err()
                 {
                     break;
@@ -654,15 +744,49 @@ async fn admin_runtime_socket(mut socket: WebSocket) {
             }
         }
     }
+    {
+        let mut clients = state.admin_runtime_clients.write().await;
+        clients.remove(&client_id);
+    }
+    ACTIVE_CONNECTIONS.dec();
 }
 
-async fn admin_runtime_ws(ws: WebSocketUpgrade, headers: HeaderMap) -> Response {
+async fn admin_runtime_ws(
+    State(state): State<AppState>,
+    ws: WebSocketUpgrade,
+    headers: HeaderMap,
+) -> Response {
     if !authorized_admin_ws(&headers) {
         record_http("GET", "/webrtc/runtime/ws", StatusCode::UNAUTHORIZED);
         return StatusCode::UNAUTHORIZED.into_response();
     }
     record_http("GET", "/webrtc/runtime/ws", StatusCode::SWITCHING_PROTOCOLS);
-    ws.on_upgrade(admin_runtime_socket)
+    ws.on_upgrade(move |socket| admin_runtime_socket(socket, state))
+}
+
+async fn admin_runtime_broadcast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Response {
+    if !authorized_runtime_broadcast(&headers) {
+        record_http(
+            "POST",
+            "/webrtc/runtime/broadcast",
+            StatusCode::UNAUTHORIZED,
+        );
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let delivered = broadcast_to_admin_runtime(&state, payload).await;
+    record_http("POST", "/webrtc/runtime/broadcast", StatusCode::ACCEPTED);
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({
+            "ok": true,
+            "delivered": delivered,
+        })),
+    )
+        .into_response()
 }
 
 async fn signal_ws(
@@ -785,6 +909,7 @@ async fn main() {
         .expect("HOST/PORT must form a socket address");
     let state = AppState {
         rooms: Arc::new(RwLock::new(HashMap::new())),
+        admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
     };
 
     let app = Router::new()
@@ -797,6 +922,8 @@ async fn main() {
         .route("/webrtc/metrics", get(metrics))
         .route("/runtime/ws", get(admin_runtime_ws))
         .route("/webrtc/runtime/ws", get(admin_runtime_ws))
+        .route("/runtime/broadcast", post(admin_runtime_broadcast))
+        .route("/webrtc/runtime/broadcast", post(admin_runtime_broadcast))
         .route("/signal", get(signal_ws))
         .route("/webrtc/signal", get(signal_ws))
         .with_state(state);

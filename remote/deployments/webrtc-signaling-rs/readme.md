@@ -91,6 +91,20 @@ The server wraps forwarded frames as:
 }
 ```
 
+## Runtime Admin Fanout
+
+The protected admin websocket at `/webrtc/runtime/ws` is also used as the Rust websocket backup path
+for remote-dev task status. It forwards `k8s-runtime-event` and `task-event` payloads from
+`RUNTIME_ADMIN_EVENT_SUBJECT` when NATS is healthy, and it stays connected if NATS is unavailable.
+Internal services can post the same JSON envelope directly to:
+
+```text
+POST /webrtc/runtime/broadcast
+```
+
+The direct broadcast endpoint requires `X-Server-Auth`, `X-Agent-Auth`, or `X-DD-Internal-Auth`
+matching `RUNTIME_BROADCAST_SECRET`/`SERVER_AUTH_SECRET`.
+
 ## Client Responsibilities
 
 Clients still own the actual `RTCPeerConnection` setup:

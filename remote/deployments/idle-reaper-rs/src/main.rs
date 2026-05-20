@@ -121,10 +121,19 @@ struct K8sRuntimeWatchJob {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QueueTaskMessage {
+    message_kind: Option<String>,
     thread_id: String,
     task_id: String,
     shadow: Option<bool>,
     direct_dispatch: Option<bool>,
+}
+
+fn is_shadow_task(task: &QueueTaskMessage) -> bool {
+    task.shadow.unwrap_or(false)
+        || task
+            .message_kind
+            .as_deref()
+            .is_some_and(|kind| kind == "task.shadow")
 }
 
 #[derive(Debug, Deserialize)]
@@ -1250,7 +1259,15 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
                                         };
                                         window_had_message = true;
                                         match serde_json::from_slice::<QueueTaskMessage>(&message.payload) {
-                                            Ok(task) => prepare_thread_from_nats(&client, &job, &task).await,
+                                            Ok(task) if is_shadow_task(&task) => prepare_thread_from_nats(&client, &job, &task).await,
+                                            Ok(task) => println!(
+                                                "nats watchdog ignored queued task thread={} task={} kind={} shadow={} direct_dispatch={}",
+                                                task.thread_id,
+                                                task.task_id,
+                                                task.message_kind.as_deref().unwrap_or("unknown"),
+                                                task.shadow.unwrap_or(false),
+                                                task.direct_dispatch.unwrap_or(false)
+                                            ),
                                             Err(error) => eprintln!("nats watchdog invalid task message: {}", error),
                                         }
                                     }

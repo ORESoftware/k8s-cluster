@@ -38,6 +38,26 @@ Their browser JavaScript calls the public gateway routes `GET /api/agents/tasks?
 The REST API owns RDS/Postgres, Supabase fallback, and later NATS/Postgres event write paths. This
 keeps page rendering separate from data access without making the webserver a proxy.
 
+## Lambda Functions
+
+`/lambdas/functions` is the Rust-served operator UI for stored lambda definitions. It calls
+`/api/lambdas/functions` for CRUD and invokes saved functions through the gateway's
+`POST /lambdas/invoke/<function-id>` route.
+
+The editor exposes a deployment profile layer above the persisted lambda runtime: direct `nodejs`
+and `python3` child-process profiles, plus `rust` and `gleamlang` process profiles that generate a
+Node.js wrapper using the lambda runner's `context.containerPool.dispatch(...)` helper. The UI also
+captures the intended base image and container runner (`containerd / ctr`, `containerd / nerdctl`,
+or `docker`) in `metaData.lambdaDeployment` so operators can see and revise the deployment intent
+without widening the REST API's trusted entry-command contract.
+
+The page accepts query params to prefill a new draft. Common params are `slug`, `name` or
+`displayName`, `description`, `status`, `runtime`, `processProfile` (`nodejs`, `python3`, `rust`,
+or `gleamlang`), `containerized`, `containerRunner`, `baseImage`, `reuseKey`,
+`idleTimeoutSeconds`, `maxRunMs`, `body` or `functionBody`, `request`, `labels`, `meta`, and
+`containerPoolTimeoutMs`. JSON-valued params such as `request`, `labels`, and `meta` should be URL
+encoded.
+
 ## Service directory
 
 `/home` lists the managed runtime deployments including Solana contracts, VPN, live-mutex, bastion,
@@ -83,6 +103,8 @@ runs the task and streams task events.
 The page opens two WebSocket paths while a task is active:
 
 - `wss://<host>/gleam/ws?threadId=<uuid>&taskId=<uuid>` for cluster-wide NATS/Gleam fanout.
+- `wss://<host>/admin/webrtc/runtime/ws?threadId=<uuid>&taskId=<uuid>` for Rust runtime fanout,
+  including direct REST API status broadcasts when NATS event fanout is unhealthy.
 - `wss://<host>/dd-thread/<thread-short>/ws?threadId=<uuid>&taskId=<uuid>` for direct worker
   replay/live events from the pinned Node.js container.
 
@@ -99,6 +121,9 @@ The same page now exposes per-thread controls:
   GitHub PRs.
 - `Merge with upstream` wakes the thread worker, then asks the Node.js task manager to fetch and
   merge the configured base branch and push the feature branch.
+- `Merge with siblings` creates a normal worker task that asks the selected thread branch to fetch
+  and semantically merge sibling feature branches from other threads with the same repo and base
+  branch, then commit and push the current branch.
 - `Make commit` wakes the thread worker, commits current workspace changes if there are any, and
   pushes the thread branch.
 - `Open draft PR` wakes the worker and opens or reuses a GitHub PR only on demand. New PRs are

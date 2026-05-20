@@ -374,6 +374,7 @@ struct KnownGitRepoRequest {
 #[serde(rename_all = "camelCase")]
 struct AgentEventIngestRequest {
     task_id: String,
+    thread_id: Option<String>,
     seq: i32,
     event: Value,
 }
@@ -475,6 +476,14 @@ fn env_usize(name: &str, default: usize) -> usize {
     env::var(name)
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default)
 }
@@ -733,6 +742,138 @@ fn nats_event_subject() -> &'static str {
     "dd.remote.events"
 }
 
+fn rest_status_gleam_broadcast_url() -> String {
+    first_env(&["REST_STATUS_GLEAM_BROADCAST_URL", "GLEAM_BROADCAST_URL"]).unwrap_or_else(|| {
+        "http://dd-gleamlang-server.default.svc.cluster.local:8081/broadcast".to_string()
+    })
+}
+
+fn rest_status_gleam_broadcast_secret() -> Option<String> {
+    first_env(&[
+        "REST_STATUS_GLEAM_BROADCAST_SECRET",
+        "GLEAM_BROADCAST_SECRET",
+        "NATS_WATCH_GLEAM_BROADCAST_SECRET",
+    ])
+}
+
+fn rest_status_rust_broadcast_url() -> String {
+    first_env(&["REST_STATUS_RUST_BROADCAST_URL", "RUNTIME_BROADCAST_URL"]).unwrap_or_else(|| {
+        "http://dd-webrtc-signaling.default.svc.cluster.local:8095/runtime/broadcast".to_string()
+    })
+}
+
+fn rest_status_rust_broadcast_secret() -> Option<String> {
+    first_env(&[
+        "REST_STATUS_RUST_BROADCAST_SECRET",
+        "RUNTIME_BROADCAST_SECRET",
+        "REMOTE_DEV_SERVER_SECRET",
+        "SERVER_AUTH_SECRET",
+    ])
+}
+
+fn task_event_payload(
+    thread_id: &str,
+    task_id: &str,
+    seq: impl Serialize,
+    message_id: &str,
+    event: &Value,
+) -> Value {
+    json!({
+        "type": "task-event",
+        "messageId": message_id,
+        "threadId": thread_id,
+        "taskId": task_id,
+        "seq": seq,
+        "event": event,
+        "emittedAt": now_ms()
+    })
+}
+
+fn task_event_message_id(task_id: &str, seq: i32, event: &Value) -> String {
+    event
+        .get("stage")
+        .and_then(Value::as_str)
+        .filter(|stage| !stage.trim().is_empty())
+        .map(|stage| format!("{task_id}:{stage}"))
+        .unwrap_or_else(|| format!("{task_id}:event:{seq}"))
+}
+
+async fn post_task_event_to_websocket_fanout(
+    client: &reqwest::Client,
+    name: &str,
+    url: &str,
+    secret: &str,
+    payload: &Value,
+) -> Result<(), String> {
+    let response = client
+        .post(url)
+        .header("content-type", "application/json")
+        .header("x-dd-internal-auth", secret)
+        .json(payload)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        Err(format!(
+            "{name} websocket fanout failed with {status}: {}",
+            body.chars().take(300).collect::<String>()
+        ))
+    }
+}
+
+async fn publish_task_event_to_websocket_fanout(
+    thread_id: &str,
+    task_id: &str,
+    seq: impl Serialize,
+    message_id: &str,
+    event: &Value,
+) {
+    let payload = task_event_payload(thread_id, task_id, seq, message_id, event);
+    let timeout_ms = env_u64("REST_STATUS_WS_FANOUT_TIMEOUT_MS", 900);
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_millis(timeout_ms))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("failed to build websocket fanout client: {error}");
+            return;
+        }
+    };
+
+    if let Some(secret) = rest_status_gleam_broadcast_secret() {
+        if let Err(error) = post_task_event_to_websocket_fanout(
+            &client,
+            "gleam",
+            &rest_status_gleam_broadcast_url(),
+            &secret,
+            &payload,
+        )
+        .await
+        {
+            eprintln!("failed to publish task event to gleam websocket fanout: {error}");
+        }
+    }
+
+    if let Some(secret) = rest_status_rust_broadcast_secret() {
+        if let Err(error) = post_task_event_to_websocket_fanout(
+            &client,
+            "rust",
+            &rest_status_rust_broadcast_url(),
+            &secret,
+            &payload,
+        )
+        .await
+        {
+            eprintln!("failed to publish task event to rust websocket fanout: {error}");
+        }
+    }
+}
+
 fn nats_lambda_functions_subject() -> &'static str {
     "dd.remote.lambdas.functions"
 }
@@ -767,6 +908,14 @@ async fn publish_thread_runtime_event_to_nats(
             "atMs": now
         }
     });
+    publish_task_event_to_websocket_fanout(
+        thread_id,
+        event_task_id,
+        now,
+        &format!("{event_task_id}:thread-runtime:{action}:{status}"),
+        &payload["event"],
+    )
+    .await;
     let body = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
     let client = async_nats::connect(nats_url())
         .await
@@ -795,6 +944,7 @@ async fn persist_task_status_event(
     event_object.insert("atMs".to_string(), json!(now_ms()));
     let request = AgentEventIngestRequest {
         task_id: task_id.to_string(),
+        thread_id: None,
         seq,
         event,
     };
@@ -810,15 +960,7 @@ async fn publish_task_event_to_nats(
     message_id: &str,
     event: &Value,
 ) -> Result<(), String> {
-    let payload = json!({
-        "type": "task-event",
-        "messageId": message_id,
-        "threadId": thread_id,
-        "taskId": task_id,
-        "seq": seq,
-        "event": event,
-        "emittedAt": now_ms()
-    });
+    let payload = task_event_payload(thread_id, task_id, seq, message_id, event);
     let body = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
     client
         .publish(nats_event_subject(), body.into())
@@ -3551,6 +3693,7 @@ fn copy_lambda_runner(
     let (source_name, target_name) = lambda_runner_source(runtime);
     let source = repo_root
         .join("remote")
+        .join("deployments")
         .join("gleam-lambda-runner")
         .join("child-runtimes")
         .join(source_name);
@@ -4051,19 +4194,11 @@ async fn persist_feedback_event_to_postgres(
     })
 }
 
-async fn publish_task_shadow_to_nats(
-    request: &DispatchTaskRequest,
-    branch: Option<&str>,
-) -> Result<(), String> {
-    publish_task_to_nats(request, branch, "task.shadow", true, true).await
-}
-
 async fn publish_task_dispatch_to_nats(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
-    direct_dispatch: bool,
 ) -> Result<(), String> {
-    publish_task_to_nats(request, branch, "task.dispatch", false, direct_dispatch).await
+    publish_task_to_nats(request, branch, "task.dispatch", false).await
 }
 
 fn dispatch_mode_value(request: &DispatchTaskRequest) -> &str {
@@ -4089,7 +4224,6 @@ async fn publish_task_to_nats(
     branch: Option<&str>,
     message_kind: &'static str,
     shadow: bool,
-    direct_dispatch: bool,
 ) -> Result<(), String> {
     let repo_config = normalized_repo_config(request)?;
     let message = NatsTaskMessage {
@@ -4097,7 +4231,7 @@ async fn publish_task_to_nats(
         message_kind,
         task_kind: "agent.prompt",
         shadow,
-        direct_dispatch,
+        direct_dispatch: false,
         thread_id: request.thread_id.clone(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
@@ -4133,7 +4267,7 @@ async fn publish_task_to_nats(
             "stage": "nats-published",
             "messageKind": message_kind,
             "shadow": shadow,
-            "directDispatch": direct_dispatch,
+            "directDispatch": false,
             "subject": nats_task_subject(&request.thread_id),
             "wakeupSubject": nats_wakeup_subject(),
         }),
@@ -4141,12 +4275,21 @@ async fn publish_task_to_nats(
     .await;
     match status_event {
         Ok(event) => {
+            let message_id = format!("{}:{message_kind}:nats-published", request.task_id);
+            publish_task_event_to_websocket_fanout(
+                &request.thread_id,
+                &request.task_id,
+                -950,
+                &message_id,
+                &event,
+            )
+            .await;
             if let Err(error) = publish_task_event_to_nats(
                 &client,
                 &request.thread_id,
                 &request.task_id,
                 -950,
-                &format!("{}:{message_kind}:nats-published", request.task_id),
+                &message_id,
                 &event,
             )
             .await
@@ -4952,7 +5095,7 @@ async fn dispatch_thread_task(
         eprintln!("failed to persist remote task before worker wake: {error}");
     }
     if queued_dispatch {
-        if let Err(error) = persist_task_status_event(
+        match persist_task_status_event(
             &request.task_id,
             -980,
             "queued dispatch accepted",
@@ -4966,17 +5109,27 @@ async fn dispatch_thread_task(
         )
         .await
         {
-            eprintln!("failed to persist queued dispatch accepted event: {error}");
+            Ok(event) => {
+                publish_task_event_to_websocket_fanout(
+                    &thread_id,
+                    &request.task_id,
+                    -980,
+                    &format!("{}:queued-dispatch-accepted", request.task_id),
+                    &event,
+                )
+                .await;
+            }
+            Err(error) => eprintln!("failed to persist queued dispatch accepted event: {error}"),
         }
-        match publish_task_dispatch_to_nats(&request, None, !container_pool_dispatch).await {
+        match publish_task_dispatch_to_nats(&request, None).await {
             Ok(()) => {}
             Err(error) => {
                 eprintln!("failed to publish queued remote task to nats: {error}");
-                if let Err(persist_error) = persist_task_status_event(
+                match persist_task_status_event(
                     &request.task_id,
                     -940,
                     "nats publish failed",
-                    "REST API could not publish the queued handoff to NATS; continuing with synchronous worker dispatch.",
+                    "REST API could not publish the queued handoff to NATS.",
                     json!({
                         "source": "dd-remote-rest-api",
                         "stage": "nats-publish-failed",
@@ -4987,34 +5140,45 @@ async fn dispatch_thread_task(
                 )
                 .await
                 {
-                    eprintln!("failed to persist queued dispatch publish failure: {persist_error}");
+                    Ok(event) => {
+                        publish_task_event_to_websocket_fanout(
+                            &thread_id,
+                            &request.task_id,
+                            -940,
+                            &format!("{}:nats-publish-failed", request.task_id),
+                            &event,
+                        )
+                        .await;
+                    }
+                    Err(persist_error) => {
+                        eprintln!(
+                            "failed to persist queued dispatch publish failure: {persist_error}"
+                        );
+                    }
                 }
-                if container_pool_dispatch {
-                    return (
-                        StatusCode::BAD_GATEWAY,
-                        Json(json!({
-                            "error": "failed to publish queued container-pool task to nats"
-                        })),
-                    )
-                        .into_response();
-                }
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({
+                        "error": "failed to publish queued task to nats"
+                    })),
+                )
+                    .into_response();
             }
         }
-        if container_pool_dispatch {
-            return (
-                StatusCode::ACCEPTED,
-                Json(json!({
-                    "ok": true,
-                    "mode": dispatch_mode,
-                    "queued": true,
-                    "directDispatch": false,
-                    "subject": nats_task_subject(&thread_id),
-                    "taskId": &request.task_id,
-                    "threadId": &thread_id,
-                })),
-            )
-                .into_response();
-        }
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "ok": true,
+                "mode": dispatch_mode,
+                "queued": true,
+                "containerPoolDispatch": container_pool_dispatch,
+                "directDispatch": false,
+                "subject": nats_task_subject(&thread_id),
+                "taskId": &request.task_id,
+                "threadId": &thread_id,
+            })),
+        )
+            .into_response();
     }
 
     let Ok((namespace, name, _results)) =
@@ -5089,16 +5253,6 @@ async fn dispatch_thread_task(
                 {
                     eprintln!("failed to persist remote task to postgres: {error}");
                 }
-                match tokio::time::timeout(
-                    Duration::from_secs(2),
-                    publish_task_shadow_to_nats(&request, branch.as_deref()),
-                )
-                .await
-                {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => eprintln!("failed to publish remote task to nats: {error}"),
-                    Err(_) => eprintln!("timed out publishing remote task to nats"),
-                }
             }
             let public_status =
                 StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -5136,7 +5290,19 @@ async fn ingest_agent_event(
             .into_response();
     };
     match persist_agent_event_to_postgres(&request, &event_kind).await {
-        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Ok(()) => {
+            if let Some(thread_id) = request.thread_id.as_deref() {
+                publish_task_event_to_websocket_fanout(
+                    thread_id,
+                    &request.task_id,
+                    request.seq,
+                    &task_event_message_id(&request.task_id, request.seq, &request.event),
+                    &request.event,
+                )
+                .await;
+            }
+            Json(json!({ "ok": true })).into_response()
+        }
         Err(error) => {
             eprintln!("agent event ingest failed: {error}");
             (

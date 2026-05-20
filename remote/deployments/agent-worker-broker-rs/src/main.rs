@@ -1,5 +1,5 @@
 use std::{
-    env, fs,
+    env,
     net::SocketAddr,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -41,7 +41,6 @@ struct Config {
     nats_task_subject: String,
     nats_wakeup_subject: String,
     direct_dispatch_enabled: bool,
-    wake_on_dispatch: bool,
     worker_health_timeout: Duration,
     worker_task_timeout: Duration,
     server_auth_secret: Option<String>,
@@ -67,7 +66,6 @@ struct BrokerHealth {
     ok: bool,
     service: &'static str,
     direct_dispatch_enabled: bool,
-    wake_on_dispatch: bool,
 }
 
 #[derive(Serialize)]
@@ -220,7 +218,6 @@ fn config_from_env() -> Config {
         nats_task_subject: env_value("NATS_TASK_SUBJECT", "dd.remote.thread.*.tasks"),
         nats_wakeup_subject: env_value("NATS_WAKEUP_SUBJECT", "dd.remote.orchestrator.wakeup"),
         direct_dispatch_enabled: env_bool("DIRECT_DISPATCH_ENABLED", true),
-        wake_on_dispatch: env_bool("WAKE_ON_DISPATCH", true),
         worker_health_timeout: Duration::from_millis(env_u64("WORKER_HEALTH_TIMEOUT_MS", 800)),
         worker_task_timeout: Duration::from_millis(env_u64("WORKER_TASK_TIMEOUT_MS", 30_000)),
         server_auth_secret: first_env(&["REMOTE_DEV_SERVER_SECRET", "SERVER_AUTH_SECRET"]),
@@ -244,7 +241,6 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         ok: true,
         service: "dd-agent-worker-broker",
         direct_dispatch_enabled: state.config.direct_dispatch_enabled,
-        wake_on_dispatch: state.config.wake_on_dispatch,
     })
 }
 
@@ -272,17 +268,13 @@ async fn metrics(State(state): State<AppState>) -> Response {
             "dd_agent_worker_broker_nats_publish_failures_total {}\n",
             "# HELP dd_agent_worker_broker_direct_dispatch_enabled Direct worker dispatch setting.\n",
             "# TYPE dd_agent_worker_broker_direct_dispatch_enabled gauge\n",
-            "dd_agent_worker_broker_direct_dispatch_enabled {}\n",
-            "# HELP dd_agent_worker_broker_wake_on_dispatch_enabled Worker wake-up setting.\n",
-            "# TYPE dd_agent_worker_broker_wake_on_dispatch_enabled gauge\n",
-            "dd_agent_worker_broker_wake_on_dispatch_enabled {}\n"
+            "dd_agent_worker_broker_direct_dispatch_enabled {}\n"
         ),
         state.metrics.http_requests_total.load(Ordering::Relaxed),
         state.metrics.dispatch_requests_total.load(Ordering::Relaxed),
         state.metrics.dispatch_failures_total.load(Ordering::Relaxed),
         state.metrics.nats_publish_failures_total.load(Ordering::Relaxed),
-        u8::from(state.config.direct_dispatch_enabled),
-        u8::from(state.config.wake_on_dispatch)
+        u8::from(state.config.direct_dispatch_enabled)
     );
 
     (
@@ -362,6 +354,25 @@ async fn publish_task_to_nats(
         subject,
         wakeup_subject: config.nats_wakeup_subject.clone(),
     })
+}
+
+fn skipped_nats_result(config: &Config, thread_id: &str) -> NatsPublishResult {
+    NatsPublishResult {
+        published: false,
+        subject: format!("dd.remote.thread.{thread_id}.tasks"),
+        wakeup_subject: config.nats_wakeup_subject.clone(),
+    }
+}
+
+fn skipped_wake_result() -> K8sWakeResult {
+    K8sWakeResult {
+        attempted: false,
+        ok: false,
+        resource: String::new(),
+        status: None,
+        body: None,
+        error: None,
+    }
 }
 
 async fn worker_is_awake(state: &AppState, worker_name: &str) -> bool {
@@ -464,91 +475,6 @@ async fn direct_dispatch(
     }
 }
 
-async fn k8s_http_client() -> Result<(reqwest::Client, String, String), String> {
-    let base_url = if let Some(value) = first_env(&["K8S_API_SERVER"]) {
-        value
-    } else {
-        let host = env::var("KUBERNETES_SERVICE_HOST")
-            .map_err(|_| "KUBERNETES_SERVICE_HOST is not set".to_string())?;
-        let port = env::var("KUBERNETES_SERVICE_PORT").unwrap_or_else(|_| "443".to_string());
-        format!("https://{host}:{port}")
-    };
-    let token = fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/token")
-        .map_err(|error| format!("failed to read serviceaccount token: {error}"))?;
-    let mut builder = reqwest::Client::builder();
-    if let Ok(ca) = fs::read("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt") {
-        if let Ok(cert) = reqwest::Certificate::from_pem(&ca) {
-            builder = builder.add_root_certificate(cert);
-        }
-    }
-    let client = builder
-        .build()
-        .map_err(|error| format!("failed to build k8s http client: {error}"))?;
-    Ok((client, base_url, token))
-}
-
-async fn wake_worker(config: &Config, worker_name: &str) -> K8sWakeResult {
-    if !config.wake_on_dispatch {
-        return K8sWakeResult {
-            attempted: false,
-            ok: false,
-            resource: String::new(),
-            status: None,
-            body: None,
-            error: None,
-        };
-    }
-
-    let resource = format!(
-        "/apis/apps/v1/namespaces/{}/deployments/{}/scale",
-        config.namespace, worker_name
-    );
-    let (client, base_url, token) = match k8s_http_client().await {
-        Ok(value) => value,
-        Err(error) => {
-            return K8sWakeResult {
-                attempted: true,
-                ok: false,
-                resource,
-                status: None,
-                body: None,
-                error: Some(error),
-            }
-        }
-    };
-
-    match client
-        .patch(format!("{base_url}{resource}"))
-        .bearer_auth(token.trim())
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/merge-patch+json")
-        .json(&json!({ "spec": { "replicas": 1 } }))
-        .send()
-        .await
-    {
-        Ok(response) => {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            K8sWakeResult {
-                attempted: true,
-                ok: status.is_success(),
-                resource,
-                status: Some(status.as_u16()),
-                body: Some(body.chars().take(1_000).collect()),
-                error: None,
-            }
-        }
-        Err(error) => K8sWakeResult {
-            attempted: true,
-            ok: false,
-            resource,
-            status: None,
-            body: None,
-            error: Some(error.to_string()),
-        },
-    }
-}
-
 async fn dispatch_task(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
@@ -623,6 +549,45 @@ async fn dispatch_task(
     };
 
     let worker_name = thread_resource_name(&thread_id);
+    let direct_dispatch = direct_dispatch(
+        &state,
+        &thread_id,
+        &worker_name,
+        &request,
+        &repo,
+        &base_branch,
+    )
+    .await;
+    if direct_dispatch.worker_awake {
+        let ok = direct_dispatch.sent;
+        let nats = skipped_nats_result(&state.config, &thread_id);
+        if !ok {
+            state
+                .metrics
+                .dispatch_failures_total
+                .fetch_add(1, Ordering::Relaxed);
+        }
+        let status = if ok {
+            StatusCode::OK
+        } else {
+            StatusCode::BAD_GATEWAY
+        };
+        return (
+            status,
+            Json(BrokerResponse {
+                ok,
+                mode: "direct",
+                thread_id,
+                task_id: request.task_id,
+                worker_name,
+                nats,
+                direct_dispatch,
+                wake: skipped_wake_result(),
+            }),
+        )
+            .into_response();
+    }
+
     let nats = match publish_task_to_nats(&state.config, &thread_id, &request, &repo, &base_branch)
         .await
     {
@@ -643,37 +608,9 @@ async fn dispatch_task(
                 .into_response();
         }
     };
-    let direct_dispatch = direct_dispatch(
-        &state,
-        &thread_id,
-        &worker_name,
-        &request,
-        &repo,
-        &base_branch,
-    )
-    .await;
-    let wake = if direct_dispatch.sent {
-        K8sWakeResult {
-            attempted: false,
-            ok: false,
-            resource: String::new(),
-            status: None,
-            body: None,
-            error: None,
-        }
-    } else {
-        wake_worker(&state.config, &worker_name).await
-    };
-    let mode = if direct_dispatch.sent {
-        "direct-and-queued"
-    } else {
-        "queued"
-    };
-    let status = if direct_dispatch.sent {
-        StatusCode::OK
-    } else {
-        StatusCode::ACCEPTED
-    };
+    let wake = skipped_wake_result();
+    let mode = "queued";
+    let status = StatusCode::ACCEPTED;
 
     (
         status,

@@ -5,11 +5,11 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-remote-web-home` (Rust web layer for `/` + `/home`)
 - `dd-remote-auth` (Rust PIN auth service that sets the gateway `dd_auth` cookie)
 - `dd-remote-rest-api` (Rust RDS/Postgres REST API for agent task data)
-- `dd-agent-worker-broker` (Rust worker-dispatch broker for NATS-first, direct-if-awake handoff)
+- `dd-agent-worker-broker` (Rust worker-dispatch broker that chooses direct-if-awake or NATS queue)
 - `dd-container-pool` (Rust Postgres-configured warm container pool over HTTP or NATS)
 - `dd-build-server` (Rust CI/CD build server for repo image builds and controlled k8s deploys)
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
-- `dd-remote-queue-consumer` (Rust NATS shadow consumer that prepares UUID-bound thread workers)
+- `dd-remote-queue-consumer` (Rust NATS queue consumer for repo-scoped warm workers)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
@@ -257,10 +257,11 @@ health, then makes a narrow repo fix when there is an actionable issue. `remote/
 the branch and opens/reuses the PR.
 
 The same deployment also runs an adaptive NATS watchdog. It listens to copies of
-`dd.remote.thread.*.tasks` and `dd.remote.events`; task messages idempotently call
-`/api/agents/threads/<threadId>/prepare`, and event messages are reposted to the Gleam websocket
-fanout endpoint. When a window has activity it checks again after 5 seconds; quiet windows back off
-to 15 seconds.
+`dd.remote.thread.*.tasks` and `dd.remote.events`; legacy shadow task messages idempotently call
+`/api/agents/threads/<threadId>/prepare`, real queued `task.dispatch` messages are ignored by the
+watchdog so they stay owned by `dd-remote-queue-consumer`, and event messages are reposted to the
+Gleam websocket fanout endpoint. When a window has activity it checks again after 5 seconds; quiet
+windows back off to 15 seconds.
 
 The reaper is also the cron supervisor for the local worker image. Every day at 4am America/New_York
 it fetches/fast-forwards the EC2 checkout, runs `nerdctl -n k8s.io build` for
@@ -275,31 +276,40 @@ to make Headlamp's Jobs and Cron Jobs workload cards non-zero. It runs a no-op B
 `concurrencyPolicy: Forbid` so there is normally one active child `Job`; the real maintenance loops
 above still live in `dd-idle-reaper`.
 
-## NATS shadow prepare path
+## NATS queued execution path
 
-The runtime now includes a shadow NATS prepare path for future queue execution:
+The runtime now includes a NATS queued execution path:
 
-1. `dd-remote-rest-api` still performs direct dispatch to the selected thread worker.
-2. After a direct dispatch succeeds, it publishes the task payload through JetStream to
-   `dd.remote.thread.<threadId>.tasks` and also emits `dd.remote.orchestrator.wakeup`.
+1. Direct dispatch posts only to the selected thread worker and does not publish a task to NATS.
+2. Queued dispatch publishes the task payload through JetStream to
+   `dd.remote.thread.<threadId>.tasks`, emits `dd.remote.orchestrator.wakeup`, and returns `202`.
 3. `dd-remote-queue-consumer` reads the durable pull consumer `dd-remote-thread-preparer` on the
    `DD_REMOTE_TASKS` stream.
 4. KEDA watches that JetStream consumer lag and scales `dd-remote-queue-consumer` from 1 to 8 pods
    when pending messages build up, then returns to 1 after the stream drains.
-5. The consumer calls the internal REST route `/api/agents/threads/<threadId>/prepare`, which
-   creates/scales the deterministic `dd-thread-<short>` Deployment and waits for readiness.
+5. The consumer dispatches real `task.dispatch` messages to the repo-scoped container pool with
+   `affinityKey=<threadId>`; legacy shadow messages are the only messages that prepare the
+   deterministic `dd-thread-<short>` Deployment.
 6. The queue consumer stores taskId receipts under `/tmp/dd-remote-queue-consumer/tasks`; the
    Node.js worker also stores taskId receipts under its log directory. Repeated messages are
    accepted idempotently and do not start duplicate agent runs.
 
+Task status visibility has a second lane that is deliberately separate from execution ownership.
+The REST API persists queue status events and best-effort posts the same `task-event` JSON directly
+to both `dd-gleamlang-server` `/broadcast` and `dd-webrtc-signaling` `/runtime/broadcast`. NATS event
+fanout still works as the normal telemetry bus, but web-home can receive the initial queued/NATS
+failure statuses over Gleam or Rust websocket fanout even when `dd.remote.events` is degraded.
+
 This proves the queue handoff and warmup behavior without allowing arbitrary generic workers to
 steal coding-agent execution. Real queued `task.dispatch` messages are routed to repo-scoped
-Node chat/Claude warm pools first, with direct REST fallback to the deterministic thread worker.
+Node chat/Claude warm pools with `threadId` affinity; the queue consumer does not use direct REST
+fallback for real queued messages, preserving one execution owner.
 
 `dd-agent-worker-broker` is the additive long-run replacement for REST-owned worker dispatch. Its
-first route, `POST /api/agent-worker/threads/<threadId>/tasks`, publishes the task to JetStream,
-emits the wakeup subject, direct-posts to the deterministic Node.js worker only when that worker is
-already healthy, and otherwise scales the worker Deployment to `1` while returning `202 queued`.
+first route, `POST /api/agent-worker/threads/<threadId>/tasks`, direct-posts to the deterministic
+Node.js worker only when that worker is already healthy. If the worker is not awake, it publishes
+the task to JetStream, emits the wakeup subject, and returns `202 queued`; the queue consumer then
+owns pool selection. It deliberately chooses direct or queued, never both for the same accepted task.
 
 ## Container pool
 

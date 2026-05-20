@@ -14,7 +14,7 @@
 //   GET  /healthz                — liveness probe
 //
 // Per thread, the server prepares/reuses a stable branch
-// dev-thread/<threadId>/<slugified-title>.
+// agent/k8s/openai-5.5/<threadId>/<slugified-title>.
 // Per task, it runs the selected provider, streams sequenced events,
 // appends tmp/convos/thread.log, and pushes the branch. PR creation is an
 // explicit UI/API action.
@@ -23,29 +23,67 @@
 import Fastify from 'fastify';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { access, appendFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { ReplaySubject, Subject, interval } from 'rxjs';
 import { filter, takeUntil } from 'rxjs/operators';
 import { z } from 'zod';
 import { EventBus } from './event-bus.js';
-import { buildAgentEnv, getCachedAvailability, getRunner, probeAllProviders, resolveAgentProvider, } from './agents/index.js';
+import { containerPoolConfigFromEnv, containerPoolConfigured, dispatchContainerPool, } from './container-pool.js';
+import { buildAgentEnvCandidates, getCachedAvailability, getRunner, probeAllProviders, resolveAgentProvider, } from './agents/index.js';
 import { publishArtifact } from './storage/index.js';
 import { acquireUserChannel, destroyChannelPool, isRealtimeEnabled, publishUserEvent, releaseUserChannel, } from './realtime.js';
 import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
+import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
+import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
 // ---------- Config ----------
+const DEFAULT_AGENT_PROVIDER = 'generic-ai-sdk';
+const AGENT_FALLBACK_PROVIDER = 'generic-ai-sdk';
+const AGENT_SECONDARY_FALLBACK_PROVIDER = 'opencode-ai-sdk';
+const CONFIG_AGENT_PROVIDERS = new Set([
+    'claude-cli',
+    'claude-sdk',
+    'generic-ai-sdk',
+    'gemini-sdk',
+    'opencode-ai-sdk',
+    'openai-codex-cli',
+    'openai-sdk',
+]);
+const GENERATED_GIT_EXCLUDE_PATHS = ['.pnpm-store', 'node_modules', '.next', '.turbo'];
+const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS.map((path) => `:(exclude)${path}`);
+function configAgentProvider(value, fallback) {
+    return value && CONFIG_AGENT_PROVIDERS.has(value) ? value : fallback;
+}
+function configAgentProviderList(value, fallback) {
+    const requested = value
+        ? value
+            .split(/[,\s]+/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : fallback;
+    const seen = new Set();
+    const providers = [];
+    for (const item of requested) {
+        if (CONFIG_AGENT_PROVIDERS.has(item) && !seen.has(item)) {
+            seen.add(item);
+            providers.push(item);
+        }
+    }
+    return providers.length > 0 ? providers : fallback;
+}
+const configuredAgentFallbackProvider = configAgentProvider(process.env.AGENT_FALLBACK_PROVIDER, AGENT_FALLBACK_PROVIDER);
+const configuredAgentSecondaryFallbackProvider = configAgentProvider(process.env.AGENT_SECONDARY_FALLBACK_PROVIDER, AGENT_SECONDARY_FALLBACK_PROVIDER);
 const config = {
     port: Number(process.env.PORT ?? 8080),
     host: process.env.HOST ?? '0.0.0.0',
     workspaceRepo: process.env.WORKSPACE_REPO ?? '/home/node/workspace/repo',
     repoUrl: process.env.DD_REPO_URL ?? null,
-    // The container is pinned to a single threadId originating from
-    // /u/admin/remote-dev. Set via REMOTE_DEV_THREAD_ID (preferred) or
-    // THREAD_ID (fallback). The server refuses to start without one — see
-    // main().
+    // Per-thread pods set REMOTE_DEV_THREAD_ID. Repo-scoped warm pool workers
+    // leave it unset and accept tasks for any thread in the configured repo.
     threadId: process.env.REMOTE_DEV_THREAD_ID ?? process.env.THREAD_ID ?? null,
+    workerBindMode: process.env.WORKER_BIND_MODE ?? (process.env.REMOTE_DEV_THREAD_ID || process.env.THREAD_ID ? 'thread' : 'repo'),
     userId: process.env.USER_ID ?? null,
     // Each agent run writes publishable files into ${OUTPUTS_DIR}/<taskId>/.
     // After claude exits, runTask scans that dir and uploads each file via
@@ -69,12 +107,27 @@ const config = {
     eventIngestSecret: process.env.EVENT_INGEST_SECRET ?? null,
     natsUrl: process.env.NATS_URL ?? null,
     natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events',
+    workerFanoutWsUrl: workerFanoutWsUrlFromEnv(process.env),
+    workerFanoutWsMaxQueueDepth: Number(process.env.WORKER_FANOUT_WS_MAX_QUEUE_DEPTH ?? 500),
+    workerFanoutWsReconnectMs: Number(process.env.WORKER_FANOUT_WS_RECONNECT_MS ?? 1000),
     threadContextBaseUrl: process.env.THREAD_CONTEXT_BASE_URL ??
         process.env.REMOTE_REST_API_BASE_URL ??
         'http://dd-remote-rest-api.default.svc.cluster.local:8082',
     threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
     threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
-    agentEchoFallback: process.env.AGENT_ECHO_FALLBACK !== 'false',
+    repoContextMaxChars: Number(process.env.REPO_CONTEXT_MAX_CHARS ?? 24_000),
+    agentOptimisticMode: process.env.AGENT_OPTIMISTIC_MODE !== 'false',
+    agentMcpUrl: process.env.AGENT_MCP_ENABLED === 'false' ? null : process.env.AGENT_MCP_URL ?? null,
+    agentFallbackProvider: configuredAgentFallbackProvider,
+    agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider,
+    agentProviderRotation: configAgentProviderList(process.env.AGENT_PROVIDER_ROTATION, [
+        'generic-ai-sdk',
+        'opencode-ai-sdk',
+        'openai-sdk',
+        'claude-sdk',
+        'gemini-sdk',
+    ]),
+    agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
     baseBranch: process.env.BASE_BRANCH ?? 'dev',
     threadLogRelativePath: process.env.THREAD_LOG_RELATIVE_PATH ?? 'tmp/convos/thread.log',
     skipBootGitSync: process.env.SKIP_BOOT_GIT_SYNC === 'true',
@@ -85,6 +138,7 @@ const config = {
     },
     logDir: process.env.LOG_DIR ?? '/tmp/convos',
     processedTasksDir: process.env.PROCESSED_TASKS_DIR ?? join(process.env.LOG_DIR ?? '/tmp/convos', 'processed-tasks'),
+    containerPool: containerPoolConfigFromEnv(process.env),
     taskGcAfterMs: 60 * 60 * 1000, // 1 hour
     taskGcIntervalMs: 5 * 60 * 1000, // 5 min sweep
 };
@@ -95,6 +149,51 @@ const serverInstanceId = randomUUID();
 // ---- RxJS EventBus — reactive pipeline for events ----
 const eventBus = new EventBus();
 const natsPublisher = new NatsPublisher(config.natsUrl);
+const workerFanout = new WorkerFanoutWebSocket({
+    url: config.workerFanoutWsUrl,
+    logger: console,
+    maxQueueDepth: config.workerFanoutWsMaxQueueDepth,
+    reconnectMs: config.workerFanoutWsReconnectMs,
+});
+// ---------- Helpers ----------
+function pruneSessionQueueState(session) {
+    if (session.runningTaskId) {
+        const running = tasks.get(session.runningTaskId);
+        if (!running || running.finished) {
+            session.runningTaskId = undefined;
+        }
+    }
+    session.queuedTaskIds = session.queuedTaskIds.filter((id) => {
+        const task = tasks.get(id);
+        return Boolean(task && !task.finished && session.runningTaskId !== id);
+    });
+}
+function sessionBlockingTaskIds(session) {
+    pruneSessionQueueState(session);
+    const ids = [
+        session.runningTaskId,
+        ...session.queuedTaskIds,
+    ].filter((id) => Boolean(id));
+    return Array.from(new Set(ids));
+}
+function totalQueuedTaskCount() {
+    let count = 0;
+    for (const session of sessions.values()) {
+        pruneSessionQueueState(session);
+        count += session.queuedTaskIds.length;
+    }
+    return count;
+}
+function taskQueueSnapshot(task) {
+    const session = task.session;
+    pruneSessionQueueState(session);
+    const queuedIndex = session.queuedTaskIds.indexOf(task.taskId);
+    return {
+        running: session.runningTaskId === task.taskId && !task.finished,
+        queued: queuedIndex >= 0 && !task.finished,
+        queuePosition: queuedIndex >= 0 ? queuedIndex + 1 : undefined,
+    };
+}
 function shCapture(cmd, args, cwd, optsOrExtraEnv) {
     // Backwards-compat: callers passing a plain extraEnv object still work.
     const opts = optsOrExtraEnv &&
@@ -178,18 +277,297 @@ function slugifyBranchFragment(value) {
         .slice(0, 80);
     return slug || 'thread';
 }
-function getSessionBranch(sessionId, branchHint, titleHint) {
+function repoDisplayName() {
+    const repo = config.repoUrl?.trim();
+    if (!repo) {
+        return 'unknown repo';
+    }
+    const githubMatch = repo.match(/github\.com[:/]([^/]+)\/([^/#?]+?)(?:\.git)?$/i);
+    if (githubMatch) {
+        return `${githubMatch[1]}/${githubMatch[2]}`;
+    }
+    return repo;
+}
+function assertSafeGitBranchName(branch, label = 'branch') {
+    const invalid = !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(branch) ||
+        branch.startsWith('-') ||
+        branch.startsWith('/') ||
+        branch.endsWith('/') ||
+        branch.endsWith('.lock') ||
+        branch.includes('..') ||
+        branch.includes('//') ||
+        branch.includes('@{') ||
+        branch.includes('\\') ||
+        branch.split('/').some((part) => !part || part === '.' || part === '..' || part.endsWith('.lock'));
+    if (invalid) {
+        throw new Error(`invalid git ${label}: ${branch}`);
+    }
+}
+function gitBranchTarget(branch) {
+    return `${repoDisplayName()} branch ${branch}`;
+}
+function providerCanEditWorkspace(provider) {
+    return provider !== 'gemini-sdk';
+}
+function providerCanAccessWorkspace(provider) {
+    return providerCanEditWorkspace(provider);
+}
+function providerCanUseShell(provider) {
+    return (provider === 'openai-sdk' ||
+        provider === 'openai-codex-cli' ||
+        provider === 'claude-sdk' ||
+        provider === 'claude-cli');
+}
+function promptRequestsPullRequest(prompt) {
+    return /\b(?:open|create|submit|make|raise)\s+(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt) || /\b(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt);
+}
+function stripNegatedWorkspaceChangePhrases(prompt) {
+    return prompt
+        .replace(/\b(?:do\s+not|don't|dont|never)\s+(?:make\s+)?(?:any\s+)?(?:file|code|workspace|repo(?:sitory)?|source)?\s*(?:changes?|edits?|modifications?)\b/gi, ' ')
+        .replace(/\b(?:do\s+not|don't|dont|never)\s+(?:edit|change|modify|write|update|create|delete|remove|patch|fix|implement)(?:\s+(?:the|a|any|files?|code|workspace|repo(?:sitory)?|source|project|readme(?:\.md)?|package(?:\.json)?)){0,4}\b/gi, ' ')
+        .replace(/\b(?:without|no)\s+(?:making\s+)?(?:any\s+)?(?:file|code|workspace|repo(?:sitory)?|source)?\s*(?:changes?|edits?|modifications?)\b/gi, ' ');
+}
+function promptLikelyRequiresWorkspaceChange(prompt) {
+    const editablePrompt = stripNegatedWorkspaceChangePhrases(prompt);
+    return /\b(add|append|change|create|delete|edit|fix|implement|modify|move|patch|refactor|remove|rename|replace|update|write)\b/i.test(editablePrompt);
+}
+function promptLikelyRequiresWorkspaceAccess(prompt) {
+    const workspacePrompt = stripNegatedWorkspaceChangePhrases(prompt);
+    if (promptLikelyRequiresWorkspaceChange(prompt)) {
+        return true;
+    }
+    if (/\b(readme(?:\.md)?|package(?:\.json)?|pnpm-lock|dockerfile|makefile|tsconfig|cargo\.toml|go\.mod)\b/i.test(workspacePrompt)) {
+        return true;
+    }
+    const hasWorkspaceNoun = /\b(repo(?:sitory)?|codebase|workspace|working tree|source tree|folders?|directories|dirs?|files?|top[- ]level|root)\b/i.test(workspacePrompt);
+    const hasInspectionVerb = /\b(count|find|grep|how many|inspect|list|look|open|read|search|show|tree|what|where|which)\b/i.test(workspacePrompt);
+    return hasWorkspaceNoun && hasInspectionVerb;
+}
+function promptLikelyRequiresShellAccess(prompt) {
+    const workspacePrompt = stripNegatedWorkspaceChangePhrases(prompt);
+    return (/\bgit\s+(?:fetch|merge|push|commit|branch)\b/i.test(workspacePrompt) ||
+        /\b(?:fetch|push)\s+(?:origin|the\s+current\s+branch|current\s+branch|branches?)\b/i.test(workspacePrompt) ||
+        /\bcommit\s+(?:the\s+integrated\s+result|current\s+changes?|workspace\s+changes?|merge\s+result)\b/i.test(workspacePrompt) ||
+        /\bmerge\s+(?:with\s+)?sibling\b/i.test(workspacePrompt) ||
+        /\bsibling\s+feature\s+branches?\b/i.test(workspacePrompt));
+}
+function parseDeterministicAppendFilePrompt(prompt) {
+    const quoted = prompt.match(/\b(?:append(?:ing)?|add(?:ing)?)\s+(?:"([^"]+)"|'([^']+)'|`([^`]+)`)\s+(?:to|into)\s+(?:the\s+)?(?:file\s+)?([A-Za-z0-9][A-Za-z0-9._/-]*)(?:\b|$)/i);
+    if (quoted) {
+        return {
+            action: 'append-file',
+            text: quoted[1] ?? quoted[2] ?? quoted[3] ?? '',
+            relativePath: quoted[4],
+        };
+    }
+    const unquoted = prompt.match(/\b(?:append(?:ing)?|add(?:ing)?)\s+([A-Za-z0-9][A-Za-z0-9._-]*)\s+(?:to|into)\s+(?:the\s+)?(?:file\s+)?([A-Za-z0-9][A-Za-z0-9._/-]*)(?:\b|$)/i);
+    if (!unquoted) {
+        return null;
+    }
+    return {
+        action: 'append-file',
+        text: unquoted[1],
+        relativePath: unquoted[2],
+    };
+}
+function safeRepoRelativePath(workspacePath, rawPath) {
+    const trimmed = rawPath.trim().replace(/^[.][/\\]+/, '').replace(/[),.;:]+$/g, '');
+    const normalized = normalize(trimmed);
+    if (!trimmed || trimmed.includes('\0') || isAbsolute(trimmed) || normalized === '.' || normalized === '..') {
+        throw new Error(`refusing unsafe deterministic append path: ${rawPath}`);
+    }
+    if (normalized.startsWith(`..${sep}`) || normalized.split(sep).some((part) => part === '..')) {
+        throw new Error(`refusing deterministic append outside ${repoDisplayName()}: ${rawPath}`);
+    }
+    const blockedSegments = new Set(['.git', 'node_modules', '.pnpm-store', '.next', '.turbo']);
+    const segments = normalized.split(sep).filter(Boolean);
+    if (segments.some((part) => blockedSegments.has(part))) {
+        throw new Error(`refusing deterministic append into generated or git-managed path: ${rawPath}`);
+    }
+    const workspaceRoot = resolve(workspacePath);
+    const resolvedTarget = resolve(workspaceRoot, normalized);
+    const repoRelative = relative(workspaceRoot, resolvedTarget);
+    if (!repoRelative || repoRelative.startsWith(`..${sep}`) || isAbsolute(repoRelative)) {
+        throw new Error(`refusing deterministic append outside ${repoDisplayName()}: ${rawPath}`);
+    }
+    return repoRelative.split(sep).join('/');
+}
+async function applyDeterministicWorkspaceEdit(state) {
+    const appendEdit = parseDeterministicAppendFilePrompt(state.prompt);
+    if (!appendEdit) {
+        return null;
+    }
+    const relativePath = safeRepoRelativePath(state.worktreePath, appendEdit.relativePath);
+    const targetPath = resolve(state.worktreePath, relativePath);
+    await mkdir(dirname(targetPath), { recursive: true });
+    let existing = '';
+    try {
+        existing = await readFile(targetPath, 'utf8');
+    }
+    catch (err) {
+        if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
+            throw err;
+        }
+    }
+    const prefix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    const suffix = appendEdit.text.endsWith('\n') ? '' : '\n';
+    await appendFile(targetPath, `${prefix}${appendEdit.text}${suffix}`, 'utf8');
+    const result = {
+        action: 'append-file',
+        relativePath,
+        appendedChars: appendEdit.text.length,
+    };
+    await appendThreadLog(state, {
+        kind: 'deterministic-edit',
+        action: result.action,
+        relativePath: result.relativePath,
+        appendedChars: result.appendedChars,
+        branch: state.branch,
+    });
+    emit(state, {
+        kind: 'status',
+        status: 'deterministic-edit:append-file',
+        message: `Appended ${result.appendedChars} character(s) to ${relativePath} in ${repoDisplayName()}.\n` +
+            `Workspace: ${gitBranchTarget(state.branch)}`,
+    });
+    return result;
+}
+async function gitWorkspaceStatus(workspacePath) {
+    return shCapture('git', ['status', '--porcelain', '--untracked-files=all', '--', '.', ...GENERATED_GIT_STATUS_EXCLUDES], workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
+}
+async function fetchRemoteBranch(workspacePath, branch, depth = 1) {
+    assertSafeGitBranchName(branch, 'remote branch');
+    await shCapture('git', [
+        'fetch',
+        '--quiet',
+        '--prune',
+        `--depth=${depth}`,
+        'origin',
+        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ], workspacePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
+}
+async function deepenRemoteBranch(workspacePath, branch, commits) {
+    assertSafeGitBranchName(branch, 'remote branch');
+    await shCapture('git', [
+        'fetch',
+        '--quiet',
+        `--deepen=${commits}`,
+        'origin',
+        `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    ], workspacePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
+}
+async function currentGitBranch(workspacePath) {
+    try {
+        const out = await shCapture('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], workspacePath, {
+            timeoutMs: TIMEOUT_GIT_QUICK,
+        });
+        return out.trim() || null;
+    }
+    catch {
+        return null;
+    }
+}
+async function currentGitCommit(workspacePath) {
+    return (await shCapture('git', ['rev-parse', 'HEAD'], workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+    })).trim();
+}
+async function assertSessionOnFeatureBranch(session) {
+    if (session.branch === config.baseBranch || session.branch === `origin/${config.baseBranch}`) {
+        throw new Error(`refusing to run ${session.sessionId} on parent branch ${config.baseBranch}; expected a feature branch`);
+    }
+    const branch = await currentGitBranch(session.workspacePath);
+    if (branch === config.baseBranch) {
+        throw new Error(`workspace is still on parent branch ${config.baseBranch}; refusing to start queued task for ${session.branch}`);
+    }
+    if (branch !== session.branch) {
+        const commit = await currentGitCommit(session.workspacePath).catch(() => 'unknown');
+        throw new Error(`workspace branch mismatch: expected ${session.branch}, got ${branch ?? `detached at ${commit}`}`);
+    }
+}
+async function ensureMergeBaseWithBaseBranch(session) {
+    const deepenSteps = [50, 200, 1000];
+    for (let attempt = 0; attempt <= deepenSteps.length; attempt += 1) {
+        try {
+            await shCapture('git', ['merge-base', 'HEAD', `origin/${config.baseBranch}`], session.workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
+            return;
+        }
+        catch (err) {
+            if (attempt >= deepenSteps.length) {
+                throw err;
+            }
+            const deepenBy = deepenSteps[attempt];
+            await deepenRemoteBranch(session.workspacePath, config.baseBranch, deepenBy);
+            if (await remoteBranchExists(session.branch)) {
+                await deepenRemoteBranch(session.workspacePath, session.branch, deepenBy);
+            }
+        }
+    }
+}
+async function gitUnmergedFiles(workspacePath) {
+    const out = await shCapture('git', ['diff', '--name-only', '--diff-filter=U'], workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+    return out
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
+async function abortMergeIfInProgress(workspacePath) {
+    try {
+        await shCapture('git', ['rev-parse', '--quiet', '--verify', 'MERGE_HEAD'], workspacePath, {
+            timeoutMs: TIMEOUT_GIT_QUICK,
+        });
+    }
+    catch {
+        return;
+    }
+    try {
+        await shCapture('git', ['merge', '--abort'], workspacePath, {
+            timeoutMs: TIMEOUT_GIT_QUICK,
+        });
+    }
+    catch (err) {
+        process.stderr.write(`[remote-dev] merge --abort failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+}
+async function pushSessionBranch(session) {
+    assertSafeGitBranchName(session.branch, 'session branch');
+    await shCapture('git', ['push', '--no-verify', '--set-upstream', 'origin', session.branch], session.workspacePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
+}
+async function gitAddWorkspaceChanges(workspacePath) {
+    await shCapture('git', ['add', '-A', '--', '.'], workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+    await shCapture('git', ['reset', '-q', 'HEAD', '--', ...GENERATED_GIT_EXCLUDE_PATHS], workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+}
+async function resetDependencyInstallArtifacts(workspacePath) {
+    await shCapture('git', ['restore', '--staged', '--worktree', '--', '.'], workspacePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+    await shCapture('git', ['clean', '-fdx', '--exclude=node_modules', '--exclude=.pnpm-store', '--exclude=.next', '--exclude=.turbo'], workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
+}
+function getSessionBranch(sessionId, branchHint, titleHint, promptHint) {
     const hinted = branchHint?.trim();
     if (hinted) {
+        assertSafeGitBranchName(hinted, 'session branch');
         return hinted;
     }
-    const titleSlug = slugifyBranchFragment(titleHint?.trim() || sessionId);
-    return `dev-thread/${sessionId}/${titleSlug}`;
+    const titleSlug = slugifyBranchFragment(titleHint?.trim() || promptHint?.trim() || sessionId);
+    const branch = `${config.agentBranchPrefix}/${sessionId}/${titleSlug}`;
+    assertSafeGitBranchName(branch, 'session branch');
+    return branch;
+}
+function isPlaceholderSessionBranch(sessionId, branch) {
+    return branch === getSessionBranch(sessionId);
 }
 function getSessionLogPath(workspacePath) {
     return join(workspacePath, config.threadLogRelativePath);
 }
 async function remoteBranchExists(branch) {
+    assertSafeGitBranchName(branch, 'remote branch');
     const out = await shCapture('git', ['ls-remote', '--heads', 'origin', branch], config.workspaceRepo, { timeoutMs: TIMEOUT_GIT_NETWORK });
     return out.trim().length > 0;
 }
@@ -241,23 +619,33 @@ async function prepareSessionWorkspace(session) {
         }) + '\n');
         return;
     }
-    await shCapture('git', ['fetch', '--quiet', 'origin', config.baseBranch], config.workspaceRepo, {
-        timeoutMs: TIMEOUT_GIT_NETWORK,
-    });
+    await fetchRemoteBranch(config.workspaceRepo, config.baseBranch, 1);
     const hasRemoteBranch = await remoteBranchExists(session.branch);
+    const switchSource = hasRemoteBranch ? `origin/${session.branch}` : `origin/${config.baseBranch}`;
     if (hasRemoteBranch) {
-        await shCapture('git', ['fetch', '--quiet', 'origin', session.branch], config.workspaceRepo, {
-            timeoutMs: TIMEOUT_GIT_NETWORK,
-        });
+        await fetchRemoteBranch(config.workspaceRepo, session.branch, 1);
     }
-    await shCapture('git', [
-        'switch',
-        '--discard-changes',
-        '-C',
-        session.branch,
-        hasRemoteBranch ? `origin/${session.branch}` : `origin/${config.baseBranch}`,
-    ], config.workspaceRepo, { timeoutMs: TIMEOUT_GIT_QUICK });
+    const currentBranch = await currentGitBranch(session.workspacePath);
+    if (currentBranch !== session.branch) {
+        const status = await gitWorkspaceStatus(session.workspacePath);
+        if (status.trim()) {
+            throw new Error(`workspace has uncommitted changes while on ${currentBranch ?? 'detached HEAD'}; refusing to switch to ${session.branch}`);
+        }
+        await shCapture('git', [
+            'switch',
+            '--discard-changes',
+            '-C',
+            session.branch,
+            switchSource,
+        ], config.workspaceRepo, { timeoutMs: TIMEOUT_GIT_QUICK });
+    }
+    await assertSessionOnFeatureBranch(session);
+    const preInstallStatus = await gitWorkspaceStatus(session.workspacePath);
+    if (preInstallStatus.trim()) {
+        throw new Error(`workspace has uncommitted changes before dependency preparation on ${session.branch}; refusing to discard them`);
+    }
     const installResult = await installWorkspaceDependencies(session.workspacePath);
+    await resetDependencyInstallArtifacts(session.workspacePath);
     await configureGitIdentity(session.workspacePath);
     await mkdir(dirname(session.logPath), { recursive: true });
     await appendFile(session.logPath, JSON.stringify({
@@ -274,11 +662,19 @@ async function prepareSessionWorkspace(session) {
 }
 function getOrCreateSession(input) {
     const sessionId = getSessionId(input.threadId, input.taskId);
+    const desiredBranch = getSessionBranch(sessionId, input.branch, input.threadTitle, input.prompt);
     const existing = sessions.get(sessionId);
     if (existing) {
         existing.lastActiveAt = Date.now();
         if (!existing.userId && input.userId) {
             existing.userId = input.userId;
+        }
+        if (existing.taskIds.size === 0 &&
+            existing.branch !== desiredBranch &&
+            !input.branch?.trim() &&
+            isPlaceholderSessionBranch(sessionId, existing.branch)) {
+            existing.branch = desiredBranch;
+            existing.ready = existing.ready.catch(() => undefined).then(() => prepareSessionWorkspace(existing));
         }
         return existing;
     }
@@ -287,11 +683,12 @@ function getOrCreateSession(input) {
         sessionId,
         userId: input.userId,
         workspacePath,
-        branch: getSessionBranch(sessionId, input.branch, input.threadTitle),
+        branch: desiredBranch,
         logPath: getSessionLogPath(workspacePath),
         ready: Promise.resolve(),
         queue: Promise.resolve(),
         taskIds: new Set(),
+        queuedTaskIds: [],
         createdAt: Date.now(),
         lastActiveAt: Date.now(),
     };
@@ -337,9 +734,44 @@ function sanitizeEventText(value) {
     let output = value;
     for (const key of [
         'OPENAI_API_KEY',
+        'OPENAI_API_KEYS',
+        'OPENAI_API_KEYS_JSON',
         'ANTHROPIC_API_KEY',
+        'ANTHROPIC_API_KEYS',
+        'ANTHROPIC_API_KEYS_JSON',
+        'CLAUDE_API_KEY',
+        'CLAUDE_API_KEYS',
+        'CLAUDE_API_KEYS_JSON',
         'GEMINI_API_KEY',
+        'GEMINI_API_KEYS',
+        'GEMINI_API_KEYS_JSON',
         'GOOGLE_API_KEY',
+        'GOOGLE_API_KEYS',
+        'GOOGLE_API_KEYS_JSON',
+        'OPENCODE_API_KEY',
+        'OPENCODE_API_KEYS',
+        'OPENCODE_API_KEYS_JSON',
+        'OPENCODE_ZEN_API_KEY',
+        'OPENCODE_ZEN_API_KEYS',
+        'OPENCODE_ZEN_API_KEYS_JSON',
+        'DEEPSEEK_API_KEY',
+        'DEEPSEEK_API_KEYS',
+        'DEEPSEEK_API_KEYS_JSON',
+        'DASHSCOPE_API_KEY',
+        'DASHSCOPE_API_KEYS',
+        'DASHSCOPE_API_KEYS_JSON',
+        'QWEN_API_KEY',
+        'QWEN_API_KEYS',
+        'QWEN_API_KEYS_JSON',
+        'ALIBABA_API_KEY',
+        'ALIBABA_API_KEYS',
+        'ALIBABA_API_KEYS_JSON',
+        'XAI_API_KEY',
+        'XAI_API_KEYS',
+        'XAI_API_KEYS_JSON',
+        'GROK_API_KEY',
+        'GROK_API_KEYS',
+        'GROK_API_KEYS_JSON',
         'GH_PAT',
         'GH_DEPLOY_KEY',
         'SERVER_AUTH_SECRET',
@@ -355,7 +787,42 @@ function sanitizeEventText(value) {
         .replace(/\bsk-ant-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-anthropic-key]')
         .replace(/\bsk-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-openai-key]')
         .replace(/\bAIza[A-Za-z0-9_*\-]{12,}\b/g, '[redacted-google-key]')
+        .replace(/\bsk-oc-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-opencode-key]')
+        .replace(/\bxai-[A-Za-z0-9_*.-]{24,}\b/g, '[redacted-xai-key]')
         .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]');
+}
+function compactAgentErrorMessage(provider, err) {
+    const raw = sanitizeEventText(err instanceof Error ? err.message : String(err));
+    if (/You exceeded your current quota|insufficient_quota|quota/i.test(raw)) {
+        return provider === 'gemini-sdk' ? 'quota or rate limit' : 'quota exceeded';
+    }
+    if (/Credit balance is too low/i.test(raw)) {
+        return 'credit balance is too low';
+    }
+    if (/SERVICE_DISABLED|Gemini API has not been used/i.test(raw)) {
+        return 'Gemini API disabled for this key project';
+    }
+    if (/API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(raw)) {
+        return 'Google API key blocks server-side requests';
+    }
+    if (/API_KEY_SERVICE_BLOCKED|StreamGenerateContent are blocked|Requests to this API/i.test(raw)) {
+        return 'Google API key blocks the Gemini API';
+    }
+    if (/API_KEY_INVALID|API key not valid/i.test(raw)) {
+        return 'invalid API key';
+    }
+    if (/MALFORMED_FUNCTION_CALL/i.test(raw)) {
+        return 'model returned malformed function call';
+    }
+    return raw.replace(/\s+/g, ' ').slice(0, 240);
+}
+function formatAgentFailureSummary(provider, failures, attempted, total) {
+    const reasons = Array.from(failures.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, count]) => `${reason} (${count})`)
+        .slice(0, 4)
+        .join('; ');
+    return `${provider} failed ${attempted}/${total} configured key(s): ${reasons || 'unknown error'}`;
 }
 function isWebSocketJsonObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -386,6 +853,93 @@ function sanitizeEvent(event) {
         return { ...event, text: sanitizeEventText(event.text) };
     }
     return event;
+}
+function recordValue(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return value;
+    }
+    return undefined;
+}
+function nestedRecord(value, key) {
+    return recordValue(recordValue(value)?.[key]);
+}
+function stringValue(value) {
+    return typeof value === 'string' ? value : '';
+}
+function agentRawType(raw) {
+    const obj = recordValue(raw);
+    const data = nestedRecord(raw, 'data');
+    const event = nestedRecord(raw, 'event');
+    const dataEvent = recordValue(data?.event);
+    const providerData = nestedRecord(raw, 'providerData');
+    const message = nestedRecord(raw, 'message');
+    return [
+        obj?.type,
+        data?.type,
+        event?.type,
+        dataEvent?.type,
+        providerData?.type,
+        message?.type,
+    ]
+        .filter((value) => typeof value === 'string' && value.length > 0)
+        .join(' ');
+}
+function agentEventVisibleText(raw) {
+    const obj = recordValue(raw);
+    if (!obj)
+        return '';
+    const directText = stringValue(obj.text).trim();
+    if (directText)
+        return directText;
+    const data = nestedRecord(raw, 'data');
+    const event = recordValue(data?.event) ?? nestedRecord(raw, 'event') ?? data ?? {};
+    const rawType = agentRawType(raw);
+    if (/output_text\.delta|text_delta|message_delta|content_block_delta/i.test(rawType)) {
+        const eventRecord = recordValue(event);
+        const content = Array.isArray(eventRecord?.content) ? eventRecord.content[0] : undefined;
+        return stringValue(eventRecord?.delta || eventRecord?.text || recordValue(content)?.text).trim();
+    }
+    if (/message|assistant/i.test(rawType)) {
+        const eventRecord = recordValue(event);
+        const message = recordValue(eventRecord?.message) ?? nestedRecord(raw, 'message');
+        const content = message?.content ?? obj.content;
+        if (Array.isArray(content)) {
+            return content
+                .map((item) => stringValue(recordValue(item)?.text))
+                .filter(Boolean)
+                .join('');
+        }
+    }
+    return '';
+}
+function agentEventHasProviderError(raw) {
+    const obj = recordValue(raw);
+    const message = nestedRecord(raw, 'message');
+    return Boolean(obj?.error ||
+        obj?.is_error === true ||
+        message?.error ||
+        /billing_error|api_error|permission_denied|quota|rate limit/i.test([obj?.error, obj?.result, obj?.terminal_reason].filter(Boolean).join(' ')));
+}
+function agentEventIsProviderMetadataOnly(raw) {
+    const obj = recordValue(raw);
+    if (!obj)
+        return false;
+    return Boolean(obj.provider && obj.model && !agentEventVisibleText(raw));
+}
+function shouldForwardAgentRunnerEvent(event) {
+    if (event.kind !== 'claude')
+        return true;
+    const rawType = agentRawType(event.raw);
+    const visibleText = agentEventVisibleText(event.raw);
+    if (agentEventHasProviderError(event.raw))
+        return false;
+    if (agentEventIsProviderMetadataOnly(event.raw))
+        return false;
+    if (/raw_model_stream_event|response\.created|response\.in_progress|response_started|response\.completed|system|tool/i.test(rawType) &&
+        !visibleText) {
+        return false;
+    }
+    return true;
 }
 function emit(state, event) {
     event = sanitizeEvent(event);
@@ -431,8 +985,9 @@ function emit(state, event) {
         seq: stored.seq,
         event,
     });
-    natsPublisher.publish(config.natsEventSubject, {
+    const fanoutPayload = {
         type: 'task-event',
+        messageId: randomUUID(),
         taskId: state.taskId,
         threadId: state.threadId,
         userId: state.userId,
@@ -441,7 +996,9 @@ function emit(state, event) {
         seq: stored.seq,
         emittedAt: new Date().toISOString(),
         event,
-    });
+    };
+    natsPublisher.publish(config.natsEventSubject, fanoutPayload);
+    workerFanout.publish(fanoutPayload);
 }
 async function ensureDeployKey() {
     if (!config.ghDeployKey) {
@@ -457,6 +1014,12 @@ async function ensureDeployKey() {
     }
     await writeFile(config.ghDeployKeyPath, config.ghDeployKey, { mode: 0o600 });
 }
+function githubCliEnv() {
+    if (!config.ghPat) {
+        throw new Error('GH_PAT is required for GitHub CLI pull request creation');
+    }
+    return { GH_TOKEN: config.ghPat };
+}
 async function configureGitIdentity(cwd) {
     await shCapture('git', ['config', 'user.name', config.prAuthor.name], cwd, {
         timeoutMs: TIMEOUT_GIT_QUICK,
@@ -466,8 +1029,9 @@ async function configureGitIdentity(cwd) {
     });
 }
 async function waitForBootGitReady() {
-    // If the container started via entrypoint.sh, the git fetch + switch
-    // runs as a background process. Wait for it to finish before we proceed.
+    // Older entrypoints exposed a background git-ready PID. Keep the wait
+    // path for rolling deploy compatibility; the current entrypoint runs
+    // synchronously before Node starts.
     const gitReadyPid = process.env.GIT_READY_PID;
     if (!gitReadyPid) {
         return;
@@ -528,12 +1092,29 @@ async function mergeUpstreamForThread(input) {
         const before = (await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
             timeoutMs: TIMEOUT_GIT_QUICK,
         })).trim();
-        await shCapture('git', ['fetch', '--quiet', 'origin', config.baseBranch], session.workspacePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
-        await shCapture('git', ['merge', '--no-edit', `origin/${config.baseBranch}`], session.workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
+        await assertSessionOnFeatureBranch(session);
+        const status = await gitWorkspaceStatus(session.workspacePath);
+        if (status.trim()) {
+            throw new Error(`workspace has uncommitted changes before merging ${config.baseBranch}: ${status.trim()}`);
+        }
+        await fetchRemoteBranch(session.workspacePath, config.baseBranch, 1);
+        await ensureMergeBaseWithBaseBranch(session);
+        try {
+            await shCapture('git', ['merge', '--no-edit', `origin/${config.baseBranch}`], session.workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
+        }
+        catch (err) {
+            const conflicts = await gitUnmergedFiles(session.workspacePath).catch(() => []);
+            await abortMergeIfInProgress(session.workspacePath);
+            throw new Error(conflicts.length > 0
+                ? `merge-upstream hit conflicts and was aborted: ${conflicts.join(', ')}`
+                : err instanceof Error
+                    ? err.message
+                    : String(err));
+        }
         const after = (await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
             timeoutMs: TIMEOUT_GIT_QUICK,
         })).trim();
-        await shCapture('git', ['push', '--no-verify', '--set-upstream', 'origin', session.branch], session.workspacePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
+        await pushSessionBranch(session);
         await appendFile(session.logPath, JSON.stringify({
             ts: new Date().toISOString(),
             kind: 'merge-upstream-done',
@@ -585,7 +1166,11 @@ async function makeCommitForThread(input) {
     });
     const taskState = input.taskId ? tasks.get(input.taskId) : undefined;
     if (taskState) {
-        emit(taskState, { kind: 'status', status: 'manual-commit-pushing' });
+        emit(taskState, {
+            kind: 'status',
+            status: `manual commit: preparing ${gitBranchTarget(session.branch)}`,
+            message: `Base branch: ${config.baseBranch}`,
+        });
     }
     await waitForBootGitReady();
     await session.ready;
@@ -603,20 +1188,17 @@ async function makeCommitForThread(input) {
             branch: session.branch,
             taskId,
         }) + '\n');
-        const status = await shCapture('git', ['status', '--porcelain'], session.workspacePath, {
-            timeoutMs: TIMEOUT_GIT_QUICK,
-        });
+        const status = await gitWorkspaceStatus(session.workspacePath);
         const hasChanges = status.trim().length > 0;
         if (hasChanges) {
-            await shCapture('git', ['add', '-A'], session.workspacePath, {
-                timeoutMs: TIMEOUT_GIT_QUICK,
-            });
+            await gitAddWorkspaceChanges(session.workspacePath);
             await shCapture('git', ['commit', '--no-verify', '-m', manualCommitMessage({ ...input, threadId })], session.workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
         }
         const after = (await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
             timeoutMs: TIMEOUT_GIT_QUICK,
         })).trim();
-        await shCapture('git', ['push', '--no-verify', '--set-upstream', 'origin', session.branch], session.workspacePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
+        await assertSessionOnFeatureBranch(session);
+        await pushSessionBranch(session);
         await appendFile(session.logPath, JSON.stringify({
             ts: new Date().toISOString(),
             kind: 'make-commit-done',
@@ -628,7 +1210,13 @@ async function makeCommitForThread(input) {
             committed: hasChanges,
         }) + '\n');
         if (taskState) {
-            emit(taskState, { kind: 'status', status: hasChanges ? 'manual-commit-pushed' : 'pushed' });
+            emit(taskState, {
+                kind: 'status',
+                status: hasChanges
+                    ? `manual commit pushed to ${gitBranchTarget(session.branch)}`
+                    : `pushed ${gitBranchTarget(session.branch)} without new commit`,
+                message: `Base branch: ${config.baseBranch}`,
+            });
         }
         return {
             ok: true,
@@ -666,7 +1254,11 @@ async function openPullRequestForThread(input) {
     });
     const taskState = input.taskId ? tasks.get(input.taskId) : undefined;
     if (taskState) {
-        emit(taskState, { kind: 'status', status: 'opening-draft-pr' });
+        emit(taskState, {
+            kind: 'status',
+            status: `opening draft PR against ${config.baseBranch} from ${gitBranchTarget(session.branch)}`,
+            message: `Repo: ${repoDisplayName()}`,
+        });
     }
     await waitForBootGitReady();
     await session.ready;
@@ -705,6 +1297,11 @@ async function openPullRequestForThread(input) {
                 prUrl: result.prUrl,
                 draft: result.draft,
             });
+            emit(taskState, {
+                kind: 'status',
+                status: `completed PR request: ${result.reused ? 'reused' : 'created'} draft PR against ${result.baseBranch}`,
+                message: `${result.prUrl}\nHead: ${repoDisplayName()} branch ${result.branch}`,
+            });
         }
         return result;
     });
@@ -716,6 +1313,92 @@ function truncateContext(value, maxChars) {
         return value;
     }
     return value.slice(value.length - maxChars);
+}
+function truncateContextBlob(value, maxChars) {
+    if (value.length <= maxChars) {
+        return value;
+    }
+    return `${value.slice(0, maxChars)}\n[context blob truncated]`;
+}
+function truncateRepoContextFile(value, maxChars) {
+    if (value.length <= maxChars) {
+        return value;
+    }
+    return `${value.slice(0, maxChars)}\n[repo context file truncated]`;
+}
+async function listMarkdownChildren(workspacePath, relativeDir) {
+    try {
+        const dirents = await readdir(resolve(workspacePath, relativeDir), { withFileTypes: true });
+        return dirents
+            .filter((dirent) => dirent.isFile() && /\.md$/i.test(dirent.name))
+            .map((dirent) => `${relativeDir}/${dirent.name}`)
+            .sort((left, right) => left.localeCompare(right));
+    }
+    catch {
+        return [];
+    }
+}
+async function existingContextFiles(workspacePath, relativePaths) {
+    const out = [];
+    for (const relativePath of relativePaths) {
+        const absolutePath = resolve(workspacePath, relativePath);
+        const repoRelative = relative(workspacePath, absolutePath);
+        if (repoRelative.startsWith(`..${sep}`) || isAbsolute(repoRelative)) {
+            continue;
+        }
+        try {
+            const fileStat = await stat(absolutePath);
+            if (fileStat.isFile()) {
+                out.push(relativePath);
+            }
+        }
+        catch {
+            /* optional context file */
+        }
+    }
+    return out;
+}
+async function readRepoContextEntrypoint(workspacePath) {
+    const rootAgents = await existingContextFiles(workspacePath, ['AGENTS.md']);
+    const agentDocs = await listMarkdownChildren(workspacePath, 'agents');
+    const docs = await listMarkdownChildren(workspacePath, 'docs');
+    const allContextFiles = [...rootAgents, ...agentDocs, ...docs];
+    const inlineFiles = [...rootAgents, ...agentDocs, ...docs.slice(0, 12)];
+    const sections = [];
+    let usedChars = 0;
+    for (const relativePath of inlineFiles) {
+        const absolutePath = resolve(workspacePath, relativePath);
+        const repoRelative = relative(workspacePath, absolutePath);
+        if (repoRelative.startsWith(`..${sep}`) || isAbsolute(repoRelative)) {
+            continue;
+        }
+        let text = '';
+        try {
+            const fileStat = await stat(absolutePath);
+            if (!fileStat.isFile()) {
+                continue;
+            }
+            text = await readFile(absolutePath, 'utf8');
+        }
+        catch {
+            continue;
+        }
+        const remaining = config.repoContextMaxChars - usedChars;
+        if (remaining <= 0) {
+            break;
+        }
+        const capped = truncateRepoContextFile(text.trim(), Math.min(remaining, 8_000));
+        const section = [`File: ${relativePath}`, '', capped].join('\n');
+        sections.push(section);
+        usedChars += section.length;
+    }
+    if (allContextFiles.length === 0 && sections.length === 0) {
+        return '';
+    }
+    const catalog = allContextFiles.length
+        ? `Available repo context files:\n${allContextFiles.map((file) => `- ${file}`).join('\n')}`
+        : 'No AGENTS.md, agents/*.md, or docs/*.md files were found in this checkout.';
+    return [catalog, ...sections].join('\n\n---\n\n');
 }
 function formatThreadContextTasks(tasksFromContext, currentTaskId) {
     const tasksForPrompt = tasksFromContext.filter((task) => task.id !== currentTaskId);
@@ -743,29 +1426,65 @@ function formatThreadContextTasks(tasksFromContext, currentTaskId) {
     })
         .join('\n\n');
 }
+function formatSelectedContextBlobs(state) {
+    if (state.contextMode === 'none' || !state.contextBlobs?.length) {
+        return '';
+    }
+    const maxTotalChars = Math.min(config.threadContextMaxChars, 40_000);
+    const maxBlobChars = 6_000;
+    let usedChars = 0;
+    const sections = [];
+    for (const [index, item] of state.contextBlobs.entries()) {
+        const title = item.contextTitle.trim() || item.contextId;
+        const blob = truncateContextBlob(item.contextBlob.trim(), maxBlobChars);
+        const section = [
+            `Context ${index + 1}: ${title}`,
+            `contextId: ${item.contextId}`,
+            item.projectId ? `projectId: ${item.projectId}` : '',
+            item.matchSource ? `matchSource: ${item.matchSource}` : '',
+            Number.isFinite(item.score) ? `score: ${item.score}` : '',
+            '',
+            blob,
+        ]
+            .filter(Boolean)
+            .join('\n');
+        if (usedChars + section.length > maxTotalChars) {
+            break;
+        }
+        sections.push(section);
+        usedChars += section.length;
+    }
+    return sections.join('\n\n---\n\n');
+}
 async function readLocalThreadContext(state) {
     try {
         const text = await readFile(state.logPath, 'utf8');
-        return truncateContext(text, Math.min(config.threadContextMaxChars, 24_000));
+        const previousTaskLines = text
+            .split('\n')
+            .filter((line) => {
+            const trimmed = line.trim();
+            return (trimmed &&
+                !trimmed.includes(`"taskId":"${state.taskId}"`) &&
+                !trimmed.includes(`"taskId": "${state.taskId}"`));
+        })
+            .join('\n');
+        return truncateContext(previousTaskLines, Math.min(config.threadContextMaxChars, 24_000));
     }
     catch {
         return '';
     }
 }
 async function buildPromptWithThreadContext(state) {
-    if (!state.threadId) {
-        return state.prompt;
-    }
     const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
-    let contextText = '';
-    let contextSource = 'none';
-    if (base) {
+    let restContextText = '';
+    let restContextSource = 'none';
+    if (state.threadId && base) {
         try {
             const response = await fetch(`${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context?limit=${config.threadContextLimit}`, { signal: AbortSignal.timeout(10_000) });
             if (response.ok) {
                 const body = (await response.json());
-                contextText = formatThreadContextTasks(body.tasks ?? [], state.taskId);
-                contextSource = body.source ?? 'rest-api';
+                restContextText = formatThreadContextTasks(body.tasks ?? [], state.taskId);
+                restContextSource = body.source ?? 'rest-api';
             }
         }
         catch (err) {
@@ -775,28 +1494,268 @@ async function buildPromptWithThreadContext(state) {
             });
         }
     }
-    if (!contextText) {
-        contextText = await readLocalThreadContext(state);
-        contextSource = contextText ? 'local-thread-log' : 'none';
-    }
-    if (!contextText) {
-        return state.prompt;
-    }
-    const cappedContext = truncateContext(contextText, config.threadContextMaxChars);
-    emit(state, { kind: 'status', status: `thread-context:${contextSource}` });
-    return [
-        `You are continuing remote development thread ${state.threadId}.`,
-        'Use the previous thread context below when deciding what to do next.',
+    const localContextText = state.threadId ? await readLocalThreadContext(state) : '';
+    const repoContext = await readRepoContextEntrypoint(state.worktreePath);
+    const selectedContext = formatSelectedContextBlobs(state);
+    const runtimeContext = clusterMcpPromptSection(config.agentMcpUrl);
+    const promptSections = [
+        state.threadId ? `You are continuing remote development thread ${state.threadId}.` : 'You are starting a remote development task.',
+        `Current task UUID: ${state.taskId}.`,
+        'Use the supplied context when it is relevant, but let the current user prompt decide the work.',
         'Do not repeat completed work unless the current user prompt asks you to.',
+    ];
+    if (config.agentOptimisticMode) {
+        promptSections.push('', '<agent_operating_mode>', [
+            'Optimistic/autonomous mode is enabled for this fire-and-forget remote agent run.',
+            'Do not stop to ask the human user a question before acting.',
+            'Make the safest reasonable assumption, keep the change scoped, and continue.',
+            'If a decision is genuinely blocked, record the question and your assumption in the final summary so the user can answer in a later task prompt.',
+            'Prefer concrete repo inspection, tests, and small reversible changes over waiting for clarification.',
+        ].join('\n'), '</agent_operating_mode>');
+    }
+    if (repoContext) {
+        emit(state, {
+            kind: 'status',
+            status: 'thread-context:repo-files',
+            message: 'AGENTS.md/docs/agents repo context injected into the task prompt.',
+        });
+        promptSections.push('', '<repo_context_files>', repoContext, '</repo_context_files>');
+    }
+    if (selectedContext) {
+        emit(state, {
+            kind: 'status',
+            status: 'thread-context:selected-blobs',
+            message: `${state.contextBlobs?.length ?? 0} selected context blob(s) injected into the task prompt.`,
+        });
+        promptSections.push('', '<selected_context_blobs>', selectedContext, '</selected_context_blobs>');
+    }
+    if (restContextText) {
+        const cappedContext = truncateContext(restContextText, config.threadContextMaxChars);
+        emit(state, { kind: 'status', status: `thread-context:${restContextSource}` });
+        promptSections.push('', '<previous_thread_context>', cappedContext, '</previous_thread_context>');
+    }
+    if (localContextText) {
+        const cappedContext = truncateContext(localContextText, Math.min(config.threadContextMaxChars, 24_000));
+        emit(state, { kind: 'status', status: 'thread-context:local-thread-log' });
+        promptSections.push('', '<local_thread_log_tail>', cappedContext, '</local_thread_log_tail>');
+    }
+    if (runtimeContext) {
+        emit(state, {
+            kind: 'status',
+            status: 'thread-context:cluster-mcp',
+            message: 'Cluster MCP runtime context injected into the task prompt.',
+        });
+        promptSections.push('', '<runtime_context>', runtimeContext, '</runtime_context>');
+    }
+    promptSections.push('', '<current_user_prompt>', state.prompt, '</current_user_prompt>');
+    return promptSections.join('\n');
+}
+async function runInternalWorkspaceAgent(input) {
+    const providerOrder = [input.state.provider, ...config.agentProviderRotation].filter((provider, index, values) => values.indexOf(provider) === index);
+    const attemptGroups = [];
+    for (const provider of providerOrder) {
+        if (!providerCanEditWorkspace(provider)) {
+            emit(input.state, {
+                kind: 'status',
+                status: `agent-skip:${provider}`,
+                message: `${provider} cannot edit files for ${input.purpose} in ${repoDisplayName()}`,
+            });
+            continue;
+        }
+        if (input.requireShellAccess && !providerCanUseShell(provider)) {
+            emit(input.state, {
+                kind: 'status',
+                status: `agent-skip:${provider}`,
+                message: `${provider} cannot run shell/git commands for ${input.purpose} in ${repoDisplayName()}`,
+            });
+            continue;
+        }
+        const candidates = buildAgentEnvCandidates(provider);
+        if (candidates.length === 0) {
+            emit(input.state, {
+                kind: 'status',
+                status: `agent-skip:${provider}`,
+                message: `No configured API keys for ${provider}`,
+            });
+            continue;
+        }
+        attemptGroups.push({ provider, candidates });
+    }
+    if (attemptGroups.length === 0) {
+        throw new Error(`no configured workspace-capable agent API keys for ${input.purpose} in ${repoDisplayName()}`);
+    }
+    let lastErr = null;
+    for (const [groupIndex, group] of attemptGroups.entries()) {
+        if (input.state.cancelled || input.state.abortController.signal.aborted) {
+            throw lastErr ?? new Error(`${input.purpose} cancelled`);
+        }
+        if (groupIndex > 0) {
+            emit(input.state, {
+                kind: 'status',
+                status: `agent-fallback:${group.provider}`,
+                message: `Switching to ${group.provider} for ${input.purpose}`,
+            });
+        }
+        emit(input.state, {
+            kind: 'status',
+            status: `agent-running:${group.provider}`,
+            message: `${input.purpose}\n` +
+                `Workspace: ${gitBranchTarget(input.state.branch)}\n` +
+                `Base branch: ${config.baseBranch}\n` +
+                `Credentials: ${group.candidates.length} configured key(s)`,
+        });
+        const failures = new Map();
+        let attempted = 0;
+        for (const attempt of group.candidates) {
+            attempted += 1;
+            try {
+                const statusBeforeAttempt = input.requireWorkspaceChange
+                    ? await gitWorkspaceStatus(input.state.worktreePath)
+                    : '';
+                const runner = getRunner(attempt.provider);
+                await runner.run({
+                    prompt: input.prompt,
+                    cwd: input.state.worktreePath,
+                    env: attempt.env,
+                    signal: input.state.abortController.signal,
+                    timeoutMs: config.agentRunTimeoutMs,
+                    emit: (ev) => {
+                        if (shouldForwardAgentRunnerEvent(ev)) {
+                            emit(input.state, ev);
+                        }
+                    },
+                    setChild: (child) => {
+                        input.state.child = child;
+                    },
+                });
+                if (input.requireWorkspaceChange) {
+                    const statusAfterAttempt = await gitWorkspaceStatus(input.state.worktreePath);
+                    if (!statusAfterAttempt.trim() || statusAfterAttempt.trim() === statusBeforeAttempt.trim()) {
+                        throw new Error(`${attempt.provider} completed without workspace changes for ${input.purpose}`);
+                    }
+                }
+                return;
+            }
+            catch (err) {
+                lastErr = err;
+                const reason = compactAgentErrorMessage(attempt.provider, err);
+                failures.set(reason, (failures.get(reason) ?? 0) + 1);
+            }
+        }
+        if (attempted > 0) {
+            emit(input.state, {
+                kind: 'error',
+                message: formatAgentFailureSummary(group.provider, failures, attempted, group.candidates.length),
+            });
+        }
+    }
+    throw lastErr ?? new Error(`${input.purpose} failed`);
+}
+async function resolveMergeConflictsSemantically(state, conflictedFiles) {
+    const conflictPrompt = [
+        `Resolve the current Git merge conflicts in ${repoDisplayName()} before task ${state.taskId} starts.`,
         '',
-        '<previous_thread_context>',
-        cappedContext,
-        '</previous_thread_context>',
+        `The worker already ran: git merge --no-edit origin/${config.baseBranch}`,
+        `Feature branch: ${state.branch}`,
+        `Base branch: ${config.baseBranch}`,
         '',
-        '<current_user_prompt>',
-        state.prompt,
-        '</current_user_prompt>',
+        'Resolve only the merge conflicts. Preserve the intended changes from both the base branch and the feature branch, remove all conflict markers, and do not implement the user task yet.',
+        'Leave the repository ready for the server to stage and commit the merge resolution.',
+        '',
+        'Conflicted files:',
+        ...conflictedFiles.map((file) => `- ${file}`),
     ].join('\n');
+    await runInternalWorkspaceAgent({
+        state,
+        prompt: conflictPrompt,
+        purpose: 'merge-conflict-resolution',
+    });
+    await gitAddWorkspaceChanges(state.worktreePath);
+    const remainingConflicts = await gitUnmergedFiles(state.worktreePath);
+    if (remainingConflicts.length > 0) {
+        throw new Error(`merge conflicts remain after agent resolution: ${remainingConflicts.join(', ')}`);
+    }
+    await shCapture('git', ['diff', '--cached', '--check'], state.worktreePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+    await shCapture('git', ['commit', '--no-verify', '--no-edit'], state.worktreePath, {
+        timeoutMs: TIMEOUT_GIT_QUICK,
+    });
+}
+async function mergeBaseBranchBeforeTask(state) {
+    const session = state.session;
+    emit(state, {
+        kind: 'status',
+        status: 'verifying-thread-feature-branch',
+        message: `Expected feature branch: ${session.branch}\nParent branch: ${config.baseBranch}`,
+    });
+    await assertSessionOnFeatureBranch(session);
+    const statusBeforeMerge = await gitWorkspaceStatus(session.workspacePath);
+    if (statusBeforeMerge.trim()) {
+        throw new Error(`workspace has uncommitted changes before starting task ${state.taskId}; commit or resolve them before queue execution continues`);
+    }
+    await appendThreadLog(state, {
+        kind: 'merge-base-before-task-start',
+        branch: session.branch,
+        baseBranch: config.baseBranch,
+    });
+    emit(state, {
+        kind: 'status',
+        status: `fetching ${config.baseBranch} before task`,
+        message: 'Using a depth-1 fetch first; the worker deepens only if Git needs more history to merge.',
+    });
+    await fetchRemoteBranch(session.workspacePath, config.baseBranch, 1);
+    await ensureMergeBaseWithBaseBranch(session);
+    const before = await currentGitCommit(session.workspacePath);
+    try {
+        await shCapture('git', ['merge', '--no-edit', `origin/${config.baseBranch}`], session.workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
+    }
+    catch (err) {
+        const conflicts = await gitUnmergedFiles(session.workspacePath).catch(() => []);
+        if (conflicts.length === 0) {
+            throw err;
+        }
+        emit(state, {
+            kind: 'status',
+            status: 'merge-conflict:resolving-before-task',
+            message: `Resolving ${conflicts.length} conflicted file(s) before starting the user task.`,
+        });
+        await appendThreadLog(state, {
+            kind: 'merge-base-conflicts-before-task',
+            branch: session.branch,
+            baseBranch: config.baseBranch,
+            conflicts,
+        });
+        try {
+            await resolveMergeConflictsSemantically(state, conflicts);
+        }
+        catch (resolveErr) {
+            await abortMergeIfInProgress(session.workspacePath);
+            throw new Error(`failed to resolve upstream merge conflicts before task ${state.taskId}: ${resolveErr instanceof Error ? resolveErr.message : String(resolveErr)}`);
+        }
+    }
+    await assertSessionOnFeatureBranch(session);
+    const after = await currentGitCommit(session.workspacePath);
+    const statusAfterMerge = await gitWorkspaceStatus(session.workspacePath);
+    if (statusAfterMerge.trim()) {
+        throw new Error(`upstream merge preflight left uncommitted changes before task ${state.taskId}: ${statusAfterMerge.trim()}`);
+    }
+    if (before !== after) {
+        await pushSessionBranch(session);
+    }
+    await appendThreadLog(state, {
+        kind: 'merge-base-before-task-done',
+        branch: session.branch,
+        baseBranch: config.baseBranch,
+        before,
+        after,
+        pushed: before !== after,
+    });
+    emit(state, {
+        kind: 'status',
+        status: before === after ? 'base-branch-already-merged' : 'base-branch-merged-before-task',
+        message: `Feature branch ${session.branch} is ready for task ${state.taskId}.`,
+    });
 }
 // ---------- Per-task workflow ----------
 async function runTask(state) {
@@ -824,6 +1783,7 @@ async function runTask(state) {
         emit(state, { kind: 'status', status: 'syncing-thread-workspace' });
         await state.session.ready;
         state.session.lastActiveAt = Date.now();
+        await mergeBaseBranchBeforeTask(state);
         // Per-task outputs dir — the agent writes publishable files here.
         // After claude exits we scan it and upload each file via the storage
         // adapter, emitting an `artifact` event per file.
@@ -834,46 +1794,189 @@ async function runTask(state) {
             prompt: state.prompt,
             workspacePath: state.worktreePath,
             branch: state.branch,
+            contextMode: state.contextMode,
+            contextIds: state.contextIds,
+            contextTitles: state.contextBlobs?.map((item) => ({
+                contextId: item.contextId,
+                title: item.contextTitle,
+                matchSource: item.matchSource,
+                score: item.score,
+            })),
         });
-        emit(state, { kind: 'status', status: `agent-running:${state.provider}` });
+        if (state.containerPool) {
+            emit(state, {
+                kind: 'status',
+                status: `container-pool-dispatch:${state.containerPool.pool}`,
+            });
+            const response = await dispatchContainerPool(config.containerPool, state.containerPool.pool, {
+                ...state.containerPool.request,
+                requestId: state.containerPool.request.requestId ?? state.taskId,
+                poolSlug: state.containerPool.request.poolSlug ?? state.containerPool.pool,
+            });
+            await appendThreadLog(state, {
+                kind: 'container-pool-result',
+                pool: state.containerPool.pool,
+                response,
+            });
+            emit(state, {
+                kind: 'container_pool',
+                pool: state.containerPool.pool,
+                response,
+            });
+            emit(state, {
+                kind: 'done',
+                branch: state.branch,
+                exitReason: response.ok ? 'completed' : 'failed',
+            });
+            return;
+        }
+        const requiresWorkspaceChange = promptLikelyRequiresWorkspaceChange(state.prompt);
+        const requiresWorkspaceAccess = promptLikelyRequiresWorkspaceAccess(state.prompt);
+        const requiresShellAccess = promptLikelyRequiresShellAccess(state.prompt);
+        const requestsPullRequest = promptRequestsPullRequest(state.prompt);
+        const pullRequestOnly = requestsPullRequest && !requiresWorkspaceChange && !requiresWorkspaceAccess;
         // Strict env allowlist owned by the runner module. Inheriting the full
         // process.env into the agent process would leak our GitHub deploy key,
         // Supabase service role key, ingest secret, etc. via any `env` or
         // `printenv` tool call. The runner adds only the API key its model
         // needs.
         const prompt = await buildPromptWithThreadContext(state);
-        const runSelectedAgent = async (provider) => {
-            const agentEnv = buildAgentEnv(provider);
-            const runner = getRunner(provider);
-            await runner.run({
-                prompt,
-                cwd: state.worktreePath,
-                env: agentEnv,
-                signal: state.abortController.signal,
-                timeoutMs: config.agentRunTimeoutMs,
-                emit: (ev) => emit(state, ev),
-                setChild: (child) => {
-                    state.child = child;
-                },
-            });
-        };
-        try {
-            await runSelectedAgent(state.provider);
+        let lastErr = null;
+        let completedAgentRun = false;
+        const deterministicEdit = requiresWorkspaceChange ? await applyDeterministicWorkspaceEdit(state) : null;
+        if (deterministicEdit) {
+            completedAgentRun = true;
         }
-        catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+        else if (pullRequestOnly) {
+            completedAgentRun = true;
             emit(state, {
-                kind: 'error',
-                message: `${state.provider} failed: ${message}`,
+                kind: 'status',
+                status: 'deterministic-pr-only',
+                message: 'Prompt only requested a PR, so the worker will open/reuse a draft PR without spending model credentials.',
             });
-            if (!config.agentEchoFallback ||
-                state.provider === 'echo' ||
-                state.cancelled ||
-                state.abortController.signal.aborted) {
-                throw err;
+        }
+        else {
+            const providerOrder = [state.provider, ...config.agentProviderRotation].filter((provider, index, values) => values.indexOf(provider) === index);
+            const attemptGroups = [];
+            for (const provider of providerOrder) {
+                if (requiresWorkspaceChange && !providerCanEditWorkspace(provider)) {
+                    emit(state, {
+                        kind: 'status',
+                        status: `agent-skip:${provider}`,
+                        message: `${provider} is model-only and cannot edit files in ${repoDisplayName()}`,
+                    });
+                    continue;
+                }
+                if (requiresWorkspaceAccess && !providerCanAccessWorkspace(provider)) {
+                    emit(state, {
+                        kind: 'status',
+                        status: `agent-skip:${provider}`,
+                        message: `${provider} is model-only and cannot inspect the workspace for ${repoDisplayName()}`,
+                    });
+                    continue;
+                }
+                if (requiresShellAccess && !providerCanUseShell(provider)) {
+                    emit(state, {
+                        kind: 'status',
+                        status: `agent-skip:${provider}`,
+                        message: `${provider} cannot run shell/git commands required for this task in ${repoDisplayName()}`,
+                    });
+                    continue;
+                }
+                const candidates = buildAgentEnvCandidates(provider);
+                if (candidates.length === 0) {
+                    emit(state, {
+                        kind: 'status',
+                        status: `agent-skip:${provider}`,
+                        message: `No configured API keys for ${provider}`,
+                    });
+                    continue;
+                }
+                attemptGroups.push({ provider, candidates });
             }
-            emit(state, { kind: 'status', status: 'agent-fallback:echo' });
-            await runSelectedAgent('echo');
+            if (attemptGroups.length === 0) {
+                if (requiresShellAccess) {
+                    throw new Error(`no configured shell-capable agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON or ANTHROPIC_API_KEYS_JSON`);
+                }
+                throw new Error(`no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, OPENCODE_API_KEYS_JSON, DEEPSEEK_API_KEYS_JSON, XAI_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`);
+            }
+            const runAgentAttempt = async (attempt) => {
+                const runner = getRunner(attempt.provider);
+                await runner.run({
+                    prompt,
+                    cwd: state.worktreePath,
+                    env: attempt.env,
+                    signal: state.abortController.signal,
+                    timeoutMs: config.agentRunTimeoutMs,
+                    emit: (ev) => {
+                        if (shouldForwardAgentRunnerEvent(ev)) {
+                            emit(state, ev);
+                        }
+                    },
+                    setChild: (child) => {
+                        state.child = child;
+                    },
+                });
+            };
+            for (const [groupIndex, group] of attemptGroups.entries()) {
+                if (state.cancelled || state.abortController.signal.aborted) {
+                    throw lastErr ?? new Error('agent run cancelled');
+                }
+                if (groupIndex > 0) {
+                    emit(state, {
+                        kind: 'status',
+                        status: `agent-fallback:${group.provider}`,
+                        message: `Switching to ${group.provider} after the previous provider failed`,
+                    });
+                }
+                emit(state, {
+                    kind: 'status',
+                    status: `agent-running:${group.provider}`,
+                    message: `Workspace: ${gitBranchTarget(state.branch)}\n` +
+                        `Base branch: ${config.baseBranch}\n` +
+                        `Credentials: ${group.candidates.length} configured key(s)`,
+                });
+                const failures = new Map();
+                let attempted = 0;
+                for (const attempt of group.candidates) {
+                    if (state.cancelled || state.abortController.signal.aborted) {
+                        throw lastErr ?? new Error('agent run cancelled');
+                    }
+                    attempted += 1;
+                    try {
+                        const statusBeforeAttempt = requiresWorkspaceChange
+                            ? await gitWorkspaceStatus(state.worktreePath)
+                            : '';
+                        await runAgentAttempt(attempt);
+                        if (requiresWorkspaceChange) {
+                            const statusAfterAttempt = await gitWorkspaceStatus(state.worktreePath);
+                            if (!statusAfterAttempt.trim() || statusAfterAttempt.trim() === statusBeforeAttempt.trim()) {
+                                throw new Error(`${attempt.provider} completed without workspace changes for a repo-edit prompt in ${repoDisplayName()}`);
+                            }
+                        }
+                        completedAgentRun = true;
+                        lastErr = null;
+                        break;
+                    }
+                    catch (err) {
+                        lastErr = err;
+                        const reason = compactAgentErrorMessage(attempt.provider, err);
+                        failures.set(reason, (failures.get(reason) ?? 0) + 1);
+                    }
+                }
+                if (completedAgentRun) {
+                    break;
+                }
+                if (attempted > 0) {
+                    emit(state, {
+                        kind: 'error',
+                        message: formatAgentFailureSummary(group.provider, failures, attempted, group.candidates.length),
+                    });
+                }
+            }
+        }
+        if (!completedAgentRun) {
+            throw new Error('all configured agent providers failed; see provider summaries above');
         }
         if (state.cancelled || state.abortController.signal.aborted) {
             emit(state, {
@@ -884,22 +1987,62 @@ async function runTask(state) {
             return;
         }
         // Stage + commit anything the agent left uncommitted, then push.
-        emit(state, { kind: 'status', status: 'pushing' });
-        const status = await shCapture('git', ['status', '--porcelain'], state.worktreePath, {
-            timeoutMs: TIMEOUT_GIT_QUICK,
+        const status = await gitWorkspaceStatus(state.worktreePath);
+        if (!status.trim() && requiresWorkspaceChange) {
+            throw new Error(`agent completed without workspace changes for a repo-edit prompt in ${repoDisplayName()}`);
+        }
+        emit(state, {
+            kind: 'status',
+            status: `pushing to ${gitBranchTarget(state.branch)}`,
+            message: `Base branch: ${config.baseBranch}`,
         });
         if (status.trim()) {
-            await shCapture('git', ['add', '-A'], state.worktreePath, {
-                timeoutMs: TIMEOUT_GIT_QUICK,
-            });
+            await gitAddWorkspaceChanges(state.worktreePath);
             await shCapture('git', ['commit', '--no-verify', '-m', `agent(${state.session.sessionId}): ${state.taskId}`], state.worktreePath, { timeoutMs: TIMEOUT_GIT_QUICK });
         }
-        await shCapture('git', ['push', '--no-verify', '--set-upstream', 'origin', state.branch], state.worktreePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
-        emit(state, { kind: 'status', status: 'pushed' });
+        await assertSessionOnFeatureBranch(state.session);
+        await pushSessionBranch(state.session);
+        emit(state, {
+            kind: 'status',
+            status: `pushed to ${gitBranchTarget(state.branch)}`,
+            message: status.trim()
+                ? `Committed ${status.trim().split('\n').length} changed path(s).`
+                : 'No workspace changes were committed; branch push verified.',
+        });
+        let completionMessage = 'No PR was opened automatically; use Open draft PR to create one against the base branch.';
+        if (requestsPullRequest) {
+            emit(state, {
+                kind: 'status',
+                status: `opening draft PR against ${config.baseBranch} from ${gitBranchTarget(state.branch)}`,
+                message: `Prompt requested a PR.\nRepo: ${repoDisplayName()}`,
+            });
+            const pr = await ensurePullRequestForSession({
+                session: state.session,
+                taskId: state.taskId,
+                prompt: state.prompt,
+            });
+            emit(state, {
+                kind: 'pr_open',
+                branch: pr.branch,
+                prUrl: pr.prUrl,
+                draft: pr.draft,
+            });
+            emit(state, {
+                kind: 'status',
+                status: `completed PR request: ${pr.reused ? 'reused' : 'created'} draft PR against ${pr.baseBranch}`,
+                message: `${pr.prUrl}\nHead: ${repoDisplayName()} branch ${pr.branch}`,
+            });
+            completionMessage = `Draft PR ${pr.reused ? 'reused' : 'created'}: ${pr.prUrl}`;
+        }
         // Publish any files the agent dropped in the per-task outputs dir.
         // Failures uploading individual files are surfaced as `error` events
         // but do not fail the whole task.
         await publishOutputs(state, taskOutputsDir);
+        emit(state, {
+            kind: 'status',
+            status: `completed task on ${gitBranchTarget(state.branch)}`,
+            message: completionMessage,
+        });
         emit(state, {
             kind: 'done',
             branch: state.branch,
@@ -908,7 +2051,7 @@ async function runTask(state) {
     });
 }
 async function ensurePullRequestForSession(input) {
-    const ghEnv = config.ghPat ? { GH_TOKEN: config.ghPat } : undefined;
+    const ghEnv = githubCliEnv();
     try {
         const existing = await shCapture('gh', [
             'pr',
@@ -941,6 +2084,43 @@ async function ensurePullRequestForSession(input) {
     }
     catch {
         /* no existing PR */
+    }
+    await assertSessionOnFeatureBranch(input.session);
+    await fetchRemoteBranch(input.session.workspacePath, config.baseBranch, 1);
+    await ensureMergeBaseWithBaseBranch(input.session);
+    const [behindCountText = '0', aheadCountText = '0'] = (await shCapture('git', ['rev-list', '--left-right', '--count', `origin/${config.baseBranch}...HEAD`], input.session.workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK }))
+        .trim()
+        .split(/\s+/);
+    const behindCount = Number.parseInt(behindCountText, 10) || 0;
+    const aheadCount = Number.parseInt(aheadCountText, 10) || 0;
+    if (aheadCount === 0) {
+        const before = (await shCapture('git', ['rev-parse', 'HEAD'], input.session.workspacePath, {
+            timeoutMs: TIMEOUT_GIT_QUICK,
+        })).trim();
+        if (behindCount > 0) {
+            await shCapture('git', ['merge', '--ff-only', `origin/${config.baseBranch}`], input.session.workspacePath, { timeoutMs: TIMEOUT_GIT_NETWORK });
+        }
+        await shCapture('git', [
+            'commit',
+            '--allow-empty',
+            '--no-verify',
+            '-m',
+            `agent(${input.session.sessionId}): open draft PR`,
+        ], input.session.workspacePath, { timeoutMs: TIMEOUT_GIT_QUICK });
+        const after = (await shCapture('git', ['rev-parse', 'HEAD'], input.session.workspacePath, {
+            timeoutMs: TIMEOUT_GIT_QUICK,
+        })).trim();
+        await pushSessionBranch(input.session);
+        await appendFile(input.session.logPath, JSON.stringify({
+            ts: new Date().toISOString(),
+            kind: 'open-pr-marker-commit',
+            sessionId: input.session.sessionId,
+            branch: input.session.branch,
+            baseBranch: config.baseBranch,
+            before,
+            after,
+            fastForwardedBase: behindCount > 0,
+        }) + '\n');
     }
     const commitTitle = (await shCapture('git', ['log', '-1', '--pretty=%s'], input.session.workspacePath, {
         timeoutMs: TIMEOUT_GIT_QUICK,
@@ -1106,7 +2286,9 @@ function renderMetrics() {
         ...renderCounter('dd_runtime_http_requests_total', 'HTTP requests observed by the dd remote runtime.'),
         ...renderCounter('dd_runtime_events_total', 'Task stream events emitted by the dd remote runtime.'),
         ...renderCounter('dd_runtime_tasks_total', 'Task dispatches accepted by the dd remote runtime.'),
+        ...renderCounter('dd_runtime_tasks_queued_behind_total', 'Task dispatches accepted while another task was running or already queued for the same worker session.'),
         ...renderGauge('dd_runtime_inflight_tasks', 'Tasks that are currently not finished.', Array.from(tasks.values()).filter((t) => !t.finished).length),
+        ...renderGauge('dd_runtime_queued_tasks', 'Accepted tasks waiting behind a per-session workspace queue.', totalQueuedTaskCount()),
         ...renderGauge('dd_runtime_tracked_tasks', 'Tasks retained in memory for stream replay or GC.', tasks.size),
         ...renderGauge('dd_runtime_sessions', 'Thread sessions retained in this worker.', sessions.size),
         ...renderGauge('dd_runtime_uptime_seconds', 'Worker process uptime in seconds.', Math.max(0, Math.round((now - startedAtMs) / 1000))),
@@ -1202,6 +2384,7 @@ class WorkerWebSocketClient {
                 taskId: this.taskId,
                 pinnedThreadId: config.threadId,
                 inFlightCount: Array.from(tasks.values()).filter((task) => !task.finished).length,
+                queuedTaskCount: totalQueuedTaskCount(),
                 totalTracked: tasks.size,
                 sessionCount: sessions.size,
                 atMs: Date.now(),
@@ -1219,6 +2402,7 @@ class WorkerWebSocketClient {
             taskId: this.taskId,
             pinnedThreadId: config.threadId,
             inFlightCount: Array.from(tasks.values()).filter((task) => !task.finished).length,
+            queuedTaskCount: totalQueuedTaskCount(),
             totalTracked: tasks.size,
             sessionCount: sessions.size,
             atMs: Date.now(),
@@ -1324,6 +2508,7 @@ class WorkerWebSocketClient {
                 pinnedThreadId: config.threadId,
                 taskExists: this.taskId ? tasks.has(this.taskId) : undefined,
                 inFlightCount: Array.from(tasks.values()).filter((task) => !task.finished).length,
+                queuedTaskCount: totalQueuedTaskCount(),
                 totalTracked: tasks.size,
                 sessionCount: sessions.size,
                 atMs: Date.now(),
@@ -1404,19 +2589,19 @@ function terminalPageHtml(threadId) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Thread terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
   <style>
     :root { color-scheme: dark; --bg: #0d1117; --panel: #111827; --line: #263244; --text: #e5edf7; --muted: #9aa7b7; --accent: #7dd3fc; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100dvh; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    main { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    main { min-height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
     header { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); background: #0f172a; }
     h1 { margin: 0; font-size: 16px; font-weight: 650; }
     #status { color: var(--muted); font-size: 13px; }
-    #output { width: 100%; height: 100%; min-height: 0; resize: none; border: 0; outline: 0; padding: 14px; background: #05080d; color: #d5f5e3; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
-    form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); background: var(--panel); }
-    input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; background: #0b1220; color: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    button { border: 1px solid #31536d; border-radius: 6px; padding: 9px 12px; background: #12324a; color: var(--text); font-weight: 650; cursor: pointer; }
-    button:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
+    #terminal { min-height: 0; padding: 10px; background: #05080d; }
+    #terminal .xterm { height: 100%; }
+    #terminal .xterm-viewport { overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -1425,75 +2610,96 @@ function terminalPageHtml(threadId) {
       <h1>Thread terminal</h1>
       <span id="status">connecting</span>
     </header>
-    <textarea id="output" spellcheck="false" readonly></textarea>
-    <form id="command-form">
-      <input id="command" autocomplete="off" spellcheck="false" placeholder="command" disabled>
-      <button id="send" type="submit" disabled>Run</button>
-    </form>
+    <div id="terminal" aria-label="Thread worker terminal"></div>
   </main>
   <script>
     const threadId = ${encodedThreadId};
     const statusNode = document.getElementById("status");
-    const output = document.getElementById("output");
-    const form = document.getElementById("command-form");
-    const command = document.getElementById("command");
-    const send = document.getElementById("send");
+    const terminalNode = document.getElementById("terminal");
     let socket;
-    function append(value) {
-      output.value += value;
-      output.scrollTop = output.scrollHeight;
+    let term;
+    function write(value) {
+      if (term) term.write(String(value || ""));
     }
     function connect() {
+      if (!window.Terminal) {
+        statusNode.textContent = "terminal assets failed";
+        terminalNode.textContent = "Terminal assets failed to load.";
+        return;
+      }
+      term = new Terminal({
+        cursorBlink: true,
+        convertEol: true,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        fontSize: 13,
+        rows: 32,
+        scrollback: 5000,
+        theme: {
+          background: '#05080d',
+          foreground: '#d5f5e3',
+          cursor: '#7dd3fc',
+          selectionBackground: '#1f6feb66'
+        }
+      });
+      term.open(terminalNode);
+      term.focus();
       const url = new URL("terminal/ws", window.location.href);
       url.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("threadId", threadId);
       socket = new WebSocket(url);
       socket.addEventListener("open", () => {
         statusNode.textContent = "connected";
-        command.disabled = false;
-        send.disabled = false;
-        command.focus();
+        term.onData((data) => {
+          if (!socket || socket.readyState !== WebSocket.OPEN) return;
+          socket.send(JSON.stringify({ type: "input", data }));
+        });
       });
       socket.addEventListener("message", (event) => {
         let message;
         try {
           message = JSON.parse(event.data);
         } catch {
-          append(String(event.data));
+          write(String(event.data));
           return;
         }
-        if (message.type === "terminal-output") append(String(message.data || ""));
+        if (message.type === "terminal-output") write(String(message.data || ""));
         if (message.type === "terminal-status") statusNode.textContent = String(message.status || "status");
         if (message.type === "terminal-error") {
           statusNode.textContent = "error";
-          append("\\n" + String(message.message || "terminal error") + "\\n");
+          write("\\r\\n" + String(message.message || "terminal error") + "\\r\\n");
         }
         if (message.type === "terminal-exit") {
           statusNode.textContent = "closed";
-          command.disabled = true;
-          send.disabled = true;
         }
       });
       socket.addEventListener("close", () => {
         statusNode.textContent = "closed";
-        command.disabled = true;
-        send.disabled = true;
       });
       socket.addEventListener("error", () => {
         statusNode.textContent = "connection error";
       });
     }
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (!socket || socket.readyState !== WebSocket.OPEN) return;
-      const value = command.value;
-      command.value = "";
-      socket.send(JSON.stringify({ type: "input", data: value + "\\n" }));
-    });
-    connect();
+    window.addEventListener("load", connect);
   </script>
 </body>
 </html>`;
+}
+async function executableAvailable(path) {
+    try {
+        await access(path);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+function terminalShellCommand(shell) {
+    const normalized = shell.trim();
+    if (normalized === 'bash' || normalized.endsWith('/bash'))
+        return 'bash -i';
+    if (normalized === 'sh' || normalized.endsWith('/sh'))
+        return 'sh -i';
+    return 'bash -i';
 }
 class TerminalWebSocketClient {
     socket;
@@ -1537,16 +2743,32 @@ class TerminalWebSocketClient {
                 atMs: Date.now(),
             });
             const shell = process.env.SHELL || '/bin/bash';
-            this.child = spawn(shell, ['-i'], {
-                cwd: session.workspacePath,
-                env: {
-                    ...process.env,
-                    SHELL: shell,
-                    TERM: process.env.TERM || 'xterm-256color',
-                    PS1: '\\w $ ',
-                },
-                stdio: ['pipe', 'pipe', 'pipe'],
-            });
+            const scriptBin = process.env.TERMINAL_SCRIPT_BIN || '/usr/bin/script';
+            const usePty = await executableAvailable(scriptBin);
+            const terminalEnv = {
+                ...process.env,
+                SHELL: shell,
+                TERM: process.env.TERM || 'xterm-256color',
+                COLORTERM: process.env.COLORTERM || 'truecolor',
+                COLUMNS: process.env.COLUMNS || '120',
+                LINES: process.env.LINES || '32',
+                FORCE_COLOR: process.env.FORCE_COLOR || '1',
+                PS1: '\\w $ ',
+            };
+            const fallbackUsesBash = terminalShellCommand(shell).startsWith('bash');
+            const fallbackShell = fallbackUsesBash ? 'bash' : 'sh';
+            const fallbackArgs = fallbackUsesBash ? ['--noprofile', '--norc', '-i'] : ['-i'];
+            this.child = usePty
+                ? spawn(scriptBin, ['-q', '-f', '-e', '-c', terminalShellCommand(shell), '/dev/null'], {
+                    cwd: session.workspacePath,
+                    env: terminalEnv,
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                })
+                : spawn(fallbackShell, fallbackArgs, {
+                    cwd: session.workspacePath,
+                    env: terminalEnv,
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                });
             this.child.stdout?.on('data', (chunk) => {
                 this.sendOutput(chunk.toString('utf8'));
             });
@@ -1579,6 +2801,7 @@ class TerminalWebSocketClient {
                 threadId: this.threadId,
                 branch: session.branch,
                 cwd: session.workspacePath,
+                transport: usePty ? 'pty-script' : 'pipe-fallback',
                 atMs: Date.now(),
             });
         }
@@ -1805,8 +3028,10 @@ fastify.get('/healthz', async () => ({
     pinnedThreadId: config.threadId,
     pinnedUserId: config.userId,
     inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
+    queuedTaskCount: totalQueuedTaskCount(),
     totalTracked: tasks.size,
     sessionCount: sessions.size,
+    containerPoolConfigured: containerPoolConfigured(config.containerPool),
 }));
 fastify.get('/metrics', async (_req, reply) => {
     reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
@@ -1819,8 +3044,10 @@ fastify.get('/status', async () => ({
     pinnedThreadId: config.threadId,
     pinnedUserId: config.userId,
     inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
+    queuedTaskCount: totalQueuedTaskCount(),
     totalTracked: tasks.size,
     sessionCount: sessions.size,
+    containerPoolConfigured: containerPoolConfigured(config.containerPool),
     ingestCircuit: eventBus.getCircuitState(),
     idleTimeoutMs: config.threadId ? config.idleTimeoutMs : undefined,
 }));
@@ -1860,18 +3087,70 @@ fastify.get('/agents', async () => {
 // what's in NeonDB — so the UI shows the absolute latest state even if the
 // last few events haven't been written through to NeonDB yet.
 fastify.get('/tasks', async () => {
-    const snapshot = Array.from(tasks.values()).map((t) => ({
-        taskId: t.taskId,
-        threadId: t.threadId,
-        userId: t.userId,
-        branch: t.branch,
-        sessionId: t.session.sessionId,
-        finished: t.finished,
-        finishedAt: t.finishedAt,
-        eventCount: t.events.length,
-        lastSeq: t.events.length > 0 ? t.events[t.events.length - 1].seq : -1,
-    }));
+    const snapshot = Array.from(tasks.values()).map((t) => {
+        const queue = taskQueueSnapshot(t);
+        return {
+            taskId: t.taskId,
+            threadId: t.threadId,
+            userId: t.userId,
+            branch: t.branch,
+            sessionId: t.session.sessionId,
+            running: queue.running,
+            queued: queue.queued,
+            queuePosition: queue.queuePosition,
+            finished: t.finished,
+            finishedAt: t.finishedAt,
+            eventCount: t.events.length,
+            lastSeq: t.events.length > 0 ? t.events[t.events.length - 1].seq : -1,
+        };
+    });
     return { tasks: snapshot, serverStartedAt };
+});
+const ContainerPoolRequestSchema = z.object({
+    requestId: z.string().min(1).max(200).optional(),
+    poolId: z.string().min(1).max(120).optional(),
+    poolSlug: z.string().min(1).max(120).optional(),
+    path: z.string().min(1).max(256).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    payload: z.unknown().optional(),
+    body: z.unknown().optional(),
+});
+const ContainerPoolTaskSchema = ContainerPoolRequestSchema.extend({
+    pool: z.string().min(1).max(120),
+});
+const SelectedContextBlobSchema = z.object({
+    contextId: z.string().min(1).max(200),
+    projectId: z.string().min(1).max(120).optional(),
+    repoId: z.string().uuid().nullish(),
+    contextTitle: z.string().min(1).max(300),
+    contextBlob: z.string().min(1).max(200_000),
+    score: z.number().optional(),
+    matchSource: z.string().min(1).max(80).optional(),
+    embeddingModel: z.string().min(1).max(120).nullish(),
+    updatedAt: z.string().min(1).max(80).nullish(),
+});
+fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
+    const params = z.object({ pool: z.string().min(1).max(120) }).safeParse(req.params);
+    const parsed = ContainerPoolRequestSchema.safeParse(req.body);
+    if (!params.success || !parsed.success) {
+        return reply.code(400).send({
+            error: 'invalid container pool dispatch',
+            params: params.success ? undefined : params.error.format(),
+            body: parsed.success ? undefined : parsed.error.format(),
+        });
+    }
+    try {
+        return await dispatchContainerPool(config.containerPool, params.data.pool, {
+            ...parsed.data,
+            poolSlug: parsed.data.poolSlug ?? params.data.pool,
+        });
+    }
+    catch (error) {
+        return reply.code(502).send({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
 });
 const DispatchSchema = z.object({
     taskId: z.string().uuid().optional(),
@@ -1883,17 +3162,29 @@ const DispatchSchema = z.object({
     repo: z.string().min(1).max(2048).optional(),
     baseBranch: z.string().min(1).max(120).optional(),
     /** Stable remote-dev thread branch, if the dispatcher already knows it. */
-    branch: z.string().max(200).optional(),
+    branch: z.string().max(200).nullish(),
     /** Human-readable thread title / branch slug fallback. */
-    threadTitle: z.string().min(1).max(200).optional(),
+    threadTitle: z.string().min(1).max(200).nullish(),
     /**
      * Which agent runner to drive the task. Falls back to AGENT_PROVIDER env
-     * then "claude-sdk". Validated by the selector — unknown values fall
-     * back to default rather than 400ing.
+     * then the configured provider rotation. Validated by the selector —
+     * unknown values fall back to default rather than 400ing.
      */
     provider: z
-        .enum(['claude-cli', 'claude-sdk', 'echo', 'gemini-sdk', 'openai-codex-cli', 'openai-sdk'])
-        .optional(),
+        .enum([
+        'claude-cli',
+        'claude-sdk',
+        'generic-ai-sdk',
+        'gemini-sdk',
+        'opencode-ai-sdk',
+        'openai-codex-cli',
+        'openai-sdk',
+    ])
+        .nullish(),
+    contextMode: z.enum(['none', 'selected', 'auto']).nullish(),
+    contextIds: z.array(z.string().min(1).max(200)).max(10).nullish(),
+    contextBlobs: z.array(SelectedContextBlobSchema).max(10).nullish(),
+    containerPool: ContainerPoolTaskSchema.nullish(),
 });
 const MergeUpstreamSchema = z.object({
     kind: z.literal('thread-control').optional(),
@@ -1958,6 +3249,11 @@ fastify.post('/tasks', async (req, reply) => {
                 boundThreadId: config.threadId,
             });
         }
+        if (config.workerBindMode === 'repo' && !threadId) {
+            return reply.code(400).send({
+                error: 'threadId is required for repo-scoped warm workers',
+            });
+        }
         if (config.userId && userId !== config.userId) {
             return reply.code(403).send({
                 error: 'container is bound to a different user',
@@ -2007,16 +3303,37 @@ fastify.post('/tasks', async (req, reply) => {
             taskId,
             threadId,
             userId,
-            branch: parsed.data.branch,
-            threadTitle: parsed.data.threadTitle,
+            branch: parsed.data.branch ?? undefined,
+            threadTitle: parsed.data.threadTitle ?? undefined,
+            prompt,
         });
         session.taskIds.add(taskId);
+        const blockingTaskIds = sessionBlockingTaskIds(session);
+        const queuedBehind = blockingTaskIds.length > 0;
+        const queuePosition = blockingTaskIds.length + 1;
         const state = {
             taskId,
             prompt,
             userId,
             threadId,
-            provider: resolveAgentProvider(parsed.data.provider),
+            provider: resolveAgentProvider(parsed.data.provider ?? undefined),
+            contextMode: parsed.data.contextMode ?? undefined,
+            contextIds: parsed.data.contextIds ?? undefined,
+            contextBlobs: parsed.data.contextBlobs ?? undefined,
+            containerPool: parsed.data.containerPool
+                ? {
+                    pool: parsed.data.containerPool.pool,
+                    request: {
+                        requestId: parsed.data.containerPool.requestId,
+                        poolId: parsed.data.containerPool.poolId,
+                        poolSlug: parsed.data.containerPool.poolSlug ?? parsed.data.containerPool.pool,
+                        path: parsed.data.containerPool.path,
+                        headers: parsed.data.containerPool.headers,
+                        payload: parsed.data.containerPool.payload,
+                        body: parsed.data.containerPool.body,
+                    },
+                }
+                : undefined,
             session,
             abortController: new AbortController(),
             events: [],
@@ -2029,16 +3346,57 @@ fastify.post('/tasks', async (req, reply) => {
         };
         span.setAttribute('dd.remote.provider', state.provider);
         span.setAttribute('dd.remote.branch', state.branch);
+        span.setAttribute('dd.remote.queue_position', queuePosition);
+        span.setAttribute('dd.remote.queued_behind', queuedBehind);
         tasks.set(taskId, state);
-        await writeTaskReceipt({
-            taskId,
-            threadId,
-            branch: state.branch,
-            provider: state.provider,
-            acceptedAt: new Date().toISOString(),
+        session.queuedTaskIds.push(taskId);
+        emit(state, {
+            kind: 'status',
+            status: 'queued',
+            queueDepth: blockingTaskIds.length + 1,
+            queuePosition,
+            sessionId: session.sessionId,
         });
-        emit(state, { kind: 'status', status: 'queued' });
-        const queuedRun = session.queue.catch(() => undefined).then(() => runTask(state));
+        if (queuedBehind) {
+            incCounter('dd_runtime_tasks_queued_behind_total', {
+                service: 'dd-dev-server-api',
+                provider: state.provider,
+            });
+            emit(state, {
+                kind: 'status',
+                status: 'queued-behind-active-task',
+                message: `Task is queued behind ${blockingTaskIds.length} active task(s) for thread ${session.sessionId}. ` +
+                    `It will start after the workspace queue drains.`,
+                queueDepth: blockingTaskIds.length + 1,
+                queuePosition,
+                blockedByTaskId: blockingTaskIds[0],
+                blockedByTaskIds: blockingTaskIds.slice(0, 20),
+                sessionId: session.sessionId,
+            });
+        }
+        const queuedRun = session.queue
+            .catch(() => undefined)
+            .then(async () => {
+            session.queuedTaskIds = session.queuedTaskIds.filter((id) => id !== taskId);
+            session.runningTaskId = taskId;
+            emit(state, {
+                kind: 'status',
+                status: 'dequeued-starting',
+                message: `Task has acquired the thread workspace queue for ${session.sessionId}.`,
+                queueDepth: session.queuedTaskIds.length + 1,
+                queuePosition: 1,
+                sessionId: session.sessionId,
+            });
+            try {
+                await runTask(state);
+            }
+            finally {
+                if (session.runningTaskId === taskId) {
+                    session.runningTaskId = undefined;
+                }
+                pruneSessionQueueState(session);
+            }
+        });
         session.queue = queuedRun.catch(() => undefined);
         queuedRun.catch((err) => {
             const message = err instanceof Error ? err.message : String(err);
@@ -2051,7 +3409,22 @@ fastify.post('/tasks', async (req, reply) => {
                 });
             }
         });
-        return { taskId, branch: state.branch };
+        try {
+            await writeTaskReceipt({
+                taskId,
+                threadId,
+                branch: state.branch,
+                provider: state.provider,
+                acceptedAt: new Date().toISOString(),
+            });
+        }
+        catch (err) {
+            emit(state, {
+                kind: 'stderr',
+                text: `task receipt write failed: ${err instanceof Error ? err.message : String(err)}`,
+            });
+        }
+        return { taskId, branch: state.branch, queuedBehind, queuePosition };
     });
 });
 fastify.post('/thread/merge-upstream', async (req, reply) => {
@@ -2279,16 +3652,22 @@ async function sendHeartbeat() {
     if (!cachedOwnIp) {
         cachedOwnIp = await discoverOwnIp();
     }
-    const inFlight = Array.from(tasks.values()).map((t) => ({
-        taskId: t.taskId,
-        threadId: t.threadId,
-        userId: t.userId,
-        branch: t.branch,
-        finished: t.finished,
-        finishedAt: t.finishedAt,
-        eventCount: t.events.length,
-        lastSeq: t.events.length > 0 ? t.events[t.events.length - 1].seq : -1,
-    }));
+    const inFlight = Array.from(tasks.values()).map((t) => {
+        const queue = taskQueueSnapshot(t);
+        return {
+            taskId: t.taskId,
+            threadId: t.threadId,
+            userId: t.userId,
+            branch: t.branch,
+            running: queue.running,
+            queued: queue.queued,
+            queuePosition: queue.queuePosition,
+            finished: t.finished,
+            finishedAt: t.finishedAt,
+            eventCount: t.events.length,
+            lastSeq: t.events.length > 0 ? t.events[t.events.length - 1].seq : -1,
+        };
+    });
     const containerInfo = config.threadId
         ? {
             threadId: config.threadId,
@@ -2316,6 +3695,7 @@ async function sendHeartbeat() {
                 serverStartedAt,
                 sentAt: new Date().toISOString(),
                 inFlight,
+                queuedTaskCount: totalQueuedTaskCount(),
                 container: containerInfo,
             }),
         });
@@ -2355,14 +3735,18 @@ async function discoverOwnIp() {
 }
 async function main() {
     initTelemetry();
-    if (!config.threadId) {
-        throw new Error('REMOTE_DEV_THREAD_ID or THREAD_ID is required — the container is pinned to one thread.');
+    if (!config.threadId && config.workerBindMode !== 'repo') {
+        throw new Error('REMOTE_DEV_THREAD_ID or THREAD_ID is required unless WORKER_BIND_MODE=repo.');
     }
     if (!config.repoUrl) {
         throw new Error('DD_REPO_URL is required — the container must be pinned to one git repo.');
     }
+    assertSafeGitBranchName(config.baseBranch, 'base branch');
     if (!config.serverAuthSecret) {
         fastify.log.warn('SERVER_AUTH_SECRET is not set — all non-healthz requests will 401');
+    }
+    if (!config.ghPat) {
+        fastify.log.warn('GH_PAT is not set — /thread/open-pr and PR-requesting tasks will fail closed');
     }
     await ensureDeployKey();
     await mkdir(config.outputsDir, { recursive: true });
@@ -2382,6 +3766,9 @@ async function main() {
     fastify.log.info(`EventBus: log sink active at ${config.logDir}/thread.log`);
     if (config.natsUrl) {
         fastify.log.info(`EventBus: NATS websocket fanout active on ${config.natsEventSubject}`);
+    }
+    if (config.workerFanoutWsUrl) {
+        fastify.log.info('EventBus: outbound worker websocket fanout active');
     }
     if (config.threadId && config.idleTimeoutMs > 0) {
         eventBus.startIdleWatchdog(config.idleTimeoutMs, () => {
@@ -2406,17 +3793,21 @@ async function main() {
         fastify.log.info(`agent providers — available: [${installed || 'none'}]` +
             (missing ? ` · unavailable: [${missing}]` : ''));
     });
-    // Pre-warm the thread session so the first task lands on a ready workspace.
-    const bootSession = getOrCreateSession({
-        taskId: config.threadId,
-        threadId: config.threadId,
-    });
-    await bootSession.ready;
+    // Per-thread pods pre-warm their single session. Repo-scoped pool workers
+    // create sessions lazily per task/thread.
+    if (config.threadId) {
+        const bootSession = getOrCreateSession({
+            taskId: config.threadId,
+            threadId: config.threadId,
+        });
+        await bootSession.ready;
+    }
     registerWorkerWebSocketUpgrade();
     await fastify.listen({ host: config.host, port: config.port });
 }
 function shutdown(signal) {
     fastify.log.info(`${signal} received — tearing down EventBus + channels`);
+    workerFanout.destroy();
     natsPublisher.destroy();
     eventBus.destroy();
     destroyChannelPool();
@@ -2427,6 +3818,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 main().catch((err) => {
     fastify.log.error(err);
+    workerFanout.destroy();
     natsPublisher.destroy();
     eventBus.destroy();
     shutdownTelemetry().finally(() => process.exit(1));

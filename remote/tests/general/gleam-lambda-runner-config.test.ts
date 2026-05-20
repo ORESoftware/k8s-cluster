@@ -53,6 +53,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   );
   const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const webHomeReadme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
   const gateway = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
   );
@@ -225,6 +226,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(restApi, /reuseKey may contain only ASCII letters/);
   assert.match(restApi, /validate_lambda_image_build_root/);
   assert.match(restApi, /lambda image build root must not contain \. or \.\. path components/);
+  assert.match(restApi, /\.join\("remote"\)[\s\S]*\.join\("deployments"\)[\s\S]*\.join\("gleam-lambda-runner"\)/);
   assert.match(restApi, /"nodejs"/);
   assert.match(restApi, /"python3"/);
   assert.match(restApi, /"ruby"/);
@@ -248,6 +250,28 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /const hostAllowedRuntimes = new Set\(\["nodejs"\]\)/);
   assert.match(webHome, /function syncContainerPolicy\(\)/);
   assert.match(webHome, /requiresContainer \? "This runtime requires container execution\."/);
+  assert.match(webHome, /id="process-profile"/);
+  assert.match(webHome, /<option value="nodejs">nodejs process<\/option>/);
+  assert.match(webHome, /<option value="python3">python3 process<\/option>/);
+  assert.match(webHome, /<option value="rust">rust process<\/option>/);
+  assert.match(webHome, /<option value="gleamlang">gleamlang process<\/option>/);
+  assert.match(webHome, /id="container-runner"/);
+  assert.match(webHome, /containerd \/ ctr/);
+  assert.match(webHome, /containerd \/ nerdctl/);
+  assert.match(webHome, /<option value="docker">docker<\/option>/);
+  assert.match(webHome, /id="base-image"/);
+  assert.match(webHome, /docker\.io\/library\/dd-container-pool-rust-runtime:dev/);
+  assert.match(webHome, /docker\.io\/library\/dd-container-pool-gleamlang-runtime:dev/);
+  assert.match(webHome, /metaData\.lambdaDeployment/);
+  assert.match(webHome, /context\.containerPool\.dispatch/);
+  assert.match(webHome, /const queryParams = new URLSearchParams\(location\.search\)/);
+  assert.match(webHome, /function applyQueryAutofill\(\)/);
+  assert.match(webHome, /"processProfile", "profile", "process"/);
+  assert.match(webHome, /"containerRunner", "runner", "baseImage", "image"/);
+  assert.match(webHome, /"functionBody",\s*"body",\s*"code",\s*"source"/);
+  assert.match(webHome, /state\.queryAutofillActive/);
+  assert.match(webHomeReadme, /query params to prefill a new draft/);
+  assert.match(webHomeReadme, /`processProfile` \(`nodejs`, `python3`, `rust`,\s*or `gleamlang`\)/);
   assert.match(webHome, /<option value="python3">python3<\/option>/);
   assert.match(webHome, /<option value="ruby">ruby<\/option>/);
   assert.match(webHome, /<option value="bash">bash<\/option>/);

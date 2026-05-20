@@ -12,6 +12,7 @@
 // permissions in config instead of relying on CLI parsing.
 import { accessSync, constants } from 'node:fs';
 import { createRequire } from 'node:module';
+import { CLUSTER_MCP_SERVER_NAME, CLUSTER_MCP_TOOL_NAMES, clusterMcpUrlFromEnv, } from './cluster-mcp.js';
 const localRequire = createRequire(import.meta.url);
 function isRunnableExecutable(executable) {
     try {
@@ -71,6 +72,43 @@ function resolveClaudePermissionMode() {
         ? 'default'
         : 'bypassPermissions';
 }
+function claudeMcpServers(env) {
+    const url = clusterMcpUrlFromEnv(env);
+    if (!url) {
+        return undefined;
+    }
+    return {
+        [CLUSTER_MCP_SERVER_NAME]: {
+            type: 'http',
+            url,
+            alwaysLoad: true,
+            tools: CLUSTER_MCP_TOOL_NAMES.map((name) => ({
+                name,
+                permission_policy: 'always_allow',
+            })),
+        },
+    };
+}
+function claudeAllowedTools(env) {
+    const base = [
+        'Read',
+        'Write',
+        'Edit',
+        'MultiEdit',
+        'Bash',
+        'Glob',
+        'Grep',
+        'LS',
+        'TodoWrite',
+    ];
+    if (!clusterMcpUrlFromEnv(env)) {
+        return base;
+    }
+    return [
+        ...base,
+        ...CLUSTER_MCP_TOOL_NAMES.map((name) => `mcp__${CLUSTER_MCP_SERVER_NAME}__${name}`),
+    ];
+}
 export const claudeSdkRunner = {
     id: 'claude-sdk',
     displayName: 'Claude Agent SDK',
@@ -101,6 +139,13 @@ export const claudeSdkRunner = {
             }, opts.timeoutMs);
         }
         const claudeExecutable = resolveClaudeCodeExecutable();
+        const mcpServers = claudeMcpServers(opts.env);
+        if (mcpServers) {
+            opts.emit({
+                kind: 'stderr',
+                text: `claude-sdk: configured MCP server ${CLUSTER_MCP_SERVER_NAME}`,
+            });
+        }
         const query = sdk.query({
             prompt: opts.prompt,
             abortController,
@@ -116,17 +161,8 @@ export const claudeSdkRunner = {
                 permissionMode: resolveClaudePermissionMode(),
                 settingSources: ['project'],
                 systemPrompt: { type: 'preset', preset: 'claude_code' },
-                allowedTools: [
-                    'Read',
-                    'Write',
-                    'Edit',
-                    'MultiEdit',
-                    'Bash',
-                    'Glob',
-                    'Grep',
-                    'LS',
-                    'TodoWrite',
-                ],
+                ...(mcpServers ? { mcpServers, strictMcpConfig: true } : {}),
+                allowedTools: claudeAllowedTools(opts.env),
             },
         });
         try {
