@@ -18,6 +18,7 @@ on:
           - free-thread-pod-slots
           - repair-gleamlang-secret
           - reconcile-runtime
+          - deploy-lambda-ui
           - seed-container-pool-config
           - sync-agent-gh-pat
           - sync-agent-model-keys
@@ -297,6 +298,75 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-fsharp-ws-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-gleam-mcp-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            deploy-lambda-ui)
+              python3 - <<PY > /tmp/remote-k8s-commands.json
+          import json
+          import shlex
+
+          rev = ${TARGET_REVISION@Q}
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== preserving dirty EC2 checkout, if any ==="
+          git status --short
+          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            git stash push -u -m "pre-deploy-lambda-ui-${TARGET_REVISION:-dev}-$(date -u +%Y%m%dT%H%M%SZ)"
+          else
+            echo "checkout already clean"
+          fi
+
+          echo "=== fast-forward checkout ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== render Argo manifests ==="
+          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime-render.yaml
+          kubectl kustomize remote/deployments/gleam-lambda-runner/k8s/ec2 >/tmp/dd-gleam-lambda-runner-render.yaml
+          wc -l /tmp/dd-next-runtime-render.yaml /tmp/dd-gleam-lambda-runner-render.yaml
+
+          echo "=== rebuild local runtime images ==="
+          sudo nerdctl -n k8s.io build --progress=plain \
+            -t docker.io/library/dd-remote-web-home:dev \
+            remote/deployments/web-home-rs
+          for runtime in nodejs python3 ruby bash; do
+            sudo nerdctl -n k8s.io build --progress=plain \
+              -f "remote/deployments/gleam-lambda-runner/runtime-images/${runtime}.Dockerfile" \
+              -t "docker.io/library/dd-lambda-${runtime}-runtime:dev" \
+              remote/deployments/gleam-lambda-runner
+          done
+
+          echo "=== refresh Argo applications ==="
+          kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-gleam-lambda-runner.application.yaml
+          kubectl -n argocd annotate \
+            application/dd-next-runtime \
+            application/dd-gleam-lambda-runner \
+            argocd.argoproj.io/refresh=hard \
+            --overwrite || true
+
+          echo "=== restart changed deployments ==="
+          kubectl -n default rollout restart deployment/dd-remote-web-home deployment/dd-gleam-lambda-runner
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s
+          kubectl -n default rollout status deployment/dd-gleam-lambda-runner --timeout=600s
+
+          echo "=== smoke lambda check endpoint from runner pod ==="
+          lambda_pod="$(kubectl -n default get pod -l app=dd-gleam-lambda-runner -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n default exec "$lambda_pod" -- python3 -c 'import json, os, urllib.request; payload={"slug":"deploy-smoke-nodejs","runtime":"nodejs","functionBody":"return { status: 200, body: { ok: true } };","containerized":False,"status":"draft"}; req=urllib.request.Request("http://127.0.0.1:8083/check", data=json.dumps(payload).encode("utf-8"), headers={"content-type":"application/json","x-server-auth":os.environ.get("SERVER_AUTH_SECRET","")}, method="POST"); text=urllib.request.urlopen(req, timeout=20).read().decode("utf-8"); body=json.loads(text); print(text); raise SystemExit(1 if body.get("ok") is False else 0)'
+
+          echo "=== deployed pods ==="
+          kubectl -n default get deploy dd-remote-web-home dd-gleam-lambda-runner -o wide
+          kubectl -n default get pods -l 'app in (dd-remote-web-home,dd-gleam-lambda-runner)' -o wide
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
           ]
           print(json.dumps({"commands": commands}))
           PY
