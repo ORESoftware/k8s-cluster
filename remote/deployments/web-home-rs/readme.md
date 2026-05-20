@@ -59,10 +59,12 @@ The page accepts query params to prefill a new draft. Common params are `slug`, 
 encoded.
 
 The Maud-rendered editor keeps user edits stable across background refreshes, highlights code in
-the selected process profile, reports field-specific save validation, and calls the authenticated
-`POST /lambdas/check` runner path for Node.js compile checks before saving. Process-profile
-switches replace the generated default body only while the body is still one of the generated
-defaults; custom code is left in place.
+the selected process profile, reports field-specific save validation, and requires the authenticated
+`POST /lambdas/check` runner path to compile or syntax-check the draft before saving. The runner
+applies the same managed runtime and host/container policy used for invocation, so containerized
+Python, Ruby, and Bash drafts are checked in their runtime image. Process-profile switches replace
+the generated default body only while the body is still one of the generated defaults; custom code
+is left in place.
 
 ## Service directory
 

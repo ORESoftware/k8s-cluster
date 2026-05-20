@@ -17,6 +17,7 @@
     "test:cli:fsharp-ws-server-config": "pnpm exec tsx --test general/fsharp-ws-server-config.test.ts",
     "test:cli:gateway-service-directory": "pnpm exec tsx --test general/gateway-service-directory.test.ts",
     "test:cli:gleam-lambda-runner-config": "pnpm exec tsx --test general/gleam-lambda-runner-config.test.ts",
+    "test:cli:gleam-lambda-runner-child-checks": "pnpm exec tsx --test general/gleam-lambda-runner-child-checks.test.ts",
     "test:cli:gleam-lambda-runner-http-auth": "pnpm exec tsx --test general/gleam-lambda-runner-http-auth.test.ts",
     "test:cli:gleam-lambda-runner-ec2": "DD_EC2_GLEAM_LAMBDA_INTEGRATION=1 pnpm exec tsx --test general/gleam-lambda-runner-ec2-integration.test.ts",
     "test:cli:gleam-mcp-server-observability": "pnpm exec tsx --test general/gleam-mcp-server-observability.test.ts",

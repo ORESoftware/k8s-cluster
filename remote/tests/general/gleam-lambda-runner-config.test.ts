@@ -169,6 +169,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /open_port\(\{spawn_executable, "\/bin\/sh"\}/);
   assert.match(erlPort, /stderr_to_stdout/);
   assert.match(erlPort, /check_definition\(Command0, DefinitionJson0, TimeoutMs0\)/);
+  assert.match(erlPort, /check_worker_key/);
+  assert.doesNotMatch(erlPort, /compile check is not implemented/);
   assert.match(erlPort, /worker_loop/);
   assert.match(erlPort, /lambda_child_runner_manager/);
   assert.match(erlPort, /manager_bootstrap/);
@@ -230,10 +232,18 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(pythonRunner, /SAFE_BUILTINS/);
   assert.match(pythonRunner, /urllib\.request/);
   assert.match(pythonRunner, /handler\(request, context\)/);
+  assert.match(pythonRunner, /checkOnly/);
+  assert.match(pythonRunner, /"mode": mode/);
   assert.match(rubyRunner, /BasicObject/);
   assert.match(rubyRunner, /StandardError = ::StandardError/);
   assert.match(rubyRunner, /Net::HTTP/);
+  assert.match(rubyRunner, /compile_function/);
+  assert.match(rubyRunner, /InstructionSequence\.compile/);
+  assert.match(rubyRunner, /checkOnly/);
+  assert.match(rubyRunner, /rescue StandardError, SyntaxError/);
   assert.match(bashRunner, /spawn\('\/bin\/bash'/);
+  assert.match(bashRunner, /function checkBash/);
+  assert.match(bashRunner, /spawn\('\/bin\/bash', \['-n'\]/);
   assert.match(bashRunner, /LAMBDA_REQUEST_JSON/);
   assert.match(restApi, /\/api\/lambdas\/functions/);
   assert.match(restApi, /get\(lambda_functions\)\.post\(create_lambda_function\)/);
@@ -290,6 +300,10 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /function applyQueryAutofill\(\)/);
   assert.match(webHome, /function validateDraft\(\)/);
   assert.match(webHome, /function backendSyntaxCheck\(payload\)/);
+  assert.match(webHome, /setSaveState\("backend check passed"/);
+  assert.doesNotMatch(webHome, /clientSyntaxCheck/);
+  assert.doesNotMatch(webHome, /local check passed/);
+  assert.doesNotMatch(webHome, /normalizeRuntime\(payload\.runtime\) !== "nodejs"/);
   assert.match(webHome, /shouldReplaceGeneratedBody/);
   assert.match(webHome, /state\.editorDirty/);
   assert.match(webHome, /"processProfile", "profile", "process"/);
@@ -298,6 +312,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /state\.queryAutofillActive/);
   assert.match(webHomeReadme, /query params to prefill a new draft/);
   assert.match(webHomeReadme, /`processProfile` \(`nodejs`, `python3`, `rust`,\s*`golang`, or `gleamlang`\)/);
+  assert.match(webHomeReadme, /`POST \/lambdas\/check` runner path to compile or syntax-check/);
   assert.match(webHome, /<option value="python3">python3<\/option>/);
   assert.match(webHome, /<option value="ruby">ruby<\/option>/);
   assert.match(webHome, /<option value="bash">bash<\/option>/);

@@ -4595,6 +4595,13 @@ const AGENTS_TASKS_CSS: &str = r#"      :root {
         white-space: pre-wrap;
         font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       }
+      .stream-link {
+        color: var(--accent);
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+        cursor: pointer;
+      }
       @media (max-width: 1000px) {
         .topbar { display: block; }
         .actions { justify-content: flex-start; margin-top: 12px; }
@@ -4679,6 +4686,85 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
         return "status-done";
       };
       const text = (value) => document.createTextNode(empty(value));
+      const LINKABLE_URI_PATTERN = /\b(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s<>"'`]+|mailto:[^\s<>"'`]+|www\.[^\s<>"'`]+)/g;
+      const BLOCKED_URI_PROTOCOLS = new Set(["javascript:", "data:", "vbscript:", "blob:"]);
+      const closerPairs = {
+        ")": "(",
+        "]": "[",
+        "}": "{",
+      };
+      const countChar = (value, char) => [...value].filter((item) => item === char).length;
+      const splitTrailingUriPunctuation = (value) => {
+        let uri = value;
+        let trailing = "";
+        while (/[.,;:!?]$/.test(uri)) {
+          trailing = uri.slice(-1) + trailing;
+          uri = uri.slice(0, -1);
+        }
+        while (/[\])}]$/.test(uri)) {
+          const closer = uri.slice(-1);
+          const opener = closerPairs[closer];
+          if (!opener || countChar(uri, closer) <= countChar(uri, opener)) break;
+          trailing = closer + trailing;
+          uri = uri.slice(0, -1);
+        }
+        return { uri, trailing };
+      };
+      const linkHref = (uri) => {
+        const href = uri.toLowerCase().startsWith("www.") ? `https://${uri}` : uri;
+        try {
+          const parsed = new URL(href);
+          if (BLOCKED_URI_PROTOCOLS.has(parsed.protocol.toLowerCase())) return "";
+          return href;
+        } catch {
+          return "";
+        }
+      };
+      const openModifierLink = (anchor) => {
+        window.open(anchor.href, "_blank", "noopener,noreferrer");
+      };
+      const linkedText = (value) => {
+        const fragment = document.createDocumentFragment();
+        const raw = String(value ?? "");
+        let index = 0;
+        for (const match of raw.matchAll(LINKABLE_URI_PATTERN)) {
+          const token = match[0];
+          const start = match.index ?? 0;
+          const { uri, trailing } = splitTrailingUriPunctuation(token);
+          const href = linkHref(uri);
+          if (!href) continue;
+          if (start > index) fragment.appendChild(document.createTextNode(raw.slice(index, start)));
+          const anchor = document.createElement("a");
+          anchor.className = "stream-link";
+          anchor.href = href;
+          anchor.textContent = uri;
+          anchor.target = "_blank";
+          anchor.rel = "noopener noreferrer";
+          anchor.title = "Ctrl+click or Cmd+click to open";
+          let openedByModifier = false;
+          anchor.addEventListener("mousedown", (event) => {
+            if (event.button === 0 && (event.ctrlKey || event.metaKey)) {
+              openedByModifier = true;
+              event.preventDefault();
+              openModifierLink(anchor);
+            }
+          });
+          anchor.addEventListener("click", (event) => {
+            if (openedByModifier) {
+              openedByModifier = false;
+              event.preventDefault();
+              return;
+            }
+            if (event.ctrlKey || event.metaKey) return;
+            event.preventDefault();
+          });
+          fragment.appendChild(anchor);
+          if (trailing) fragment.appendChild(document.createTextNode(trailing));
+          index = start + token.length;
+        }
+        if (index < raw.length) fragment.appendChild(document.createTextNode(raw.slice(index)));
+        return fragment;
+      };
       const cell = (child, className) => {
         const td = document.createElement("td");
         if (className) td.className = className;
@@ -4907,7 +4993,7 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       const appendStreamLine = (line) => {
         const stream = $("chat-stream");
         if (stream.textContent === "No active stream.") stream.textContent = "";
-        stream.textContent += `${line}\n`;
+        stream.appendChild(linkedText(`${line}\n`));
         stream.scrollTop = stream.scrollHeight;
       };
       const setThreadRuntimeState = (threadId, status, detail = {}) => {
@@ -6984,7 +7070,13 @@ textarea {
 .code-highlight,
 .code-editor textarea {
   grid-area: 1 / 1;
+  justify-self: stretch;
+  align-self: stretch;
+  width: 100%;
   min-height: 220px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   margin: 0;
   padding: 10px;
   border: 0;
@@ -6994,11 +7086,18 @@ textarea {
   line-height: 1.45;
   tab-size: 2;
   white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
   overflow: auto;
 }
 .code-highlight {
   pointer-events: none;
   color: #d7fbf4;
+  overflow: hidden;
+}
+.code-highlight span {
+  display: inline;
+  margin: 0;
 }
 .code-editor textarea {
   position: relative;
@@ -7057,7 +7156,7 @@ p { margin: 0; color: var(--muted); line-height: 1.45; }
   gap: 10px;
 }
 .wide { grid-column: 1 / -1; }
-label span {
+label > span {
   display: block;
   color: var(--muted);
   font-size: 12px;
@@ -7414,6 +7513,15 @@ const codeKeywordSets = {
     "return", "True", "try", "while", "with", "yield",
   ]),
 };
+const commentPatterns = {
+  nodejs: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+  rust: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+  golang: String.raw`\/\/[^\n]*|\/\*[\s\S]*?\*\/`,
+  gleamlang: String.raw`\/\/[^\n]*`,
+  python3: String.raw`#[^\n]*`,
+  bash: String.raw`#[^\n]*`,
+  ruby: String.raw`#[^\n]*`,
+};
 
 function queryParam(...names) {
   for (const name of names) {
@@ -7527,18 +7635,28 @@ function codeLanguage() {
 
 function highlightCode(source, language) {
   const keywords = codeKeywordSets[language] || codeKeywordSets.nodejs;
-  const tokenPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|`(?:\\[\s\S]|[^`\\])*`|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_!?]*\b|[{}()[\].,;:+\-*/%=<>!&|^~]+/g;
+  const commentPattern = commentPatterns[language] || commentPatterns.nodejs;
+  const baseTokenPattern = [
+    '`(?:\\\\[\\s\\S]|[^`\\\\])*`',
+    '"(?:\\\\[\\s\\S]|[^"\\\\])*"',
+    "'(?:\\\\[\\s\\S]|[^'\\\\])*'",
+    "\\b\\d+(?:\\.\\d+)?\\b",
+    "\\b[A-Za-z_][A-Za-z0-9_!?]*\\b",
+    "[{}()[\\].,;:+\\-*/%=<>!&|^~#]+",
+  ].join("|");
+  const tokenPattern = new RegExp(`${commentPattern}|${baseTokenPattern}`, "g");
+  const commentTokenPattern = new RegExp(`^(?:${commentPattern})$`);
   let html = "";
   let index = 0;
   for (const match of source.matchAll(tokenPattern)) {
     const token = match[0];
     html += escapeHtml(source.slice(index, match.index));
     let className = "";
-    if (token.startsWith("//") || token.startsWith("/*") || token.startsWith("#")) className = "tok-comment";
+    if (commentTokenPattern.test(token)) className = "tok-comment";
     else if (token.startsWith("\"") || token.startsWith("'") || token.startsWith("`")) className = "tok-string";
     else if (/^\d/.test(token)) className = "tok-number";
     else if (keywords.has(token)) className = "tok-keyword";
-    else if (/^[{}()[\].,;:+\-*/%=<>!&|^~]+$/.test(token)) className = "tok-punct";
+    else if (/^[{}()[\].,;:+\-*/%=<>!&|^~#]+$/.test(token)) className = "tok-punct";
     html += className
       ? `<span class="${className}">${escapeHtml(token)}</span>`
       : escapeHtml(token);
@@ -7887,26 +8005,7 @@ function renderIssues(title, issues) {
   $("output").textContent = JSON.stringify({ ok: false, title, issues }, null, 2);
 }
 
-function clientSyntaxCheck(payload) {
-  if (normalizeRuntime(payload.runtime) !== "nodejs") return { ok: true, skipped: true };
-  try {
-    new Function(
-      "request",
-      "context",
-      "console",
-      "process",
-      "require",
-      "Buffer",
-      `"use strict"; return (async () => {\n${payload.functionBody}\n})();`,
-    );
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
 async function backendSyntaxCheck(payload) {
-  if (normalizeRuntime(payload.runtime) !== "nodejs") return { ok: true, skipped: true };
   const response = await fetch("/lambdas/check", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -7914,7 +8013,7 @@ async function backendSyntaxCheck(payload) {
   });
   const data = await response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }));
   if (response.status === 404 || response.status === 405) {
-    return { ok: true, skipped: true, data: { ok: true, warning: "Backend compile check route is not deployed yet." } };
+    return { ok: false, status: response.status, data: { ok: false, error: "Backend compile check route is not deployed yet." } };
   }
   return { ok: response.ok && data.ok !== false, status: response.status, data };
 }
@@ -7926,15 +8025,6 @@ async function checkDraft() {
     renderIssues("Fix required fields", errors);
     return { ok: false };
   }
-  const local = clientSyntaxCheck(payload);
-  if (!local.ok) {
-    setFieldError("function-body", local.error);
-    setSaveState("syntax failed", "bad");
-    renderIssues("Function body syntax failed", [
-      validationIssue("Function body", "function-body", local.error),
-    ]);
-    return { ok: false };
-  }
   setSaveState("checking");
   try {
     const remote = await backendSyntaxCheck(payload);
@@ -7944,16 +8034,15 @@ async function checkDraft() {
       $("output").textContent = JSON.stringify(remote.data, null, 2);
       return { ok: false };
     }
-    setSaveState(remote.skipped ? "local check passed" : "check passed", "ok");
+    setSaveState("backend check passed", "ok");
     $("output").textContent = JSON.stringify(remote.data || { ok: true }, null, 2);
     return { ok: true, payload };
   } catch (error) {
-    setSaveState("local check passed", "ok");
-    $("output").textContent = JSON.stringify({
-      ok: true,
-      warning: `Backend check unavailable: ${error instanceof Error ? error.message : String(error)}`,
-    }, null, 2);
-    return { ok: true, payload };
+    const message = `Backend check unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    setFieldError("function-body", message);
+    setSaveState("backend check unavailable", "bad");
+    $("output").textContent = JSON.stringify({ ok: false, error: message }, null, 2);
+    return { ok: false };
   }
 }
 

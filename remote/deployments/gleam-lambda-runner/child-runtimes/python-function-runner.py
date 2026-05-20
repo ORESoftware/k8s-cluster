@@ -134,6 +134,18 @@ def invoke(line):
     if len(function_body.encode("utf-8")) > MAX_FUNCTION_BODY_BYTES:
         raise ValueError("functionBody exceeds configured byte limit")
 
+    mode, compiled = compile_function(function_body)
+    if envelope.get("checkOnly") is True or envelope.get("mode") == "check":
+        return {
+            "ok": True,
+            "check": {
+                "runtime": definition.get("runtime"),
+                "slug": definition.get("slug") or envelope.get("slug"),
+                "mode": mode,
+            },
+            "cachedFunctions": len(compiled_functions),
+        }
+
     request = envelope.get("request") or {}
     context = {
         "id": definition.get("id"),
@@ -160,7 +172,6 @@ def invoke(line):
         "fetch": fetch,
     }
 
-    mode, compiled = compile_function(function_body)
     if mode == "eval":
         result = eval(compiled, globals_scope, locals_scope)
     else:

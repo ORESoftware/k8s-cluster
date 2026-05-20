@@ -6,7 +6,8 @@ optional non-root containers.
 - `GET /healthz` returns service health.
 - `GET /metrics` exposes Prometheus counters and gauges.
 - `POST /invoke/:function_id` forwards one request envelope to a child process.
-- `POST /check` compiles a posted Node.js lambda definition without executing the function body.
+- `POST /check` compiles or syntax-checks a posted lambda definition without executing the
+  function body.
 - `POST /destroy/:reuse_key` closes a cached child process.
 
 `POST /invoke/:function_id`, `POST /check`, and `POST /destroy/:reuse_key` fail closed unless
@@ -47,6 +48,14 @@ function definition from Postgres by immutable function UUID, then maps the func
 reusable worker actor. The managed runtimes are `nodejs`, `python3`, `ruby`, and `bash`; legacy
 `javascript`, `typescript`, `python`, and `shell` values normalize to those runtime pools. Each
 child receives the definition over stdio, so it does not need database credentials or `psql`.
+`POST /check` uses the same runtime mapping and host/container policy as invocation: containerized
+definitions are checked inside their managed runtime image, while host checks are limited by
+`LAMBDA_ALLOW_HOST_RUNTIMES`.
+
+Today `/check` is deliberately compile-only. If we add execution-style draft checks later, keep them
+as a separate dry-run mode with `LAMBDA_CONTAINER_NETWORK=none` plus runtime-level `fetch`/HTTP
+stubs that return deterministic `200` responses, rather than widening the build server into an
+untrusted code runner.
 
 The runner depends on the generated Gleam schema package at
 `remote/libs/pg-defs/generated/gleam` (`dd_pg_defs`). That package is generated from the shared
