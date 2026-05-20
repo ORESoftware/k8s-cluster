@@ -39,9 +39,12 @@
     "test:cli:ws-loadtest-config": "pnpm exec tsx --test general/ws-loadtest-config.test.ts",
     "test:ui:playwright": "node ui-playwright-smoke.mjs",
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",
+    "test:ui:sweep": "node ui-gateway-sweep.mjs",
     "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer"
   },
   "devDependencies": {
+    "playwright": "^1.60.0",
+    "puppeteer": "^25.0.4",
     "tsx": "^4.22.0"
   }
 }

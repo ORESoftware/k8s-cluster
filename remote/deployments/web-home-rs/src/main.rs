@@ -1068,6 +1068,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   let lastUpdatedAt = "";
   let loading = false;
   let reloadTimer = 0;
+  let runtimeSocketsStarted = false;
   const wsStatus = { gleam: "idle", rust: "idle" };
   const renderStatus = () => {
     const updated = lastUpdatedAt ? ` · updated ${lastUpdatedAt}` : "";
@@ -1227,6 +1228,7 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       }
       if (!response.ok) throw new Error("runtime inventory failed " + response.status);
       render(await response.json());
+      connectRuntimeSockets();
     } catch (error) {
       renderEmpty(String(error));
       setStatus("live container inventory unavailable");
@@ -1273,6 +1275,8 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     };
   };
   const connectRuntimeSockets = () => {
+    if (runtimeSocketsStarted) return;
+    runtimeSocketsStarted = true;
     const clientId = Math.random().toString(36).slice(2);
     openRuntimeSocket("gleam", `/admin/gleam/ws?channel=k8s-runtime-admin&client=home-${clientId}`);
     openRuntimeSocket("rust", `/admin/webrtc/runtime/ws?client=home-${clientId}`);
@@ -1288,7 +1292,6 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     dock.hidden = true;
   });
   load();
-  connectRuntimeSockets();
   startTimedReload();
 })();
 "##;

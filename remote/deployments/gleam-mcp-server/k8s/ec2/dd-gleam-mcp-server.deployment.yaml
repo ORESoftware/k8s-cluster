@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-05-18-mcp-observability"
+        dd.dev/telemetry-revision: "2026-05-20-track-gleam-manifest"
       labels:
         app: dd-gleam-mcp-server
     spec:
@@ -48,6 +48,10 @@ spec:
               cp -R "$SRC_ROOT/remote/deployments/gleam-mcp-server"/. "$WORK_ROOT/remote/deployments/gleam-mcp-server"/
               cp -R "$SRC_ROOT/remote/libs/pg-defs/generated/gleam" "$WORK_ROOT/remote/libs/pg-defs/generated/gleam"
               cd "$WORK_ROOT/remote/deployments/gleam-mcp-server"
+              if [ ! -f manifest.toml ]; then
+                echo "manifest.toml is required for offline-safe Gleam startup; run gleam deps download and commit the manifest"
+                exit 1
+              fi
               exec gleam run
           env:
             - name: HOST

@@ -17,6 +17,7 @@ target/
 build/
 erl_crash.dump
 manifest.toml
+!remote/deployments/gleam-mcp-server/manifest.toml
 
 # ──────────────────────────────────────────────
 # .NET / F#
