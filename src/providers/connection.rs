@@ -120,9 +120,11 @@ impl ConnectionService {
         .await?
         .ok_or_else(|| AppError::NotFound(format!("connection {connection_id}")))?;
 
-        let envelope = self.sealer.seal(tenant_id, provider.tag(), &cred.plaintext)?;
-        let sealed_json = serde_json::to_value(&envelope)
-            .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+        let envelope = self
+            .sealer
+            .seal(tenant_id, provider.tag(), &cred.plaintext)?;
+        let sealed_json =
+            serde_json::to_value(&envelope).map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
 
         let row = sqlx::query(
             r#"
@@ -185,10 +187,7 @@ impl ConnectionService {
         self.sealer.unseal(tenant_id, provider.tag(), &envelope)
     }
 
-    pub async fn list_for_tenant(
-        &self,
-        tenant_id: Uuid,
-    ) -> AppResult<Vec<ProviderConnection>> {
+    pub async fn list_for_tenant(&self, tenant_id: Uuid) -> AppResult<Vec<ProviderConnection>> {
         let rows = sqlx::query(
             r#"
             SELECT id, tenant_id, provider AS "provider: ProviderKind",
@@ -209,11 +208,7 @@ impl ConnectionService {
         rows.iter().map(row_to_connection).collect()
     }
 
-    pub async fn mark_failed(
-        &self,
-        connection_id: Uuid,
-        error: &str,
-    ) -> AppResult<()> {
+    pub async fn mark_failed(&self, connection_id: Uuid, error: &str) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE provider_connections
@@ -230,11 +225,7 @@ impl ConnectionService {
         Ok(())
     }
 
-    pub async fn mark_sync_failed(
-        &self,
-        connection_id: Uuid,
-        error: &str,
-    ) -> AppResult<()> {
+    pub async fn mark_sync_failed(&self, connection_id: Uuid, error: &str) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE provider_connections
@@ -327,6 +318,34 @@ impl ConnectionService {
         row.as_ref().map(row_to_connection).transpose()
     }
 
+    pub async fn find_active_by_external_account(
+        &self,
+        provider: ProviderKind,
+        external_account_id: &str,
+    ) -> AppResult<Option<ProviderConnection>> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, tenant_id, provider AS "provider: ProviderKind",
+                   auth_kind AS "auth_kind: ProviderAuthKind",
+                   external_account_id, display_label,
+                   status AS "status: ConnectionStatus", scopes,
+                   expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
+                   metadata, created_at
+            FROM provider_connections
+            WHERE provider = $1::provider_kind
+              AND external_account_id = $2
+              AND status = 'active'::connection_status
+            ORDER BY updated_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(provider.tag())
+        .bind(external_account_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.as_ref().map(row_to_connection).transpose()
+    }
+
     pub async fn mark_synced(
         &self,
         connection_id: Uuid,
@@ -349,11 +368,7 @@ impl ConnectionService {
         Ok(())
     }
 
-    pub async fn get(
-        &self,
-        tenant_id: Uuid,
-        connection_id: Uuid,
-    ) -> AppResult<ProviderConnection> {
+    pub async fn get(&self, tenant_id: Uuid, connection_id: Uuid) -> AppResult<ProviderConnection> {
         let row = sqlx::query(
             r#"
             SELECT id, tenant_id, provider AS "provider: ProviderKind",

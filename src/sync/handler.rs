@@ -17,7 +17,7 @@ use crate::solana::SolanaClient;
 
 use super::rate_limit::ProviderRateLimiter;
 
-use super::{coinflow_sync, stripe_sync};
+use super::{coinflow_sync, stripe_sync, wise_sync};
 
 #[derive(Debug, Deserialize)]
 struct SyncPayload {
@@ -58,7 +58,15 @@ impl ConnectionSyncJob {
         solana: SolanaClient,
     ) -> Self {
         let rate_limiter = ProviderRateLimiter::new(pool.clone());
-        Self { pool, cfg, ledger, locks, connections, rate_limiter, solana }
+        Self {
+            pool,
+            cfg,
+            ledger,
+            locks,
+            connections,
+            rate_limiter,
+            solana,
+        }
     }
 }
 
@@ -68,9 +76,9 @@ impl JobHandler for ConnectionSyncJob {
         let payload: SyncPayload = serde_json::from_value(ctx.payload.clone())
             .map_err(|e| AppError::BadRequest(format!("invalid sync payload: {e}")))?;
 
-        let tenant_id = ctx.tenant_id.ok_or_else(|| {
-            AppError::BadRequest("sync.connection requires tenant_id".into())
-        })?;
+        let tenant_id = ctx
+            .tenant_id
+            .ok_or_else(|| AppError::BadRequest("sync.connection requires tenant_id".into()))?;
         let region = tenant_region(&self.pool, tenant_id).await?;
 
         let conn = self
@@ -136,15 +144,14 @@ impl JobHandler for ConnectionSyncJob {
                 tenant_id,
                 region,
             };
-            let cursor = payload.cursor.as_deref().or(conn.last_sync_cursor.as_deref());
+            let cursor = payload
+                .cursor
+                .as_deref()
+                .or(conn.last_sync_cursor.as_deref());
 
             match conn.provider {
-                ProviderKind::Stripe => {
-                    stripe_sync::sync_stripe(&sctx, &conn, cursor).await
-                }
-                ProviderKind::Coinflow => {
-                    coinflow_sync::sync_coinflow(&sctx, &conn, cursor).await
-                }
+                ProviderKind::Stripe => stripe_sync::sync_stripe(&sctx, &conn, cursor).await,
+                ProviderKind::Coinflow => coinflow_sync::sync_coinflow(&sctx, &conn, cursor).await,
                 ProviderKind::Paypal => not_implemented(&conn).await,
                 ProviderKind::Braintree => not_implemented(&conn).await,
                 ProviderKind::CoinbaseCommerce | ProviderKind::CoinbasePrime => {
@@ -153,8 +160,8 @@ impl JobHandler for ConnectionSyncJob {
                 ProviderKind::PlaidBank => not_implemented(&conn).await,
                 ProviderKind::SwiftWire => not_implemented(&conn).await,
                 ProviderKind::AchDirect => not_implemented(&conn).await,
-                ProviderKind::Wise => not_implemented(&conn).await,
-                ProviderKind::SolanaWallet     => sync_solana(&self.solana, &conn, cursor).await,
+                ProviderKind::Wise => wise_sync::sync_wise(&sctx, &conn, cursor).await,
+                ProviderKind::SolanaWallet => sync_solana(&self.solana, &conn, cursor).await,
             }
         }
         .await;
@@ -166,7 +173,9 @@ impl JobHandler for ConnectionSyncJob {
                 region,
                 Some(&format!("scheduler:{}", ctx.job_id)),
                 &resource,
-                ReleaseRequest { lease_token: lease.lease_token },
+                ReleaseRequest {
+                    lease_token: lease.lease_token,
+                },
             )
             .await;
 
@@ -213,13 +222,11 @@ pub struct SyncSummary {
 }
 
 async fn tenant_region(pool: &sqlx::PgPool, tenant_id: Uuid) -> AppResult<Region> {
-    let row = sqlx::query(
-        r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#,
-    )
-    .bind(tenant_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id}")))?;
+    let row = sqlx::query(r#"SELECT country_code, us_state FROM tenants WHERE id = $1"#)
+        .bind(tenant_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id}")))?;
     let cc: String = row.try_get("country_code")?;
     let st: Option<String> = row.try_get("us_state")?;
     Region::from_codes(&cc, st.as_deref()).map_err(|e| AppError::BadRequest(e.to_string()))
@@ -254,9 +261,7 @@ async fn sync_solana(
     })
 }
 
-fn solana_wallet_from_connection(
-    conn: &ProviderConnection,
-) -> AppResult<SolanaWalletCredential> {
+fn solana_wallet_from_connection(conn: &ProviderConnection) -> AppResult<SolanaWalletCredential> {
     if let Ok(wallet) = serde_json::from_value::<SolanaWalletCredential>(conn.metadata.clone()) {
         validate_solana_pubkey(&wallet.pubkey_b58)?;
         return Ok(wallet);
@@ -275,9 +280,9 @@ fn solana_wallet_from_connection(
 }
 
 fn validate_solana_pubkey(pubkey_b58: &str) -> AppResult<()> {
-    let bytes = bs58::decode(pubkey_b58).into_vec().map_err(|e| {
-        AppError::BadRequest(format!("invalid Solana wallet pubkey: {e}"))
-    })?;
+    let bytes = bs58::decode(pubkey_b58)
+        .into_vec()
+        .map_err(|e| AppError::BadRequest(format!("invalid Solana wallet pubkey: {e}")))?;
     if bytes.len() != 32 {
         return Err(AppError::BadRequest(
             "Solana wallet pubkey must decode to 32 bytes".into(),

@@ -21,13 +21,14 @@
 //!  - On failure: marks the connection's `last_error`, releases lease,
 //!    returns Err so the scheduler retries per `max_attempts`.
 //!
-//! The per-provider sync bodies are stubbed in this commit. The contract is
-//! frozen here so the API + scheduling layer is real today; each provider's
-//! `sync_balance_transactions` lands incrementally.
+//! Stripe, Coinflow, Solana, and Wise have first-pass sync bodies. Remaining
+//! providers keep the same contract and should land incrementally without
+//! changing the API + scheduling layer.
 
 pub mod coinflow_sync;
 pub mod handler;
 pub mod rate_limit;
 pub mod stripe_sync;
+pub mod wise_sync;
 
 pub use handler::ConnectionSyncJob;

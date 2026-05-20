@@ -78,7 +78,11 @@ pub struct CustomerService {
 
 impl CustomerService {
     pub fn new(pool: PgPool, users: UserService, ledger: LedgerService) -> Self {
-        Self { pool, users, ledger }
+        Self {
+            pool,
+            users,
+            ledger,
+        }
     }
 
     pub async fn billing_state(
@@ -99,7 +103,11 @@ impl CustomerService {
 
         let unallocated = self
             .ledger
-            .account_balance(tenant_id, &format!("unallocated_cash/{}", user.id), currency)
+            .account_balance(
+                tenant_id,
+                &format!("unallocated_cash/{}", user.id),
+                currency,
+            )
             .await
             .map(|b| b.balance_minor)
             .unwrap_or(0);
@@ -171,7 +179,10 @@ impl CustomerService {
         .await?;
 
         let parse = |k: &str| -> i128 {
-            row.try_get::<String, _>(k).ok().and_then(|s| s.parse().ok()).unwrap_or(0)
+            row.try_get::<String, _>(k)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0)
         };
 
         Ok(Aging {
@@ -213,7 +224,11 @@ impl CustomerService {
 
         Ok(row.map(|r| LastPayment {
             received_on: r.try_get("posted_at").unwrap_or_else(|_| Utc::now()),
-            amount_minor: r.try_get::<String, _>("amount_t").ok().and_then(|s| s.parse().ok()).unwrap_or(0),
+            amount_minor: r
+                .try_get::<String, _>("amount_t")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
             via: r.try_get("source").unwrap_or_default(),
             external_id: r.try_get("source_event_id").unwrap_or_default(),
         }))
@@ -227,6 +242,10 @@ impl CustomerService {
         .bind(tenant_id)
         .fetch_one(&self.pool)
         .await?;
-        Ok(if count == 0 { ReconciliationStatus::Clean } else { ReconciliationStatus::BreaksOpen })
+        Ok(if count == 0 {
+            ReconciliationStatus::Clean
+        } else {
+            ReconciliationStatus::BreaksOpen
+        })
     }
 }

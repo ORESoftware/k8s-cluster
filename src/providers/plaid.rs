@@ -29,7 +29,9 @@ pub struct PlaidCredential {
     pub institution_name: Option<String>,
 }
 
-pub struct PlaidLink<'a> { cfg: &'a Config }
+pub struct PlaidLink<'a> {
+    cfg: &'a Config,
+}
 
 #[derive(Debug, Serialize)]
 struct LinkTokenCreateReq<'a> {
@@ -73,20 +75,25 @@ struct PlaidErr {
 }
 
 impl<'a> PlaidLink<'a> {
-    pub fn new(cfg: &'a Config) -> Self { Self { cfg } }
+    pub fn new(cfg: &'a Config) -> Self {
+        Self { cfg }
+    }
 
     fn base(&self) -> &'static str {
-        // Operators can switch via env later; default production.
-        "https://production.plaid.com"
+        self.cfg.plaid_api_base()
     }
 
     pub async fn create_link_token(&self, tenant_id: uuid::Uuid) -> AppResult<String> {
-        let client_id = self.cfg.plaid_client_id.as_ref().ok_or_else(|| {
-            AppError::BadRequest("PLAID_CLIENT_ID not configured".into())
-        })?;
-        let secret = self.cfg.plaid_secret.as_ref().ok_or_else(|| {
-            AppError::BadRequest("PLAID_SECRET not configured".into())
-        })?;
+        let client_id = self
+            .cfg
+            .plaid_client_id
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("PLAID_CLIENT_ID not configured".into()))?;
+        let secret = self
+            .cfg
+            .plaid_secret
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("PLAID_SECRET not configured".into()))?;
 
         let tenant_id_s = tenant_id.to_string();
         let webhook = Some(format!(
@@ -100,7 +107,9 @@ impl<'a> PlaidLink<'a> {
             language: "en",
             country_codes: vec!["US"],
             products: vec!["transactions"],
-            user: LinkUser { client_user_id: &tenant_id_s },
+            user: LinkUser {
+                client_user_id: &tenant_id_s,
+            },
             webhook,
         };
 
@@ -137,16 +146,24 @@ impl<'a> PlaidLink<'a> {
         institution_id: Option<&str>,
         institution_name: Option<&str>,
     ) -> AppResult<CodeExchangeResult> {
-        let client_id = self.cfg.plaid_client_id.as_ref().ok_or_else(|| {
-            AppError::BadRequest("PLAID_CLIENT_ID not configured".into())
-        })?;
-        let secret = self.cfg.plaid_secret.as_ref().ok_or_else(|| {
-            AppError::BadRequest("PLAID_SECRET not configured".into())
-        })?;
+        let client_id = self
+            .cfg
+            .plaid_client_id
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("PLAID_CLIENT_ID not configured".into()))?;
+        let secret = self
+            .cfg
+            .plaid_secret
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("PLAID_SECRET not configured".into()))?;
 
         let resp = reqwest::Client::new()
             .post(format!("{}/item/public_token/exchange", self.base()))
-            .json(&ExchangeReq { client_id, secret, public_token })
+            .json(&ExchangeReq {
+                client_id,
+                secret,
+                public_token,
+            })
             .send()
             .await
             .map_err(|e| AppError::Provider {

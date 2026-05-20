@@ -27,10 +27,16 @@ pub struct JobOutput {
 
 impl JobOutput {
     pub fn ok(summary: impl Into<String>) -> Self {
-        Self { summary: summary.into(), data: serde_json::Value::Null }
+        Self {
+            summary: summary.into(),
+            data: serde_json::Value::Null,
+        }
     }
     pub fn with_data(summary: impl Into<String>, data: serde_json::Value) -> Self {
-        Self { summary: summary.into(), data }
+        Self {
+            summary: summary.into(),
+            data,
+        }
     }
 }
 
@@ -47,7 +53,9 @@ pub struct HandlerRegistry {
 
 impl HandlerRegistry {
     pub fn from_map(map: HashMap<String, Arc<dyn JobHandler>>) -> Self {
-        Self { inner: Arc::new(map) }
+        Self {
+            inner: Arc::new(map),
+        }
     }
 
     pub fn get(&self, kind: &str) -> Option<Arc<dyn JobHandler>> {
@@ -66,16 +74,24 @@ pub struct HandlerRegistryBuilder {
 }
 
 impl HandlerRegistryBuilder {
-    pub fn new() -> Self { Self { map: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+        }
+    }
 
     pub fn register(mut self, kind: impl Into<String>, handler: Arc<dyn JobHandler>) -> Self {
         self.map.insert(kind.into(), handler);
         self
     }
 
-    pub fn build(self) -> HandlerRegistry { HandlerRegistry::from_map(self.map) }
+    pub fn build(self) -> HandlerRegistry {
+        HandlerRegistry::from_map(self.map)
+    }
 }
 
 impl Default for HandlerRegistryBuilder {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

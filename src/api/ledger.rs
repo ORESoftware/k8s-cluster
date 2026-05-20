@@ -1,5 +1,5 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -30,11 +30,18 @@ pub async fn ensure_account(
 ) -> AppResult<Json<EnsureAccountResp>> {
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
-    let currency = Currency::new(&input.currency)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let currency =
+        Currency::new(&input.currency).map_err(|e| AppError::BadRequest(e.to_string()))?;
     let acct = state
         .ledger
-        .ensure_account(tenant_id, region, input.user_id, input.kind, &input.code, currency)
+        .ensure_account(
+            tenant_id,
+            region,
+            input.user_id,
+            input.kind,
+            &input.code,
+            currency,
+        )
         .await?;
     Ok(Json(EnsureAccountResp {
         id: acct.id,
@@ -59,7 +66,9 @@ pub async fn post_transaction(
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
     let tx_id = state.ledger.post_transaction(&draft, region).await?;
-    Ok(Json(PostTxResp { transaction_id: tx_id }))
+    Ok(Json(PostTxResp {
+        transaction_id: tx_id,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -68,15 +77,19 @@ pub struct BalanceQuery {
     pub currency: String,
 }
 
-fn default_currency() -> String { "USD".into() }
+fn default_currency() -> String {
+    "USD".into()
+}
 
 pub async fn account_balance(
     State(state): State<AppState>,
     Path((tenant_id, code)): Path<(Uuid, String)>,
     Query(q): Query<BalanceQuery>,
 ) -> AppResult<Json<AccountBalance>> {
-    let currency = Currency::new(&q.currency)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let bal = state.ledger.account_balance(tenant_id, &code, currency).await?;
+    let currency = Currency::new(&q.currency).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let bal = state
+        .ledger
+        .account_balance(tenant_id, &code, currency)
+        .await?;
     Ok(Json(bal))
 }

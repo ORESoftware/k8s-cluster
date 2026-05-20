@@ -75,7 +75,11 @@ pub struct VendorService {
 
 impl VendorService {
     pub fn new(pool: PgPool, users: UserService, ledger: LedgerService) -> Self {
-        Self { pool, users, ledger }
+        Self {
+            pool,
+            users,
+            ledger,
+        }
     }
 
     pub async fn payable_state(
@@ -156,7 +160,10 @@ impl VendorService {
         .await?;
 
         let parse = |k: &str| -> i128 {
-            row.try_get::<String, _>(k).ok().and_then(|s| s.parse().ok()).unwrap_or(0)
+            row.try_get::<String, _>(k)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0)
         };
 
         Ok(PayableAging {
@@ -190,13 +197,41 @@ impl VendorService {
         let mut options: Vec<RailOption> = Vec::new();
         for m in methods {
             match m.as_str() {
-                "ach"       => options.push(RailOption { rail: "ach".into(),       fee_minor: 25,    eta_business_days: 2 }),
-                "wire"      => options.push(RailOption { rail: "wire".into(),      fee_minor: 1500,  eta_business_days: 0 }),
-                "swift"     => options.push(RailOption { rail: "swift".into(),     fee_minor: 4500,  eta_business_days: 2 }),
-                "paypal"    => options.push(RailOption { rail: "paypal".into(),    fee_minor: ((outstanding as f64) * 0.029) as i128 + 30, eta_business_days: 0 }),
-                "braintree" => options.push(RailOption { rail: "braintree".into(), fee_minor: ((outstanding as f64) * 0.029) as i128 + 30, eta_business_days: 0 }),
-                "usdc_sol"  => options.push(RailOption { rail: "usdc_sol".into(),  fee_minor: 1,     eta_business_days: 0 }),
-                "wise"      => options.push(RailOption { rail: "wise".into(),      fee_minor: ((outstanding as f64) * 0.004) as i128, eta_business_days: 1 }),
+                "ach" => options.push(RailOption {
+                    rail: "ach".into(),
+                    fee_minor: 25,
+                    eta_business_days: 2,
+                }),
+                "wire" => options.push(RailOption {
+                    rail: "wire".into(),
+                    fee_minor: 1500,
+                    eta_business_days: 0,
+                }),
+                "swift" => options.push(RailOption {
+                    rail: "swift".into(),
+                    fee_minor: 4500,
+                    eta_business_days: 2,
+                }),
+                "paypal" => options.push(RailOption {
+                    rail: "paypal".into(),
+                    fee_minor: ((outstanding as f64) * 0.029) as i128 + 30,
+                    eta_business_days: 0,
+                }),
+                "braintree" => options.push(RailOption {
+                    rail: "braintree".into(),
+                    fee_minor: ((outstanding as f64) * 0.029) as i128 + 30,
+                    eta_business_days: 0,
+                }),
+                "usdc_sol" => options.push(RailOption {
+                    rail: "usdc_sol".into(),
+                    fee_minor: 1,
+                    eta_business_days: 0,
+                }),
+                "wise" => options.push(RailOption {
+                    rail: "wise".into(),
+                    fee_minor: ((outstanding as f64) * 0.004) as i128,
+                    eta_business_days: 1,
+                }),
                 _ => {}
             }
         }

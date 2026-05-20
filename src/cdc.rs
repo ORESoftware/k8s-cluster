@@ -54,8 +54,7 @@ async fn start_inner() -> anyhow::Result<()> {
         return Ok(());
     };
     let stream = first_env(&["BILLING_CDC_STREAM"]).unwrap_or_else(|| "CDC".to_string());
-    let filter = first_env(&["BILLING_CDC_FILTER_SUBJECT"])
-        .unwrap_or_else(|| "cdc.>".to_string());
+    let filter = first_env(&["BILLING_CDC_FILTER_SUBJECT"]).unwrap_or_else(|| "cdc.>".to_string());
     let durable = first_env(&["BILLING_CDC_DURABLE_NAME"])
         .unwrap_or_else(|| "billing-server-audit".to_string());
 
@@ -66,9 +65,12 @@ async fn start_inner() -> anyhow::Result<()> {
         .stream(stream)
         .durable_name(durable.clone())
         .filter_subject(filter.clone())
-        .start(&jetstream, |change: dd_wal_consumer::RowChange| async move {
-            on_change(change).await;
-        })
+        .start(
+            &jetstream,
+            |change: dd_wal_consumer::RowChange| async move {
+                on_change(change).await;
+            },
+        )
         .await
         .map_err(|error| anyhow::anyhow!("dd-wal-consumer: {error}"))?;
     tracing::info!(

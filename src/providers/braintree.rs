@@ -21,7 +21,9 @@ pub struct BraintreeCredential {
     pub scopes: Vec<String>,
 }
 
-pub struct BraintreeOAuth<'a> { cfg: &'a Config }
+pub struct BraintreeOAuth<'a> {
+    cfg: &'a Config,
+}
 
 #[derive(Debug, Deserialize)]
 struct BraintreeTokenResponse {
@@ -50,29 +52,47 @@ struct BraintreeErr {
 }
 
 impl<'a> BraintreeOAuth<'a> {
-    pub fn new(cfg: &'a Config) -> Self { Self { cfg } }
+    pub fn new(cfg: &'a Config) -> Self {
+        Self { cfg }
+    }
 
     pub fn authorize_url(&self, state: &str) -> AppResult<String> {
-        let client_id = self.cfg.braintree_client_id.as_ref()
+        let client_id = self
+            .cfg
+            .braintree_client_id
+            .as_ref()
             .ok_or_else(|| AppError::BadRequest("BRAINTREE_CLIENT_ID not configured".into()))?;
-        let redirect = format!("{}/v1/oauth/braintree/callback", self.cfg.oauth_redirect_base);
+        let redirect = format!(
+            "{}/v1/oauth/braintree/callback",
+            self.cfg.oauth_redirect_base
+        );
+        let params = serde_urlencoded::to_string(&[
+            ("client_id", client_id.as_str()),
+            ("response_type", "code"),
+            ("scope", "read_only"),
+            ("redirect_uri", redirect.as_str()),
+            ("state", state),
+        ])
+        .map_err(|e| AppError::Provider {
+            provider: "braintree".into(),
+            message: format!("authorize_url encode: {e}"),
+        })?;
         Ok(format!(
-            "https://api.braintreegateway.com/oauth/connect\
-             ?client_id={client_id}\
-             &response_type=code\
-             &scope=read_write\
-             &redirect_uri={redirect}\
-             &state={state}"
+            "{}/oauth/connect?{params}",
+            self.cfg.braintree_api_base()
         ))
     }
 
     pub async fn exchange_code(&self, code: &str) -> AppResult<CodeExchangeResult> {
-        let client_id = self.cfg.braintree_client_id.as_ref().ok_or_else(|| {
-            AppError::BadRequest("BRAINTREE_CLIENT_ID not configured".into())
-        })?;
-        let client_secret = self.cfg.braintree_client_secret.as_ref().ok_or_else(|| {
-            AppError::BadRequest("BRAINTREE_CLIENT_SECRET not configured".into())
-        })?;
+        let client_id = self
+            .cfg
+            .braintree_client_id
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("BRAINTREE_CLIENT_ID not configured".into()))?;
+        let client_secret =
+            self.cfg.braintree_client_secret.as_ref().ok_or_else(|| {
+                AppError::BadRequest("BRAINTREE_CLIENT_SECRET not configured".into())
+            })?;
 
         let body = serde_urlencoded::to_string(&[
             ("client_id", client_id.as_str()),
@@ -85,7 +105,10 @@ impl<'a> BraintreeOAuth<'a> {
             message: format!("encode form: {e}"),
         })?;
         let resp = reqwest::Client::new()
-            .post("https://api.braintreegateway.com/oauth/access_tokens")
+            .post(format!(
+                "{}/oauth/access_tokens",
+                self.cfg.braintree_api_base()
+            ))
             .header("Accept", "application/json")
             .header("content-type", "application/x-www-form-urlencoded")
             .body(body)
@@ -102,11 +125,10 @@ impl<'a> BraintreeOAuth<'a> {
             message: format!("access_tokens body: {e}"),
         })?;
         if !status.is_success() {
-            let err: BraintreeErr =
-                serde_json::from_slice(&bytes).unwrap_or(BraintreeErr {
-                    error: Some(format!("http {status}")),
-                    error_description: Some(String::from_utf8_lossy(&bytes).into_owned()),
-                });
+            let err: BraintreeErr = serde_json::from_slice(&bytes).unwrap_or(BraintreeErr {
+                error: Some(format!("http {status}")),
+                error_description: Some(String::from_utf8_lossy(&bytes).into_owned()),
+            });
             return Err(AppError::Provider {
                 provider: "braintree".into(),
                 message: format!(
@@ -133,7 +155,7 @@ impl<'a> BraintreeOAuth<'a> {
             merchant_id: parsed.merchant.public_id.clone(),
             access_token: parsed.credentials.access_token,
             refresh_token: parsed.credentials.refresh_token,
-            environment: "production".into(),
+            environment: self.cfg.braintree_env.as_str().into(),
             scopes: scopes.clone(),
         };
         let plaintext = serde_json::to_vec(&cred).map_err(|e| AppError::Provider {

@@ -15,4 +15,4 @@ pub mod verify;
 pub use anchor::AnchorService;
 pub use client::SolanaClient;
 #[allow(unused_imports)]
-pub use merkle::{merkle_root, posting_leaf_hash, MerkleProof};
+pub use merkle::{MerkleProof, merkle_root, posting_leaf_hash};

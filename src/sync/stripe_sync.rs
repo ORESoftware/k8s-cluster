@@ -32,9 +32,10 @@ pub async fn sync_stripe(
     conn: &ProviderConnection,
     caller_cursor: Option<&str>,
 ) -> AppResult<SyncSummary> {
-    let secret = ctx.cfg.stripe_client_secret.as_ref().ok_or_else(|| {
-        AppError::BadRequest("STRIPE_CLIENT_SECRET not configured".into())
-    })?;
+    let secret = ctx
+        .cfg
+        .stripe_api_key()
+        .ok_or_else(|| AppError::BadRequest("STRIPE_API_KEY not configured".into()))?;
 
     // Decrypt sealed credential to fetch the connected stripe_user_id (also
     // present on the connection row, but we re-check from the sealed payload
@@ -43,13 +44,17 @@ pub async fn sync_stripe(
         .connections
         .load_credential(ctx.tenant_id, conn.id)
         .await?;
-    let cred: StripeCredential = serde_json::from_slice(&plaintext)
-        .map_err(|e| AppError::Provider {
+    let cred: StripeCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
             provider: "stripe".into(),
             message: format!("decode sealed credential: {e}"),
         })?;
 
-    let api = StripeApi::new(secret.clone(), cred.stripe_user_id.clone());
+    let api = StripeApi::new(
+        secret.clone(),
+        cred.stripe_user_id.clone(),
+        ctx.cfg.stripe_api_version.clone(),
+    );
 
     // Pick the cursor: caller-supplied (manual continuation) wins, else the
     // saved cursor in metadata, else None (first-ever sync).
@@ -133,10 +138,7 @@ pub async fn sync_stripe(
 
     if let Some(ref c) = last_newest_id {
         ctx.connections
-            .merge_metadata(
-                conn.id,
-                serde_json::json!({ "stripe_balance_cursor": c }),
-            )
+            .merge_metadata(conn.id, serde_json::json!({ "stripe_balance_cursor": c }))
             .await?;
     }
 
@@ -198,7 +200,9 @@ async fn post_one(
             // The user-facing tally is approximate by exactly the idempotency
             // count — fine for ops visibility.
             tracing::debug!(stripe_id=%bt.id, tx_id=%tx_id, "posted stripe balance_transaction");
-            Ok(PostOutcome::Posted { postings: postings_count })
+            Ok(PostOutcome::Posted {
+                postings: postings_count,
+            })
         }
         Err(AppError::Conflict(_)) => Ok(PostOutcome::Replayed),
         Err(e) => Err(e),

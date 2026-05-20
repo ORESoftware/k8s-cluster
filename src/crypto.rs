@@ -11,9 +11,9 @@
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
-use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
-use rand::{rng, RngExt};
+use base64::engine::general_purpose::STANDARD as B64;
+use rand::{RngExt, rng};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -33,10 +33,14 @@ pub struct SealedEnvelope {
 
 impl Sealer {
     pub fn from_b64_key(b64_key: &str) -> anyhow::Result<Self> {
-        let raw = B64.decode(b64_key.trim())
+        let raw = B64
+            .decode(b64_key.trim())
             .map_err(|e| anyhow::anyhow!("BILLING_MASTER_SEAL_KEY is not valid base64: {e}"))?;
         if raw.len() != 32 {
-            anyhow::bail!("BILLING_MASTER_SEAL_KEY must decode to 32 bytes, got {}", raw.len());
+            anyhow::bail!(
+                "BILLING_MASTER_SEAL_KEY must decode to 32 bytes, got {}",
+                raw.len()
+            );
         }
         let cipher = Aes256Gcm::new_from_slice(&raw)
             .map_err(|e| anyhow::anyhow!("invalid seal key: {e}"))?;
@@ -57,7 +61,13 @@ impl Sealer {
 
         let ciphertext = self
             .cipher
-            .encrypt(nonce, Payload { msg: plaintext, aad: aad.as_bytes() })
+            .encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: aad.as_bytes(),
+                },
+            )
             .map_err(|e| AppError::Crypto(format!("seal failed: {e}")))?;
 
         Ok(SealedEnvelope {
@@ -95,7 +105,13 @@ impl Sealer {
             .map_err(|e| AppError::Crypto(format!("ciphertext b64: {e}")))?;
 
         self.cipher
-            .decrypt(nonce, Payload { msg: &ciphertext, aad: env.aad_tag.as_bytes() })
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: &ciphertext,
+                    aad: env.aad_tag.as_bytes(),
+                },
+            )
             .map_err(|e| AppError::Crypto(format!("unseal failed: {e}")))
     }
 }

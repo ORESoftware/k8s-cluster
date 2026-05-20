@@ -1,15 +1,15 @@
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::Json;
 use chrono::{Duration, Utc};
-use rand::{rng, RngExt};
+use rand::{RngExt, rng};
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::providers::{braintree, paypal, stripe, ProviderKind};
 use crate::providers::connection::{CreateConnection, UpsertCredential};
 use crate::providers::oauth_common::CodeExchangeResult;
+use crate::providers::{ProviderKind, braintree, paypal, stripe};
 use crate::scheduler::{CreateScheduledJob, ScheduleKind};
 use crate::shard::Region;
 use crate::state::AppState;
@@ -33,6 +33,7 @@ pub async fn start(
     let mut nonce = [0u8; 16];
     rng().fill(&mut nonce[..]);
     let state_token = hex::encode(nonce);
+    let return_to = validate_return_to(&state, q.return_to.as_deref())?;
 
     let provider_tag = provider.as_str();
     sqlx::query(
@@ -44,16 +45,20 @@ pub async fn start(
     .bind(&state_token)
     .bind(q.tenant_id)
     .bind(provider_tag)
-    .bind(&q.return_to)
+    .bind(&return_to)
     .bind(Utc::now() + Duration::minutes(15))
     .execute(&state.pool)
     .await?;
 
     let url = match provider.as_str() {
-        "stripe"    => stripe::StripeOAuth::new(&state.cfg).authorize_url(&state_token)?,
-        "paypal"    => paypal::PaypalOAuth::new(&state.cfg).authorize_url(&state_token)?,
+        "stripe" => stripe::StripeOAuth::new(&state.cfg).authorize_url(&state_token)?,
+        "paypal" => paypal::PaypalOAuth::new(&state.cfg).authorize_url(&state_token)?,
         "braintree" => braintree::BraintreeOAuth::new(&state.cfg).authorize_url(&state_token)?,
-        other => return Err(AppError::BadRequest(format!("unsupported provider: {other}"))),
+        other => {
+            return Err(AppError::BadRequest(format!(
+                "unsupported provider: {other}"
+            )));
+        }
     };
 
     Ok(Redirect::to(&url).into_response())
@@ -110,22 +115,36 @@ pub async fn callback(
     .fetch_optional(&state.pool)
     .await?;
 
-    let row = row.ok_or_else(|| AppError::BadRequest(
-        "oauth state unknown, expired, or provider mismatch".into(),
-    ))?;
+    let row = row.ok_or_else(|| {
+        AppError::BadRequest("oauth state unknown, expired, or provider mismatch".into())
+    })?;
     use sqlx::Row;
     let tenant_id: Uuid = row.try_get("tenant_id")?;
     let return_to: Option<String> = row.try_get("return_to")?;
 
-    let code = q.code.ok_or_else(|| AppError::BadRequest("no code in callback".into()))?;
+    let code = q
+        .code
+        .ok_or_else(|| AppError::BadRequest("no code in callback".into()))?;
 
     let provider = parse_provider(&provider_str)?;
 
     // Exchange code -> sealed credential material.
     let exchanged: CodeExchangeResult = match provider {
-        ProviderKind::Stripe => stripe::StripeOAuth::new(&state.cfg).exchange_code(&code).await?,
-        ProviderKind::Paypal => paypal::PaypalOAuth::new(&state.cfg).exchange_code(&code).await?,
-        ProviderKind::Braintree => braintree::BraintreeOAuth::new(&state.cfg).exchange_code(&code).await?,
+        ProviderKind::Stripe => {
+            stripe::StripeOAuth::new(&state.cfg)
+                .exchange_code(&code)
+                .await?
+        }
+        ProviderKind::Paypal => {
+            paypal::PaypalOAuth::new(&state.cfg)
+                .exchange_code(&code)
+                .await?
+        }
+        ProviderKind::Braintree => {
+            braintree::BraintreeOAuth::new(&state.cfg)
+                .exchange_code(&code)
+                .await?
+        }
         other => {
             return Err(AppError::BadRequest(format!(
                 "{} is not a redirect-OAuth provider; use its dedicated endpoint",
@@ -134,13 +153,7 @@ pub async fn callback(
         }
     };
 
-    let outcome = persist_and_schedule(
-        &state,
-        tenant_id,
-        provider,
-        exchanged,
-    )
-    .await?;
+    let outcome = persist_and_schedule(&state, tenant_id, provider, exchanged).await?;
 
     Ok(Json(CallbackResp {
         provider: provider_str,
@@ -198,13 +211,8 @@ pub async fn plaid_exchange(
         )
         .await?;
 
-    let outcome = persist_and_schedule(
-        &state,
-        req.tenant_id,
-        ProviderKind::PlaidBank,
-        exchanged,
-    )
-    .await?;
+    let outcome =
+        persist_and_schedule(&state, req.tenant_id, ProviderKind::PlaidBank, exchanged).await?;
 
     Ok(Json(CallbackResp {
         provider: "plaid_bank".into(),
@@ -278,9 +286,7 @@ async fn persist_and_schedule(
 
     // If the OAuth response revealed a real external account id (e.g.
     // Stripe Connect's `stripe_user_id`), persist it now so sync can scope.
-    if !exchanged.external_account_id.is_empty()
-        && exchanged.external_account_id != "pending"
-    {
+    if !exchanged.external_account_id.is_empty() && exchanged.external_account_id != "pending" {
         let _ = state
             .connections
             .set_external_account(conn.id, &exchanged.external_account_id)
@@ -322,17 +328,41 @@ async fn persist_and_schedule(
 
 fn parse_provider(s: &str) -> AppResult<ProviderKind> {
     match s {
-        "stripe"            => Ok(ProviderKind::Stripe),
-        "paypal"            => Ok(ProviderKind::Paypal),
-        "braintree"         => Ok(ProviderKind::Braintree),
+        "stripe" => Ok(ProviderKind::Stripe),
+        "paypal" => Ok(ProviderKind::Paypal),
+        "braintree" => Ok(ProviderKind::Braintree),
         "coinbase_commerce" => Ok(ProviderKind::CoinbaseCommerce),
-        "coinbase_prime"    => Ok(ProviderKind::CoinbasePrime),
-        "coinflow"          => Ok(ProviderKind::Coinflow),
-        "plaid_bank"        => Ok(ProviderKind::PlaidBank),
-        "swift_wire"        => Ok(ProviderKind::SwiftWire),
-        "ach_direct"        => Ok(ProviderKind::AchDirect),
-        "wise"              => Ok(ProviderKind::Wise),
-        "solana_wallet"     => Ok(ProviderKind::SolanaWallet),
+        "coinbase_prime" => Ok(ProviderKind::CoinbasePrime),
+        "coinflow" => Ok(ProviderKind::Coinflow),
+        "plaid_bank" => Ok(ProviderKind::PlaidBank),
+        "swift_wire" => Ok(ProviderKind::SwiftWire),
+        "ach_direct" => Ok(ProviderKind::AchDirect),
+        "wise" => Ok(ProviderKind::Wise),
+        "solana_wallet" => Ok(ProviderKind::SolanaWallet),
         other => Err(AppError::BadRequest(format!("unknown provider: {other}"))),
     }
+}
+
+fn validate_return_to(state: &AppState, return_to: Option<&str>) -> AppResult<Option<String>> {
+    let Some(return_to) = return_to.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+
+    if return_to.starts_with('/') && !return_to.starts_with("//") {
+        return Ok(Some(return_to.to_string()));
+    }
+
+    if state
+        .cfg
+        .oauth_return_to_allowed_prefixes
+        .iter()
+        .any(|prefix| return_to.starts_with(prefix))
+    {
+        return Ok(Some(return_to.to_string()));
+    }
+
+    Err(AppError::BadRequest(
+        "return_to must be a relative path or match BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES"
+            .into(),
+    ))
 }

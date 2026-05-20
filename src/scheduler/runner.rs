@@ -106,11 +106,21 @@ impl SchedulerRunner {
             let timeout_seconds: i32 = row.try_get("timeout_seconds")?;
 
             self.dispatch_one(
-                job_id, tenant_id, kind, name, payload,
-                max_attempts, retry_backoff_secs,
-                sched_kind, cron_expr.as_deref(), interval_seconds,
-                one_shot_at, &timezone, timeout_seconds,
-            ).await;
+                job_id,
+                tenant_id,
+                kind,
+                name,
+                payload,
+                max_attempts,
+                retry_backoff_secs,
+                sched_kind,
+                cron_expr.as_deref(),
+                interval_seconds,
+                one_shot_at,
+                &timezone,
+                timeout_seconds,
+            )
+            .await;
         }
 
         Ok(n)
@@ -138,9 +148,10 @@ impl SchedulerRunner {
         let scheduled_for = Utc::now();
         let idem_key = format!("{job_id}/{}/{attempt}", scheduled_for.timestamp());
 
-        let run_id = match self.insert_run(
-            job_id, tenant_id, attempt, scheduled_for, &idem_key,
-        ).await {
+        let run_id = match self
+            .insert_run(job_id, tenant_id, attempt, scheduled_for, &idem_key)
+            .await
+        {
             Ok(id) => id,
             Err(e) => {
                 tracing::error!(job_id = %job_id, error = %e, "failed to insert job_run");
@@ -185,7 +196,12 @@ impl SchedulerRunner {
             Ok(out) => {
                 let _ = self.mark_run_succeeded(run_id, duration_ms, &out).await;
                 let next = compute_next_run(
-                    sched_kind, cron_expr, interval_seconds, one_shot_at, timezone, Utc::now(),
+                    sched_kind,
+                    cron_expr,
+                    interval_seconds,
+                    one_shot_at,
+                    timezone,
+                    Utc::now(),
                 );
                 let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::minutes(5));
 
@@ -194,12 +210,20 @@ impl SchedulerRunner {
                         r#"UPDATE scheduled_jobs
                            SET enabled = false, next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    ).bind(job_id).bind(next).execute(&self.pool).await;
+                    )
+                    .bind(job_id)
+                    .bind(next)
+                    .execute(&self.pool)
+                    .await;
                 } else {
                     let _ = sqlx::query(
                         r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    ).bind(job_id).bind(next).execute(&self.pool).await;
+                    )
+                    .bind(job_id)
+                    .bind(next)
+                    .execute(&self.pool)
+                    .await;
                 }
             }
             Err(e) => {
@@ -207,15 +231,26 @@ impl SchedulerRunner {
                 let _ = self.mark_run_failed(run_id, duration_ms, &err_str).await;
 
                 if attempt >= max_attempts {
-                    let _ = self.dead_letter(job_id, tenant_id, run_id, attempt, &err_str).await;
+                    let _ = self
+                        .dead_letter(job_id, tenant_id, run_id, attempt, &err_str)
+                        .await;
                     let next = compute_next_run(
-                        sched_kind, cron_expr, interval_seconds, one_shot_at, timezone, Utc::now(),
+                        sched_kind,
+                        cron_expr,
+                        interval_seconds,
+                        one_shot_at,
+                        timezone,
+                        Utc::now(),
                     );
                     let next = next.unwrap_or_else(|_| Utc::now() + chrono::Duration::hours(1));
                     let _ = sqlx::query(
                         r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    ).bind(job_id).bind(next).execute(&self.pool).await;
+                    )
+                    .bind(job_id)
+                    .bind(next)
+                    .execute(&self.pool)
+                    .await;
                 } else {
                     let backoff = e
                         .retry_after_seconds()
@@ -224,7 +259,11 @@ impl SchedulerRunner {
                     let _ = sqlx::query(
                         r#"UPDATE scheduled_jobs SET next_run_at = $2, updated_at = now()
                            WHERE id = $1"#,
-                    ).bind(job_id).bind(retry_at).execute(&self.pool).await;
+                    )
+                    .bind(job_id)
+                    .bind(retry_at)
+                    .execute(&self.pool)
+                    .await;
                 }
             }
         }
@@ -304,12 +343,7 @@ impl SchedulerRunner {
         Ok(())
     }
 
-    async fn mark_run_failed(
-        &self,
-        run_id: i64,
-        duration_ms: i32,
-        error: &str,
-    ) -> AppResult<()> {
+    async fn mark_run_failed(&self, run_id: i64, duration_ms: i32, error: &str) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE job_runs

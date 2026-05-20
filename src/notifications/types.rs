@@ -57,8 +57,12 @@ pub struct CreateNotificationRule {
     /// notifications credentials live alongside provider credentials.
     pub credential_plaintext_b64: Option<String>,
 }
-fn default_throttle() -> i32 { 1 }
-fn default_enabled() -> bool { true }
+fn default_throttle() -> i32 {
+    1
+}
+fn default_enabled() -> bool {
+    true
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct NotificationDispatch {

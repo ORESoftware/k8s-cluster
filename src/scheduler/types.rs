@@ -83,8 +83,18 @@ pub struct CreateScheduledJob {
     pub timeout_seconds: i32,
 }
 
-fn default_tz() -> String { "UTC".into() }
-fn default_enabled() -> bool { true }
-fn default_max_attempts() -> i32 { 5 }
-fn default_retry_backoff() -> i32 { 30 }
-fn default_timeout() -> i32 { 300 }
+fn default_tz() -> String {
+    "UTC".into()
+}
+fn default_enabled() -> bool {
+    true
+}
+fn default_max_attempts() -> i32 {
+    5
+}
+fn default_retry_backoff() -> i32 {
+    30
+}
+fn default_timeout() -> i32 {
+    300
+}

@@ -25,7 +25,6 @@ pub struct PaypalCredential {
 
 pub struct PaypalOAuth<'a> {
     cfg: &'a Config,
-    base: &'static str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,42 +51,52 @@ struct PaypalErr {
 
 impl<'a> PaypalOAuth<'a> {
     pub fn new(cfg: &'a Config) -> Self {
-        // PayPal has separate live + sandbox hosts; we default to live and let
-        // operators override via PAYPAL_ENV=sandbox in config (extend later).
-        let base = "https://api-m.paypal.com";
-        Self { cfg, base }
+        Self { cfg }
     }
 
     pub fn authorize_url(&self, state: &str) -> AppResult<String> {
-        let client_id = self.cfg.paypal_client_id.as_ref()
+        let client_id = self
+            .cfg
+            .paypal_client_id
+            .as_ref()
             .ok_or_else(|| AppError::BadRequest("PAYPAL_CLIENT_ID not configured".into()))?;
         let redirect = format!("{}/v1/oauth/paypal/callback", self.cfg.oauth_redirect_base);
+        let scope = "openid https://uri.paypal.com/services/reporting/search/read";
+        let params = serde_urlencoded::to_string(&[
+            ("flowEntry", "static"),
+            ("client_id", client_id.as_str()),
+            ("scope", scope),
+            ("redirect_uri", redirect.as_str()),
+            ("state", state),
+        ])
+        .map_err(|e| AppError::Provider {
+            provider: "paypal".into(),
+            message: format!("authorize_url encode: {e}"),
+        })?;
         Ok(format!(
-            "https://www.paypal.com/connect/\
-             ?flowEntry=static&client_id={client_id}\
-             &scope=openid%20https://uri.paypal.com/services/reporting/search/read\
-             &redirect_uri={redirect}\
-             &state={state}"
+            "{}/connect/?{params}",
+            self.cfg.paypal_connect_base()
         ))
     }
 
     pub async fn exchange_code(&self, code: &str) -> AppResult<CodeExchangeResult> {
-        let client_id = self.cfg.paypal_client_id.as_ref().ok_or_else(|| {
-            AppError::BadRequest("PAYPAL_CLIENT_ID not configured".into())
-        })?;
-        let client_secret = self.cfg.paypal_client_secret.as_ref().ok_or_else(|| {
-            AppError::BadRequest("PAYPAL_CLIENT_SECRET not configured".into())
-        })?;
+        let client_id = self
+            .cfg
+            .paypal_client_id
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("PAYPAL_CLIENT_ID not configured".into()))?;
+        let client_secret =
+            self.cfg.paypal_client_secret.as_ref().ok_or_else(|| {
+                AppError::BadRequest("PAYPAL_CLIENT_SECRET not configured".into())
+            })?;
 
-        let url = format!("{}/v1/oauth2/token", self.base);
-        let body = serde_urlencoded::to_string(&[
-            ("grant_type", "authorization_code"),
-            ("code", code),
-        ])
-        .map_err(|e| AppError::Provider {
-            provider: "paypal".into(),
-            message: format!("encode form: {e}"),
-        })?;
+        let url = format!("{}/v1/oauth2/token", self.cfg.paypal_api_base());
+        let body =
+            serde_urlencoded::to_string(&[("grant_type", "authorization_code"), ("code", code)])
+                .map_err(|e| AppError::Provider {
+                    provider: "paypal".into(),
+                    message: format!("encode form: {e}"),
+                })?;
         let resp = reqwest::Client::new()
             .post(&url)
             .basic_auth(client_id, Some(client_secret))
@@ -106,12 +115,11 @@ impl<'a> PaypalOAuth<'a> {
             message: format!("oauth2/token body: {e}"),
         })?;
         if !status.is_success() {
-            let err: PaypalErr =
-                serde_json::from_slice(&bytes).unwrap_or(PaypalErr {
-                    error: Some(format!("http {status}")),
-                    error_description: Some(String::from_utf8_lossy(&bytes).into_owned()),
-                    message: None,
-                });
+            let err: PaypalErr = serde_json::from_slice(&bytes).unwrap_or(PaypalErr {
+                error: Some(format!("http {status}")),
+                error_description: Some(String::from_utf8_lossy(&bytes).into_owned()),
+                message: None,
+            });
             return Err(AppError::Provider {
                 provider: "paypal".into(),
                 message: format!(
@@ -137,7 +145,7 @@ impl<'a> PaypalOAuth<'a> {
                 .as_deref()
                 .map(|s| s.split_whitespace().map(str::to_string).collect())
                 .unwrap_or_default(),
-            environment: "live".into(),
+            environment: self.cfg.paypal_env.as_str().into(),
         };
         let plaintext = serde_json::to_vec(&cred).map_err(|e| AppError::Provider {
             provider: "paypal".into(),
@@ -156,4 +164,110 @@ impl<'a> PaypalOAuth<'a> {
             display_label_suggestion: Some("PayPal".into()),
         })
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct PaypalClientToken {
+    access_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PaypalVerifyResp {
+    verification_status: String,
+}
+
+pub async fn verify_webhook_signature(
+    cfg: &Config,
+    auth_algo: &str,
+    cert_url: &str,
+    transmission_id: &str,
+    transmission_sig: &str,
+    transmission_time: &str,
+    webhook_event: &serde_json::Value,
+) -> AppResult<bool> {
+    let client_id = cfg
+        .paypal_client_id
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("PAYPAL_CLIENT_ID not configured".into()))?;
+    let client_secret = cfg
+        .paypal_client_secret
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("PAYPAL_CLIENT_SECRET not configured".into()))?;
+    let webhook_id = cfg
+        .paypal_webhook_id
+        .as_ref()
+        .ok_or_else(|| AppError::BadRequest("PAYPAL_WEBHOOK_ID not configured".into()))?;
+
+    let http = reqwest::Client::new();
+    let token_resp = http
+        .post(format!("{}/v1/oauth2/token", cfg.paypal_api_base()))
+        .basic_auth(client_id, Some(client_secret))
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body("grant_type=client_credentials")
+        .send()
+        .await
+        .map_err(|e| AppError::Provider {
+            provider: "paypal".into(),
+            message: format!("client token HTTP: {e}"),
+        })?;
+    let status = token_resp.status();
+    let bytes = token_resp.bytes().await.map_err(|e| AppError::Provider {
+        provider: "paypal".into(),
+        message: format!("client token body: {e}"),
+    })?;
+    if !status.is_success() {
+        return Err(AppError::Provider {
+            provider: "paypal".into(),
+            message: format!("client token {status}: {}", String::from_utf8_lossy(&bytes)),
+        });
+    }
+    let token: PaypalClientToken =
+        serde_json::from_slice(&bytes).map_err(|e| AppError::Provider {
+            provider: "paypal".into(),
+            message: format!("client token decode: {e}"),
+        })?;
+
+    let body = serde_json::json!({
+        "auth_algo": auth_algo,
+        "cert_url": cert_url,
+        "transmission_id": transmission_id,
+        "transmission_sig": transmission_sig,
+        "transmission_time": transmission_time,
+        "webhook_id": webhook_id,
+        "webhook_event": webhook_event,
+    });
+
+    let verify_resp = http
+        .post(format!(
+            "{}/v1/notifications/verify-webhook-signature",
+            cfg.paypal_api_base()
+        ))
+        .bearer_auth(token.access_token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::Provider {
+            provider: "paypal".into(),
+            message: format!("verify-webhook-signature HTTP: {e}"),
+        })?;
+    let status = verify_resp.status();
+    let bytes = verify_resp.bytes().await.map_err(|e| AppError::Provider {
+        provider: "paypal".into(),
+        message: format!("verify-webhook-signature body: {e}"),
+    })?;
+    if !status.is_success() {
+        return Err(AppError::Provider {
+            provider: "paypal".into(),
+            message: format!(
+                "verify-webhook-signature {status}: {}",
+                String::from_utf8_lossy(&bytes)
+            ),
+        });
+    }
+    let verified: PaypalVerifyResp =
+        serde_json::from_slice(&bytes).map_err(|e| AppError::Provider {
+            provider: "paypal".into(),
+            message: format!("verify-webhook-signature decode: {e}"),
+        })?;
+    Ok(verified.verification_status == "SUCCESS")
 }

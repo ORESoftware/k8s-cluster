@@ -27,8 +27,8 @@ pub async fn sync_coinflow(
         .connections
         .load_credential(ctx.tenant_id, conn.id)
         .await?;
-    let cred: CoinflowCredential = serde_json::from_slice(&plaintext)
-        .map_err(|e| AppError::Provider {
+    let cred: CoinflowCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
             provider: "coinflow".into(),
             message: format!("decode sealed credential: {e}"),
         })?;
@@ -227,7 +227,12 @@ async fn open_recon_break(
     .bind(conn.provider.tag())
     .bind(conn.id)
     .bind(&amount_text)
-    .bind(evt.currency.clone().unwrap_or_else(|| "USD".into()).to_uppercase())
+    .bind(
+        evt.currency
+            .clone()
+            .unwrap_or_else(|| "USD".into())
+            .to_uppercase(),
+    )
     .bind(&evt.id)
     .bind(&detail)
     .execute(ctx.pool)

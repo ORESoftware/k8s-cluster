@@ -73,10 +73,7 @@ impl SolanaClient {
     /// Fetch a confirmed/finalized transaction by signature. Returns the raw
     /// JSON value so callers can extract whatever they need (memo data, block
     /// time, slot) without us defining an exhaustive schema here.
-    pub async fn get_transaction(
-        &self,
-        signature: &str,
-    ) -> AppResult<Option<serde_json::Value>> {
+    pub async fn get_transaction(&self, signature: &str) -> AppResult<Option<serde_json::Value>> {
         let resp: RpcResponse<serde_json::Value> = self
             .call(
                 "getTransaction",
@@ -127,7 +124,12 @@ impl SolanaClient {
         let mut last_error: Option<AppError> = None;
 
         for attempt in 0..3 {
-            let req = RpcRequest { jsonrpc: "2.0", id: 1, method, params };
+            let req = RpcRequest {
+                jsonrpc: "2.0",
+                id: 1,
+                method,
+                params,
+            };
             let response = match self.http.post(&self.rpc_url).json(&req).send().await {
                 Ok(response) => response,
                 Err(e) => {
@@ -173,8 +175,8 @@ impl SolanaClient {
                 });
             }
 
-            let resp = serde_json::from_str::<RpcResponse<R>>(&body)
-                .map_err(|e| AppError::Provider {
+            let resp =
+                serde_json::from_str::<RpcResponse<R>>(&body).map_err(|e| AppError::Provider {
                     provider: "solana".into(),
                     message: format!("rpc decode: {e}"),
                 })?;
@@ -198,7 +200,7 @@ impl SolanaClient {
 async fn sleep_before_retry(attempt: u32) {
     if attempt < 2 {
         tokio::time::sleep(std::time::Duration::from_secs(
-            retry_delay_seconds(attempt) as u64,
+            retry_delay_seconds(attempt) as u64
         ))
         .await;
     }

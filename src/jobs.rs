@@ -11,8 +11,8 @@ use crate::error::AppResult;
 use crate::locks::LockService;
 use crate::notifications::evaluator::RuleEvaluatorJob;
 use crate::scheduler::{
-    CreateScheduledJob, HandlerRegistryBuilder, JobContext, JobHandler, JobOutput,
-    ScheduleKind, SchedulerService,
+    CreateScheduledJob, HandlerRegistryBuilder, JobContext, JobHandler, JobOutput, ScheduleKind,
+    SchedulerService,
 };
 use crate::solana::AnchorService;
 use crate::state::AppState;
@@ -109,7 +109,9 @@ pub struct LockSweeperJob {
     locks: LockService,
 }
 impl LockSweeperJob {
-    pub fn new(locks: LockService) -> Self { Self { locks } }
+    pub fn new(locks: LockService) -> Self {
+        Self { locks }
+    }
 }
 #[async_trait]
 impl JobHandler for LockSweeperJob {
@@ -131,7 +133,9 @@ pub struct AnchorSweeperJob {
     anchor: Arc<AnchorService>,
 }
 impl AnchorSweeperJob {
-    pub fn new(anchor: Arc<AnchorService>) -> Self { Self { anchor } }
+    pub fn new(anchor: Arc<AnchorService>) -> Self {
+        Self { anchor }
+    }
 }
 #[async_trait]
 impl JobHandler for AnchorSweeperJob {
@@ -183,7 +187,9 @@ impl JobHandler for TenantWebhookJob {
         });
 
         let res = crate::notifications::channels::deliver_webhook(
-            &url, &body_with_meta, secret.as_deref(),
+            &url,
+            &body_with_meta,
+            secret.as_deref(),
         )
         .await
         .map_err(|e| crate::error::AppError::Provider {

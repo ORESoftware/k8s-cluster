@@ -7,8 +7,8 @@ use crate::customers::CustomerService;
 use crate::ledger::LedgerService;
 use crate::locks::LockService;
 use crate::providers::connection::ConnectionService;
-use crate::solana::{AnchorService, SolanaClient};
 use crate::solana::verify::Verifier;
+use crate::solana::{AnchorService, SolanaClient};
 use crate::tenants::TenantService;
 use crate::users::UserService;
 use crate::vendors::VendorService;
@@ -40,9 +40,7 @@ impl AppState {
         let vendors = VendorService::new(pool.clone(), users.clone(), ledger.clone());
         let connections = ConnectionService::new(pool.clone(), sealer);
         let locks = LockService::new(pool.clone());
-        let notifications = Arc::new(
-            crate::notifications::NotificationService::new(pool.clone()),
-        );
+        let notifications = Arc::new(crate::notifications::NotificationService::new(pool.clone()));
         let scheduler = Arc::new(crate::scheduler::SchedulerService::new(pool.clone()));
 
         let solana_client = SolanaClient::new(&cfg);

@@ -3,14 +3,14 @@
 //! Connection model:
 //!   * Tenant clicks "Connect Stripe" in their dashboard.
 //!   * We redirect to `https://connect.stripe.com/oauth/authorize?...`
-//!     with `client_id`, `scope=read_write`, `redirect_uri`, `state`.
+//!     with `client_id`, `scope=read_only`, `redirect_uri`, `state`.
 //!   * Stripe redirects back to `/v1/oauth/stripe/callback?code=…&state=…`.
 //!   * We POST `code` to `https://connect.stripe.com/oauth/token`, receive
 //!     `stripe_user_id`, `access_token`, `refresh_token`.
 //!   * We seal `{access_token, refresh_token, stripe_user_id}` and store.
 //!
 //! At runtime, we authenticate API calls with the **platform** secret key
-//! (`STRIPE_CLIENT_SECRET`) and scope them to the connected account using
+//! (`STRIPE_API_KEY`) and scope them to the connected account using
 //! `Stripe-Account: <stripe_user_id>` header. This is the recommended
 //! Stripe Connect pattern and avoids the access-token refresh dance.
 
@@ -60,18 +60,30 @@ struct StripeOAuthError {
 }
 
 impl<'a> StripeOAuth<'a> {
-    pub fn new(cfg: &'a Config) -> Self { Self { cfg } }
+    pub fn new(cfg: &'a Config) -> Self {
+        Self { cfg }
+    }
 
     pub fn authorize_url(&self, state: &str) -> AppResult<String> {
-        let client_id = self.cfg.stripe_client_id.as_ref()
+        let client_id = self
+            .cfg
+            .stripe_client_id
+            .as_ref()
             .ok_or_else(|| AppError::BadRequest("STRIPE_CLIENT_ID not configured".into()))?;
         let redirect = format!("{}/v1/oauth/stripe/callback", self.cfg.oauth_redirect_base);
+        let params = serde_urlencoded::to_string(&[
+            ("response_type", "code"),
+            ("client_id", client_id.as_str()),
+            ("scope", "read_only"),
+            ("redirect_uri", redirect.as_str()),
+            ("state", state),
+        ])
+        .map_err(|e| AppError::Provider {
+            provider: "stripe".into(),
+            message: format!("authorize_url encode: {e}"),
+        })?;
         Ok(format!(
-            "https://connect.stripe.com/oauth/authorize\
-             ?response_type=code&client_id={client_id}\
-             &scope=read_write\
-             &redirect_uri={redirect}\
-             &state={state}"
+            "https://connect.stripe.com/oauth/authorize?{params}"
         ))
     }
 
@@ -81,9 +93,10 @@ impl<'a> StripeOAuth<'a> {
     /// rejected codes with a JSON `{error, error_description}` body — we
     /// surface those as `Provider` errors.
     pub async fn exchange_code(&self, code: &str) -> AppResult<CodeExchangeResult> {
-        let secret = self.cfg.stripe_client_secret.as_ref().ok_or_else(|| {
-            AppError::BadRequest("STRIPE_CLIENT_SECRET not configured".into())
-        })?;
+        let secret =
+            self.cfg.stripe_client_secret.as_ref().ok_or_else(|| {
+                AppError::BadRequest("STRIPE_CLIENT_SECRET not configured".into())
+            })?;
 
         let body = serde_urlencoded::to_string(&[
             ("client_secret", secret.as_str()),
@@ -186,14 +199,16 @@ struct StripeList<T> {
 pub struct StripeApi {
     secret_key: String,
     stripe_account: String,
+    api_version: String,
     http: reqwest::Client,
 }
 
 impl StripeApi {
-    pub fn new(secret_key: String, stripe_account: String) -> Self {
+    pub fn new(secret_key: String, stripe_account: String, api_version: String) -> Self {
         Self {
             secret_key,
             stripe_account,
+            api_version,
             http: reqwest::Client::new(),
         }
     }
@@ -211,11 +226,10 @@ impl StripeApi {
         if let Some(c) = ending_before {
             params.push(("ending_before", c.to_string()));
         }
-        let qs = serde_urlencoded::to_string(&params)
-            .map_err(|e| AppError::Provider {
-                provider: "stripe".into(),
-                message: format!("encode query: {e}"),
-            })?;
+        let qs = serde_urlencoded::to_string(&params).map_err(|e| AppError::Provider {
+            provider: "stripe".into(),
+            message: format!("encode query: {e}"),
+        })?;
         let url = format!("https://api.stripe.com/v1/balance_transactions?{qs}");
 
         let resp = self
@@ -223,6 +237,7 @@ impl StripeApi {
             .get(&url)
             .basic_auth(&self.secret_key, Some(""))
             .header("Stripe-Account", &self.stripe_account)
+            .header("Stripe-Version", &self.api_version)
             .send()
             .await
             .map_err(|e| AppError::Provider {
@@ -273,20 +288,29 @@ pub fn verify_signature(
     payload: &[u8],
     header: &str,
     signing_secret: &str,
+    tolerance_seconds: i64,
 ) -> AppResult<()> {
     let mut timestamp: Option<&str> = None;
     let mut v1_sigs: Vec<&str> = Vec::new();
     for part in header.split(',') {
         let mut it = part.splitn(2, '=');
         match (it.next(), it.next()) {
-            (Some("t"), Some(v))  => timestamp = Some(v),
+            (Some("t"), Some(v)) => timestamp = Some(v),
             (Some("v1"), Some(v)) => v1_sigs.push(v),
             _ => {}
         }
     }
-    let ts = timestamp.ok_or_else(|| AppError::BadRequest("missing t= in Stripe-Signature".into()))?;
+    let ts =
+        timestamp.ok_or_else(|| AppError::BadRequest("missing t= in Stripe-Signature".into()))?;
     if v1_sigs.is_empty() {
         return Err(AppError::BadRequest("missing v1= signature".into()));
+    }
+    let ts_int: i64 = ts
+        .parse()
+        .map_err(|_| AppError::BadRequest("invalid t= in Stripe-Signature".into()))?;
+    let age = (Utc::now().timestamp() - ts_int).abs();
+    if age > tolerance_seconds.max(0) {
+        return Err(AppError::Unauthorized);
     }
 
     let signed = format!("{ts}.");
@@ -308,7 +332,9 @@ pub fn verify_signature(
 fn constant_time_eq_str(a: &str, b: &str) -> bool {
     let ab = a.as_bytes();
     let bb = b.as_bytes();
-    if ab.len() != bb.len() { return false; }
+    if ab.len() != bb.len() {
+        return false;
+    }
     let mut diff: u8 = 0;
     for (x, y) in ab.iter().zip(bb.iter()) {
         diff |= x ^ y;
@@ -372,11 +398,10 @@ pub fn normalize_balance_transaction(
     tenant_id: uuid::Uuid,
     stripe_account_id: &str,
 ) -> AppResult<NormalizedTransaction> {
-    let currency = Currency::new(&tx.currency.to_uppercase())
-        .map_err(|e| AppError::Provider {
-            provider: "stripe".into(),
-            message: format!("unknown currency {}: {e}", tx.currency),
-        })?;
+    let currency = Currency::new(&tx.currency.to_uppercase()).map_err(|e| AppError::Provider {
+        provider: "stripe".into(),
+        message: format!("unknown currency {}: {e}", tx.currency),
+    })?;
     let cur = currency.as_str().to_string();
     let clearing_code = format!("{ACCT_CLEARING_PREFIX}{stripe_account_id}");
     let posted_at: DateTime<Utc> = Utc
@@ -506,7 +531,11 @@ pub fn normalize_balance_transaction(
         postings,
     };
 
-    Ok(NormalizedTransaction { draft, accounts_to_ensure: accounts, recognized })
+    Ok(NormalizedTransaction {
+        draft,
+        accounts_to_ensure: accounts,
+        recognized,
+    })
 }
 
 fn signed_amount_human(amount: i64, currency: &str) -> String {
@@ -515,4 +544,35 @@ fn signed_amount_human(amount: i64, currency: &str) -> String {
     let whole = abs / 100;
     let frac = abs % 100;
     format!("{sign}{whole}.{frac:02} {currency}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn signed_header(payload: &[u8], secret: &str, ts: i64) -> String {
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        Mac::update(&mut mac, format!("{ts}.").as_bytes());
+        Mac::update(&mut mac, payload);
+        format!("t={ts},v1={}", hex::encode(Mac::finalize(mac).into_bytes()))
+    }
+
+    #[test]
+    fn verifies_current_signature() {
+        let payload = br#"{"id":"evt_1","type":"payment_intent.succeeded"}"#;
+        let ts = Utc::now().timestamp();
+        let header = signed_header(payload, "whsec_test", ts);
+        verify_signature(payload, &header, "whsec_test", 300).unwrap();
+    }
+
+    #[test]
+    fn rejects_replayed_signature() {
+        let payload = br#"{"id":"evt_1","type":"payment_intent.succeeded"}"#;
+        let ts = Utc::now().timestamp() - 1_000;
+        let header = signed_header(payload, "whsec_test", ts);
+        assert!(matches!(
+            verify_signature(payload, &header, "whsec_test", 300),
+            Err(AppError::Unauthorized)
+        ));
+    }
 }

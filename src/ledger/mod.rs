@@ -1,5 +1,5 @@
-pub mod types;
 pub mod service;
+pub mod types;
 
-pub use types::*;
 pub use service::LedgerService;
+pub use types::*;

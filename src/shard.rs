@@ -36,13 +36,14 @@ impl Region {
         if cc == *b"US" {
             let state = us_state
                 .ok_or_else(|| anyhow::anyhow!("us_state is required when country is US"))?;
-            return Ok(Self::Us { state: parse_cc(state)? });
+            return Ok(Self::Us {
+                state: parse_cc(state)?,
+            });
         }
         const EU: &[[u8; 2]] = &[
-            *b"AT", *b"BE", *b"BG", *b"HR", *b"CY", *b"CZ", *b"DK", *b"EE",
-            *b"FI", *b"FR", *b"DE", *b"GR", *b"HU", *b"IE", *b"IT", *b"LV",
-            *b"LT", *b"LU", *b"MT", *b"NL", *b"PL", *b"PT", *b"RO", *b"SK",
-            *b"SI", *b"ES", *b"SE",
+            *b"AT", *b"BE", *b"BG", *b"HR", *b"CY", *b"CZ", *b"DK", *b"EE", *b"FI", *b"FR", *b"DE",
+            *b"GR", *b"HU", *b"IE", *b"IT", *b"LV", *b"LT", *b"LU", *b"MT", *b"NL", *b"PL", *b"PT",
+            *b"RO", *b"SK", *b"SI", *b"ES", *b"SE",
         ];
         if EU.contains(&cc) {
             Ok(Self::Eu { country: cc })
@@ -95,9 +96,18 @@ impl ShardKey {
         let mut hasher = Sha256::new();
         hasher.update(tenant_id.as_bytes());
         match region {
-            Region::Us { state } => { hasher.update(b"us"); hasher.update(state); }
-            Region::Eu { country } => { hasher.update(b"eu"); hasher.update(country); }
-            Region::Other { country } => { hasher.update(b"ot"); hasher.update(country); }
+            Region::Us { state } => {
+                hasher.update(b"us");
+                hasher.update(state);
+            }
+            Region::Eu { country } => {
+                hasher.update(b"eu");
+                hasher.update(country);
+            }
+            Region::Other { country } => {
+                hasher.update(b"ot");
+                hasher.update(country);
+            }
         }
         let digest = hasher.finalize();
         // Low 48 bits from the digest

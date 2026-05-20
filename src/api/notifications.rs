@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -15,7 +15,10 @@ pub async fn create_rule(
 ) -> AppResult<(StatusCode, Json<NotificationRule>)> {
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
-    let rule = state.notifications.create_rule(tenant_id, region, input).await?;
+    let rule = state
+        .notifications
+        .create_rule(tenant_id, region, input)
+        .await?;
     Ok((StatusCode::CREATED, Json(rule)))
 }
 
@@ -32,7 +35,9 @@ pub struct DispatchesQuery {
     #[serde(default = "default_limit")]
     pub limit: i64,
 }
-fn default_limit() -> i64 { 100 }
+fn default_limit() -> i64 {
+    100
+}
 
 pub async fn list_dispatches(
     State(state): State<AppState>,
