@@ -19,6 +19,7 @@ on:
           - repair-gleamlang-secret
           - reconcile-runtime
           - deploy-lambda-ui
+          - verify-lambda-checks
           - seed-container-pool-config
           - sync-agent-gh-pat
           - sync-agent-model-keys
@@ -370,6 +371,188 @@ jobs:
               f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
           ]
           print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-lambda-checks)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import shlex
+
+          script = r'''set -euo pipefail
+          echo "=== lambda runner deployment ==="
+          kubectl -n default get deploy dd-gleam-lambda-runner -o wide
+          kubectl -n default rollout status deployment/dd-gleam-lambda-runner --timeout=120s
+
+          echo "=== lambda runner pod ==="
+          lambda_pod="$(kubectl -n default get pod -l app=dd-gleam-lambda-runner -o jsonpath='{.items[0].metadata.name}')"
+          echo "$lambda_pod"
+
+          echo "=== lambda check matrix ==="
+          kubectl -n default exec -i "$lambda_pod" -- python3 - <<'INNER'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          endpoint = "http://127.0.0.1:8083/check"
+          server_auth = os.environ.get("SERVER_AUTH_SECRET", "")
+          if not server_auth:
+              raise SystemExit("SERVER_AUTH_SECRET is not available in runner pod")
+
+          cases = [
+              {
+                  "name": "nodejs-host-valid",
+                  "runtime": "nodejs",
+                  "containerized": False,
+                  "functionBody": "return { status: 200, body: { ok: true } };",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "nodejs-container-valid",
+                  "runtime": "nodejs",
+                  "containerized": True,
+                  "functionBody": "return { status: 200, body: { ok: true } };",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "python3-container-valid",
+                  "runtime": "python3",
+                  "containerized": True,
+                  "functionBody": 'result = { "status": 200, "body": { "ok": True } }',
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "ruby-container-valid",
+                  "runtime": "ruby",
+                  "containerized": True,
+                  "functionBody": "{ status: 200, body: { ok: true } }",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "bash-container-valid",
+                  "runtime": "bash",
+                  "containerized": True,
+                  "functionBody": "printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "nodejs-container-invalid",
+                  "runtime": "nodejs",
+                  "containerized": True,
+                  "functionBody": "return {",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "python3-container-invalid",
+                  "runtime": "python3",
+                  "containerized": True,
+                  "functionBody": "if :\\n  result = 1",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "ruby-container-invalid",
+                  "runtime": "ruby",
+                  "containerized": True,
+                  "functionBody": "def broken(",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "bash-container-invalid",
+                  "runtime": "bash",
+                  "containerized": True,
+                  "functionBody": "if true; then echo ok",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "python3-host-policy",
+                  "runtime": "python3",
+                  "containerized": False,
+                  "functionBody": 'result = { "status": 200 }',
+                  "expectedStatus": 502,
+                  "expectedOk": False,
+                  "expectedError": "requires containerized=true",
+              },
+          ]
+
+          def post(payload):
+              request = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "content-type": "application/json",
+                      "x-server-auth": server_auth,
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      return response.status, response.read().decode("utf-8")
+              except urllib.error.HTTPError as error:
+                  return error.code, error.read().decode("utf-8")
+
+          failures = []
+          for case in cases:
+              payload = {
+                  "slug": "verify-" + case["name"],
+                  "runtime": case["runtime"],
+                  "functionBody": case["functionBody"],
+                  "containerized": case["containerized"],
+                  "status": "draft",
+              }
+              status, text = post(payload)
+              try:
+                  body = json.loads(text)
+              except json.JSONDecodeError:
+                  body = {"ok": None, "error": "response was not JSON", "raw": text}
+
+              result = {
+                  "case": case["name"],
+                  "status": status,
+                  "ok": body.get("ok"),
+                  "runtime": (body.get("check") or {}).get("runtime"),
+                  "error": body.get("error", ""),
+              }
+              print(json.dumps(result, sort_keys=True))
+
+              if status != case["expectedStatus"]:
+                  failures.append(f"{case['name']} status {status} != {case['expectedStatus']}: {text}")
+              if body.get("ok") is not case["expectedOk"]:
+                  failures.append(f"{case['name']} ok {body.get('ok')} != {case['expectedOk']}: {text}")
+              if case.get("expectedError") and case["expectedError"] not in str(body.get("error", "")):
+                  failures.append(f"{case['name']} missing error fragment {case['expectedError']!r}: {text}")
+              if body.get("ok") is True and (body.get("check") or {}).get("runtime") != case["runtime"]:
+                  failures.append(f"{case['name']} check runtime mismatch: {text}")
+
+          if failures:
+              print("lambda check matrix failures:", file=sys.stderr)
+              for failure in failures:
+                  print("- " + failure, file=sys.stderr)
+              raise SystemExit(1)
+
+          print("lambda check matrix passed")
+          INNER
+
+          echo "=== lambda runner metrics sample ==="
+          kubectl -n default exec "$lambda_pod" -- sh -lc \
+            'wget -qO- http://127.0.0.1:8083/metrics | grep -E "dd_lambda_runner_(child_spawns_total|active_workers)" || true'
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
           PY
               ;;
             verify-gleam-mcp-server)
