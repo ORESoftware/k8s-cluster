@@ -1174,13 +1174,8 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     args.push(pool.image.clone());
     args.extend(pool.command.clone());
 
-    match run_command(
-        &state.config.nerdctl_bin,
-        &args,
-        state.config.command_timeout,
-    )
-    .await
-    {
+    let container_run_timeout = state.config.command_timeout.min(Duration::from_secs(30));
+    match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
         Ok(_) => {
             if let Err(error) = wait_container_ready(state, &pool, &container).await {
                 let mut registry = state.registry.lock().await;
