@@ -874,7 +874,7 @@ class LambdaFunction(Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
     runtime: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'nodejs'"))
-    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'"))
+    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'"))
     function_body: Mapped[str] = mapped_column(Text(), nullable=False)
     reuse_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     idle_timeout_seconds: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("300"))
@@ -960,7 +960,7 @@ class LambdaFunctionInsert(BaseModel):
     displayName: str = Field(..., min_length=1, max_length=200)
     description: str | None = ""
     runtime: LambdaFunctionRuntime | None = "nodejs"
-    entryCommand: str | None = "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
+    entryCommand: str | None = "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
     functionBody: str = Field(..., min_length=1)
     reuseKey: str | None = Field(None, max_length=200)
     idleTimeoutSeconds: int | None = Field(300, ge=1, le=3600)

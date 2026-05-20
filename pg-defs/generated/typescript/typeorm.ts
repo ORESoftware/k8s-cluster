@@ -494,7 +494,7 @@ export class LambdaFunctionEntity {
   @Column({ name: "runtime", type: "varchar", length: 40, default: () => "'nodejs'" })
   runtime!: string;
 
-  @Column({ name: "entry_command", type: "text", default: () => "'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'" })
+  @Column({ name: "entry_command", type: "text", default: () => "'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" })
   entryCommand!: string;
 
   @Column({ name: "function_body", type: "text" })

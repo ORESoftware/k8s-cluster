@@ -1,8 +1,8 @@
 // IMPORTANT FOR CODING AGENTS:
 // - schema/schema.sql is the final source of truth for database shape.
 // - Generated ORM/client files are adapters only; never treat them as migration authority.
-// - Never run or apply migrations automatically. Generate SQL for human review and wait for
-//   explicit user approval before any database write.
+// - Never run or apply migrations automatically. Use report-only RDS drift checks for migration
+//   planning; do not generate .sql migration files from adapters.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
