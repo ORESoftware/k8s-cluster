@@ -1378,23 +1378,35 @@ async fn shared_header_js() -> impl IntoResponse {
 
 async fn lambda_functions_page() -> impl IntoResponse {
     record_request("GET", "/lambdas/functions", StatusCode::OK);
-    Html(static_page_with_shared_header(
-        LAMBDA_FUNCTIONS_HTML,
+    inline_ui_document(
+        "dd lambda functions",
         "lambdas",
-    ))
+        LAMBDA_FUNCTIONS_CSS,
+        LAMBDA_FUNCTIONS_BODY,
+        LAMBDA_FUNCTIONS_JS,
+    )
 }
 
 async fn presence_test_page() -> impl IntoResponse {
     record_request("GET", "/presence-test", StatusCode::OK);
-    Html(static_page_with_shared_header(
-        PRESENCE_TEST_HTML,
+    inline_ui_document(
+        "presence test",
         "presence",
-    ))
+        PRESENCE_TEST_CSS,
+        PRESENCE_TEST_BODY,
+        PRESENCE_TEST_JS,
+    )
 }
 
 async fn wss_test_page() -> impl IntoResponse {
     record_request("GET", "/wss-test", StatusCode::OK);
-    Html(static_page_with_shared_header(WSS_TEST_HTML, "wss"))
+    inline_ui_document(
+        "wss test lab",
+        "wss",
+        WSS_TEST_CSS,
+        WSS_TEST_BODY,
+        WSS_TEST_JS,
+    )
 }
 
 fn ui_document(
@@ -1431,6 +1443,37 @@ fn ui_document(
     )
 }
 
+fn inline_ui_document(
+    title: &str,
+    active_page: &'static str,
+    stylesheet: &'static str,
+    body: &'static str,
+    script: &'static str,
+) -> Html<String> {
+    Html(
+        html! {
+            (DOCTYPE)
+            html lang="en" data-dd-mode="dark" {
+                head {
+                    meta charset="utf-8";
+                    meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover";
+                    title { (title) }
+                    script { (PreEscaped(SHARED_HEADER_BOOT_JS)) }
+                    style { (PreEscaped(stylesheet)) }
+                    link rel="stylesheet" href="/assets/web-home/shared-header.css";
+                    script defer="defer" src="/assets/web-home/shared-header.js" {}
+                }
+                body {
+                    (shared_header(active_page))
+                    (PreEscaped(body))
+                    script { (PreEscaped(script)) }
+                }
+            }
+        }
+        .into_string(),
+    )
+}
+
 fn text_asset(path: &'static str, content_type: &'static str, body: &'static str) -> Response {
     record_request("GET", path, StatusCode::OK);
     (
@@ -1453,30 +1496,6 @@ fn html_asset(path: &'static str, body: Markup) -> Response {
         body.into_string(),
     )
         .into_response()
-}
-
-fn static_page_with_shared_header(document: &'static str, active_page: &'static str) -> String {
-    document
-        .replacen(
-            "<html lang=\"en\">",
-            "<html lang=\"en\" data-dd-mode=\"dark\">",
-            1,
-        )
-        .replacen(
-            "</title>",
-            &format!("</title>\n    <script>{SHARED_HEADER_BOOT_JS}</script>"),
-            1,
-        )
-        .replacen(
-            "</style>",
-            "</style>\n    <link rel=\"stylesheet\" href=\"/assets/web-home/shared-header.css\" />\n    <script defer=\"defer\" src=\"/assets/web-home/shared-header.js\"></script>",
-            1,
-        )
-        .replacen(
-            "<body>",
-            &format!("<body>\n    {}", shared_header(active_page).into_string()),
-            1,
-        )
 }
 
 fn agents_threads_body() -> Markup {
@@ -2053,7 +2072,7 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         overflow: hidden;
       }
       .main.mode-empty #response-stream-panel,
-      .main.mode-new #response-stream-panel,
+      .main.mode-new:not(.stream-active) #response-stream-panel,
       .main.stream-deferred #response-stream-panel {
         display: none;
       }
@@ -2323,6 +2342,18 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         align-items: center;
         margin-bottom: 8px;
       }
+      .event-head-left {
+        min-width: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .pill.model {
+        background: rgba(125, 211, 252, 0.12);
+        border-color: rgba(125, 211, 252, 0.34);
+        color: #bae6fd;
+      }
       .event-text {
         margin: 0;
         white-space: pre-wrap;
@@ -2543,11 +2574,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setControlPosition(existingThread(state.selectedThreadId) ? "bottom" : "top");
       }
 
+      function setStreamActive(active) {
+        $("thread-workspace").classList.toggle("stream-active", Boolean(active));
+      }
+
       function setThreadUiMode(modeName) {
         const workspace = $("thread-workspace");
         state.threadUiMode = modeName;
         workspace.classList.remove("mode-empty", "mode-new", "mode-existing");
         workspace.classList.add(`mode-${modeName}`);
+        setStreamActive(modeName === "existing");
         setControlPosition(modeName === "existing" ? "bottom" : "top");
         updateTasksSidebarVisibility();
         $("new-task").disabled = modeName === "empty";
@@ -3423,6 +3459,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
             seq: parsed.seq ?? `${source}-${Date.now()}`,
             eventKind: parsed.event?.kind || "message",
             payload: parsed.event || parsed,
+            provider: parsed.provider || parsed.activeProvider,
+            model: parsed.model,
+            modelLabel: parsed.modelLabel,
             createdAt: parsed.emittedAt || new Date().toISOString(),
           });
         }
@@ -3452,6 +3491,41 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           raw.providerData?.type,
           raw.message?.type,
         ].filter(Boolean).join(" ");
+      }
+
+      function prettyModelLabel(provider, model) {
+        if (!model && provider) return String(provider).replace(/-sdk|-cli/g, "").replace(/-/g, " ");
+        if (!model) return "";
+        const rawModel = String(model).trim();
+        if (/^gpt-/i.test(rawModel)) {
+          return rawModel.replace(/^gpt-/i, "chatgpt-").replace(/_/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+        }
+        return rawModel
+          .replace(/claude-([a-z]+)-(\d+)-(\d+)/i, "claude $1 $2.$3")
+          .replace(/([a-z])(\d)/gi, "$1 $2")
+          .replace(/[_-]+/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
+      }
+
+      function eventModelLabel(row) {
+        const payload = eventPayload(row);
+        if (payload.modelLabel) return String(payload.modelLabel);
+        const raw = rawObject(row);
+        const provider = payload.provider || raw?.provider || raw?.providerData?.provider || row.provider;
+        const model = payload.model ||
+          raw?.model ||
+          raw?.modelId ||
+          raw?.model_id ||
+          raw?.providerData?.model ||
+          raw?.providerData?.modelId ||
+          raw?.data?.model ||
+          raw?.data?.event?.model ||
+          raw?.event?.model ||
+          raw?.message?.model ||
+          row.model;
+        return prettyModelLabel(provider, model);
       }
 
       function visibleAgentRawText(row) {
@@ -3603,14 +3677,24 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         item.className = `event ${kind === "claude" ? "agent" : kind === "error" ? "error" : ""}`;
         const head = document.createElement("div");
         head.className = "event-head";
+        const leftGroup = document.createElement("div");
+        leftGroup.className = "event-head-left";
         const left = document.createElement("span");
         left.className = kind === "error" ? "pill bad" : kind === "done" || kind === "claude" ? "pill" : "pill warn";
         const displayKind = kind === "claude" ? "agent" : kind;
         left.textContent = `${displayKind} · ${seqLabel || `seq ${seq}`}`;
+        leftGroup.appendChild(left);
+        const model = eventModelLabel(row);
+        if (kind === "claude" && model) {
+          const modelChip = document.createElement("span");
+          modelChip.className = "pill model";
+          modelChip.textContent = model;
+          leftGroup.appendChild(modelChip);
+        }
         const right = document.createElement("span");
         right.className = "muted";
         right.textContent = fmt(row.createdAt);
-        head.append(left, right);
+        head.append(leftGroup, right);
         const body = document.createElement("pre");
         body.className = "event-text";
         body.appendChild(textNode(text));
@@ -3734,7 +3818,6 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const data = await response.json();
         const summary = workerRuntimeSummary(data);
         state.lastRuntimeData = data;
-        setStatus(summary, Boolean(data.errors?.length));
         if (render && summary !== state.lastRuntimeSummary) {
           state.lastRuntimeSummary = summary;
           renderEventRow({
@@ -3755,9 +3838,13 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function startRuntimePolling(threadId) {
         stopRuntimePolling();
         state.lastRuntimeSummary = "";
-        loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
+        loadRuntimeState(threadId).catch((error) => {
+          renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
+        });
         state.runtimePoll = setInterval(() => {
-          loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
+          loadRuntimeState(threadId).catch((error) => {
+            renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
+          });
         }, 5000);
       }
 
@@ -3956,6 +4043,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.selectedTaskId = taskId;
         closeInlineTerminal();
         setTaskStreamLayout("stream");
+        setStreamActive(true);
+        setControlPosition("bottom", { forceAnimation: true });
+        $("thread-workspace").scrollTo({ top: 0, behavior: "smooth" });
         replaceSelectionUrl(threadId, taskId);
         clearStream(usesContainerPool ? "waiting for queue" : "waking worker");
         openGleamLiveSocket(threadId, taskId);
@@ -3979,7 +4069,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
             const elapsed = Math.round((Date.now() - startedAt) / 1000);
             const runtimeSummary = state.lastRuntimeSummary || "runtime snapshot pending";
             const runtimeDetails = workerRuntimeWaitDetails(state.lastRuntimeData);
-            setStatus(`dispatch waiting ${elapsed}s · ${runtimeSummary}`);
+            setStatus(`dispatch waiting ${elapsed}s`);
             renderEventRow({
               seq: `dispatch-wait-${elapsed}`,
               eventKind: "status",
@@ -4047,7 +4137,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         renderThreads();
         updateSelectionHeader();
         renderTaskList();
-        setControlPosition("bottom", { forceAnimation: true });
+        setStreamActive(true);
+        setControlPosition("bottom");
         setStatus("dispatch accepted");
         renderEventRow({
           seq: `dispatch-accepted-${Date.now()}`,
@@ -4060,7 +4151,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           createdAt: new Date().toISOString(),
         });
         if (!usesContainerPool) {
-          await loadRuntimeState(threadId).catch((error) => setStatus(adminPreview("runtime state error", error, 240), true));
+          await loadRuntimeState(threadId).catch((error) => {
+            renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
+          });
         }
         openLiveStream(threadId, taskId);
         resetContextReview("Context review will run before the next dispatch.");
@@ -5352,2066 +5445,2418 @@ const AGENTS_TASKS_JS: &str = r#"      const $ = (id) => document.getElementById
       load();
       setInterval(load, 10000);
 "#;
-const WSS_TEST_HTML: &str = r##"<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>wss test lab</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b1117;
-        --panel: #111923;
-        --panel-2: #0f1720;
-        --field: #0e1520;
-        --line: rgba(148, 163, 184, 0.24);
-        --text: #eef2f6;
-        --muted: #a8b3c1;
-        --accent: #5eead4;
-        --warn: #fbbf24;
-        --danger: #fb7185;
-        --ok: #86efac;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        background: var(--bg);
-        color: var(--text);
-        font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      }
-      header {
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        display: grid;
-        gap: 10px;
-        padding: 12px 16px;
-        background: var(--panel);
-        border-bottom: 1px solid var(--line);
-      }
-      .topline {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      h1 { font-size: 18px; margin: 0 12px 0 0; }
-      label { display: grid; gap: 3px; color: var(--muted); font-size: 11px; }
-      input, select, textarea, button {
-        background: var(--field);
-        color: var(--text);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 6px 8px;
-        font: inherit;
-      }
-      input:focus, select:focus, textarea:focus, button:focus { outline: 1px solid var(--accent); }
-      button { cursor: pointer; background: var(--panel-2); }
-      button:hover { background: #182032; }
-      button.primary { border-color: var(--accent); color: var(--accent); }
-      button.danger { border-color: var(--danger); color: var(--danger); }
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        min-height: 24px;
-        padding: 2px 8px;
-        border-radius: 999px;
-        color: var(--accent);
-        border: 1px solid rgba(94, 234, 212, 0.35);
-        background: rgba(94, 234, 212, 0.08);
-        font-size: 12px;
-      }
-      .pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.08); }
-      .pill.bad { color: var(--danger); border-color: rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.08); }
-      .pill.ok { color: var(--ok); border-color: rgba(134, 239, 172, 0.35); background: rgba(134, 239, 172, 0.08); }
-      .stats {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
-        gap: 14px;
-        padding: 16px;
-      }
-      .panel {
-        min-width: 0;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        overflow: hidden;
-      }
-      .panel h2 {
-        margin: 0;
-        padding: 10px 12px;
-        font-size: 13px;
-        background: var(--panel-2);
-        border-bottom: 1px solid var(--line);
-      }
-      .panel-body { display: grid; gap: 10px; padding: 12px; }
-      .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-      .field-wide { grid-column: 1 / -1; }
-      .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-      textarea {
-        width: 100%;
-        min-height: 168px;
-        resize: vertical;
-        line-height: 1.45;
-      }
-      .log {
-        margin: 0;
-        min-height: 488px;
-        max-height: calc(100vh - 210px);
-        overflow: auto;
-        padding: 10px;
-        background: #090f16;
-        color: var(--text);
-        border-top: 1px solid var(--line);
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      .row { padding: 2px 0; }
-      .row.in { color: var(--ok); }
-      .row.out { color: var(--accent); }
-      .row.warn { color: var(--warn); }
-      .row.bad { color: var(--danger); }
-      .row.meta { color: var(--muted); }
-      .ts { color: var(--muted); }
-      code {
-        display: inline-block;
-        max-width: 100%;
-        overflow-wrap: anywhere;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 6px;
-        padding: 1px 5px;
-        background: #0a1017;
-        color: #d7fbf4;
-      }
-      @media (max-width: 860px) {
-        .grid { grid-template-columns: 1fr; }
-        .fields { grid-template-columns: 1fr; }
-        .log { min-height: 320px; max-height: none; }
-      }
-    </style>
-  </head>
-  <body>
-    <header>
-      <div class="topline">
-        <h1>wss test lab</h1>
-        <label>preset
-          <select id="preset">
-            <option value="gleam">Gleam fan-out</option>
-            <option value="webrtc">Rust WebRTC signaling</option>
-            <option value="gcs">gms/gcs/chat.vibe router</option>
-            <option value="fsrx">F# Rx burst</option>
+const WSS_TEST_CSS: &str = r###":root {
+  color-scheme: dark;
+  --bg: #0b1117;
+  --panel: #111923;
+  --panel-2: #0f1720;
+  --field: #0e1520;
+  --line: rgba(148, 163, 184, 0.24);
+  --text: #eef2f6;
+  --muted: #a8b3c1;
+  --accent: #5eead4;
+  --warn: #fbbf24;
+  --danger: #fb7185;
+  --ok: #86efac;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.topline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+h1 { font-size: 18px; margin: 0 12px 0 0; }
+label { display: grid; gap: 3px; color: var(--muted); font-size: 11px; }
+input, select, textarea, button {
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+input:focus, select:focus, textarea:focus, button:focus { outline: 1px solid var(--accent); }
+button { cursor: pointer; background: var(--panel-2); }
+button:hover { background: #182032; }
+button.primary { border-color: var(--accent); color: var(--accent); }
+button.danger { border-color: var(--danger); color: var(--danger); }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  border: 1px solid rgba(94, 234, 212, 0.35);
+  background: rgba(94, 234, 212, 0.08);
+  font-size: 12px;
+}
+.pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.08); }
+.pill.bad { color: var(--danger); border-color: rgba(251, 113, 133, 0.35); background: rgba(251, 113, 133, 0.08); }
+.pill.ok { color: var(--ok); border-color: rgba(134, 239, 172, 0.35); background: rgba(134, 239, 172, 0.08); }
+.stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+}
+.panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.panel h2 {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+.panel-body { display: grid; gap: 10px; padding: 12px; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.field-wide { grid-column: 1 / -1; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+textarea {
+  width: 100%;
+  min-height: 168px;
+  resize: vertical;
+  line-height: 1.45;
+}
+.log {
+  margin: 0;
+  min-height: 488px;
+  max-height: calc(100vh - 210px);
+  overflow: auto;
+  padding: 10px;
+  background: #090f16;
+  color: var(--text);
+  border-top: 1px solid var(--line);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.row { padding: 2px 0; }
+.row.in { color: var(--ok); }
+.row.out { color: var(--accent); }
+.row.warn { color: var(--warn); }
+.row.bad { color: var(--danger); }
+.row.meta { color: var(--muted); }
+.ts { color: var(--muted); }
+code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  padding: 1px 5px;
+  background: #0a1017;
+  color: #d7fbf4;
+}
+@media (max-width: 860px) {
+  .grid { grid-template-columns: 1fr; }
+  .fields { grid-template-columns: 1fr; }
+  .log { min-height: 320px; max-height: none; }
+}
+"###;
+
+const WSS_TEST_BODY: &str = r###"<header>
+  <div class="topline">
+    <h1>wss test lab</h1>
+    <label>preset
+      <select id="preset">
+        <option value="gleam">Gleam fan-out</option>
+        <option value="webrtc">Rust WebRTC signaling</option>
+        <option value="gcs">gms/gcs/chat.vibe router</option>
+        <option value="fsrx">F# Rx burst</option>
+      </select>
+    </label>
+    <label>base
+      <input id="base" placeholder="same origin" style="width: 260px" />
+    </label>
+    <label>path
+      <input id="path" style="width: 330px" />
+    </label>
+    <span id="status" class="pill warn">idle</span>
+    <span id="counter" class="pill">0 frames</span>
+    <span id="sent-counter" class="pill">0 sent</span>
+    <span id="recv-counter" class="pill">0 recv</span>
+  </div>
+  <div class="topline">
+    <code id="url-preview">ws://...</code>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="panel">
+    <h2>connection</h2>
+    <div class="panel-body">
+      <div class="fields">
+        <label>thread id<input id="thread-id" /></label>
+        <label>task id<input id="task-id" /></label>
+        <label>room<input id="room-id" /></label>
+        <label>peer<input id="peer-id" /></label>
+        <label>user id<input id="user-id" /></label>
+        <label>device id<input id="device-id" /></label>
+        <label>conversation id<input id="conv-id" /></label>
+        <label>burst count<input id="burst-count" type="number" min="1" max="500" value="12" /></label>
+        <label>interval ms<input id="interval-ms" type="number" min="50" max="60000" value="1000" /></label>
+        <label>gcs route
+          <select id="gcs-route">
+            <option value="conv">conv</option>
+            <option value="user">user</option>
+            <option value="device">device</option>
           </select>
         </label>
-        <label>base
-          <input id="base" placeholder="same origin" style="width: 260px" />
-        </label>
-        <label>path
-          <input id="path" style="width: 330px" />
-        </label>
-        <span id="status" class="pill warn">idle</span>
-        <span id="counter" class="pill">0 frames</span>
-        <span id="sent-counter" class="pill">0 sent</span>
-        <span id="recv-counter" class="pill">0 recv</span>
       </div>
-      <div class="topline">
-        <code id="url-preview">ws://...</code>
+      <div class="actions">
+        <button id="connect" class="primary" type="button">connect</button>
+        <button id="disconnect" class="danger" type="button">disconnect</button>
+        <button id="copy-url" type="button">copy url</button>
+        <button id="check-health" type="button">health</button>
+        <button id="clear" type="button">clear</button>
       </div>
-    </header>
-
-    <main class="grid">
-      <section class="panel">
-        <h2>connection</h2>
-        <div class="panel-body">
-          <div class="fields">
-            <label>thread id<input id="thread-id" /></label>
-            <label>task id<input id="task-id" /></label>
-            <label>room<input id="room-id" /></label>
-            <label>peer<input id="peer-id" /></label>
-            <label>user id<input id="user-id" /></label>
-            <label>device id<input id="device-id" /></label>
-            <label>conversation id<input id="conv-id" /></label>
-            <label>burst count<input id="burst-count" type="number" min="1" max="500" value="12" /></label>
-            <label>interval ms<input id="interval-ms" type="number" min="50" max="60000" value="1000" /></label>
-            <label>gcs route
-              <select id="gcs-route">
-                <option value="conv">conv</option>
-                <option value="user">user</option>
-                <option value="device">device</option>
-              </select>
-            </label>
-          </div>
-          <div class="actions">
-            <button id="connect" class="primary" type="button">connect</button>
-            <button id="disconnect" class="danger" type="button">disconnect</button>
-            <button id="copy-url" type="button">copy url</button>
-            <button id="check-health" type="button">health</button>
-            <button id="clear" type="button">clear</button>
-          </div>
-          <div class="actions">
-            <a href="/presence-test?user=alice&amp;device=d1&amp;autoconnect=1"><code>/presence-test</code></a>
-            <a href="/gleam/home"><code>/gleam/home</code></a>
-            <a href="/webrtc/"><code>/webrtc/</code></a>
-            <a href="/gcs/ws-health"><code>/gcs/ws-health</code></a>
-            <a href="/wss-test?preset=fsrx"><code>/fsws/ws/rx-burst</code></a>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>frames</h2>
-        <div class="panel-body">
-          <textarea id="payload" spellcheck="false"></textarea>
-          <div class="actions">
-            <button id="send" class="primary" type="button">send</button>
-            <button id="send-ping" type="button">ping</button>
-            <button id="send-hello" type="button">hello</button>
-            <button id="send-sample" type="button">sample</button>
-            <button id="send-burst" type="button">burst</button>
-            <button id="start-interval" type="button">start interval</button>
-            <button id="stop-interval" type="button">stop interval</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel" style="grid-column: 1 / -1">
-        <h2>log</h2>
-        <pre id="log" class="log"></pre>
-      </section>
-    </main>
-
-    <script>
-      const $ = (id) => document.getElementById(id);
-      const params = new URLSearchParams(location.search);
-      const defaults = {
-        threadId: "00000000-0000-4000-8000-000000000001",
-        taskId: "00000000-0000-4000-8000-000000000002",
-        roomId: "browser-room",
-        peerId: "peer-" + Math.random().toString(16).slice(2, 8),
-        userId: "65c48f2f47d56fec05a41b38",
-        deviceId: "65c48f2f47d56fec05a41b39",
-        convId: "65c48f2f47d56fec05a41b3a",
-      };
-      const state = { ws: null, frames: 0, sent: 0, received: 0, intervalTimer: null };
-
-      function sameOriginWsBase() {
-        const proto = location.protocol === "https:" ? "wss" : "ws";
-        return `${proto}://${location.host}`;
-      }
-      function httpToWs(value) {
-        return value.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
-      }
-      function wsToHttp(value) {
-        return value.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://");
-      }
-      function trimSlash(value) {
-        return value.replace(/\/+$/, "");
-      }
-      function ensureLeadingSlash(value) {
-        return value.startsWith("/") ? value : "/" + value;
-      }
-      function ts() {
-        const d = new Date();
-        return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
-      }
-      function log(text, cls = "meta") {
-        const row = document.createElement("div");
-        row.className = "row " + cls;
-        const stamp = document.createElement("span");
-        stamp.className = "ts";
-        stamp.textContent = ts() + " ";
-        row.append(stamp, document.createTextNode(text));
-        $("log").appendChild(row);
-        while ($("log").childNodes.length > 500) $("log").removeChild($("log").firstChild);
-        $("log").scrollTop = $("log").scrollHeight;
-      }
-      function setStatus(text, cls = "warn") {
-        $("status").textContent = text;
-        $("status").className = "pill " + cls;
-      }
-      function updateCounters() {
-        $("counter").textContent = `${state.frames} frames`;
-        $("sent-counter").textContent = `${state.sent} sent`;
-        $("recv-counter").textContent = `${state.received} recv`;
-      }
-      function countFrame(direction) {
-        state.frames += 1;
-        if (direction === "out") state.sent += 1;
-        if (direction === "in") state.received += 1;
-        updateCounters();
-      }
-      function pretty(raw) {
-        try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (_) { return String(raw); }
-      }
-      function setGcsPath() {
-        $("path").value = `/gcs/ws/${$("gcs-route").value}/${encodeURIComponent(gcsRouteId())}`;
-      }
-
-      function applyPreset() {
-        const preset = $("preset").value;
-        if (!$("base").value) $("base").placeholder = sameOriginWsBase();
-        if (preset === "gleam") {
-          $("path").value = "/gleam/ws";
-          $("payload").value = "ping";
-        } else if (preset === "webrtc") {
-          $("path").value = "/webrtc/signal";
-          $("payload").value = JSON.stringify({
-            type: "hello",
-            metadata: { client: "web-home-rs/wss-test", at: new Date().toISOString() }
-          }, null, 2);
-        } else if (preset === "gcs") {
-          setGcsPath();
-          $("payload").value = JSON.stringify({
-            Meta: {},
-            List: [{
-              "@vibe-meta": {},
-              "@vibe-type": "PollForKafkaMessages",
-              "@vibe-data": JSON.stringify({ TopicIds: [$("user-id").value] })
-            }]
-          }, null, 2);
-        } else {
-          $("path").value = "/fsws/ws/rx-burst";
-          $("payload").value = JSON.stringify({
-            id: "rx-" + Date.now().toString(36),
-            payload: "sample from web-home-rs/wss-test"
-          }, null, 2);
-        }
-        updateUrlPreview();
-      }
-
-      function gcsRouteId() {
-        const route = $("gcs-route").value;
-        if (route === "user") return $("user-id").value;
-        if (route === "device") return $("device-id").value;
-        return $("conv-id").value;
-      }
-
-      function buildUrl() {
-        const preset = $("preset").value;
-        const base = trimSlash(httpToWs($("base").value.trim() || sameOriginWsBase()));
-        if (preset === "gcs") setGcsPath();
-        const path = ensureLeadingSlash($("path").value.trim());
-        const url = new URL(base + path);
-
-        if (preset === "gleam") {
-          url.searchParams.set("threadId", $("thread-id").value.trim());
-          url.searchParams.set("taskId", $("task-id").value.trim());
-        } else if (preset === "webrtc") {
-          url.searchParams.set("room", $("room-id").value.trim());
-          url.searchParams.set("peer", $("peer-id").value.trim());
-        } else {
-          url.searchParams.set("userId", $("user-id").value.trim());
-          url.searchParams.set("deviceId", $("device-id").value.trim());
-          url.searchParams.set("conversationIds", JSON.stringify([$("conv-id").value.trim()]));
-        }
-
-        return url.toString();
-      }
-
-      function updateUrlPreview() {
-        $("url-preview").textContent = buildUrl();
-      }
-
-      function healthPath() {
-        const preset = $("preset").value;
-        if (preset === "gleam") return "/gleam/healthz";
-        if (preset === "webrtc") return "/webrtc/healthz";
-        if (preset === "gcs") return "/gcs/ws-health";
-        return "/fsws/healthz";
-      }
-
-      function httpBase() {
-        const raw = $("base").value.trim();
-        if (!raw) return location.origin;
-        return trimSlash(wsToHttp(httpToWs(raw)));
-      }
-
-      async function checkHealth() {
-        const url = httpBase() + healthPath();
-        log("GET " + url, "meta");
-        try {
-          const response = await fetch(url, { cache: "no-store" });
-          const text = await response.text();
-          log(`health ${response.status}: ${text.slice(0, 600)}`, response.ok ? "in" : "bad");
-        } catch (error) {
-          log("health error: " + String(error), "bad");
-        }
-      }
-
-      function connect() {
-        disconnect();
-        const url = buildUrl();
-        const ws = new WebSocket(url);
-        state.ws = ws;
-        setStatus("connecting", "warn");
-        log("open " + url, "meta");
-        ws.onopen = () => {
-          setStatus("open", "ok");
-          log("connected", "meta");
-          if ($("preset").value === "webrtc") sendHello();
-        };
-        ws.onmessage = (event) => {
-          countFrame("in");
-          log("in  " + pretty(event.data), "in");
-        };
-        ws.onerror = () => {
-          setStatus("error", "bad");
-          log("websocket error; check browser devtools network panel", "bad");
-        };
-        ws.onclose = (event) => {
-          stopInterval();
-          setStatus(`closed ${event.code}`, event.code === 1000 ? "warn" : "bad");
-          log(`closed code=${event.code} reason="${event.reason || ""}"`, "warn");
-          if (state.ws === ws) state.ws = null;
-        };
-      }
-
-      function disconnect() {
-        stopInterval();
-        if (state.ws) {
-          try { state.ws.close(1000, "ui disconnect"); } catch (_) {}
-          state.ws = null;
-        }
-        setStatus("idle", "warn");
-      }
-
-      function sendRaw(raw) {
-        if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
-          log("not connected", "bad");
-          return;
-        }
-        state.ws.send(raw);
-        countFrame("out");
-        log("out " + pretty(raw), "out");
-      }
-
-      function sendPayload() {
-        const raw = $("payload").value;
-        if (raw.trim()) sendRaw(raw);
-      }
-
-      function sendPing() {
-        if ($("preset").value === "webrtc") {
-          sendRaw(JSON.stringify({ type: "ping" }));
-        } else {
-          sendRaw("ping");
-        }
-      }
-
-      function sendHello() {
-        if ($("preset").value === "webrtc") {
-          sendRaw(JSON.stringify({
-            type: "hello",
-            metadata: { client: "web-home-rs/wss-test", peer: $("peer-id").value }
-          }));
-        } else {
-          sendRaw("hello from web-home-rs/wss-test");
-        }
-      }
-
-      function sampleFrame(index = null) {
-        if ($("preset").value === "gleam") {
-          return JSON.stringify({
-            type: "task-event",
-            threadId: $("thread-id").value,
-            taskId: $("task-id").value,
-            body: index === null ? "sample from wss-test" : `sample ${index} from wss-test`,
-            at: new Date().toISOString()
-          });
-        }
-        if ($("preset").value === "webrtc") {
-          return JSON.stringify({
-            type: "message",
-            payload: {
-              body: index === null ? "sample signaling message" : `sample signaling message ${index}`,
-              at: new Date().toISOString()
-            }
-          });
-        }
-        if ($("preset").value === "gcs") {
-          return JSON.stringify({
-            Meta: {},
-            List: [{
-              "@vibe-meta": {},
-              "@vibe-type": "PollForKafkaMessages",
-              "@vibe-data": JSON.stringify({
-                TopicIds: [$("user-id").value, $("conv-id").value],
-                Sequence: index
-              })
-            }]
-          });
-        }
-        return JSON.stringify({
-          id: `rx-${Date.now().toString(36)}-${index === null ? "sample" : index}`,
-          payload: index === null ? "sample from wss-test" : `burst payload ${index}`
-        });
-      }
-
-      function sendSample() {
-        sendRaw(sampleFrame());
-      }
-
-      function sendBurst() {
-        const count = Math.min(500, Math.max(1, Number.parseInt($("burst-count").value, 10) || 1));
-        for (let i = 0; i < count; i += 1) {
-          sendRaw(sampleFrame(i + 1));
-        }
-      }
-
-      function stopInterval() {
-        if (state.intervalTimer !== null) {
-          clearInterval(state.intervalTimer);
-          state.intervalTimer = null;
-          log("interval stopped", "meta");
-        }
-      }
-
-      function startInterval() {
-        stopInterval();
-        const ms = Math.min(60000, Math.max(50, Number.parseInt($("interval-ms").value, 10) || 1000));
-        state.intervalTimer = setInterval(sendSample, ms);
-        log(`interval started ${ms}ms`, "meta");
-      }
-
-      $("preset").value = params.get("preset") || "gleam";
-      $("base").value = params.get("base") || "";
-      $("thread-id").value = params.get("threadId") || defaults.threadId;
-      $("task-id").value = params.get("taskId") || defaults.taskId;
-      $("room-id").value = params.get("room") || defaults.roomId;
-      $("peer-id").value = params.get("peer") || defaults.peerId;
-      $("user-id").value = params.get("userId") || defaults.userId;
-      $("device-id").value = params.get("deviceId") || defaults.deviceId;
-      $("conv-id").value = params.get("convId") || defaults.convId;
-
-      $("preset").addEventListener("change", applyPreset);
-      $("gcs-route").addEventListener("change", applyPreset);
-      for (const id of ["base", "path", "thread-id", "task-id", "room-id", "peer-id", "user-id", "device-id", "conv-id"]) {
-        $(id).addEventListener("input", updateUrlPreview);
-      }
-      for (const id of ["burst-count", "interval-ms"]) {
-        $(id).addEventListener("input", updateUrlPreview);
-      }
-      $("connect").onclick = connect;
-      $("disconnect").onclick = disconnect;
-      $("send").onclick = sendPayload;
-      $("send-ping").onclick = sendPing;
-      $("send-hello").onclick = sendHello;
-      $("send-sample").onclick = sendSample;
-      $("send-burst").onclick = sendBurst;
-      $("start-interval").onclick = startInterval;
-      $("stop-interval").onclick = stopInterval;
-      $("check-health").onclick = () => { checkHealth().catch((error) => log("health error: " + String(error), "bad")); };
-      $("clear").onclick = () => {
-        $("log").textContent = "";
-        state.frames = 0;
-        state.sent = 0;
-        state.received = 0;
-        updateCounters();
-      };
-      $("copy-url").onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(buildUrl());
-          log("copied url", "meta");
-        } catch (_) {
-          log("copy failed", "bad");
-        }
-      };
-      $("payload").addEventListener("keydown", (event) => {
-        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") sendPayload();
-      });
-
-      applyPreset();
-      window.addEventListener("beforeunload", disconnect);
-      if (params.get("autoconnect") === "1") setTimeout(connect, 50);
-    </script>
-  </body>
-</html>
-"##;
-const PRESENCE_TEST_HTML: &str = r##"<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>presence test</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0b1117;
-        --panel: #111923;
-        --panel-2: #0f1720;
-        --field: #0e1520;
-        --line: rgba(148, 163, 184, 0.24);
-        --text: #eef2f6;
-        --muted: #a8b3c1;
-        --accent: #5eead4;
-        --warn: #fbbf24;
-        --danger: #fb7185;
-        --ok: #86efac;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        background: var(--bg);
-        color: var(--text);
-        font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      }
-      header {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 16px;
-        align-items: center;
-        padding: 12px 16px;
-        background: var(--panel);
-        border-bottom: 1px solid var(--line);
-        position: sticky;
-        top: 0;
-        z-index: 10;
-      }
-      header label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
-      header input { width: 180px; }
-      input, button, select {
-        background: var(--field);
-        color: var(--text);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 5px 8px;
-        font: inherit;
-      }
-      input:focus, button:focus { outline: 1px solid var(--accent); }
-      button {
-        cursor: pointer;
-        background: var(--panel-2);
-        transition: background .12s ease;
-      }
-      button:hover { background: #182032; }
-      button.primary { border-color: var(--accent); color: var(--accent); }
-      button.danger { border-color: var(--danger); color: var(--danger); }
-      .pill {
-        display: inline-block;
-        padding: 1px 7px;
-        border-radius: 9px;
-        font-size: 11px;
-        background: rgba(94, 234, 212, 0.12);
-        color: var(--accent);
-        border: 1px solid rgba(94, 234, 212, 0.3);
-      }
-      .pill.warn { background: rgba(251,191,36,.12); color: var(--warn); border-color: rgba(251,191,36,.3); }
-      .pill.bad { background: rgba(251,113,133,.12); color: var(--danger); border-color: rgba(251,113,133,.3); }
-      .pill.ok { background: rgba(134,239,172,.12); color: var(--ok); border-color: rgba(134,239,172,.3); }
-      main { padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr; }
-      @media (min-width: 1080px) {
-        main { grid-template-columns: 1fr 1fr; }
-        .user-panel { grid-column: 1 / -1; }
-      }
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        display: flex;
-        flex-direction: column;
-        min-height: 240px;
-        overflow: hidden;
-      }
-      .panel-head {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--line);
-        background: var(--panel-2);
-      }
-      .panel-head .title { font-weight: 600; color: var(--text); }
-      .panel-head .meta { font-size: 11px; color: var(--muted); }
-      .panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-      .controls { display: flex; gap: 6px; padding: 8px 12px; flex-wrap: wrap; align-items: center; }
-      .controls input[type="text"] { flex: 1; min-width: 140px; }
-      .log {
-        flex: 1;
-        margin: 0 12px 12px;
-        padding: 8px;
-        background: var(--panel-2);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        overflow: auto;
-        font-size: 12px;
-        min-height: 160px;
-        max-height: 320px;
-      }
-      .log .row { padding: 1px 0; white-space: pre-wrap; word-break: break-word; }
-      .log .row.system { color: var(--accent); }
-      .log .row.warn { color: var(--warn); }
-      .log .row.bad { color: var(--danger); }
-      .log .row.muted { color: var(--muted); }
-      .log .ts { color: var(--muted); }
-      .quick-bar {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        padding: 8px 16px;
-        background: var(--panel-2);
-        border-bottom: 1px solid var(--line);
-      }
-      footer { padding: 12px 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
-      code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <label>user-id<input id="user" value="alice" /></label>
-      <label>device-id<input id="device" value="d1" /></label>
-      <label>presence base<input id="presence" value="http://localhost:8081" style="width: 220px;" /></label>
-      <label>conv ids (comma)<input id="convs" value="conv-1,conv-2,conv-3,conv-4,conv-5" style="width: 260px;" /></label>
-      <div style="flex:1"></div>
-      <button id="connect" class="primary" type="button">Connect all</button>
-      <button id="disconnect" type="button">Disconnect all</button>
-      <span id="status" class="pill warn">idle</span>
-    </header>
-
-    <div class="quick-bar">
-      <span class="pill" id="self-info">no session</span>
-      <span class="pill warn" id="ws-count">0 / 6 ws open</span>
-      <span class="pill" id="hello-node">node: ?</span>
-      <span class="muted" style="margin-left:auto">open this page in 3 tabs (alice/d1, bob/d2, carol/d3) to test cross-user fan-out</span>
+      <div class="actions">
+        <a href="/presence-test?user=alice&amp;device=d1&amp;autoconnect=1"><code>/presence-test</code></a>
+        <a href="/gleam/home"><code>/gleam/home</code></a>
+        <a href="/webrtc/"><code>/webrtc/</code></a>
+        <a href="/gcs/ws-health"><code>/gcs/ws-health</code></a>
+        <a href="/wss-test?preset=fsrx"><code>/fsws/ws/rx-burst</code></a>
+      </div>
     </div>
+  </section>
 
-    <main id="grid">
-      <section class="panel user-panel" id="user-panel">
-        <div class="panel-head">
-          <span class="title">user-ws</span>
-          <span class="meta" id="user-meta">/ws?user=…&amp;device=…</span>
-          <span id="user-status" class="pill bad" style="margin-left:auto">closed</span>
-        </div>
-        <div class="controls">
-          <input id="user-broadcast-input" type="text" placeholder="send to /user/&lt;me&gt;/broadcast — every user-ws of me on every node" />
-          <button id="user-broadcast-send" type="button">user-broadcast</button>
-          <button id="user-logout" class="danger" type="button">logout this device</button>
-          <button id="user-clear" type="button">clear log</button>
-        </div>
-        <div class="log" id="user-log"></div>
-      </section>
-      <!-- conv panels are injected here -->
-    </main>
+  <section class="panel">
+    <h2>frames</h2>
+    <div class="panel-body">
+      <textarea id="payload" spellcheck="false"></textarea>
+      <div class="actions">
+        <button id="send" class="primary" type="button">send</button>
+        <button id="send-ping" type="button">ping</button>
+        <button id="send-hello" type="button">hello</button>
+        <button id="send-sample" type="button">sample</button>
+        <button id="send-burst" type="button">burst</button>
+        <button id="start-interval" type="button">start interval</button>
+        <button id="stop-interval" type="button">stop interval</button>
+      </div>
+    </div>
+  </section>
 
-    <footer>
-      <div>Quick links:</div>
+  <section class="panel" style="grid-column: 1 / -1">
+    <h2>log</h2>
+    <pre id="log" class="log"></pre>
+  </section>
+</main>"###;
+
+const WSS_TEST_JS: &str = r###"const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const defaults = {
+  threadId: "00000000-0000-4000-8000-000000000001",
+  taskId: "00000000-0000-4000-8000-000000000002",
+  roomId: "browser-room",
+  peerId: "peer-" + Math.random().toString(16).slice(2, 8),
+  userId: "65c48f2f47d56fec05a41b38",
+  deviceId: "65c48f2f47d56fec05a41b39",
+  convId: "65c48f2f47d56fec05a41b3a",
+};
+const state = { ws: null, frames: 0, sent: 0, received: 0, intervalTimer: null };
+
+function sameOriginWsBase() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${location.host}`;
+}
+function httpToWs(value) {
+  return value.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
+}
+function wsToHttp(value) {
+  return value.replace(/^ws:\/\//, "http://").replace(/^wss:\/\//, "https://");
+}
+function trimSlash(value) {
+  return value.replace(/\/+$/, "");
+}
+function ensureLeadingSlash(value) {
+  return value.startsWith("/") ? value : "/" + value;
+}
+function ts() {
+  const d = new Date();
+  return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+}
+function log(text, cls = "meta") {
+  const row = document.createElement("div");
+  row.className = "row " + cls;
+  const stamp = document.createElement("span");
+  stamp.className = "ts";
+  stamp.textContent = ts() + " ";
+  row.append(stamp, document.createTextNode(text));
+  $("log").appendChild(row);
+  while ($("log").childNodes.length > 500) $("log").removeChild($("log").firstChild);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+function setStatus(text, cls = "warn") {
+  $("status").textContent = text;
+  $("status").className = "pill " + cls;
+}
+function updateCounters() {
+  $("counter").textContent = `${state.frames} frames`;
+  $("sent-counter").textContent = `${state.sent} sent`;
+  $("recv-counter").textContent = `${state.received} recv`;
+}
+function countFrame(direction) {
+  state.frames += 1;
+  if (direction === "out") state.sent += 1;
+  if (direction === "in") state.received += 1;
+  updateCounters();
+}
+function pretty(raw) {
+  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch (_) { return String(raw); }
+}
+function setGcsPath() {
+  $("path").value = `/gcs/ws/${$("gcs-route").value}/${encodeURIComponent(gcsRouteId())}`;
+}
+
+function applyPreset() {
+  const preset = $("preset").value;
+  if (!$("base").value) $("base").placeholder = sameOriginWsBase();
+  if (preset === "gleam") {
+    $("path").value = "/gleam/ws";
+    $("payload").value = "ping";
+  } else if (preset === "webrtc") {
+    $("path").value = "/webrtc/signal";
+    $("payload").value = JSON.stringify({
+      type: "hello",
+      metadata: { client: "web-home-rs/wss-test", at: new Date().toISOString() }
+    }, null, 2);
+  } else if (preset === "gcs") {
+    setGcsPath();
+    $("payload").value = JSON.stringify({
+      Meta: {},
+      List: [{
+        "@vibe-meta": {},
+        "@vibe-type": "PollForKafkaMessages",
+        "@vibe-data": JSON.stringify({ TopicIds: [$("user-id").value] })
+      }]
+    }, null, 2);
+  } else {
+    $("path").value = "/fsws/ws/rx-burst";
+    $("payload").value = JSON.stringify({
+      id: "rx-" + Date.now().toString(36),
+      payload: "sample from web-home-rs/wss-test"
+    }, null, 2);
+  }
+  updateUrlPreview();
+}
+
+function gcsRouteId() {
+  const route = $("gcs-route").value;
+  if (route === "user") return $("user-id").value;
+  if (route === "device") return $("device-id").value;
+  return $("conv-id").value;
+}
+
+function buildUrl() {
+  const preset = $("preset").value;
+  const base = trimSlash(httpToWs($("base").value.trim() || sameOriginWsBase()));
+  if (preset === "gcs") setGcsPath();
+  const path = ensureLeadingSlash($("path").value.trim());
+  const url = new URL(base + path);
+
+  if (preset === "gleam") {
+    url.searchParams.set("threadId", $("thread-id").value.trim());
+    url.searchParams.set("taskId", $("task-id").value.trim());
+  } else if (preset === "webrtc") {
+    url.searchParams.set("room", $("room-id").value.trim());
+    url.searchParams.set("peer", $("peer-id").value.trim());
+  } else {
+    url.searchParams.set("userId", $("user-id").value.trim());
+    url.searchParams.set("deviceId", $("device-id").value.trim());
+    url.searchParams.set("conversationIds", JSON.stringify([$("conv-id").value.trim()]));
+  }
+
+  return url.toString();
+}
+
+function updateUrlPreview() {
+  $("url-preview").textContent = buildUrl();
+}
+
+function healthPath() {
+  const preset = $("preset").value;
+  if (preset === "gleam") return "/gleam/healthz";
+  if (preset === "webrtc") return "/webrtc/healthz";
+  if (preset === "gcs") return "/gcs/ws-health";
+  return "/fsws/healthz";
+}
+
+function httpBase() {
+  const raw = $("base").value.trim();
+  if (!raw) return location.origin;
+  return trimSlash(wsToHttp(httpToWs(raw)));
+}
+
+async function checkHealth() {
+  const url = httpBase() + healthPath();
+  log("GET " + url, "meta");
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    const text = await response.text();
+    log(`health ${response.status}: ${text.slice(0, 600)}`, response.ok ? "in" : "bad");
+  } catch (error) {
+    log("health error: " + String(error), "bad");
+  }
+}
+
+function connect() {
+  disconnect();
+  const url = buildUrl();
+  const ws = new WebSocket(url);
+  state.ws = ws;
+  setStatus("connecting", "warn");
+  log("open " + url, "meta");
+  ws.onopen = () => {
+    setStatus("open", "ok");
+    log("connected", "meta");
+    if ($("preset").value === "webrtc") sendHello();
+  };
+  ws.onmessage = (event) => {
+    countFrame("in");
+    log("in  " + pretty(event.data), "in");
+  };
+  ws.onerror = () => {
+    setStatus("error", "bad");
+    log("websocket error; check browser devtools network panel", "bad");
+  };
+  ws.onclose = (event) => {
+    stopInterval();
+    setStatus(`closed ${event.code}`, event.code === 1000 ? "warn" : "bad");
+    log(`closed code=${event.code} reason="${event.reason || ""}"`, "warn");
+    if (state.ws === ws) state.ws = null;
+  };
+}
+
+function disconnect() {
+  stopInterval();
+  if (state.ws) {
+    try { state.ws.close(1000, "ui disconnect"); } catch (_) {}
+    state.ws = null;
+  }
+  setStatus("idle", "warn");
+}
+
+function sendRaw(raw) {
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+    log("not connected", "bad");
+    return;
+  }
+  state.ws.send(raw);
+  countFrame("out");
+  log("out " + pretty(raw), "out");
+}
+
+function sendPayload() {
+  const raw = $("payload").value;
+  if (raw.trim()) sendRaw(raw);
+}
+
+function sendPing() {
+  if ($("preset").value === "webrtc") {
+    sendRaw(JSON.stringify({ type: "ping" }));
+  } else {
+    sendRaw("ping");
+  }
+}
+
+function sendHello() {
+  if ($("preset").value === "webrtc") {
+    sendRaw(JSON.stringify({
+      type: "hello",
+      metadata: { client: "web-home-rs/wss-test", peer: $("peer-id").value }
+    }));
+  } else {
+    sendRaw("hello from web-home-rs/wss-test");
+  }
+}
+
+function sampleFrame(index = null) {
+  if ($("preset").value === "gleam") {
+    return JSON.stringify({
+      type: "task-event",
+      threadId: $("thread-id").value,
+      taskId: $("task-id").value,
+      body: index === null ? "sample from wss-test" : `sample ${index} from wss-test`,
+      at: new Date().toISOString()
+    });
+  }
+  if ($("preset").value === "webrtc") {
+    return JSON.stringify({
+      type: "message",
+      payload: {
+        body: index === null ? "sample signaling message" : `sample signaling message ${index}`,
+        at: new Date().toISOString()
+      }
+    });
+  }
+  if ($("preset").value === "gcs") {
+    return JSON.stringify({
+      Meta: {},
+      List: [{
+        "@vibe-meta": {},
+        "@vibe-type": "PollForKafkaMessages",
+        "@vibe-data": JSON.stringify({
+          TopicIds: [$("user-id").value, $("conv-id").value],
+          Sequence: index
+        })
+      }]
+    });
+  }
+  return JSON.stringify({
+    id: `rx-${Date.now().toString(36)}-${index === null ? "sample" : index}`,
+    payload: index === null ? "sample from wss-test" : `burst payload ${index}`
+  });
+}
+
+function sendSample() {
+  sendRaw(sampleFrame());
+}
+
+function sendBurst() {
+  const count = Math.min(500, Math.max(1, Number.parseInt($("burst-count").value, 10) || 1));
+  for (let i = 0; i < count; i += 1) {
+    sendRaw(sampleFrame(i + 1));
+  }
+}
+
+function stopInterval() {
+  if (state.intervalTimer !== null) {
+    clearInterval(state.intervalTimer);
+    state.intervalTimer = null;
+    log("interval stopped", "meta");
+  }
+}
+
+function startInterval() {
+  stopInterval();
+  const ms = Math.min(60000, Math.max(50, Number.parseInt($("interval-ms").value, 10) || 1000));
+  state.intervalTimer = setInterval(sendSample, ms);
+  log(`interval started ${ms}ms`, "meta");
+}
+
+$("preset").value = params.get("preset") || "gleam";
+$("base").value = params.get("base") || "";
+$("thread-id").value = params.get("threadId") || defaults.threadId;
+$("task-id").value = params.get("taskId") || defaults.taskId;
+$("room-id").value = params.get("room") || defaults.roomId;
+$("peer-id").value = params.get("peer") || defaults.peerId;
+$("user-id").value = params.get("userId") || defaults.userId;
+$("device-id").value = params.get("deviceId") || defaults.deviceId;
+$("conv-id").value = params.get("convId") || defaults.convId;
+
+$("preset").addEventListener("change", applyPreset);
+$("gcs-route").addEventListener("change", applyPreset);
+for (const id of ["base", "path", "thread-id", "task-id", "room-id", "peer-id", "user-id", "device-id", "conv-id"]) {
+  $(id).addEventListener("input", updateUrlPreview);
+}
+for (const id of ["burst-count", "interval-ms"]) {
+  $(id).addEventListener("input", updateUrlPreview);
+}
+$("connect").onclick = connect;
+$("disconnect").onclick = disconnect;
+$("send").onclick = sendPayload;
+$("send-ping").onclick = sendPing;
+$("send-hello").onclick = sendHello;
+$("send-sample").onclick = sendSample;
+$("send-burst").onclick = sendBurst;
+$("start-interval").onclick = startInterval;
+$("stop-interval").onclick = stopInterval;
+$("check-health").onclick = () => { checkHealth().catch((error) => log("health error: " + String(error), "bad")); };
+$("clear").onclick = () => {
+  $("log").textContent = "";
+  state.frames = 0;
+  state.sent = 0;
+  state.received = 0;
+  updateCounters();
+};
+$("copy-url").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(buildUrl());
+    log("copied url", "meta");
+  } catch (_) {
+    log("copy failed", "bad");
+  }
+};
+$("payload").addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") sendPayload();
+});
+
+applyPreset();
+window.addEventListener("beforeunload", disconnect);
+if (params.get("autoconnect") === "1") setTimeout(connect, 50);
+"###;
+const PRESENCE_TEST_CSS: &str = r###":root {
+  color-scheme: dark;
+  --bg: #0b1117;
+  --panel: #111923;
+  --panel-2: #0f1720;
+  --field: #0e1520;
+  --line: rgba(148, 163, 184, 0.24);
+  --text: #eef2f6;
+  --muted: #a8b3c1;
+  --accent: #5eead4;
+  --warn: #fbbf24;
+  --danger: #fb7185;
+  --ok: #86efac;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+header label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
+header input { width: 180px; }
+input, button, select {
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font: inherit;
+}
+input:focus, button:focus { outline: 1px solid var(--accent); }
+button {
+  cursor: pointer;
+  background: var(--panel-2);
+  transition: background .12s ease;
+}
+button:hover { background: #182032; }
+button.primary { border-color: var(--accent); color: var(--accent); }
+button.danger { border-color: var(--danger); color: var(--danger); }
+.pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  background: rgba(94, 234, 212, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(94, 234, 212, 0.3);
+}
+.pill.warn { background: rgba(251,191,36,.12); color: var(--warn); border-color: rgba(251,191,36,.3); }
+.pill.bad { background: rgba(251,113,133,.12); color: var(--danger); border-color: rgba(251,113,133,.3); }
+.pill.ok { background: rgba(134,239,172,.12); color: var(--ok); border-color: rgba(134,239,172,.3); }
+main { padding: 16px; display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 1080px) {
+  main { grid-template-columns: 1fr 1fr; }
+  .user-panel { grid-column: 1 / -1; }
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+  overflow: hidden;
+}
+.panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.panel-head .title { font-weight: 600; color: var(--text); }
+.panel-head .meta { font-size: 11px; color: var(--muted); }
+.panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.controls { display: flex; gap: 6px; padding: 8px 12px; flex-wrap: wrap; align-items: center; }
+.controls input[type="text"] { flex: 1; min-width: 140px; }
+.log {
+  flex: 1;
+  margin: 0 12px 12px;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: auto;
+  font-size: 12px;
+  min-height: 160px;
+  max-height: 320px;
+}
+.log .row { padding: 1px 0; white-space: pre-wrap; word-break: break-word; }
+.log .row.system { color: var(--accent); }
+.log .row.warn { color: var(--warn); }
+.log .row.bad { color: var(--danger); }
+.log .row.muted { color: var(--muted); }
+.log .ts { color: var(--muted); }
+.quick-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+footer { padding: 12px 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); }
+code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
+"###;
+
+const PRESENCE_TEST_BODY: &str = r###"<header>
+  <label>user-id<input id="user" value="alice" /></label>
+  <label>device-id<input id="device" value="d1" /></label>
+  <label>presence base<input id="presence" value="http://localhost:8081" style="width: 220px;" /></label>
+  <label>conv ids (comma)<input id="convs" value="conv-1,conv-2,conv-3,conv-4,conv-5" style="width: 260px;" /></label>
+  <div style="flex:1"></div>
+  <button id="connect" class="primary" type="button">Connect all</button>
+  <button id="disconnect" type="button">Disconnect all</button>
+  <span id="status" class="pill warn">idle</span>
+</header>
+
+<div class="quick-bar">
+  <span class="pill" id="self-info">no session</span>
+  <span class="pill warn" id="ws-count">0 / 6 ws open</span>
+  <span class="pill" id="hello-node">node: ?</span>
+  <span class="muted" style="margin-left:auto">open this page in 3 tabs (alice/d1, bob/d2, carol/d3) to test cross-user fan-out</span>
+</div>
+
+<main id="grid">
+  <section class="panel user-panel" id="user-panel">
+    <div class="panel-head">
+      <span class="title">user-ws</span>
+      <span class="meta" id="user-meta">/ws?user=…&amp;device=…</span>
+      <span id="user-status" class="pill bad" style="margin-left:auto">closed</span>
+    </div>
+    <div class="controls">
+      <input id="user-broadcast-input" type="text" placeholder="send to /user/&lt;me&gt;/broadcast — every user-ws of me on every node" />
+      <button id="user-broadcast-send" type="button">user-broadcast</button>
+      <button id="user-logout" class="danger" type="button">logout this device</button>
+      <button id="user-clear" type="button">clear log</button>
+    </div>
+    <div class="log" id="user-log"></div>
+  </section>
+  <!-- conv panels are injected here -->
+</main>
+
+<footer>
+  <div>Quick links:</div>
+  <div>
+    <a href="?user=alice&amp;device=d1&amp;autoconnect=1">alice / d1</a> ·
+    <a href="?user=bob&amp;device=d2&amp;autoconnect=1">bob / d2</a> ·
+    <a href="?user=carol&amp;device=d3&amp;autoconnect=1">carol / d3</a>
+  </div>
+  <div style="margin-top:6px">
+    Routes exercised:
+    <code>GET /ws?user=…&amp;device=…</code>,
+    <code>GET /ws?user=…&amp;conv=…&amp;device=…</code>,
+    <code>POST /conv/&lt;id&gt;/members/&lt;user&gt;</code>,
+    <code>DELETE /conv/&lt;id&gt;/members/&lt;user&gt;</code>,
+    <code>POST /conv/&lt;id&gt;/broadcast</code>,
+    <code>POST /user/&lt;id&gt;/broadcast</code>,
+    <code>POST /user/&lt;u&gt;/devices/&lt;d&gt;/logout</code>.
+  </div>
+</footer>"###;
+
+const PRESENCE_TEST_JS: &str = r###"const $ = (id) => document.getElementById(id);
+
+// Apply ?user=, ?device=, ?presence=, ?convs=, ?autoconnect= from URL.
+const params = new URLSearchParams(location.search);
+for (const k of ["user", "device", "presence", "convs"]) {
+  if (params.has(k)) $(k).value = params.get(k);
+}
+
+// ───────────────────────────────────────────────────────────────────
+// state
+const state = {
+  userWs: null,
+  convs: {},          // convId → { ws, panel, logEl, statusEl, membersEl }
+  helloUserNode: null,
+};
+
+function nowTs() {
+  const d = new Date();
+  return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
+}
+
+function log(panelLog, text, cls = "") {
+  const row = document.createElement("div");
+  row.className = "row " + cls;
+  const ts = document.createElement("span");
+  ts.className = "ts";
+  ts.textContent = nowTs() + " ";
+  row.append(ts, document.createTextNode(text));
+  panelLog.appendChild(row);
+  // Keep ~400 lines max.
+  while (panelLog.childNodes.length > 400) panelLog.removeChild(panelLog.firstChild);
+  panelLog.scrollTop = panelLog.scrollHeight;
+}
+
+function setPill(el, text, cls) {
+  el.textContent = text;
+  el.className = "pill " + cls;
+}
+
+function wsBase() {
+  const http = $("presence").value.trim().replace(/\/$/, "");
+  return http.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
+}
+function httpBase() {
+  return $("presence").value.trim().replace(/\/$/, "");
+}
+
+function updateWsCount() {
+  let open = 0;
+  if (state.userWs && state.userWs.readyState === WebSocket.OPEN) open++;
+  for (const k in state.convs) {
+    const c = state.convs[k];
+    if (c.ws && c.ws.readyState === WebSocket.OPEN) open++;
+  }
+  const total = 1 + Object.keys(state.convs).length;
+  const el = $("ws-count");
+  el.textContent = `${open} / ${total} ws open`;
+  el.className = "pill " + (open === total ? "ok" : open === 0 ? "bad" : "warn");
+}
+
+function applySelfInfo() {
+  $("self-info").textContent = `me: ${$("user").value || "?"}@${$("device").value || "?"}`;
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Conv panels — built once from the comma-separated list, never re-
+// rendered. Each panel owns one conv-ws lifecycle.
+function buildConvPanels() {
+  const grid = $("grid");
+  // Remove any existing conv panels (everything after user-panel).
+  Array.from(grid.querySelectorAll(".panel.conv-panel")).forEach((n) => n.remove());
+  state.convs = {};
+
+  const convIds = $("convs").value.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const convId of convIds) {
+    const panel = document.createElement("section");
+    panel.className = "panel conv-panel";
+    panel.dataset.conv = convId;
+    panel.innerHTML = `
+      <div class="panel-head">
+        <span class="title">${convId}</span>
+        <span class="meta">/ws?user=&hellip;&amp;conv=${convId}</span>
+        <span class="pill" data-role="members">members: —</span>
+        <span class="pill bad" data-role="status" style="margin-left:auto">closed</span>
+      </div>
+      <div class="controls">
+        <button type="button" data-act="join">join (me)</button>
+        <button type="button" data-act="leave" class="danger">leave (me)</button>
+        <button type="button" data-act="open">open ws</button>
+        <button type="button" data-act="close" class="danger">close ws</button>
+        <button type="button" data-act="refresh">refresh members</button>
+      </div>
+      <div class="controls">
+        <input type="text" data-role="broadcast-input" placeholder="broadcast to ${convId} — every conv-ws of every member" />
+        <button type="button" data-act="broadcast">send</button>
+        <button type="button" data-act="clear">clear log</button>
+      </div>
+      <div class="log" data-role="log"></div>
+    `;
+    grid.appendChild(panel);
+
+    const logEl = panel.querySelector('[data-role="log"]');
+    const statusEl = panel.querySelector('[data-role="status"]');
+    const membersEl = panel.querySelector('[data-role="members"]');
+    const broadcastInput = panel.querySelector('[data-role="broadcast-input"]');
+
+    panel.querySelector('[data-act="join"]').onclick = () => joinConv(convId);
+    panel.querySelector('[data-act="leave"]').onclick = () => leaveConv(convId);
+    panel.querySelector('[data-act="open"]').onclick = () => openConvWs(convId);
+    panel.querySelector('[data-act="close"]').onclick = () => closeConvWs(convId);
+    panel.querySelector('[data-act="refresh"]').onclick = () => refreshConvMembers(convId);
+    panel.querySelector('[data-act="broadcast"]').onclick = () => {
+      const v = broadcastInput.value;
+      if (!v) return;
+      convBroadcast(convId, v);
+      broadcastInput.value = "";
+    };
+    broadcastInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") panel.querySelector('[data-act="broadcast"]').click();
+    });
+    panel.querySelector('[data-act="clear"]').onclick = () => { logEl.textContent = ""; };
+
+    state.convs[convId] = { ws: null, panel, logEl, statusEl, membersEl };
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// user-ws lifecycle
+function openUserWs() {
+  if (state.userWs && state.userWs.readyState <= 1) return;
+  const user = $("user").value.trim();
+  const device = $("device").value.trim();
+  if (!user) { log($("user-log"), "missing user-id", "bad"); return; }
+  const qs = new URLSearchParams({ user });
+  if (device) qs.set("device", device);
+  const url = `${wsBase()}/ws?${qs}`;
+  $("user-meta").textContent = url;
+  const ws = new WebSocket(url);
+  state.userWs = ws;
+  setPill($("user-status"), "connecting", "warn");
+  log($("user-log"), `→ open ${url}`, "muted");
+  ws.onopen = () => { setPill($("user-status"), "open", "ok"); updateWsCount(); };
+  ws.onclose = (e) => {
+    setPill($("user-status"), `closed (${e.code})`, "bad");
+    log($("user-log"), `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
+    updateWsCount();
+  };
+  ws.onerror = () => log($("user-log"), "← error (see devtools)", "bad");
+  ws.onmessage = (e) => handleUserFrame(e.data);
+}
+
+function closeUserWs() {
+  if (state.userWs) {
+    try { state.userWs.close(); } catch (_) {}
+    state.userWs = null;
+  }
+  setPill($("user-status"), "closed", "bad");
+  updateWsCount();
+}
+
+function handleUserFrame(raw) {
+  const sys = tryParseSystemFrame(raw);
+  if (!sys) {
+    log($("user-log"), `← payload: ${raw}`);
+    return;
+  }
+  log($("user-log"), `← ${raw}`, "system");
+  if (sys.type === "hello") {
+    $("hello-node").textContent = `node: ${sys.node}`;
+    state.helloUserNode = sys.node;
+  } else if (sys.type === "membership-changed") {
+    if (sys.change === "added" && state.convs[sys.conv]) {
+      const c = state.convs[sys.conv];
+      const members = Array.isArray(sys.members) ? sys.members : [];
+      setPill(c.membersEl, `members: ${members.join(",") || "—"}`, "");
+      log(c.logEl, `(user-ws) added; members=[${members.join(",")}]`, "system");
+    } else if (sys.change === "removed" && state.convs[sys.conv]) {
+      const c = state.convs[sys.conv];
+      log(c.logEl, "(user-ws) removed from conv", "warn");
+      setPill(c.membersEl, "members: (you left)", "warn");
+    }
+  } else if (sys.type === "kick") {
+    log($("user-log"), `kick: ${sys.reason}`, "bad");
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// conv-ws lifecycle
+function openConvWs(convId) {
+  const c = state.convs[convId];
+  if (!c) return;
+  if (c.ws && c.ws.readyState <= 1) return;
+  const user = $("user").value.trim();
+  const device = $("device").value.trim();
+  const qs = new URLSearchParams({ user, conv: convId });
+  if (device) qs.set("device", device);
+  const url = `${wsBase()}/ws?${qs}`;
+  const ws = new WebSocket(url);
+  c.ws = ws;
+  setPill(c.statusEl, "connecting", "warn");
+  log(c.logEl, `→ open ${url}`, "muted");
+  ws.onopen = () => { setPill(c.statusEl, "open", "ok"); updateWsCount(); };
+  ws.onclose = (e) => {
+    setPill(c.statusEl, `closed (${e.code})`, "bad");
+    log(c.logEl, `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
+    updateWsCount();
+  };
+  ws.onerror = () => log(c.logEl, "← error", "bad");
+  ws.onmessage = (e) => handleConvFrame(convId, e.data);
+}
+
+function closeConvWs(convId) {
+  const c = state.convs[convId];
+  if (c && c.ws) {
+    try { c.ws.close(); } catch (_) {}
+    c.ws = null;
+  }
+  if (c) setPill(c.statusEl, "closed", "bad");
+  updateWsCount();
+}
+
+function handleConvFrame(convId, raw) {
+  const c = state.convs[convId];
+  if (!c) return;
+  const sys = tryParseSystemFrame(raw);
+  if (!sys) {
+    log(c.logEl, `← payload: ${raw}`);
+    return;
+  }
+  log(c.logEl, `← ${raw}`, "system");
+  if (sys.type === "kick") {
+    setPill(c.statusEl, `kicked`, "bad");
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// HTTP API calls
+async function joinConv(convId) {
+  const user = $("user").value.trim();
+  const c = state.convs[convId];
+  const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
+  if (c) log(c.logEl, `POST /members/${user} → ${res}`, "system");
+  // Refresh membership pill (the user-ws will also see the membership-
+  // changed JSON if I'm registered).
+  refreshConvMembers(convId);
+}
+
+async function leaveConv(convId) {
+  const user = $("user").value.trim();
+  const c = state.convs[convId];
+  const res = await deletePlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
+  if (c) log(c.logEl, `DELETE /members/${user} → ${res}`, "warn");
+  refreshConvMembers(convId);
+}
+
+async function refreshConvMembers(convId) {
+  const c = state.convs[convId];
+  if (!c) return;
+  try {
+    const r = await fetch(`${httpBase()}/conv/${enc(convId)}/members`);
+    const body = (await r.text()).trim();
+    const members = body ? body.split("\n") : [];
+    setPill(c.membersEl, `members: ${members.join(",") || "—"}`, members.length ? "" : "warn");
+  } catch (e) {
+    setPill(c.membersEl, "members: ?", "bad");
+  }
+}
+
+async function convBroadcast(convId, payload) {
+  const c = state.convs[convId];
+  const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/broadcast`, payload);
+  if (c) log(c.logEl, `POST /broadcast (${payload.length}B) → ${res}`, "muted");
+}
+
+async function userBroadcast(payload) {
+  const user = $("user").value.trim();
+  const res = await postPlain(`${httpBase()}/user/${enc(user)}/broadcast`, payload);
+  log($("user-log"), `POST /user/${user}/broadcast → ${res}`, "muted");
+}
+
+async function deviceLogout() {
+  const user = $("user").value.trim();
+  const device = $("device").value.trim();
+  if (!device) { log($("user-log"), "device-id required for logout", "bad"); return; }
+  const res = await postPlain(`${httpBase()}/user/${enc(user)}/devices/${enc(device)}/logout`, "ui-button");
+  log($("user-log"), `POST /devices/${device}/logout → ${res}`, "warn");
+}
+
+// ───────────────────────────────────────────────────────────────────
+// helpers
+async function postPlain(url, body = "") {
+  try {
+    const r = await fetch(url, { method: "POST", body, headers: { "content-type": "text/plain" } });
+    return `HTTP ${r.status} ${(await r.text()).trim()}`;
+  } catch (e) { return `error: ${e}`; }
+}
+async function deletePlain(url) {
+  try {
+    const r = await fetch(url, { method: "DELETE" });
+    return `HTTP ${r.status} ${(await r.text()).trim()}`;
+  } catch (e) { return `error: ${e}`; }
+}
+function enc(s) { return encodeURIComponent(s); }
+
+function tryParseSystemFrame(raw) {
+  if (typeof raw !== "string") return null;
+  const s = raw.trimStart();
+  if (!s.startsWith("{")) return null;
+  try {
+    const o = JSON.parse(s);
+    return typeof o === "object" && o && typeof o.type === "string" ? o : null;
+  } catch (_) { return null; }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// top-level connect / disconnect
+async function connectAll() {
+  setPill($("status"), "connecting", "warn");
+  openUserWs();
+  // Join every conv THEN open its ws. Membership is required for the
+  // conv-ws upgrade to succeed.
+  for (const convId of Object.keys(state.convs)) {
+    await joinConv(convId);
+    openConvWs(convId);
+  }
+  setPill($("status"), "connected", "ok");
+}
+
+function disconnectAll() {
+  closeUserWs();
+  for (const convId of Object.keys(state.convs)) closeConvWs(convId);
+  setPill($("status"), "idle", "warn");
+}
+
+// ───────────────────────────────────────────────────────────────────
+// wire up
+$("user").addEventListener("input", applySelfInfo);
+$("device").addEventListener("input", applySelfInfo);
+$("convs").addEventListener("change", buildConvPanels);
+
+$("connect").onclick = connectAll;
+$("disconnect").onclick = disconnectAll;
+$("user-broadcast-send").onclick = () => {
+  const v = $("user-broadcast-input").value;
+  if (!v) return;
+  userBroadcast(v);
+  $("user-broadcast-input").value = "";
+};
+$("user-broadcast-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("user-broadcast-send").click();
+});
+$("user-logout").onclick = deviceLogout;
+$("user-clear").onclick = () => { $("user-log").textContent = ""; };
+
+applySelfInfo();
+buildConvPanels();
+updateWsCount();
+// Periodic ws-count refresh in case readyState changes silently.
+setInterval(updateWsCount, 1000);
+
+if (params.get("autoconnect") === "1") {
+  // Defer one tick so panels are in the DOM before the WSes try to
+  // resolve. Then fire-and-forget.
+  setTimeout(connectAll, 50);
+}
+"###;
+const LAMBDA_FUNCTIONS_CSS: &str = r###":root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --panel: #151b23;
+  --panel-2: #101722;
+  --field: #0f1620;
+  --line: rgba(148, 163, 184, 0.28);
+  --text: #eef2f6;
+  --muted: #a8b3c1;
+  --accent: #5eead4;
+  --accent-2: #facc15;
+  --danger: #fb7185;
+  --ok: #86efac;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input, select, textarea {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+}
+button {
+  min-height: 34px;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+button:hover { border-color: rgba(94, 234, 212, 0.62); }
+button.primary {
+  border-color: rgba(94, 234, 212, 0.65);
+  background: rgba(20, 83, 45, 0.32);
+  color: #dcfce7;
+}
+button.warn { border-color: rgba(250, 204, 21, 0.55); color: #fef9c3; }
+input, select {
+  min-height: 34px;
+  width: 100%;
+  padding: 7px 9px;
+}
+textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.code-editor {
+  display: grid;
+  width: 100%;
+  min-height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #090f16;
+  overflow: hidden;
+}
+.code-editor.field-invalid {
+  border-color: rgba(251, 113, 133, 0.72) !important;
+  box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.16);
+}
+.code-highlight,
+.code-editor textarea {
+  grid-area: 1 / 1;
+  min-height: 220px;
+  margin: 0;
+  padding: 10px;
+  border: 0;
+  border-radius: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+.code-highlight {
+  pointer-events: none;
+  color: #d7fbf4;
+}
+.code-editor textarea {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  resize: vertical;
+  -webkit-text-fill-color: transparent;
+}
+.code-editor textarea::selection {
+  background: rgba(94, 234, 212, 0.24);
+  -webkit-text-fill-color: transparent;
+}
+.tok-keyword { color: #93c5fd; }
+.tok-string { color: #86efac; }
+.tok-number { color: #facc15; }
+.tok-comment { color: #7dd3fc; opacity: 0.66; }
+.tok-punct { color: #c4b5fd; }
+.app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+}
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: #111821;
+  padding: 18px;
+  min-width: 0;
+}
+.main {
+  min-width: 0;
+  padding: 22px;
+}
+.topbar, .row, .actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.topbar { justify-content: space-between; margin-bottom: 16px; }
+h1 { margin: 0; font-size: 24px; }
+h2 { margin: 0; font-size: 16px; }
+h3 { margin: 0; font-size: 14px; }
+p { margin: 0; color: var(--muted); line-height: 1.45; }
+.muted { color: var(--muted); }
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.wide { grid-column: 1 / -1; }
+label span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.check-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 19px;
+}
+.check-row input { width: auto; min-height: auto; }
+.check-row span { margin: 0; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(94, 234, 212, 0.35);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pill.warn { border-color: rgba(250, 204, 21, 0.4); color: var(--accent-2); }
+.pill.bad { border-color: rgba(251, 113, 133, 0.42); color: var(--danger); }
+.field-invalid {
+  border-color: rgba(251, 113, 133, 0.72) !important;
+  box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.16);
+}
+.field-hint {
+  margin-top: 5px;
+  color: var(--danger);
+  font-size: 12px;
+}
+.function-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+details {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+details[open] { border-color: rgba(94, 234, 212, 0.46); }
+summary {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+}
+summary::marker { color: var(--accent); }
+.summary-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.summary-meta {
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+.details-body {
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+.output {
+  min-height: 170px;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: #090f16;
+  padding: 12px;
+  color: #d7fbf4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+@media (max-width: 980px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+  .grid { grid-template-columns: 1fr; }
+}
+"###;
+
+const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
+  <aside class="sidebar">
+    <div class="topbar">
       <div>
-        <a href="?user=alice&amp;device=d1&amp;autoconnect=1">alice / d1</a> ·
-        <a href="?user=bob&amp;device=d2&amp;autoconnect=1">bob / d2</a> ·
-        <a href="?user=carol&amp;device=d3&amp;autoconnect=1">carol / d3</a>
+        <h1>Lambda functions</h1>
+        <p id="snapshot-meta">loading functions</p>
       </div>
-      <div style="margin-top:6px">
-        Routes exercised:
-        <code>GET /ws?user=…&amp;device=…</code>,
-        <code>GET /ws?user=…&amp;conv=…&amp;device=…</code>,
-        <code>POST /conv/&lt;id&gt;/members/&lt;user&gt;</code>,
-        <code>DELETE /conv/&lt;id&gt;/members/&lt;user&gt;</code>,
-        <code>POST /conv/&lt;id&gt;/broadcast</code>,
-        <code>POST /user/&lt;id&gt;/broadcast</code>,
-        <code>POST /user/&lt;u&gt;/devices/&lt;d&gt;/logout</code>.
+      <button id="refresh" type="button" title="Refresh">Refresh</button>
+    </div>
+    <input id="search" autocomplete="off" placeholder="Search functions" />
+    <div class="actions" style="margin-top: 10px">
+      <button id="new-function" class="primary" type="button">New</button>
+    </div>
+    <div id="function-list" class="function-list" aria-live="polite"></div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="editor-title">New function</h1>
+        <p id="editor-subtitle">draft</p>
       </div>
-    </footer>
-
-    <script>
-      const $ = (id) => document.getElementById(id);
-
-      // Apply ?user=, ?device=, ?presence=, ?convs=, ?autoconnect= from URL.
-      const params = new URLSearchParams(location.search);
-      for (const k of ["user", "device", "presence", "convs"]) {
-        if (params.has(k)) $(k).value = params.get(k);
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // state
-      const state = {
-        userWs: null,
-        convs: {},          // convId → { ws, panel, logEl, statusEl, membersEl }
-        helloUserNode: null,
-      };
-
-      function nowTs() {
-        const d = new Date();
-        return d.toTimeString().slice(0, 8) + "." + String(d.getMilliseconds()).padStart(3, "0");
-      }
-
-      function log(panelLog, text, cls = "") {
-        const row = document.createElement("div");
-        row.className = "row " + cls;
-        const ts = document.createElement("span");
-        ts.className = "ts";
-        ts.textContent = nowTs() + " ";
-        row.append(ts, document.createTextNode(text));
-        panelLog.appendChild(row);
-        // Keep ~400 lines max.
-        while (panelLog.childNodes.length > 400) panelLog.removeChild(panelLog.firstChild);
-        panelLog.scrollTop = panelLog.scrollHeight;
-      }
-
-      function setPill(el, text, cls) {
-        el.textContent = text;
-        el.className = "pill " + cls;
-      }
-
-      function wsBase() {
-        const http = $("presence").value.trim().replace(/\/$/, "");
-        return http.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
-      }
-      function httpBase() {
-        return $("presence").value.trim().replace(/\/$/, "");
-      }
-
-      function updateWsCount() {
-        let open = 0;
-        if (state.userWs && state.userWs.readyState === WebSocket.OPEN) open++;
-        for (const k in state.convs) {
-          const c = state.convs[k];
-          if (c.ws && c.ws.readyState === WebSocket.OPEN) open++;
-        }
-        const total = 1 + Object.keys(state.convs).length;
-        const el = $("ws-count");
-        el.textContent = `${open} / ${total} ws open`;
-        el.className = "pill " + (open === total ? "ok" : open === 0 ? "bad" : "warn");
-      }
-
-      function applySelfInfo() {
-        $("self-info").textContent = `me: ${$("user").value || "?"}@${$("device").value || "?"}`;
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // Conv panels — built once from the comma-separated list, never re-
-      // rendered. Each panel owns one conv-ws lifecycle.
-      function buildConvPanels() {
-        const grid = $("grid");
-        // Remove any existing conv panels (everything after user-panel).
-        Array.from(grid.querySelectorAll(".panel.conv-panel")).forEach((n) => n.remove());
-        state.convs = {};
-
-        const convIds = $("convs").value.split(",").map((s) => s.trim()).filter(Boolean);
-        for (const convId of convIds) {
-          const panel = document.createElement("section");
-          panel.className = "panel conv-panel";
-          panel.dataset.conv = convId;
-          panel.innerHTML = `
-            <div class="panel-head">
-              <span class="title">${convId}</span>
-              <span class="meta">/ws?user=&hellip;&amp;conv=${convId}</span>
-              <span class="pill" data-role="members">members: —</span>
-              <span class="pill bad" data-role="status" style="margin-left:auto">closed</span>
-            </div>
-            <div class="controls">
-              <button type="button" data-act="join">join (me)</button>
-              <button type="button" data-act="leave" class="danger">leave (me)</button>
-              <button type="button" data-act="open">open ws</button>
-              <button type="button" data-act="close" class="danger">close ws</button>
-              <button type="button" data-act="refresh">refresh members</button>
-            </div>
-            <div class="controls">
-              <input type="text" data-role="broadcast-input" placeholder="broadcast to ${convId} — every conv-ws of every member" />
-              <button type="button" data-act="broadcast">send</button>
-              <button type="button" data-act="clear">clear log</button>
-            </div>
-            <div class="log" data-role="log"></div>
-          `;
-          grid.appendChild(panel);
-
-          const logEl = panel.querySelector('[data-role="log"]');
-          const statusEl = panel.querySelector('[data-role="status"]');
-          const membersEl = panel.querySelector('[data-role="members"]');
-          const broadcastInput = panel.querySelector('[data-role="broadcast-input"]');
-
-          panel.querySelector('[data-act="join"]').onclick = () => joinConv(convId);
-          panel.querySelector('[data-act="leave"]').onclick = () => leaveConv(convId);
-          panel.querySelector('[data-act="open"]').onclick = () => openConvWs(convId);
-          panel.querySelector('[data-act="close"]').onclick = () => closeConvWs(convId);
-          panel.querySelector('[data-act="refresh"]').onclick = () => refreshConvMembers(convId);
-          panel.querySelector('[data-act="broadcast"]').onclick = () => {
-            const v = broadcastInput.value;
-            if (!v) return;
-            convBroadcast(convId, v);
-            broadcastInput.value = "";
-          };
-          broadcastInput.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") panel.querySelector('[data-act="broadcast"]').click();
-          });
-          panel.querySelector('[data-act="clear"]').onclick = () => { logEl.textContent = ""; };
-
-          state.convs[convId] = { ws: null, panel, logEl, statusEl, membersEl };
-        }
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // user-ws lifecycle
-      function openUserWs() {
-        if (state.userWs && state.userWs.readyState <= 1) return;
-        const user = $("user").value.trim();
-        const device = $("device").value.trim();
-        if (!user) { log($("user-log"), "missing user-id", "bad"); return; }
-        const qs = new URLSearchParams({ user });
-        if (device) qs.set("device", device);
-        const url = `${wsBase()}/ws?${qs}`;
-        $("user-meta").textContent = url;
-        const ws = new WebSocket(url);
-        state.userWs = ws;
-        setPill($("user-status"), "connecting", "warn");
-        log($("user-log"), `→ open ${url}`, "muted");
-        ws.onopen = () => { setPill($("user-status"), "open", "ok"); updateWsCount(); };
-        ws.onclose = (e) => {
-          setPill($("user-status"), `closed (${e.code})`, "bad");
-          log($("user-log"), `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
-          updateWsCount();
-        };
-        ws.onerror = () => log($("user-log"), "← error (see devtools)", "bad");
-        ws.onmessage = (e) => handleUserFrame(e.data);
-      }
-
-      function closeUserWs() {
-        if (state.userWs) {
-          try { state.userWs.close(); } catch (_) {}
-          state.userWs = null;
-        }
-        setPill($("user-status"), "closed", "bad");
-        updateWsCount();
-      }
-
-      function handleUserFrame(raw) {
-        const sys = tryParseSystemFrame(raw);
-        if (!sys) {
-          log($("user-log"), `← payload: ${raw}`);
-          return;
-        }
-        log($("user-log"), `← ${raw}`, "system");
-        if (sys.type === "hello") {
-          $("hello-node").textContent = `node: ${sys.node}`;
-          state.helloUserNode = sys.node;
-        } else if (sys.type === "membership-changed") {
-          if (sys.change === "added" && state.convs[sys.conv]) {
-            const c = state.convs[sys.conv];
-            const members = Array.isArray(sys.members) ? sys.members : [];
-            setPill(c.membersEl, `members: ${members.join(",") || "—"}`, "");
-            log(c.logEl, `(user-ws) added; members=[${members.join(",")}]`, "system");
-          } else if (sys.change === "removed" && state.convs[sys.conv]) {
-            const c = state.convs[sys.conv];
-            log(c.logEl, "(user-ws) removed from conv", "warn");
-            setPill(c.membersEl, "members: (you left)", "warn");
-          }
-        } else if (sys.type === "kick") {
-          log($("user-log"), `kick: ${sys.reason}`, "bad");
-        }
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // conv-ws lifecycle
-      function openConvWs(convId) {
-        const c = state.convs[convId];
-        if (!c) return;
-        if (c.ws && c.ws.readyState <= 1) return;
-        const user = $("user").value.trim();
-        const device = $("device").value.trim();
-        const qs = new URLSearchParams({ user, conv: convId });
-        if (device) qs.set("device", device);
-        const url = `${wsBase()}/ws?${qs}`;
-        const ws = new WebSocket(url);
-        c.ws = ws;
-        setPill(c.statusEl, "connecting", "warn");
-        log(c.logEl, `→ open ${url}`, "muted");
-        ws.onopen = () => { setPill(c.statusEl, "open", "ok"); updateWsCount(); };
-        ws.onclose = (e) => {
-          setPill(c.statusEl, `closed (${e.code})`, "bad");
-          log(c.logEl, `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
-          updateWsCount();
-        };
-        ws.onerror = () => log(c.logEl, "← error", "bad");
-        ws.onmessage = (e) => handleConvFrame(convId, e.data);
-      }
-
-      function closeConvWs(convId) {
-        const c = state.convs[convId];
-        if (c && c.ws) {
-          try { c.ws.close(); } catch (_) {}
-          c.ws = null;
-        }
-        if (c) setPill(c.statusEl, "closed", "bad");
-        updateWsCount();
-      }
-
-      function handleConvFrame(convId, raw) {
-        const c = state.convs[convId];
-        if (!c) return;
-        const sys = tryParseSystemFrame(raw);
-        if (!sys) {
-          log(c.logEl, `← payload: ${raw}`);
-          return;
-        }
-        log(c.logEl, `← ${raw}`, "system");
-        if (sys.type === "kick") {
-          setPill(c.statusEl, `kicked`, "bad");
-        }
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // HTTP API calls
-      async function joinConv(convId) {
-        const user = $("user").value.trim();
-        const c = state.convs[convId];
-        const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
-        if (c) log(c.logEl, `POST /members/${user} → ${res}`, "system");
-        // Refresh membership pill (the user-ws will also see the membership-
-        // changed JSON if I'm registered).
-        refreshConvMembers(convId);
-      }
-
-      async function leaveConv(convId) {
-        const user = $("user").value.trim();
-        const c = state.convs[convId];
-        const res = await deletePlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
-        if (c) log(c.logEl, `DELETE /members/${user} → ${res}`, "warn");
-        refreshConvMembers(convId);
-      }
-
-      async function refreshConvMembers(convId) {
-        const c = state.convs[convId];
-        if (!c) return;
-        try {
-          const r = await fetch(`${httpBase()}/conv/${enc(convId)}/members`);
-          const body = (await r.text()).trim();
-          const members = body ? body.split("\n") : [];
-          setPill(c.membersEl, `members: ${members.join(",") || "—"}`, members.length ? "" : "warn");
-        } catch (e) {
-          setPill(c.membersEl, "members: ?", "bad");
-        }
-      }
-
-      async function convBroadcast(convId, payload) {
-        const c = state.convs[convId];
-        const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/broadcast`, payload);
-        if (c) log(c.logEl, `POST /broadcast (${payload.length}B) → ${res}`, "muted");
-      }
-
-      async function userBroadcast(payload) {
-        const user = $("user").value.trim();
-        const res = await postPlain(`${httpBase()}/user/${enc(user)}/broadcast`, payload);
-        log($("user-log"), `POST /user/${user}/broadcast → ${res}`, "muted");
-      }
-
-      async function deviceLogout() {
-        const user = $("user").value.trim();
-        const device = $("device").value.trim();
-        if (!device) { log($("user-log"), "device-id required for logout", "bad"); return; }
-        const res = await postPlain(`${httpBase()}/user/${enc(user)}/devices/${enc(device)}/logout`, "ui-button");
-        log($("user-log"), `POST /devices/${device}/logout → ${res}`, "warn");
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // helpers
-      async function postPlain(url, body = "") {
-        try {
-          const r = await fetch(url, { method: "POST", body, headers: { "content-type": "text/plain" } });
-          return `HTTP ${r.status} ${(await r.text()).trim()}`;
-        } catch (e) { return `error: ${e}`; }
-      }
-      async function deletePlain(url) {
-        try {
-          const r = await fetch(url, { method: "DELETE" });
-          return `HTTP ${r.status} ${(await r.text()).trim()}`;
-        } catch (e) { return `error: ${e}`; }
-      }
-      function enc(s) { return encodeURIComponent(s); }
-
-      function tryParseSystemFrame(raw) {
-        if (typeof raw !== "string") return null;
-        const s = raw.trimStart();
-        if (!s.startsWith("{")) return null;
-        try {
-          const o = JSON.parse(s);
-          return typeof o === "object" && o && typeof o.type === "string" ? o : null;
-        } catch (_) { return null; }
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // top-level connect / disconnect
-      async function connectAll() {
-        setPill($("status"), "connecting", "warn");
-        openUserWs();
-        // Join every conv THEN open its ws. Membership is required for the
-        // conv-ws upgrade to succeed.
-        for (const convId of Object.keys(state.convs)) {
-          await joinConv(convId);
-          openConvWs(convId);
-        }
-        setPill($("status"), "connected", "ok");
-      }
-
-      function disconnectAll() {
-        closeUserWs();
-        for (const convId of Object.keys(state.convs)) closeConvWs(convId);
-        setPill($("status"), "idle", "warn");
-      }
-
-      // ───────────────────────────────────────────────────────────────────
-      // wire up
-      $("user").addEventListener("input", applySelfInfo);
-      $("device").addEventListener("input", applySelfInfo);
-      $("convs").addEventListener("change", buildConvPanels);
-
-      $("connect").onclick = connectAll;
-      $("disconnect").onclick = disconnectAll;
-      $("user-broadcast-send").onclick = () => {
-        const v = $("user-broadcast-input").value;
-        if (!v) return;
-        userBroadcast(v);
-        $("user-broadcast-input").value = "";
-      };
-      $("user-broadcast-input").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") $("user-broadcast-send").click();
-      });
-      $("user-logout").onclick = deviceLogout;
-      $("user-clear").onclick = () => { $("user-log").textContent = ""; };
-
-      applySelfInfo();
-      buildConvPanels();
-      updateWsCount();
-      // Periodic ws-count refresh in case readyState changes silently.
-      setInterval(updateWsCount, 1000);
-
-      if (params.get("autoconnect") === "1") {
-        // Defer one tick so panels are in the DOM before the WSes try to
-        // resolve. Then fire-and-forget.
-        setTimeout(connectAll, 50);
-      }
-    </script>
-  </body>
-</html>
-"##;
-const LAMBDA_FUNCTIONS_HTML: &str = r#"<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>dd lambda functions</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #0d1117;
-        --panel: #151b23;
-        --panel-2: #101722;
-        --field: #0f1620;
-        --line: rgba(148, 163, 184, 0.28);
-        --text: #eef2f6;
-        --muted: #a8b3c1;
-        --accent: #5eead4;
-        --accent-2: #facc15;
-        --danger: #fb7185;
-        --ok: #86efac;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        background: var(--bg);
-        color: var(--text);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
-      }
-      a { color: var(--accent); text-decoration: none; }
-      a:hover { text-decoration: underline; }
-      button, input, select, textarea {
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: var(--field);
-        color: var(--text);
-        font: inherit;
-      }
-      button {
-        min-height: 34px;
-        padding: 7px 11px;
-        cursor: pointer;
-      }
-      button:hover { border-color: rgba(94, 234, 212, 0.62); }
-      button.primary {
-        border-color: rgba(94, 234, 212, 0.65);
-        background: rgba(20, 83, 45, 0.32);
-        color: #dcfce7;
-      }
-      button.warn { border-color: rgba(250, 204, 21, 0.55); color: #fef9c3; }
-      input, select {
-        min-height: 34px;
-        width: 100%;
-        padding: 7px 9px;
-      }
-      textarea {
-        width: 100%;
-        min-height: 120px;
-        padding: 10px;
-        resize: vertical;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 13px;
-        line-height: 1.45;
-      }
-      .app {
-        min-height: 100vh;
-        display: grid;
-        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-      }
-      .sidebar {
-        border-right: 1px solid var(--line);
-        background: #111821;
-        padding: 18px;
-        min-width: 0;
-      }
-      .main {
-        min-width: 0;
-        padding: 22px;
-      }
-      .topbar, .row, .actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .topbar { justify-content: space-between; margin-bottom: 16px; }
-      h1 { margin: 0; font-size: 24px; }
-      h2 { margin: 0; font-size: 16px; }
-      h3 { margin: 0; font-size: 14px; }
-      p { margin: 0; color: var(--muted); line-height: 1.45; }
-      .muted { color: var(--muted); }
-      .panel {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        padding: 14px;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
-      }
-      .wide { grid-column: 1 / -1; }
-      label span {
-        display: block;
-        color: var(--muted);
-        font-size: 12px;
-        margin-bottom: 5px;
-      }
-      .check-row {
-        min-height: 34px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding-top: 19px;
-      }
-      .check-row input { width: auto; min-height: auto; }
-      .check-row span { margin: 0; }
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        border: 1px solid rgba(94, 234, 212, 0.35);
-        border-radius: 999px;
-        padding: 3px 8px;
-        color: var(--accent);
-        font-size: 12px;
-        white-space: nowrap;
-      }
-      .pill.warn { border-color: rgba(250, 204, 21, 0.4); color: var(--accent-2); }
-      .pill.bad { border-color: rgba(251, 113, 133, 0.42); color: var(--danger); }
-      .function-list {
-        display: grid;
-        gap: 8px;
-        margin-top: 14px;
-      }
-      details {
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 8px;
-        background: var(--panel-2);
-        overflow: hidden;
-      }
-      details[open] { border-color: rgba(94, 234, 212, 0.46); }
-      summary {
-        min-height: 52px;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
-        gap: 10px;
-        padding: 12px;
-        cursor: pointer;
-      }
-      summary::marker { color: var(--accent); }
-      .summary-title {
-        display: block;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-weight: 600;
-      }
-      .summary-meta {
-        display: flex;
-        gap: 8px;
-        color: var(--muted);
-        font-size: 12px;
-        flex-wrap: wrap;
-        margin-top: 5px;
-      }
-      .details-body {
-        border-top: 1px solid rgba(148, 163, 184, 0.18);
-        padding: 12px;
-        display: grid;
-        gap: 10px;
-      }
-      .output {
-        min-height: 170px;
-        max-height: 420px;
-        overflow: auto;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        border-radius: 8px;
-        background: #090f16;
-        padding: 12px;
-        color: #d7fbf4;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 13px;
-        line-height: 1.45;
-      }
-      @media (max-width: 980px) {
-        .app { grid-template-columns: 1fr; }
-        .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
-        .grid { grid-template-columns: 1fr; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="app">
-      <aside class="sidebar">
-        <div class="topbar">
-          <div>
-            <h1>Lambda functions</h1>
-            <p id="snapshot-meta">loading functions</p>
-          </div>
-          <button id="refresh" type="button" title="Refresh">Refresh</button>
-        </div>
-        <input id="search" autocomplete="off" placeholder="Search functions" />
-        <div class="actions" style="margin-top: 10px">
-          <button id="new-function" class="primary" type="button">New</button>
-        </div>
-        <div id="function-list" class="function-list" aria-live="polite"></div>
-      </aside>
-      <main class="main">
-        <div class="topbar">
-          <div>
-            <h1 id="editor-title">New function</h1>
-            <p id="editor-subtitle">draft</p>
-          </div>
-          <div class="row">
-            <a href="/agents/threads">Agent threads</a>
-            <a href="/home">Service directory</a>
-          </div>
-        </div>
-
-        <section class="panel">
-          <div class="grid">
-            <label>
-              <span>Slug</span>
-              <input id="slug" autocomplete="off" spellcheck="false" />
-            </label>
-            <label>
-              <span>Name</span>
-              <input id="display-name" autocomplete="off" />
-            </label>
-            <label>
-              <span>Status</span>
-              <select id="status">
-                <option value="draft">draft</option>
-                <option value="active">active</option>
-                <option value="paused">paused</option>
-                <option value="archived">archived</option>
-              </select>
-            </label>
-            <label>
-              <span>Runtime</span>
-              <select id="runtime">
-                <option value="nodejs">nodejs</option>
-                <option value="python3">python3</option>
-                <option value="ruby">ruby</option>
-                <option value="bash">bash</option>
-              </select>
-            </label>
-            <label>
-              <span>Process profile</span>
-              <select id="process-profile">
-                <option value="nodejs">nodejs process</option>
-                <option value="python3">python3 process</option>
-                <option value="rust">rust process</option>
-                <option value="gleamlang">gleamlang process</option>
-              </select>
-            </label>
-            <label>
-              <span>Container runner</span>
-              <select id="container-runner">
-                <option value="containerd-ctr">containerd / ctr</option>
-                <option value="containerd-nerdctl">containerd / nerdctl</option>
-                <option value="docker">docker</option>
-              </select>
-            </label>
-            <label>
-              <span>Base image</span>
-              <select id="base-image"></select>
-            </label>
-            <label class="check-row">
-              <input id="containerized" type="checkbox" />
-              <span>Containerize</span>
-            </label>
-            <label>
-              <span>Reuse key</span>
-              <input id="reuse-key" autocomplete="off" spellcheck="false" />
-            </label>
-            <label>
-              <span>Idle timeout seconds</span>
-              <input id="idle-timeout" type="number" min="1" max="3600" />
-            </label>
-            <label>
-              <span>Max run ms</span>
-              <input id="max-run" type="number" min="1000" max="300000" step="500" />
-            </label>
-            <label>
-              <span>Entry command</span>
-              <input id="entry-command" autocomplete="off" readonly spellcheck="false" />
-            </label>
-            <label>
-              <span>Container image</span>
-              <input id="container-image" autocomplete="off" readonly spellcheck="false" />
-            </label>
-            <label>
-              <span>Build status</span>
-              <input id="container-build-status" autocomplete="off" readonly spellcheck="false" />
-            </label>
-            <label class="wide">
-              <span>Description</span>
-              <textarea id="description" style="min-height: 74px; font-family: inherit"></textarea>
-            </label>
-            <label class="wide">
-              <span>Function body</span>
-              <textarea id="function-body" spellcheck="false"></textarea>
-            </label>
-            <label>
-              <span>Labels JSON</span>
-              <textarea id="labels-json" spellcheck="false"></textarea>
-            </label>
-            <label>
-              <span>Meta JSON</span>
-              <textarea id="meta-json" spellcheck="false"></textarea>
-            </label>
-          </div>
-          <div class="actions" style="margin-top: 10px">
-            <button id="save" class="primary" type="button">Save</button>
-            <button id="reset" type="button">Reset</button>
-            <span id="save-state" class="pill warn">idle</span>
-          </div>
-        </section>
-
-        <section class="panel" style="margin-top: 14px">
-          <div class="topbar">
-            <h2>Run</h2>
-            <span id="run-state" class="pill warn">idle</span>
-          </div>
-          <label>
-            <span>Request JSON</span>
-            <textarea id="request-json" spellcheck="false"></textarea>
-          </label>
-          <div class="actions" style="margin-top: 10px">
-            <button id="run" class="primary" type="button">Run</button>
-            <code id="invoke-route">/lambdas/invoke/:function-id</code>
-          </div>
-          <pre id="output" class="output"></pre>
-        </section>
-      </main>
+      <div class="row">
+        <a href="/agents/threads">Agent threads</a>
+        <a href="/home">Service directory</a>
+      </div>
     </div>
 
-    <script>
-      const $ = (id) => document.getElementById(id);
-      const entryCommands = {
-        nodejs: "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs",
-        python3: "env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py",
-        ruby: "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
-        bash: "env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs",
-      };
-      const processProfiles = {
-        nodejs: {
-          runtime: "nodejs",
-          poolSlug: "nodejs",
-          baseImages: [
-            "docker.io/library/dd-lambda-nodejs-runtime:dev",
-            "docker.io/library/dd-container-pool-nodejs-runtime:dev",
-            "docker.io/library/node:25-alpine",
-          ],
-        },
-        python3: {
-          runtime: "python3",
-          poolSlug: "python3",
-          baseImages: [
-            "docker.io/library/dd-lambda-python3-runtime:dev",
-            "docker.io/library/dd-container-pool-python3-runtime:dev",
-            "docker.io/library/python:3.12-alpine",
-          ],
-        },
-        rust: {
-          runtime: "nodejs",
-          poolSlug: "rust",
-          requiresContainerPool: true,
-          baseImages: [
-            "docker.io/library/dd-container-pool-rust-runtime:dev",
-            "docker.io/library/rust:1.90-bookworm",
-            "docker.io/library/rust:1.90-alpine",
-          ],
-        },
-        gleamlang: {
-          runtime: "nodejs",
-          poolSlug: "gleamlang",
-          requiresContainerPool: true,
-          baseImages: [
-            "docker.io/library/dd-container-pool-gleamlang-runtime:dev",
-            "ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine",
-            "docker.io/library/erlang:27-alpine",
-          ],
-        },
-      };
-      const hostAllowedRuntimes = new Set(["nodejs"]);
-      const defaultCommand = entryCommands.nodejs;
-      const defaultContainerRunner = "containerd-ctr";
-      const state = {
-        functions: [],
-        selectedId: null,
-        queryAutofillActive: false,
-      };
-      const queryParams = new URLSearchParams(location.search);
-      const autofillParamNames = [
-        "slug", "name", "displayName", "title", "description", "status", "runtime",
-        "processProfile", "profile", "process", "containerized", "container",
-        "containerRunner", "runner", "baseImage", "image", "reuseKey",
-        "idleTimeoutSeconds", "idleTimeout", "maxRunMs", "maxRun", "functionBody",
-        "body", "code", "source", "request", "requestJson", "payload", "labels",
-        "labelsJson", "meta", "metaData", "metaJson", "containerPoolTimeoutMs",
-      ];
+    <section class="panel">
+      <div class="grid">
+        <label>
+          <span>Slug</span>
+          <input id="slug" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>
+          <span>Name</span>
+          <input id="display-name" autocomplete="off" />
+        </label>
+        <label>
+          <span>Status</span>
+          <select id="status">
+            <option value="draft">draft</option>
+            <option value="active">active</option>
+            <option value="paused">paused</option>
+            <option value="archived">archived</option>
+          </select>
+        </label>
+        <label>
+          <span>Runtime</span>
+          <select id="runtime">
+            <option value="nodejs">nodejs</option>
+            <option value="python3">python3</option>
+            <option value="ruby">ruby</option>
+            <option value="bash">bash</option>
+          </select>
+        </label>
+        <label>
+          <span>Process profile</span>
+          <select id="process-profile">
+            <option value="nodejs">nodejs process</option>
+            <option value="python3">python3 process</option>
+            <option value="rust">rust process</option>
+            <option value="golang">golang process</option>
+            <option value="gleamlang">gleamlang process</option>
+          </select>
+        </label>
+        <label>
+          <span>Container runner</span>
+          <select id="container-runner">
+            <option value="containerd-ctr">containerd / ctr</option>
+            <option value="containerd-nerdctl">containerd / nerdctl</option>
+            <option value="docker">docker</option>
+          </select>
+        </label>
+        <label>
+          <span>Base image</span>
+          <select id="base-image"></select>
+        </label>
+        <label class="check-row">
+          <input id="containerized" type="checkbox" />
+          <span>Containerize</span>
+        </label>
+        <label>
+          <span>Reuse key</span>
+          <input id="reuse-key" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>
+          <span>Idle timeout seconds</span>
+          <input id="idle-timeout" type="number" min="1" max="3600" />
+        </label>
+        <label>
+          <span>Max run ms</span>
+          <input id="max-run" type="number" min="1000" max="300000" step="500" />
+        </label>
+        <label>
+          <span>Entry command</span>
+          <input id="entry-command" autocomplete="off" readonly spellcheck="false" />
+        </label>
+        <label>
+          <span>Container image</span>
+          <input id="container-image" autocomplete="off" readonly spellcheck="false" />
+        </label>
+        <label>
+          <span>Build status</span>
+          <input id="container-build-status" autocomplete="off" readonly spellcheck="false" />
+        </label>
+        <label class="wide">
+          <span>Description</span>
+          <textarea id="description" style="min-height: 74px; font-family: inherit"></textarea>
+        </label>
+        <label class="wide">
+          <span>Function body</span>
+          <div id="function-body-editor" class="code-editor">
+            <pre id="function-body-highlight" class="code-highlight" aria-hidden="true"></pre>
+            <textarea id="function-body" spellcheck="false"></textarea>
+          </div>
+        </label>
+        <label>
+          <span>Labels JSON</span>
+          <textarea id="labels-json" spellcheck="false"></textarea>
+        </label>
+        <label>
+          <span>Meta JSON</span>
+          <textarea id="meta-json" spellcheck="false"></textarea>
+        </label>
+      </div>
+      <div class="actions" style="margin-top: 10px">
+        <button id="check" type="button">Check</button>
+        <button id="save" class="primary" type="button">Save</button>
+        <button id="reset" type="button">Reset</button>
+        <span id="save-state" class="pill warn">idle</span>
+      </div>
+    </section>
 
-      function queryParam(...names) {
-        for (const name of names) {
-          if (!queryParams.has(name)) continue;
-          const value = queryParams.get(name);
-          if (value !== null && value !== "") return value;
-        }
-        return null;
-      }
+    <section class="panel" style="margin-top: 14px">
+      <div class="topbar">
+        <h2>Run</h2>
+        <span id="run-state" class="pill warn">idle</span>
+      </div>
+      <label>
+        <span>Request JSON</span>
+        <textarea id="request-json" spellcheck="false"></textarea>
+      </label>
+      <div class="actions" style="margin-top: 10px">
+        <button id="run" class="primary" type="button">Run</button>
+        <code id="invoke-route">/lambdas/invoke/:function-id</code>
+      </div>
+      <pre id="output" class="output"></pre>
+    </section>
+  </main>
+</div>"###;
 
-      function queryHas(...names) {
-        return names.some((name) => queryParams.has(name));
-      }
+const LAMBDA_FUNCTIONS_JS: &str = r###"const $ = (id) => document.getElementById(id);
+const entryCommands = {
+  nodejs: "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs",
+  python3: "env -i PATH=\"$PATH\" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py",
+  ruby: "env -i PATH=\"$PATH\" ruby child-runtimes/ruby-function-runner.rb",
+  bash: "env -i PATH=\"$PATH\" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs",
+};
+const processProfiles = {
+  nodejs: {
+    runtime: "nodejs",
+    poolSlug: "nodejs",
+    baseImages: [
+      "docker.io/library/dd-lambda-nodejs-runtime:dev",
+      "docker.io/library/dd-container-pool-nodejs-runtime:dev",
+      "docker.io/library/node:25-alpine",
+    ],
+  },
+  python3: {
+    runtime: "python3",
+    poolSlug: "python3",
+    baseImages: [
+      "docker.io/library/dd-lambda-python3-runtime:dev",
+      "docker.io/library/dd-container-pool-python3-runtime:dev",
+      "docker.io/library/python:3.12-alpine",
+    ],
+  },
+  rust: {
+    runtime: "nodejs",
+    poolSlug: "rust",
+    requiresContainerPool: true,
+    baseImages: [
+      "docker.io/library/dd-container-pool-rust-runtime:dev",
+      "docker.io/library/rust:1.90-bookworm",
+      "docker.io/library/rust:1.90-alpine",
+    ],
+  },
+  golang: {
+    runtime: "nodejs",
+    poolSlug: "golang",
+    requiresContainerPool: true,
+    baseImages: [
+      "docker.io/library/dd-container-pool-golang-runtime:dev",
+      "docker.io/library/golang:1.25-alpine",
+    ],
+  },
+  gleamlang: {
+    runtime: "nodejs",
+    poolSlug: "gleamlang",
+    requiresContainerPool: true,
+    baseImages: [
+      "docker.io/library/dd-container-pool-gleamlang-runtime:dev",
+      "ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine",
+      "docker.io/library/erlang:27-alpine",
+    ],
+  },
+};
+const hostAllowedRuntimes = new Set(["nodejs"]);
+const defaultCommand = entryCommands.nodejs;
+const defaultContainerRunner = "containerd-ctr";
+const state = {
+  functions: [],
+  selectedId: null,
+  queryAutofillActive: false,
+  editorDirty: false,
+  bodyProfile: "nodejs",
+};
+const queryParams = new URLSearchParams(location.search);
+const autofillParamNames = [
+  "slug", "name", "displayName", "title", "description", "status", "runtime",
+  "processProfile", "profile", "process", "containerized", "container",
+  "containerRunner", "runner", "baseImage", "image", "reuseKey",
+  "idleTimeoutSeconds", "idleTimeout", "maxRunMs", "maxRun", "functionBody",
+  "body", "code", "source", "request", "requestJson", "payload", "labels",
+  "labelsJson", "meta", "metaData", "metaJson", "containerPoolTimeoutMs",
+];
+const codeKeywordSets = {
+  nodejs: new Set([
+    "async", "await", "break", "case", "catch", "class", "const", "continue", "default",
+    "delete", "do", "else", "export", "extends", "false", "finally", "for", "from",
+    "function", "if", "import", "in", "instanceof", "let", "new", "null", "return",
+    "switch", "this", "throw", "true", "try", "typeof", "undefined", "var", "void",
+    "while", "yield",
+  ]),
+  rust: new Set([
+    "as", "async", "await", "break", "const", "continue", "crate", "else", "enum",
+    "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod",
+    "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super",
+    "trait", "true", "type", "unsafe", "use", "where", "while",
+  ]),
+  golang: new Set([
+    "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
+    "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
+    "range", "return", "select", "struct", "switch", "type", "var",
+  ]),
+  gleamlang: new Set([
+    "as", "assert", "case", "const", "echo", "else", "external", "fn", "if", "import",
+    "let", "opaque", "panic", "pub", "todo", "type", "use",
+  ]),
+  python3: new Set([
+    "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+    "elif", "else", "except", "False", "finally", "for", "from", "global", "if",
+    "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise",
+    "return", "True", "try", "while", "with", "yield",
+  ]),
+};
 
-      function queryBoolean(value, fallback = false) {
-        if (value === null) return fallback;
-        const normalized = String(value).trim().toLowerCase();
-        if (["1", "true", "yes", "on"].includes(normalized)) return true;
-        if (["0", "false", "no", "off"].includes(normalized)) return false;
-        return fallback;
-      }
+function queryParam(...names) {
+  for (const name of names) {
+    if (!queryParams.has(name)) continue;
+    const value = queryParams.get(name);
+    if (value !== null && value !== "") return value;
+  }
+  return null;
+}
 
-      function jsonText(value, fallback) {
-        if (value === null) return JSON.stringify(fallback, null, 2);
-        try {
-          return JSON.stringify(JSON.parse(value), null, 2);
-        } catch {
-          return value;
-        }
-      }
+function queryHas(...names) {
+  return names.some((name) => queryParams.has(name));
+}
 
-      function jsonValue(value, fallback) {
-        if (value === null) return fallback;
-        try {
-          return JSON.parse(value);
-        } catch {
-          return fallback;
-        }
-      }
+function queryBoolean(value, fallback = false) {
+  if (value === null) return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
 
-      function selectValue(id, value) {
-        if (value === null) return;
-        const select = $(id);
-        const option = Array.from(select.options).find((item) => item.value === value);
-        if (option) select.value = value;
-      }
+function jsonText(value, fallback) {
+  if (value === null) return JSON.stringify(fallback, null, 2);
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
 
-      function ensureSelectValue(id, value) {
-        if (value === null) return;
-        const select = $(id);
-        if (!Array.from(select.options).some((item) => item.value === value)) {
-          const option = document.createElement("option");
-          option.value = value;
-          option.textContent = value;
-          select.appendChild(option);
-        }
-        select.value = value;
-      }
+function jsonValue(value, fallback) {
+  if (value === null) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
 
-      function normalizeRuntime(value) {
-        if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
-        if (value === "python") return "python3";
-        if (value === "shell") return "bash";
-        return entryCommands[value] ? value : "nodejs";
-      }
+function selectValue(id, value) {
+  if (value === null) return;
+  const select = $(id);
+  const option = Array.from(select.options).find((item) => item.value === value);
+  if (option) select.value = value;
+}
 
-      function normalizeProcessProfile(value) {
-        const key = String(value || "").trim().toLowerCase();
-        if (key === "gleam") return "gleamlang";
-        if (key === "python") return "python3";
-        return processProfiles[key] ? key : "nodejs";
-      }
+function ensureSelectValue(id, value) {
+  if (value === null) return;
+  const select = $(id);
+  if (!Array.from(select.options).some((item) => item.value === value)) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  }
+  select.value = value;
+}
 
-      function processProfileForRuntime(runtime) {
-        const normalized = normalizeRuntime(runtime);
-        if (normalized === "python3") return "python3";
-        return "nodejs";
-      }
+function normalizeRuntime(value) {
+  if (value === "javascript" || value === "typescript" || value === "node") return "nodejs";
+  if (value === "python") return "python3";
+  if (value === "shell") return "bash";
+  return entryCommands[value] ? value : "nodejs";
+}
 
-      function deploymentMeta(metaData) {
-        const value = metaData?.lambdaDeployment;
-        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-      }
+function normalizeProcessProfile(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (key === "gleam") return "gleamlang";
+  if (key === "go") return "golang";
+  if (key === "python") return "python3";
+  return processProfiles[key] ? key : "nodejs";
+}
 
-      function processProfileForFunction(fn) {
-        const configured = deploymentMeta(fn?.metaData).processProfile;
-        if (configured) return normalizeProcessProfile(configured);
-        return processProfileForRuntime(fn?.runtime || "nodejs");
-      }
+function processProfileForRuntime(runtime) {
+  const raw = String(runtime || "").trim().toLowerCase();
+  if (raw === "go" || raw === "golang") return "golang";
+  if (raw === "rust") return "rust";
+  if (raw === "gleam" || raw === "gleamlang") return "gleamlang";
+  const normalized = normalizeRuntime(runtime);
+  if (normalized === "python3") return "python3";
+  return "nodejs";
+}
 
-      function selectedProcessProfile() {
-        return processProfiles[normalizeProcessProfile($("process-profile").value)] || processProfiles.nodejs;
-      }
+function deploymentMeta(metaData) {
+  const value = metaData?.lambdaDeployment;
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
 
-      function containerPoolFunctionBody(profileName) {
-        const profile = processProfiles[normalizeProcessProfile(profileName)] || processProfiles.nodejs;
-        return [
-          "const payload = request.body ?? request;",
-          `return await context.containerPool.dispatch("${profile.poolSlug}", payload, {`,
-          "  path: \"/invoke\",",
-          "  timeoutMs: Number(context.meta.metaData?.lambdaDeployment?.containerPoolTimeoutMs || 30000),",
-          "});",
-        ].join("\n");
-      }
+function processProfileForFunction(fn) {
+  const configured = deploymentMeta(fn?.metaData).processProfile;
+  if (configured) return normalizeProcessProfile(configured);
+  return processProfileForRuntime(fn?.runtime || "nodejs");
+}
 
-      function defaultFunctionBody(runtimeOrProfile) {
-        const profileName = processProfiles[runtimeOrProfile]
-          ? runtimeOrProfile
-          : processProfileForRuntime(runtimeOrProfile);
-        switch (profileName) {
-          case "python3":
-            return "result = { \"status\": 200, \"body\": { \"ok\": True, \"echo\": request.get(\"body\") } }";
-          case "rust":
-          case "gleamlang":
-            return containerPoolFunctionBody(profileName);
-          case "nodejs":
-            return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
-          case "ruby":
-            return "{ status: 200, body: { ok: true, echo: request[\"body\"] } }";
-          case "bash":
-            return "printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'";
-          default:
-            return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
-        }
-      }
+function selectedProcessProfile() {
+  return processProfiles[normalizeProcessProfile($("process-profile").value)] || processProfiles.nodejs;
+}
 
-      function syncEntryCommand() {
-        $("entry-command").value = entryCommands[normalizeRuntime($("runtime").value)] || defaultCommand;
-      }
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
 
-      function syncBaseImages(preferred = "") {
-        const profile = selectedProcessProfile();
-        const select = $("base-image");
-        const current = preferred || select.value;
-        select.textContent = "";
-        const images = profile.baseImages || processProfiles.nodejs.baseImages;
-        const selected = images.includes(current) ? current : images[0];
-        for (const image of images) {
-          const option = document.createElement("option");
-          option.value = image;
-          option.textContent = image;
-          select.appendChild(option);
-        }
-        select.value = selected;
-      }
+function codeLanguage() {
+  const profile = normalizeProcessProfile($("process-profile").value);
+  return codeKeywordSets[profile] ? profile : normalizeRuntime($("runtime").value);
+}
 
-      function syncContainerPolicy() {
-        const requiresContainer = !hostAllowedRuntimes.has(normalizeRuntime($("runtime").value));
-        $("containerized").disabled = requiresContainer;
-        $("containerized").title = requiresContainer ? "This runtime requires container execution." : "";
-        if (requiresContainer) $("containerized").checked = true;
-      }
+function highlightCode(source, language) {
+  const keywords = codeKeywordSets[language] || codeKeywordSets.nodejs;
+  const tokenPattern = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*|`(?:\\[\s\S]|[^`\\])*`|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_!?]*\b|[{}()[\].,;:+\-*/%=<>!&|^~]+/g;
+  let html = "";
+  let index = 0;
+  for (const match of source.matchAll(tokenPattern)) {
+    const token = match[0];
+    html += escapeHtml(source.slice(index, match.index));
+    let className = "";
+    if (token.startsWith("//") || token.startsWith("/*") || token.startsWith("#")) className = "tok-comment";
+    else if (token.startsWith("\"") || token.startsWith("'") || token.startsWith("`")) className = "tok-string";
+    else if (/^\d/.test(token)) className = "tok-number";
+    else if (keywords.has(token)) className = "tok-keyword";
+    else if (/^[{}()[\].,;:+\-*/%=<>!&|^~]+$/.test(token)) className = "tok-punct";
+    html += className
+      ? `<span class="${className}">${escapeHtml(token)}</span>`
+      : escapeHtml(token);
+    index = match.index + token.length;
+  }
+  html += escapeHtml(source.slice(index));
+  return html || "\n";
+}
 
-      function syncProcessProfile(options = {}) {
-        const profileName = normalizeProcessProfile($("process-profile").value);
-        const profile = processProfiles[profileName] || processProfiles.nodejs;
-        $("process-profile").value = profileName;
-        $("runtime").value = profile.runtime;
-        syncEntryCommand();
-        syncContainerPolicy();
-        syncBaseImages(options.baseImage || "");
-        if (profile.requiresContainerPool) $("containerized").checked = false;
-        if (options.replaceBody) $("function-body").value = defaultFunctionBody(profileName);
-      }
+function syncCodeScroll() {
+  const textarea = $("function-body");
+  const highlight = $("function-body-highlight");
+  if (!textarea || !highlight) return;
+  highlight.scrollTop = textarea.scrollTop;
+  highlight.scrollLeft = textarea.scrollLeft;
+}
 
-      function deploymentMetaFromControls(existingMeta = {}) {
-        const profileName = normalizeProcessProfile($("process-profile").value);
-        const profile = processProfiles[profileName] || processProfiles.nodejs;
-        const existingDeployment = deploymentMeta(existingMeta);
-        const timeout = queryParam("containerPoolTimeoutMs");
-        return {
-          ...existingDeployment,
-          ...(timeout ? { containerPoolTimeoutMs: Number(timeout) || timeout } : {}),
-          processProfile: profileName,
-          poolSlug: profile.poolSlug,
-          runtime: profile.runtime,
-          baseImage: $("base-image").value,
-          containerRunner: $("container-runner").value || defaultContainerRunner,
-        };
-      }
+function updateCodeHighlight() {
+  const textarea = $("function-body");
+  const highlight = $("function-body-highlight");
+  if (!textarea || !highlight) return;
+  highlight.innerHTML = highlightCode(textarea.value, codeLanguage());
+  highlight.dataset.language = codeLanguage();
+  syncCodeScroll();
+}
 
-      function applyQueryAutofill() {
-        if (!autofillParamNames.some((name) => queryParams.has(name))) return;
-        state.queryAutofillActive = true;
-        const runtimeValue = queryParam("runtime");
-        const profileValue = queryParam("processProfile", "profile", "process");
-        const profileName = profileValue
-          ? normalizeProcessProfile(profileValue)
-          : runtimeValue
-            ? processProfileForRuntime(runtimeValue)
-            : normalizeProcessProfile($("process-profile").value);
-        const bodyValue = queryParam("functionBody", "body", "code", "source");
+function setFunctionBody(value) {
+  $("function-body").value = value;
+  updateCodeHighlight();
+}
 
-        $("process-profile").value = profileName;
-        syncProcessProfile({
-          baseImage: queryParam("baseImage", "image") || "",
-          replaceBody: bodyValue === null,
-        });
-        selectValue("container-runner", queryParam("containerRunner", "runner"));
-        ensureSelectValue("base-image", queryParam("baseImage", "image"));
+function containerPoolFunctionBody(profileName) {
+  const profile = processProfiles[normalizeProcessProfile(profileName)] || processProfiles.nodejs;
+  return [
+    "const payload = request.body ?? request;",
+    `return await context.containerPool.dispatch("${profile.poolSlug}", payload, {`,
+    "  path: \"/invoke\",",
+    "  timeoutMs: Number(context.meta.metaData?.lambdaDeployment?.containerPoolTimeoutMs || 30000),",
+    "});",
+  ].join("\n");
+}
 
-        const slug = queryParam("slug");
-        if (slug !== null) $("slug").value = normalizeSlug(slug);
-        const displayName = queryParam("displayName", "name", "title");
-        if (displayName !== null) $("display-name").value = displayName;
-        if (!$("display-name").value && $("slug").value) $("display-name").value = $("slug").value;
-        const description = queryParam("description");
-        if (description !== null) $("description").value = description;
-        selectValue("status", queryParam("status"));
-        const reuseKey = queryParam("reuseKey");
-        if (reuseKey !== null) $("reuse-key").value = reuseKey;
-        const idleTimeout = queryParam("idleTimeoutSeconds", "idleTimeout");
-        if (idleTimeout !== null) $("idle-timeout").value = idleTimeout;
-        const maxRun = queryParam("maxRunMs", "maxRun");
-        if (maxRun !== null) $("max-run").value = maxRun;
-        if (queryHas("containerized", "container")) {
-          $("containerized").checked = queryBoolean(queryParam("containerized", "container"), $("containerized").checked);
-        }
-        syncContainerPolicy();
-        if (bodyValue !== null) $("function-body").value = bodyValue;
+function defaultFunctionBody(runtimeOrProfile) {
+  const profileName = processProfiles[runtimeOrProfile]
+    ? runtimeOrProfile
+    : processProfileForRuntime(runtimeOrProfile);
+  switch (profileName) {
+    case "python3":
+      return "result = { \"status\": 200, \"body\": { \"ok\": True, \"echo\": request.get(\"body\") } }";
+    case "rust":
+    case "golang":
+    case "gleamlang":
+      return containerPoolFunctionBody(profileName);
+    case "nodejs":
+      return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
+    case "ruby":
+      return "{ status: 200, body: { ok: true, echo: request[\"body\"] } }";
+    case "bash":
+      return "printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'";
+    default:
+      return "return { status: 200, body: { ok: true, echo: request.body ?? null } };";
+  }
+}
 
-        const labels = queryParam("labels", "labelsJson");
-        if (labels !== null) $("labels-json").value = jsonText(labels, []);
-        const metaText = queryParam("metaData", "meta", "metaJson");
-        const metaData = metaText === null ? parseJsonField("meta-json", {}) : jsonValue(metaText, {});
-        metaData.lambdaDeployment = deploymentMetaFromControls(metaData);
-        $("meta-json").value = JSON.stringify(metaData, null, 2);
-        const request = queryParam("request", "requestJson", "payload");
-        if (request !== null) $("request-json").value = jsonText(request, {});
+function normalizedBody(value) {
+  return String(value || "").trim().replace(/\r\n/g, "\n");
+}
 
-        $("editor-title").textContent = $("display-name").value || "New function";
-        $("editor-subtitle").textContent = $("slug").value || "query draft";
-        $("invoke-route").textContent = "/lambdas/invoke/:function-id";
-        setSaveState("query autofilled", "ok");
-      }
+function generatedDefaultProfile(value) {
+  const body = normalizedBody(value);
+  if (!body) return "";
+  for (const profileName of Object.keys(processProfiles)) {
+    if (body === normalizedBody(defaultFunctionBody(profileName))) return profileName;
+  }
+  return "";
+}
 
-      function normalizeSlug(value) {
-        return String(value || "")
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 120);
-      }
+function shouldReplaceGeneratedBody(previousProfile) {
+  const body = $("function-body").value;
+  if (!body.trim()) return true;
+  if (state.bodyProfile && normalizedBody(body) === normalizedBody(defaultFunctionBody(state.bodyProfile))) {
+    return true;
+  }
+  if (previousProfile && normalizedBody(body) === normalizedBody(defaultFunctionBody(previousProfile))) {
+    return true;
+  }
+  return Boolean(generatedDefaultProfile(body));
+}
 
-      function fmt(value) {
-        if (!value) return "never";
-        const date = new Date(value);
-        return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
-      }
+function markEditorDirty() {
+  state.editorDirty = true;
+}
 
-      function parseJsonField(id, fallback) {
-        const value = $(id).value.trim();
-        if (!value) return fallback;
-        return JSON.parse(value);
-      }
+function markBodyDirty() {
+  state.bodyProfile = generatedDefaultProfile($("function-body").value) || null;
+  updateCodeHighlight();
+  markEditorDirty();
+}
 
-      function selectedFunction() {
-        return state.functions.find((fn) => fn.id === state.selectedId) || null;
-      }
+function syncEntryCommand() {
+  $("entry-command").value = entryCommands[normalizeRuntime($("runtime").value)] || defaultCommand;
+}
 
-      function functionPayload() {
-        const profileName = normalizeProcessProfile($("process-profile").value);
-        const profile = processProfiles[profileName] || processProfiles.nodejs;
-        const metaData = parseJsonField("meta-json", {});
-        metaData.lambdaDeployment = deploymentMetaFromControls(metaData);
-        return {
-          slug: normalizeSlug($("slug").value),
-          displayName: $("display-name").value.trim(),
-          description: $("description").value.trim(),
-          runtime: normalizeRuntime(profile.runtime),
-          entryCommand: entryCommands[normalizeRuntime(profile.runtime)] || defaultCommand,
-          functionBody: $("function-body").value,
-          reuseKey: $("reuse-key").value.trim() || null,
-          idleTimeoutSeconds: Number($("idle-timeout").value || 300),
-          maxRunMs: Number($("max-run").value || 30000),
-          containerized: $("containerized").checked,
-          status: $("status").value,
-          labels: parseJsonField("labels-json", []),
-          metaData,
-        };
-      }
+function syncBaseImages(preferred = "") {
+  const profile = selectedProcessProfile();
+  const select = $("base-image");
+  const current = preferred || select.value;
+  select.textContent = "";
+  const images = profile.baseImages || processProfiles.nodejs.baseImages;
+  const selected = images.includes(current) ? current : images[0];
+  for (const image of images) {
+    const option = document.createElement("option");
+    option.value = image;
+    option.textContent = image;
+    select.appendChild(option);
+  }
+  select.value = selected;
+}
 
-      function setSaveState(message, kind = "warn") {
-        const node = $("save-state");
-        node.textContent = message;
-        node.className = kind === "bad" ? "pill bad" : kind === "ok" ? "pill" : "pill warn";
-      }
+function syncContainerPolicy() {
+  const requiresContainer = !hostAllowedRuntimes.has(normalizeRuntime($("runtime").value));
+  $("containerized").disabled = requiresContainer;
+  $("containerized").title = requiresContainer ? "This runtime requires container execution." : "";
+  if (requiresContainer) $("containerized").checked = true;
+}
 
-      function setRunState(message, kind = "warn") {
-        const node = $("run-state");
-        node.textContent = message;
-        node.className = kind === "bad" ? "pill bad" : kind === "ok" ? "pill" : "pill warn";
-      }
+function syncProcessProfile(options = {}) {
+  const profileName = normalizeProcessProfile($("process-profile").value);
+  const profile = processProfiles[profileName] || processProfiles.nodejs;
+  $("process-profile").value = profileName;
+  $("runtime").value = profile.runtime;
+  syncEntryCommand();
+  syncContainerPolicy();
+  syncBaseImages(options.baseImage || "");
+  if (profile.requiresContainerPool) $("containerized").checked = false;
+  if (options.replaceBody) {
+    setFunctionBody(defaultFunctionBody(profileName));
+    state.bodyProfile = profileName;
+  }
+  updateCodeHighlight();
+}
 
-      function fillEditor(fn) {
-        state.selectedId = fn?.id || null;
-        $("editor-title").textContent = fn?.displayName || "New function";
-        $("editor-subtitle").textContent = fn?.slug || "draft";
-        $("slug").value = fn?.slug || "";
-        $("display-name").value = fn?.displayName || "";
-        $("status").value = fn?.status || "draft";
-        const profileName = processProfileForFunction(fn);
-        const lambdaDeployment = deploymentMeta(fn?.metaData);
-        $("process-profile").value = profileName;
-        $("runtime").value = normalizeRuntime(fn?.runtime || processProfiles[profileName]?.runtime || "nodejs");
-        $("container-runner").value = lambdaDeployment.containerRunner || defaultContainerRunner;
-        $("reuse-key").value = fn?.reuseKey || "";
-        $("idle-timeout").value = fn?.idleTimeoutSeconds || 300;
-        $("max-run").value = fn?.maxRunMs || 30000;
-        syncEntryCommand();
-        $("containerized").checked = Boolean(fn?.containerized);
-        syncContainerPolicy();
-        syncBaseImages(lambdaDeployment.baseImage || "");
-        $("container-image").value = fn?.containerImage || "";
-        $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
-        $("description").value = fn?.description || "";
-        $("function-body").value = fn?.functionBody || defaultFunctionBody(profileName);
-        $("labels-json").value = JSON.stringify(fn?.labels ?? [], null, 2);
-        $("meta-json").value = JSON.stringify(fn?.metaData ?? {}, null, 2);
-        $("request-json").value = JSON.stringify({ body: { ping: "pong" } }, null, 2);
-        $("invoke-route").textContent = `/lambdas/invoke/${fn?.id || ":function-id"}`;
-        $("output").textContent = "";
-        setSaveState("idle");
-        setRunState("idle");
-        renderFunctions();
-      }
+function deploymentMetaFromControls(existingMeta = {}) {
+  const profileName = normalizeProcessProfile($("process-profile").value);
+  const profile = processProfiles[profileName] || processProfiles.nodejs;
+  const existingDeployment = deploymentMeta(existingMeta);
+  const timeout = queryParam("containerPoolTimeoutMs");
+  return {
+    ...existingDeployment,
+    ...(timeout ? { containerPoolTimeoutMs: Number(timeout) || timeout } : {}),
+    processProfile: profileName,
+    poolSlug: profile.poolSlug,
+    runtime: profile.runtime,
+    baseImage: $("base-image").value,
+    containerRunner: $("container-runner").value || defaultContainerRunner,
+  };
+}
 
-      function renderFunctions() {
-        const list = $("function-list");
-        list.textContent = "";
-        const search = $("search").value.trim().toLowerCase();
-        const functions = state.functions.filter((fn) => {
-          const haystack = `${fn.id} ${fn.slug} ${fn.displayName} ${fn.description}`.toLowerCase();
-          return !search || haystack.includes(search);
-        });
-        $("snapshot-meta").textContent = `${functions.length} of ${state.functions.length} functions`;
-        if (!functions.length) {
-          const empty = document.createElement("p");
-          empty.className = "muted";
-          empty.textContent = "No functions found.";
-          list.appendChild(empty);
-          return;
-        }
-        for (const fn of functions) {
-          const details = document.createElement("details");
-          details.open = fn.id === state.selectedId;
-          const summary = document.createElement("summary");
-          const left = document.createElement("span");
-          const title = document.createElement("span");
-          title.className = "summary-title";
-          title.textContent = fn.displayName || fn.slug;
-          const meta = document.createElement("span");
-          meta.className = "summary-meta";
-          const processProfile = processProfileForFunction(fn);
-          const lambdaDeployment = deploymentMeta(fn.metaData);
-          const mode = fn.containerized ? `container ${fn.containerBuildStatus || "pending"}` : "host";
-          const runner = lambdaDeployment.containerRunner ? ` - ${lambdaDeployment.containerRunner}` : "";
-          meta.textContent = `${fn.slug} - ${fn.id.slice(0, 8)} - ${processProfile} via ${normalizeRuntime(fn.runtime)} - ${mode}${runner} - updated ${fmt(fn.updatedAt)}`;
-          left.append(title, meta);
-          const status = document.createElement("span");
-          status.className = fn.status === "active" ? "pill" : fn.status === "paused" ? "pill warn" : "pill bad";
-          status.textContent = fn.status;
-          summary.append(left, status);
-          summary.addEventListener("click", () => {
-            state.queryAutofillActive = false;
-            fillEditor(fn);
-          });
-          const body = document.createElement("div");
-          body.className = "details-body";
-          const description = document.createElement("p");
-          description.textContent = fn.description || "No description";
-          const actions = document.createElement("div");
-          actions.className = "actions";
-          const edit = document.createElement("button");
-          edit.type = "button";
-          edit.textContent = "Edit";
-          edit.addEventListener("click", () => {
-            state.queryAutofillActive = false;
-            fillEditor(fn);
-          });
-          const run = document.createElement("button");
-          run.type = "button";
-          run.className = "primary";
-          run.textContent = "Run";
-          run.addEventListener("click", () => {
-            state.queryAutofillActive = false;
-            fillEditor(fn);
-            invokeSelected().catch((error) => {
-              setRunState("failed", "bad");
-              $("output").textContent = String(error);
-            });
-          });
-          actions.append(edit, run);
-          body.append(description, actions);
-          details.append(summary, body);
-          list.appendChild(details);
-        }
-      }
+function applyQueryAutofill() {
+  if (!autofillParamNames.some((name) => queryParams.has(name))) return;
+  state.queryAutofillActive = true;
+  const runtimeValue = queryParam("runtime");
+  const profileValue = queryParam("processProfile", "profile", "process");
+  const profileName = profileValue
+    ? normalizeProcessProfile(profileValue)
+    : runtimeValue
+      ? processProfileForRuntime(runtimeValue)
+      : normalizeProcessProfile($("process-profile").value);
+  const bodyValue = queryParam("functionBody", "body", "code", "source");
 
-      async function load() {
-        const response = await fetch("/api/lambdas/functions?limit=250", { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error(`GET /api/lambdas/functions failed: HTTP ${response.status}`);
-        }
-        const data = await response.json();
-        state.functions = Array.isArray(data.functions) ? data.functions : [];
-        if (state.selectedId) {
-          const stillSelected = selectedFunction();
-          if (stillSelected) fillEditor(stillSelected);
-        } else if (!state.queryAutofillActive && state.functions.length) {
-          fillEditor(state.functions[0]);
-        } else if (!state.queryAutofillActive) {
-          fillEditor(null);
-        }
-        renderFunctions();
-      }
+  $("process-profile").value = profileName;
+  syncProcessProfile({
+    baseImage: queryParam("baseImage", "image") || "",
+    replaceBody: bodyValue === null,
+  });
+  selectValue("container-runner", queryParam("containerRunner", "runner"));
+  ensureSelectValue("base-image", queryParam("baseImage", "image"));
 
-      async function save() {
-        setSaveState("saving");
-        const payload = functionPayload();
-        if (!payload.slug || !payload.displayName || !payload.functionBody.trim()) {
-          setSaveState("missing fields", "bad");
-          return;
-        }
-        const current = selectedFunction();
-        const route = current ? `/api/lambdas/functions/${encodeURIComponent(current.id)}` : "/api/lambdas/functions";
-        const response = await fetch(route, {
-          method: current ? "PATCH" : "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) {
-          setSaveState("failed", "bad");
-          $("output").textContent = JSON.stringify(data, null, 2);
-          return;
-        }
-        setSaveState("saved", "ok");
-        await load();
-        const saved = state.functions.find((fn) => fn.id === data.function?.id);
-        if (saved) {
-          state.queryAutofillActive = false;
-          fillEditor(saved);
-        }
-      }
+  const slug = queryParam("slug");
+  if (slug !== null) $("slug").value = normalizeSlug(slug);
+  const displayName = queryParam("displayName", "name", "title");
+  if (displayName !== null) $("display-name").value = displayName;
+  if (!$("display-name").value && $("slug").value) $("display-name").value = $("slug").value;
+  const description = queryParam("description");
+  if (description !== null) $("description").value = description;
+  selectValue("status", queryParam("status"));
+  const reuseKey = queryParam("reuseKey");
+  if (reuseKey !== null) $("reuse-key").value = reuseKey;
+  const idleTimeout = queryParam("idleTimeoutSeconds", "idleTimeout");
+  if (idleTimeout !== null) $("idle-timeout").value = idleTimeout;
+  const maxRun = queryParam("maxRunMs", "maxRun");
+  if (maxRun !== null) $("max-run").value = maxRun;
+  if (queryHas("containerized", "container")) {
+    $("containerized").checked = queryBoolean(queryParam("containerized", "container"), $("containerized").checked);
+  }
+  syncContainerPolicy();
+  if (bodyValue !== null) {
+    setFunctionBody(bodyValue);
+    state.bodyProfile = generatedDefaultProfile(bodyValue) || null;
+  }
 
-      async function invokeSelected() {
-        const current = selectedFunction();
-        const functionId = current?.id;
-        if (!functionId) {
-          setRunState("save first", "bad");
-          return;
-        }
-        const request = parseJsonField("request-json", {});
-        $("invoke-route").textContent = `/lambdas/invoke/${functionId}`;
-        setRunState("running");
-        const response = await fetch(`/lambdas/invoke/${encodeURIComponent(functionId)}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(request),
-        });
-        const text = await response.text();
-        setRunState(response.ok ? "complete" : "failed", response.ok ? "ok" : "bad");
-        try {
-          $("output").textContent = JSON.stringify(JSON.parse(text), null, 2);
-        } catch {
-          $("output").textContent = text;
-        }
-      }
+  const labels = queryParam("labels", "labelsJson");
+  if (labels !== null) $("labels-json").value = jsonText(labels, []);
+  const metaText = queryParam("metaData", "meta", "metaJson");
+  const metaData = metaText === null ? parseJsonField("meta-json", {}) : jsonValue(metaText, {});
+  metaData.lambdaDeployment = deploymentMetaFromControls(metaData);
+  $("meta-json").value = JSON.stringify(metaData, null, 2);
+  const request = queryParam("request", "requestJson", "payload");
+  if (request !== null) $("request-json").value = jsonText(request, {});
 
-      $("refresh").addEventListener("click", () => load().catch((error) => setSaveState(String(error), "bad")));
-      $("new-function").addEventListener("click", () => {
-        state.queryAutofillActive = false;
-        fillEditor(null);
-      });
-      $("search").addEventListener("input", renderFunctions);
-      $("slug").addEventListener("input", () => {
-        $("slug").value = normalizeSlug($("slug").value);
-        $("invoke-route").textContent = `/lambdas/invoke/${selectedFunction()?.id || ":function-id"}`;
-      });
-      $("runtime").addEventListener("change", () => {
-        $("process-profile").value = processProfileForRuntime($("runtime").value);
-        syncEntryCommand();
-        syncContainerPolicy();
-        syncBaseImages();
-        if (!selectedFunction() && !$("function-body").value.trim()) {
-          $("function-body").value = defaultFunctionBody($("runtime").value);
-        }
-      });
-      $("process-profile").addEventListener("change", () => syncProcessProfile({ replaceBody: !selectedFunction() }));
-      $("reset").addEventListener("click", () => {
-        fillEditor(selectedFunction());
-        if (state.queryAutofillActive && !selectedFunction()) applyQueryAutofill();
-      });
-      $("save").addEventListener("click", () => save().catch((error) => {
-        setSaveState("failed", "bad");
-        $("output").textContent = String(error);
-      }));
-      $("run").addEventListener("click", () => invokeSelected().catch((error) => {
+  $("editor-title").textContent = $("display-name").value || "New function";
+  $("editor-subtitle").textContent = $("slug").value || "query draft";
+  $("invoke-route").textContent = "/lambdas/invoke/:function-id";
+  state.editorDirty = true;
+  setSaveState("query autofilled", "ok");
+}
+
+function normalizeSlug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+}
+
+function fmt(value) {
+  if (!value) return "never";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function parseJsonField(id, fallback) {
+  const value = $(id).value.trim();
+  if (!value) return fallback;
+  return JSON.parse(value);
+}
+
+function selectedFunction() {
+  return state.functions.find((fn) => fn.id === state.selectedId) || null;
+}
+
+function functionPayload() {
+  const profileName = normalizeProcessProfile($("process-profile").value);
+  const profile = processProfiles[profileName] || processProfiles.nodejs;
+  const metaData = parseJsonField("meta-json", {});
+  metaData.lambdaDeployment = deploymentMetaFromControls(metaData);
+  return {
+    slug: normalizeSlug($("slug").value),
+    displayName: $("display-name").value.trim(),
+    description: $("description").value.trim(),
+    runtime: normalizeRuntime(profile.runtime),
+    entryCommand: entryCommands[normalizeRuntime(profile.runtime)] || defaultCommand,
+    functionBody: $("function-body").value,
+    reuseKey: $("reuse-key").value.trim() || null,
+    idleTimeoutSeconds: Number($("idle-timeout").value || 300),
+    maxRunMs: Number($("max-run").value || 30000),
+    containerized: $("containerized").checked,
+    status: $("status").value,
+    labels: parseJsonField("labels-json", []),
+    metaData,
+  };
+}
+
+function clearFieldErrors() {
+  for (const node of document.querySelectorAll(".field-invalid")) {
+    node.classList.remove("field-invalid");
+  }
+  for (const node of document.querySelectorAll(".field-hint")) {
+    node.remove();
+  }
+}
+
+function setFieldError(id, message) {
+  const field = $(id);
+  if (!field) return;
+  field.classList.add("field-invalid");
+  const editor = field.closest(".code-editor");
+  if (editor) editor.classList.add("field-invalid");
+  const label = field.closest("label");
+  if (!label || label.querySelector(".field-hint")) return;
+  const hint = document.createElement("div");
+  hint.className = "field-hint";
+  hint.textContent = message;
+  label.appendChild(hint);
+}
+
+function validationIssue(field, id, message) {
+  return { field, id, message };
+}
+
+function validateDraft() {
+  clearFieldErrors();
+  const errors = [];
+  let labels = [];
+  let metaData = {};
+  const slug = normalizeSlug($("slug").value);
+  if (!slug) errors.push(validationIssue("Slug", "slug", "Slug is required."));
+  if (slug && slug.length < 3) errors.push(validationIssue("Slug", "slug", "Slug must be at least 3 characters."));
+  const displayName = $("display-name").value.trim();
+  if (!displayName) errors.push(validationIssue("Name", "display-name", "Name is required."));
+  const functionBody = $("function-body").value;
+  if (!functionBody.trim()) errors.push(validationIssue("Function body", "function-body", "Function body is required."));
+  try {
+    labels = parseJsonField("labels-json", []);
+    if (!Array.isArray(labels)) {
+      errors.push(validationIssue("Labels JSON", "labels-json", "Labels JSON must be an array."));
+    }
+  } catch (error) {
+    errors.push(validationIssue("Labels JSON", "labels-json", `Labels JSON is invalid: ${error.message}`));
+  }
+  try {
+    metaData = parseJsonField("meta-json", {});
+    if (!metaData || typeof metaData !== "object" || Array.isArray(metaData)) {
+      errors.push(validationIssue("Meta JSON", "meta-json", "Meta JSON must be an object."));
+    }
+  } catch (error) {
+    errors.push(validationIssue("Meta JSON", "meta-json", `Meta JSON is invalid: ${error.message}`));
+  }
+  for (const issue of errors) setFieldError(issue.id, issue.message);
+  if (errors.length) return { errors, payload: null };
+  const profileName = normalizeProcessProfile($("process-profile").value);
+  const profile = processProfiles[profileName] || processProfiles.nodejs;
+  metaData.lambdaDeployment = deploymentMetaFromControls(metaData);
+  return {
+    errors,
+    payload: {
+      slug,
+      displayName,
+      description: $("description").value.trim(),
+      runtime: normalizeRuntime(profile.runtime),
+      entryCommand: entryCommands[normalizeRuntime(profile.runtime)] || defaultCommand,
+      functionBody,
+      reuseKey: $("reuse-key").value.trim() || null,
+      idleTimeoutSeconds: Number($("idle-timeout").value || 300),
+      maxRunMs: Number($("max-run").value || 30000),
+      containerized: $("containerized").checked,
+      status: $("status").value,
+      labels,
+      metaData,
+    },
+  };
+}
+
+function renderIssues(title, issues) {
+  $("output").textContent = JSON.stringify({ ok: false, title, issues }, null, 2);
+}
+
+function clientSyntaxCheck(payload) {
+  if (normalizeRuntime(payload.runtime) !== "nodejs") return { ok: true, skipped: true };
+  try {
+    new Function(
+      "request",
+      "context",
+      "console",
+      "process",
+      "require",
+      "Buffer",
+      `"use strict"; return (async () => {\n${payload.functionBody}\n})();`,
+    );
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function backendSyntaxCheck(payload) {
+  if (normalizeRuntime(payload.runtime) !== "nodejs") return { ok: true, skipped: true };
+  const response = await fetch("/lambdas/check", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({ ok: false, error: `HTTP ${response.status}` }));
+  if (response.status === 404 || response.status === 405) {
+    return { ok: true, skipped: true, data: { ok: true, warning: "Backend compile check route is not deployed yet." } };
+  }
+  return { ok: response.ok && data.ok !== false, status: response.status, data };
+}
+
+async function checkDraft() {
+  const { errors, payload } = validateDraft();
+  if (errors.length || !payload) {
+    setSaveState(`${errors.length} field issue${errors.length === 1 ? "" : "s"}`, "bad");
+    renderIssues("Fix required fields", errors);
+    return { ok: false };
+  }
+  const local = clientSyntaxCheck(payload);
+  if (!local.ok) {
+    setFieldError("function-body", local.error);
+    setSaveState("syntax failed", "bad");
+    renderIssues("Function body syntax failed", [
+      validationIssue("Function body", "function-body", local.error),
+    ]);
+    return { ok: false };
+  }
+  setSaveState("checking");
+  try {
+    const remote = await backendSyntaxCheck(payload);
+    if (!remote.ok) {
+      setFieldError("function-body", remote.data?.error || "Backend compile check failed.");
+      setSaveState("backend check failed", "bad");
+      $("output").textContent = JSON.stringify(remote.data, null, 2);
+      return { ok: false };
+    }
+    setSaveState(remote.skipped ? "local check passed" : "check passed", "ok");
+    $("output").textContent = JSON.stringify(remote.data || { ok: true }, null, 2);
+    return { ok: true, payload };
+  } catch (error) {
+    setSaveState("local check passed", "ok");
+    $("output").textContent = JSON.stringify({
+      ok: true,
+      warning: `Backend check unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    }, null, 2);
+    return { ok: true, payload };
+  }
+}
+
+function setSaveState(message, kind = "warn") {
+  const node = $("save-state");
+  node.textContent = message;
+  node.className = kind === "bad" ? "pill bad" : kind === "ok" ? "pill" : "pill warn";
+}
+
+function setRunState(message, kind = "warn") {
+  const node = $("run-state");
+  node.textContent = message;
+  node.className = kind === "bad" ? "pill bad" : kind === "ok" ? "pill" : "pill warn";
+}
+
+function fillEditor(fn) {
+  state.selectedId = fn?.id || null;
+  $("editor-title").textContent = fn?.displayName || "New function";
+  $("editor-subtitle").textContent = fn?.slug || "draft";
+  $("slug").value = fn?.slug || "";
+  $("display-name").value = fn?.displayName || "";
+  $("status").value = fn?.status || "draft";
+  const profileName = processProfileForFunction(fn);
+  const lambdaDeployment = deploymentMeta(fn?.metaData);
+  $("process-profile").value = profileName;
+  $("runtime").value = normalizeRuntime(fn?.runtime || processProfiles[profileName]?.runtime || "nodejs");
+  $("container-runner").value = lambdaDeployment.containerRunner || defaultContainerRunner;
+  $("reuse-key").value = fn?.reuseKey || "";
+  $("idle-timeout").value = fn?.idleTimeoutSeconds || 300;
+  $("max-run").value = fn?.maxRunMs || 30000;
+  syncEntryCommand();
+  $("containerized").checked = Boolean(fn?.containerized);
+  syncContainerPolicy();
+  syncBaseImages(lambdaDeployment.baseImage || "");
+  $("container-image").value = fn?.containerImage || "";
+  $("container-build-status").value = fn?.containerBuildStatus || (fn?.containerized ? "pending" : "not_requested");
+  $("description").value = fn?.description || "";
+  setFunctionBody(fn?.functionBody || defaultFunctionBody(profileName));
+  state.bodyProfile = generatedDefaultProfile($("function-body").value) || profileName;
+  $("labels-json").value = JSON.stringify(fn?.labels ?? [], null, 2);
+  $("meta-json").value = JSON.stringify(fn?.metaData ?? {}, null, 2);
+  $("request-json").value = JSON.stringify({ body: { ping: "pong" } }, null, 2);
+  $("invoke-route").textContent = `/lambdas/invoke/${fn?.id || ":function-id"}`;
+  $("output").textContent = "";
+  setSaveState("idle");
+  setRunState("idle");
+  state.editorDirty = false;
+  clearFieldErrors();
+  updateCodeHighlight();
+  renderFunctions();
+}
+
+function renderFunctions() {
+  const list = $("function-list");
+  list.textContent = "";
+  const search = $("search").value.trim().toLowerCase();
+  const functions = state.functions.filter((fn) => {
+    const haystack = `${fn.id} ${fn.slug} ${fn.displayName} ${fn.description}`.toLowerCase();
+    return !search || haystack.includes(search);
+  });
+  $("snapshot-meta").textContent = `${functions.length} of ${state.functions.length} functions`;
+  if (!functions.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No functions found.";
+    list.appendChild(empty);
+    return;
+  }
+  for (const fn of functions) {
+    const details = document.createElement("details");
+    details.open = fn.id === state.selectedId;
+    const summary = document.createElement("summary");
+    const left = document.createElement("span");
+    const title = document.createElement("span");
+    title.className = "summary-title";
+    title.textContent = fn.displayName || fn.slug;
+    const meta = document.createElement("span");
+    meta.className = "summary-meta";
+    const processProfile = processProfileForFunction(fn);
+    const lambdaDeployment = deploymentMeta(fn.metaData);
+    const mode = fn.containerized ? `container ${fn.containerBuildStatus || "pending"}` : "host";
+    const runner = lambdaDeployment.containerRunner ? ` - ${lambdaDeployment.containerRunner}` : "";
+    meta.textContent = `${fn.slug} - ${fn.id.slice(0, 8)} - ${processProfile} via ${normalizeRuntime(fn.runtime)} - ${mode}${runner} - updated ${fmt(fn.updatedAt)}`;
+    left.append(title, meta);
+    const status = document.createElement("span");
+    status.className = fn.status === "active" ? "pill" : fn.status === "paused" ? "pill warn" : "pill bad";
+    status.textContent = fn.status;
+    summary.append(left, status);
+    summary.addEventListener("click", () => {
+      state.queryAutofillActive = false;
+      fillEditor(fn);
+    });
+    const body = document.createElement("div");
+    body.className = "details-body";
+    const description = document.createElement("p");
+    description.textContent = fn.description || "No description";
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => {
+      state.queryAutofillActive = false;
+      fillEditor(fn);
+    });
+    const run = document.createElement("button");
+    run.type = "button";
+    run.className = "primary";
+    run.textContent = "Run";
+    run.addEventListener("click", () => {
+      state.queryAutofillActive = false;
+      fillEditor(fn);
+      invokeSelected().catch((error) => {
         setRunState("failed", "bad");
         $("output").textContent = String(error);
-      }));
+      });
+    });
+    actions.append(edit, run);
+    body.append(description, actions);
+    details.append(summary, body);
+    list.appendChild(details);
+  }
+}
 
-      fillEditor(null);
-      applyQueryAutofill();
-      const handleLoadError = (error) => {
-        setSaveState("load failed", "bad");
-        $("snapshot-meta").textContent = String(error);
-      };
-      load().catch(handleLoadError);
-      setInterval(() => load().catch(handleLoadError), 15000);
-    </script>
-  </body>
-</html>
-"#;
+async function load() {
+  const response = await fetch("/api/lambdas/functions?limit=250", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`GET /api/lambdas/functions failed: HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  state.functions = Array.isArray(data.functions) ? data.functions : [];
+  if (state.selectedId) {
+    const stillSelected = selectedFunction();
+    if (stillSelected && !state.editorDirty) fillEditor(stillSelected);
+  } else if (!state.editorDirty && !state.queryAutofillActive && state.functions.length) {
+    fillEditor(state.functions[0]);
+  } else if (!state.editorDirty && !state.queryAutofillActive) {
+    fillEditor(null);
+  }
+  renderFunctions();
+}
+
+async function save() {
+  setSaveState("saving");
+  const checked = await checkDraft();
+  if (!checked.ok) {
+    return;
+  }
+  const payload = checked.payload;
+  const current = selectedFunction();
+  const route = current ? `/api/lambdas/functions/${encodeURIComponent(current.id)}` : "/api/lambdas/functions";
+  const response = await fetch(route, {
+    method: current ? "PATCH" : "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    setSaveState("failed", "bad");
+    $("output").textContent = JSON.stringify(data, null, 2);
+    return;
+  }
+  setSaveState("saved", "ok");
+  await load();
+  const saved = state.functions.find((fn) => fn.id === data.function?.id);
+  if (saved) {
+    state.queryAutofillActive = false;
+    fillEditor(saved);
+  }
+}
+
+async function invokeSelected() {
+  const current = selectedFunction();
+  const functionId = current?.id;
+  if (!functionId) {
+    setRunState("save first", "bad");
+    return;
+  }
+  const request = parseJsonField("request-json", {});
+  $("invoke-route").textContent = `/lambdas/invoke/${functionId}`;
+  setRunState("running");
+  const response = await fetch(`/lambdas/invoke/${encodeURIComponent(functionId)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  const text = await response.text();
+  setRunState(response.ok ? "complete" : "failed", response.ok ? "ok" : "bad");
+  try {
+    $("output").textContent = JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    $("output").textContent = text;
+  }
+}
+
+$("refresh").addEventListener("click", () => load().catch((error) => setSaveState(String(error), "bad")));
+$("new-function").addEventListener("click", () => {
+  state.queryAutofillActive = false;
+  fillEditor(null);
+});
+$("search").addEventListener("input", renderFunctions);
+$("slug").addEventListener("input", () => {
+  markEditorDirty();
+  $("slug").value = normalizeSlug($("slug").value);
+  $("invoke-route").textContent = `/lambdas/invoke/${selectedFunction()?.id || ":function-id"}`;
+});
+$("runtime").addEventListener("change", () => {
+  const previousProfile = normalizeProcessProfile($("process-profile").value);
+  const replaceBody = shouldReplaceGeneratedBody(previousProfile);
+  $("process-profile").value = processProfileForRuntime($("runtime").value);
+  syncProcessProfile({ replaceBody });
+  markEditorDirty();
+});
+$("process-profile").addEventListener("change", () => {
+  const previousProfile = state.bodyProfile || generatedDefaultProfile($("function-body").value);
+  const replaceBody = shouldReplaceGeneratedBody(previousProfile);
+  syncProcessProfile({ replaceBody });
+  markEditorDirty();
+  if (!replaceBody) setSaveState("kept custom body", "warn");
+});
+for (const id of [
+  "display-name", "status", "container-runner", "base-image", "containerized",
+  "reuse-key", "idle-timeout", "max-run", "description", "labels-json", "meta-json",
+  "request-json",
+]) {
+  $(id).addEventListener("input", markEditorDirty);
+  $(id).addEventListener("change", markEditorDirty);
+}
+$("function-body").addEventListener("input", markBodyDirty);
+$("function-body").addEventListener("scroll", syncCodeScroll);
+$("check").addEventListener("click", () => checkDraft().catch((error) => {
+  setSaveState("check failed", "bad");
+  $("output").textContent = String(error);
+}));
+$("reset").addEventListener("click", () => {
+  fillEditor(selectedFunction());
+  if (state.queryAutofillActive && !selectedFunction()) applyQueryAutofill();
+});
+$("save").addEventListener("click", () => save().catch((error) => {
+  setSaveState("failed", "bad");
+  $("output").textContent = String(error);
+}));
+$("run").addEventListener("click", () => invokeSelected().catch((error) => {
+  setRunState("failed", "bad");
+  $("output").textContent = String(error);
+}));
+
+fillEditor(null);
+applyQueryAutofill();
+const handleLoadError = (error) => {
+  setSaveState("load failed", "bad");
+  $("snapshot-meta").textContent = String(error);
+};
+load().catch(handleLoadError);
+setInterval(() => load().catch(handleLoadError), 15000);
+"###;
 
 async fn favicon() -> impl IntoResponse {
     record_request("GET", "/favicon.ico", StatusCode::NO_CONTENT);

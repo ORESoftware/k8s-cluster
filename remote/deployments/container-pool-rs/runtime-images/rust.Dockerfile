@@ -1,7 +1,8 @@
 FROM docker.io/library/rust:1.90-alpine AS build
 WORKDIR /build
 COPY runtime-images/common/rust-handler.rs ./rust-handler.rs
-RUN rustc -C opt-level=3 -o /out/dd-pool-rust-handler rust-handler.rs
+RUN mkdir -p /out \
+  && rustc -C opt-level=3 -o /out/dd-pool-rust-handler rust-handler.rs
 
 FROM docker.io/library/alpine:3.22
 RUN apk add --no-cache python3 ca-certificates \

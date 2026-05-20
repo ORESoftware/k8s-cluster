@@ -17,6 +17,13 @@ pub fn invoke_definition(
   timeout_ms: Int,
 ) -> Result(String, String)
 
+@external(erlang, "lambda_child_runner", "check_definition")
+pub fn check_definition(
+  command: String,
+  definition: String,
+  timeout_ms: Int,
+) -> Result(String, String)
+
 @external(erlang, "lambda_child_runner", "metrics")
 pub fn metrics() -> String
 

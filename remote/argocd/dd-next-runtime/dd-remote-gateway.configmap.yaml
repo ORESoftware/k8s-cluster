@@ -156,6 +156,26 @@ data:
         proxy_pass http://dd-gleam-lambda-runner.default.svc.cluster.local:8083/invoke/;
       }
 
+      location = /lambdas/check {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        if ($request_method != POST) {
+          return 405;
+        }
+        client_max_body_size 1m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 35;
+        proxy_send_timeout 35;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-gleam-lambda-runner.default.svc.cluster.local:8083/check;
+      }
+
       location /api/lambdas/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;

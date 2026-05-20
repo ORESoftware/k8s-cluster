@@ -388,6 +388,9 @@ test('container pool runtime base images cover the supported language pools', as
   const worker = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/worker.py');
   const shim = await readRepoFile('remote/deployments/container-pool-rs/scripts/nerdctl-process-shim.py');
   const runtimeReadme = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/readme.md');
+  const rustHandler = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/rust-handler.rs');
+  const golangHandler = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/golang-handler.go');
+  const erlangHandler = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/erlang-handler.escript');
   const dockerfiles = new Map(
     await Promise.all(
       ['nodejs', 'rust', 'golang', 'python3', 'dart', 'gleamlang', 'erlang'].map(
@@ -418,6 +421,12 @@ test('container pool runtime base images cover the supported language pools', as
   assert.match(runtimeReadme, /nodejs/);
   assert.match(runtimeReadme, /gleamlang/);
   assert.match(runtimeReadme, /DD_POOL_NATS_HEARTBEAT_SUBJECT/);
+  assert.match(rustHandler, /evaluate_expression/);
+  assert.match(rustHandler, /answer/);
+  assert.match(golangHandler, /evaluateExpression/);
+  assert.match(golangHandler, /"answer"/);
+  assert.match(erlangHandler, /eval_expr/);
+  assert.match(erlangHandler, /answer/);
 
   for (const [runtime, dockerfile] of dockerfiles) {
     assert.match(dockerfile, / AS /, `${runtime} image should be multi-stage`);
@@ -437,9 +446,12 @@ test('container pool runtime base images cover the supported language pools', as
 
   assert.match(dockerfiles.get('nodejs') ?? '', /nodejs-current/);
   assert.match(dockerfiles.get('rust') ?? '', /rust:1\.90-alpine AS build/);
+  assert.match(dockerfiles.get('rust') ?? '', /mkdir -p \/out/);
   assert.match(dockerfiles.get('golang') ?? '', /golang:1\.25-alpine AS build/);
+  assert.match(dockerfiles.get('golang') ?? '', /mkdir -p \/out/);
   assert.match(dockerfiles.get('python3') ?? '', /python:3\.13-alpine/);
   assert.match(dockerfiles.get('dart') ?? '', /dart compile exe/);
+  assert.match(dockerfiles.get('dart') ?? '', /mkdir -p \/out/);
   assert.match(dockerfiles.get('gleamlang') ?? '', /gleam:v1\.16\.0-erlang-alpine/);
   assert.match(dockerfiles.get('erlang') ?? '', /erlang:28-alpine/);
 });

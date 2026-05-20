@@ -82,11 +82,16 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(dockerfile, /python3/);
   assert.match(dockerfile, /ruby/);
   assert.match(dockerfile, /bash/);
+  assert.match(dockerfile, /alpine\/edge\/main/);
   assert.match(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner\/runtime-images \.\/remote\/deployments\/gleam-lambda-runner\/runtime-images/);
   assert.doesNotMatch(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner \.\/remote\/deployments\/gleam-lambda-runner/);
   assert.match(dockerfile, /WORKDIR \/app\/remote\/deployments\/gleam-lambda-runner/);
   assert.match(nodeRuntimeDockerfile, /nodejs-current/);
   assert.match(bashRuntimeDockerfile, /nodejs-current/);
+  assert.match(nodeRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "\/opt\/dd-lambda\/runner\.mjs"\]/);
+  assert.match(bashRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "--allow-child-process", "\/opt\/dd-lambda\/runner\.mjs"\]/);
+  assert.doesNotMatch(nodeRuntimeDockerfile, /"--allow-net"/);
+  assert.doesNotMatch(bashRuntimeDockerfile, /"--allow-net"/);
   assert.doesNotMatch(nodeRuntimeDockerfile, /node:22-alpine/);
   assert.doesNotMatch(bashRuntimeDockerfile, /node:22-alpine/);
   assert.match(pgContract, /import pg_defs/);
@@ -96,6 +101,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
     httpServer,
     /\["invoke", function_id\] ->\s*require_authenticated_post\(req, fn\(\) \{ invoke\(req, function_id\) \}\)/,
   );
+  assert.match(
+    httpServer,
+    /\["check"\] -> require_authenticated_post\(req, fn\(\) \{ check\(req\) \}\)/,
+  );
+  assert.match(httpServer, /child_process\.check_definition/);
   assert.match(httpServer, /server_auth_secret/);
   assert.match(httpServer, /@external\(erlang, "lambda_runtime_env", "getenv"\)/);
   assert.match(httpServer, /pub fn bind_host\(\)/);
@@ -151,8 +161,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(lambdaNats, /dropping oversized message/);
   assert.match(lambdaNats, /<<"\\\\t">>/);
   assert.match(childProcess, /@external\(erlang, "lambda_child_runner", "invoke"\)/);
+  assert.match(childProcess, /@external\(erlang, "lambda_child_runner", "check_definition"\)/);
   assert.match(erlPort, /ShellCommand = "exec " \+\+ binary_to_list\(Command\)/);
   assert.match(erlPort, /open_port\(\{spawn_executable, "\/bin\/sh"\}/);
+  assert.match(erlPort, /stderr_to_stdout/);
+  assert.match(erlPort, /check_definition\(Command0, DefinitionJson0, TimeoutMs0\)/);
   assert.match(erlPort, /worker_loop/);
   assert.match(erlPort, /lambda_child_runner_manager/);
   assert.match(erlPort, /manager_bootstrap/);
@@ -203,6 +216,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(jsRunner, /PUB \$\{subject\} \$\{inbox\}/);
   assert.match(jsRunner, /LAMBDA_FUNCTION_CACHE_MAX/);
   assert.match(jsRunner, /LAMBDA_RESULT_MAX_BYTES/);
+  assert.match(jsRunner, /checkOnly === true/);
   assert.match(jsRunner, /globalThis\.console = safeConsole/);
   assert.match(jsRunner, /Object\.defineProperty\(globalThis, 'process'/);
   assert.match(jsRunner, /resolveDefinition/);
@@ -251,9 +265,11 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /function syncContainerPolicy\(\)/);
   assert.match(webHome, /requiresContainer \? "This runtime requires container execution\."/);
   assert.match(webHome, /id="process-profile"/);
+  assert.match(webHome, /id="check"/);
   assert.match(webHome, /<option value="nodejs">nodejs process<\/option>/);
   assert.match(webHome, /<option value="python3">python3 process<\/option>/);
   assert.match(webHome, /<option value="rust">rust process<\/option>/);
+  assert.match(webHome, /<option value="golang">golang process<\/option>/);
   assert.match(webHome, /<option value="gleamlang">gleamlang process<\/option>/);
   assert.match(webHome, /id="container-runner"/);
   assert.match(webHome, /containerd \/ ctr/);
@@ -261,17 +277,22 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /<option value="docker">docker<\/option>/);
   assert.match(webHome, /id="base-image"/);
   assert.match(webHome, /docker\.io\/library\/dd-container-pool-rust-runtime:dev/);
+  assert.match(webHome, /docker\.io\/library\/dd-container-pool-golang-runtime:dev/);
   assert.match(webHome, /docker\.io\/library\/dd-container-pool-gleamlang-runtime:dev/);
   assert.match(webHome, /metaData\.lambdaDeployment/);
   assert.match(webHome, /context\.containerPool\.dispatch/);
   assert.match(webHome, /const queryParams = new URLSearchParams\(location\.search\)/);
   assert.match(webHome, /function applyQueryAutofill\(\)/);
+  assert.match(webHome, /function validateDraft\(\)/);
+  assert.match(webHome, /function backendSyntaxCheck\(payload\)/);
+  assert.match(webHome, /shouldReplaceGeneratedBody/);
+  assert.match(webHome, /state\.editorDirty/);
   assert.match(webHome, /"processProfile", "profile", "process"/);
   assert.match(webHome, /"containerRunner", "runner", "baseImage", "image"/);
   assert.match(webHome, /"functionBody",\s*"body",\s*"code",\s*"source"/);
   assert.match(webHome, /state\.queryAutofillActive/);
   assert.match(webHomeReadme, /query params to prefill a new draft/);
-  assert.match(webHomeReadme, /`processProfile` \(`nodejs`, `python3`, `rust`,\s*or `gleamlang`\)/);
+  assert.match(webHomeReadme, /`processProfile` \(`nodejs`, `python3`, `rust`,\s*`golang`, or `gleamlang`\)/);
   assert.match(webHome, /<option value="python3">python3<\/option>/);
   assert.match(webHome, /<option value="ruby">ruby<\/option>/);
   assert.match(webHome, /<option value="bash">bash<\/option>/);
@@ -288,6 +309,10 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(
     gateway,
     /location\s+\/lambdas\/invoke\/[\s\S]*request_method != POST[\s\S]*client_max_body_size 5m/,
+  );
+  assert.match(
+    gateway,
+    /location\s+=\s+\/lambdas\/check[\s\S]*proxy_pass http:\/\/dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083\/check/,
   );
   assert.match(
     gateway,

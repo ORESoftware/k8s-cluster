@@ -374,6 +374,10 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /location\s+\/lambdas\/invoke\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083\/invoke\//,
   );
+  assert.match(
+    gateway,
+    /location\s+=\s+\/lambdas\/check[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083\/check/,
+  );
   assert.match(gateway, /location = \/telemetry[\s\S]*return 302 \/telemetry\//);
   assert.match(
     gateway,

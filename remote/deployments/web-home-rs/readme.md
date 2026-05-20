@@ -45,18 +45,24 @@ keeps page rendering separate from data access without making the webserver a pr
 `POST /lambdas/invoke/<function-id>` route.
 
 The editor exposes a deployment profile layer above the persisted lambda runtime: direct `nodejs`
-and `python3` child-process profiles, plus `rust` and `gleamlang` process profiles that generate a
-Node.js wrapper using the lambda runner's `context.containerPool.dispatch(...)` helper. The UI also
+and `python3` child-process profiles, plus `rust`, `golang`, and `gleamlang` process profiles that
+generate a Node.js wrapper using the lambda runner's `context.containerPool.dispatch(...)` helper. The UI also
 captures the intended base image and container runner (`containerd / ctr`, `containerd / nerdctl`,
 or `docker`) in `metaData.lambdaDeployment` so operators can see and revise the deployment intent
 without widening the REST API's trusted entry-command contract.
 
 The page accepts query params to prefill a new draft. Common params are `slug`, `name` or
 `displayName`, `description`, `status`, `runtime`, `processProfile` (`nodejs`, `python3`, `rust`,
-or `gleamlang`), `containerized`, `containerRunner`, `baseImage`, `reuseKey`,
+`golang`, or `gleamlang`), `containerized`, `containerRunner`, `baseImage`, `reuseKey`,
 `idleTimeoutSeconds`, `maxRunMs`, `body` or `functionBody`, `request`, `labels`, `meta`, and
 `containerPoolTimeoutMs`. JSON-valued params such as `request`, `labels`, and `meta` should be URL
 encoded.
+
+The Maud-rendered editor keeps user edits stable across background refreshes, highlights code in
+the selected process profile, reports field-specific save validation, and calls the authenticated
+`POST /lambdas/check` runner path for Node.js compile checks before saving. Process-profile
+switches replace the generated default body only while the body is still one of the generated
+defaults; custom code is left in place.
 
 ## Service directory
 

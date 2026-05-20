@@ -59,6 +59,7 @@ fn route(
     ["metrics"] -> metrics()
     ["invoke", function_id] ->
       require_authenticated_post(req, fn() { invoke(req, function_id) })
+    ["check"] -> require_authenticated_post(req, fn() { check(req) })
     ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
     _ -> not_found()
@@ -87,6 +88,43 @@ fn invoke(
                 200,
                 "{\"ok\":true,\"output\":\"" <> json_escape(output) <> "\"}",
               )
+
+            Error(error) ->
+              json_response(
+                502,
+                "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
+              )
+          }
+        }
+        Error(_) ->
+          json_response(400, "{\"ok\":false,\"error\":\"body-not-utf8\"}")
+      }
+    }
+    Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"invalid-body\"}")
+  }
+}
+
+fn check(
+  req: request.Request(mist.Connection),
+) -> response.Response(mist.ResponseData) {
+  case mist.read_body(req, max_body_bytes) {
+    Ok(req) -> {
+      case bit_array.to_string(req.body) {
+        Ok(payload) -> {
+          case
+            child_process.check_definition(
+              default_command,
+              request_payload(payload),
+              child_timeout_ms,
+            )
+          {
+            Ok(output) -> {
+              let status = case string.contains(output, "\"ok\":false") {
+                True -> 422
+                False -> 200
+              }
+              json_response(status, output)
+            }
 
             Error(error) ->
               json_response(

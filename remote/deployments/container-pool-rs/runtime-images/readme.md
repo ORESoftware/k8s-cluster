@@ -23,6 +23,9 @@ Each image exposes a small HTTP worker on `PORT` with:
 
 The worker executes the trusted `DD_POOL_HANDLER` configured in the image or app config. Dispatch
 requests supply JSON payloads only; they do not choose shell commands.
+The Rust, Go, and Gleam/Erlang smoke handlers also accept an `expr` or `expression` string with a
+simple integer expression such as `3+3` and return an `answer` field, which makes cross-runtime
+lambda/container-pool probes verify real runtime execution instead of metadata-only echoes.
 
 When `NATS_URL` is injected by the manager, the common worker publishes:
 

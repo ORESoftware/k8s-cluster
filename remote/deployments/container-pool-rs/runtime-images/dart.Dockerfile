@@ -1,7 +1,8 @@
 FROM docker.io/library/dart:stable AS build
 WORKDIR /build
 COPY runtime-images/common/dart-handler.dart ./dart-handler.dart
-RUN dart compile exe dart-handler.dart -o /out/dd-pool-dart-handler
+RUN mkdir -p /out \
+  && dart compile exe dart-handler.dart -o /out/dd-pool-dart-handler
 
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update \
