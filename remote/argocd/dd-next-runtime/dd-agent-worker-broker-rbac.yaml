@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-agent-worker-broker
+  namespace: default
+  labels:
+    app: dd-agent-worker-broker

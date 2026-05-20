@@ -10,6 +10,7 @@ resources:
   - dd-remote-rest-api-rbac.yaml
   - dd-remote-rest-api.deployment.yaml
   - dd-remote-rest-api.service.yaml
+  - dd-agent-worker-broker-rbac.yaml
   - dd-agent-worker-broker.deployment.yaml
   - dd-agent-worker-broker.service.yaml
   - dd-container-pool-rbac.yaml
