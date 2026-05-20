@@ -6,9 +6,10 @@ optional non-root containers.
 - `GET /healthz` returns service health.
 - `GET /metrics` exposes Prometheus counters and gauges.
 - `POST /invoke/:function_id` forwards one request envelope to a child process.
+- `POST /check` compiles a posted Node.js lambda definition without executing the function body.
 - `POST /destroy/:reuse_key` closes a cached child process.
 
-`POST /invoke/:function_id` and `POST /destroy/:reuse_key` fail closed unless
+`POST /invoke/:function_id`, `POST /check`, and `POST /destroy/:reuse_key` fail closed unless
 `LAMBDA_SERVER_AUTH_SECRET`, `SERVER_AUTH_SECRET`, or `REMOTE_DEV_SERVER_SECRET` is configured.
 Callers must present the secret in `X-Server-Auth`, `X-Lambda-Runner-Auth`, or `X-Agent-Auth`.
 `GET /healthz` and `GET /metrics` remain unauthenticated for Kubernetes probes and scraping.

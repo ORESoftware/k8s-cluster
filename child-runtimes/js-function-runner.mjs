@@ -268,6 +268,17 @@ async function invoke(line) {
   }
 
   const fn = compileFunction(functionBody);
+  if (envelope.checkOnly === true || envelope.mode === 'check') {
+    return {
+      ok: true,
+      check: {
+        runtime: definition.runtime,
+        slug: definition.slug || envelope.slug,
+      },
+      cachedFunctions: compiledFunctions.size,
+    };
+  }
+
   const result = await fn(request, context, safeConsole, undefined, undefined, undefined);
   return {
     ok: true,

@@ -1,6 +1,6 @@
 -module(lambda_child_runner).
 
--export([invoke/5, invoke_definition/6, metrics/0, destroy/1]).
+-export([invoke/5, invoke_definition/6, check_definition/3, metrics/0, destroy/1]).
 
 -define(SERVER, lambda_child_runner_manager).
 -define(WORKERS, lambda_child_runner_workers).
@@ -49,6 +49,29 @@ invoke_definition(Command0, Identifier0, DefinitionJson0, Payload0, IdleMs0, Tim
         IdleMs0,
         TimeoutMs0
     ).
+
+check_definition(Command0, DefinitionJson0, TimeoutMs0) ->
+    ensure_tables(),
+    FallbackCommand = to_binary(Command0),
+    DefinitionJson = normalize_json_payload(to_binary(DefinitionJson0)),
+    Runtime = runtime_from_definition(DefinitionJson),
+    case Runtime of
+        <<"nodejs">> ->
+            Command = case host_command(Runtime) of
+                {ok, HostCommand} -> HostCommand;
+                {error, _Reason} -> FallbackCommand
+            end,
+            Payload = check_payload(DefinitionJson),
+            invoke_worker(
+                Command,
+                <<"check:nodejs">>,
+                Payload,
+                30000,
+                max_int(TimeoutMs0, 1000)
+            );
+        _ ->
+            {error, iolist_to_binary(["compile check is not implemented for runtime: ", Runtime])}
+    end.
 
 invoke_loaded_definition(FallbackCommand, Identifier, DefinitionJson, RequestPayload, IdleMs0, TimeoutMs0) ->
     case command_for_definition(FallbackCommand, DefinitionJson) of
@@ -476,6 +499,19 @@ invocation_payload(Slug, DefinitionJson, RequestJson) ->
         "}"
     ]).
 
+check_payload(DefinitionJson) ->
+    Slug = case json_string_field(DefinitionJson, <<"slug">>) of
+        <<>> -> <<"lambda-check">>;
+        Value -> Value
+    end,
+    iolist_to_binary([
+        "{\"slug\":\"",
+        json_escape(Slug),
+        "\",\"definition\":",
+        DefinitionJson,
+        ",\"request\":{},\"checkOnly\":true}"
+    ]).
+
 ensure_tables() ->
     ensure_manager(),
     wait_for_tables(500).
@@ -663,6 +699,7 @@ worker_start(Parent, Command) ->
     try open_port({spawn_executable, "/bin/sh"}, [
         binary,
         exit_status,
+        stderr_to_stdout,
         use_stdio,
         {args, ["-c", ShellCommand]}
     ]) of
@@ -707,7 +744,17 @@ worker_receive_result(Port, From, Ref, Buffer) ->
                     end
             end;
         {Port, {exit_status, Status}} ->
-            From ! {Ref, {exit_status, Status}};
+            Reason = case Buffer of
+                <<>> ->
+                    iolist_to_binary(io_lib:format("child exited with status ~p", [Status]));
+                _ ->
+                    Preview = binary:part(Buffer, 0, min(byte_size(Buffer), 4096)),
+                    iolist_to_binary(io_lib:format(
+                        "child exited with status ~p: ~s",
+                        [Status, Preview]
+                    ))
+            end,
+            From ! {Ref, {error, Reason}};
         stop ->
             close_port(Port),
             From ! {Ref, {error, <<"lambda child worker stopped">>}}
