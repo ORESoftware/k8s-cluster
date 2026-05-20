@@ -25,9 +25,23 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --bind_ip_all
+            - --replSet
+            - rs0
           ports:
             - name: mongodb
               containerPort: 27017
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    set -eu
+                    until mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' >/dev/null 2>&1; do
+                      sleep 2
+                    done
+                    mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"gcs-mongodb.default.svc.cluster.local:27017"}]}).ok }' >/dev/null
           resources:
             requests:
               cpu: 100m
