@@ -3,6 +3,7 @@
 
 require 'json'
 require 'net/http'
+require 'ripper'
 require 'uri'
 
 MAX_FUNCTION_BODY_BYTES = Integer(ENV.fetch('LAMBDA_FUNCTION_BODY_MAX_BYTES', '262144'))
@@ -89,12 +90,32 @@ def resolve_definition(envelope)
   definition
 end
 
+def compile_function(function_body)
+  if defined?(::RubyVM::InstructionSequence)
+    ::RubyVM::InstructionSequence.compile(function_body, '<lambda>', '<lambda>', 1)
+  elsif ::Ripper.sexp(function_body).nil?
+    raise ::SyntaxError, 'invalid Ruby syntax'
+  end
+  true
+end
+
 def invoke(line, console)
   envelope = JSON.parse(line)
   definition = resolve_definition(envelope)
   function_body = definition['functionBody'].to_s
   raise 'functionBody is required' if function_body.strip.empty?
   raise 'functionBody exceeds configured byte limit' if function_body.bytesize > MAX_FUNCTION_BODY_BYTES
+
+  compile_function(function_body)
+  if envelope['checkOnly'] == true || envelope['mode'] == 'check'
+    return {
+      ok: true,
+      check: {
+        runtime: definition['runtime'],
+        slug: definition['slug'] || envelope['slug']
+      }
+    }
+  end
 
   request = envelope['request'] || {}
   lambda_context = {
@@ -138,7 +159,7 @@ STDIN.each_line do |line|
 
   begin
     write_result(invoke(line, console))
-  rescue StandardError => e
+  rescue StandardError, SyntaxError => e
     STDERR.write("#{e.class}: #{e.message}\n")
     STDERR.write(e.backtrace.join("\n")) if e.backtrace
     STDERR.write("\n")

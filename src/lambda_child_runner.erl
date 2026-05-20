@@ -54,23 +54,20 @@ check_definition(Command0, DefinitionJson0, TimeoutMs0) ->
     ensure_tables(),
     FallbackCommand = to_binary(Command0),
     DefinitionJson = normalize_json_payload(to_binary(DefinitionJson0)),
-    Runtime = runtime_from_definition(DefinitionJson),
-    case Runtime of
-        <<"nodejs">> ->
-            Command = case host_command(Runtime) of
-                {ok, HostCommand} -> HostCommand;
-                {error, _Reason} -> FallbackCommand
-            end,
+    case command_for_definition(FallbackCommand, DefinitionJson) of
+        {ok, Command} ->
+            Runtime = runtime_from_definition(DefinitionJson),
+            Containerized = json_bool_field(DefinitionJson, <<"containerized">>, false),
             Payload = check_payload(DefinitionJson),
             invoke_worker(
                 Command,
-                <<"check:nodejs">>,
+                check_worker_key(Runtime, Containerized),
                 Payload,
                 30000,
                 max_int(TimeoutMs0, 1000)
             );
-        _ ->
-            {error, iolist_to_binary(["compile check is not implemented for runtime: ", Runtime])}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 invoke_loaded_definition(FallbackCommand, Identifier, DefinitionJson, RequestPayload, IdleMs0, TimeoutMs0) ->
@@ -400,6 +397,11 @@ worker_key(Identifier, DefinitionJson, Runtime, Containerized) ->
                 false -> {error, <<"reuseKey contains unsupported characters">>}
             end
     end.
+
+check_worker_key(Runtime, true) ->
+    iolist_to_binary(["check:container:", Runtime]);
+check_worker_key(Runtime, false) ->
+    iolist_to_binary(["check:host:", Runtime]).
 
 idle_ms_from_definition(DefinitionJson, Fallback) ->
     Seconds = json_int_field(DefinitionJson, <<"idleTimeoutSeconds">>, 0),

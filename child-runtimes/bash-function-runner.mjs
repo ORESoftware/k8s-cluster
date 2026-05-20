@@ -25,6 +25,32 @@ function resolveDefinition(envelope) {
   return definition;
 }
 
+function checkBash(functionBody) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('/bin/bash', ['-n'], {
+      env: {
+        PATH: env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      },
+      stdio: ['pipe', 'ignore', 'pipe'],
+    });
+
+    let err = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      err += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (status) => {
+      if (status !== 0) {
+        reject(new Error(`bash syntax check failed${err ? `: ${err.trim()}` : ''}`));
+        return;
+      }
+      resolve();
+    });
+    child.stdin.end(functionBody);
+  });
+}
+
 function runBash(functionBody, request, context) {
   return new Promise((resolve, reject) => {
     const child = spawn('/bin/bash', ['-s'], {
@@ -81,6 +107,16 @@ async function invoke(line) {
   }
   if (Buffer.byteLength(functionBody, 'utf8') > maxFunctionBodyBytes) {
     throw new Error('functionBody exceeds configured byte limit');
+  }
+  if (envelope.checkOnly === true || envelope.mode === 'check') {
+    await checkBash(functionBody);
+    return {
+      ok: true,
+      check: {
+        runtime: definition.runtime,
+        slug: definition.slug || envelope.slug,
+      },
+    };
   }
   const request = envelope.request || {};
   const context = {
