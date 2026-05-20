@@ -69,8 +69,9 @@ import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
 
 // ---------- Config ----------
 
-const AGENT_FALLBACK_PROVIDER: AgentProvider = 'openai-sdk';
-const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk';
+const DEFAULT_AGENT_PROVIDER: AgentProvider = 'generic-ai-sdk';
+const AGENT_FALLBACK_PROVIDER: AgentProvider = 'generic-ai-sdk';
+const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'opencode-ai-sdk';
 const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
   'claude-cli',
   'claude-sdk',
@@ -164,10 +165,10 @@ const config = {
   agentProviderRotation: configAgentProviderList(
     process.env.AGENT_PROVIDER_ROTATION,
     [
-      configuredAgentFallbackProvider,
-      configuredAgentSecondaryFallbackProvider,
       'generic-ai-sdk',
       'opencode-ai-sdk',
+      'openai-sdk',
+      'claude-sdk',
       'gemini-sdk',
     ],
   ),
@@ -1918,6 +1919,8 @@ async function runTask(state: TaskState): Promise<void> {
 
       const requiresWorkspaceChange = promptLikelyRequiresWorkspaceChange(state.prompt);
       const requiresWorkspaceAccess = promptLikelyRequiresWorkspaceAccess(state.prompt);
+      const requestsPullRequest = promptRequestsPullRequest(state.prompt);
+      const pullRequestOnly = requestsPullRequest && !requiresWorkspaceChange && !requiresWorkspaceAccess;
       // Strict env allowlist owned by the runner module. Inheriting the full
       // process.env into the agent process would leak our GitHub deploy key,
       // Supabase service role key, ingest secret, etc. via any `env` or
@@ -1929,6 +1932,13 @@ async function runTask(state: TaskState): Promise<void> {
       const deterministicEdit = requiresWorkspaceChange ? await applyDeterministicWorkspaceEdit(state) : null;
       if (deterministicEdit) {
         completedAgentRun = true;
+      } else if (pullRequestOnly) {
+        completedAgentRun = true;
+        emit(state, {
+          kind: 'status',
+          status: 'deterministic-pr-only',
+          message: 'Prompt only requested a PR, so the worker will open/reuse a draft PR without spending model credentials.',
+        });
       } else {
         const providerOrder = [state.provider, ...config.agentProviderRotation].filter(
           (provider, index, values) => values.indexOf(provider) === index,
@@ -2100,7 +2110,7 @@ async function runTask(state: TaskState): Promise<void> {
       });
 
       let completionMessage = 'No PR was opened automatically; use Open draft PR to create one against the base branch.';
-      if (promptRequestsPullRequest(state.prompt)) {
+      if (requestsPullRequest) {
         emit(state, {
           kind: 'status',
           status: `opening draft PR against ${config.baseBranch} from ${gitBranchTarget(state.branch)}`,

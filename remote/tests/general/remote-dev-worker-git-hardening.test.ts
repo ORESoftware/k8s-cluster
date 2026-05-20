@@ -110,8 +110,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /type: 'worker-heartbeat'/);
   assert.match(server, /status: 'waiting-for-task'/);
   assert.match(server, /registerWorkerWebSocketUpgrade\(\);[\s\S]*await fastify\.listen/);
-  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'openai-sdk'/);
-  assert.match(server, /const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'claude-sdk'/);
+  assert.match(server, /const DEFAULT_AGENT_PROVIDER: AgentProvider = 'generic-ai-sdk'/);
+  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'generic-ai-sdk'/);
+  assert.match(server, /const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'opencode-ai-sdk'/);
   assert.match(server, /function configAgentProvider\(value: string \| undefined, fallback: AgentProvider\): AgentProvider/);
   assert.match(server, /function configAgentProviderList\(value: string \| undefined, fallback: AgentProvider\[\]\): AgentProvider\[\]/);
   assert.match(server, /const configuredAgentFallbackProvider = configAgentProvider\(/);
@@ -172,6 +173,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /const attemptGroups: \{ provider: AgentProvider; candidates: AgentEnvCandidate\[\] \}\[\] = \[\]/);
   assert.match(server, /buildAgentEnvCandidates\(provider\)/);
   assert.match(server, /DEEPSEEK_API_KEYS_JSON, XAI_API_KEYS_JSON/);
+  assert.match(server, /const requestsPullRequest = promptRequestsPullRequest\(state\.prompt\)/);
+  assert.match(server, /const pullRequestOnly = requestsPullRequest && !requiresWorkspaceChange && !requiresWorkspaceAccess/);
+  assert.match(server, /status: 'deterministic-pr-only'/);
+  assert.match(server, /without spending model credentials/);
   assert.match(server, /status: `agent-fallback:\$\{group\.provider\}`/);
   assert.match(server, /promptLikelyRequiresWorkspaceAccess\(state\.prompt\)/);
   assert.match(server, /providerCanAccessWorkspace\(provider\)/);
@@ -249,7 +254,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(agentIndex, /AGENT_MCP_CONNECT_TIMEOUT_MS/);
   assert.doesNotMatch(agentIndex, /OPENCODE_API_KEY not set/);
   assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
-  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'openai-sdk'/);
+  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'generic-ai-sdk'/);
   assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
   assert.match(server, /threadTitle:\s*z\.string\(\)\.min\(1\)\.max\(200\)\.nullish\(\)/);
   assert.match(
@@ -314,10 +319,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(claudeSdkRunner, /mcpServers/);
   assert.match(claudeSdkRunner, /strictMcpConfig:\s*true/);
   assert.match(claudeSdkRunner, /mcp__\$\{CLUSTER_MCP_SERVER_NAME\}__\$\{name\}/);
-  assert.match(config, /AGENT_PROVIDER:\s*'openai-sdk'/);
-  assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'openai-sdk'/);
-  assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'claude-sdk'/);
-  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'openai-sdk,claude-sdk,generic-ai-sdk,opencode-ai-sdk,gemini-sdk'/);
+  assert.match(config, /AGENT_PROVIDER:\s*'generic-ai-sdk'/);
+  assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'generic-ai-sdk'/);
+  assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'opencode-ai-sdk'/);
+  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'generic-ai-sdk,opencode-ai-sdk,openai-sdk,claude-sdk,gemini-sdk'/);
   assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
   assert.match(config, /AGENT_MCP_URL:\s*'http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp'/);
   assert.match(config, /AGENT_MCP_CONNECT_TIMEOUT_MS:\s*'3000'/);

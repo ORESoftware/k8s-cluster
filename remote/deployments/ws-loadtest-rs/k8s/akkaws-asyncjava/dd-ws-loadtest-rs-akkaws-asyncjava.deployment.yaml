@@ -30,7 +30,7 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: loadtest
-          image: docker.io/library/rust:1.86-bookworm
+          image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
