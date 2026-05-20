@@ -1231,6 +1231,12 @@ async fn wait_container_ready(
             Ok(Ok(response)) if response.status().is_success() => return Ok(()),
             Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {}
         }
+        if !inspect_container_running(state, &container.name).await? {
+            return Err(format!(
+                "container {} stopped before readiness at {url}",
+                container.name
+            ));
+        }
         if started.elapsed() > state.config.container_start_timeout {
             return Err(format!(
                 "container {} readiness timed out at {url}",
