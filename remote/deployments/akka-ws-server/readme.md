@@ -676,6 +676,12 @@ v2 async clients, Vert.x `Handler<AsyncResult<T>>`):
 | `BENCHMARK_ITERATIONS`    | `200`       | Iterations for `GET /v1/benchmark`.                      |
 | `BENCHMARK_PAYLOAD`       | sample JSON | Payload to drive the benchmark.                          |
 | `JAVA_OPTS`               | G1, 70% RAM | Standard JVM tuning.                                     |
+| `AKKA_LICENSE_KEY`        | unset       | Akka license key, read from `dd-agent-secrets` on EC2.   |
+
+Akka 2.8.8 terminates the actor system after a short grace period when no
+license key is configured. Store `AKKA_LICENSE_KEY` in the AWS Secrets Manager
+JSON value `dd/remote-dev/agent-secrets`; External Secrets syncs that value into
+the Kubernetes `dd-agent-secrets` Secret consumed by the EC2 Deployment.
 
 ## Local build
 

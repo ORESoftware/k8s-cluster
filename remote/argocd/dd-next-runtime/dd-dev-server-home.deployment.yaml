@@ -16,6 +16,8 @@ spec:
     metadata:
       labels:
         app: dd-dev-server-api
+      annotations:
+        dd.dev/code-revision: '2026-05-20-disable-api-idle-watchdog'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -50,6 +52,8 @@ spec:
               value: http://dd-otel-collector.observability.svc.cluster.local:4318
             - name: REMOTE_DEV_THREAD_ID
               value: "00000000-0000-4000-8000-000000000001"
+            - name: IDLE_TIMEOUT_MS
+              value: "0"
             - name: DD_REPO_URL
               valueFrom:
                 secretKeyRef:

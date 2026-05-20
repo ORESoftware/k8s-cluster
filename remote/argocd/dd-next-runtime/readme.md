@@ -176,6 +176,7 @@ Use `dd-agent-secrets` for shared remote runtime values:
   `OPENCODE_API_KEY`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, and `XAI_API_KEY`
 - GitHub credentials used by the remote dev worker entrypoint and PR creation path:
   `GH_DEPLOY_KEY`, optional `GH_DEPLOY_KEY_PUBLIC`, and optional `GH_PAT`
+- `AKKA_LICENSE_KEY` for the optional Akka WebSocket comparison workload
 
 GitHub deploy keys must stay in Kubernetes/AWS secrets and must never be baked into
 `dd-dev-server` or any container-pool image. The worker entrypoint writes `GH_DEPLOY_KEY` to
@@ -190,6 +191,7 @@ clone/fetch/push. A safe AWS Secrets Manager value for `dd/remote-dev/agent-secr
   "GH_DEPLOY_KEY": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
   "GH_DEPLOY_KEY_PUBLIC": "ssh-ed25519 ... comment",
   "GH_PAT": "optional-fine-grained-token-for-gh-cli-prs",
+  "AKKA_LICENSE_KEY": "optional-official-akka-license-key",
   "ANTHROPIC_API_KEY": "replace-me",
   "OPENCODE_API_KEY": "replace-me",
   "DEEPSEEK_API_KEYS_JSON": "[\"replace-me\"]",

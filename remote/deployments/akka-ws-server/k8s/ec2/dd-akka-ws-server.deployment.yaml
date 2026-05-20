@@ -23,7 +23,7 @@ spec:
       labels:
         app: dd-akka-ws-server
       annotations:
-        dd.dev/code-revision: '2026-05-18-telemetry'
+        dd.dev/code-revision: '2026-05-20-license-key-env'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -54,6 +54,12 @@ spec:
               value: '8086'
             - name: JAVA_OPTS
               value: -XX:+UseG1GC -XX:MaxRAMPercentage=70 -Dfile.encoding=UTF-8
+            - name: AKKA_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: AKKA_LICENSE_KEY
+                  optional: true
             # The pinned-at-30 workaround was removed once async-java/async.java#9 landed
             # the CounterLimit AtomicInteger fix. With the fix the live /v1/benchmark endpoint
             # runs the full 200 iterations and returns p50/p95/p99 + throughput from a
