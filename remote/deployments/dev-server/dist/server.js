@@ -318,6 +318,56 @@ function providerCanUseShell(provider) {
         provider === 'claude-sdk' ||
         provider === 'claude-cli');
 }
+function firstConfiguredModel(value) {
+    return value
+        ?.split(/[,\n;]/)
+        .map((item) => item.trim())
+        .find(Boolean);
+}
+function modelForAgentEnv(provider, env) {
+    if (provider === 'claude-cli' || provider === 'claude-sdk') {
+        return env.ANTHROPIC_MODEL;
+    }
+    if (provider === 'gemini-sdk') {
+        return env.GEMINI_MODEL;
+    }
+    if (provider === 'openai-codex-cli') {
+        return env.CODEX_MODEL ?? env.OPENAI_MODEL;
+    }
+    if (provider === 'openai-sdk') {
+        return env.OPENAI_MODEL;
+    }
+    if (provider === 'opencode-ai-sdk') {
+        return firstConfiguredModel(env.OPENCODE_MODELS ?? env.OPENCODE_MODEL);
+    }
+    if (provider === 'generic-ai-sdk') {
+        return firstConfiguredModel(env.GENERIC_AI_SDK_MODELS);
+    }
+    return undefined;
+}
+function isAgentProviderValue(value) {
+    return typeof value === 'string' && CONFIG_AGENT_PROVIDERS.has(value);
+}
+function modelLabel(provider, model) {
+    if (!model) {
+        return provider?.replace(/-sdk|-cli/g, '').replace(/-/g, ' ');
+    }
+    let label = model.trim();
+    if (!label) {
+        return undefined;
+    }
+    if (/^gpt-/i.test(label)) {
+        return label.replace(/^gpt-/i, 'chatgpt-').replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+    label = label
+        .replace(/claude-([a-z]+)-(\d+)-(\d+)/i, 'claude $1 $2.$3')
+        .replace(/([a-z])(\d)/gi, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    return label;
+}
 function promptRequestsPullRequest(prompt) {
     return /\b(?:open|create|submit|make|raise)\s+(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt) || /\b(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt);
 }
@@ -941,7 +991,45 @@ function shouldForwardAgentRunnerEvent(event) {
     }
     return true;
 }
+function agentRawProvider(raw) {
+    const obj = recordValue(raw);
+    const provider = obj?.provider ?? nestedRecord(raw, 'providerData')?.provider;
+    return isAgentProviderValue(provider) ? provider : undefined;
+}
+function agentRawModel(raw) {
+    const obj = recordValue(raw);
+    const data = nestedRecord(raw, 'data');
+    const event = nestedRecord(raw, 'event');
+    const dataEvent = recordValue(data?.event);
+    const providerData = nestedRecord(raw, 'providerData');
+    const message = nestedRecord(raw, 'message');
+    const candidates = [
+        obj?.model,
+        obj?.modelId,
+        obj?.model_id,
+        data?.model,
+        event?.model,
+        dataEvent?.model,
+        providerData?.model,
+        providerData?.modelId,
+        message?.model,
+    ];
+    return candidates.find((value) => typeof value === 'string' && value.trim().length > 0)?.trim();
+}
+function annotateEventWithAgentMetadata(state, event) {
+    const raw = event.kind === 'claude' ? event.raw : undefined;
+    const provider = event.provider ?? agentRawProvider(raw) ?? state.activeProvider ?? state.provider;
+    const model = event.model ?? agentRawModel(raw) ?? state.activeModel;
+    const label = event.modelLabel ?? modelLabel(provider, model) ?? state.activeModelLabel;
+    return {
+        ...event,
+        provider,
+        ...(model ? { model } : {}),
+        ...(label ? { modelLabel: label } : {}),
+    };
+}
 function emit(state, event) {
+    event = annotateEventWithAgentMetadata(state, event);
     event = sanitizeEvent(event);
     // Once a task has emitted `done`, it's terminal — late events from a
     // race (e.g. cancel firing while claude was already exiting cleanly)
@@ -992,6 +1080,9 @@ function emit(state, event) {
         threadId: state.threadId,
         userId: state.userId,
         provider: state.provider,
+        activeProvider: event.provider ?? state.activeProvider ?? state.provider,
+        model: event.model ?? state.activeModel,
+        modelLabel: event.modelLabel ?? state.activeModelLabel,
         branch: state.branch,
         seq: stored.seq,
         emittedAt: new Date().toISOString(),
@@ -1596,6 +1687,9 @@ async function runInternalWorkspaceAgent(input) {
                 message: `Switching to ${group.provider} for ${input.purpose}`,
             });
         }
+        input.state.activeProvider = group.provider;
+        input.state.activeModel = modelForAgentEnv(group.provider, group.candidates[0]?.env ?? {});
+        input.state.activeModelLabel = modelLabel(group.provider, input.state.activeModel);
         emit(input.state, {
             kind: 'status',
             status: `agent-running:${group.provider}`,
@@ -1609,6 +1703,9 @@ async function runInternalWorkspaceAgent(input) {
         for (const attempt of group.candidates) {
             attempted += 1;
             try {
+                input.state.activeProvider = attempt.provider;
+                input.state.activeModel = modelForAgentEnv(attempt.provider, attempt.env);
+                input.state.activeModelLabel = modelLabel(attempt.provider, input.state.activeModel);
                 const statusBeforeAttempt = input.requireWorkspaceChange
                     ? await gitWorkspaceStatus(input.state.worktreePath)
                     : '';
@@ -1901,6 +1998,9 @@ async function runTask(state) {
                 throw new Error(`no configured agent API keys for ${repoDisplayName()}; set OPENAI_API_KEYS_JSON, ANTHROPIC_API_KEYS_JSON, OPENCODE_API_KEYS_JSON, DEEPSEEK_API_KEYS_JSON, XAI_API_KEYS_JSON, or GEMINI_API_KEYS_JSON`);
             }
             const runAgentAttempt = async (attempt) => {
+                state.activeProvider = attempt.provider;
+                state.activeModel = modelForAgentEnv(attempt.provider, attempt.env);
+                state.activeModelLabel = modelLabel(attempt.provider, state.activeModel);
                 const runner = getRunner(attempt.provider);
                 await runner.run({
                     prompt,
@@ -1929,6 +2029,9 @@ async function runTask(state) {
                         message: `Switching to ${group.provider} after the previous provider failed`,
                     });
                 }
+                state.activeProvider = group.provider;
+                state.activeModel = modelForAgentEnv(group.provider, group.candidates[0]?.env ?? {});
+                state.activeModelLabel = modelLabel(group.provider, state.activeModel);
                 emit(state, {
                     kind: 'status',
                     status: `agent-running:${group.provider}`,
