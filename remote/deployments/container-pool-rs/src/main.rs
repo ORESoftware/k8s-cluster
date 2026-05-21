@@ -2281,7 +2281,14 @@ async fn dispatch_to_pool_inner(
         }
     });
 
-    let send = apply_forward_headers(state.http.post(&url), request.headers.as_ref()).json(&body);
+    let mut send = apply_forward_headers(state.http.post(&url), request.headers.as_ref());
+    if let Some(secret) = state.config.server_auth_secret.as_deref() {
+        send = send
+            .header("x-server-auth", secret)
+            .header("x-container-pool-auth", secret)
+            .header("x-agent-auth", secret);
+    }
+    let send = send.json(&body);
     let response = timeout(lease.pool.request_timeout, send.send()).await;
     let mut retire_reason = None::<String>;
     let result = match response {
