@@ -315,7 +315,7 @@ async fn ensure_schema(client: &tokio_postgres::Client) -> Result<(), String> {
               dockerfile_path text not null,
               build_context text not null,
               dockerfile_text text not null,
-              dockerfile_sha256 char(64) not null,
+              dockerfile_sha256 varchar(64) not null,
               source varchar(32) default 'user' not null,
               notes text default '' not null,
               status varchar(32) default 'candidate' not null,
@@ -1268,7 +1268,7 @@ async fn update_build_error(build_id: &str, phase: &str, message: &str) -> Resul
     let _ = client
         .execute(
             "update container_pool_build_runs set \
-             overall_status = 'error', error_message = $2, updated_at = now() \
+             overall_status = 'errored', error_message = $2, updated_at = now() \
              where id = $1::uuid",
             &[&build_id, &message],
         )

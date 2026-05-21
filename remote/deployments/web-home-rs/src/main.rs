@@ -8524,7 +8524,7 @@ body {
 .cpool-table tr:hover { background: var(--panel-2); }
 .cpool-table .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line-2); font-size: 11px; color: var(--muted); }
 .cpool-table .status-pill.passed, .cpool-table .status-pill.built { color: var(--good); border-color: rgba(103,211,145,0.4); }
-.cpool-table .status-pill.failed, .cpool-table .status-pill.error { color: var(--bad); border-color: rgba(255,122,122,0.4); }
+.cpool-table .status-pill.failed, .cpool-table .status-pill.errored { color: var(--bad); border-color: rgba(255,122,122,0.4); }
 .cpool-table .status-pill.running, .cpool-table .status-pill.building, .cpool-table .status-pill.testing { color: var(--accent); border-color: rgba(78,161,255,0.4); }
 .cpool-row-action { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
 
@@ -8631,7 +8631,7 @@ function statusBadge(overall) {
   const c = String(overall).toLowerCase();
   let cls = '';
   if (c === 'passed') cls = 'ok';
-  else if (c === 'failed' || c === 'error') cls = 'fail';
+  else if (c === 'failed' || c === 'errored') cls = 'fail';
   else if (c === 'running' || c === 'building' || c === 'testing' || c === 'queued') cls = 'run';
   return `<span class="badge ${cls}">${c}</span>`;
 }
@@ -8879,7 +8879,7 @@ function startPolling(buildId) {
       const overall = body.build && body.build.overall_status;
       $('cpool-status').textContent = `build ${buildId.slice(0,8)}: ${overall}`;
       await loadBuilds(state.currentSlug);
-      if (overall === 'passed' || overall === 'failed' || overall === 'error' || overall === 'cancelled') {
+      if (overall === 'passed' || overall === 'failed' || overall === 'errored' || overall === 'cancelled') {
         clearInterval(state.pollHandle); state.pollHandle = null;
         const lvl = overall === 'passed' ? 'good' : 'bad';
         showToast(`Build ${buildId.slice(0,8)}: ${overall}`, lvl);

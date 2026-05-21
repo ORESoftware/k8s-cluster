@@ -265,6 +265,57 @@ model LambdaFunction {
   @@map("lambda_functions")
 }
 
+model ContainerPoolImageRevisions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  imageSlug String @map("image_slug") @db.VarChar(120)
+  imageRef String @map("image_ref") @db.Text
+  dockerfilePath String @map("dockerfile_path") @db.Text
+  buildContext String @map("build_context") @db.Text
+  dockerfileText String @map("dockerfile_text") @db.Text
+  dockerfileSha256 String @map("dockerfile_sha256") @db.VarChar(64)
+  source String @default("user") @db.VarChar(32)
+  notes String @default("") @db.Text
+  status String @default("candidate") @db.VarChar(32)
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // container_pool_image_revisions_slug_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // container_pool_image_revisions_slug_sha_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("container_pool_image_revisions")
+}
+
+model ContainerPoolBuildRuns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  imageSlug String @map("image_slug") @db.VarChar(120)
+  revisionId String @map("revision_id") @db.Uuid
+  imageRef String @map("image_ref") @db.Text
+  candidateTag String @map("candidate_tag") @db.Text
+  buildStatus String @map("build_status") @default("queued") @db.VarChar(32)
+  testStatus String @map("test_status") @default("not_started") @db.VarChar(32)
+  overallStatus String @map("overall_status") @default("queued") @db.VarChar(32)
+  testCommand String @map("test_command") @default("") @db.Text
+  buildStartedAt DateTime? @map("build_started_at") @db.Timestamptz(6)
+  buildFinishedAt DateTime? @map("build_finished_at") @db.Timestamptz(6)
+  testStartedAt DateTime? @map("test_started_at") @db.Timestamptz(6)
+  testFinishedAt DateTime? @map("test_finished_at") @db.Timestamptz(6)
+  buildLogExcerpt String @map("build_log_excerpt") @default("") @db.Text
+  testLogExcerpt String @map("test_log_excerpt") @default("") @db.Text
+  errorMessage String? @map("error_message") @db.Text
+  triggeredBy String? @map("triggered_by") @db.Uuid
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // container_pool_build_runs_slug_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // container_pool_build_runs_overall_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("container_pool_build_runs")
+}
+
 model PresenceConvs {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug String @db.VarChar(120)

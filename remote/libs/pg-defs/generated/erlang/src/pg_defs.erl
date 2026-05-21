@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0]).
+-export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0]).
 
 app_config_table() -> <<"app_config">>.
 
@@ -368,6 +368,107 @@ validate_lambda_functions_status(Value) when is_binary(Value) ->
     end;
 validate_lambda_functions_status(Value) when is_list(Value) ->
     validate_lambda_functions_status(unicode:characters_to_binary(Value)).
+
+container_pool_image_revisions_table() -> <<"container_pool_image_revisions">>.
+
+container_pool_image_revisions_columns() -> [<<"id">>, <<"image_slug">>, <<"image_ref">>, <<"dockerfile_path">>, <<"build_context">>, <<"dockerfile_text">>, <<"dockerfile_sha256">>, <<"source">>, <<"notes">>, <<"status">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+container_pool_image_revisions_select_sql() -> <<"select
+      id::text as id,
+      image_slug,
+      image_ref,
+      dockerfile_path,
+      build_context,
+      dockerfile_text,
+      dockerfile_sha256,
+      source,
+      notes,
+      status,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_image_revisions">>.
+
+container_pool_image_revisions_source_values() -> [<<"disk-default">>, <<"user">>, <<"system">>].
+
+validate_container_pool_image_revisions_source(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_image_revisions_source_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_image_revisions.source: "/binary, Value/binary>>}
+    end;
+validate_container_pool_image_revisions_source(Value) when is_list(Value) ->
+    validate_container_pool_image_revisions_source(unicode:characters_to_binary(Value)).
+
+container_pool_image_revisions_status_values() -> [<<"candidate">>, <<"active">>, <<"archived">>].
+
+validate_container_pool_image_revisions_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_image_revisions_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_image_revisions.status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_image_revisions_status(Value) when is_list(Value) ->
+    validate_container_pool_image_revisions_status(unicode:characters_to_binary(Value)).
+
+container_pool_build_runs_table() -> <<"container_pool_build_runs">>.
+
+container_pool_build_runs_columns() -> [<<"id">>, <<"image_slug">>, <<"revision_id">>, <<"image_ref">>, <<"candidate_tag">>, <<"build_status">>, <<"test_status">>, <<"overall_status">>, <<"test_command">>, <<"build_started_at">>, <<"build_finished_at">>, <<"test_started_at">>, <<"test_finished_at">>, <<"build_log_excerpt">>, <<"test_log_excerpt">>, <<"error_message">>, <<"triggered_by">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>].
+
+container_pool_build_runs_select_sql() -> <<"select
+      id::text as id,
+      image_slug,
+      revision_id::text as revision_id,
+      image_ref,
+      candidate_tag,
+      build_status,
+      test_status,
+      overall_status,
+      test_command,
+      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_started_at,
+      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_finished_at,
+      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_started_at,
+      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_finished_at,
+      build_log_excerpt,
+      test_log_excerpt,
+      error_message,
+      triggered_by::text as triggered_by,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from container_pool_build_runs">>.
+
+container_pool_build_runs_build_status_values() -> [<<"queued">>, <<"building">>, <<"built">>, <<"failed">>, <<"skipped">>, <<"cancelled">>].
+
+validate_container_pool_build_runs_build_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_build_runs_build_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_build_runs.build_status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_build_runs_build_status(Value) when is_list(Value) ->
+    validate_container_pool_build_runs_build_status(unicode:characters_to_binary(Value)).
+
+container_pool_build_runs_test_status_values() -> [<<"not_started">>, <<"pending">>, <<"testing">>, <<"passed">>, <<"failed">>, <<"skipped">>, <<"cancelled">>].
+
+validate_container_pool_build_runs_test_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_build_runs_test_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_build_runs.test_status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_build_runs_test_status(Value) when is_list(Value) ->
+    validate_container_pool_build_runs_test_status(unicode:characters_to_binary(Value)).
+
+container_pool_build_runs_overall_status_values() -> [<<"queued">>, <<"running">>, <<"passed">>, <<"failed">>, <<"cancelled">>, <<"errored">>].
+
+validate_container_pool_build_runs_overall_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_build_runs_overall_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_build_runs.overall_status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_build_runs_overall_status(Value) when is_list(Value) ->
+    validate_container_pool_build_runs_overall_status(unicode:characters_to_binary(Value)).
 
 presence_convs_table() -> <<"presence_convs">>.
 

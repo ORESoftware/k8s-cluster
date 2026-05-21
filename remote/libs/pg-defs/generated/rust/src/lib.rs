@@ -1595,6 +1595,446 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     Ok(())
 }
 
+pub const CONTAINER_POOL_IMAGE_REVISIONS_TABLE: &str = "container_pool_image_revisions";
+pub const CONTAINER_POOL_IMAGE_REVISIONS_COLUMNS: &[&str] = &["id", "image_slug", "image_ref", "dockerfile_path", "build_context", "dockerfile_text", "dockerfile_sha256", "source", "notes", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const CONTAINER_POOL_IMAGE_REVISIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      image_slug,
+      image_ref,
+      dockerfile_path,
+      build_context,
+      dockerfile_text,
+      dockerfile_sha256,
+      source,
+      notes,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_image_revisions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolImageRevisionsSource {
+    DiskDefault,
+    User,
+    System,
+}
+
+impl ContainerPoolImageRevisionsSource {
+    pub const VALUES: &'static [&'static str] = &["disk-default", "user", "system"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DiskDefault => "disk-default",
+            Self::User => "user",
+            Self::System => "system",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolImageRevisionsSource {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "disk-default" => Ok(Self::DiskDefault),
+            "user" => Ok(Self::User),
+            "system" => Ok(Self::System),
+            _ => Err(format!("unsupported source: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolImageRevisionsStatus {
+    Candidate,
+    Active,
+    Archived,
+}
+
+impl ContainerPoolImageRevisionsStatus {
+    pub const VALUES: &'static [&'static str] = &["candidate", "active", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Candidate => "candidate",
+            Self::Active => "active",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolImageRevisionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "candidate" => Ok(Self::Candidate),
+            "active" => Ok(Self::Active),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolImageRevisionsRow {
+    pub id: String,
+    pub image_slug: String,
+    pub image_ref: String,
+    pub dockerfile_path: String,
+    pub build_context: String,
+    pub dockerfile_text: String,
+    pub dockerfile_sha256: String,
+    pub source: String,
+    pub notes: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolImageRevisionsInsert {
+    pub id: Option<String>,
+    pub image_slug: Option<String>,
+    pub image_ref: Option<String>,
+    pub dockerfile_path: Option<String>,
+    pub build_context: Option<String>,
+    pub dockerfile_text: Option<String>,
+    pub dockerfile_sha256: Option<String>,
+    pub source: Option<String>,
+    pub notes: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_container_pool_image_revisions_row(value: &ContainerPoolImageRevisionsRow) -> Result<(), String> {
+    validate_slug("container_pool_image_revisions.image_slug", &value.image_slug)?;
+    if (&value.image_ref).as_bytes().len() > 512 { return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string()); }
+    if (&value.dockerfile_path).as_bytes().len() > 512 { return Err("container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string()); }
+    if (&value.build_context).as_bytes().len() > 512 { return Err("container_pool_image_revisions.build_context exceeds 512 bytes".to_string()); }
+    if (&value.dockerfile_text).as_bytes().len() > 65536 { return Err("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string()); }
+    validate_string_length("container_pool_image_revisions.dockerfile_sha256", &value.dockerfile_sha256, None, Some(64))?;
+    if !["disk-default", "user", "system"].contains(&(&value.source).as_str()) { return Err(format!("unsupported container_pool_image_revisions.source: {}", &value.source)); }
+    if (&value.notes).as_bytes().len() > 8192 { return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string()); }
+    if !["candidate", "active", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported container_pool_image_revisions.status: {}", &value.status)); }
+    if !(&value.meta_data).is_object() { return Err("container_pool_image_revisions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_container_pool_image_revisions_insert(value: &ContainerPoolImageRevisionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.image_slug {
+        validate_slug("container_pool_image_revisions.image_slug", value)?;
+    }
+    if let Some(value) = &value.image_ref {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.dockerfile_path {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.build_context {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.build_context exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.dockerfile_text {
+        if (value).as_bytes().len() > 65536 { return Err("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string()); }
+    }
+    if let Some(value) = &value.dockerfile_sha256 {
+        validate_string_length("container_pool_image_revisions.dockerfile_sha256", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.source {
+        if !["disk-default", "user", "system"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_image_revisions.source: {}", value)); }
+    }
+    if let Some(value) = &value.notes {
+        if (value).as_bytes().len() > 8192 { return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["candidate", "active", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_image_revisions.status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("container_pool_image_revisions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const CONTAINER_POOL_BUILD_RUNS_TABLE: &str = "container_pool_build_runs";
+pub const CONTAINER_POOL_BUILD_RUNS_COLUMNS: &[&str] = &["id", "image_slug", "revision_id", "image_ref", "candidate_tag", "build_status", "test_status", "overall_status", "test_command", "build_started_at", "build_finished_at", "test_started_at", "test_finished_at", "build_log_excerpt", "test_log_excerpt", "error_message", "triggered_by", "meta_data", "is_soft_deleted", "created_at", "updated_at"];
+pub const CONTAINER_POOL_BUILD_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      image_slug,
+      revision_id::text as revision_id,
+      image_ref,
+      candidate_tag,
+      build_status,
+      test_status,
+      overall_status,
+      test_command,
+      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_started_at,
+      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_finished_at,
+      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_started_at,
+      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_finished_at,
+      build_log_excerpt,
+      test_log_excerpt,
+      error_message,
+      triggered_by::text as triggered_by,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from container_pool_build_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolBuildRunsBuildStatus {
+    Queued,
+    Building,
+    Built,
+    Failed,
+    Skipped,
+    Cancelled,
+}
+
+impl ContainerPoolBuildRunsBuildStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "building", "built", "failed", "skipped", "cancelled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Building => "building",
+            Self::Built => "built",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolBuildRunsBuildStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "building" => Ok(Self::Building),
+            "built" => Ok(Self::Built),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(format!("unsupported build_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolBuildRunsTestStatus {
+    NotStarted,
+    Pending,
+    Testing,
+    Passed,
+    Failed,
+    Skipped,
+    Cancelled,
+}
+
+impl ContainerPoolBuildRunsTestStatus {
+    pub const VALUES: &'static [&'static str] = &["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotStarted => "not_started",
+            Self::Pending => "pending",
+            Self::Testing => "testing",
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolBuildRunsTestStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "not_started" => Ok(Self::NotStarted),
+            "pending" => Ok(Self::Pending),
+            "testing" => Ok(Self::Testing),
+            "passed" => Ok(Self::Passed),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(format!("unsupported test_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolBuildRunsOverallStatus {
+    Queued,
+    Running,
+    Passed,
+    Failed,
+    Cancelled,
+    Errored,
+}
+
+impl ContainerPoolBuildRunsOverallStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "passed", "failed", "cancelled", "errored"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Errored => "errored",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolBuildRunsOverallStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "passed" => Ok(Self::Passed),
+            "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
+            "errored" => Ok(Self::Errored),
+            _ => Err(format!("unsupported overall_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolBuildRunsRow {
+    pub id: String,
+    pub image_slug: String,
+    pub revision_id: String,
+    pub image_ref: String,
+    pub candidate_tag: String,
+    pub build_status: String,
+    pub test_status: String,
+    pub overall_status: String,
+    pub test_command: String,
+    pub build_started_at: Option<String>,
+    pub build_finished_at: Option<String>,
+    pub test_started_at: Option<String>,
+    pub test_finished_at: Option<String>,
+    pub build_log_excerpt: String,
+    pub test_log_excerpt: String,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<String>,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolBuildRunsInsert {
+    pub id: Option<String>,
+    pub image_slug: Option<String>,
+    pub revision_id: Option<String>,
+    pub image_ref: Option<String>,
+    pub candidate_tag: Option<String>,
+    pub build_status: Option<String>,
+    pub test_status: Option<String>,
+    pub overall_status: Option<String>,
+    pub test_command: Option<String>,
+    pub build_started_at: Option<String>,
+    pub build_finished_at: Option<String>,
+    pub test_started_at: Option<String>,
+    pub test_finished_at: Option<String>,
+    pub build_log_excerpt: Option<String>,
+    pub test_log_excerpt: Option<String>,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_container_pool_build_runs_row(value: &ContainerPoolBuildRunsRow) -> Result<(), String> {
+    validate_slug("container_pool_build_runs.image_slug", &value.image_slug)?;
+    if (&value.image_ref).as_bytes().len() > 512 { return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string()); }
+    if (&value.candidate_tag).as_bytes().len() > 512 { return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string()); }
+    if !["queued", "building", "built", "failed", "skipped", "cancelled"].contains(&(&value.build_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.build_status: {}", &value.build_status)); }
+    if !["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"].contains(&(&value.test_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.test_status: {}", &value.test_status)); }
+    if !["queued", "running", "passed", "failed", "cancelled", "errored"].contains(&(&value.overall_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.overall_status: {}", &value.overall_status)); }
+    if (&value.test_command).as_bytes().len() > 4096 { return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string()); }
+    if (&value.build_log_excerpt).as_bytes().len() > 65536 { return Err("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string()); }
+    if (&value.test_log_excerpt).as_bytes().len() > 65536 { return Err("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string()); }
+    if let Some(value) = &value.error_message {
+        if (value).as_bytes().len() > 8192 { return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("container_pool_build_runs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_container_pool_build_runs_insert(value: &ContainerPoolBuildRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.image_slug {
+        validate_slug("container_pool_build_runs.image_slug", value)?;
+    }
+    if let Some(value) = &value.image_ref {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.candidate_tag {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.build_status {
+        if !["queued", "building", "built", "failed", "skipped", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.build_status: {}", value)); }
+    }
+    if let Some(value) = &value.test_status {
+        if !["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.test_status: {}", value)); }
+    }
+    if let Some(value) = &value.overall_status {
+        if !["queued", "running", "passed", "failed", "cancelled", "errored"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.overall_status: {}", value)); }
+    }
+    if let Some(value) = &value.test_command {
+        if (value).as_bytes().len() > 4096 { return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.build_log_excerpt {
+        if (value).as_bytes().len() > 65536 { return Err("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string()); }
+    }
+    if let Some(value) = &value.test_log_excerpt {
+        if (value).as_bytes().len() > 65536 { return Err("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string()); }
+    }
+    if let Some(value) = &value.error_message {
+        if (value).as_bytes().len() > 8192 { return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("container_pool_build_runs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const PRESENCE_CONVS_TABLE: &str = "presence_convs";
 pub const PRESENCE_CONVS_COLUMNS: &[&str] = &["id", "slug", "display_name", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const PRESENCE_CONVS_SELECT_SQL: &str = r###"select

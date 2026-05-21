@@ -789,6 +789,255 @@ pub fn validate_lambda_functions_status(value: String) -> Result(String, String)
   }
 }
 
+pub const container_pool_image_revisions_table = "container_pool_image_revisions"
+pub const container_pool_image_revisions_select_sql = "select\n      id::text as id,\n      image_slug,\n      image_ref,\n      dockerfile_path,\n      build_context,\n      dockerfile_text,\n      dockerfile_sha256,\n      source,\n      notes,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_image_revisions"
+
+pub type ContainerPoolImageRevisionsSource {
+  ContainerPoolImageRevisionsSourceDiskDefault
+  ContainerPoolImageRevisionsSourceUser
+  ContainerPoolImageRevisionsSourceSystem
+}
+
+pub fn container_pool_image_revisions_source_to_string(value: ContainerPoolImageRevisionsSource) -> String {
+  case value {
+    ContainerPoolImageRevisionsSourceDiskDefault -> "disk-default"
+    ContainerPoolImageRevisionsSourceUser -> "user"
+    ContainerPoolImageRevisionsSourceSystem -> "system"
+  }
+}
+
+pub fn parse_container_pool_image_revisions_source(value: String) -> Result(ContainerPoolImageRevisionsSource, String) {
+  case value {
+    "disk-default" -> Ok(ContainerPoolImageRevisionsSourceDiskDefault)
+    "user" -> Ok(ContainerPoolImageRevisionsSourceUser)
+    "system" -> Ok(ContainerPoolImageRevisionsSourceSystem)
+    _ -> Error("unsupported container_pool_image_revisions.source: " <> value)
+  }
+}
+
+pub type ContainerPoolImageRevisionsStatus {
+  ContainerPoolImageRevisionsStatusCandidate
+  ContainerPoolImageRevisionsStatusActive
+  ContainerPoolImageRevisionsStatusArchived
+}
+
+pub fn container_pool_image_revisions_status_to_string(value: ContainerPoolImageRevisionsStatus) -> String {
+  case value {
+    ContainerPoolImageRevisionsStatusCandidate -> "candidate"
+    ContainerPoolImageRevisionsStatusActive -> "active"
+    ContainerPoolImageRevisionsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_container_pool_image_revisions_status(value: String) -> Result(ContainerPoolImageRevisionsStatus, String) {
+  case value {
+    "candidate" -> Ok(ContainerPoolImageRevisionsStatusCandidate)
+    "active" -> Ok(ContainerPoolImageRevisionsStatusActive)
+    "archived" -> Ok(ContainerPoolImageRevisionsStatusArchived)
+    _ -> Error("unsupported container_pool_image_revisions.status: " <> value)
+  }
+}
+
+pub type ContainerPoolImageRevisionsRow {
+  ContainerPoolImageRevisionsRow(
+    id: String,
+    image_slug: String,
+    image_ref: String,
+    dockerfile_path: String,
+    build_context: String,
+    dockerfile_text: String,
+    dockerfile_sha256: String,
+    source: String,
+    notes: String,
+    status: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_container_pool_image_revisions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("container_pool_image_revisions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_container_pool_image_revisions_source(value: String) -> Result(String, String) {
+  case list.contains(["disk-default", "user", "system"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_image_revisions.source: " <> value)
+  }
+}
+
+pub fn validate_container_pool_image_revisions_status(value: String) -> Result(String, String) {
+  case list.contains(["candidate", "active", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_image_revisions.status: " <> value)
+  }
+}
+
+pub const container_pool_build_runs_table = "container_pool_build_runs"
+pub const container_pool_build_runs_select_sql = "select\n      id::text as id,\n      image_slug,\n      revision_id::text as revision_id,\n      image_ref,\n      candidate_tag,\n      build_status,\n      test_status,\n      overall_status,\n      test_command,\n      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_started_at,\n      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_finished_at,\n      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_started_at,\n      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_finished_at,\n      build_log_excerpt,\n      test_log_excerpt,\n      error_message,\n      triggered_by::text as triggered_by,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from container_pool_build_runs"
+
+pub type ContainerPoolBuildRunsBuildStatus {
+  ContainerPoolBuildRunsBuildStatusQueued
+  ContainerPoolBuildRunsBuildStatusBuilding
+  ContainerPoolBuildRunsBuildStatusBuilt
+  ContainerPoolBuildRunsBuildStatusFailed
+  ContainerPoolBuildRunsBuildStatusSkipped
+  ContainerPoolBuildRunsBuildStatusCancelled
+}
+
+pub fn container_pool_build_runs_build_status_to_string(value: ContainerPoolBuildRunsBuildStatus) -> String {
+  case value {
+    ContainerPoolBuildRunsBuildStatusQueued -> "queued"
+    ContainerPoolBuildRunsBuildStatusBuilding -> "building"
+    ContainerPoolBuildRunsBuildStatusBuilt -> "built"
+    ContainerPoolBuildRunsBuildStatusFailed -> "failed"
+    ContainerPoolBuildRunsBuildStatusSkipped -> "skipped"
+    ContainerPoolBuildRunsBuildStatusCancelled -> "cancelled"
+  }
+}
+
+pub fn parse_container_pool_build_runs_build_status(value: String) -> Result(ContainerPoolBuildRunsBuildStatus, String) {
+  case value {
+    "queued" -> Ok(ContainerPoolBuildRunsBuildStatusQueued)
+    "building" -> Ok(ContainerPoolBuildRunsBuildStatusBuilding)
+    "built" -> Ok(ContainerPoolBuildRunsBuildStatusBuilt)
+    "failed" -> Ok(ContainerPoolBuildRunsBuildStatusFailed)
+    "skipped" -> Ok(ContainerPoolBuildRunsBuildStatusSkipped)
+    "cancelled" -> Ok(ContainerPoolBuildRunsBuildStatusCancelled)
+    _ -> Error("unsupported container_pool_build_runs.build_status: " <> value)
+  }
+}
+
+pub type ContainerPoolBuildRunsTestStatus {
+  ContainerPoolBuildRunsTestStatusNotStarted
+  ContainerPoolBuildRunsTestStatusPending
+  ContainerPoolBuildRunsTestStatusTesting
+  ContainerPoolBuildRunsTestStatusPassed
+  ContainerPoolBuildRunsTestStatusFailed
+  ContainerPoolBuildRunsTestStatusSkipped
+  ContainerPoolBuildRunsTestStatusCancelled
+}
+
+pub fn container_pool_build_runs_test_status_to_string(value: ContainerPoolBuildRunsTestStatus) -> String {
+  case value {
+    ContainerPoolBuildRunsTestStatusNotStarted -> "not_started"
+    ContainerPoolBuildRunsTestStatusPending -> "pending"
+    ContainerPoolBuildRunsTestStatusTesting -> "testing"
+    ContainerPoolBuildRunsTestStatusPassed -> "passed"
+    ContainerPoolBuildRunsTestStatusFailed -> "failed"
+    ContainerPoolBuildRunsTestStatusSkipped -> "skipped"
+    ContainerPoolBuildRunsTestStatusCancelled -> "cancelled"
+  }
+}
+
+pub fn parse_container_pool_build_runs_test_status(value: String) -> Result(ContainerPoolBuildRunsTestStatus, String) {
+  case value {
+    "not_started" -> Ok(ContainerPoolBuildRunsTestStatusNotStarted)
+    "pending" -> Ok(ContainerPoolBuildRunsTestStatusPending)
+    "testing" -> Ok(ContainerPoolBuildRunsTestStatusTesting)
+    "passed" -> Ok(ContainerPoolBuildRunsTestStatusPassed)
+    "failed" -> Ok(ContainerPoolBuildRunsTestStatusFailed)
+    "skipped" -> Ok(ContainerPoolBuildRunsTestStatusSkipped)
+    "cancelled" -> Ok(ContainerPoolBuildRunsTestStatusCancelled)
+    _ -> Error("unsupported container_pool_build_runs.test_status: " <> value)
+  }
+}
+
+pub type ContainerPoolBuildRunsOverallStatus {
+  ContainerPoolBuildRunsOverallStatusQueued
+  ContainerPoolBuildRunsOverallStatusRunning
+  ContainerPoolBuildRunsOverallStatusPassed
+  ContainerPoolBuildRunsOverallStatusFailed
+  ContainerPoolBuildRunsOverallStatusCancelled
+  ContainerPoolBuildRunsOverallStatusErrored
+}
+
+pub fn container_pool_build_runs_overall_status_to_string(value: ContainerPoolBuildRunsOverallStatus) -> String {
+  case value {
+    ContainerPoolBuildRunsOverallStatusQueued -> "queued"
+    ContainerPoolBuildRunsOverallStatusRunning -> "running"
+    ContainerPoolBuildRunsOverallStatusPassed -> "passed"
+    ContainerPoolBuildRunsOverallStatusFailed -> "failed"
+    ContainerPoolBuildRunsOverallStatusCancelled -> "cancelled"
+    ContainerPoolBuildRunsOverallStatusErrored -> "errored"
+  }
+}
+
+pub fn parse_container_pool_build_runs_overall_status(value: String) -> Result(ContainerPoolBuildRunsOverallStatus, String) {
+  case value {
+    "queued" -> Ok(ContainerPoolBuildRunsOverallStatusQueued)
+    "running" -> Ok(ContainerPoolBuildRunsOverallStatusRunning)
+    "passed" -> Ok(ContainerPoolBuildRunsOverallStatusPassed)
+    "failed" -> Ok(ContainerPoolBuildRunsOverallStatusFailed)
+    "cancelled" -> Ok(ContainerPoolBuildRunsOverallStatusCancelled)
+    "errored" -> Ok(ContainerPoolBuildRunsOverallStatusErrored)
+    _ -> Error("unsupported container_pool_build_runs.overall_status: " <> value)
+  }
+}
+
+pub type ContainerPoolBuildRunsRow {
+  ContainerPoolBuildRunsRow(
+    id: String,
+    image_slug: String,
+    revision_id: String,
+    image_ref: String,
+    candidate_tag: String,
+    build_status: String,
+    test_status: String,
+    overall_status: String,
+    test_command: String,
+    build_started_at: Option(String),
+    build_finished_at: Option(String),
+    test_started_at: Option(String),
+    test_finished_at: Option(String),
+    build_log_excerpt: String,
+    test_log_excerpt: String,
+    error_message: Option(String),
+    triggered_by: Option(String),
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_container_pool_build_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("container_pool_build_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_container_pool_build_runs_build_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "building", "built", "failed", "skipped", "cancelled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_build_runs.build_status: " <> value)
+  }
+}
+
+pub fn validate_container_pool_build_runs_test_status(value: String) -> Result(String, String) {
+  case list.contains(["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_build_runs.test_status: " <> value)
+  }
+}
+
+pub fn validate_container_pool_build_runs_overall_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "passed", "failed", "cancelled", "errored"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_build_runs.overall_status: " <> value)
+  }
+}
+
 pub const presence_convs_table = "presence_convs"
 pub const presence_convs_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from presence_convs"
 

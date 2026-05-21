@@ -22,6 +22,8 @@ defmodule DdPgDefs do
     DdPgDefs.AgentRemoteDevArtifacts,
     DdPgDefs.AgentRemoteDevRuntimeLocks,
     DdPgDefs.LambdaFunctions,
+    DdPgDefs.ContainerPoolImageRevisions,
+    DdPgDefs.ContainerPoolBuildRuns,
     DdPgDefs.PresenceConvs,
     DdPgDefs.PresenceConvMembers,
     DdPgDefs.PresenceUsers,

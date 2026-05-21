@@ -652,6 +652,149 @@ pub struct LambdaFunctionDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    container_pool_image_revisions (id) {
+        id -> Uuid,
+        image_slug -> Varchar,
+        image_ref -> Text,
+        dockerfile_path -> Text,
+        build_context -> Text,
+        dockerfile_text -> Text,
+        dockerfile_sha256 -> Varchar,
+        source -> Varchar,
+        notes -> Text,
+        status -> Varchar,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_image_revisions)]
+pub struct ContainerPoolImageRevisionsDieselRow {
+    pub id: Uuid,
+    pub image_slug: String,
+    pub image_ref: String,
+    pub dockerfile_path: String,
+    pub build_context: String,
+    pub dockerfile_text: String,
+    pub dockerfile_sha256: String,
+    pub source: String,
+    pub notes: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_image_revisions)]
+pub struct ContainerPoolImageRevisionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub image_slug: Option<String>,
+    pub image_ref: Option<String>,
+    pub dockerfile_path: Option<String>,
+    pub build_context: Option<String>,
+    pub dockerfile_text: Option<String>,
+    pub dockerfile_sha256: Option<String>,
+    pub source: Option<String>,
+    pub notes: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    container_pool_build_runs (id) {
+        id -> Uuid,
+        image_slug -> Varchar,
+        revision_id -> Uuid,
+        image_ref -> Text,
+        candidate_tag -> Text,
+        build_status -> Varchar,
+        test_status -> Varchar,
+        overall_status -> Varchar,
+        test_command -> Text,
+        build_started_at -> Nullable<Timestamptz>,
+        build_finished_at -> Nullable<Timestamptz>,
+        test_started_at -> Nullable<Timestamptz>,
+        test_finished_at -> Nullable<Timestamptz>,
+        build_log_excerpt -> Text,
+        test_log_excerpt -> Text,
+        error_message -> Nullable<Text>,
+        triggered_by -> Nullable<Uuid>,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_build_runs)]
+pub struct ContainerPoolBuildRunsDieselRow {
+    pub id: Uuid,
+    pub image_slug: String,
+    pub revision_id: Uuid,
+    pub image_ref: String,
+    pub candidate_tag: String,
+    pub build_status: String,
+    pub test_status: String,
+    pub overall_status: String,
+    pub test_command: String,
+    pub build_started_at: Option<DateTime<Utc>>,
+    pub build_finished_at: Option<DateTime<Utc>>,
+    pub test_started_at: Option<DateTime<Utc>>,
+    pub test_finished_at: Option<DateTime<Utc>>,
+    pub build_log_excerpt: String,
+    pub test_log_excerpt: String,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<Uuid>,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_build_runs)]
+pub struct ContainerPoolBuildRunsDieselInsert {
+    pub id: Option<Uuid>,
+    pub image_slug: Option<String>,
+    pub revision_id: Option<Uuid>,
+    pub image_ref: Option<String>,
+    pub candidate_tag: Option<String>,
+    pub build_status: Option<String>,
+    pub test_status: Option<String>,
+    pub overall_status: Option<String>,
+    pub test_command: Option<String>,
+    pub build_started_at: Option<DateTime<Utc>>,
+    pub build_finished_at: Option<DateTime<Utc>>,
+    pub test_started_at: Option<DateTime<Utc>>,
+    pub test_finished_at: Option<DateTime<Utc>>,
+    pub build_log_excerpt: Option<String>,
+    pub test_log_excerpt: Option<String>,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<Uuid>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     presence_convs (id) {
         id -> Uuid,
         slug -> Varchar,

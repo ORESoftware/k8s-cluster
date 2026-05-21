@@ -391,6 +391,97 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "container_pool_image_revisions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "image_slug")]
+    pub image_slug: String,
+    #[sea_orm(column_name = "image_ref")]
+    pub image_ref: String,
+    #[sea_orm(column_name = "dockerfile_path")]
+    pub dockerfile_path: String,
+    #[sea_orm(column_name = "build_context")]
+    pub build_context: String,
+    #[sea_orm(column_name = "dockerfile_text")]
+    pub dockerfile_text: String,
+    #[sea_orm(column_name = "dockerfile_sha256")]
+    pub dockerfile_sha256: String,
+    pub source: String,
+    pub notes: String,
+    pub status: String,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "container_pool_build_runs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "image_slug")]
+    pub image_slug: String,
+    #[sea_orm(column_name = "revision_id")]
+    pub revision_id: Uuid,
+    #[sea_orm(column_name = "image_ref")]
+    pub image_ref: String,
+    #[sea_orm(column_name = "candidate_tag")]
+    pub candidate_tag: String,
+    #[sea_orm(column_name = "build_status")]
+    pub build_status: String,
+    #[sea_orm(column_name = "test_status")]
+    pub test_status: String,
+    #[sea_orm(column_name = "overall_status")]
+    pub overall_status: String,
+    #[sea_orm(column_name = "test_command")]
+    pub test_command: String,
+    #[sea_orm(column_name = "build_started_at")]
+    pub build_started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "build_finished_at")]
+    pub build_finished_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "test_started_at")]
+    pub test_started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "test_finished_at")]
+    pub test_finished_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "build_log_excerpt")]
+    pub build_log_excerpt: String,
+    #[sea_orm(column_name = "test_log_excerpt")]
+    pub test_log_excerpt: String,
+    #[sea_orm(column_name = "error_message")]
+    pub error_message: Option<String>,
+    #[sea_orm(column_name = "triggered_by")]
+    pub triggered_by: Option<Uuid>,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "presence_convs")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
