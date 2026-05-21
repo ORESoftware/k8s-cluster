@@ -1,3 +1,4 @@
+import dd_runtime_config_client
 import gleam/erlang/process
 import gleam/int
 import gleam/io
@@ -7,6 +8,7 @@ import gleam_lambda_runner/nats
 
 pub fn main() -> Nil {
   let _ = nats.start()
+  let _ = dd_runtime_config_client.start_registration_loop()
 
   let assert Ok(_started) =
     supervisor.new(supervisor.OneForOne)

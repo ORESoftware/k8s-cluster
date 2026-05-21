@@ -3,6 +3,7 @@
 
 packages = [
   { name = "dd_pg_defs", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], source = "local", path = "../../libs/pg-defs/generated/gleam" },
+  { name = "dd_runtime_config_client", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_erlang", "gleam_http", "gleam_stdlib", "mist"], source = "local", path = "../../libs/runtime-config-client-gleam" },
   { name = "exception", version = "2.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "exception", source = "hex", outer_checksum = "329D269D5C2A314F7364BD2711372B6F2C58FA6F39981572E5CA68624D291F8C" },
   { name = "gleam_crypto", version = "1.6.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleam_crypto", source = "hex", outer_checksum = "2DE9E4EF53CF6FEE049D4F765731F7178F7A11AEFAE00EEE63BF7536B354AD3F" },
   { name = "gleam_erlang", version = "1.3.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "gleam_erlang", source = "hex", outer_checksum = "1124AD3AA21143E5AF0FC5CF3D9529F6DB8CA03E43A55711B60B6B7B3874375C" },
@@ -19,6 +20,7 @@ packages = [
 
 [requirements]
 dd_pg_defs = { path = "../../libs/pg-defs/generated/gleam" }
+dd_runtime_config_client = { path = "../../libs/runtime-config-client-gleam" }
 gleam_erlang = { version = ">= 1.3.0 and < 2.0.0" }
 gleam_http = { version = ">= 4.0.0 and < 5.0.0" }
 gleam_otp = { version = ">= 1.2.0 and < 2.0.0" }
