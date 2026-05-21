@@ -1121,14 +1121,31 @@ async fn run_build_and_test(
     }
 
     // ── TEST ─────────────────────────────────────────────────────────────────
+    //
+    // Run the smoke test detached (-d) rather than --rm. When this orchestrator
+    // is executed from inside a Kubernetes pod, `nerdctl run --rm` creates the
+    // stdio FIFOs under the pod's /run/containerd/fifo namespace, which the
+    // host's containerd-shim cannot see; that surfaces as:
+    //
+    //   containerd-shim: opening file "/run/containerd/fifo/<n>/<id>-stdout"
+    //   failed: open ... : no such file or directory
+    //
+    // Detached mode avoids real-time stdio forwarding entirely: containerd
+    // captures stdout/stderr into its own log files, we `wait` for exit, then
+    // `logs` to retrieve output, and finally `rm` for cleanup. This is the
+    // same pattern dd-container-pool uses for warm worker containers.
     update_build_started(&build_id, "test").await?;
-    let mut test_cmd = TokioCommand::new(nerdctl_binary());
+    let test_container_name = format!("cpool-smoketest-{}", &build_id.replace('-', "")[..16]);
+
+    let mut start_cmd = TokioCommand::new(nerdctl_binary());
     if !namespace.trim().is_empty() {
-        test_cmd.arg("-n").arg(&namespace);
+        start_cmd.arg("-n").arg(&namespace);
     }
-    test_cmd
+    start_cmd
         .arg("run")
-        .arg("--rm")
+        .arg("-d")
+        .arg("--name")
+        .arg(&test_container_name)
         .arg("--network")
         .arg("host")
         .arg("--pull")
@@ -1143,13 +1160,13 @@ async fn run_build_and_test(
         .stderr(Stdio::piped());
 
     let test_started = std::time::Instant::now();
-    let test_output = timeout(test_timeout(), test_cmd.output()).await;
-    let test_elapsed_ms = test_started.elapsed().as_millis();
+    let start_result = timeout(test_timeout(), start_cmd.output()).await;
     let _ = fs::remove_dir_all(&work_dir);
-    match test_output {
+
+    let start_output = match start_result {
         Err(_) => {
             let msg = format!(
-                "smoke test timed out after {} seconds",
+                "smoke test (`run -d`) timed out after {} seconds",
                 test_timeout().as_secs()
             );
             update_build_finished(&build_id, "test", "failed", "", &msg).await?;
@@ -1160,40 +1177,159 @@ async fn run_build_and_test(
             update_build_finished(&build_id, "test", "failed", "", &msg).await?;
             return Err(msg);
         }
-        Ok(Ok(output)) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
+        Ok(Ok(output)) => output,
+    };
+
+    if !start_output.status.success() {
+        let stdout = String::from_utf8_lossy(&start_output.stdout);
+        let stderr = String::from_utf8_lossy(&start_output.stderr);
+        let log = truncate_log(
+            &format!(
+                "$ nerdctl -n {ns} run -d --name {name} --network host --pull never \
+                 --entrypoint /bin/sh {tag} -c {cmd:?}\n\
+                 -- exit: {code} --\nSTDOUT:\n{out}\n\nSTDERR:\n{err}",
+                ns = namespace,
+                name = test_container_name,
+                tag = candidate_tag,
+                cmd = test_command,
+                code = start_output.status.code().unwrap_or(-1),
+                out = stdout,
+                err = stderr,
+            ),
+            32_000,
+        );
+        let _ = nerdctl_rm(&namespace, &test_container_name).await;
+        update_build_finished(
+            &build_id,
+            "test",
+            "failed",
+            &log,
+            "smoke test container failed to start",
+        )
+        .await?;
+        return Err("smoke test failed to start".to_string());
+    }
+
+    // Wait for the test container to exit (or hit the configured budget).
+    let wait_budget = test_timeout();
+    let mut wait_cmd = TokioCommand::new(nerdctl_binary());
+    if !namespace.trim().is_empty() {
+        wait_cmd.arg("-n").arg(&namespace);
+    }
+    wait_cmd
+        .arg("wait")
+        .arg(&test_container_name)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let wait_result = timeout(wait_budget, wait_cmd.output()).await;
+
+    // Pull logs regardless of how wait turned out so the operator UI shows
+    // something useful even on timeout.
+    let mut logs_cmd = TokioCommand::new(nerdctl_binary());
+    if !namespace.trim().is_empty() {
+        logs_cmd.arg("-n").arg(&namespace);
+    }
+    logs_cmd
+        .arg("logs")
+        .arg(&test_container_name)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let logs_output = timeout(Duration::from_secs(10), logs_cmd.output()).await;
+    let test_elapsed_ms = test_started.elapsed().as_millis();
+    let (logs_stdout, logs_stderr) = match logs_output {
+        Ok(Ok(o)) => (
+            String::from_utf8_lossy(&o.stdout).to_string(),
+            String::from_utf8_lossy(&o.stderr).to_string(),
+        ),
+        _ => (String::new(), String::new()),
+    };
+    let _ = nerdctl_rm(&namespace, &test_container_name).await;
+
+    match wait_result {
+        Err(_) => {
+            let msg = format!(
+                "smoke test exceeded {} seconds in `nerdctl wait`",
+                wait_budget.as_secs()
+            );
             let log = truncate_log(
                 &format!(
-                    "$ nerdctl -n {ns} run --rm --network host --pull never \
-                     --entrypoint /bin/sh {tag} -c {cmd:?}\n\
-                     -- exit: {code}, elapsed: {ms}ms --\n\
-                     STDOUT:\n{out}\n\nSTDERR:\n{err}",
+                    "$ nerdctl -n {ns} run -d ... && wait && logs && rm  ({tag})\n\
+                     -- TIMED OUT after {ms}ms --\nLOGS STDOUT:\n{out}\n\nLOGS STDERR:\n{err}",
                     ns = namespace,
                     tag = candidate_tag,
-                    cmd = test_command,
-                    code = output.status.code().unwrap_or(-1),
                     ms = test_elapsed_ms,
-                    out = stdout,
-                    err = stderr,
+                    out = logs_stdout,
+                    err = logs_stderr,
                 ),
                 32_000,
             );
-            if !output.status.success() {
+            update_build_finished(&build_id, "test", "failed", &log, &msg).await?;
+            return Err(msg);
+        }
+        Ok(Err(err)) => {
+            let msg = format!("smoke test `nerdctl wait` failed to spawn: {err}");
+            update_build_finished(&build_id, "test", "failed", "", &msg).await?;
+            return Err(msg);
+        }
+        Ok(Ok(wait_out)) => {
+            // `nerdctl wait` prints the container exit code on stdout.
+            let stdout = String::from_utf8_lossy(&wait_out.stdout);
+            let exit_code: i32 = stdout
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .parse()
+                .unwrap_or(-1);
+            let log = truncate_log(
+                &format!(
+                    "$ nerdctl -n {ns} run -d --name {name} --network host --pull never \
+                     --entrypoint /bin/sh {tag} -c {cmd:?}\n\
+                     -- container exit: {exit_code}, elapsed: {ms}ms --\n\
+                     LOGS STDOUT:\n{out}\n\nLOGS STDERR:\n{err}",
+                    ns = namespace,
+                    name = test_container_name,
+                    tag = candidate_tag,
+                    cmd = test_command,
+                    ms = test_elapsed_ms,
+                    out = logs_stdout,
+                    err = logs_stderr,
+                ),
+                32_000,
+            );
+            if exit_code != 0 {
                 update_build_finished(
                     &build_id,
                     "test",
                     "failed",
                     &log,
-                    "smoke test returned non-zero status",
+                    &format!("smoke test container exited with code {exit_code}"),
                 )
                 .await?;
-                return Err("smoke test failed".to_string());
+                return Err(format!("smoke test failed (exit={exit_code})"));
             }
             update_build_finished(&build_id, "test", "passed", &log, "").await?;
         }
     }
 
+    Ok(())
+}
+
+async fn nerdctl_rm(namespace: &str, container_name: &str) -> Result<(), String> {
+    let mut cmd = TokioCommand::new(nerdctl_binary());
+    if !namespace.trim().is_empty() {
+        cmd.arg("-n").arg(namespace);
+    }
+    cmd.arg("rm")
+        .arg("-f")
+        .arg(container_name)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let _ = timeout(Duration::from_secs(15), cmd.output()).await;
     Ok(())
 }
 
