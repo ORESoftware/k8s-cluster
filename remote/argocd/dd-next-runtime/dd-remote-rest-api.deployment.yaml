@@ -170,6 +170,15 @@ spec:
             - name: buildkit-run
               mountPath: /run/buildkit
               readOnly: true
+            # nerdctl writes per-container etchosts + meta to /var/lib/nerdctl.
+            # Without this mount, `nerdctl run` fails immediately with:
+            #   failed to fulfil mount request: open
+            #   /var/lib/nerdctl/<id>/etchosts/<ns>/<cid>/hosts: no such file
+            # The dd-container-pool deployment already mounts this with
+            # Bidirectional propagation; mirror it here for build smoke tests.
+            - name: nerdctl-state
+              mountPath: /var/lib/nerdctl
+              mountPropagation: Bidirectional
       volumes:
         - name: repo
           hostPath:
@@ -203,3 +212,7 @@ spec:
           hostPath:
             path: /run/buildkit
             type: Directory
+        - name: nerdctl-state
+          hostPath:
+            path: /var/lib/nerdctl
+            type: DirectoryOrCreate

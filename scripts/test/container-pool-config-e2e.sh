@@ -162,10 +162,17 @@ BUILD_NS=$(echo "$LIST_JSON" | python3 -c 'import sys,json;print(json.load(sys.s
 [ -z "$BUILD_NS" ] && BUILD_NS=k8s.io
 echo "    build namespace = $BUILD_NS"
 if [ -n "$CAND_TAG" ]; then
-  IMGS=$(sudo /usr/local/bin/nerdctl -n "$BUILD_NS" images 2>&1 | head -50)
+  IMGS=$(sudo /usr/local/bin/nerdctl -n "$BUILD_NS" images 2>&1 | head -80)
   echo "$IMGS"
   REPO_PART=$(echo "$CAND_TAG" | cut -d: -f1)
-  if echo "$IMGS" | grep -q "$REPO_PART"; then
+  TAG_PART=$(echo "$CAND_TAG" | awk -F: '{print $NF}')
+  # nerdctl renders `docker.io/library/foo` as just `foo` in the REPOSITORY
+  # column, so try the candidate tag, the short repo (no `docker.io/library/`
+  # prefix), and as a final probe the tag portion alone.
+  SHORT_REPO=${REPO_PART#docker.io/library/}
+  if echo "$IMGS" | grep -qE "(^| )$SHORT_REPO " && echo "$IMGS" | grep -q "$TAG_PART"; then
+    ok "candidate image $CAND_TAG present in $BUILD_NS namespace"
+  elif echo "$IMGS" | grep -q "$REPO_PART"; then
     ok "candidate image $CAND_TAG present in $BUILD_NS namespace"
   else
     warn "candidate image $CAND_TAG not in $BUILD_NS (may have been pruned)"
