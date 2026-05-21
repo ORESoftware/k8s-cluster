@@ -519,7 +519,7 @@ async fn fetch_revision_by_id(
 ) -> Result<Option<RevisionRow>, String> {
     let sql = format!(
         "select {cols} from container_pool_image_revisions \
-         where id = $1::uuid and is_soft_deleted = false",
+         where id = $1::text::uuid and is_soft_deleted = false",
         cols = REVISION_COLS_FULL,
     );
     let row = client
@@ -553,7 +553,7 @@ async fn fetch_build_by_id(
 ) -> Result<Option<BuildRunRow>, String> {
     let sql = format!(
         "select {cols} from container_pool_build_runs \
-         where id = $1::uuid and is_soft_deleted = false",
+         where id = $1::text::uuid and is_soft_deleted = false",
         cols = BUILD_COLS_FULL,
     );
     let row = client
@@ -970,7 +970,7 @@ async fn trigger_build_test(
         "insert into container_pool_build_runs \
          (image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, \
           overall_status, test_command) \
-         values ($1, $2::uuid, $3, $4, 'queued', 'not_started', 'queued', $5) \
+         values ($1, $2::text::uuid, $3, $4, 'queued', 'not_started', 'queued', $5) \
          returning {cols}",
         cols = BUILD_COLS_FULL,
     );
@@ -1203,14 +1203,14 @@ async fn update_build_started(build_id: &str, phase: &str) -> Result<(), String>
         "build" => (
             "update container_pool_build_runs set \
              build_started_at = now(), build_status = 'building', overall_status = 'running', \
-             updated_at = now() where id = $1::uuid",
+             updated_at = now() where id = $1::text::uuid",
             "building",
             "running",
         ),
         "test" => (
             "update container_pool_build_runs set \
              test_started_at = now(), test_status = 'testing', overall_status = 'running', \
-             updated_at = now() where id = $1::uuid",
+             updated_at = now() where id = $1::text::uuid",
             "testing",
             "running",
         ),
@@ -1242,7 +1242,7 @@ async fn update_build_finished(
              build_status = $2, build_finished_at = now(), \
              build_log_excerpt = $3, error_message = coalesce($4, error_message), \
              overall_status = case when $2 = 'failed' then 'failed' else overall_status end, \
-             updated_at = now() where id = $1::uuid"
+             updated_at = now() where id = $1::text::uuid"
         }
         "test" => {
             "update container_pool_build_runs set \
@@ -1251,7 +1251,7 @@ async fn update_build_finished(
              overall_status = case when $2 = 'passed' then 'passed' \
                                    when $2 = 'failed' then 'failed' \
                                    else overall_status end, \
-             updated_at = now() where id = $1::uuid"
+             updated_at = now() where id = $1::text::uuid"
         }
         _ => return Err(format!("unknown phase: {phase}")),
     };
@@ -1269,7 +1269,7 @@ async fn update_build_error(build_id: &str, phase: &str, message: &str) -> Resul
         .execute(
             "update container_pool_build_runs set \
              overall_status = 'errored', error_message = $2, updated_at = now() \
-             where id = $1::uuid",
+             where id = $1::text::uuid",
             &[&build_id, &message],
         )
         .await

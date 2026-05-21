@@ -145,8 +145,10 @@ echo "    revisions: $RCNT"
 [ "${RCNT:-0}" -ge 1 ] && ok "revisions list returns $RCNT" || ko "revisions list empty"
 
 note "11. Web page reachability /container-pool/config"
-PAGE=$($KX exec -n default deploy/dd-remote-web-home -- wget -qO- http://127.0.0.1:8080/container-pool/config 2>&1)
+# web-home image is distroless and lacks curl/wget; exec from rest-api (bookworm) instead
+PAGE=$($KX exec -n default deploy/dd-remote-rest-api -- curl -sf http://dd-remote-web-home.default.svc.cluster.local:8080/container-pool/config 2>&1)
 echo "    page bytes: ${#PAGE}"
+echo "    page head (first 400B): ${PAGE:0:400}"
 echo "$PAGE" | grep -q 'cpool-shell' && ok "page HTML contains cpool-shell" || ko "page HTML missing cpool-shell"
 echo "$PAGE" | grep -q 'Container pool config' && ok "nav option present" || warn "nav title not found in HTML"
 echo "$PAGE" | grep -q '/api/container-pool/images' && ok "page JS references /api/container-pool/images" || warn "JS fetch URL not found in HTML"
