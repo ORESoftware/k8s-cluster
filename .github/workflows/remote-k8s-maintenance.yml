@@ -466,13 +466,13 @@ jobs:
           repo=/home/ec2-user/codes/dd/dd-next-1
           cd "$repo"
 
-          echo "=== preserving dirty EC2 checkout, if any ==="
+          echo "=== checking EC2 checkout cleanliness ==="
           git status --short
-          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-            git stash push -u -m "pre-deploy-lambda-ui-${TARGET_REVISION:-dev}-$(date -u +%Y%m%dT%H%M%SZ)"
-          else
-            echo "checkout already clean"
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block deploy-lambda-ui" >&2
+            exit 1
           fi
+          echo "tracked checkout clean"
 
           echo "=== fast-forward checkout ==="
           git fetch origin "${TARGET_REVISION:-dev}"

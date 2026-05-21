@@ -32,6 +32,13 @@ read-only by default; do not add write-capable AWS or Kubernetes tools without a
 short-lived human grant, auth, and audit design. Treat minikube overlays as local mirrors only, not
 as the live runtime source of truth.
 
+## Command Safety
+
+The following commands are blacklisted for agents in this repo: `git checkout`, `git reset`,
+`git stash`, `rm`, and `sed`. Do not run them in local operator work or add them to automation
+scripts. If a checkout has tracked dirty files, stop and surface the dirty state explicitly instead
+of hiding it. Leave untracked runtime files alone unless a human asks for a specific cleanup.
+
 ## Postgres Contract
 
 RDS Postgres plus `remote/libs/pg-defs/schema/schema.sql` are the database contract. Do not generate
