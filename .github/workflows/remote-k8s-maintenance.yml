@@ -27,6 +27,7 @@ on:
           - deploy-lambda-ui
           - verify-lambda-checks
           - seed-container-pool-config
+          - test-container-pool-config
           - sync-agent-gh-pat
           - sync-agent-model-keys
           - verify-gleam-mcp-server
@@ -214,6 +215,38 @@ jobs:
             ]
           }
           JSON
+              ;;
+            test-container-pool-config)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== wait for deployed services ==="
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-gateway --timeout=300s
+
+          echo "=== run /container-pool/config e2e from cluster ==="
+          bash scripts/test/container-pool-config-e2e.sh
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
               ;;
             repair-gleamlang-secret)
               python3 - <<'PY' > /tmp/remote-k8s-commands.json
