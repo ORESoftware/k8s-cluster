@@ -380,6 +380,8 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(deployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
   assert.match(deployment, /mountPath:\s*\/var\/lib\/containerd/);
   assert.match(deployment, /mountPropagation:\s*Bidirectional/);
+  assert.match(deployment, /mountPath:\s*\/var\/lib\/nerdctl/);
+  assert.match(deployment, /name:\s*nerdctl-data[\s\S]*hostPath:[\s\S]*path:\s*\/var\/lib\/nerdctl/);
   assert.match(deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
   assert.match(service, /name:\s*dd-container-pool/);
   assert.match(service, /port:\s*8102/);

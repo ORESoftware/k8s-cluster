@@ -166,6 +166,9 @@ spec:
             - name: containerd-root
               mountPath: /var/lib/containerd
               mountPropagation: Bidirectional
+            - name: nerdctl-data
+              mountPath: /var/lib/nerdctl
+              mountPropagation: Bidirectional
             - name: nerdctl-bin
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
@@ -182,6 +185,10 @@ spec:
           hostPath:
             path: /var/lib/containerd
             type: Directory
+        - name: nerdctl-data
+          hostPath:
+            path: /var/lib/nerdctl
+            type: DirectoryOrCreate
         - name: nerdctl-bin
           hostPath:
             path: /usr/local/bin/nerdctl
