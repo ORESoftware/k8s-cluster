@@ -100,7 +100,7 @@ function canonicalRepoKey(input: string | null | undefined): string | null {
   if (!value) return null;
   value = value.replace(/^git\+/i, '');
   const scpMatch = value.match(/^([^@\s]+)@([^:\s]+):(.+)$/);
-  if (scpMatch) {
+  if (scpMatch && scpMatch[2] && scpMatch[3]) {
     const host = scpMatch[2].toLowerCase();
     const pathPart = scpMatch[3].replace(/^\/+/, '');
     value = `https://${host}/${pathPart}`;
