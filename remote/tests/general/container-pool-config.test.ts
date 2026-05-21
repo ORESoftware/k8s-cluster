@@ -369,8 +369,8 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(deployment, /CONTAINER_POOL_START_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_MEMORY[\s\S]*value:\s*512m/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_CPUS[\s\S]*value:\s*'1'/);
-  assert.match(deployment, /CONTAINER_POOL_PIDS_LIMIT[\s\S]*value:\s*'128'/);
-  assert.match(deployment, /CONTAINER_POOL_NOFILE_LIMIT[\s\S]*value:\s*'128'/);
+  assert.match(deployment, /CONTAINER_POOL_PIDS_LIMIT[\s\S]*value:\s*'4096'/);
+  assert.match(deployment, /CONTAINER_POOL_NOFILE_LIMIT[\s\S]*value:\s*'65536'/);
   assert.match(deployment, /CONTAINER_POOL_HEALTH_CHECK_SECONDS[\s\S]*value:\s*'10'/);
   assert.match(deployment, /CONTAINER_POOL_HEALTH_TIMEOUT_MS[\s\S]*value:\s*'1000'/);
   assert.match(deployment, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD[\s\S]*value:\s*'2'/);

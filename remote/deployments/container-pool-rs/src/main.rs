@@ -84,6 +84,8 @@ struct ServiceConfig {
     forward_env_keys: Vec<String>,
     pids_limit: u64,
     nofile_limit: u64,
+    cap_drop_all: bool,
+    no_new_privileges: bool,
 }
 
 #[derive(Default)]
@@ -613,8 +615,10 @@ fn service_config_from_env() -> ServiceConfig {
         container_cpus: first_env(&["CONTAINER_POOL_CONTAINER_CPUS"])
             .filter(|value| safe_resource_value(value)),
         forward_env_keys: forwarded_worker_env_keys(),
-        pids_limit: env_u64("CONTAINER_POOL_PIDS_LIMIT", 128).clamp(16, 4096),
-        nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 128).clamp(32, 8192),
+        pids_limit: env_u64("CONTAINER_POOL_PIDS_LIMIT", 4096).clamp(16, 16384),
+        nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 65536).clamp(32, 262144),
+        cap_drop_all: env_bool("CONTAINER_POOL_CAP_DROP_ALL", false),
+        no_new_privileges: env_bool("CONTAINER_POOL_NO_NEW_PRIVILEGES", false),
     }
 }
 
@@ -1322,15 +1326,19 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         format!("dd.container-pool.service={SERVICE_NAME}"),
         "--user".to_string(),
         pool.user.clone(),
-        "--cap-drop".to_string(),
-        "ALL".to_string(),
-        "--security-opt".to_string(),
-        "no-new-privileges".to_string(),
         "--pids-limit".to_string(),
         state.config.pids_limit.to_string(),
         "--ulimit".to_string(),
         format!("nofile={limit}:{limit}", limit = state.config.nofile_limit),
     ];
+    if state.config.cap_drop_all {
+        args.push("--cap-drop".to_string());
+        args.push("ALL".to_string());
+    }
+    if state.config.no_new_privileges {
+        args.push("--security-opt".to_string());
+        args.push("no-new-privileges".to_string());
+    }
     if pool.read_only {
         args.push("--read-only".to_string());
         args.push("--tmpfs".to_string());
@@ -1424,8 +1432,27 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     args.extend(pool.command.clone());
 
     let container_run_timeout = state.config.nerdctl_run_timeout;
+    eprintln!(
+        "dd-container-pool starting container {name} (pool {pool_slug}, image {image}): nerdctl args=[-n {ns} run -d --name {name} ... --user {user} --pids-limit {pids} --ulimit nofile={nofile}:{nofile} cap_drop_all={cap_drop_all} no_new_privileges={nnp}]",
+        name = container.name,
+        pool_slug = pool.slug,
+        image = pool.image,
+        ns = state.config.containerd_namespace,
+        user = pool.user,
+        pids = state.config.pids_limit,
+        nofile = state.config.nofile_limit,
+        cap_drop_all = state.config.cap_drop_all,
+        nnp = state.config.no_new_privileges,
+    );
     match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
-        Ok(_) => {
+        Ok(output) => {
+            let trimmed = output.trim();
+            if !trimmed.is_empty() {
+                eprintln!(
+                    "dd-container-pool nerdctl run -d output for {name}: {trimmed}",
+                    name = container.name
+                );
+            }
             if let Err(error) = wait_container_ready(state, &pool, &container).await {
                 let mut registry = state.registry.lock().await;
                 registry.containers.remove(&container.name);

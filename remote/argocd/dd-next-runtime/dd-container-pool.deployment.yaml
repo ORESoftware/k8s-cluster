@@ -98,9 +98,9 @@ spec:
             - name: CONTAINER_POOL_CONTAINER_CPUS
               value: '1'
             - name: CONTAINER_POOL_PIDS_LIMIT
-              value: '128'
+              value: '4096'
             - name: CONTAINER_POOL_NOFILE_LIMIT
-              value: '128'
+              value: '65536'
             - name: CONTAINER_POOL_HEALTH_CHECK_SECONDS
               value: '10'
             - name: CONTAINER_POOL_HEALTH_TIMEOUT_MS
