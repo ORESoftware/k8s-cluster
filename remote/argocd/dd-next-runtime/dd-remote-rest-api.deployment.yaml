@@ -89,8 +89,12 @@ spec:
               value: 'true'
             - name: CONTAINER_POOL_IMAGE_BUILD_ROOT
               value: /var/lib/dd-container-pool-images
+            # Builds run in the same containerd namespace as the host
+            # buildkitd (k8s.io), matching LAMBDA_IMAGE_BUILD_NAMESPACE and the
+            # idle-reaper worker-image build. With dd-pool, nerdctl could not
+            # locate a buildkit socket and aborted before invoking buildctl.
             - name: CONTAINER_POOL_IMAGE_BUILD_NAMESPACE
-              value: dd-pool
+              value: k8s.io
             - name: CONTAINER_POOL_IMAGE_BUILD_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: CONTAINER_POOL_IMAGE_REPO_ROOT
@@ -99,6 +103,10 @@ spec:
               value: '1200'
             - name: CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS
               value: '120'
+            # Base URL the /api/runtime-config/snapshot/* proxy forwards to.
+            # See remote/deployments/runtime-config-rs/readme.md.
+            - name: RUNTIME_CONFIG_BASE_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110
           envFrom:
             - secretRef:
                 name: dd-agent-secrets
@@ -151,6 +159,17 @@ spec:
             - name: nerdctl-bin
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
+            # buildctl + the host buildkitd socket dir are required so nerdctl
+            # can shell out for `nerdctl build`. Both are baked on the host but
+            # absent inside the rust:1.90 image, which caused container-pool
+            # build-test rows to instantly fail with: `buildctl` executable
+            # file not found in $PATH.
+            - name: buildctl-bin
+              mountPath: /usr/local/bin/buildctl
+              readOnly: true
+            - name: buildkit-run
+              mountPath: /run/buildkit
+              readOnly: true
       volumes:
         - name: repo
           hostPath:
@@ -176,3 +195,11 @@ spec:
           hostPath:
             path: /usr/local/bin/nerdctl
             type: File
+        - name: buildctl-bin
+          hostPath:
+            path: /usr/local/bin/buildctl
+            type: File
+        - name: buildkit-run
+          hostPath:
+            path: /run/buildkit
+            type: Directory
