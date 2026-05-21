@@ -677,6 +677,8 @@ class AgentRemoteDevEventObjectBox {
 
   String taskId;
 
+  String? threadId;
+
   int seq;
 
   String eventKind;
@@ -690,6 +692,7 @@ class AgentRemoteDevEventObjectBox {
   AgentRemoteDevEventObjectBox({
     required this.id,
     required this.taskId,
+    this.threadId,
     required this.seq,
     required this.eventKind,
     required this.payload,
@@ -699,6 +702,7 @@ class AgentRemoteDevEventObjectBox {
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
     "taskId": taskId,
+    "threadId": threadId,
     "seq": seq,
     "eventKind": eventKind,
     "payload": jsonDecode(payload),
@@ -709,6 +713,7 @@ class AgentRemoteDevEventObjectBox {
     return AgentRemoteDevEventObjectBox(
       id: (json["id"] as num).toInt(),
       taskId: json["taskId"] as String,
+      threadId: json["threadId"] as String?,
       seq: (json["seq"] as num).toInt(),
       eventKind: json["eventKind"] as String,
       payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),

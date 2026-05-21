@@ -152,6 +152,7 @@ public final class Tables {
     public static final Table<org.jooq.Record> AGENT_REMOTE_DEV_EVENTS = DSL.table(AGENT_REMOTE_DEV_EVENTS_NAME);
     public static final Field<Long> AGENT_REMOTE_DEV_EVENTS_ID = DSL.field(DSL.name("agent_remote_dev_events", "id"), SQLDataType.BIGINT);
     public static final Field<UUID> AGENT_REMOTE_DEV_EVENTS_TASK_ID = DSL.field(DSL.name("agent_remote_dev_events", "task_id"), SQLDataType.UUID);
+    public static final Field<UUID> AGENT_REMOTE_DEV_EVENTS_THREAD_ID = DSL.field(DSL.name("agent_remote_dev_events", "thread_id"), SQLDataType.UUID);
     public static final Field<Integer> AGENT_REMOTE_DEV_EVENTS_SEQ = DSL.field(DSL.name("agent_remote_dev_events", "seq"), SQLDataType.INTEGER);
     public static final Field<String> AGENT_REMOTE_DEV_EVENTS_EVENT_KIND = DSL.field(DSL.name("agent_remote_dev_events", "event_kind"), SQLDataType.VARCHAR(80));
     public static final Field<JSONB> AGENT_REMOTE_DEV_EVENTS_PAYLOAD = DSL.field(DSL.name("agent_remote_dev_events", "payload"), SQLDataType.JSONB);

@@ -181,12 +181,14 @@ model AgentRemoteDevTask {
 model AgentRemoteDevEvent {
   id BigInt @id @default(autoincrement()) @db.BigInt
   taskId String @map("task_id") @db.Uuid
+  threadId String? @map("thread_id") @db.Uuid
   seq Int
   eventKind String @map("event_kind") @db.VarChar(80)
   payload Json @default("{}")
   createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
   @@unique([taskId, seq], map: "agent_remote_dev_events_task_seq_uq")
   @@index([taskId, createdAt], map: "agent_remote_dev_events_task_id_created_at_idx")
+  // agent_remote_dev_events_thread_id_created_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
   @@index([createdAt], map: "agent_remote_dev_events_created_at_idx")
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("agent_remote_dev_events")

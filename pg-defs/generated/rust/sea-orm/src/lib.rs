@@ -264,6 +264,8 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_name = "task_id")]
     pub task_id: Uuid,
+    #[sea_orm(column_name = "thread_id")]
+    pub thread_id: Option<Uuid>,
     pub seq: i32,
     #[sea_orm(column_name = "event_kind")]
     pub event_kind: String,

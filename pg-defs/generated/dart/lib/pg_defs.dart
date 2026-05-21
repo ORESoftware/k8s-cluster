@@ -729,12 +729,13 @@ class AgentRemoteDevTaskRow {
 }
 
 const agentRemoteDevEventTable = "agent_remote_dev_events";
-const agentRemoteDevEventSelectSql = "select\n      id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
+const agentRemoteDevEventSelectSql = "select\n      id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
 
 class AgentRemoteDevEventRow {
   const AgentRemoteDevEventRow({
     required this.id,
     required this.taskId,
+    this.threadId,
     required this.seq,
     required this.eventKind,
     required this.payload,
@@ -743,6 +744,7 @@ class AgentRemoteDevEventRow {
 
   final int id;
   final String taskId;
+  final String? threadId;
   final int seq;
   final String eventKind;
   final Map<String, Object?> payload;
@@ -752,6 +754,7 @@ class AgentRemoteDevEventRow {
     return AgentRemoteDevEventRow(
       id: _readRequiredInt(json, "id"),
       taskId: _readRequiredString(json, "taskId"),
+      threadId: _readOptionalString(json, "threadId"),
       seq: _readRequiredInt(json, "seq"),
       eventKind: _readRequiredString(json, "eventKind"),
       payload: _readRequiredObject(json, "payload"),
@@ -762,6 +765,7 @@ class AgentRemoteDevEventRow {
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
     "taskId": taskId,
+    "threadId": threadId,
     "seq": seq,
     "eventKind": eventKind,
     "payload": payload,

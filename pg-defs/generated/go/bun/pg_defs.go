@@ -405,6 +405,7 @@ const AgentRemoteDevEventTable = "agent_remote_dev_events"
 const AgentRemoteDevEventSelectSQL = `select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload,
@@ -415,6 +416,7 @@ type AgentRemoteDevEventBun struct {
 	bun.BaseModel `bun:"table:agent_remote_dev_events"`
 	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
 	TaskId uuid.UUID `bun:"task_id,type:uuid" json:"taskId"`
+	ThreadId *uuid.UUID `bun:"thread_id,type:uuid,nullzero" json:"threadId,omitempty"`
 	Seq int32 `bun:"seq,type:integer" json:"seq"`
 	EventKind string `bun:"event_kind,type:varchar(80)" json:"eventKind"`
 	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`

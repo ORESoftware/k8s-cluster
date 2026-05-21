@@ -13,13 +13,14 @@ defmodule DdPgDefs.AgentRemoteDevEvents do
 
   schema @table do
     field :task_id, :binary_id
+    field :thread_id, :binary_id
     field :seq, :integer
     field :event_kind, :string
     field :payload, :map, default: %{}
   end
 
   @required_fields ~w(task_id seq event_kind)a
-  @optional_fields ~w(payload)a
+  @optional_fields ~w(thread_id payload)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do

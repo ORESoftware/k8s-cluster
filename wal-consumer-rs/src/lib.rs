@@ -317,7 +317,14 @@ where
             };
             match serde_json::from_slice::<RowChange>(&msg.payload) {
                 Ok(change) => {
-                    (handler)(change).await;
+                    if change.schema_version == SCHEMA_VERSION {
+                        (handler)(change).await;
+                    } else {
+                        log_warn(&format!(
+                            "wal-consumer[{log_label}] unsupported schemaVersion={}",
+                            change.schema_version
+                        ));
+                    }
                 }
                 Err(error) => {
                     log_warn(&format!(
@@ -370,7 +377,10 @@ mod tests {
         let parsed: RowChange = serde_json::from_str(json).expect("decode");
         assert_eq!(parsed.op, ChangeOp::Update);
         assert_eq!(parsed.table, "app_config");
-        assert_eq!(parsed.column("scope").and_then(Value::as_str), Some("default"));
+        assert_eq!(
+            parsed.column("scope").and_then(Value::as_str),
+            Some("default")
+        );
         assert!(parsed.is_table("public", "app_config"));
     }
 

@@ -239,11 +239,12 @@ validate_agent_remote_dev_tasks_exit_reason(Value) when is_list(Value) ->
 
 agent_remote_dev_events_table() -> <<"agent_remote_dev_events">>.
 
-agent_remote_dev_events_columns() -> [<<"id">>, <<"task_id">>, <<"seq">>, <<"event_kind">>, <<"payload">>, <<"created_at">>].
+agent_remote_dev_events_columns() -> [<<"id">>, <<"task_id">>, <<"thread_id">>, <<"seq">>, <<"event_kind">>, <<"payload">>, <<"created_at">>].
 
 agent_remote_dev_events_select_sql() -> <<"select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload::text as payload_json,
