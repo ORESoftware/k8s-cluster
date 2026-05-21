@@ -153,15 +153,22 @@ echo "$PAGE" | grep -q 'cpool-shell' && ok "page HTML contains cpool-shell" || k
 echo "$PAGE" | grep -q 'Container pool config' && ok "nav option present" || warn "nav title not found in HTML"
 echo "$PAGE" | grep -q '/api/container-pool/images' && ok "page JS references /api/container-pool/images" || warn "JS fetch URL not found in HTML"
 
-note "12. Candidate image landed in dd-pool namespace"
+note "12. Candidate image landed in build namespace (k8s.io)"
+# Builds run in CONTAINER_POOL_IMAGE_BUILD_NAMESPACE=k8s.io (same as
+# LAMBDA_IMAGE_BUILD_NAMESPACE + idle-reaper worker-image builds) because
+# that is where the host buildkitd is wired in. Workers later read from
+# dd-pool; image copy across namespaces is a separate concern.
+BUILD_NS=$(echo "$LIST_JSON" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("namespace",""))' 2>/dev/null)
+[ -z "$BUILD_NS" ] && BUILD_NS=k8s.io
+echo "    build namespace = $BUILD_NS"
 if [ -n "$CAND_TAG" ]; then
-  IMGS=$(sudo /usr/local/bin/nerdctl -n dd-pool images 2>&1 | head -40)
+  IMGS=$(sudo /usr/local/bin/nerdctl -n "$BUILD_NS" images 2>&1 | head -50)
   echo "$IMGS"
   REPO_PART=$(echo "$CAND_TAG" | cut -d: -f1)
   if echo "$IMGS" | grep -q "$REPO_PART"; then
-    ok "candidate image $CAND_TAG present in dd-pool namespace"
+    ok "candidate image $CAND_TAG present in $BUILD_NS namespace"
   else
-    warn "candidate image $CAND_TAG not in dd-pool (may have been pruned)"
+    warn "candidate image $CAND_TAG not in $BUILD_NS (may have been pruned)"
   fi
 fi
 
