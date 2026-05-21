@@ -29,8 +29,10 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
             capabilities:
               drop:
                 - ALL
@@ -43,9 +45,19 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-runtime-config-target
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               cd /opt/dd-next-1/remote/deployments/runtime-config-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/dd-runtime-config-target
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -103,8 +115,13 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: tmp
+          emptyDir: {}
