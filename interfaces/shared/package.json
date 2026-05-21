@@ -1,0 +1,20 @@
+{
+  "name": "@dd/shared-interfaces",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "JSON Schema source of truth for cross-runtime shared interfaces (runtime config, subscriber registry, apply payloads). Generated outputs live under generated/<lang>.",
+  "scripts": {
+    "generate": "node src/generate.mjs",
+    "check": "node src/generate.mjs --check",
+    "test": "node --test \"src/**/*.test.mjs\""
+  },
+  "exports": {
+    "./schema": "./schema/index.json",
+    "./typescript": "./generated/typescript/index.ts",
+    "./rust": "./generated/rust/src/lib.rs",
+    "./python": "./generated/python/dd_shared_interfaces.py",
+    "./gleam": "./generated/gleam/src/dd_shared_interfaces.gleam"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

@@ -51,8 +51,10 @@ if (args.includes("--parse-only")) {
   process.exit(0);
 }
 
-const databaseUrl = await resolveDatabaseUrl();
-const actualSchema = await introspectDatabase(databaseUrl);
+const catalogJsonPath = argValue("--catalog-json");
+const actualSchema = catalogJsonPath
+  ? hydrateActualSchema(JSON.parse(await readFile(path.resolve(process.cwd(), catalogJsonPath), "utf8")))
+  : await introspectDatabase(await resolveDatabaseUrl());
 const diffSql = generateDiffSql({
   contract,
   actualSchema,
@@ -345,10 +347,14 @@ async function introspectDatabase(databaseUrl) {
     ) as schema_json;
   `);
 
+  return hydrateActualSchema(rows);
+}
+
+function hydrateActualSchema(rows) {
   const tables = new Map();
   const routines = new Map();
   const triggers = new Map();
-  for (const table of rows.tables) {
+  for (const table of rows.tables ?? []) {
     tables.set(table.table_name, {
       name: table.table_name,
       columns: new Map(),
@@ -357,7 +363,7 @@ async function introspectDatabase(databaseUrl) {
     });
   }
 
-  for (const column of rows.columns) {
+  for (const column of rows.columns ?? []) {
     const table = tables.get(column.table_name);
     if (!table) {
       continue;
@@ -372,21 +378,21 @@ async function introspectDatabase(databaseUrl) {
     });
   }
 
-  for (const check of rows.checks) {
+  for (const check of rows.checks ?? []) {
     tables.get(check.table_name)?.checks.set(check.constraint_name, {
       name: check.constraint_name,
       definition: check.definition,
     });
   }
 
-  for (const index of rows.indexes) {
+  for (const index of rows.indexes ?? []) {
     tables.get(index.table_name)?.indexes.set(index.index_name, {
       name: index.index_name,
       definition: index.definition,
     });
   }
 
-  for (const routine of rows.routines) {
+  for (const routine of rows.routines ?? []) {
     const normalized = {
       name: routine.routine_name,
       identityArguments: normalizeRoutineArgs(routine.identity_arguments ?? ""),
@@ -398,7 +404,7 @@ async function introspectDatabase(databaseUrl) {
     routines.set(routineKey(normalized), normalized);
   }
 
-  for (const trigger of rows.triggers) {
+  for (const trigger of rows.triggers ?? []) {
     const normalized = {
       name: trigger.trigger_name,
       tableName: trigger.table_name,
@@ -671,21 +677,92 @@ function normalizeRoutineBody(value) {
 }
 
 function normalizeCheck(value) {
+  // Postgres deparses stored CHECK definitions in a heavily parenthesised,
+  // cast-annotated form that's semantically identical to the lossy SQL we
+  // ship in schema.sql. Walk through the deparse-noise transforms in a
+  // fixed order until the string stabilises so simple shapes like
+  // `between`, `in`, `is null`, and `varchar` cast wraps don't show up
+  // as false-positive drift.
   let normalized = value
     .replace(/^CHECK\s*/i, "")
-    .replace(/::(?:text|character varying|integer|bigint|boolean|jsonb|uuid|timestamp with time zone)\b/gi, "")
+    // Strip type casts including their `[]` array suffix so `::text[]`
+    // doesn't leave behind a stray `[]`.
+    .replace(
+      /::(?:text|character varying|integer|int|int4|int8|bigint|boolean|bool|jsonb|json|uuid|numeric|real|double precision|timestamp with time zone|timestamp without time zone|timestamptz|timestamp|date|smallint|bytea)(\s*\[\])?/gi,
+      "",
+    )
     .replace(/::[\w.[\]"]+/g, "")
     .replace(/"/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  normalized = stripOuterParens(normalized);
-  normalized = normalized.replace(/\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+  // Pre-pass: strip parens around bare identifiers so the LHS of an
+  // `(col)::text = ANY (...)` has its bare `col` exposed before the
+  // `= ANY` → `IN` rewrite tries to match.
+  normalized = normalized.replace(/(?<![a-z0-9_])\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+
+  // `col = any ((array[...])[])` (PG deparse) → `col in (...)`. Tolerates
+  // the optional `[]` suffix the array-cast strip leaves behind. Done
+  // before the paren-flattening loop so subsequent passes can strip the
+  // resulting `(col in (...))` wrap with the same rule that strips
+  // other paren-wrapped clauses.
   normalized = normalized.replace(
-    /([a-z_][\w]*)\s*=\s*any\s*\(\s*\(?array\[([^\]]+)\]\)?\s*\[\]\s*\)/gi,
+    /([a-z_][\w]*)\s*=\s*any\s*\(\s*\(?\s*array\s*\[([^\]]+)\]\s*\)?\s*(?:\[\])?\s*\)/gi,
     "$1 in ($2)",
   );
-  normalized = stripOuterParens(normalized);
+
+  // Repeatedly apply paren-flattening passes until idempotent so nested
+  // wraps like `(((x is null)))` collapse cleanly without depth-specific
+  // regexes.
+  for (let i = 0; i < 8; i += 1) {
+    const before = normalized;
+    normalized = stripOuterParens(normalized);
+    // `(ident)` — but ONLY when not glued to a function name. The previous
+    // version dropped the open paren of `octet_length(display_name)`.
+    normalized = normalized.replace(/(?<![a-z0-9_])\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+    // `(col is null)` / `(col is not null)`
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*)\s+(is\s+(?:not\s+)?null)\s*\)/gi,
+      "$1 $2",
+    );
+    // `(LHS OP RHS)` — strip parens around simple binary comparisons where
+    // LHS is an ident or a balanced function call (`octet_length(col)`),
+    // RHS is anything without inner parens. Done in a paren-context-safe
+    // way so `(octet_length(col) <= N)` becomes `octet_length(col) <= N`.
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*(?:\([^()]*\))?)\s*(>=|<=|<>|!=|=|>|<)\s*([^()]+?)\s*\)/gi,
+      "$1 $2 $3",
+    );
+    // `(col in (...))` and `(func(col) in (...))`
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*(?:\([^()]*\))?\s+in\s*\([^()]*\))\s*\)/gi,
+      "$1",
+    );
+    // `(X) AND (Y)` / `(X) OR (Y)` — strip parens around top-level boolean
+    // operands when each operand is itself a simple comparison/predicate.
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*(?:\([^()]*\))?\s+(?:is\s+(?:not\s+)?null|in\s*\([^()]*\)|(?:>=|<=|<>|!=|=|>|<|between)[^()]+?))\s*\)/gi,
+      "$1",
+    );
+    if (normalized === before) break;
+  }
+
+  // `(LHS >= N) AND (LHS <= M)` → `LHS between N and M`. LHS may be a
+  // bare identifier or a balanced function call. Bounds must be integer
+  // literals so this stays safe (no cross-column comparisons).
+  normalized = normalized.replace(
+    /([a-z_][\w]*(?:\([^()]*\))?)\s*>=\s*(-?\d+)\s+and\s+\1\s*<=\s*(-?\d+)/gi,
+    "$1 between $2 and $3",
+  );
+
+  // Final cleanup pass: paren strip + outer wrap + ws collapse.
+  for (let i = 0; i < 4; i += 1) {
+    const before = normalized;
+    normalized = stripOuterParens(normalized);
+    normalized = normalized.replace(/(?<![a-z0-9_])\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+    normalized = normalized.replace(/\s+/g, " ").trim();
+    if (normalized === before) break;
+  }
   return normalized.toLowerCase();
 }
 
