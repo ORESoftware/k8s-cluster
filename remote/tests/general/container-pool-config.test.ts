@@ -115,8 +115,16 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /x-container-pool-auth/);
   assert.match(source, /Command::new\(program\)\.args\(args\)\.output\(\)/);
   assert.match(source, /"run"\.to_string\(\)/);
+  assert.match(source, /container_run_timeout = state\.config\.command_timeout\.min\(Duration::from_secs\(30\)\)/);
   assert.match(source, /wait_container_ready/);
   assert.match(source, /inspect_container_running/);
+  assert.match(source, /state\.config\.command_timeout\.min\(Duration::from_secs\(5\)\)/);
+  assert.match(source, /container \{\} stopped before readiness at \{url\}/);
+  assert.match(source, /retire_stale_starting_containers/);
+  assert.match(source, /container\.status == ContainerStatus::Starting/);
+  assert.match(source, /retire_stale_starting_containers\(state, Some\(pool_id\)\)\.await/);
+  assert.match(source, /retire_stale_starting_containers\(state, None\)\.await/);
+  assert.match(source, /"starting container is not running"/);
   assert.match(source, /probe_container_health/);
   assert.match(source, /retire_container/);
   assert.match(source, /prune_unhealthy_containers/);

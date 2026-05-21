@@ -627,10 +627,24 @@ function modelLabel(provider: AgentProvider | undefined, model: string | undefin
   return label;
 }
 
+function stripNegatedPullRequestPhrases(prompt: string): string {
+  return prompt
+    .replace(
+      /\b(?:do\s+not|don't|dont|never)\s+(?:(?:open|create|submit|make|raise)\s+)?(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/gi,
+      ' ',
+    )
+    .replace(
+      /\b(?:without|no)\s+(?:(?:opening|creating|submitting|making|raising)\s+)?(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)s?\b/gi,
+      ' ',
+    )
+    .replace(/\b(?:without|no)\s+(?:pr|pull\s+request|merge\s+request)s?\b/gi, ' ');
+}
+
 function promptRequestsPullRequest(prompt: string): boolean {
+  const prPrompt = stripNegatedPullRequestPhrases(prompt);
   return /\b(?:open|create|submit|make|raise)\s+(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/i.test(
-    prompt,
-  ) || /\b(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt);
+    prPrompt,
+  ) || /\b(?:pr|pull\s+request|merge\s+request)\b/i.test(prPrompt);
 }
 
 function stripNegatedWorkspaceChangePhrases(prompt: string): string {

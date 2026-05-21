@@ -212,6 +212,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /function providerCanEditWorkspace\(provider: AgentProvider\): boolean/);
   assert.match(server, /return provider !== 'gemini-sdk'/);
   assert.doesNotMatch(server, /provider !== 'opencode-ai-sdk' && provider !== 'generic-ai-sdk'/);
+  assert.match(server, /function stripNegatedPullRequestPhrases\(prompt: string\): string/);
+  assert.match(server, /const prPrompt = stripNegatedPullRequestPhrases\(prompt\)/);
+  assert.match(server, /do\\s\+not\|don't\|dont\|never/);
+  assert.match(server, /without\|no/);
   assert.match(server, /function promptRequestsPullRequest\(prompt: string\): boolean/);
   assert.match(server, /ensurePullRequestForSession\(\{[\s\S]*session: state\.session,[\s\S]*taskId: state\.taskId,[\s\S]*prompt: state\.prompt/);
   assert.match(server, /kind: 'pr_open'/);
@@ -384,16 +388,14 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(entrypoint, /if \[\[ ! -d "\$REPO_DIR\/\.git" && -d "\$TEMPLATE_DIR\/\.git" \]\]; then/);
   assert.match(entrypoint, /cp -a "\$TEMPLATE_DIR\/\." "\$REPO_DIR\/"/);
   assert.match(entrypoint, /==> git fetch starting/);
+  assert.match(entrypoint, /git fetch --quiet --depth=1 origin "\+refs\/heads\/\$BASE_BRANCH:refs\/remotes\/origin\/\$BASE_BRANCH"/);
   assert.doesNotMatch(entrypoint, /GIT_READY_PID/);
 
-  assert.match(readme, /git clone --depth=1 --branch <BASE_BRANCH>/);
+  assert.match(readme, /Runtime clone or baked-template clone uses `git clone --depth=1 --branch <BASE_BRANCH>`/);
   assert.match(readme, /Warm boots only refresh `origin\/<BASE_BRANCH>` with a depth-1 fetch/);
   assert.match(readme, /switch from it;[\s\S]*otherwise create the feature branch from[\s\S]*`origin\/<BASE_BRANCH>`/);
   assert.match(readme, /If a reused workspace is still on the parent branch, the worker fails[\s\S]*closed/);
-  assert.match(
-    readme,
-    /Install repo dependencies only after the feature branch is prepared/,
-  );
+  assert.match(readme, /Install repo dependencies only after the feature branch is prepared/);
   assert.match(readme, /Before the first build you need a `pnpm-lock\.yaml`/);
   assert.match(readme, /cluster-mcp\.ts/);
   assert.match(readme, /AGENT_MCP_URL/);

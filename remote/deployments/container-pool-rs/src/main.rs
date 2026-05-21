@@ -1226,6 +1226,8 @@ async fn allocate_container_slot(
     state: &AppState,
     pool_id: &str,
 ) -> Result<(PoolConfig, WarmContainer), String> {
+    retire_stale_starting_containers(state, Some(pool_id)).await;
+
     let mut registry = state.registry.lock().await;
     let pool = registry
         .configs
@@ -1416,13 +1418,8 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     args.push(pool.image.clone());
     args.extend(pool.command.clone());
 
-    match run_command(
-        &state.config.nerdctl_bin,
-        &args,
-        state.config.command_timeout,
-    )
-    .await
-    {
+    let container_run_timeout = state.config.command_timeout.min(Duration::from_secs(30));
+    match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
         Ok(_) => {
             if let Err(error) = wait_container_ready(state, &pool, &container).await {
                 let mut registry = state.registry.lock().await;
@@ -1472,6 +1469,12 @@ async fn wait_container_ready(
         match timeout(Duration::from_millis(800), state.http.get(&url).send()).await {
             Ok(Ok(response)) if response.status().is_success() => return Ok(()),
             Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {}
+        }
+        if !inspect_container_running(state, &container.name).await? {
+            return Err(format!(
+                "container {} stopped before readiness at {url}",
+                container.name
+            ));
         }
         if started.elapsed() > state.config.container_start_timeout {
             return Err(format!(
@@ -1558,19 +1561,14 @@ async fn run_command(
 }
 
 async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
+    let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(5));
     let args = vec![
         "-n".to_string(),
         state.config.containerd_namespace.clone(),
         "inspect".to_string(),
         name.to_string(),
     ];
-    let output = match run_command(
-        &state.config.nerdctl_bin,
-        &args,
-        state.config.command_timeout,
-    )
-    .await
-    {
+    let output = match run_command(&state.config.nerdctl_bin, &args, inspect_timeout).await {
         Ok(output) => output,
         Err(error) => {
             let lower = error.to_ascii_lowercase();
@@ -1601,6 +1599,37 @@ async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool,
         .and_then(Value::as_str)
         .unwrap_or_default();
     Ok(status.eq_ignore_ascii_case("running"))
+}
+
+async fn retire_stale_starting_containers(state: &AppState, pool_id: Option<&str>) {
+    let now = now_ms();
+    let candidates = {
+        let registry = state.registry.lock().await;
+        registry
+            .containers
+            .values()
+            .filter(|container| container.in_flight == 0)
+            .filter(|container| container.status == ContainerStatus::Starting)
+            .filter(|container| pool_id.map(|id| id == container.pool_id).unwrap_or(true))
+            .filter(|container| {
+                Duration::from_millis(now.saturating_sub(container.launched_at_ms) as u64)
+                    >= state.config.unhealthy_grace
+            })
+            .map(|container| container.name.clone())
+            .collect::<Vec<_>>()
+    };
+
+    for name in candidates {
+        match inspect_container_running(state, &name).await {
+            Ok(false) => {
+                retire_container(state, &name, "starting container is not running").await;
+            }
+            Ok(true) => {}
+            Err(error) => {
+                eprintln!("failed to inspect starting warm container {name}: {error}");
+            }
+        }
+    }
 }
 
 async fn probe_container_health(
@@ -1658,6 +1687,8 @@ async fn retire_container(state: &AppState, name: &str, reason: &str) {
 }
 
 async fn prune_unhealthy_containers(state: &AppState) {
+    retire_stale_starting_containers(state, None).await;
+
     let now = now_ms();
     let candidates = {
         let registry = state.registry.lock().await;
