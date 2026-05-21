@@ -48,12 +48,12 @@ jobs:
               --comment "Refresh remote web-home local image" \
               --parameters 'commands=[
                 "set -euo pipefail",
-                "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git status --short; if ! git diff --quiet || ! git diff --cached --quiet; then echo tracked dirty files block refresh; exit 1; fi; git fetch origin dev; git switch dev 2>/dev/null || git switch -c dev --track origin/dev; git merge --ff-only origin/dev; git rev-parse --short HEAD'\''",
-                "cd /home/ec2-user/codes/dd/dd-next-1",
+                "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; source_repo=/home/ec2-user/codes/dd/dd-next-1; cd \"$source_repo\"; git status --short; refresh_root=$(mktemp -d /tmp/dd-web-home-refresh.XXXXXX); git clone --depth 1 --branch dev \"$(git config --get remote.origin.url)\" \"$refresh_root\"; cd \"$refresh_root\"; git rev-parse --short HEAD; printf \"%s\\n\" \"$refresh_root\" >/tmp/dd-web-home-refresh-root'\''",
+                "refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\"",
                 "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-dev-server:dev remote/deployments/dev-server",
                 "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/deployments/web-home-rs",
-                "sudo -u ec2-user -H bash -lc '\''cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
-                "sudo -u ec2-user -H bash -lc '\''cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-gleam-lambda-runner.application.yaml'\''",
+                "sudo -u ec2-user -H bash -lc '\''refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\" && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
+                "sudo -u ec2-user -H bash -lc '\''refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\" && kubectl apply -f remote/argocd/apps/dd-gleam-lambda-runner.application.yaml'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-next-runtime'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-gleam-lambda-runner'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite'\''",
