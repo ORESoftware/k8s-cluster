@@ -303,12 +303,14 @@ jobs:
             sudo nerdctl -n k8s.io rm -f "$c" || true
           done
           '''
-          diag = r'''set -euo pipefail
+          diag = r'''set +e
           echo "=== runtime versions on host ==="
           sudo nerdctl --version 2>&1 || true
           sudo containerd --version 2>&1 || true
           sudo runc --version 2>&1 || true
-          ls -la /usr/bin/runc /usr/local/bin/runc 2>&1 || true
+          which runc 2>&1 || true
+          ls -la /usr/bin/runc /usr/local/bin/runc /usr/sbin/runc 2>&1 || true
+          ls -la /usr/local/bin/containerd-shim-runc-v2 /usr/bin/containerd-shim-runc-v2 2>&1 || true
           stat -c '%a %u %g %n' /run/containerd/containerd.sock 2>&1 || true
           echo "=== live-mutex pool snapshot ==="
           pod="$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath='{.items[0].metadata.name}')"
@@ -339,26 +341,37 @@ jobs:
             echo "--- containerd journal for container ---"
             sudo journalctl -u containerd --since "5 min ago" 2>&1 | grep -iE "error|fail|warn|dd-pool|runc" | tail -30 || true
           fi
-          echo "=== removing stale workers and running a foreground nerdctl smoke ==="
+          echo "=== removing stale workers ==="
           for c in $(sudo nerdctl -n dd-pool ps -aq --filter label=dd.container-pool.managed=true 2>/dev/null); do
             sudo nerdctl -n dd-pool rm -f "$c" 2>&1 | head -c 200 || true
           done
-          echo "--- foreground nerdctl: dd-dev-server in dd-pool ns (entrypoint override, 20s timeout) ---"
-          sudo timeout 20 nerdctl -n dd-pool run --rm --network host --user 1000:1000 --pull never --entrypoint /bin/sh docker.io/library/dd-dev-server:dev -c "echo dd-dev-server-foreground-ok; id; date" 2>&1 | head -c 4000
-          fg_exit=$?
-          echo
-          echo "--- foreground nerdctl exit code: $fg_exit ---"
-          echo "--- detached nerdctl: dd-dev-server in dd-pool ns (entrypoint override sleep, 30s timeout) ---"
-          sudo timeout 30 nerdctl -n dd-pool run -d --name dd-pool-smoke --network host --user 1000:1000 --pull never --entrypoint /bin/sh docker.io/library/dd-dev-server:dev -c "echo started; sleep 25" 2>&1 | head -c 800
-          d_exit=$?
-          echo
-          echo "--- detached nerdctl exit code: $d_exit ---"
-          sleep 3
-          echo "--- detached smoke inspect ---"
+          echo "=== restarting containerd on the host to clear any stuck shims ==="
+          sudo systemctl restart containerd 2>&1 | head -c 500 || true
+          sleep 6
+          sudo systemctl status containerd --no-pager --lines 0 2>&1 | head -c 800 || true
+          echo "=== runc and containerd-shim-runc-v2 versions after restart ==="
+          sudo runc --version 2>&1 || true
+          sudo containerd-shim-runc-v2 -v 2>&1 || true
+          echo "=== minimal busybox smoke after containerd restart ==="
+          if sudo nerdctl -n k8s.io images --quiet docker.io/library/busybox:latest 2>/dev/null | grep -q .; then
+            sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never docker.io/library/busybox:latest /bin/sh -c "echo busybox-smoke-ok; id; date" 2>&1 | head -c 4000 || true
+            echo "--- busybox-smoke exit: $? ---"
+          else
+            echo "busybox not present; trying alpine"
+            if sudo nerdctl -n k8s.io images --quiet docker.io/library/alpine:latest 2>/dev/null | grep -q .; then
+              sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never docker.io/library/alpine:latest /bin/sh -c "echo alpine-smoke-ok; id; date" 2>&1 | head -c 4000 || true
+              echo "--- alpine-smoke exit: $? ---"
+            fi
+          fi
+          echo "=== dd-dev-server foreground (no --user, no --memory, no --pids-limit) ==="
+          sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never --entrypoint /bin/sh docker.io/library/dd-dev-server:dev -c "echo dd-dev-foreground-ok; id; date" 2>&1 | head -c 4000 || true
+          echo "--- dd-dev-foreground exit: $? ---"
+          echo "=== dd-dev-server detached default cmd (no --user, no --memory) ==="
+          sudo timeout 30 nerdctl -n dd-pool run -d --name dd-pool-smoke --network host --pull never docker.io/library/dd-dev-server:dev 2>&1 | head -c 800 || true
+          echo "--- dd-dev-detached exit: $? ---"
+          sleep 5
           sudo timeout 10 nerdctl -n dd-pool inspect dd-pool-smoke 2>&1 | jq -r '.[0].State' 2>&1 | head -c 800 || true
-          sudo timeout 10 ctr -n dd-pool tasks ls 2>&1 | head -c 800 || true
-          echo "--- detached smoke logs ---"
-          sudo timeout 10 nerdctl -n dd-pool logs dd-pool-smoke 2>&1 | head -c 800 || true
+          sudo timeout 10 nerdctl -n dd-pool logs dd-pool-smoke 2>&1 | tail -c 2000 || true
           sudo timeout 10 nerdctl -n dd-pool rm -f dd-pool-smoke 2>&1 | head -c 200 || true
           echo "=== dd-pool images ==="
           sudo nerdctl -n dd-pool images | grep -E "dd-dev-server|dd-container-pool|nodejs-runtime|busybox" || true
