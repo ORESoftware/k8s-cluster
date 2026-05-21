@@ -506,7 +506,7 @@ create table if not exists container_pool_image_revisions (
   dockerfile_path text not null,
   build_context text not null,
   dockerfile_text text not null,
-  dockerfile_sha256 char(64) not null,
+  dockerfile_sha256 varchar(64) not null,
   source varchar(32) default 'user' not null,
   notes text default '' not null,
   status varchar(32) default 'candidate' not null,
@@ -589,7 +589,7 @@ create table if not exists container_pool_build_runs (
   constraint container_pool_build_runs_test_status_chk
     check (test_status in ('not_started', 'pending', 'testing', 'passed', 'failed', 'skipped', 'cancelled')),
   constraint container_pool_build_runs_overall_status_chk
-    check (overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'error')),
+    check (overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'errored')),
   constraint container_pool_build_runs_meta_object_chk
     check (jsonb_typeof(meta_data) = 'object')
 );

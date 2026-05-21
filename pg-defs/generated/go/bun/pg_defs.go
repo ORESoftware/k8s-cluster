@@ -29,6 +29,9 @@ var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
+var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var containerPoolBuildRunsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var presenceConvsSlugPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
 
 const AppConfigTable = "app_config"
@@ -590,6 +593,140 @@ func (value LambdaFunctionBun) Validate() error {
 	if !validateRawJSON(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateRawJSON(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolImageRevisionsTable = "container_pool_image_revisions"
+const ContainerPoolImageRevisionsSelectSQL = `select
+      id::text as id,
+      image_slug,
+      image_ref,
+      dockerfile_path,
+      build_context,
+      dockerfile_text,
+      dockerfile_sha256,
+      source,
+      notes,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_image_revisions`
+
+var ContainerPoolImageRevisionsSourceValues = []string{"disk-default", "user", "system"}
+var ContainerPoolImageRevisionsStatusValues = []string{"candidate", "active", "archived"}
+
+type ContainerPoolImageRevisionsBun struct {
+	bun.BaseModel `bun:"table:container_pool_image_revisions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ImageSlug string `bun:"image_slug,type:varchar(120)" json:"imageSlug"`
+	ImageRef string `bun:"image_ref,type:text" json:"imageRef"`
+	DockerfilePath string `bun:"dockerfile_path,type:text" json:"dockerfilePath"`
+	BuildContext string `bun:"build_context,type:text" json:"buildContext"`
+	DockerfileText string `bun:"dockerfile_text,type:text" json:"dockerfileText"`
+	DockerfileSha256 string `bun:"dockerfile_sha256,type:varchar(64)" json:"dockerfileSha256"`
+	Source string `bun:"source,type:varchar(32),default:'user'" json:"source"`
+	Notes string `bun:"notes,type:text,default:''" json:"notes"`
+	Status string `bun:"status,type:varchar(32),default:'candidate'" json:"status"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value ContainerPoolImageRevisionsBun) Validate() error {
+	if !containerPoolImageRevisionsImageSlugPattern.MatchString(value.ImageSlug) { return errors.New("container_pool_image_revisions.image_slug does not match the required pattern") }
+	if len([]byte(value.ImageRef)) > 512 { return errors.New("container_pool_image_revisions.image_ref exceeds 512 bytes") }
+	if len([]byte(value.ImageRef)) < 1 { return errors.New("container_pool_image_revisions.image_ref is below 1 bytes") }
+	if len([]byte(value.DockerfilePath)) > 512 { return errors.New("container_pool_image_revisions.dockerfile_path exceeds 512 bytes") }
+	if len([]byte(value.DockerfilePath)) < 1 { return errors.New("container_pool_image_revisions.dockerfile_path is below 1 bytes") }
+	if len([]byte(value.BuildContext)) > 512 { return errors.New("container_pool_image_revisions.build_context exceeds 512 bytes") }
+	if len([]byte(value.BuildContext)) < 1 { return errors.New("container_pool_image_revisions.build_context is below 1 bytes") }
+	if len([]byte(value.DockerfileText)) > 65536 { return errors.New("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes") }
+	if len([]byte(value.DockerfileText)) < 1 { return errors.New("container_pool_image_revisions.dockerfile_text is below 1 bytes") }
+	if !containerPoolImageRevisionsDockerfileSha256Pattern.MatchString(value.DockerfileSha256) { return errors.New("container_pool_image_revisions.dockerfile_sha256 does not match the required pattern") }
+	if !containsString(ContainerPoolImageRevisionsSourceValues, value.Source) { return errors.New("unsupported container_pool_image_revisions.source") }
+	if len([]byte(value.Notes)) > 8192 { return errors.New("container_pool_image_revisions.notes exceeds 8192 bytes") }
+	if !containsString(ContainerPoolImageRevisionsStatusValues, value.Status) { return errors.New("unsupported container_pool_image_revisions.status") }
+	if !validateRawJSON(value.MetaData) { return errors.New("container_pool_image_revisions.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolBuildRunsTable = "container_pool_build_runs"
+const ContainerPoolBuildRunsSelectSQL = `select
+      id::text as id,
+      image_slug,
+      revision_id::text as revision_id,
+      image_ref,
+      candidate_tag,
+      build_status,
+      test_status,
+      overall_status,
+      test_command,
+      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_started_at,
+      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_finished_at,
+      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_started_at,
+      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_finished_at,
+      build_log_excerpt,
+      test_log_excerpt,
+      error_message,
+      triggered_by::text as triggered_by,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from container_pool_build_runs`
+
+var ContainerPoolBuildRunsBuildStatusValues = []string{"queued", "building", "built", "failed", "skipped", "cancelled"}
+var ContainerPoolBuildRunsTestStatusValues = []string{"not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"}
+var ContainerPoolBuildRunsOverallStatusValues = []string{"queued", "running", "passed", "failed", "cancelled", "errored"}
+
+type ContainerPoolBuildRunsBun struct {
+	bun.BaseModel `bun:"table:container_pool_build_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ImageSlug string `bun:"image_slug,type:varchar(120)" json:"imageSlug"`
+	RevisionId uuid.UUID `bun:"revision_id,type:uuid" json:"revisionId"`
+	ImageRef string `bun:"image_ref,type:text" json:"imageRef"`
+	CandidateTag string `bun:"candidate_tag,type:text" json:"candidateTag"`
+	BuildStatus string `bun:"build_status,type:varchar(32),default:'queued'" json:"buildStatus"`
+	TestStatus string `bun:"test_status,type:varchar(32),default:'not_started'" json:"testStatus"`
+	OverallStatus string `bun:"overall_status,type:varchar(32),default:'queued'" json:"overallStatus"`
+	TestCommand string `bun:"test_command,type:text,default:''" json:"testCommand"`
+	BuildStartedAt *time.Time `bun:"build_started_at,type:timestamptz,nullzero" json:"buildStartedAt,omitempty"`
+	BuildFinishedAt *time.Time `bun:"build_finished_at,type:timestamptz,nullzero" json:"buildFinishedAt,omitempty"`
+	TestStartedAt *time.Time `bun:"test_started_at,type:timestamptz,nullzero" json:"testStartedAt,omitempty"`
+	TestFinishedAt *time.Time `bun:"test_finished_at,type:timestamptz,nullzero" json:"testFinishedAt,omitempty"`
+	BuildLogExcerpt string `bun:"build_log_excerpt,type:text,default:''" json:"buildLogExcerpt"`
+	TestLogExcerpt string `bun:"test_log_excerpt,type:text,default:''" json:"testLogExcerpt"`
+	ErrorMessage *string `bun:"error_message,type:text,nullzero" json:"errorMessage,omitempty"`
+	TriggeredBy *uuid.UUID `bun:"triggered_by,type:uuid,nullzero" json:"triggeredBy,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value ContainerPoolBuildRunsBun) Validate() error {
+	if !containerPoolBuildRunsImageSlugPattern.MatchString(value.ImageSlug) { return errors.New("container_pool_build_runs.image_slug does not match the required pattern") }
+	if len([]byte(value.ImageRef)) > 512 { return errors.New("container_pool_build_runs.image_ref exceeds 512 bytes") }
+	if len([]byte(value.ImageRef)) < 1 { return errors.New("container_pool_build_runs.image_ref is below 1 bytes") }
+	if len([]byte(value.CandidateTag)) > 512 { return errors.New("container_pool_build_runs.candidate_tag exceeds 512 bytes") }
+	if len([]byte(value.CandidateTag)) < 1 { return errors.New("container_pool_build_runs.candidate_tag is below 1 bytes") }
+	if !containsString(ContainerPoolBuildRunsBuildStatusValues, value.BuildStatus) { return errors.New("unsupported container_pool_build_runs.build_status") }
+	if !containsString(ContainerPoolBuildRunsTestStatusValues, value.TestStatus) { return errors.New("unsupported container_pool_build_runs.test_status") }
+	if !containsString(ContainerPoolBuildRunsOverallStatusValues, value.OverallStatus) { return errors.New("unsupported container_pool_build_runs.overall_status") }
+	if len([]byte(value.TestCommand)) > 4096 { return errors.New("container_pool_build_runs.test_command exceeds 4096 bytes") }
+	if len([]byte(value.BuildLogExcerpt)) > 65536 { return errors.New("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes") }
+	if len([]byte(value.TestLogExcerpt)) > 65536 { return errors.New("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes") }
+	if value.ErrorMessage != nil {
+		if len([]byte(*value.ErrorMessage)) > 8192 { return errors.New("container_pool_build_runs.error_message exceeds 8192 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("container_pool_build_runs.meta_data must be valid JSON") }
 	return nil
 }
 

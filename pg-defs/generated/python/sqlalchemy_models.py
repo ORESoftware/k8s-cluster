@@ -1013,6 +1013,330 @@ class LambdaFunctionInsert(BaseModel):
             raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
         return value
 
+ContainerPoolImageRevisionsSource = Literal["disk-default", "user", "system"]
+ContainerPoolImageRevisionsStatus = Literal["candidate", "active", "archived"]
+
+class ContainerPoolImageRevisions(Base):
+    __tablename__ = "container_pool_image_revisions"
+    __table_args__ = (
+        CheckConstraint("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'", name="container_pool_image_revisions_slug_format_chk"),
+        CheckConstraint("octet_length(dockerfile_text) between 1 and 65536", name="container_pool_image_revisions_dockerfile_size_chk"),
+        CheckConstraint("octet_length(image_ref) between 1 and 512", name="container_pool_image_revisions_image_ref_size_chk"),
+        CheckConstraint("octet_length(dockerfile_path) between 1 and 512", name="container_pool_image_revisions_path_size_chk"),
+        CheckConstraint("octet_length(build_context) between 1 and 512", name="container_pool_image_revisions_context_size_chk"),
+        CheckConstraint("octet_length(notes) <= 8192", name="container_pool_image_revisions_notes_size_chk"),
+        CheckConstraint("dockerfile_sha256 ~ '^[0-9a-f]{64}$'", name="container_pool_image_revisions_sha_format_chk"),
+        CheckConstraint("status in ('candidate', 'active', 'archived')", name="container_pool_image_revisions_status_chk"),
+        CheckConstraint("source in ('disk-default', 'user', 'system')", name="container_pool_image_revisions_source_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="container_pool_image_revisions_meta_object_chk"),
+        Index("container_pool_image_revisions_slug_idx", "image_slug", text("created_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("container_pool_image_revisions_slug_sha_uq", "image_slug", "dockerfile_sha256", unique=True, postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    image_slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    image_ref: Mapped[str] = mapped_column(Text(), nullable=False)
+    dockerfile_path: Mapped[str] = mapped_column(Text(), nullable=False)
+    build_context: Mapped[str] = mapped_column(Text(), nullable=False)
+    dockerfile_text: Mapped[str] = mapped_column(Text(), nullable=False)
+    dockerfile_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'user'"))
+    notes: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'candidate'"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class ContainerPoolImageRevisionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    imageRef: str
+    dockerfilePath: str
+    buildContext: str
+    dockerfileText: str
+    dockerfileSha256: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    source: ContainerPoolImageRevisionsSource
+    notes: str
+    status: ContainerPoolImageRevisionsStatus
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfilePath")
+    @classmethod
+    def validate_dockerfile_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.dockerfile_path exceeds 512 bytes")
+        return value
+
+    @field_validator("buildContext")
+    @classmethod
+    def validate_build_context(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.build_context exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfileText")
+    @classmethod
+    def validate_dockerfile_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def validate_notes(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_image_revisions.notes exceeds 8192 bytes")
+        return value
+
+class ContainerPoolImageRevisionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    imageRef: str
+    dockerfilePath: str
+    buildContext: str
+    dockerfileText: str
+    dockerfileSha256: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    source: ContainerPoolImageRevisionsSource | None = "user"
+    notes: str | None = ""
+    status: ContainerPoolImageRevisionsStatus | None = "candidate"
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfilePath")
+    @classmethod
+    def validate_dockerfile_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.dockerfile_path exceeds 512 bytes")
+        return value
+
+    @field_validator("buildContext")
+    @classmethod
+    def validate_build_context(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.build_context exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfileText")
+    @classmethod
+    def validate_dockerfile_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def validate_notes(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_image_revisions.notes exceeds 8192 bytes")
+        return value
+
+ContainerPoolBuildRunsBuildStatus = Literal["queued", "building", "built", "failed", "skipped", "cancelled"]
+ContainerPoolBuildRunsTestStatus = Literal["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"]
+ContainerPoolBuildRunsOverallStatus = Literal["queued", "running", "passed", "failed", "cancelled", "errored"]
+
+class ContainerPoolBuildRuns(Base):
+    __tablename__ = "container_pool_build_runs"
+    __table_args__ = (
+        CheckConstraint("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'", name="container_pool_build_runs_slug_format_chk"),
+        CheckConstraint("octet_length(image_ref) between 1 and 512", name="container_pool_build_runs_image_ref_size_chk"),
+        CheckConstraint("octet_length(candidate_tag) between 1 and 512", name="container_pool_build_runs_candidate_tag_size_chk"),
+        CheckConstraint("octet_length(test_command) <= 4096", name="container_pool_build_runs_test_command_size_chk"),
+        CheckConstraint("octet_length(build_log_excerpt) <= 65536\n       and octet_length(test_log_excerpt) <= 65536", name="container_pool_build_runs_log_size_chk"),
+        CheckConstraint("error_message is null or octet_length(error_message) <= 8192", name="container_pool_build_runs_error_size_chk"),
+        CheckConstraint("build_status in ('queued', 'building', 'built', 'failed', 'skipped', 'cancelled')", name="container_pool_build_runs_build_status_chk"),
+        CheckConstraint("test_status in ('not_started', 'pending', 'testing', 'passed', 'failed', 'skipped', 'cancelled')", name="container_pool_build_runs_test_status_chk"),
+        CheckConstraint("overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'errored')", name="container_pool_build_runs_overall_status_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="container_pool_build_runs_meta_object_chk"),
+        Index("container_pool_build_runs_slug_idx", "image_slug", text("created_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("container_pool_build_runs_overall_idx", "overall_status", postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    image_slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    revision_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    image_ref: Mapped[str] = mapped_column(Text(), nullable=False)
+    candidate_tag: Mapped[str] = mapped_column(Text(), nullable=False)
+    build_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    test_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'not_started'"))
+    overall_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    test_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    build_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    build_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    test_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    test_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    build_log_excerpt: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    test_log_excerpt: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    triggered_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class ContainerPoolBuildRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    revisionId: UUID
+    imageRef: str
+    candidateTag: str
+    buildStatus: ContainerPoolBuildRunsBuildStatus
+    testStatus: ContainerPoolBuildRunsTestStatus
+    overallStatus: ContainerPoolBuildRunsOverallStatus
+    testCommand: str
+    buildStartedAt: datetime | None = None
+    buildFinishedAt: datetime | None = None
+    testStartedAt: datetime | None = None
+    testFinishedAt: datetime | None = None
+    buildLogExcerpt: str
+    testLogExcerpt: str
+    errorMessage: str | None = None
+    triggeredBy: UUID | None = None
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("candidateTag")
+    @classmethod
+    def validate_candidate_tag(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.candidate_tag exceeds 512 bytes")
+        return value
+
+    @field_validator("testCommand")
+    @classmethod
+    def validate_test_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("container_pool_build_runs.test_command exceeds 4096 bytes")
+        return value
+
+    @field_validator("buildLogExcerpt")
+    @classmethod
+    def validate_build_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("testLogExcerpt")
+    @classmethod
+    def validate_test_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("errorMessage")
+    @classmethod
+    def validate_error_message(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_build_runs.error_message exceeds 8192 bytes")
+        return value
+
+class ContainerPoolBuildRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    revisionId: UUID
+    imageRef: str
+    candidateTag: str
+    buildStatus: ContainerPoolBuildRunsBuildStatus | None = "queued"
+    testStatus: ContainerPoolBuildRunsTestStatus | None = "not_started"
+    overallStatus: ContainerPoolBuildRunsOverallStatus | None = "queued"
+    testCommand: str | None = ""
+    buildStartedAt: datetime | None = None
+    buildFinishedAt: datetime | None = None
+    testStartedAt: datetime | None = None
+    testFinishedAt: datetime | None = None
+    buildLogExcerpt: str | None = ""
+    testLogExcerpt: str | None = ""
+    errorMessage: str | None = None
+    triggeredBy: UUID | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("candidateTag")
+    @classmethod
+    def validate_candidate_tag(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.candidate_tag exceeds 512 bytes")
+        return value
+
+    @field_validator("testCommand")
+    @classmethod
+    def validate_test_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("container_pool_build_runs.test_command exceeds 4096 bytes")
+        return value
+
+    @field_validator("buildLogExcerpt")
+    @classmethod
+    def validate_build_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("testLogExcerpt")
+    @classmethod
+    def validate_test_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("errorMessage")
+    @classmethod
+    def validate_error_message(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_build_runs.error_message exceeds 8192 bytes")
+        return value
+
 PresenceConvsStatus = Literal["active", "paused", "archived"]
 
 class PresenceConvs(Base):
