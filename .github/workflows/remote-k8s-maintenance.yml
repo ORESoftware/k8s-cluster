@@ -345,10 +345,21 @@ jobs:
           for c in $(sudo nerdctl -n dd-pool ps -aq --filter label=dd.container-pool.managed=true 2>/dev/null); do
             sudo nerdctl -n dd-pool rm -f "$c" 2>&1 | head -c 200 || true
           done
+          echo "=== killing leaked nerdctl oci-hook postStop processes (root cause of unknown task state) ==="
+          stuck_hook_count=$(ps -eo pid,args 2>/dev/null | grep -F "nerdctl" | grep -F "internal oci-hook" | grep -v grep | wc -l)
+          echo "stuck oci-hook process count before kill: $stuck_hook_count"
+          sudo pkill -KILL -f "nerdctl .* internal oci-hook" 2>&1 | head -c 200 || true
+          sudo pkill -KILL -f "nerdctl.*internal oci-hook" 2>&1 | head -c 200 || true
+          sleep 2
+          stuck_hook_count_after=$(ps -eo pid,args 2>/dev/null | grep -F "nerdctl" | grep -F "internal oci-hook" | grep -v grep | wc -l)
+          echo "stuck oci-hook process count after kill: $stuck_hook_count_after"
+          echo "=== killing any hung containerd-shim-runc-v2 for dd-pool containers ==="
+          ps -eo pid,args 2>/dev/null | grep -F "containerd-shim-runc-v2" | grep -F "dd-pool" | grep -v grep | awk '{print $1}' | xargs -r sudo kill -KILL 2>&1 | head -c 200 || true
+          sleep 1
           echo "=== restarting containerd on the host to clear any stuck shims ==="
           sudo systemctl restart containerd 2>&1 | head -c 500 || true
           sleep 6
-          sudo systemctl status containerd --no-pager --lines 0 2>&1 | head -c 800 || true
+          sudo systemctl status containerd --no-pager --lines 0 2>&1 | head -c 1500 || true
           echo "=== runc and containerd-shim-runc-v2 versions after restart ==="
           sudo runc --version 2>&1 || true
           sudo containerd-shim-runc-v2 -v 2>&1 || true
