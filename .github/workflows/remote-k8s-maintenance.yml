@@ -486,8 +486,9 @@ jobs:
 
           echo "=== rebuild local runtime images ==="
           sudo nerdctl -n k8s.io build --progress=plain \
+            -f remote/deployments/web-home-rs/Dockerfile \
             -t docker.io/library/dd-remote-web-home:dev \
-            remote/deployments/web-home-rs
+            remote
           for runtime in nodejs python3 ruby bash; do
             sudo nerdctl -n k8s.io build --progress=plain \
               -f "remote/deployments/gleam-lambda-runner/runtime-images/${runtime}.Dockerfile" \
