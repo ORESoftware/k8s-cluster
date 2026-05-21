@@ -88,6 +88,46 @@ function configAgentProvider(value: string | undefined, fallback: AgentProvider)
   return value && CONFIG_AGENT_PROVIDERS.has(value as AgentProvider) ? (value as AgentProvider) : fallback;
 }
 
+// Normalize a git remote so that equivalent forms compare equal:
+//   git@github.com:Owner/Repo.git  <->  https://github.com/Owner/Repo
+//   git+https://github.com/Owner/Repo.git  <->  https://github.com/owner/repo.git
+// Returns null for an empty/unparseable input. Host and owner-or-org/path are
+// lowercased; trailing `.git` and trailing `/` are stripped. Userinfo is
+// dropped so credentials embedded in the URL never affect equality.
+function canonicalRepoKey(input: string | null | undefined): string | null {
+  if (!input) return null;
+  let value = String(input).trim();
+  if (!value) return null;
+  value = value.replace(/^git\+/i, '');
+  const scpMatch = value.match(/^([^@\s]+)@([^:\s]+):(.+)$/);
+  if (scpMatch) {
+    const host = scpMatch[2].toLowerCase();
+    const pathPart = scpMatch[3].replace(/^\/+/, '');
+    value = `https://${host}/${pathPart}`;
+  }
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    let pathPart = url.pathname.replace(/^\/+/, '').replace(/\/+$/, '');
+    if (pathPart.toLowerCase().endsWith('.git')) {
+      pathPart = pathPart.slice(0, -4);
+    }
+    return `${host}/${pathPart.toLowerCase()}`;
+  } catch {
+    let stripped = value.replace(/\/+$/, '');
+    if (stripped.toLowerCase().endsWith('.git')) {
+      stripped = stripped.slice(0, -4);
+    }
+    return stripped.toLowerCase();
+  }
+}
+
+function repoUrlsMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ka = canonicalRepoKey(a);
+  const kb = canonicalRepoKey(b);
+  return ka !== null && kb !== null && ka === kb;
+}
+
 function configAgentProviderList(value: string | undefined, fallback: AgentProvider[]): AgentProvider[] {
   const requested = value
     ? value
@@ -4183,10 +4223,11 @@ fastify.post('/tasks', async (req, reply) => {
         });
       }
       const requestedRepo = parsed.data.repo?.trim();
-      if (requestedRepo && requestedRepo !== config.repoUrl) {
+      if (requestedRepo && !repoUrlsMatch(requestedRepo, config.repoUrl)) {
         return reply.code(409).send({
           error: 'container is bound to a different repo',
           boundRepo: config.repoUrl,
+          requestedRepo,
         });
       }
       const requestedBaseBranch = parsed.data.baseBranch?.trim();

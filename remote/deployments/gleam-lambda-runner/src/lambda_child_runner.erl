@@ -310,21 +310,43 @@ container_command(Runtime, DefinitionJson) ->
     end,
     case safe_container_image(Image) of
         true ->
-            Namespace = env_binary("LAMBDA_CONTAINER_NAMESPACE", <<"k8s.io">>),
+            %% Default to a dedicated namespace so we do not collide with kubelet's
+            %% CRI plugin and so periodic reapers can target our containers safely.
+            Namespace = env_binary("LAMBDA_CONTAINER_NAMESPACE", <<"dd-lambda">>),
             Network = env_binary("LAMBDA_CONTAINER_NETWORK", <<"bridge">>),
             Memory = env_binary("LAMBDA_CONTAINER_MEMORY", <<"256m">>),
             Cpus = env_binary("LAMBDA_CONTAINER_CPUS", <<"0.50">>),
+            TimeoutSecs = env_binary("LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS", <<"120">>),
             case env_binary("LAMBDA_CONTAINER_RUNNER", <<"nerdctl">>) of
                 <<"ctr">> ->
                     Ctr = env_binary("LAMBDA_CONTAINER_CTR", <<"/usr/local/bin/ctr">>),
                     MemoryBytes = env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"268435456">>),
-                    {ok, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime)};
+                    {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime))};
                 _ ->
                     Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
-                    {ok, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image)}
+                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image))}
             end;
         false ->
             {error, <<"containerImage contains unsupported characters">>}
+    end.
+
+%% Wrap a runner shell command in `timeout` so a stuck nerdctl/ctr invocation cannot
+%% pin an Erlang port forever. `--kill-after=10` ensures SIGKILL on hung shims.
+wrap_with_timeout(SecondsBinary, Command) ->
+    case safe_timeout_value(SecondsBinary) of
+        {ok, Seconds} ->
+            iolist_to_binary([
+                "timeout --kill-after=10 ", Seconds, " ", Command
+            ]);
+        error ->
+            Command
+    end.
+
+safe_timeout_value(Value0) ->
+    Value = to_binary(Value0),
+    case re:run(Value, "^[0-9]{1,5}$", [{capture, none}]) of
+        match -> {ok, Value};
+        nomatch -> error
     end.
 
 nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image) ->

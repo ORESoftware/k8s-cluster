@@ -97,11 +97,13 @@ spec:
             - name: LAMBDA_PREWARM_RUNTIMES
               value: nodejs
             - name: LAMBDA_PREWARM_CONTAINER_RUNTIMES
-              value: nodejs,python3,ruby,bash
+              value: ''
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE
-              value: k8s.io
+              value: dd-lambda
+            - name: LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS
+              value: '120'
             - name: LAMBDA_CONTAINER_NETWORK
               value: host
             - name: LAMBDA_CONTAINER_RUNNER
