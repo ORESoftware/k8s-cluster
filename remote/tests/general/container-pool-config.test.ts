@@ -100,6 +100,8 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /redis::cmd\("MULTI"\)/);
   assert.match(source, /redis::cmd\("EXEC"\)/);
   assert.match(source, /acquire_affinity_dispatch_lock/);
+  assert.match(source, /CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS/);
+  assert.match(source, /nerdctl_run_timeout/);
   assert.match(source, /CONTAINER_POOL_START_TIMEOUT_SECONDS/);
   assert.match(source, /CONTAINER_POOL_CONTAINER_MEMORY/);
   assert.match(source, /CONTAINER_POOL_CONTAINER_CPUS/);
@@ -115,10 +117,10 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /x-container-pool-auth/);
   assert.match(source, /Command::new\(program\)\.args\(args\)\.output\(\)/);
   assert.match(source, /"run"\.to_string\(\)/);
-  assert.match(source, /container_run_timeout = state\.config\.command_timeout\.min\(Duration::from_secs\(30\)\)/);
+  assert.match(source, /container_run_timeout = state\.config\.nerdctl_run_timeout/);
   assert.match(source, /wait_container_ready/);
   assert.match(source, /inspect_container_running/);
-  assert.match(source, /state\.config\.command_timeout\.min\(Duration::from_secs\(5\)\)/);
+  assert.match(source, /state\.config\.command_timeout\.min\(Duration::from_secs\(15\)\)/);
   assert.match(source, /container \{\} stopped before readiness at \{url\}/);
   assert.match(source, /retire_stale_starting_containers/);
   assert.match(source, /container\.status == ContainerStatus::Starting/);
@@ -167,6 +169,7 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(readme, /keeps at least `min_warm` available request slots/);
   assert.match(readme, /Redis lock for/);
   assert.match(readme, /WATCH`\/`MULTI`\/`EXEC`/);
+  assert.match(readme, /CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS/);
   assert.match(readme, /Warm workers are health checked/);
   assert.match(readme, /Worker contract/);
   assert.match(readme, /app_config/);
@@ -362,6 +365,7 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   );
   assert.match(deployment, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES[\s\S]*value:\s*'2097152'/);
   assert.match(deployment, /CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
+  assert.match(deployment, /CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS[\s\S]*value:\s*'180'/);
   assert.match(deployment, /CONTAINER_POOL_START_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_MEMORY[\s\S]*value:\s*512m/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_CPUS[\s\S]*value:\s*'1'/);

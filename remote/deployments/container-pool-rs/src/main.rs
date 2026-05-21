@@ -69,6 +69,7 @@ struct ServiceConfig {
     config_refresh: Duration,
     reconcile_interval: Duration,
     command_timeout: Duration,
+    nerdctl_run_timeout: Duration,
     container_start_timeout: Duration,
     health_check_interval: Duration,
     health_check_timeout: Duration,
@@ -580,6 +581,10 @@ fn service_config_from_env() -> ServiceConfig {
         config_refresh: Duration::from_secs(env_u64("CONTAINER_POOL_CONFIG_REFRESH_SECONDS", 30)),
         reconcile_interval: Duration::from_secs(env_u64("CONTAINER_POOL_RECONCILE_SECONDS", 10)),
         command_timeout: Duration::from_secs(env_u64("CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS", 30)),
+        nerdctl_run_timeout: Duration::from_secs(env_u64(
+            "CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS",
+            180,
+        )),
         container_start_timeout: Duration::from_secs(env_u64(
             "CONTAINER_POOL_START_TIMEOUT_SECONDS",
             15,
@@ -1418,7 +1423,7 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     args.push(pool.image.clone());
     args.extend(pool.command.clone());
 
-    let container_run_timeout = state.config.command_timeout.min(Duration::from_secs(30));
+    let container_run_timeout = state.config.nerdctl_run_timeout;
     match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
         Ok(_) => {
             if let Err(error) = wait_container_ready(state, &pool, &container).await {
@@ -1561,7 +1566,7 @@ async fn run_command(
 }
 
 async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
-    let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(5));
+    let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(15));
     let args = vec![
         "-n".to_string(),
         state.config.containerd_namespace.clone(),

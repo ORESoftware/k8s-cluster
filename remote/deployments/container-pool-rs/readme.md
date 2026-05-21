@@ -28,6 +28,11 @@ enabled by `CONTAINER_POOL_REDIS_URL`; when unset, local development keeps the p
 behavior. Lock ownership is checked with `WATCH`/`MULTI`/`EXEC` on release because Redis scripts are
 disabled in the shared cache ACL.
 
+`nerdctl -n k8s.io run -d` for a cold worker uses
+`CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS` (default 180s) so a busy containerd host can finish
+namespace, cgroup, and overlay setup without timing out. Short bookkeeping commands such as
+`inspect` and `rm` stay on the smaller `CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS` budget.
+
 Warm workers are health checked on the configured `health_path` (default `/healthz`). The manager
 also verifies the container is still running through `nerdctl inspect`; failed health checks mark the
 container unhealthy, retire it after the configured threshold, and reconcile the pool back to its
