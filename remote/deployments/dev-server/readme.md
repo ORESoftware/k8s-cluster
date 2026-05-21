@@ -51,6 +51,9 @@ The build can optionally receive a GitHub deploy key and `DD_REPO_URL` so the im
 pre-clone that repo at `--depth=1` and run `pnpm install`. Use BuildKit's `--secret` flag for the key, never
 `--build-arg`, so the key never lands in any image layer. If `DD_REPO_URL` is omitted, the image
 is a generic worker base and the container clones the configured repo at runtime.
+The base package includes the NATS and WebSocket client dependencies used by queued worker fanout;
+runtime repo, branch, and credentials are injected through Kubernetes env/secrets, not baked into
+the image.
 
 ```bash
 DOCKER_BUILDKIT=1 docker build \

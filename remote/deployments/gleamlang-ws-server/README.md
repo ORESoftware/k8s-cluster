@@ -123,11 +123,12 @@ unless noted.
 | `GLEAM_WORKER_WS_SECRET`         | falls back to `GLEAM_BROADCAST_SECRET`      | Per-route override for `/worker-ws/<secret>`.                    |
 | `GLEAM_NATS_PUBLISH_URL`         | `http://127.0.0.1:8083/publish`             | Sidecar publish endpoint (legacy).                               |
 | `NATS_PUBLISH_SUBJECT`           | `dd.remote.websocket.events`                | Default subject for sidecar-mediated publishes.                  |
-| `PG_DATABASE_URL`                | (in-memory)                                 | If set, opens a pog pool; otherwise in-memory fallback.          |
+| `PG_DATABASE_URL`                | (in-memory)                                 | If set, opens a pog pool, SQL outbox, and sharded LISTEN/NOTIFY; otherwise in-memory fallback. The EC2/minikube manifests map this from the `RDS_DATABASE_URL` secret so PG fanout is active when the secret exists. |
 | `NATS_URL`                       | (disabled)                                  | If set, native NATS transport boots in-process.                  |
-| `PRESENCE_NOTIFY_SHARDS`         | `256`                                       | LISTEN/NOTIFY + WAL shard count.                                 |
-| `PRESENCE_OUTBOX_TICK_MS`        | `5000`                                      | Outbox poll interval.                                            |
-| `PRESENCE_WAL_TICK_MS`           | `1000`                                      | WAL poll interval.                                               |
+| `PRESENCE_NOTIFY_SHARDS`         | `256`                                       | LISTEN/NOTIFY and outbox shard count.                            |
+| `PRESENCE_OUTBOX_TICK_MS`        | `5000`                                      | Outbox safety-net poll interval.                                 |
+| `PRESENCE_WAL_ENABLED`           | `false` (EC2/minikube set `true`)           | Enables the per-pod wal2json logical slot for the Gleam WSS presence path. Keep `max_slot_wal_keep_size`/slot-lag alerts in place before scaling replicas. |
+| `PRESENCE_WAL_TICK_MS`           | `1000`                                      | WAL poll interval. Ignored unless `PRESENCE_WAL_ENABLED=true`.   |
 | `CLUSTER_PEERS`                  | (empty)                                     | Comma-separated full node names. Wins over k8s mode.             |
 | `CLUSTER_NAMESPACE`              | `default`                                   | k8s namespace for pod discovery.                                 |
 | `CLUSTER_LABEL_SELECTOR`         | `app=presence`                              | k8s label selector.                                              |
@@ -137,6 +138,25 @@ unless noted.
 | `RELEASE_NODE`                   | (k8s sets it for the cluster flavor)        | Full long-name node, e.g. `presence@presence-0.…`.               |
 | `RELEASE_COOKIE`                 | (k8s sets it via Secret for cluster flavor) | Shared Erlang cookie.                                            |
 | `ERL_AFLAGS`                     | (cluster flavor pins dist ports)            | Recommended: `-kernel inet_dist_listen_min 9100 inet_dist_listen_max 9100`. |
+
+## Distributed fanout posture
+
+The presence subsystem deliberately mirrors the Erlang/Phoenix-style shape:
+
+* each websocket process registers a typed subject in the node-local ETS
+  registry;
+* the same process joins matching Erlang `pg` groups for cluster-visible
+  membership;
+* each node has one relay in the `relay` group, so cross-node fanout sends one
+  `Forward(group, msg)` per peer node, then the receiving node does local ETS
+  dispatch.
+
+`pg` membership is eventually consistent and `pg:join` allows repeated joins
+for the same process/group. The local `pg_groups` wrapper makes joins
+idempotent for this service and de-dupes dispatch member reads so registry
+restart/re-register paths cannot double-send frames. Kubernetes peer discovery
+parses only `items[*].metadata.name` from the PodList JSON before constructing
+Erlang node names; container and port names in the same response are ignored.
 
 ## Deployment flavors (`k8s/`)
 

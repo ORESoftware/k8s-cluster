@@ -20,9 +20,14 @@ use crate::error::{AppError, AppResult};
 use crate::providers::connection::ProviderConnection;
 use crate::providers::{
     ProviderKind,
+    bridge,
     coinbase::{self, CoinbaseCredential},
     coinflow::{self, CoinflowCredential},
-    paypal, stripe,
+    gocardless::{self, GoCardlessCredential},
+    mercury::{self, MercuryCredential},
+    paypal,
+    revolut::{self, RevolutCredential},
+    stripe,
 };
 use crate::state::AppState;
 
@@ -75,6 +80,38 @@ pub async fn coinflow(
     record_event(&state, WebhookProvider::Coinflow, &headers, &body).await
 }
 
+pub async fn revolut(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Revolut, &headers, &body).await
+}
+
+pub async fn gocardless(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::GoCardless, &headers, &body).await
+}
+
+pub async fn mercury(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Mercury, &headers, &body).await
+}
+
+pub async fn bridge(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Bridge, &headers, &body).await
+}
+
 #[derive(Clone, Copy)]
 enum WebhookProvider {
     Stripe,
@@ -82,6 +119,10 @@ enum WebhookProvider {
     CoinbaseCommerce,
     PlaidBank,
     Coinflow,
+    Revolut,
+    GoCardless,
+    Mercury,
+    Bridge,
 }
 
 impl WebhookProvider {
@@ -92,6 +133,10 @@ impl WebhookProvider {
             Self::CoinbaseCommerce => ProviderKind::CoinbaseCommerce,
             Self::PlaidBank => ProviderKind::PlaidBank,
             Self::Coinflow => ProviderKind::Coinflow,
+            Self::Revolut => ProviderKind::Revolut,
+            Self::GoCardless => ProviderKind::GoCardless,
+            Self::Mercury => ProviderKind::Mercury,
+            Self::Bridge => ProviderKind::Bridge,
         }
     }
 
@@ -280,7 +325,120 @@ async fn verify_delivery(
             let _ = header_str(headers, "plaid-verification");
             Ok(false)
         }
+        WebhookProvider::Revolut => {
+            let Some(sig) = header_str(headers, "revolut-signature") else {
+                return Ok(false);
+            };
+            let Some(ts) = header_str(headers, "revolut-request-timestamp") else {
+                return Ok(false);
+            };
+            let secret = if let Some(conn) = connection {
+                load_revolut_secret(state, conn).await?
+            } else {
+                state.cfg.revolut_webhook_secret.clone()
+            };
+            let Some(secret) = secret else {
+                return Ok(false);
+            };
+            revolut::verify_webhook_signature(body, ts, sig, &secret)?;
+            Ok(true)
+        }
+        WebhookProvider::GoCardless => {
+            let Some(sig) = header_str(headers, "webhook-signature") else {
+                return Ok(false);
+            };
+            let secret = if let Some(conn) = connection {
+                load_gocardless_secret(state, conn).await?
+            } else {
+                state.cfg.gocardless_webhook_secret.clone()
+            };
+            let Some(secret) = secret else {
+                return Ok(false);
+            };
+            gocardless::verify_webhook_signature(body, sig, &secret)?;
+            Ok(true)
+        }
+        WebhookProvider::Mercury => {
+            let Some(sig) = header_str(headers, "x-mercury-signature") else {
+                return Ok(false);
+            };
+            let Some(ts) = header_str(headers, "x-mercury-timestamp") else {
+                return Ok(false);
+            };
+            let secret = if let Some(conn) = connection {
+                load_mercury_secret(state, conn).await?
+            } else {
+                state.cfg.mercury_webhook_secret.clone()
+            };
+            let Some(secret) = secret else {
+                return Ok(false);
+            };
+            mercury::verify_webhook_signature(body, ts, sig, &secret)?;
+            Ok(true)
+        }
+        WebhookProvider::Bridge => {
+            let Some(sig_header) = header_str(headers, "x-webhook-signature") else {
+                return Ok(false);
+            };
+            let parsed = match bridge::parse_signature_header(sig_header) {
+                Ok(p) => p,
+                Err(_) => return Ok(false),
+            };
+            // Staleness check is the only cryptographic guard until we add
+            // the RSA verify dep (next push). We surface verification as
+            // false so signature_ok stays accurate.
+            bridge::validate_timestamp_freshness(&parsed, 600, chrono::Utc::now())?;
+            Ok(false)
+        }
     }
+}
+
+async fn load_mercury_secret(
+    state: &AppState,
+    conn: &ProviderConnection,
+) -> AppResult<Option<String>> {
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: MercuryCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "mercury".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_secret)
+}
+
+async fn load_revolut_secret(
+    state: &AppState,
+    conn: &ProviderConnection,
+) -> AppResult<Option<String>> {
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: RevolutCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "revolut".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_secret)
+}
+
+async fn load_gocardless_secret(
+    state: &AppState,
+    conn: &ProviderConnection,
+) -> AppResult<Option<String>> {
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: GoCardlessCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "gocardless".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_secret)
 }
 
 async fn load_coinbase_secret(
@@ -373,6 +531,25 @@ fn external_account_id(provider: WebhookProvider, payload: &Value) -> Option<Str
         WebhookProvider::CoinbaseCommerce => payload
             .pointer("/event/data/metadata/merchant_id")
             .or_else(|| payload.pointer("/data/metadata/merchant_id"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Revolut => payload
+            .pointer("/data/account_id")
+            .or_else(|| payload.get("account_id"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::GoCardless => payload
+            .pointer("/events/0/links/organisation")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Mercury => payload
+            .pointer("/data/accountId")
+            .or_else(|| payload.get("accountId"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Bridge => payload
+            .pointer("/event_object/customer_id")
+            .or_else(|| payload.get("customer_id"))
             .and_then(|v| v.as_str())
             .map(str::to_string),
     }

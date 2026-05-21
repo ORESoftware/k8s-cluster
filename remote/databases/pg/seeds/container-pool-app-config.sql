@@ -35,7 +35,7 @@ values (
         "buildContext": "remote/deployments/container-pool-rs"
       },
       {
-        "runtime": "nodejs-chat-openai",
+        "runtime": "nodejs-chat-claude",
         "image": "docker.io/library/dd-dev-server:dev",
         "dockerfile": "remote/deployments/dev-server/Dockerfile",
         "buildContext": "remote/deployments/dev-server"
@@ -99,15 +99,15 @@ values (
         "labels": ["runtime", "nodejs"]
       },
       {
-        "slug": "nodejs-chat-openai-live-mutex-dev",
-        "displayName": "Node.js chat/OpenAI warm workers for ORESoftware/live-mutex dev",
+        "slug": "nodejs-chat-claude-live-mutex-dev",
+        "displayName": "Node.js chat/Claude warm workers for ORESoftware/live-mutex dev",
         "image": "docker.io/library/dd-dev-server:dev",
         "command": [],
         "env": {
           "DD_REPO_URL": "git@github.com:ORESoftware/live-mutex.git",
           "BASE_BRANCH": "dev",
           "WORKER_BIND_MODE": "repo",
-          "AGENT_PROVIDER": "openai-sdk",
+          "AGENT_PROVIDER": "claude-sdk",
           "WORKER_FANOUT_WS_BASE_URL": "ws://dd-gleamlang-server.default.svc.cluster.local:8081/worker-ws"
         },
         "requestPath": "/tasks",
@@ -115,24 +115,24 @@ values (
         "containerPort": 8080,
         "readOnly": false,
         "user": "1000:1000",
-        "minWarm": 1,
-        "maxWarm": 2,
+        "minWarm": 2,
+        "maxWarm": 4,
         "maxConcurrencyPerContainer": 1,
         "requestTimeoutMs": 180000,
         "idleTtlSeconds": 1800,
-        "natsSubject": "dd.remote.container_pool.nodejs-chat-openai-live-mutex-dev.requests",
-        "labels": ["runtime", "nodejs", "agent", "openai", "repo:live-mutex"]
+        "natsSubject": "dd.remote.container_pool.nodejs-chat-claude-live-mutex-dev.requests",
+        "labels": ["runtime", "nodejs", "agent", "claude", "repo:live-mutex"]
       },
       {
-        "slug": "nodejs-chat-openai-k8s-cluster-dev",
-        "displayName": "Node.js chat/OpenAI warm workers for ORESoftware/k8s-cluster dev",
+        "slug": "nodejs-chat-claude-k8s-cluster-dev",
+        "displayName": "Node.js chat/Claude warm workers for ORESoftware/k8s-cluster dev",
         "image": "docker.io/library/dd-dev-server:dev",
         "command": [],
         "env": {
           "DD_REPO_URL": "git@github.com:ORESoftware/k8s-cluster.git",
           "BASE_BRANCH": "dev",
           "WORKER_BIND_MODE": "repo",
-          "AGENT_PROVIDER": "openai-sdk",
+          "AGENT_PROVIDER": "claude-sdk",
           "WORKER_FANOUT_WS_BASE_URL": "ws://dd-gleamlang-server.default.svc.cluster.local:8081/worker-ws"
         },
         "requestPath": "/tasks",
@@ -145,8 +145,8 @@ values (
         "maxConcurrencyPerContainer": 1,
         "requestTimeoutMs": 180000,
         "idleTtlSeconds": 1800,
-        "natsSubject": "dd.remote.container_pool.nodejs-chat-openai-k8s-cluster-dev.requests",
-        "labels": ["runtime", "nodejs", "agent", "openai", "repo:k8s-cluster"]
+        "natsSubject": "dd.remote.container_pool.nodejs-chat-claude-k8s-cluster-dev.requests",
+        "labels": ["runtime", "nodejs", "agent", "claude", "repo:k8s-cluster"]
       },
       {
         "slug": "rust",

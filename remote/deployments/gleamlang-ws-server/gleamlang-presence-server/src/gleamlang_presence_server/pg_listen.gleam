@@ -29,7 +29,6 @@ import gleam/json
 import gleam/option.{type Option, Some}
 import gleam/otp/actor
 import gleam/otp/supervision
-import gleam/result
 import gleam/string
 
 pub type Op {
@@ -81,6 +80,19 @@ type State {
 
 type ShardState {
   ShardState(refcount: Int, listen_ref: Dynamic)
+}
+
+type DecodedEventFields {
+  DecodedEventFields(
+    op: String,
+    conv_id: String,
+    user_id: String,
+    soft_deleted: Bool,
+    conv_shard: Int,
+    user_shard: Int,
+    seq: Int,
+    emitted_at: Float,
+  )
 }
 
 // ── pgo_notifications FFI ────────────────────────────────────────────────
@@ -197,7 +209,10 @@ pub fn shard_of(conv_id: String, n_shards: Int) -> Int {
   // bails on such inputs, so the two paths simply never converge for
   // non-UUID conv_ids and that's fine. If the algorithm ever drifts,
   // cross-check with `select presence_shard_of('<uuid>')`.
-  shard_of_ffi(conv_id, n_shards)
+  case n_shards > 0 {
+    True -> shard_of_ffi(conv_id, n_shards)
+    False -> shard_of_ffi(conv_id, 256)
+  }
 }
 
 @external(erlang, "gleamlang_presence_server_ffi", "shard_of")
@@ -276,11 +291,18 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
       actor.continue(new_state)
     }
 
-    Raw(_channel, payload) -> {
-      case decode_event(payload) {
-        Ok(event) -> state.on_event(event)
-        Error(reason) ->
-          io.println("pg_listen: malformed payload: " <> reason)
+    Raw(channel, payload) -> {
+      case decode_event(payload, state.n_shards) {
+        Ok(event) -> {
+          case channel_accepts_event(channel, event) {
+            True -> state.on_event(event)
+            False ->
+              io.println(
+                "pg_listen: rejected payload for mismatched channel " <> channel,
+              )
+          }
+        }
+        Error(reason) -> io.println("pg_listen: malformed payload: " <> reason)
       }
       actor.continue(state)
     }
@@ -317,7 +339,7 @@ fn decode_notification(raw: Dynamic) -> Message {
   }
 }
 
-fn decode_event(json_str: String) -> Result(Event, String) {
+fn decode_event(json_str: String, n_shards: Int) -> Result(Event, String) {
   let decoder = {
     use op <- decode.field("op", decode.string)
     use conv_id <- decode.field("conv_id", decode.string)
@@ -327,8 +349,8 @@ fn decode_event(json_str: String) -> Result(Event, String) {
     use user_shard <- decode.field("user_shard", decode.int)
     use seq <- decode.field("seq", decode.int)
     use emitted_at <- decode.field("emitted_at", decode.float)
-    decode.success(Event(
-      op: parse_op(op),
+    decode.success(DecodedEventFields(
+      op: op,
       conv_id: conv_id,
       user_id: user_id,
       soft_deleted: soft_deleted,
@@ -338,16 +360,55 @@ fn decode_event(json_str: String) -> Result(Event, String) {
       emitted_at: emitted_at,
     ))
   }
-  json.parse(from: json_str, using: decoder)
-  |> result.map_error(fn(e) { "json: " <> string.inspect(e) })
+  case json.parse(from: json_str, using: decoder) {
+    Error(e) -> Error("json: " <> string.inspect(e))
+    Ok(fields) -> {
+      case parse_op(fields.op) {
+        Error(reason) -> Error(reason)
+        Ok(parsed_op) -> {
+          case
+            valid_shard(fields.conv_shard, n_shards),
+            valid_shard(fields.user_shard, n_shards)
+          {
+            True, True ->
+              Ok(Event(
+                op: parsed_op,
+                conv_id: fields.conv_id,
+                user_id: fields.user_id,
+                soft_deleted: fields.soft_deleted,
+                conv_shard: fields.conv_shard,
+                user_shard: fields.user_shard,
+                seq: fields.seq,
+                emitted_at: fields.emitted_at,
+              ))
+            _, _ -> Error("shard out of range")
+          }
+        }
+      }
+    }
+  }
 }
 
-fn parse_op(op: String) -> Op {
+fn parse_op(op: String) -> Result(Op, String) {
   case op {
-    "INSERT" -> OpInsert
-    "UPDATE" -> OpUpdate
-    "DELETE" -> OpDelete
-    _ -> OpUpdate
+    "INSERT" -> Ok(OpInsert)
+    "UPDATE" -> Ok(OpUpdate)
+    "DELETE" -> Ok(OpDelete)
+    _ -> Error("unknown op: " <> op)
+  }
+}
+
+fn valid_shard(shard: Int, n_shards: Int) -> Bool {
+  case shard < 0 {
+    True -> False
+    False -> shard < n_shards
+  }
+}
+
+fn channel_accepts_event(channel: String, event: Event) -> Bool {
+  case channel == channel_name(#(ConvAxis, event.conv_shard)) {
+    True -> True
+    False -> channel == channel_name(#(UserAxis, event.user_shard))
   }
 }
 

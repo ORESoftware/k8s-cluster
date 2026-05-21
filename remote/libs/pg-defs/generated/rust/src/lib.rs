@@ -1012,10 +1012,11 @@ pub fn validate_agent_remote_dev_tasks_insert(value: &AgentRemoteDevTaskInsert) 
 }
 
 pub const AGENT_REMOTE_DEV_EVENTS_TABLE: &str = "agent_remote_dev_events";
-pub const AGENT_REMOTE_DEV_EVENTS_COLUMNS: &[&str] = &["id", "task_id", "seq", "event_kind", "payload", "created_at"];
+pub const AGENT_REMOTE_DEV_EVENTS_COLUMNS: &[&str] = &["id", "task_id", "thread_id", "seq", "event_kind", "payload", "created_at"];
 pub const AGENT_REMOTE_DEV_EVENTS_SELECT_SQL: &str = r###"select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload,
@@ -1028,6 +1029,7 @@ pub const AGENT_REMOTE_DEV_EVENTS_SELECT_SQL: &str = r###"select
 pub struct AgentRemoteDevEventRow {
     pub id: i64,
     pub task_id: String,
+    pub thread_id: Option<String>,
     pub seq: i32,
     pub event_kind: String,
     pub payload: Value,
@@ -1039,6 +1041,7 @@ pub struct AgentRemoteDevEventRow {
 pub struct AgentRemoteDevEventInsert {
     pub id: Option<i64>,
     pub task_id: Option<String>,
+    pub thread_id: Option<String>,
     pub seq: Option<i32>,
     pub event_kind: Option<String>,
     pub payload: Option<Value>,

@@ -345,6 +345,7 @@ create index if not exists agent_remote_dev_tasks_created_at_idx
 create table if not exists agent_remote_dev_events (
   id bigserial primary key,
   task_id uuid not null,
+  thread_id uuid,
   seq integer not null,
   event_kind varchar(80) not null,
   payload jsonb default '{}'::jsonb not null,
@@ -358,8 +359,15 @@ create table if not exists agent_remote_dev_events (
 create unique index if not exists agent_remote_dev_events_task_seq_uq
   on agent_remote_dev_events (task_id, seq);
 
+alter table if exists agent_remote_dev_events
+  add column if not exists thread_id uuid;
+
 create index if not exists agent_remote_dev_events_task_id_created_at_idx
   on agent_remote_dev_events (task_id, created_at desc);
+
+create index if not exists agent_remote_dev_events_thread_id_created_at_idx
+  on agent_remote_dev_events (thread_id, created_at desc)
+  where thread_id is not null;
 
 create index if not exists agent_remote_dev_events_created_at_idx
   on agent_remote_dev_events (created_at desc);
@@ -504,6 +512,10 @@ alter table if exists agent_remote_dev_tasks
 alter table if exists agent_remote_dev_events
   add constraint agent_remote_dev_events_task_fk
   foreign key (task_id) references agent_remote_dev_tasks(id);
+
+alter table if exists agent_remote_dev_events
+  add constraint agent_remote_dev_events_thread_fk
+  foreign key (thread_id) references agent_remote_dev_threads(id);
 
 alter table if exists agent_remote_dev_artifacts
   add constraint agent_remote_dev_artifacts_task_fk
@@ -855,7 +867,7 @@ create table if not exists presence_consumer_checkpoints (
 
 -- ── WAL / logical replication helpers ───────────────────────────────────
 --
--- The pg_wal.gleam consumer wants TWO Postgres-side artefacts:
+-- The opt-in pg_wal.gleam consumer wants TWO Postgres-side artefacts:
 --
 --   1. A PUBLICATION listing the tables we care about. Logical
 --      replication only ships row changes for tables included in some
@@ -876,9 +888,11 @@ create table if not exists presence_consumer_checkpoints (
 --   * `max_slot_wal_keep_size` set, OR an alert on slot lag, to avoid
 --     the classic "dead slot fills the disk" outage.
 --
--- The helpers below are intentionally simple wrappers — the consumer
--- creates its slot at startup (idempotent) so deploys don't need a
--- separate DBA step.
+-- The helpers below are intentionally simple wrappers. Enable the per-pod
+-- WAL consumer only for deployments that explicitly need the direct PG WAL
+-- path, and pair it with `max_slot_wal_keep_size` plus slot-lag alerts; the
+-- SQL outbox above remains the lower-risk durable replay path because it
+-- does not retain Postgres WAL per pod.
 
 -- `CREATE PUBLICATION IF NOT EXISTS` doesn't exist in any PG version, so
 -- wrap in a DO block so re-running the schema file is idempotent.
@@ -954,8 +968,9 @@ $$;
 -- streams apart so a busy presence pipeline can't starve the slow-moving
 -- config CDC stream.
 --
--- Adding a table to the gateway is a 1-line change here plus letting
--- `wal-gateway-rs` redeploy; new subscribers do not require schema changes.
+-- Adding a table to the gateway means adding it to the create-publication list
+-- and the idempotent `alter publication ... add table` guard below; new
+-- subscribers do not require schema changes.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 do $$
@@ -965,7 +980,18 @@ begin
       app_config,
       container_pool_configs,
       lambda_functions,
-      known_git_repos;
+      known_git_repos,
+      agent_remote_dev_events;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'cdc_pub'
+      and schemaname = 'public'
+      and tablename = 'agent_remote_dev_events'
+  ) then
+    alter publication cdc_pub add table agent_remote_dev_events;
   end if;
 end;
 $$;

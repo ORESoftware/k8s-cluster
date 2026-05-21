@@ -31,7 +31,7 @@ spec:
           args:
             - |
               set -eu
-              cd /opt/dd-next-1/remote/deployments/gleamlang-server
+              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-server
               exec gleam run
           ports:
             - name: http
@@ -46,6 +46,28 @@ spec:
               value: http://127.0.0.1:8083/publish
             - name: NATS_PUBLISH_SUBJECT
               value: dd.remote.websocket.events
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
+            - name: PRESENCE_WAL_ENABLED
+              value: "true"
           readinessProbe:
             httpGet:
               path: /healthz
@@ -85,7 +107,7 @@ spec:
           args:
             - |
               set -eu
-              exec node /opt/dd-next-1/remote/deployments/gleamlang-server/nats-bridge.mjs
+              exec node /opt/dd-next-1/remote/deployments/gleamlang-ws-server/nats-bridge.mjs
           env:
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222

@@ -339,6 +339,12 @@ fn parse_provider(s: &str) -> AppResult<ProviderKind> {
         "ach_direct" => Ok(ProviderKind::AchDirect),
         "wise" => Ok(ProviderKind::Wise),
         "solana_wallet" => Ok(ProviderKind::SolanaWallet),
+        "revolut" => Ok(ProviderKind::Revolut),
+        "remitly" => Ok(ProviderKind::Remitly),
+        "robinhood" => Ok(ProviderKind::Robinhood),
+        "mercury" => Ok(ProviderKind::Mercury),
+        "bridge" => Ok(ProviderKind::Bridge),
+        "gocardless" => Ok(ProviderKind::GoCardless),
         other => Err(AppError::BadRequest(format!("unknown provider: {other}"))),
     }
 }

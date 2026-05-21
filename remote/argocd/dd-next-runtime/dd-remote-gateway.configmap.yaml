@@ -471,14 +471,20 @@ data:
       }
 
       # /fsws — dd-fsharp-ws-server (F# + ASP.NET Core, port 8087). Same
-      # access posture as /gleam/ and /webrtc/ (no auth required) since the
-      # service is a public-facing pipeline-comparison demo. WS upgrade is
-      # supported so /fsws/ws/rx and /fsws/ws/async work end-to-end.
+      # access posture as /gleam/ and /webrtc/: gateway-authenticated operator
+      # demo traffic only. WS upgrade is supported so /fsws/ws/rx and
+      # /fsws/ws/async work end-to-end after the browser has a dd_auth cookie.
       location = /fsws {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         return 302 /fsws/;
       }
 
       location /fsws/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_buffering off;
         # WS endpoints (/ws/rx, /ws/async) need a long idle timeout; keep
@@ -527,10 +533,16 @@ data:
       }
 
       location = /gcs {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         return 302 /gcs/health;
       }
 
       location = /gcs/health {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_connect_timeout 30;
@@ -543,6 +555,9 @@ data:
       }
 
       location = /gcs/ws-health {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_connect_timeout 30;
@@ -555,6 +570,9 @@ data:
       }
 
       location /gcs/api/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_read_timeout 900;
@@ -586,6 +604,9 @@ data:
       # timeouts. 900s (pre-change) would have closed long-running chat
       # sessions after 15 minutes of inactivity.
       location /gcs/ws/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_read_timeout 3600;
@@ -600,10 +621,16 @@ data:
       }
 
       location = /webrtc {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         return 302 /webrtc/;
       }
 
       location /webrtc/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -634,10 +661,16 @@ data:
       }
 
       location = /mdp {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         return 302 /mdp/;
       }
 
       location /mdp/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -648,10 +681,16 @@ data:
       }
 
       location = /des {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         return 302 /des/;
       }
 
       location /des/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_read_timeout 900;

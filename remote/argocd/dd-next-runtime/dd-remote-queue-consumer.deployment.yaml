@@ -65,6 +65,8 @@ spec:
               value: http://dd-container-pool.default.svc.cluster.local:8102
             - name: QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS
               value: '420'
+            - name: QUEUE_CONSUMER_FALLBACK_REST_DISPATCH
+              value: 'true'
             - name: QUEUE_CONSUMER_RECEIPTS_DIR
               value: /tmp/dd-remote-queue-consumer/tasks
           envFrom:

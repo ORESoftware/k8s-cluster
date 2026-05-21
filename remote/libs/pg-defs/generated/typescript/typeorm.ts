@@ -371,6 +371,7 @@ export class AgentRemoteDevTaskEntity {
 
 @Index("agent_remote_dev_events_task_seq_uq", ["taskId", "seq"], { unique: true })
 // agent_remote_dev_events_task_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_events_thread_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // agent_remote_dev_events_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "agent_remote_dev_events" })
 export class AgentRemoteDevEventEntity {
@@ -379,6 +380,9 @@ export class AgentRemoteDevEventEntity {
 
   @Column({ name: "task_id", type: "uuid" })
   taskId!: string;
+
+  @Column({ name: "thread_id", type: "uuid", nullable: true })
+  threadId!: string | null;
 
   @Column({ name: "seq", type: "integer" })
   seq!: number;

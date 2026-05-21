@@ -19,7 +19,7 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: gleamlang-server
-          image: dd-gleamlang-server:dev
+          image: dd-gleamlang-ws-server:dev
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -44,12 +44,22 @@ spec:
                   name: dd-gleamlang-server-secrets
                   key: RDS_DATABASE_URL
                   optional: true
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
             - name: AGENT_TASKS_RDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: dd-gleamlang-server-secrets
                   key: AGENT_TASKS_RDS_DATABASE_URL
                   optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
+            - name: PRESENCE_WAL_ENABLED
+              value: "true"
           envFrom:
             - secretRef:
                 name: dd-gleamlang-server-secrets
@@ -81,7 +91,7 @@ spec:
               cpu: "1"
               memory: 512Mi
         - name: nats-bridge
-          image: dd-gleamlang-server:dev
+          image: dd-gleamlang-ws-server:dev
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -96,7 +106,7 @@ spec:
           args:
             - |
               set -eu
-              exec node /app/remote/deployments/gleamlang-server/nats-bridge.mjs
+              exec node /app/remote/deployments/gleamlang-ws-server/nats-bridge.mjs
           env:
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222

@@ -664,11 +664,13 @@ class AgentRemoteDevEvent(Base):
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="agent_remote_dev_events_payload_object_chk"),
         Index("agent_remote_dev_events_task_seq_uq", "task_id", "seq", unique=True),
         Index("agent_remote_dev_events_task_id_created_at_idx", "task_id", text("created_at desc")),
+        Index("agent_remote_dev_events_thread_id_created_at_idx", "thread_id", text("created_at desc"), postgresql_where=text("thread_id is not null")),
         Index("agent_remote_dev_events_created_at_idx", text("created_at desc")),
     )
 
     id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
     task_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    thread_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
     seq: Mapped[int] = mapped_column(Integer(), nullable=False)
     event_kind: Mapped[str] = mapped_column(String(80), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
@@ -679,6 +681,7 @@ class AgentRemoteDevEventRow(BaseModel):
 
     id: int
     taskId: UUID
+    threadId: UUID | None = None
     seq: int
     eventKind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
     payload: dict[str, Any]
@@ -689,6 +692,7 @@ class AgentRemoteDevEventInsert(BaseModel):
 
     id: int | None = None
     taskId: UUID
+    threadId: UUID | None = None
     seq: int
     eventKind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
     payload: dict[str, Any] | None = Field(default_factory=dict)

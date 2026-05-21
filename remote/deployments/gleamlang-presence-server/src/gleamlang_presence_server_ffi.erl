@@ -129,7 +129,12 @@ pgo_config_from_url(Url) ->
 %%      `presence_to_uuid(text)` which md5's non-UUID strings before
 %%      casting to uuid — so both sides land on the same shard for
 %%      demo IDs ("conv-1", "alice") as well as real UUIDs.
-shard_of(Id, NShards) ->
+shard_of(Id, NShards0) ->
+    NShards =
+        case NShards0 of
+            N when is_integer(N), N > 0 -> N;
+            _ -> 256
+        end,
     Bin = case Id of
               B when is_binary(B) -> B;
               L when is_list(L) -> list_to_binary(L)

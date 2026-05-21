@@ -17,7 +17,10 @@ use crate::solana::SolanaClient;
 
 use super::rate_limit::ProviderRateLimiter;
 
-use super::{coinflow_sync, stripe_sync, wise_sync};
+use super::{
+    bridge_sync, coinbase_sync, coinflow_sync, gocardless_sync, mercury_sync, revolut_sync,
+    stripe_sync, wise_sync,
+};
 
 #[derive(Debug, Deserialize)]
 struct SyncPayload {
@@ -152,16 +155,24 @@ impl JobHandler for ConnectionSyncJob {
             match conn.provider {
                 ProviderKind::Stripe => stripe_sync::sync_stripe(&sctx, &conn, cursor).await,
                 ProviderKind::Coinflow => coinflow_sync::sync_coinflow(&sctx, &conn, cursor).await,
+                ProviderKind::CoinbaseCommerce => {
+                    coinbase_sync::sync_coinbase_commerce(&sctx, &conn, cursor).await
+                }
+                ProviderKind::Revolut => revolut_sync::sync_revolut(&sctx, &conn, cursor).await,
                 ProviderKind::Paypal => not_implemented(&conn).await,
                 ProviderKind::Braintree => not_implemented(&conn).await,
-                ProviderKind::CoinbaseCommerce | ProviderKind::CoinbasePrime => {
-                    not_implemented(&conn).await
-                }
+                ProviderKind::CoinbasePrime => not_implemented(&conn).await,
                 ProviderKind::PlaidBank => not_implemented(&conn).await,
                 ProviderKind::SwiftWire => not_implemented(&conn).await,
                 ProviderKind::AchDirect => not_implemented(&conn).await,
                 ProviderKind::Wise => wise_sync::sync_wise(&sctx, &conn, cursor).await,
                 ProviderKind::SolanaWallet => sync_solana(&self.solana, &conn, cursor).await,
+                ProviderKind::Mercury => mercury_sync::sync_mercury(&sctx, &conn, cursor).await,
+                ProviderKind::Bridge => bridge_sync::sync_bridge(&sctx, &conn, cursor).await,
+                ProviderKind::GoCardless => {
+                    gocardless_sync::sync_gocardless(&sctx, &conn, cursor).await
+                }
+                ProviderKind::Remitly | ProviderKind::Robinhood => limited_fit(&conn).await,
             }
         }
         .await;
@@ -296,6 +307,24 @@ async fn not_implemented(conn: &ProviderConnection) -> AppResult<SyncSummary> {
         provider: conn.provider.tag().to_string(),
         message: format!(
             "{} sync not implemented yet; webhook events still flow",
+            conn.provider.tag()
+        ),
+    })
+}
+
+/// Sync stub for providers we accept but that don't have a usable
+/// programmatic surface today (Remitly, Robinhood). Returns Ok with a
+/// zero-summary so the connection is marked synced + healthy rather
+/// than escalating as a job failure — these providers are intentionally
+/// observation-only with no expected events.
+async fn limited_fit(conn: &ProviderConnection) -> AppResult<SyncSummary> {
+    Ok(SyncSummary {
+        new_postings: 0,
+        events_processed: 0,
+        next_cursor: None,
+        has_more: false,
+        summary: format!(
+            "{}: provider classified as limited_fit; no programmatic sync surface today",
             conn.provider.tag()
         ),
     })

@@ -55,8 +55,10 @@ The current chat server starts two listeners:
 
 - REST API: `gcs.default.svc.cluster.local:3000`
 - WebSocket API: `gcs.default.svc.cluster.local:3001`
-- Public REST health: `http://54.91.17.58/gcs/health`
-- Public WebSocket listener health: `http://54.91.17.58/gcs/ws-health`
+- Gateway REST health: `https://54.91.17.58/gcs/health` with the operator `Auth` header or
+  `dd_auth` browser cookie
+- Gateway WebSocket listener health: `https://54.91.17.58/gcs/ws-health` with the operator `Auth`
+  header or `dd_auth` browser cookie
 
 Health checks use:
 
@@ -89,9 +91,40 @@ MongoDB is also persistent:
 /var/lib/dd/gcs/mongodb
 ```
 
-## Public Gateway Paths
+`gcs` / chat.vibe does not consume Postgres `LISTEN/NOTIFY` or logical WAL
+streams. Its deployed runtime uses MongoDB for chat persistence and
+RabbitMQ/Kafka/Redis for brokered fan-out/cache paths; WebSocket pod affinity is
+handled by `gcs-router`.
 
-The EC2 gateway routes:
+### MongoDB sharding posture
+
+chat.vibe can be sharded, but it should use MongoDB-native sharding rather than
+the Postgres LISTEN/NOTIFY or WAL pipeline. The current EC2 deployment is only a
+single-node replica set for dev transactions; a production sharded deployment
+needs config servers, `mongos`, and multiple shard replica sets before running
+`sh.shardCollection`.
+
+Use the same routing dimensions as the websocket router and broker topic names:
+
+| Collection | Primary routing key | Notes |
+| --- | --- | --- |
+| `vibe_chat_conv_message` | `{ ChatId: "hashed" }` | Conversation history, message sends, and room reads should distribute by conv. |
+| `vibe_chat_conv_message_ack` | `{ ChatId: "hashed" }` | Acks are usually read with `ChatId` plus `MessageId`/`UserId`. |
+| `vibe_chat_conv_users` | `{ ChatId: "hashed" }` | Keep membership rows for one conversation colocated; retain the `UserId` secondary index for inbox-style lookups. |
+| `vibe_user_devices` | `{ UserId: "hashed" }` | Device state is user-scoped. |
+| `vibe_chat_conv_events` | `{ ChatId: "hashed" }` | Conversation event stream follows the owning conv. |
+| `vibe_chat_user` | keep unsharded initially, or shard by `{ _id: "hashed" }` once unique `Handle` constraints are redesigned | Non-shard-key unique indexes are the main blocker here. |
+
+Before enabling native Mongo sharding, audit unique indexes: MongoDB requires
+unique indexes on sharded collections to include the shard key. In particular,
+the message collection currently has a unique `UserId + DateCreatedOnDevice +
+ChatId` index, so either the shard key or the uniqueness contract has to change
+before `shardCollection` will be accepted safely.
+
+## Gateway Paths
+
+The EC2 gateway routes require the operator `Auth` header or the `dd_auth` browser cookie before
+they forward to chat.vibe:
 
 - `/gcs/health` -> REST health check
 - `/gcs/ws-health` -> WebSocket listener health check

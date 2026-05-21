@@ -489,12 +489,13 @@ pub fn validate_agent_remote_dev_tasks_exit_reason(value: String) -> Result(Stri
 }
 
 pub const agent_remote_dev_events_table = "agent_remote_dev_events"
-pub const agent_remote_dev_events_select_sql = "select\n      id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events"
+pub const agent_remote_dev_events_select_sql = "select\n      id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events"
 
 pub type AgentRemoteDevEventRow {
   AgentRemoteDevEventRow(
     id: Int,
     task_id: String,
+    thread_id: Option(String),
     seq: Int,
     event_kind: String,
     payload_json: String,

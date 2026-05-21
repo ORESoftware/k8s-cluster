@@ -241,6 +241,64 @@ fn validate_api_key_credential(
             validate_environment("wise.environment", &cred.environment)?;
             Ok(Some(cred.profile_id))
         }
+        ProviderKind::Revolut => {
+            let cred: crate::providers::revolut::RevolutCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid revolut credential: {e}"))
+                })?;
+            require_non_empty("revolut.access_token", &cred.access_token)?;
+            validate_environment("revolut.environment", &cred.environment)?;
+            Ok(None)
+        }
+        ProviderKind::Mercury => {
+            let cred: crate::providers::mercury::MercuryCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid mercury credential: {e}"))
+                })?;
+            require_non_empty("mercury.api_key", &cred.api_key)?;
+            Ok(None)
+        }
+        ProviderKind::Bridge => {
+            let cred: crate::providers::bridge::BridgeCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid bridge credential: {e}"))
+                })?;
+            require_non_empty("bridge.api_key", &cred.api_key)?;
+            validate_environment("bridge.environment", &cred.environment)?;
+            Ok(None)
+        }
+        ProviderKind::GoCardless => {
+            let cred: crate::providers::gocardless::GoCardlessCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid gocardless credential: {e}"))
+                })?;
+            require_non_empty("gocardless.access_token", &cred.access_token)?;
+            // gocardless uses "live"/"sandbox", not "production"/"sandbox" —
+            // accept whatever the tenant sends and validate against its own list
+            let env = cred.environment.trim().to_lowercase();
+            if !matches!(env.as_str(), "live" | "sandbox") {
+                return Err(AppError::BadRequest(format!(
+                    "gocardless.environment must be 'live' or 'sandbox' (got {env})"
+                )));
+            }
+            Ok(None)
+        }
+        ProviderKind::Remitly => {
+            let _cred: crate::providers::remitly::RemitlyCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid remitly credential: {e}"))
+                })?;
+            // No required fields — Remitly is limited_fit; we accept the
+            // attach so tenants can register intent, but sync is a no-op.
+            Ok(None)
+        }
+        ProviderKind::Robinhood => {
+            let _cred: crate::providers::robinhood::RobinhoodCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid robinhood credential: {e}"))
+                })?;
+            Ok(None)
+        }
         ProviderKind::Stripe
         | ProviderKind::Paypal
         | ProviderKind::Braintree
@@ -264,5 +322,64 @@ fn validate_environment(field: &str, value: &str) -> AppResult<()> {
         other => Err(AppError::BadRequest(format!(
             "{field} must be production or sandbox, got {other}"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_coinflow_and_derives_merchant_id() {
+        let credential = serde_json::json!({
+            "api_key": "cf_test",
+            "merchant_id": "merchant_123",
+            "environment": "sandbox",
+            "webhook_validation_key": "hook_secret"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::Coinflow, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("merchant_123"));
+    }
+
+    #[test]
+    fn validates_wise_and_derives_profile_id() {
+        let credential = serde_json::json!({
+            "api_token": "wise_test",
+            "profile_id": "profile_456",
+            "environment": "production"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::Wise, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("profile_456"));
+    }
+
+    #[test]
+    fn rejects_empty_coinbase_webhook_secret() {
+        let credential = serde_json::json!({
+            "api_key": "coinbase_test",
+            "webhook_secret": "",
+            "variant": "commerce"
+        });
+
+        let err =
+            validate_api_key_credential(ProviderKind::CoinbaseCommerce, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_unknown_environment() {
+        let credential = serde_json::json!({
+            "api_token": "wise_test",
+            "profile_id": "profile_456",
+            "environment": "staging"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::Wise, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
     }
 }

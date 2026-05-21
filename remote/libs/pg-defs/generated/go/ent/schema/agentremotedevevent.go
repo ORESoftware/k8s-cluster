@@ -29,6 +29,7 @@ func (AgentRemoteDevEvent) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("id").StorageKey("id"),
 		field.UUID("task_id", uuid.UUID{}).StorageKey("task_id"),
+		field.UUID("thread_id", uuid.UUID{}).Optional().Nillable().StorageKey("thread_id"),
 		field.Int32("seq").StorageKey("seq"),
 		field.String("event_kind").MinLen(1).MaxLen(80).Match(regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)).StorageKey("event_kind"),
 		field.JSON("payload", map[string]interface{}{}).StorageKey("payload"),
@@ -40,6 +41,7 @@ func (AgentRemoteDevEvent) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("task_id", "seq").Unique(),
 		index.Fields("task_id", "created_at"),
+		// agent_remote_dev_events_thread_id_created_at_idx lives in schema.sql because ent cannot model partial indexes.
 		index.Fields("created_at"),
 	}
 }

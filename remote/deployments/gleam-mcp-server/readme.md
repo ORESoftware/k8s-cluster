@@ -185,9 +185,9 @@ operations. The deployment includes a NetworkPolicy that permits ingress from th
 gateway, the dev-server supervisor (`app: dd-dev-server-api`), per-thread agent
 worker pods (`app.kubernetes.io/part-of: dd-remote-dev` +
 `app.kubernetes.io/component: thread-pod`), and metrics scrapers in the
-`observability` namespace. Egress is restricted to DNS, observability and NATS
-telemetry ports, Kubernetes API on TCP 443, and database TCP 5432 for future
-read-only PG-backed MCP tools.
+`observability` namespace; DNS egress, bounded egress to observability and NATS
+telemetry ports, Kubernetes API egress on TCP 443, and database egress for
+future read-only PG-backed MCP tools.
 
 If you add a new in-cluster MCP caller, give its pod template one of those
 labels (or extend the NetworkPolicy ingress in

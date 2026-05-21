@@ -433,6 +433,7 @@ diesel::table! {
     agent_remote_dev_events (id) {
         id -> Int8,
         task_id -> Uuid,
+        thread_id -> Nullable<Uuid>,
         seq -> Int4,
         event_kind -> Varchar,
         payload -> Jsonb,
@@ -445,6 +446,7 @@ diesel::table! {
 pub struct AgentRemoteDevEventDieselRow {
     pub id: i64,
     pub task_id: Uuid,
+    pub thread_id: Option<Uuid>,
     pub seq: i32,
     pub event_kind: String,
     pub payload: Value,
@@ -455,6 +457,7 @@ pub struct AgentRemoteDevEventDieselRow {
 #[diesel(table_name = agent_remote_dev_events)]
 pub struct AgentRemoteDevEventDieselInsert {
     pub task_id: Option<Uuid>,
+    pub thread_id: Option<Uuid>,
     pub seq: Option<i32>,
     pub event_kind: Option<String>,
     pub payload: Option<Value>,

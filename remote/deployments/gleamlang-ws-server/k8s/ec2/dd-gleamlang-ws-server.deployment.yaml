@@ -60,12 +60,22 @@ spec:
                   name: dd-gleamlang-ws-server-secrets
                   key: RDS_DATABASE_URL
                   optional: true
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-ws-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
             - name: AGENT_TASKS_RDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: dd-gleamlang-ws-server-secrets
                   key: AGENT_TASKS_RDS_DATABASE_URL
                   optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
+            - name: PRESENCE_WAL_ENABLED
+              value: "true"
           envFrom:
             - secretRef:
                 name: dd-gleamlang-ws-server-secrets

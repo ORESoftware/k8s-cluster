@@ -116,6 +116,11 @@ Status events are not NATS-only. When the REST API accepts a queued task, publis
 or records a NATS publish failure, it also best-effort posts the same `task-event` envelope directly
 to the Gleam websocket `/broadcast` endpoint and the Rust WebRTC runtime `/runtime/broadcast`
 endpoint. Connected web-home clients still dedupe by `messageId`, `threadId`, and `taskId`.
+The central `dd-wal-gateway` also publishes committed `agent_remote_dev_events`
+rows onto the CDC stream; this service converts those WAL-derived row changes
+back into the same `dd.remote.events` websocket event envelope, giving the
+Gleam and Rust websocket paths a durable PG-backed catch-up feed in addition to
+the direct low-latency post.
 
 The lambda function API is CRUD-only:
 

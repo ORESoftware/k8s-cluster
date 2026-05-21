@@ -107,16 +107,16 @@ update agent_remote_dev_tasks set thread_id = $2, user_id = $3, docker_task_id =
 delete from agent_remote_dev_tasks where id = $1;
 
 -- name: ListAgentRemoteDevEvents :many
-select id, task_id, seq, event_kind, payload, created_at from agent_remote_dev_events;
+select id, task_id, thread_id, seq, event_kind, payload, created_at from agent_remote_dev_events;
 
 -- name: GetAgentRemoteDevEvents :one
-select id, task_id, seq, event_kind, payload, created_at from agent_remote_dev_events where id = $1 limit 1;
+select id, task_id, thread_id, seq, event_kind, payload, created_at from agent_remote_dev_events where id = $1 limit 1;
 
 -- name: CreateAgentRemoteDevEvents :one
-insert into agent_remote_dev_events (id, task_id, seq, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6) returning id, task_id, seq, event_kind, payload, created_at;
+insert into agent_remote_dev_events (id, task_id, thread_id, seq, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, task_id, thread_id, seq, event_kind, payload, created_at;
 
 -- name: UpdateAgentRemoteDevEvents :one
-update agent_remote_dev_events set task_id = $2, seq = $3, event_kind = $4, payload = $5 where id = $1 returning id, task_id, seq, event_kind, payload, created_at;
+update agent_remote_dev_events set task_id = $2, thread_id = $3, seq = $4, event_kind = $5, payload = $6 where id = $1 returning id, task_id, thread_id, seq, event_kind, payload, created_at;
 
 -- name: DeleteAgentRemoteDevEvents :exec
 delete from agent_remote_dev_events where id = $1;

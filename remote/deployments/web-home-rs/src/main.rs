@@ -238,14 +238,14 @@ fn home_summary() -> Markup {
             code { "/" } ", " code { "/home" } ", " code { "/auth" } ", "
             code { "/agents/tasks" } ", " code { "/agents/threads" } ", "
             code { "/api/agents/tasks" } ", " code { "/presence-test" } ", "
-            code { "/wss-test" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
-            code { "/mdp/" } ", and " code { "/des/" } ". Server-auth paths: "
+            code { "/wss-test" } ". Server-auth paths: "
             code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
             code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
             code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
             code { "/builds" } ", " code { "/gleam/" } ", " code { "/mcp" } ", and "
-            code { "/gcs/" } ". Internal-access ops: " code { "/headlamp/" } ", "
+            code { "/gcs/" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
+            code { "/mdp/" } ", and " code { "/des/" } ". Internal-access ops: " code { "/headlamp/" } ", "
             code { "/telemetry/" } ", "
             code { "/prometheus/" } ", " code { "/nats/" } ", " code { "/nats-metrics/" } ", "
             code { "/reaper/" } ", " code { "/cron/" } ", plus the new "
@@ -439,7 +439,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-web-scraper"], service: &["dd-web-scraper:8097"], service_note: None, access: SERVER_AUTH, notes: "Long-running Fastify scraper deployment with scraper parser workers, browser strategies, DOM strategies, native fetch, Cheerio, and Browserless support." },
     DeploymentRow { deployments: &["dd-build-server"], service: &["dd-build-server:8100"], service_note: None, access: SERVER_AUTH, notes: "Rust CI/CD server that clones allowlisted repos, builds allowlisted ECR images, pushes through ECR login, and applies constrained manifests with kubectl." },
     DeploymentRow { deployments: &["dd-ai-ml-pipeline"], service: &["dd-ai-ml-pipeline.ai-ml:8099"], service_note: None, access: SERVER_AUTH, notes: "Python3 online feature pipeline for telemetry risk scoring, anomaly detection, transition hints, and MDP-ready events on dd.remote.telemetry.mdp." },
-    DeploymentRow { deployments: &["dd-des-simulator"], service: &["dd-des-simulator:8099"], service_note: None, access: PUBLIC, notes: "Rust DES simulator with declared des.v1 schema, validation endpoint, async job status, and NATS result publishing." },
+    DeploymentRow { deployments: &["dd-des-simulator"], service: &["dd-des-simulator:8099"], service_note: None, access: SERVER_AUTH, notes: "Rust DES simulator with declared des.v1 schema, validation endpoint, async job status, and NATS result publishing." },
     DeploymentRow { deployments: &["dd-contract-service"], service: &["dd-contract-service:8101"], service_note: None, access: SERVER_AUTH, notes: "Rust Solana contract gateway for solana.contract.v1 validation, signed transaction simulation, metrics, and NATS validation results." },
     DeploymentRow { deployments: &["dd-vpn"], service: &["dd-vpn-ui.vpn:51821"], service_note: None, access: VPN_PRIVATE, notes: "WireGuard wg-easy VPN server and private admin UI for split-tunnel access to the cluster service and pod CIDRs." },
     DeploymentRow { deployments: &["dd-live-mutex"], service: &["dd-live-mutex:6970"], service_note: None, access: CLUSTER_LOCAL, notes: "Singleton live-mutex broker deployment for TCP lock coordination." },
@@ -463,10 +463,10 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-gleamlang-server"], service: &["dd-gleamlang-server:8081"], service_note: None, access: SERVER_AUTH, notes: "Gleam/OTP WebSocket fan-out behind /gleam/*. Exposes /gleam/home, /gleam/healthz, /gleam/metrics, and wss://<host>/gleam/ws." },
     DeploymentRow { deployments: &["presence"], service: &["presence-svc.presence:8080"], service_note: Some("(StatefulSet)"), access: CLUSTER_LOCAL, notes: "Gleam gleamlang-presence-server. Distributed-Erlang StatefulSet that powers user-scoped and conv-scoped websockets driving the /presence-test browser harness." },
     DeploymentRow { deployments: &["dd-gleam-mcp-server"], service: &["dd-gleam-mcp-server:8090"], service_note: None, access: SERVER_AUTH, notes: "Gleam JSON-RPC MCP service behind /mcp and /mcp/*. Ships read-only runtime tools, Prometheus metrics, and Loki-collected stdout." },
-    DeploymentRow { deployments: &["dd-webrtc-signaling"], service: &["dd-webrtc-signaling:8095"], service_note: None, access: PUBLIC, notes: "Rust WebRTC signaling service behind /webrtc/. Room WebSocket signaling for browser/mobile peer handshakes; media and data channels stay peer-to-peer." },
-    DeploymentRow { deployments: &["dd-mdp-optimizer"], service: &["dd-mdp-optimizer:8096"], service_note: None, access: PUBLIC, notes: "Rust MDP/POMDP/RL optimizer behind /mdp/. Consumes dd.remote.mdp.optimize and dd.remote.telemetry.mdp." },
+    DeploymentRow { deployments: &["dd-webrtc-signaling"], service: &["dd-webrtc-signaling:8095"], service_note: None, access: SERVER_AUTH, notes: "Rust WebRTC signaling service behind /webrtc/. Room WebSocket signaling for browser/mobile peer handshakes; media and data channels stay peer-to-peer." },
+    DeploymentRow { deployments: &["dd-mdp-optimizer"], service: &["dd-mdp-optimizer:8096"], service_note: None, access: SERVER_AUTH, notes: "Rust MDP/POMDP/RL optimizer behind /mdp/. Consumes dd.remote.mdp.optimize and dd.remote.telemetry.mdp." },
     DeploymentRow { deployments: &["dd-akka-ws-server"], service: &["dd-akka-ws-server:8086"], service_note: None, access: INTERNAL, notes: "Scala/Akka WebSocket reference server backing the akka-streams and async-java load-test targets." },
-    DeploymentRow { deployments: &["dd-fsharp-ws-server"], service: &["dd-fsharp-ws-server:8087"], service_note: None, access: PUBLIC, notes: "F# + ASP.NET Core WebSocket server behind /fsws/. Exposes /fsws/healthz, /fsws/livez, /fsws/ws/rx, and /fsws/ws/async." },
+    DeploymentRow { deployments: &["dd-fsharp-ws-server"], service: &["dd-fsharp-ws-server:8087"], service_note: None, access: SERVER_AUTH, notes: "F# + ASP.NET Core WebSocket server behind /fsws/. Exposes /fsws/healthz, /fsws/livez, /fsws/ws/rx, and /fsws/ws/async." },
     DeploymentRow { deployments: &["dd-formal-methods-server"], service: &["dd-formal-methods-server:8110"], service_note: None, access: INTERNAL, notes: "Rust formal-methods server. Runs annotation-driven proofs and exposes verification status." },
     DeploymentRow { deployments: &["dd-formal-methods-service"], service: &["dd-formal-methods-service:8111"], service_note: None, access: INTERNAL, notes: "Rust formal-methods orchestration service. Templates and dispatches verification jobs against dd-formal-methods-server." },
     DeploymentRow { deployments: &["dd-spark-pipeline-server"], service: &["dd-spark-pipeline-server:8085"], service_note: None, access: INTERNAL, notes: "Java/Spark pipeline server. Coordinates analytical batch/stream jobs against the cluster Spark workers." },
@@ -483,7 +483,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: PUBLIC, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks." },
     PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
     PathRow { paths: &[PathEntry { label: "/presence-test", href: Some("/presence-test?user=alice&device=d1&autoconnect=1") }], target: "gleamlang-presence-server browser harness", access: PUBLIC, notes: "Self-contained page that opens one user-scoped ws plus N conv-scoped ws connections against the presence server." },
-    PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness for the Gleam fan-out socket, Rust WebRTC signaling socket, gcs/chat.vibe router, and F# Rx burst endpoint." },
+    PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness. Preset health checks and sockets use gateway-authenticated upstream routes when they leave the public page." },
     PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/login", href: Some("/auth/login") }, PathEntry { label: "/auth/logout", href: Some("/auth/logout") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
     PathRow { paths: &[PathEntry { label: "/bastion/runtime/deployments", href: Some("/bastion/runtime/deployments") }, PathEntry { label: "/bastion/profile", href: Some("/bastion/profile") }, PathEntry { label: "/bastion/terminal", href: None }], target: "Rust bastion/jumphost access broker", access: SERVER_AUTH, notes: "Same-origin gateway access to bastion inventory and allowlisted browser exec terminals." },
     PathRow { paths: &[PathEntry { label: "/headlamp/", href: Some("/headlamp/") }], target: "Headlamp Kubernetes UI", access: SERVER_AUTH, notes: "Read-only cluster browser for workload, pod, container, logs, node, Argo CD, KEDA, and External Secrets state. Paste a token from `kubectl -n headlamp create token headlamp-viewer`." },
@@ -491,9 +491,9 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/dd-thread/<short>", href: Some("/dd-thread/example") }, PathEntry { label: "/dd-thread/<short>/tasks", href: Some("/dd-thread/example/tasks") }, PathEntry { label: "/dd-thread/<short>/stream/<taskId>", href: Some("/dd-thread/example/stream/example-task-id") }, PathEntry { label: "/dd-thread/<short>/ws", href: Some("/dd-thread/example/ws") }], target: "Kubernetes per-thread Ingress", access: SERVER_AUTH, notes: "Ingress selects the UUID-bound worker Service; Node.js handles only the task inside that selected container." },
     PathRow { paths: &[PathEntry { label: "/gleam/home", href: Some("/gleam/home") }, PathEntry { label: "/gleam/healthz", href: Some("/gleam/healthz") }, PathEntry { label: "/gleam/metrics", href: Some("/gleam/metrics") }, PathEntry { label: "/gleam/ws", href: None }], target: "Gleam WebSocket service", access: INTERNAL_ACCESS, notes: "Gleam/OTP fan-out socket behind the gateway; WebSocket endpoint is wss://<host>/gleam/ws." },
     PathRow { paths: &[PathEntry { label: "/mcp", href: Some("/mcp") }, PathEntry { label: "/mcp/home", href: Some("/mcp/home") }, PathEntry { label: "/mcp/healthz", href: Some("/mcp/healthz") }, PathEntry { label: "/mcp/metrics", href: Some("/mcp/metrics") }], target: "Gleam MCP service", access: INTERNAL_ACCESS, notes: "Dedicated MCP deployment with read-only runtime tools, Prometheus metrics, and Loki-collected stdout logs." },
-    PathRow { paths: &[PathEntry { label: "/webrtc/", href: Some("/webrtc/") }, PathEntry { label: "/webrtc/healthz", href: Some("/webrtc/healthz") }, PathEntry { label: "/webrtc/metrics", href: Some("/webrtc/metrics") }, PathEntry { label: "/webrtc/signal test", href: Some("/wss-test?preset=webrtc") }], target: "Rust WebRTC signaling service", access: PUBLIC, notes: "Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer." },
-    PathRow { paths: &[PathEntry { label: "/mdp/", href: Some("/mdp/") }, PathEntry { label: "/mdp/healthz", href: Some("/mdp/healthz") }, PathEntry { label: "/mdp/metrics", href: Some("/mdp/metrics") }, PathEntry { label: "POST /mdp/optimize", href: Some("/mdp/optimize") }, PathEntry { label: "POST /mdp/telemetry/learn", href: Some("/mdp/telemetry/learn") }, PathEntry { label: "dd.remote.mdp.optimize", href: None }, PathEntry { label: "dd.remote.telemetry.mdp", href: None }], target: "Rust MDP/POMDP optimizer", access: PUBLIC, notes: "Async optimizer that subscribes to NATS optimization and telemetry jobs, then publishes results/events back to the runtime queue." },
-    PathRow { paths: &[PathEntry { label: "/des/", href: Some("/des/") }, PathEntry { label: "/des/healthz", href: Some("/des/healthz") }, PathEntry { label: "/des/metrics", href: Some("/des/metrics") }, PathEntry { label: "/des/model/schema", href: Some("/des/model/schema") }, PathEntry { label: "/des/model/example", href: Some("/des/model/example") }, PathEntry { label: "POST /des/validate", href: Some("/des/validate") }, PathEntry { label: "POST /des/simulate", href: Some("/des/simulate") }, PathEntry { label: "dd.remote.des.simulate", href: None }], target: "Rust discrete event simulator", access: PUBLIC, notes: "Async DES job runner with declared des.v1 model schema, strict validation, in-memory job status, metrics, and NATS result publishing." },
+    PathRow { paths: &[PathEntry { label: "/webrtc/", href: Some("/webrtc/") }, PathEntry { label: "/webrtc/healthz", href: Some("/webrtc/healthz") }, PathEntry { label: "/webrtc/metrics", href: Some("/webrtc/metrics") }, PathEntry { label: "/webrtc/signal test", href: Some("/wss-test?preset=webrtc") }], target: "Rust WebRTC signaling service", access: SERVER_AUTH, notes: "Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer. The gateway requires the operator Auth header or dd_auth cookie before forwarding." },
+    PathRow { paths: &[PathEntry { label: "/mdp/", href: Some("/mdp/") }, PathEntry { label: "/mdp/healthz", href: Some("/mdp/healthz") }, PathEntry { label: "/mdp/metrics", href: Some("/mdp/metrics") }, PathEntry { label: "POST /mdp/optimize", href: Some("/mdp/optimize") }, PathEntry { label: "POST /mdp/telemetry/learn", href: Some("/mdp/telemetry/learn") }, PathEntry { label: "dd.remote.mdp.optimize", href: None }, PathEntry { label: "dd.remote.telemetry.mdp", href: None }], target: "Rust MDP/POMDP optimizer", access: SERVER_AUTH, notes: "Async optimizer behind the authenticated gateway; it subscribes to NATS optimization and telemetry jobs, then publishes runtime events." },
+    PathRow { paths: &[PathEntry { label: "/des/", href: Some("/des/") }, PathEntry { label: "/des/healthz", href: Some("/des/healthz") }, PathEntry { label: "/des/metrics", href: Some("/des/metrics") }, PathEntry { label: "/des/model/schema", href: Some("/des/model/schema") }, PathEntry { label: "/des/model/example", href: Some("/des/model/example") }, PathEntry { label: "POST /des/validate", href: Some("/des/validate") }, PathEntry { label: "POST /des/simulate", href: Some("/des/simulate") }, PathEntry { label: "dd.remote.des.simulate", href: None }], target: "Rust discrete event simulator", access: SERVER_AUTH, notes: "Async DES job runner behind the authenticated gateway, with declared des.v1 schema, strict validation, in-memory job status, metrics, and NATS result publishing." },
     PathRow { paths: &[PathEntry { label: "/contracts/", href: Some("/contracts/") }, PathEntry { label: "/contracts/healthz", href: Some("/contracts/healthz") }, PathEntry { label: "/contracts/metrics", href: Some("/contracts/metrics") }, PathEntry { label: "/contracts/schema", href: Some("/contracts/schema") }, PathEntry { label: "/contracts/example", href: Some("/contracts/example") }, PathEntry { label: "POST /contracts/validate", href: Some("/contracts/validate") }, PathEntry { label: "POST /contracts/simulate", href: Some("/contracts/simulate") }, PathEntry { label: "dd.remote.contracts.solana.validate", href: None }], target: "Rust Solana contract service", access: SERVER_AUTH, notes: "Validates solana.contract.v1 instruction envelopes, proxies signed simulation through Solana JSON-RPC, and publishes NATS validation results." },
     PathRow { paths: &[PathEntry { label: "/ml/", href: Some("/ml/") }, PathEntry { label: "/ml/healthz", href: Some("/ml/healthz") }, PathEntry { label: "/ml/metrics", href: Some("/ml/metrics") }, PathEntry { label: "/ml/status", href: Some("/ml/status") }, PathEntry { label: "POST /ml/analyze", href: Some("/ml/analyze") }, PathEntry { label: "POST /ml/ingest", href: Some("/ml/ingest") }, PathEntry { label: "dd.remote.telemetry.raw", href: None }, PathEntry { label: "dd.remote.ml.features", href: None }], target: "Python AI/ML feature pipeline", access: SERVER_AUTH, notes: "Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests." },
     PathRow { paths: &[PathEntry { label: "/trading/", href: Some("/trading/") }, PathEntry { label: "/trading/healthz", href: Some("/trading/healthz") }, PathEntry { label: "/trading/metrics", href: Some("/trading/metrics") }, PathEntry { label: "/trading/schema", href: Some("/trading/schema") }, PathEntry { label: "/trading/example", href: Some("/trading/example") }, PathEntry { label: "POST /trading/decide", href: Some("/trading/decide") }, PathEntry { label: "dd.remote.trading.signals", href: None }, PathEntry { label: "dd.remote.trading.order_intents", href: None }], target: "Rust trading decision service", access: SERVER_AUTH, notes: "Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions." },
@@ -503,7 +503,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/prometheus/", href: Some("/prometheus/") }], target: "Prometheus", access: INTERNAL_ACCESS, notes: "Low-level metrics UI and query surface." },
     PathRow { paths: &[PathEntry { label: "/nats/", href: Some("/nats/") }, PathEntry { label: "/nats-metrics/metrics", href: Some("/nats-metrics/metrics") }], target: "NATS monitor and exporter", access: INTERNAL_ACCESS, notes: "NATS should usually be inspected through Grafana; these paths expose raw health and metrics." },
     PathRow { paths: &[PathEntry { label: "/reaper/", href: Some("/reaper/") }, PathEntry { label: "/cron/", href: Some("/cron/") }], target: "Runtime service status", access: INTERNAL_ACCESS, notes: "Gateway status surfaces for idle reaper and cron scheduler deployments." },
-    PathRow { paths: &[PathEntry { label: "/fsws/", href: Some("/fsws/") }, PathEntry { label: "/fsws/healthz", href: Some("/fsws/healthz") }, PathEntry { label: "/fsws/livez", href: Some("/fsws/livez") }, PathEntry { label: "/fsws/ws/rx", href: None }, PathEntry { label: "/fsws/ws/async", href: None }, PathEntry { label: "/wss-test?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "dd-fsharp-ws-server", access: PUBLIC, notes: "F# + ASP.NET Core burst WebSocket server. The gateway strips the /fsws/ prefix before proxying to the upstream." },
+    PathRow { paths: &[PathEntry { label: "/fsws/", href: Some("/fsws/") }, PathEntry { label: "/fsws/healthz", href: Some("/fsws/healthz") }, PathEntry { label: "/fsws/livez", href: Some("/fsws/livez") }, PathEntry { label: "/fsws/ws/rx", href: None }, PathEntry { label: "/fsws/ws/async", href: None }, PathEntry { label: "/wss-test?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "dd-fsharp-ws-server", access: SERVER_AUTH, notes: "F# + ASP.NET Core burst WebSocket server. The authenticated gateway strips the /fsws/ prefix before proxying to the upstream." },
     PathRow { paths: &[PathEntry { label: "/gcs/health", href: Some("/gcs/health") }, PathEntry { label: "/gcs/ws-health", href: Some("/gcs/ws-health") }, PathEntry { label: "/gcs/api/<...>", href: None }, PathEntry { label: "/gcs/ws/conv/<convId>", href: None }, PathEntry { label: "/gcs/ws/user/<userId>", href: None }, PathEntry { label: "/gcs/ws/device/<deviceId>", href: None }, PathEntry { label: "/wss-test?preset=gcs", href: Some("/wss-test?preset=gcs") }], target: "gcs / chat.vibe websocket router", access: SERVER_AUTH, notes: "HTTP API rewrites to /chat/* on gcs; websocket traffic is routed through gcs-router for conv/user/device pinning." },
     PathRow { paths: &[PathEntry { label: "/v1/tenants", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/customers/by-email/<email>/billing-state", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/vendors/by-email/<email>/payable-state", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/connections", href: None }, PathEntry { label: "POST /v1/oauth/<provider>/start", href: None }, PathEntry { label: "GET /v1/oauth/<provider>/callback", href: None }, PathEntry { label: "POST /v1/webhooks/<provider>", href: None }, PathEntry { label: "GET /v1/verify/tenants/<tenant_id>/postings/<id>", href: None }], target: "dd-billing-server Rust ledger service", access: CLUSTER_LOCAL, notes: "Multi-tenant AR/AP ledger. Public verification needs no auth; provider webhooks update ledger state in seconds." },
     PathRow { paths: &[PathEntry { label: "cdc.<schema>.<table>.<op>", href: None }, PathEntry { label: "JetStream stream CDC", href: None }, PathEntry { label: "/healthz", href: None }, PathEntry { label: "/readyz", href: None }, PathEntry { label: "/metrics", href: None }], target: "dd-wal-gateway (postgres-to-NATS CDC)", access: INTERNAL_ACCESS, notes: "One advisory-locked logical replication slot pumps wal2json rows into JetStream as cdc.row.v1 envelopes." },
@@ -2442,7 +2442,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         selectedTaskId: null,
         liveSource: null,
         liveWs: null,
+        liveRustWs: null,
         renderedEvents: new Set(),
+        renderedEventKeys: [],
         streamTaskId: null,
         runtimePoll: null,
         lastRuntimeSummary: "",
@@ -2463,10 +2465,13 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         tasksSidebarCollapsed: false,
         taskSearch: "",
         controlAnimationTimer: null,
+        lastRuntimeErrorMessage: "",
       };
 
       const AGENT_TEXT_JOIN_DELAY_MS = 1200;
       const AGENT_TEXT_MAX_BUFFER_MS = 3000;
+      const STREAM_EVENT_DOM_LIMIT = 500;
+      const STREAM_EVENT_DEDUPE_LIMIT = 1500;
 
       function makeUuid() {
         if (crypto.randomUUID) return crypto.randomUUID();
@@ -3335,6 +3340,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function clearStream(message, taskId = state.selectedTaskId) {
         resetAgentTextBuffer();
         state.renderedEvents.clear();
+        state.renderedEventKeys = [];
         state.streamTaskId = taskId || null;
         $("stream").textContent = "";
         setStreamState(message || "waiting", "warn");
@@ -3662,7 +3668,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       function queueAgentTextRow(row, key, seq, text) {
-        state.renderedEvents.add(key);
+        markRenderedEvent(key);
         const taskId = state.selectedTaskId || row.taskId || "task";
         if (!state.agentTextBuffer || state.agentTextBuffer.taskId !== taskId) {
           flushAgentTextBuffer();
@@ -3679,6 +3685,27 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.agentTextBuffer.lastSeq = seq;
         state.agentTextBuffer.parts.push(text);
         scheduleAgentTextFlush();
+      }
+
+      function markRenderedEvent(key) {
+        if (!state.renderedEvents.has(key)) {
+          state.renderedEventKeys.push(key);
+        }
+        state.renderedEvents.add(key);
+        while (state.renderedEventKeys.length > STREAM_EVENT_DEDUPE_LIMIT) {
+          const oldest = state.renderedEventKeys.shift();
+          if (oldest) state.renderedEvents.delete(oldest);
+        }
+      }
+
+      function trimStreamDom() {
+        const stream = $("stream");
+        const events = stream.querySelectorAll(".event");
+        const overflow = events.length - STREAM_EVENT_DOM_LIMIT;
+        if (overflow <= 0) return;
+        for (const item of Array.from(events).slice(0, overflow)) {
+          item.remove();
+        }
       }
 
       function appendEventElement({ row, kind, seq, seqLabel, text, feedbackSeq }) {
@@ -3723,6 +3750,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           item.appendChild(votes);
         }
         $("stream").appendChild(item);
+        trimStreamDom();
         $("stream").scrollTop = $("stream").scrollHeight;
         setStreamState("showing events", "ok");
       }
@@ -3735,7 +3763,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (state.renderedEvents.has(key)) return;
         const text = eventText(row, { preserveWhitespace: kind === "claude" });
         if (shouldHideEventRow(row, text)) {
-          state.renderedEvents.add(key);
+          markRenderedEvent(key);
           return;
         }
         if (shouldCoalesceAgentText(row, text)) {
@@ -3743,7 +3771,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           return;
         }
         flushAgentTextBuffer();
-        state.renderedEvents.add(key);
+        markRenderedEvent(key);
         appendEventElement({ row, kind, seq, text, feedbackSeq: seq });
       }
 
@@ -3839,6 +3867,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return data;
       }
 
+      function renderRuntimeError(error) {
+        const message = adminPreview("runtime state error", error, 240);
+        if (message === state.lastRuntimeErrorMessage) {
+          setStreamState("runtime still unavailable", "warn");
+          return;
+        }
+        state.lastRuntimeErrorMessage = message;
+        renderError(`runtime state error: ${message}`, error, "runtime state error");
+      }
+
       function stopRuntimePolling() {
         if (state.runtimePoll) clearInterval(state.runtimePoll);
         state.runtimePoll = null;
@@ -3847,13 +3885,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function startRuntimePolling(threadId) {
         stopRuntimePolling();
         state.lastRuntimeSummary = "";
-        loadRuntimeState(threadId).catch((error) => {
-          renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
-        });
+        state.lastRuntimeErrorMessage = "";
+        loadRuntimeState(threadId).catch(renderRuntimeError);
         state.runtimePoll = setInterval(() => {
-          loadRuntimeState(threadId).catch((error) => {
-            renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
-          });
+          loadRuntimeState(threadId).catch(renderRuntimeError);
         }, 5000);
       }
 
@@ -3957,6 +3992,23 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         };
       }
 
+      function openRustRuntimeSocket(threadId, taskId) {
+        if (state.liveRustWs) state.liveRustWs.close();
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const wsUrl = `${proto}://${location.host}/admin/webrtc/runtime/ws?threadId=${encodeURIComponent(threadId)}&taskId=${encodeURIComponent(taskId)}`;
+        const ws = new WebSocket(wsUrl);
+        state.liveRustWs = ws;
+        ws.onopen = () => {
+          setStreamState("rust websocket connected", "ok");
+          ws.send(JSON.stringify({ type: "subscribe", threadId, taskId }));
+        };
+        ws.onmessage = (event) => renderRealtimePayload(event.data, "rust-ws");
+        ws.onerror = () => setStreamState("rust websocket error", "warn");
+        ws.onclose = () => {
+          if (state.liveRustWs === ws) state.liveRustWs = null;
+        };
+      }
+
       async function loadSnapshot(options = {}) {
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
         if (!response.ok) {
@@ -4012,6 +4064,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const provider = $("provider").value;
         const dispatchMode = $("dispatch-mode").value;
         const usesContainerPool = dispatchMode === "queued-pool";
+        const usesQueuedDispatch = dispatchMode === "queued" || dispatchMode === "queued-pool";
         const repoValidation = validateCurrentRepoUrl();
         const repo = repoValidation.repo;
         const baseBranch = currentBaseBranch();
@@ -4056,25 +4109,28 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setControlPosition("bottom", { forceAnimation: true });
         $("thread-workspace").scrollTo({ top: 0, behavior: "smooth" });
         replaceSelectionUrl(threadId, taskId);
-        clearStream(usesContainerPool ? "waiting for queue" : "waking worker");
+        const dispatchStatus = usesContainerPool ? "queueing container-pool task" : usesQueuedDispatch ? "queueing NATS task" : "waking worker";
+        clearStream(dispatchStatus);
+        openRustRuntimeSocket(threadId, taskId);
         openGleamLiveSocket(threadId, taskId);
-        if (!usesContainerPool) startRuntimePolling(threadId);
+        if (!usesQueuedDispatch) startRuntimePolling(threadId);
         renderEventRow({
           seq: `dispatch-start-${Date.now()}`,
           eventKind: "status",
           payload: {
             kind: "status",
-            status: usesContainerPool ? "queueing container-pool task" : "waking worker",
+            status: dispatchStatus,
             message: usesContainerPool
               ? "Publishing the task to NATS for the queue consumer to dispatch through container-pool using this thread UUID as the affinity key."
+              : usesQueuedDispatch
+              ? "Publishing the task to NATS for the queue consumer to dispatch using this thread UUID as the affinity key."
               : "Creating or waking the UUID-bound worker. Cold starts can take 30-90 seconds while the container installs dependencies, refreshes git, and starts Node.",
           },
           createdAt: new Date().toISOString(),
         });
         setStatus(`POST /api/agents/threads/${threadId}/tasks`);
         const startedAt = Date.now();
-        const keepRuntimePolling = dispatchMode === "queued";
-        const waitTicker = usesContainerPool ? null : setInterval(() => {
+        const waitTicker = usesQueuedDispatch ? null : setInterval(() => {
             const elapsed = Math.round((Date.now() - startedAt) / 1000);
             const runtimeSummary = state.lastRuntimeSummary || "runtime snapshot pending";
             const runtimeDetails = workerRuntimeWaitDetails(state.lastRuntimeData);
@@ -4114,7 +4170,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           });
         } finally {
           if (waitTicker !== null) clearInterval(waitTicker);
-          if (!keepRuntimePolling) stopRuntimePolling();
+          stopRuntimePolling();
         }
         const body = await response.text();
         if (!response.ok) {
@@ -4140,7 +4196,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           provider,
           repo,
           baseBranch,
-          status: usesContainerPool ? "queued" : "running",
+          status: usesQueuedDispatch ? "queued" : "running",
           eventCount: 1,
         });
         renderThreads();
@@ -4159,12 +4215,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           },
           createdAt: new Date().toISOString(),
         });
-        if (!usesContainerPool) {
-          await loadRuntimeState(threadId).catch((error) => {
-            renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
-          });
+        if (!usesQueuedDispatch) {
+          await loadRuntimeState(threadId).catch(renderRuntimeError);
         }
-        openLiveStream(threadId, taskId);
+        if (!usesQueuedDispatch) openLiveStream(threadId, taskId);
         resetContextReview("Context review will run before the next dispatch.");
         await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => handleSnapshotError(error, { preserveStreamForTask: taskId }));
       }

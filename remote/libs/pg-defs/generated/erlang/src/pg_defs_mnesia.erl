@@ -12,7 +12,7 @@
 -record(agent_context_embeddings, {id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at}).
 -record(agent_remote_dev_threads, {id, user_id, known_git_repo_id, title, repo, base_branch, meta, archived_at, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(agent_remote_dev_tasks, {id, thread_id, user_id, docker_task_id, prompt, status, branch, pr_url, pr_state, exit_reason, error_message, last_event_seq, meta, is_soft_deleted, started_at, finished_at, created_at, updated_at, created_by, updated_by}).
--record(agent_remote_dev_events, {id, task_id, seq, event_kind, payload, created_at}).
+-record(agent_remote_dev_events, {id, task_id, thread_id, seq, event_kind, payload, created_at}).
 -record(agent_remote_dev_artifacts, {id, task_id, thread_id, filename, content_type, size_bytes, storage_provider, storage_bucket, storage_key, url, signed_url_expires_at, sha256, meta, created_at}).
 -record(agent_remote_dev_runtime_locks, {id, thread_id, owner, status, fencing_token, lease_expires_at, created_at, updated_at}).
 -record(lambda_functions, {id, slug, display_name, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, status, env, labels, meta_data, last_invoked_at, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
@@ -113,10 +113,10 @@ agent_remote_dev_tasks_table_def() ->
         {disc_copies, [node()]}
     ].
 
-agent_remote_dev_events_attributes() -> ['id', 'task_id', 'seq', 'event_kind', 'payload', 'created_at'].
+agent_remote_dev_events_attributes() -> ['id', 'task_id', 'thread_id', 'seq', 'event_kind', 'payload', 'created_at'].
 
 agent_remote_dev_events_record_info() ->
-    {agent_remote_dev_events, 6, agent_remote_dev_events_attributes()}.
+    {agent_remote_dev_events, 7, agent_remote_dev_events_attributes()}.
 
 agent_remote_dev_events_table_def() ->
     [

@@ -189,7 +189,8 @@ impl NotificationService {
             SELECT COUNT(*)::BIGINT FROM notification_dispatches
             WHERE rule_id = $1
               AND ($2::TEXT IS NULL OR target_resource = $2)
-              AND created_at::date = (now() AT TIME ZONE 'UTC')::date
+              AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+              AND created_at <  (date_trunc('day', now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'
               AND status IN ('sent', 'pending', 'sending')
             "#,
         )

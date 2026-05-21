@@ -14,7 +14,8 @@ Rust public web layer for remote-dev.
 - serves `GET /wss-test` as a same-origin gateway WebSocket harness with presets
   for `dd-gleamlang-server`, `dd-webrtc-signaling-rs`, `gms/gcs/chat.vibe`,
   and the F# Rx burst endpoint; the page includes health checks, burst send,
-  interval send, and separate sent/received counters for browser-side smoke tests
+  interval send, and separate sent/received counters for browser-side smoke tests.
+  The page is public, but its service presets call gateway-authenticated upstream paths.
 - keeps HTML/public pages out of the Node.js worker runtime
 - keeps database credentials out of the public HTML server
 - exposes `GET /healthz` for web liveness

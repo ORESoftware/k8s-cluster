@@ -570,6 +570,7 @@ export const agentRemoteDevEvents = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     taskId: uuid("task_id").notNull(),
+    threadId: uuid("thread_id"),
     seq: integer("seq").notNull(),
     eventKind: varchar("event_kind", { length: 80 }).notNull(),
     payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
@@ -580,6 +581,7 @@ export const agentRemoteDevEvents = pgTable(
     agentRemoteDevEventsPayloadObjectChk: check("agent_remote_dev_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
     agentRemoteDevEventsTaskSeqUq: uniqueIndex("agent_remote_dev_events_task_seq_uq").on(table.taskId, table.seq),
     agentRemoteDevEventsTaskIdCreatedAtIdx: index("agent_remote_dev_events_task_id_created_at_idx").on(table.taskId, table.createdAt.desc()),
+    agentRemoteDevEventsThreadIdCreatedAtIdx: index("agent_remote_dev_events_thread_id_created_at_idx").on(table.threadId, table.createdAt.desc()).where(sql.raw("thread_id is not null")),
     agentRemoteDevEventsCreatedAtIdx: index("agent_remote_dev_events_created_at_idx").on(table.createdAt.desc()),
   }),
 );
@@ -587,6 +589,7 @@ export const agentRemoteDevEvents = pgTable(
 export const agentRemoteDevEventRowSchema = z.object({
   id: z.number().int(),
   taskId: z.string().uuid(),
+  threadId: z.string().uuid().nullable(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
   payload: jsonObjectSchema,
@@ -596,6 +599,7 @@ export const agentRemoteDevEventRowSchema = z.object({
 export const agentRemoteDevEventInsertSchema = z.object({
   id: z.number().int().optional(),
   taskId: z.string().uuid(),
+  threadId: z.string().uuid().nullable().optional(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
   payload: jsonObjectSchema.optional().default({}),

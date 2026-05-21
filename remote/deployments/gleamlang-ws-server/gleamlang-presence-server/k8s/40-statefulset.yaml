@@ -63,6 +63,8 @@ spec:
             #     secretKeyRef:
             #       name: presence-pg
             #       key: url
+            - name: PRESENCE_WAL_ENABLED
+              value: "false"
           ports:
             - name: ws
               containerPort: 8081

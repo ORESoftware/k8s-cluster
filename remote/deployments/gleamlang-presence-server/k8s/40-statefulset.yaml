@@ -65,6 +65,11 @@ spec:
                   optional: true
             - name: PRESENCE_NOTIFY_SHARDS
               value: "256"
+            # Direct per-pod logical replication is intentionally opt-in.
+            # The default durable recovery path is the SQL outbox, which
+            # does not retain Postgres WAL per pod.
+            - name: PRESENCE_WAL_ENABLED
+              value: "false"
           ports:
             - name: ws
               containerPort: 8081

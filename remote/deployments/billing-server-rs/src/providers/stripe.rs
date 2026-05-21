@@ -71,7 +71,7 @@ impl<'a> StripeOAuth<'a> {
             .as_ref()
             .ok_or_else(|| AppError::BadRequest("STRIPE_CLIENT_ID not configured".into()))?;
         let redirect = format!("{}/v1/oauth/stripe/callback", self.cfg.oauth_redirect_base);
-        let params = serde_urlencoded::to_string(&[
+        let params = serde_urlencoded::to_string([
             ("response_type", "code"),
             ("client_id", client_id.as_str()),
             ("scope", "read_only"),
@@ -98,7 +98,7 @@ impl<'a> StripeOAuth<'a> {
                 AppError::BadRequest("STRIPE_CLIENT_SECRET not configured".into())
             })?;
 
-        let body = serde_urlencoded::to_string(&[
+        let body = serde_urlencoded::to_string([
             ("client_secret", secret.as_str()),
             ("code", code),
             ("grant_type", "authorization_code"),

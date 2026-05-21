@@ -63,6 +63,7 @@ CREATE INDEX notification_dispatches_tenant_idx
 CREATE INDEX notification_dispatches_rule_idx
     ON notification_dispatches (rule_id, created_at DESC);
 
--- Day-bucket index used by the throttler to count today's sends fast.
+-- Throttler lookup: one rule/resource over a UTC day range.
 CREATE INDEX notification_dispatches_day_idx
-    ON notification_dispatches ((created_at::date), rule_id, target_resource);
+    ON notification_dispatches (rule_id, target_resource, created_at DESC)
+    WHERE status IN ('sent', 'pending', 'sending');

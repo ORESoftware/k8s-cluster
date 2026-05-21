@@ -249,7 +249,12 @@ pgo_config_from_url(Url) ->
 
 %% Compute the shard a slug or UUID maps to. Must match Postgres'
 %% algorithm in `notify_presence_member_change()` exactly.
-shard_of(Id, NShards) ->
+shard_of(Id, NShards0) ->
+    NShards =
+        case NShards0 of
+            N when is_integer(N), N > 0 -> N;
+            _ -> 256
+        end,
     Bin = case Id of
               B when is_binary(B) -> B;
               L when is_list(L) -> list_to_binary(L)

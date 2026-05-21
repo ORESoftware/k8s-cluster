@@ -20,9 +20,15 @@ importers:
       '@google/genai':
         specifier: ^2.3.0
         version: 2.3.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
+      '@nats-io/jetstream':
+        specifier: ^3.4.0
+        version: 3.4.0
+      '@nats-io/transport-node':
+        specifier: ^3.4.0
+        version: 3.4.0
       '@openai/agents':
         specifier: ^0.9.1
-        version: 0.9.1(ws@8.20.0)(zod@4.4.3)
+        version: 0.9.1(ws@8.20.1)(zod@4.4.3)
       '@supabase/supabase-js':
         specifier: ^2.86.2
         version: 2.105.3
@@ -35,6 +41,9 @@ importers:
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
+      ws:
+        specifier: ^8.20.1
+        version: 8.20.1
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -489,6 +498,24 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@nats-io/jetstream@3.4.0':
+    resolution: {integrity: sha512-GzHQodNJ942+R5LRb8PuZ5ugVWVWMRiufxUYLLVWkXKfwDXYN+Owo0d7L/b9O7BPyrbYD7jQWAC6+ZVuXa9Gyw==}
+
+  '@nats-io/nats-core@3.4.0':
+    resolution: {integrity: sha512-QMDM86EUNm+wudlKC67HLar/KHHQUvJGLfb4jbahje3pUk3K9afeck9fwsxBZF0eUFox6T/TA6m/t+lQqf+QsQ==}
+
+  '@nats-io/nkeys@2.0.3':
+    resolution: {integrity: sha512-JVt56GuE6Z89KUkI4TXUbSI9fmIfAmk6PMPknijmuL72GcD+UgIomTcRWiNvvJKxA01sBbmIPStqJs5cMRBC3A==}
+    engines: {node: '>=18.0.0'}
+
+  '@nats-io/nuid@3.0.0':
+    resolution: {integrity: sha512-QbXZDrxmYlrn5AD06gYcUTmEHwxn96HBQMIk7XTjDlEcx6FPzVBBPjp4AMRh1lEv6B4iJ6Xb/Uz61JugPXFRQg==}
+    engines: {node: '>= 22.x'}
+
+  '@nats-io/transport-node@3.4.0':
+    resolution: {integrity: sha512-hH7u7ejIBTFEJIZ8rIcMrHJI6wl+HhpO5sVFs1+ppmXa8RuB2+Lh1+UwTzZ5xTNNm1TKcRkYy+2qCV56qp8RxA==}
+    engines: {node: '>= 18.0.0'}
 
   '@nodable/entities@2.1.0':
     resolution: {integrity: sha512-nyT7T3nbMyBI/lvr6L5TyWbFJAI9FTgVRakNoBqCD+PmID8DzFrrNdLLtHMwMszOtqZa8PAOV24ZqDnQrhQINA==}
@@ -1416,6 +1443,9 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
+  tweetnacl@1.0.3:
+    resolution: {integrity: sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==}
+
   type-is@2.0.1:
     resolution: {integrity: sha512-OZs6gsjF4vMp32qrCbiVSkrFmXtG/AZhY3t0iAMrMBiAZyV9oALtXO8hsrHbMXF9x6L3grlFuwW2oAz7cav+Gw==}
     engines: {node: '>= 0.6'}
@@ -1448,8 +1478,8 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.20.0:
-    resolution: {integrity: sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==}
+  ws@8.20.1:
+    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -2101,7 +2131,7 @@ snapshots:
       google-auth-library: 10.6.2
       p-retry: 4.6.2
       protobufjs: 7.5.8
-      ws: 8.20.0
+      ws: 8.20.1
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
     transitivePeerDependencies:
@@ -2135,12 +2165,33 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@nats-io/jetstream@3.4.0':
+    dependencies:
+      '@nats-io/nats-core': 3.4.0
+
+  '@nats-io/nats-core@3.4.0':
+    dependencies:
+      '@nats-io/nkeys': 2.0.3
+      '@nats-io/nuid': 3.0.0
+
+  '@nats-io/nkeys@2.0.3':
+    dependencies:
+      tweetnacl: 1.0.3
+
+  '@nats-io/nuid@3.0.0': {}
+
+  '@nats-io/transport-node@3.4.0':
+    dependencies:
+      '@nats-io/nats-core': 3.4.0
+      '@nats-io/nkeys': 2.0.3
+      '@nats-io/nuid': 3.0.0
+
   '@nodable/entities@2.1.0': {}
 
-  '@openai/agents-core@0.9.1(ws@8.20.0)(zod@4.4.3)':
+  '@openai/agents-core@0.9.1(ws@8.20.1)(zod@4.4.3)':
     dependencies:
       debug: 4.4.3
-      openai: 6.36.0(ws@8.20.0)(zod@4.4.3)
+      openai: 6.36.0(ws@8.20.1)(zod@4.4.3)
     optionalDependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
       zod: 4.4.3
@@ -2149,11 +2200,11 @@ snapshots:
       - supports-color
       - ws
 
-  '@openai/agents-openai@0.9.1(ws@8.20.0)(zod@4.4.3)':
+  '@openai/agents-openai@0.9.1(ws@8.20.1)(zod@4.4.3)':
     dependencies:
-      '@openai/agents-core': 0.9.1(ws@8.20.0)(zod@4.4.3)
+      '@openai/agents-core': 0.9.1(ws@8.20.1)(zod@4.4.3)
       debug: 4.4.3
-      openai: 6.36.0(ws@8.20.0)(zod@4.4.3)
+      openai: 6.36.0(ws@8.20.1)(zod@4.4.3)
       zod: 4.4.3
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -2162,10 +2213,10 @@ snapshots:
 
   '@openai/agents-realtime@0.9.1(zod@4.4.3)':
     dependencies:
-      '@openai/agents-core': 0.9.1(ws@8.20.0)(zod@4.4.3)
+      '@openai/agents-core': 0.9.1(ws@8.20.1)(zod@4.4.3)
       '@types/ws': 8.18.1
       debug: 4.4.3
-      ws: 8.20.0
+      ws: 8.20.1
       zod: 4.4.3
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -2173,13 +2224,13 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@openai/agents@0.9.1(ws@8.20.0)(zod@4.4.3)':
+  '@openai/agents@0.9.1(ws@8.20.1)(zod@4.4.3)':
     dependencies:
-      '@openai/agents-core': 0.9.1(ws@8.20.0)(zod@4.4.3)
-      '@openai/agents-openai': 0.9.1(ws@8.20.0)(zod@4.4.3)
+      '@openai/agents-core': 0.9.1(ws@8.20.1)(zod@4.4.3)
+      '@openai/agents-openai': 0.9.1(ws@8.20.1)(zod@4.4.3)
       '@openai/agents-realtime': 0.9.1(zod@4.4.3)
       debug: 4.4.3
-      openai: 6.36.0(ws@8.20.0)(zod@4.4.3)
+      openai: 6.36.0(ws@8.20.1)(zod@4.4.3)
       zod: 4.4.3
     transitivePeerDependencies:
       - '@cfworker/json-schema'
@@ -2569,7 +2620,7 @@ snapshots:
       '@supabase/phoenix': 0.4.1
       '@types/ws': 8.18.1
       tslib: 2.8.1
-      ws: 8.20.0
+      ws: 8.20.1
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -3063,9 +3114,9 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.36.0(ws@8.20.0)(zod@4.4.3):
+  openai@6.36.0(ws@8.20.1)(zod@4.4.3):
     optionalDependencies:
-      ws: 8.20.0
+      ws: 8.20.1
       zod: 4.4.3
 
   p-retry@4.6.2:
@@ -3276,6 +3327,8 @@ snapshots:
     optionalDependencies:
       fsevents: 2.3.3
 
+  tweetnacl@1.0.3: {}
+
   type-is@2.0.1:
     dependencies:
       content-type: 1.0.5
@@ -3298,7 +3351,7 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@8.20.0: {}
+  ws@8.20.1: {}
 
   xml-naming@0.1.0: {}
 

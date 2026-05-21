@@ -48,6 +48,12 @@ function assertPathEntry(source: string, label: string, href?: string): void {
   );
 }
 
+function assertGatewayLocationRequiresAuth(source: string, locationPattern: RegExp): void {
+  const match = source.match(locationPattern);
+  assert.ok(match?.[0], `expected gateway location ${locationPattern} to exist`);
+  assert.match(match[0], /if \(\$dd_gateway_auth_ok = 0\) \{\s*return 401;\s*\}/);
+}
+
 test('rust homepage lists public task paths and protected ops paths', async () => {
   const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
@@ -62,10 +68,6 @@ test('rust homepage lists public task paths and protected ops paths', async () =
     '/api/agents/tasks',
     '/presence-test',
     '/wss-test',
-    '/webrtc/',
-    '/fsws/',
-    '/mdp/',
-    '/des/',
   ]) {
     assertHomeCode(home, path);
   }
@@ -85,6 +87,10 @@ test('rust homepage lists public task paths and protected ops paths', async () =
     '/gleam/',
     '/mcp',
     '/gcs/',
+    '/webrtc/',
+    '/fsws/',
+    '/mdp/',
+    '/des/',
   ]) {
     assertHomeCode(home, path);
   }
@@ -210,8 +216,12 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assertPathEntry(home, '/webrtc/metrics', '/webrtc/metrics');
   assertPathEntry(home, '/webrtc/signal test', '/wss-test?preset=webrtc');
   assert.match(home, /\/webrtc\/signal/);
+  assert.match(home, /target: "Rust WebRTC signaling service", access: SERVER_AUTH/);
   assert.match(home, /Rust WebRTC signaling service/);
   assert.match(home, /Media and data channels stay peer-to-peer/);
+  assert.match(home, /target: "Rust MDP\/POMDP optimizer", access: SERVER_AUTH/);
+  assert.match(home, /target: "Rust discrete event simulator", access: SERVER_AUTH/);
+  assert.match(home, /target: "dd-fsharp-ws-server", access: SERVER_AUTH/);
   assertPathEntry(home, 'POST /scrape', '/scrape');
   assertPathEntry(home, '/scrape/healthz', '/scrape/healthz');
   assert.match(home, /Playwright, Puppeteer, and Browserless scraping/);
@@ -411,6 +421,23 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /location\s+\/mcp\/[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\//,
   );
+  for (const blockPattern of [
+    /location = \/fsws[\s\S]*?\n      \}/,
+    /location \/fsws\/[\s\S]*?\n      \}/,
+    /location = \/gcs[\s\S]*?\n      \}/,
+    /location = \/gcs\/health[\s\S]*?\n      \}/,
+    /location = \/gcs\/ws-health[\s\S]*?\n      \}/,
+    /location \/gcs\/api\/[\s\S]*?\n      \}/,
+    /location \/gcs\/ws\/[\s\S]*?\n      \}/,
+    /location = \/webrtc[\s\S]*?\n      \}/,
+    /location \/webrtc\/[\s\S]*?\n      \}/,
+    /location = \/mdp[\s\S]*?\n      \}/,
+    /location \/mdp\/[\s\S]*?\n      \}/,
+    /location = \/des[\s\S]*?\n      \}/,
+    /location \/des\/[\s\S]*?\n      \}/,
+  ]) {
+    assertGatewayLocationRequiresAuth(gateway, blockPattern);
+  }
   assert.match(gateway, /location = \/webrtc[\s\S]*return 302 \/webrtc\//);
   assert.match(
     gateway,
@@ -1069,6 +1096,12 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /function flushAgentTextBuffer\(\) \{/);
   assert.match(server, /seqLabel: pending\.firstSeq === pending\.lastSeq \? `seq \$\{pending\.firstSeq\}` : `seq \$\{pending\.firstSeq\}-\$\{pending\.lastSeq\}`/);
   assert.match(server, /for \(const event of data\.events\) renderEventRow\(event\);[\s\S]*flushAgentTextBuffer\(\);/);
+  assert.match(server, /function prettyModelLabel\(provider, model\) \{/);
+  assert.match(server, /return rawModel\.replace\(\/\^gpt-\/i, "chatgpt-"\)/);
+  assert.match(server, /function eventModelLabel\(row\) \{/);
+  assert.match(server, /leftGroup\.className = "event-head-left"/);
+  assert.match(server, /modelChip\.className = "pill model"/);
+  assert.match(server, /leftGroup\.appendChild\(modelChip\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
   assert.match(server, /NATS container pool/);
   assert.match(server, /queueing container-pool task/);
@@ -1083,7 +1116,8 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /function workerRuntimeWaitDetails\(data\) \{/);
   assert.match(server, /runtime phase=\$\{summary\.phase \|\| "unknown"\}/);
   assert.match(server, /node pod-slot limit full/);
-  assert.match(server, /dispatch waiting \$\{elapsed\}s · \$\{runtimeSummary\}/);
+  assert.match(server, /setStatus\(`dispatch waiting \$\{elapsed\}s`\)/);
+  assert.match(server, /message: \[[\s\S]*runtimeSummary,[\s\S]*runtimeDetails,[\s\S]*\]\.filter\(Boolean\)\.join\("\\n"\)/);
   assert.match(server, /workerRuntimeWaitDetails\(state\.lastRuntimeData\)/);
   assert.match(server, /dispatch accepted/);
   assert.match(server, /streamTaskId: null/);
@@ -1429,7 +1463,7 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
   assert.match(dockerfile, /ENV HOME=\/home\/node/);
   assert.match(dockerfile, /WORKSPACE_REPO=\/home\/node\/workspace\/repo/);
   assert.match(dockerfile, /GH_DEPLOY_KEY_PATH=\/home\/node\/\.ssh\/id_ed25519/);
-  assert.match(dockerfile, /git clone --depth 50 --branch "\$DD_REPO_REF"/);
+  assert.match(dockerfile, /git clone --depth 1 --branch "\$DD_REPO_REF"/);
   assert.match(bootstrapDeployment, /image: docker\.io\/library\/dd-dev-server:dev/);
   assert.match(bootstrapDeployment, /EVENT_INGEST_URL[\s\S]*\/api\/agents\/events/);
   assert.match(bootstrapDeployment, /EVENT_INGEST_SECRET[\s\S]*SERVER_AUTH_SECRET/);

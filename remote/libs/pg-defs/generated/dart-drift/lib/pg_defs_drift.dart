@@ -205,6 +205,7 @@ class AgentRemoteDevEventTable extends Table {
 
   Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
   TextColumn get taskId => text().named("task_id").customConstraint("UUID REFERENCES agent_remote_dev_tasks (id)")();
+  TextColumn get threadId => text().named("thread_id").nullable().customConstraint("UUID REFERENCES agent_remote_dev_threads (id)")();
   IntColumn get seq => integer().named("seq")();
   TextColumn get eventKind => text().named("event_kind").withLength(max: 80)();
   TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();

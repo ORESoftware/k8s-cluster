@@ -73,9 +73,17 @@ Gateway path map:
 - `/api/lambdas/functions` -> `dd-remote-rest-api:8082`
 - `/api/db/*` -> `dd-remote-rest-api:8082` (server auth required; generic RDS table access)
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
-- `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` -> `dd-webrtc-signaling:8095`
+- `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` ->
+  `dd-webrtc-signaling:8095` (gateway auth required)
+- `/fsws/`, `/fsws/healthz`, `/fsws/livez`, `/fsws/ws/*` -> `dd-fsharp-ws-server:8087`
+  (gateway auth required)
+- `/gcs/health`, `/gcs/ws-health`, `/gcs/api/*`, `/gcs/ws/*` -> `gcs` / `gcs-router`
+  (gateway auth required)
 - `/des/`, `/des/model/schema`, `/des/model/example`, `POST /des/validate`,
   `POST /des/simulate`, `/des/simulations/<jobId>` -> `dd-des-simulator:8099`
+  (gateway auth required)
+- `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
+  `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
@@ -99,10 +107,13 @@ browser. Do not scale `dd-remote-gateway` above one pod on the current single-no
 deployment; gateway HA needs either multiple nodes with a DaemonSet/load balancer shape or an
 external load balancer in front of multiple gateway instances.
 
-The Node.js worker image is pre-baked as `docker.io/library/dd-dev-server:dev` on the EC2
-containerd node. It already contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
-`remote/deployments/dev-server` server, and a warm `dd-next-1` checkout template. The container runs as the
-built-in `node` user; mounted workspaces live under `/home/node/workspace`.
+The Node.js worker image is built as `docker.io/library/dd-dev-server:dev` on the EC2 containerd
+node. It contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
+`remote/deployments/dev-server` server, and Node transport dependencies for NATS and outbound
+WebSocket fanout. Repo-scoped pool workers receive `DD_REPO_URL`, `BASE_BRANCH`, provider config,
+NATS config, WebSocket fanout config, and Git credentials at runtime; the image may carry a cache
+seed, but a live worker must not depend on a baked repo checkout as its source of truth. The
+container runs as the built-in `node` user; mounted workspaces live under `/home/node/workspace`.
 
 Protected ops paths accept either the legacy `Auth` request header or the browser `dd_auth` cookie.
 Browser document requests redirect to `/auth?return=<original path>`; API/curl callers still
@@ -395,8 +406,9 @@ function definition by UUID, maps the UUID to a reusable worker actor/child proc
 request payload to that process, and exposes child process counters through `/metrics` for
 Prometheus/Grafana.
 
-The runtime also includes `dd-mdp-optimizer`, a Rust MDP/POMDP/RL optimization service. It serves
-`/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`, and `POST /mdp/telemetry/learn`. It
+The runtime also includes `dd-mdp-optimizer`, a Rust MDP/POMDP/RL optimization service. The gateway
+requires operator auth for `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`, and
+`POST /mdp/telemetry/learn`. It
 queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.telemetry.mdp` for app/infra telemetry snapshots, then publishes results to
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.

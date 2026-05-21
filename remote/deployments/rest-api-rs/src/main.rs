@@ -792,12 +792,57 @@ fn task_event_payload(
 }
 
 fn task_event_message_id(task_id: &str, seq: i32, event: &Value) -> String {
+    task_event_message_id_i64(task_id, seq as i64, event)
+}
+
+fn task_event_message_id_i64(task_id: &str, seq: i64, event: &Value) -> String {
     event
         .get("stage")
         .and_then(Value::as_str)
         .filter(|stage| !stage.trim().is_empty())
         .map(|stage| format!("{task_id}:{stage}"))
         .unwrap_or_else(|| format!("{task_id}:event:{seq}"))
+}
+
+fn cdc_column_string(change: &dd_wal_consumer::RowChange, name: &str) -> Option<String> {
+    change
+        .column(name)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn cdc_column_i64(change: &dd_wal_consumer::RowChange, name: &str) -> Option<i64> {
+    change.column(name).and_then(Value::as_i64)
+}
+
+fn task_event_payload_from_agent_event_change(
+    change: &dd_wal_consumer::RowChange,
+) -> Option<Value> {
+    if matches!(change.op, dd_wal_consumer::ChangeOp::Delete) {
+        return None;
+    }
+    let task_id = cdc_column_string(change, "task_id")?;
+    let event = change
+        .column("payload")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({ "kind": "cdc", "source": "wal-gateway" }));
+    let thread_id = cdc_column_string(change, "thread_id").or_else(|| {
+        event
+            .get("threadId")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    })?;
+    let seq = cdc_column_i64(change, "seq").unwrap_or_default();
+    let message_id = task_event_message_id_i64(&task_id, seq, &event);
+    Some(task_event_payload(
+        &thread_id,
+        &task_id,
+        seq,
+        &message_id,
+        &event,
+    ))
 }
 
 async fn post_task_event_to_websocket_fanout(
@@ -931,6 +976,7 @@ async fn publish_thread_runtime_event_to_nats(
 }
 
 async fn persist_task_status_event(
+    thread_id: Option<&str>,
     task_id: &str,
     seq: i32,
     status: &str,
@@ -946,7 +992,7 @@ async fn persist_task_status_event(
     event_object.insert("atMs".to_string(), json!(now_ms()));
     let request = AgentEventIngestRequest {
         task_id: task_id.to_string(),
-        thread_id: None,
+        thread_id: thread_id.map(str::to_string),
         seq,
         event,
     };
@@ -4004,14 +4050,21 @@ async fn persist_agent_event_to_postgres(
         .execute(
             r#"
             insert into agent_remote_dev_events
-              (task_id, seq, event_kind, payload, created_at)
+              (task_id, thread_id, seq, event_kind, payload, created_at)
             values
-              ($1::text::uuid, $2, $3, $4, now())
+              ($1::text::uuid, $2::text::uuid, $3, $4, $5, now())
             on conflict (task_id, seq) do update set
+              thread_id = coalesce(excluded.thread_id, agent_remote_dev_events.thread_id),
               event_kind = excluded.event_kind,
               payload = excluded.payload
             "#,
-            &[&request.task_id, &request.seq, &event_kind, &request.event],
+            &[
+                &request.task_id,
+                &request.thread_id,
+                &request.seq,
+                &event_kind,
+                &request.event,
+            ],
         )
         .await
         .map_err(|error| error.to_string())?;
@@ -4237,6 +4290,22 @@ fn is_container_pool_dispatch_mode(mode: &str) -> bool {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DispatchPath {
+    NatsQueue { container_pool: bool },
+    DirectWorker,
+}
+
+fn dispatch_path_for_mode(mode: &str) -> DispatchPath {
+    if is_queued_dispatch_mode(mode) {
+        DispatchPath::NatsQueue {
+            container_pool: is_container_pool_dispatch_mode(mode),
+        }
+    } else {
+        DispatchPath::DirectWorker
+    }
+}
+
 async fn publish_task_to_nats(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
@@ -4276,6 +4345,7 @@ async fn publish_task_to_nats(
         .await
         .map_err(|error| error.to_string())?;
     let status_event = persist_task_status_event(
+        Some(&request.thread_id),
         &request.task_id,
         -950,
         "nats queued",
@@ -4435,6 +4505,56 @@ async fn run_cdc_fanout_subscriptions() {
                 nats_git_repos_changes_subject()
             ),
             Err(error) => eprintln!("rest-api cdc git-repo subscription failed to start: {error}"),
+        }
+    }
+
+    // agent_remote_dev_events → dd.remote.events
+    //
+    // This is the WAL-derived catch-net for runtime task status. The normal
+    // ingest path still direct-fans out to the websocket services for latency,
+    // but any event committed to Postgres is also replayed through the same
+    // NATS subject consumed by the Gleam and Rust websocket fanout paths.
+    {
+        let nats_for_handler = nats.clone();
+        let durable = "dd-remote-rest-api-agent-events".to_string();
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream.clone())
+            .durable_name(durable.clone())
+            .filter_subject("cdc.public.agent_remote_dev_events.>")
+            .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
+                let nats = nats_for_handler.clone();
+                async move {
+                    let Some(payload) = task_event_payload_from_agent_event_change(&change) else {
+                        if !matches!(change.op, dd_wal_consumer::ChangeOp::Delete) {
+                            eprintln!(
+                                "cdc agent-event fanout skipped malformed row: lsn={}",
+                                change.lsn
+                            );
+                        }
+                        return;
+                    };
+                    let bytes = match serde_json::to_vec(&payload) {
+                        Ok(b) => b,
+                        Err(error) => {
+                            eprintln!("cdc agent-event fanout encode failed: {error}");
+                            return;
+                        }
+                    };
+                    if let Err(error) = nats.publish(nats_event_subject(), bytes.into()).await {
+                        eprintln!("cdc agent-event fanout publish failed: {error}");
+                    }
+                }
+            })
+            .await;
+        match result {
+            Ok(_) => println!(
+                "rest-api cdc subscription started: durable={durable} \
+                 subject=cdc.public.agent_remote_dev_events.> -> {}",
+                nats_event_subject()
+            ),
+            Err(error) => {
+                eprintln!("rest-api cdc agent-event subscription failed to start: {error}")
+            }
         }
     }
 }
@@ -5100,8 +5220,11 @@ async fn dispatch_thread_task(
     }
 
     let dispatch_mode = dispatch_mode_value(&request);
-    let queued_dispatch = is_queued_dispatch_mode(&dispatch_mode);
-    let container_pool_dispatch = is_container_pool_dispatch_mode(&dispatch_mode);
+    let dispatch_path = dispatch_path_for_mode(&dispatch_mode);
+    let (queued_dispatch, container_pool_dispatch) = match dispatch_path {
+        DispatchPath::NatsQueue { container_pool } => (true, container_pool),
+        DispatchPath::DirectWorker => (false, false),
+    };
     remember_runtime_task(&request, None);
     if let Err(error) = persist_runtime_task_to_postgres(
         &request,
@@ -5114,6 +5237,7 @@ async fn dispatch_thread_task(
     }
     if queued_dispatch {
         match persist_task_status_event(
+            Some(&thread_id),
             &request.task_id,
             -980,
             "queued dispatch accepted",
@@ -5145,6 +5269,7 @@ async fn dispatch_thread_task(
             Err(error) => {
                 eprintln!("failed to publish queued remote task to nats: {error}");
                 match persist_task_status_event(
+                    Some(&thread_id),
                     &request.task_id,
                     -940,
                     "nats publish failed",
@@ -5704,5 +5829,132 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod cdc_tests {
+    use super::*;
+
+    #[test]
+    fn agent_event_cdc_row_builds_websocket_task_event() {
+        let thread_id = "11111111-1111-1111-1111-111111111111";
+        let task_id = "22222222-2222-2222-2222-222222222222";
+        let change = dd_wal_consumer::RowChange {
+            schema_version: dd_wal_consumer::SCHEMA_VERSION.to_string(),
+            schema: "public".to_string(),
+            table: "agent_remote_dev_events".to_string(),
+            op: dd_wal_consumer::ChangeOp::Insert,
+            lsn: "0/1A3B5C0".to_string(),
+            xid: Some(123),
+            ts_ms: 1_736_000_000_000,
+            source_timestamp: None,
+            primary_key: vec!["id".to_string()],
+            row: json!({
+                "id": 42,
+                "task_id": task_id,
+                "thread_id": thread_id,
+                "seq": 7,
+                "event_kind": "status",
+                "payload": {
+                    "kind": "status",
+                    "stage": "worker-ready",
+                    "message": "ready"
+                }
+            }),
+            previous_row: None,
+        };
+
+        let payload =
+            task_event_payload_from_agent_event_change(&change).expect("payload from cdc row");
+
+        assert_eq!(
+            payload.get("type").and_then(Value::as_str),
+            Some("task-event")
+        );
+        assert_eq!(
+            payload.get("threadId").and_then(Value::as_str),
+            Some(thread_id)
+        );
+        assert_eq!(payload.get("taskId").and_then(Value::as_str), Some(task_id));
+        assert_eq!(payload.get("seq").and_then(Value::as_i64), Some(7));
+        assert_eq!(
+            payload.get("messageId").and_then(Value::as_str),
+            Some("22222222-2222-2222-2222-222222222222:worker-ready")
+        );
+        assert_eq!(
+            payload
+                .get("event")
+                .and_then(|event| event.get("stage"))
+                .and_then(Value::as_str),
+            Some("worker-ready")
+        );
+    }
+
+    #[test]
+    fn agent_event_cdc_delete_is_not_fanned_out() {
+        let change = dd_wal_consumer::RowChange {
+            schema_version: dd_wal_consumer::SCHEMA_VERSION.to_string(),
+            schema: "public".to_string(),
+            table: "agent_remote_dev_events".to_string(),
+            op: dd_wal_consumer::ChangeOp::Delete,
+            lsn: "0/1A3B5C1".to_string(),
+            xid: Some(124),
+            ts_ms: 1_736_000_000_001,
+            source_timestamp: None,
+            primary_key: vec!["id".to_string()],
+            row: json!({
+                "id": 42,
+                "task_id": "22222222-2222-2222-2222-222222222222",
+                "thread_id": "11111111-1111-1111-1111-111111111111",
+                "seq": 7,
+                "payload": { "kind": "status" }
+            }),
+            previous_row: None,
+        };
+
+        assert!(task_event_payload_from_agent_event_change(&change).is_none());
+    }
+}
+
+#[cfg(test)]
+mod dispatch_path_tests {
+    use super::*;
+
+    #[test]
+    fn queued_modes_resolve_to_nats_queue_only() {
+        for mode in [
+            "queued",
+            "nats",
+            "async",
+            "queued-pool",
+            "nats-pool",
+            "container-pool",
+            "pool",
+        ] {
+            assert!(matches!(
+                dispatch_path_for_mode(mode),
+                DispatchPath::NatsQueue { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn container_pool_modes_are_still_nats_queue_modes() {
+        for mode in ["queued-pool", "nats-pool", "container-pool", "pool"] {
+            assert_eq!(
+                dispatch_path_for_mode(mode),
+                DispatchPath::NatsQueue {
+                    container_pool: true
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn direct_modes_skip_the_nats_queue_path() {
+        for mode in ["direct", "worker", "sync"] {
+            assert_eq!(dispatch_path_for_mode(mode), DispatchPath::DirectWorker);
+        }
     }
 }

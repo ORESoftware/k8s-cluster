@@ -90,9 +90,12 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /DD_REMOTE_TASKS/);
   assert.match(consumer, /QUEUE_CONSUMER_RECEIPTS_DIR/);
   assert.match(consumer, /CONTAINER_POOL_BASE_URL/);
+  assert.match(consumer, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH/);
+  assert.match(consumer, /fn env_bool/);
   assert.match(consumer, /dispatch_to_container_pool/);
+  assert.match(consumer, /dispatch_to_rest_api/);
   assert.match(consumer, /repo_pool_slug/);
-  assert.match(consumer, /nodejs-chat-openai-/);
+  assert.match(consumer, /nodejs-chat-claude-/);
   assert.match(consumer, /"affinityKey": &task\.thread_id/);
   assert.match(consumer, /HashSet/);
   assert.match(consumer, /has_task_receipt/);
@@ -112,6 +115,12 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /let pool = task[\s\S]*repo_pool_slug\(repo, task\.base_branch\.as_deref\(\)\.unwrap_or\("dev"\)\)/);
   assert.match(consumer, /match dispatch_to_container_pool\(&http, &container_pool_url, &secret, &task\)\.await/);
   assert.match(consumer, /container-pool-failed/);
+  assert.match(consumer, /rest-fallback-dispatch/);
+  assert.match(consumer, /prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await\?/);
+  assert.match(consumer, /dispatch_to_rest_api\(&http, &rest_api_url, &secret, &task\)\.await/);
+  assert.match(consumer, /"dispatchMode": "direct"/);
+  assert.match(consumer, /rest-fallback-accepted/);
+  assert.match(consumer, /rest-fallback-failed/);
   assert.match(consumer, /"affinityKey": &task\.thread_id/);
   assert.match(consumer, /queue-handoff-ok/);
   assert.match(consumer, /queue-acked/);
@@ -123,6 +132,7 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(deployment, /NATS_TASK_ACK_WAIT_SECONDS[\s\S]*'600'/);
   assert.match(deployment, /NATS_TASK_NAK_DELAY_SECONDS[\s\S]*'15'/);
   assert.match(deployment, /QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS[\s\S]*value:\s*'420'/);
+  assert.match(deployment, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH[\s\S]*value:\s*'true'/);
   assert.match(deployment, /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/);
   assert.match(
     deployment,

@@ -412,6 +412,7 @@ const AgentRemoteDevEventTable = "agent_remote_dev_events"
 const AgentRemoteDevEventSelectSQL = `select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload,
@@ -421,6 +422,7 @@ const AgentRemoteDevEventSelectSQL = `select
 type AgentRemoteDevEventGorm struct {
 	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
 	TaskId uuid.UUID `gorm:"column:task_id;type:uuid;not null" json:"taskId"`
+	ThreadId *uuid.UUID `gorm:"column:thread_id;type:uuid" json:"threadId,omitempty"`
 	Seq int32 `gorm:"column:seq;type:integer;not null" json:"seq"`
 	EventKind string `gorm:"column:event_kind;type:varchar(80);not null" json:"eventKind"`
 	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`

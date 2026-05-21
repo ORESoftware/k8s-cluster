@@ -90,6 +90,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/webhooks/coinbase", post(webhooks::coinbase))
         .route("/v1/webhooks/plaid", post(webhooks::plaid))
         .route("/v1/webhooks/coinflow", post(webhooks::coinflow))
+        .route("/v1/webhooks/revolut", post(webhooks::revolut))
+        .route("/v1/webhooks/gocardless", post(webhooks::gocardless))
+        .route("/v1/webhooks/mercury", post(webhooks::mercury))
+        .route("/v1/webhooks/bridge", post(webhooks::bridge))
         // Public verification (no auth required — that's the point)
         .route(
             "/v1/verify/tenants/{tenant_id}/postings/{id}",

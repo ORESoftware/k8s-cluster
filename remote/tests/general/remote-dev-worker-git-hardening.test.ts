@@ -57,10 +57,12 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     /async function installWorkspaceDependencies\(workspacePath: string\): Promise<\{\s*ok: boolean;\s*error\?: string;\s*\}>\s*\{/,
   );
   assert.match(server, /\['ls-remote', '--heads', 'origin', branch\]/);
-  assert.match(server, /\['fetch', '--quiet', 'origin', config\.baseBranch\]/);
-  assert.match(server, /\['fetch', '--quiet', 'origin', session\.branch\]/);
-  assert.match(server, /let switchSource = `origin\/\$\{config\.baseBranch\}`/);
-  assert.match(server, /switchSource = 'FETCH_HEAD'/);
+  assert.match(server, /async function fetchRemoteBranch\(workspacePath: string, branch: string, depth = 1\): Promise<void>/);
+  assert.match(server, /'--prune'[\s\S]*`--depth=\$\{depth\}`[\s\S]*`\+refs\/heads\/\$\{branch\}:refs\/remotes\/origin\/\$\{branch\}`/);
+  assert.match(server, /await fetchRemoteBranch\(config\.workspaceRepo, config\.baseBranch, 1\)/);
+  assert.match(server, /await fetchRemoteBranch\(config\.workspaceRepo, session\.branch, 1\)/);
+  assert.match(server, /const hasRemoteBranch = await remoteBranchExists\(session\.branch\)/);
+  assert.match(server, /const switchSource = hasRemoteBranch \? `origin\/\$\{session\.branch\}` : `origin\/\$\{config\.baseBranch\}`/);
   assert.match(server, /'switch',[\s\S]*'--discard-changes',[\s\S]*'-C',[\s\S]*session\.branch,/);
   assert.match(server, /'switch',[\s\S]*session\.branch,[\s\S]*switchSource/);
   assert.match(server, /\['merge', '--no-edit', `origin\/\$\{config\.baseBranch\}`\]/);
@@ -122,7 +124,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*'generic-ai-sdk'[\s\S]*'gemini-sdk'/);
   assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
   assert.match(server, /titleHint\?\.trim\(\) \|\| promptHint\?\.trim\(\) \|\| sessionId/);
-  assert.match(server, /return `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
+  assert.match(server, /const branch = `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
+  assert.match(server, /assertSafeGitBranchName\(branch, 'session branch'\)/);
+  assert.match(server, /return branch/);
   assert.match(server, /function isPlaceholderSessionBranch\(sessionId: string, branch: string\): boolean/);
   assert.match(server, /existing\.taskIds\.size === 0[\s\S]*isPlaceholderSessionBranch\(sessionId, existing\.branch\)/);
   assert.match(server, /prompt,\s*\}\);/);
@@ -366,7 +370,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     /PNPM_STORE_DIR=\/home\/node\/repo-template\/\.pnpm-store pnpm install --frozen-lockfile/,
   );
   assert.match(dockerfile, /ENV HOME=\/home\/node \\\s+USER=node/);
-  assert.match(dockerfile, /git clone --depth 50 --branch "\$DD_REPO_REF" "\$DD_REPO_URL" repo-template/);
+  assert.match(dockerfile, /git clone --depth 1 --branch "\$DD_REPO_REF" "\$DD_REPO_URL" repo-template/);
   assert.match(dockerfile, /WORKSPACE_REPO=\/home\/node\/workspace\/repo/);
   assert.doesNotMatch(dockerfile, /workspace\/repo-template/);
   assert.match(entrypoint, /TEMPLATE_DIR="\$\{REPO_TEMPLATE_DIR:-\/home\/node\/repo-template\}"/);
@@ -374,19 +378,21 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(entrypoint, /DD_REPO_URL is required/);
   assert.match(entrypoint, /github_https_to_ssh\(\)/);
   assert.match(entrypoint, /GIT_REPO_URL="\$\(github_https_to_ssh "\$REPO_URL"\)"/);
-  assert.match(entrypoint, /git clone --depth 50 --branch "\$BASE_BRANCH" "\$GIT_REPO_URL" "\$REPO_DIR"/);
+  assert.match(entrypoint, /git clone --depth 1 --branch "\$BASE_BRANCH" "\$GIT_REPO_URL" "\$REPO_DIR"/);
   assert.match(entrypoint, /git remote set-url origin "\$GIT_REPO_URL"/);
+  assert.match(entrypoint, /git fetch --quiet --depth=1 origin "\+refs\/heads\/\$BASE_BRANCH:refs\/remotes\/origin\/\$BASE_BRANCH"/);
   assert.match(entrypoint, /if \[\[ ! -d "\$REPO_DIR\/\.git" && -d "\$TEMPLATE_DIR\/\.git" \]\]; then/);
   assert.match(entrypoint, /cp -a "\$TEMPLATE_DIR\/\." "\$REPO_DIR\/"/);
-  assert.match(entrypoint, /==> git fetch \+ switch starting/);
+  assert.match(entrypoint, /==> git fetch starting/);
   assert.doesNotMatch(entrypoint, /GIT_READY_PID/);
 
-  assert.match(readme, /git fetch origin <BASE_BRANCH>/);
-  assert.match(readme, /switch from it;[\s\S]*otherwise create from `origin\/<BASE_BRANCH>`/);
-  assert.match(readme, /brand-new thread start from fresh `origin\/<BASE_BRANCH>`/);
+  assert.match(readme, /git clone --depth=1 --branch <BASE_BRANCH>/);
+  assert.match(readme, /Warm boots only refresh `origin\/<BASE_BRANCH>` with a depth-1 fetch/);
+  assert.match(readme, /switch from it;[\s\S]*otherwise create the feature branch from[\s\S]*`origin\/<BASE_BRANCH>`/);
+  assert.match(readme, /If a reused workspace is still on the parent branch, the worker fails[\s\S]*closed/);
   assert.match(
     readme,
-    /pnpm install --ignore-workspace --frozen-lockfile[\s\S]*standalone package instead of the root workspace/,
+    /Install repo dependencies only after the feature branch is prepared/,
   );
   assert.match(readme, /Before the first build you need a `pnpm-lock\.yaml`/);
   assert.match(readme, /cluster-mcp\.ts/);

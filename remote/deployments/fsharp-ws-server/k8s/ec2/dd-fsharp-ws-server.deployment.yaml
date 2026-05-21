@@ -127,10 +127,11 @@ spec:
             #       name: fsws-pg
             #       key: url
             #
-            # When PG is enabled all three PG paths (LISTEN/NOTIFY, WAL via
-            # pg_logical_slot_get_changes, and the outbox tail) come online
-            # automatically — see remote/deployments/fsharp-ws-server/sql/schema.sql for
-            # what the boot-time migrator provisions.
+            # When PG is enabled, LISTEN/NOTIFY and the SQL outbox come
+            # online. The direct per-pod WAL slot stays off unless
+            # FSWS_WAL_ENABLED=true because every live slot retains WAL.
+            - name: FSWS_WAL_ENABLED
+              value: 'false'
             - name: FSWS_WAL_POLL_MS
               value: '250'
             - name: FSWS_OUTBOX_POLL_MS

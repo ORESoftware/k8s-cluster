@@ -160,7 +160,7 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
     /SRC_ROOT=\/opt\/dd-next-1[\s\S]*WORK_ROOT=\/tmp\/dd-gleam-mcp-server\/dd-next-1[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\.[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*exec gleam run/,
   );
   assert.doesNotMatch(ec2Deployment, /apk add/);
-  assert.doesNotMatch(ec2Deployment, /gleam deps download/);
+  assert.doesNotMatch(ec2Deployment, /^\s*gleam deps download\s*$/m);
   assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
   assert.match(ec2Deployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
@@ -208,6 +208,11 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2NetworkPolicy, /kind:\s*NetworkPolicy/);
   assert.match(ec2NetworkPolicy, /app:\s*dd-gleam-mcp-server/);
   assert.match(ec2NetworkPolicy, /app:\s*dd-remote-gateway/);
+  assert.match(ec2NetworkPolicy, /app:\s*dd-dev-server-api/);
+  assert.match(
+    ec2NetworkPolicy,
+    /app\.kubernetes\.io\/part-of:\s*dd-remote-dev[\s\S]*app\.kubernetes\.io\/component:\s*thread-pod/,
+  );
   assert.match(ec2NetworkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
   assert.match(ec2NetworkPolicy, /kubernetes\.io\/metadata\.name:\s*messaging/);
   assert.match(ec2NetworkPolicy, /app:\s*dd-nats/);
@@ -251,6 +256,11 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(minikubeNetworkPolicy, /namespace:\s*dd-dev-local/);
   assert.match(minikubeNetworkPolicy, /kubernetes\.io\/metadata\.name:\s*observability/);
   assert.match(minikubeNetworkPolicy, /kubernetes\.io\/metadata\.name:\s*messaging/);
+  assert.match(minikubeNetworkPolicy, /app:\s*dd-dev-server-api/);
+  assert.match(
+    minikubeNetworkPolicy,
+    /app\.kubernetes\.io\/part-of:\s*dd-remote-dev[\s\S]*app\.kubernetes\.io\/component:\s*thread-pod/,
+  );
   assert.match(minikubeNetworkPolicy, /port:\s*7777/);
   assert.match(minikubeNetworkPolicy, /port:\s*8222/);
   assert.match(minikubeNetworkPolicy, /port:\s*443/);
