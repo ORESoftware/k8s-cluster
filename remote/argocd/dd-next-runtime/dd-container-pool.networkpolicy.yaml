@@ -44,6 +44,13 @@ spec:
         - protocol: TCP
           port: 4222
     - to:
+        - podSelector:
+            matchLabels:
+              app: dd-redis-cache
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
         - ipBlock:
             cidr: 10.0.0.0/8
         - ipBlock:

@@ -32,6 +32,9 @@ const DEFAULT_PORT: u16 = 8102;
 const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 2 * 1024 * 1024;
 const MAX_WORKER_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const DEFAULT_REDIS_LOCK_PREFIX: &str = "dd:container-pool:affinity";
+
+static LOCK_TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 struct AppState {
@@ -39,6 +42,7 @@ struct AppState {
     registry: Arc<Mutex<PoolRegistry>>,
     http: reqwest::Client,
     nats: Option<async_nats::Client>,
+    redis_locks: Option<RedisLockManager>,
     metrics: Arc<Metrics>,
 }
 
@@ -55,6 +59,12 @@ struct ServiceConfig {
     nats_subject: String,
     nats_result_subject: String,
     nats_max_payload_bytes: usize,
+    redis_url: Option<String>,
+    redis_lock_prefix: String,
+    redis_lock_ttl: Duration,
+    redis_lock_wait_timeout: Duration,
+    redis_lock_retry_delay: Duration,
+    redis_lock_request_timeout: Duration,
     worker_response_max_bytes: usize,
     config_refresh: Duration,
     reconcile_interval: Duration,
@@ -236,6 +246,217 @@ struct ContainerLease {
     container: WarmContainer,
 }
 
+#[derive(Clone)]
+struct RedisLockManager {
+    client: redis::Client,
+    key_prefix: String,
+    ttl: Duration,
+    wait_timeout: Duration,
+    retry_delay: Duration,
+    request_timeout: Duration,
+}
+
+struct RedisLockGuard {
+    manager: RedisLockManager,
+    key: String,
+    token: String,
+}
+
+impl RedisLockManager {
+    fn new(
+        redis_url: &str,
+        key_prefix: String,
+        ttl: Duration,
+        wait_timeout: Duration,
+        retry_delay: Duration,
+        request_timeout: Duration,
+    ) -> Result<Self, String> {
+        let client = redis::Client::open(redis_url)
+            .map_err(|error| format!("invalid container pool redis url: {error}"))?;
+        Ok(Self {
+            client,
+            key_prefix: key_prefix.trim_matches(':').to_string(),
+            ttl,
+            wait_timeout,
+            retry_delay,
+            request_timeout,
+        })
+    }
+
+    fn lock_key(&self, suffix: &str) -> String {
+        format!("{}:{suffix}", self.key_prefix)
+    }
+
+    async fn acquire(&self, suffix: &str) -> Result<RedisLockGuard, String> {
+        let key = self.lock_key(suffix);
+        let token = next_lock_token();
+        let started = tokio::time::Instant::now();
+        let mut last_error = None::<String>;
+        loop {
+            match self.try_acquire(&key, &token).await {
+                Ok(true) => {
+                    return Ok(RedisLockGuard {
+                        manager: self.clone(),
+                        key,
+                        token,
+                    });
+                }
+                Ok(false) => {}
+                Err(error) => last_error = Some(error),
+            }
+            if started.elapsed() >= self.wait_timeout {
+                let waited_ms = duration_millis_u64(started.elapsed());
+                let detail = last_error
+                    .map(|error| format!("; last redis error: {error}"))
+                    .unwrap_or_default();
+                return Err(format!(
+                    "timed out after {waited_ms}ms waiting for container affinity lock {key}{detail}"
+                ));
+            }
+            sleep(self.retry_delay).await;
+        }
+    }
+
+    async fn try_acquire(&self, key: &str, token: &str) -> Result<bool, String> {
+        let mut connection = timeout(
+            self.request_timeout,
+            self.client.get_multiplexed_async_connection(),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis connection timed out after {}ms",
+                duration_millis_u64(self.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let ttl_ms = duration_millis_u64(self.ttl).max(1);
+        let response: Option<String> = timeout(
+            self.request_timeout,
+            redis::cmd("SET")
+                .arg(key)
+                .arg(token)
+                .arg("NX")
+                .arg("PX")
+                .arg(ttl_ms)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis SET NX timed out after {}ms",
+                duration_millis_u64(self.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        Ok(response
+            .as_deref()
+            .is_some_and(|value| value.eq_ignore_ascii_case("OK")))
+    }
+}
+
+impl RedisLockGuard {
+    async fn release(self) -> Result<bool, String> {
+        let mut connection = timeout(
+            self.manager.request_timeout,
+            self.manager.client.get_multiplexed_async_connection(),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis connection timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let _: String = timeout(
+            self.manager.request_timeout,
+            redis::cmd("WATCH")
+                .arg(&self.key)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis WATCH timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let current: Option<String> = timeout(
+            self.manager.request_timeout,
+            redis::cmd("GET")
+                .arg(&self.key)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis GET timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        if current.as_deref() != Some(self.token.as_str()) {
+            let _: String = timeout(
+                self.manager.request_timeout,
+                redis::cmd("UNWATCH").query_async(&mut connection),
+            )
+            .await
+            .map_err(|_| {
+                format!(
+                    "redis UNWATCH timed out after {}ms",
+                    duration_millis_u64(self.manager.request_timeout)
+                )
+            })?
+            .map_err(|error| error.to_string())?;
+            return Ok(false);
+        }
+        let _: String = timeout(
+            self.manager.request_timeout,
+            redis::cmd("MULTI").query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis MULTI timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let _: String = timeout(
+            self.manager.request_timeout,
+            redis::cmd("DEL")
+                .arg(&self.key)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis DEL timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let deleted: Option<Vec<i64>> = timeout(
+            self.manager.request_timeout,
+            redis::cmd("EXEC").query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis EXEC timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        Ok(deleted
+            .and_then(|values| values.first().copied())
+            .unwrap_or_default()
+            > 0)
+    }
+}
+
 fn first_env(keys: &[&str]) -> Option<String> {
     keys.iter().find_map(|key| {
         env::var(key)
@@ -288,6 +509,11 @@ fn now_ms() -> u128 {
         .as_millis()
 }
 
+fn next_lock_token() -> String {
+    let seq = LOCK_TOKEN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{SERVICE_NAME}:{}:{}:{seq}", std::process::id(), now_ms())
+}
+
 fn service_config_from_env() -> ServiceConfig {
     let port_start = env_u16("CONTAINER_POOL_PORT_START", 12_000);
     let port_end = env_u16("CONTAINER_POOL_PORT_END", 12_999).max(port_start);
@@ -328,6 +554,24 @@ fn service_config_from_env() -> ServiceConfig {
             MAX_NATS_PAYLOAD_BYTES,
         )
         .min(16 * 1024 * 1024),
+        redis_url: first_env(&["CONTAINER_POOL_REDIS_URL", "REDIS_URL"]),
+        redis_lock_prefix: env_value(
+            "CONTAINER_POOL_REDIS_LOCK_PREFIX",
+            DEFAULT_REDIS_LOCK_PREFIX,
+        ),
+        redis_lock_ttl: Duration::from_secs(env_u64("CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS", 600)),
+        redis_lock_wait_timeout: Duration::from_secs(env_u64(
+            "CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS",
+            420,
+        )),
+        redis_lock_retry_delay: Duration::from_millis(env_u64(
+            "CONTAINER_POOL_REDIS_LOCK_RETRY_MS",
+            250,
+        )),
+        redis_lock_request_timeout: Duration::from_millis(env_u64(
+            "CONTAINER_POOL_REDIS_LOCK_REQUEST_TIMEOUT_MS",
+            800,
+        )),
         worker_response_max_bytes: env_usize(
             "CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES",
             MAX_WORKER_RESPONSE_BYTES,
@@ -1619,6 +1863,28 @@ fn affinity_map_key(pool_id: &str, affinity_key: &str) -> String {
     format!("{pool_id}:{affinity_key}")
 }
 
+async fn acquire_affinity_dispatch_lock(
+    state: &AppState,
+    selector: &str,
+    affinity_key: Option<&str>,
+) -> Result<Option<RedisLockGuard>, String> {
+    let Some(affinity_key) = affinity_key else {
+        return Ok(None);
+    };
+    let Some(redis_locks) = state.redis_locks.as_ref() else {
+        return Ok(None);
+    };
+    let pool_id = {
+        let registry = state.registry.lock().await;
+        pool_id_from_selector(&registry, selector)
+            .ok_or_else(|| format!("unknown container pool: {selector}"))?
+    };
+    redis_locks
+        .acquire(&affinity_map_key(&pool_id, affinity_key))
+        .await
+        .map(Some)
+}
+
 fn remove_affinity_for_container(registry: &mut PoolRegistry, container_name: &str) {
     registry
         .affinity
@@ -1876,8 +2142,34 @@ async fn dispatch_to_pool(
     selector: &str,
     request: DispatchRequest,
 ) -> Result<DispatchResponse, String> {
-    let started = now_ms();
     let affinity_key = normalized_affinity_key(request.affinity_key.as_deref());
+    let lock_guard =
+        match acquire_affinity_dispatch_lock(state, selector, affinity_key.as_deref()).await {
+            Ok(lock_guard) => lock_guard,
+            Err(error) => {
+                state
+                    .metrics
+                    .dispatch_failures_total
+                    .fetch_add(1, Ordering::Relaxed);
+                return Err(error);
+            }
+        };
+    let result = dispatch_to_pool_inner(state, selector, request, affinity_key).await;
+    if let Some(lock_guard) = lock_guard {
+        if let Err(error) = lock_guard.release().await {
+            eprintln!("container pool redis affinity lock release failed: {error}");
+        }
+    }
+    result
+}
+
+async fn dispatch_to_pool_inner(
+    state: &AppState,
+    selector: &str,
+    request: DispatchRequest,
+    affinity_key: Option<String>,
+) -> Result<DispatchResponse, String> {
+    let started = now_ms();
     let lease = lease_container(state, selector, affinity_key.as_deref()).await?;
     let path = match safe_dispatch_path(request.path.as_deref(), &lease.pool.request_path) {
         Ok(path) => path,
@@ -2489,21 +2781,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         },
         None => None,
     };
+    let redis_locks = match config.redis_url.as_deref() {
+        Some(url) => Some(RedisLockManager::new(
+            url,
+            config.redis_lock_prefix.clone(),
+            config.redis_lock_ttl,
+            config.redis_lock_wait_timeout,
+            config.redis_lock_retry_delay,
+            config.redis_lock_request_timeout,
+        )?),
+        None => None,
+    };
     let state = AppState {
         config,
         registry,
         http,
         nats,
+        redis_locks,
         metrics: Arc::new(Metrics::default()),
     };
 
     println!(
-        "{SERVICE_NAME} starting: nerdctl={} namespace={} network={} db_configured={} nats_subject={}",
+        "{SERVICE_NAME} starting: nerdctl={} namespace={} network={} db_configured={} nats_subject={} redis_locks={}",
         state.config.nerdctl_bin,
         state.config.containerd_namespace,
         state.config.network,
         state.config.database_url.is_some(),
-        state.config.nats_subject
+        state.config.nats_subject,
+        state.redis_locks.is_some()
     );
 
     if let Err(error) = cleanup_managed_containers_on_start(&state).await {
@@ -2549,4 +2854,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         })
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redis_affinity_lock_key_uses_normalized_thread_affinity() {
+        let affinity_key = normalized_affinity_key(Some(" thread 1 / bad chars "))
+            .expect("normalized affinity key");
+
+        assert_eq!(affinity_key, "thread-1---bad-chars");
+        assert_eq!(
+            affinity_map_key("nodejs-chat-claude-k8s-cluster-dev", &affinity_key),
+            "nodejs-chat-claude-k8s-cluster-dev:thread-1---bad-chars"
+        );
+    }
 }

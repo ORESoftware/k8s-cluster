@@ -18,6 +18,7 @@ spec:
         dd.dev/telemetry-revision: '2026-05-16-container-pool'
       labels:
         app: dd-container-pool
+        dd.dev/redis-cache-client: 'true'
     spec:
       serviceAccountName: dd-container-pool
       automountServiceAccountToken: false
@@ -52,6 +53,18 @@ spec:
               value: dd.remote.container_pool.results
             - name: CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES
               value: '2097152'
+            - name: CONTAINER_POOL_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/0
+            - name: CONTAINER_POOL_REDIS_LOCK_PREFIX
+              value: dd:container-pool:affinity
+            - name: CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS
+              value: '600'
+            - name: CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS
+              value: '420'
+            - name: CONTAINER_POOL_REDIS_LOCK_RETRY_MS
+              value: '250'
+            - name: CONTAINER_POOL_REDIS_LOCK_REQUEST_TIMEOUT_MS
+              value: '800'
             - name: CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES
               value: '2097152'
             - name: CONTAINER_POOL_NERDCTL_BIN

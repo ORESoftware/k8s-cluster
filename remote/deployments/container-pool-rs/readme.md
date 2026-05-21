@@ -20,6 +20,14 @@ processes. If a singleton pool has one warm worker and that worker is leased, th
 replacement in the background up to `max_warm`. Idle surplus containers are removed after
 `idle_ttl_seconds`.
 
+When a dispatch includes `affinityKey`, the manager can acquire a Redis lock for
+`poolId:affinityKey` before selecting, starting, or posting to the worker. The EC2 deployment wires
+this to `dd-redis-cache` so concurrent task requests for the same thread wait for the first
+container match/startup to finish instead of racing duplicate `nerdctl run` calls. Redis locking is
+enabled by `CONTAINER_POOL_REDIS_URL`; when unset, local development keeps the previous in-process
+behavior. Lock ownership is checked with `WATCH`/`MULTI`/`EXEC` on release because Redis scripts are
+disabled in the shared cache ACL.
+
 Warm workers are health checked on the configured `health_path` (default `/healthz`). The manager
 also verifies the container is still running through `nerdctl inspect`; failed health checks mark the
 container unhealthy, retire it after the configured threshold, and reconcile the pool back to its

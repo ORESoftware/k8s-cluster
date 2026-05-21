@@ -13,6 +13,7 @@ axum = { version = "0.7", features = ["macros"] }
 dd-wal-consumer = { path = "../../libs/wal-consumer-rs" }
 futures-util = "0.3"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
+redis = { version = "=0.27.6", default-features = false, features = ["aio", "tokio-comp"] }
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
 rustls-pemfile = "=2.2.0"
 serde = { version = "1", features = ["derive"] }

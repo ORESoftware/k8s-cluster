@@ -77,6 +77,7 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(cargoToml, /tokio-postgres/);
   assert.match(cargoToml, /rustls-pemfile/);
   assert.match(cargoToml, /reqwest/);
+  assert.match(cargoToml, /redis\s*=/);
   assert.match(source, /const SERVICE_NAME: &str = "dd-container-pool"/);
   assert.match(source, /from app_config/);
   assert.match(source, /CONTAINER_POOL_APP_CONFIG_KEY/);
@@ -90,6 +91,15 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /CONTAINER_POOL_NATS_SUBJECT/);
   assert.match(source, /CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES/);
   assert.match(source, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES/);
+  assert.match(source, /CONTAINER_POOL_REDIS_URL/);
+  assert.match(source, /CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS/);
+  assert.match(source, /CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS/);
+  assert.match(source, /RedisLockManager/);
+  assert.match(source, /redis::cmd\("SET"\)/);
+  assert.match(source, /redis::cmd\("WATCH"\)/);
+  assert.match(source, /redis::cmd\("MULTI"\)/);
+  assert.match(source, /redis::cmd\("EXEC"\)/);
+  assert.match(source, /acquire_affinity_dispatch_lock/);
   assert.match(source, /CONTAINER_POOL_START_TIMEOUT_SECONDS/);
   assert.match(source, /CONTAINER_POOL_CONTAINER_MEMORY/);
   assert.match(source, /CONTAINER_POOL_CONTAINER_CPUS/);
@@ -147,6 +157,8 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.doesNotMatch(source, /\/bin\/bash/);
   assert.match(readme, /reads active pool definitions from Postgres/);
   assert.match(readme, /keeps at least `min_warm` available request slots/);
+  assert.match(readme, /Redis lock for/);
+  assert.match(readme, /WATCH`\/`MULTI`\/`EXEC`/);
   assert.match(readme, /Warm workers are health checked/);
   assert.match(readme, /Worker contract/);
   assert.match(readme, /app_config/);
@@ -312,6 +324,7 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(deployment, /serviceAccountName:\s*dd-container-pool/);
   assert.match(deployment, /hostNetwork:\s*true/);
   assert.match(deployment, /dnsPolicy:\s*ClusterFirstWithHostNet/);
+  assert.match(deployment, /dd\.dev\/redis-cache-client:\s*'true'/);
   assert.match(deployment, /securityContext:\s*\n\s*privileged:\s*true/);
   assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/container-pool-rs/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8102'/);
@@ -330,6 +343,15 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(deployment, /CONTAINER_POOL_PULL_POLICY[\s\S]*value:\s*never/);
   assert.match(deployment, /CONTAINER_POOL_PORT_START[\s\S]*value:\s*'12000'/);
   assert.match(deployment, /CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES[\s\S]*value:\s*'2097152'/);
+  assert.match(
+    deployment,
+    /CONTAINER_POOL_REDIS_URL[\s\S]*redis:\/\/dd-redis-cache\.default\.svc\.cluster\.local:6379\/0/,
+  );
+  assert.match(deployment, /CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS[\s\S]*value:\s*'600'/);
+  assert.match(
+    deployment,
+    /CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS[\s\S]*value:\s*'420'/,
+  );
   assert.match(deployment, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES[\s\S]*value:\s*'2097152'/);
   assert.match(deployment, /CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
   assert.match(deployment, /CONTAINER_POOL_START_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
@@ -360,6 +382,8 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*messaging/);
   assert.match(networkPolicy, /port:\s*4222/);
+  assert.match(networkPolicy, /app:\s*dd-redis-cache/);
+  assert.match(networkPolicy, /port:\s*6379/);
   assert.match(networkPolicy, /port:\s*5432/);
   assert.match(networkPolicy, /port:\s*8102/);
   assert.match(
