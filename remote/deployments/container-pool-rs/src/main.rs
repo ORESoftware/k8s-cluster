@@ -1432,17 +1432,32 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     args.extend(pool.command.clone());
 
     let container_run_timeout = state.config.nerdctl_run_timeout;
+    let scrubbed_args = args
+        .iter()
+        .map(|arg| {
+            if arg.starts_with("GH_DEPLOY_KEY=")
+                || arg.starts_with("SERVER_AUTH_SECRET=")
+                || arg.starts_with("ANTHROPIC_API_KEY=")
+                || arg.starts_with("OPENAI_API_KEY=")
+                || arg.starts_with("CLAUDE_API_KEYS_JSON=")
+                || arg.starts_with("OPENAI_API_KEYS_JSON=")
+                || arg.starts_with("EVENT_INGEST_SECRET=")
+                || arg.starts_with("GH_PAT=")
+                || arg.contains("API_KEY")
+                || arg.contains("SECRET")
+                || arg.contains("DEPLOY_KEY")
+            {
+                let prefix = arg.splitn(2, '=').next().unwrap_or("").to_string();
+                format!("{prefix}=<redacted>")
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>();
     eprintln!(
-        "dd-container-pool starting container {name} (pool {pool_slug}, image {image}): nerdctl args=[-n {ns} run -d --name {name} ... --user {user} --pids-limit {pids} --ulimit nofile={nofile}:{nofile} cap_drop_all={cap_drop_all} no_new_privileges={nnp}]",
+        "dd-container-pool nerdctl run for {name}: {bin} {scrubbed_args:?}",
         name = container.name,
-        pool_slug = pool.slug,
-        image = pool.image,
-        ns = state.config.containerd_namespace,
-        user = pool.user,
-        pids = state.config.pids_limit,
-        nofile = state.config.nofile_limit,
-        cap_drop_all = state.config.cap_drop_all,
-        nnp = state.config.no_new_privileges,
+        bin = state.config.nerdctl_bin,
     );
     match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
         Ok(output) => {
@@ -1580,6 +1595,16 @@ async fn run_command(
         .map_err(|_| format!("{program} timed out after {}s", command_timeout.as_secs()))?
         .map_err(|error| format!("{program} failed to start: {error}"))?;
     if output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_trimmed = stderr.trim();
+        if !stderr_trimmed.is_empty()
+            && args.iter().any(|arg| arg == "run" || arg == "inspect")
+        {
+            eprintln!(
+                "{program} stderr (exit 0, args={args:?}): {}",
+                stderr_trimmed.chars().take(1500).collect::<String>()
+            );
+        }
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }
     let stderr = String::from_utf8_lossy(&output.stderr)
