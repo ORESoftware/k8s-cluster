@@ -9,6 +9,8 @@ on:
       - "remote/deployments/container-pool-rs/**"
       - "remote/deployments/queue-consumer-rs/**"
       - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/host-cron/**"
+      - "remote/deployments/dev-server/src/server.ts"
       - "remote/argocd/dd-next-runtime/**"
   workflow_dispatch:
     inputs:
@@ -399,6 +401,7 @@ jobs:
               "set -euo pipefail",
               f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
               f"bash -lc {shlex.quote(tag_images)}",
+              "sudo bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && ./remote/deployments/host-cron/install.sh'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-secrets.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml'",
