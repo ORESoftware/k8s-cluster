@@ -32,6 +32,9 @@ pub struct Config {
     pub plaid_env: PlaidEnvironment,
     pub coinbase_webhook_secret: Option<String>,
     pub coinflow_webhook_validation_key: Option<String>,
+    pub revolut_webhook_secret: Option<String>,
+    pub gocardless_webhook_secret: Option<String>,
+    pub mercury_webhook_secret: Option<String>,
 
     pub oauth_redirect_base: String,
     pub oauth_return_to_allowed_prefixes: Vec<String>,
@@ -73,7 +76,7 @@ impl Config {
                 .or_else(|_| env::var("DATABASE_URL"))
                 .map_err(|_| anyhow::anyhow!("BILLING_DATABASE_URL or DATABASE_URL must be set"))?,
             run_migrations: env::var("BILLING_RUN_MIGRATIONS")
-                .map(|s| s != "0" && s.to_ascii_lowercase() != "false")
+                .map(|s| s != "0" && !s.eq_ignore_ascii_case("false"))
                 .unwrap_or(true),
 
             master_seal_key_b64: env::var("BILLING_MASTER_SEAL_KEY").map_err(|_| {
@@ -113,6 +116,9 @@ impl Config {
             plaid_env: PlaidEnvironment::from_env("PLAID_ENV"),
             coinbase_webhook_secret: env::var("COINBASE_WEBHOOK_SECRET").ok(),
             coinflow_webhook_validation_key: env::var("COINFLOW_WEBHOOK_VALIDATION_KEY").ok(),
+            revolut_webhook_secret: env::var("REVOLUT_WEBHOOK_SECRET").ok(),
+            gocardless_webhook_secret: env::var("GOCARDLESS_WEBHOOK_SECRET").ok(),
+            mercury_webhook_secret: env::var("MERCURY_WEBHOOK_SECRET").ok(),
 
             oauth_redirect_base: env::var("BILLING_OAUTH_REDIRECT_BASE")
                 .unwrap_or_else(|_| "http://localhost:8087".into()),

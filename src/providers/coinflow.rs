@@ -169,7 +169,7 @@ impl CoinflowApi {
                 message: format!("merchant/webhooks decode: {e}"),
             })?;
 
-        let has_more = parsed.has_more.unwrap_or_else(|| {
+        let has_more = parsed.has_more.unwrap_or({
             matches!(
                 (parsed.page, parsed.total_pages),
                 (Some(p), Some(t)) if p < t
@@ -442,4 +442,26 @@ fn _silence_tz(_: chrono::Utc) -> Option<chrono::Utc> {
 #[allow(dead_code)]
 fn _silence_timezone() {
     let _ = chrono::Utc.timestamp_opt(0, 0).single();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verifies_coinflow_hmac() {
+        let payload = br#"{"id":"evt_1","type":"cardPayment.succeeded"}"#;
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(b"validation_key").unwrap();
+        Mac::update(&mut mac, payload);
+        let sig = hex::encode(Mac::finalize(mac).into_bytes());
+
+        verify_webhook_signature(payload, &format!("v1={sig}"), "validation_key").unwrap();
+    }
+
+    #[test]
+    fn rejects_bad_coinflow_hmac() {
+        let err = verify_webhook_signature(b"{}", "v1=deadbeef", "validation_key").unwrap_err();
+
+        assert!(matches!(err, AppError::Unauthorized));
+    }
 }

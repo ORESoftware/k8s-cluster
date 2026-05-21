@@ -62,7 +62,7 @@ impl<'a> PaypalOAuth<'a> {
             .ok_or_else(|| AppError::BadRequest("PAYPAL_CLIENT_ID not configured".into()))?;
         let redirect = format!("{}/v1/oauth/paypal/callback", self.cfg.oauth_redirect_base);
         let scope = "openid https://uri.paypal.com/services/reporting/search/read";
-        let params = serde_urlencoded::to_string(&[
+        let params = serde_urlencoded::to_string([
             ("flowEntry", "static"),
             ("client_id", client_id.as_str()),
             ("scope", scope),
@@ -92,7 +92,7 @@ impl<'a> PaypalOAuth<'a> {
 
         let url = format!("{}/v1/oauth2/token", self.cfg.paypal_api_base());
         let body =
-            serde_urlencoded::to_string(&[("grant_type", "authorization_code"), ("code", code)])
+            serde_urlencoded::to_string([("grant_type", "authorization_code"), ("code", code)])
                 .map_err(|e| AppError::Provider {
                     provider: "paypal".into(),
                     message: format!("encode form: {e}"),

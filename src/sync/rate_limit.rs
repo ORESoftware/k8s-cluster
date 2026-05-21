@@ -112,6 +112,22 @@ fn provider_budget(provider: ProviderKind) -> ProviderBudget {
             window_seconds: 60,
             request_limit: 240,
         },
+        ProviderKind::Revolut => ProviderBudget {
+            window_seconds: 60,
+            request_limit: 240,
+        },
+        ProviderKind::Mercury | ProviderKind::Bridge | ProviderKind::GoCardless => {
+            ProviderBudget {
+                window_seconds: 60,
+                request_limit: 120,
+            }
+        }
+        ProviderKind::Remitly | ProviderKind::Robinhood => ProviderBudget {
+            // Limited-fit providers shouldn't be hammered; this also caps
+            // accidental polling cost if a future stub is wired up.
+            window_seconds: 60,
+            request_limit: 30,
+        },
     }
 }
 
