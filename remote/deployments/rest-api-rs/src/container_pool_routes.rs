@@ -1236,27 +1236,41 @@ async fn update_build_finished(
     let error_opt: Option<&str> = if error_message.is_empty() { None } else { Some(error_message) };
     let log_owned = truncate_log(log, 60_000);
     let log_ref: &str = log_owned.as_str();
+    // Compute the next overall_status here so each SQL parameter has exactly one
+    // role (otherwise tokio-postgres rejects with "inconsistent types deduced
+    // for parameter $N" when the same placeholder is used as both an assignment
+    // target and a comparison operand).
+    let overall_next: Option<&str> = match phase {
+        "build" if status == "failed" => Some("failed"),
+        "test" if status == "passed" => Some("passed"),
+        "test" if status == "failed" => Some("failed"),
+        _ => None,
+    };
     let sql = match phase {
         "build" => {
             "update container_pool_build_runs set \
-             build_status = $2, build_finished_at = now(), \
-             build_log_excerpt = $3, error_message = coalesce($4, error_message), \
-             overall_status = case when $2 = 'failed' then 'failed' else overall_status end, \
-             updated_at = now() where id = $1::text::uuid"
+             build_status = $2::varchar, \
+             build_finished_at = now(), \
+             build_log_excerpt = $3::text, \
+             error_message = coalesce($4::text, error_message), \
+             overall_status = coalesce($5::varchar, overall_status), \
+             updated_at = now() \
+             where id = $1::text::uuid"
         }
         "test" => {
             "update container_pool_build_runs set \
-             test_status = $2, test_finished_at = now(), \
-             test_log_excerpt = $3, error_message = coalesce($4, error_message), \
-             overall_status = case when $2 = 'passed' then 'passed' \
-                                   when $2 = 'failed' then 'failed' \
-                                   else overall_status end, \
-             updated_at = now() where id = $1::text::uuid"
+             test_status = $2::varchar, \
+             test_finished_at = now(), \
+             test_log_excerpt = $3::text, \
+             error_message = coalesce($4::text, error_message), \
+             overall_status = coalesce($5::varchar, overall_status), \
+             updated_at = now() \
+             where id = $1::text::uuid"
         }
         _ => return Err(format!("unknown phase: {phase}")),
     };
     client
-        .execute(sql, &[&build_id, &status, &log_ref, &error_opt])
+        .execute(sql, &[&build_id, &status, &log_ref, &error_opt, &overall_next])
         .await
         .map_err(|err| err.to_string())?;
     Ok(())
