@@ -487,6 +487,121 @@ create index if not exists lambda_functions_updated_at_idx
 create index if not exists lambda_functions_labels_gin_idx
   on lambda_functions using gin (labels);
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Container-pool image config:
+--
+-- One row per saved Dockerfile revision for each container-pool image (e.g.
+-- the per-runtime warm runtime images and the dd-dev-server worker image).
+-- Operators iterate on Dockerfiles via /container-pool/config in the web UI;
+-- the on-disk Dockerfile in git is the "sane default" (loaded as a synthetic
+-- revision with source='disk-default'), and saves become new rows here.
+-- Each revision is content-addressed by `dockerfile_sha256` so duplicate
+-- saves coalesce into a single row.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists container_pool_image_revisions (
+  id uuid primary key default gen_random_uuid(),
+  image_slug varchar(120) not null,
+  image_ref text not null,
+  dockerfile_path text not null,
+  build_context text not null,
+  dockerfile_text text not null,
+  dockerfile_sha256 char(64) not null,
+  source varchar(32) default 'user' not null,
+  notes text default '' not null,
+  status varchar(32) default 'candidate' not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint container_pool_image_revisions_slug_format_chk
+    check (image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'),
+  constraint container_pool_image_revisions_dockerfile_size_chk
+    check (octet_length(dockerfile_text) between 1 and 65536),
+  constraint container_pool_image_revisions_image_ref_size_chk
+    check (octet_length(image_ref) between 1 and 512),
+  constraint container_pool_image_revisions_path_size_chk
+    check (octet_length(dockerfile_path) between 1 and 512),
+  constraint container_pool_image_revisions_context_size_chk
+    check (octet_length(build_context) between 1 and 512),
+  constraint container_pool_image_revisions_notes_size_chk
+    check (octet_length(notes) <= 8192),
+  constraint container_pool_image_revisions_sha_format_chk
+    check (dockerfile_sha256 ~ '^[0-9a-f]{64}$'),
+  constraint container_pool_image_revisions_status_chk
+    check (status in ('candidate', 'active', 'archived')),
+  constraint container_pool_image_revisions_source_chk
+    check (source in ('disk-default', 'user', 'system')),
+  constraint container_pool_image_revisions_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists container_pool_image_revisions_slug_idx
+  on container_pool_image_revisions (image_slug, created_at desc)
+  where is_soft_deleted = false;
+
+create unique index if not exists container_pool_image_revisions_slug_sha_uq
+  on container_pool_image_revisions (image_slug, dockerfile_sha256)
+  where is_soft_deleted = false;
+
+-- Per-image build + smoke-test runs. `build_status` covers the nerdctl build
+-- step; `test_status` covers the post-build smoke run; `overall_status` is
+-- the rolled-up state surfaced in the UI.
+create table if not exists container_pool_build_runs (
+  id uuid primary key default gen_random_uuid(),
+  image_slug varchar(120) not null,
+  revision_id uuid not null references container_pool_image_revisions(id),
+  image_ref text not null,
+  candidate_tag text not null,
+  build_status varchar(32) default 'queued' not null,
+  test_status varchar(32) default 'not_started' not null,
+  overall_status varchar(32) default 'queued' not null,
+  test_command text default '' not null,
+  build_started_at timestamptz,
+  build_finished_at timestamptz,
+  test_started_at timestamptz,
+  test_finished_at timestamptz,
+  build_log_excerpt text default '' not null,
+  test_log_excerpt text default '' not null,
+  error_message text,
+  triggered_by uuid,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint container_pool_build_runs_slug_format_chk
+    check (image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'),
+  constraint container_pool_build_runs_image_ref_size_chk
+    check (octet_length(image_ref) between 1 and 512),
+  constraint container_pool_build_runs_candidate_tag_size_chk
+    check (octet_length(candidate_tag) between 1 and 512),
+  constraint container_pool_build_runs_test_command_size_chk
+    check (octet_length(test_command) <= 4096),
+  constraint container_pool_build_runs_log_size_chk
+    check (octet_length(build_log_excerpt) <= 65536
+       and octet_length(test_log_excerpt) <= 65536),
+  constraint container_pool_build_runs_error_size_chk
+    check (error_message is null or octet_length(error_message) <= 8192),
+  constraint container_pool_build_runs_build_status_chk
+    check (build_status in ('queued', 'building', 'built', 'failed', 'skipped', 'cancelled')),
+  constraint container_pool_build_runs_test_status_chk
+    check (test_status in ('not_started', 'pending', 'testing', 'passed', 'failed', 'skipped', 'cancelled')),
+  constraint container_pool_build_runs_overall_status_chk
+    check (overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'error')),
+  constraint container_pool_build_runs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists container_pool_build_runs_slug_idx
+  on container_pool_build_runs (image_slug, created_at desc)
+  where is_soft_deleted = false;
+
+create index if not exists container_pool_build_runs_overall_idx
+  on container_pool_build_runs (overall_status)
+  where is_soft_deleted = false;
+
 alter table if exists agent_remote_dev_threads
   add constraint agent_remote_dev_threads_known_git_repo_fk
   foreign key (known_git_repo_id) references known_git_repos(id);
