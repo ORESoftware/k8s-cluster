@@ -85,6 +85,20 @@ spec:
               value: k8s.io
             - name: LAMBDA_ALLOW_HOST_RUNTIMES
               value: nodejs
+            - name: CONTAINER_POOL_IMAGE_BUILDS_ENABLED
+              value: 'true'
+            - name: CONTAINER_POOL_IMAGE_BUILD_ROOT
+              value: /var/lib/dd-container-pool-images
+            - name: CONTAINER_POOL_IMAGE_BUILD_NAMESPACE
+              value: dd-pool
+            - name: CONTAINER_POOL_IMAGE_BUILD_NERDCTL
+              value: /usr/local/bin/nerdctl
+            - name: CONTAINER_POOL_IMAGE_REPO_ROOT
+              value: /opt/dd-next-1
+            - name: CONTAINER_POOL_IMAGE_BUILD_TIMEOUT_SECONDS
+              value: '1200'
+            - name: CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS
+              value: '120'
           envFrom:
             - secretRef:
                 name: dd-agent-secrets
@@ -127,6 +141,8 @@ spec:
               mountPath: /opt/dd-next-1
             - name: lambda-image-builds
               mountPath: /var/lib/dd-lambdas
+            - name: container-pool-image-builds
+              mountPath: /var/lib/dd-container-pool-images
             - name: containerd-sock
               mountPath: /run/containerd/containerd.sock
             - name: containerd-root
@@ -143,6 +159,10 @@ spec:
         - name: lambda-image-builds
           hostPath:
             path: /var/lib/dd-lambdas
+            type: DirectoryOrCreate
+        - name: container-pool-image-builds
+          hostPath:
+            path: /var/lib/dd-container-pool-images
             type: DirectoryOrCreate
         - name: containerd-sock
           hostPath:

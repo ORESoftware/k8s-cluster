@@ -12,6 +12,7 @@ use std::{
 };
 
 mod api_docs;
+mod container_pool_routes;
 mod db_routes;
 mod pg_contract;
 
@@ -5761,6 +5762,7 @@ fn code_first_router() -> Router {
             "/api/agents/threads/:thread_id/terminal",
             post(terminal_thread),
         )
+        .merge(container_pool_routes::router())
 }
 
 fn internal_db_routes_enabled() -> bool {

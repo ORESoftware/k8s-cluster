@@ -38,6 +38,24 @@ also verifies the container is still running through `nerdctl inspect`; failed h
 container unhealthy, retire it after the configured threshold, and reconcile the pool back to its
 available-capacity floor.
 
+## Operator UI: `/container-pool/config`
+
+The web UI at `/container-pool/config` (gateway-gated, same operator cookie as
+`/lambdas/functions`) lists every pool image in the catalog, exposes the on-disk Dockerfile as the
+sane default, lets an operator save edits as new revisions, and runs an isolated `nerdctl build` +
+smoke-test against any revision. Saved revisions and build/test runs are stored in
+`container_pool_image_revisions` and `container_pool_build_runs` (see
+`remote/libs/pg-defs/schema/schema.sql`). Builds run inside the `dd-pool` containerd namespace
+under a candidate tag like `<image>-cpool-test:<sha>` so they never collide with the live
+production tag — promoting a revision into production is a separate, manual step (rebuild the real
+tag via `idle-reaper-rs` or `nerdctl build` on the host once a candidate passes review).
+
+The build/test flow is wired through `dd-remote-rest-api`, which reuses the same
+`/run/containerd/containerd.sock` + `/usr/local/bin/nerdctl` hostPath mounts as the existing lambda
+image builds. Enable the surface with `CONTAINER_POOL_IMAGE_BUILDS_ENABLED=true`; tune limits with
+`CONTAINER_POOL_IMAGE_BUILD_TIMEOUT_SECONDS` (default 1200) and
+`CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS` (default 120).
+
 Protected HTTP routes require `SERVER_AUTH_SECRET` through `X-Server-Auth`,
 `X-Container-Pool-Auth`, or `X-Agent-Auth`. The gateway injects `X-Server-Auth` for
 `/container-pools`.
