@@ -282,9 +282,32 @@ jobs:
           PY
               ;;
             reconcile-runtime)
-              python3 - <<PY > /tmp/remote-k8s-commands.json
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
-          rev = ${TARGET_REVISION@Q}
+          import os
+          import shlex
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          diag = r'''set -euo pipefail
+          echo "=== container-pool /pools snapshot ==="
+          pod="$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath='{.items[0].metadata.name}')"
+          if [ -n "$pod" ]; then
+            kubectl -n default exec "$pod" -- bash -lc 'secret="${SERVER_AUTH_SECRET:-}"; curl -fsS -H "X-Server-Auth: $secret" http://127.0.0.1:8102/pools || true'
+          fi
+          echo "=== managed nerdctl workers ==="
+          sudo nerdctl -n k8s.io ps -a --format "{{.ID}} {{.Status}} {{.Names}}" | grep -E "dd-pool|dd-container-pool" || true
+          echo "=== container-pool recent logs ==="
+          for p in $(kubectl -n default get pods -l app=dd-container-pool -o name); do
+            echo "=== LOGS $p ==="
+            kubectl -n default logs "$p" --all-containers --tail=160 || true
+          done
+          echo "=== queue-consumer recent logs ==="
+          for p in $(kubectl -n default get pods -l app=dd-remote-queue-consumer -o name); do
+            echo "=== LOGS $p ==="
+            kubectl -n default logs "$p" --all-containers --tail=180 || true
+          done
+          echo "=== local images ==="
+          sudo nerdctl -n k8s.io images | grep -E "dd-dev-server|dd-container-pool|nodejs-runtime" || true
+          '''
           commands = [
               "set -euo pipefail",
               f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
@@ -303,16 +326,7 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-fsharp-ws-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-gleam-mcp-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
-              "echo '=== container-pool /pools snapshot ==='",
-              "sudo -u ec2-user -H bash -lc 'pod=\\$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath=\"{.items[0].metadata.name}\"); kubectl -n default exec \"\\$pod\" -- bash -lc '\\''secret=\"\\${SERVER_AUTH_SECRET:-}\"; curl -fsS -H \"X-Server-Auth: \\$secret\" http://127.0.0.1:8102/pools || true'\\'''",
-              "echo '=== managed nerdctl workers ==='",
-              "sudo -u ec2-user -H bash -lc 'sudo nerdctl -n k8s.io ps -a --format \"{{.ID}} {{.Status}} {{.Names}}\" | grep -E \"dd-pool|dd-container-pool\" || true'",
-              "echo '=== container-pool recent logs ==='",
-              "for p in \\$(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-container-pool -o name\" || true); do echo === LOGS \\$p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs \\$p --all-containers --tail=160\" || true; done",
-              "echo '=== queue-consumer recent logs ==='",
-              "for p in \\$(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-remote-queue-consumer -o name\" || true); do echo === LOGS \\$p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs \\$p --all-containers --tail=180\" || true; done",
-              "echo '=== local images ==='",
-              "sudo -u ec2-user -H bash -lc 'sudo nerdctl -n k8s.io images | grep -E \"dd-dev-server|dd-container-pool|nodejs-runtime\" || true'",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(diag)}",
           ]
           print(json.dumps({"commands": commands}))
           PY
