@@ -16,11 +16,14 @@ consumer. Legacy shadow messages still call the REST API's internal prepare endp
 POST /api/agents/threads/:threadId/prepare
 ```
 
-Real `task.dispatch` messages are handed to a repo-scoped warm Node chat/Claude
-container pool first. If the repo pool is missing, unhealthy, or rejects the
-request, the consumer can fall back to the deterministic worker path by calling
-`/prepare` and then posting the same task to REST with `dispatchMode: "direct"`.
-The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_DISPATCH`.
+Real `task.dispatch` messages are routed by the `dispatchMode` fields in the NATS
+payload. Plain `queued`/`nats` messages prepare the deterministic UUID-bound
+worker and then post the task back through REST with `dispatchMode: "direct"`.
+Only `queued-pool`/`container-pool` messages are handed to a repo-scoped warm
+Node chat/Claude container pool first. If that repo pool is missing, unhealthy,
+or rejects the request, the consumer can fall back to the deterministic worker
+path. The fallback is enabled by default through
+`QUEUE_CONSUMER_FALLBACK_REST_DISPATCH`.
 
 ## Environment
 
@@ -54,9 +57,10 @@ and acknowledged only after the queued handoff succeeds.
 ## Thread Affinity
 
 The consumer does not assign coding-agent work to an arbitrary generic worker.
-For queued execution it derives a repo-scoped pool slug from the task repo and
-base branch, for example `nodejs-chat-claude-live-mutex-dev`, then sends the
-task to that pool with `threadId` as the affinity key.
+For plain queued execution it wakes the deterministic worker bound to the thread
+UUID. For container-pool execution it derives a repo-scoped pool slug from the
+task repo and base branch, for example `nodejs-chat-claude-live-mutex-dev`, then
+sends the task to that pool with `threadId` as the affinity key.
 
 The consumer also keeps an in-memory taskId set and writes JSON receipts under
 `QUEUE_CONSUMER_RECEIPTS_DIR`. A duplicate NATS delivery for the same taskId is

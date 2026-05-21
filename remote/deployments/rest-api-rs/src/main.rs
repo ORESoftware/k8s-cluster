@@ -408,6 +408,8 @@ struct NatsTaskMessage {
     task_kind: &'static str,
     shadow: bool,
     direct_dispatch: bool,
+    dispatch_mode: String,
+    container_pool_dispatch: bool,
     thread_id: String,
     task_id: String,
     provider: Option<String>,
@@ -4313,12 +4315,16 @@ async fn publish_task_to_nats(
     shadow: bool,
 ) -> Result<(), String> {
     let repo_config = normalized_repo_config(request)?;
+    let dispatch_mode = dispatch_mode_value(request);
+    let container_pool_dispatch = is_container_pool_dispatch_mode(&dispatch_mode);
     let message = NatsTaskMessage {
         version: 1,
         message_kind,
         task_kind: "agent.prompt",
         shadow,
         direct_dispatch: false,
+        dispatch_mode,
+        container_pool_dispatch,
         thread_id: request.thread_id.clone(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
@@ -4356,6 +4362,8 @@ async fn publish_task_to_nats(
             "messageKind": message_kind,
             "shadow": shadow,
             "directDispatch": false,
+            "dispatchMode": &message.dispatch_mode,
+            "containerPoolDispatch": message.container_pool_dispatch,
             "subject": nats_task_subject(&request.thread_id),
             "wakeupSubject": nats_wakeup_subject(),
         }),

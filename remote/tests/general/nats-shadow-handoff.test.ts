@@ -26,6 +26,8 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
 
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
   assert.match(server, /struct NatsTaskMessage/);
+  assert.match(server, /dispatch_mode: String/);
+  assert.match(server, /container_pool_dispatch: bool/);
   assert.match(server, /fn nats_task_subject/);
   assert.match(server, /dd\.remote\.thread\.\{thread_id\}\.tasks/);
   assert.match(server, /fn nats_task_stream_name/);
@@ -41,8 +43,11 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /publish_task_event_to_nats/);
   assert.match(server, /queued-dispatch-accepted/);
   assert.match(server, /"stage": "nats-published"/);
+  assert.match(server, /"dispatchMode": &message\.dispatch_mode/);
+  assert.match(server, /"containerPoolDispatch": message\.container_pool_dispatch/);
   assert.match(server, /on conflict \(task_id, seq\) do update set/);
   assert.match(server, /publish_task_dispatch_to_nats/);
+  assert.match(server, /container_pool_dispatch/);
   assert.match(server, /publish_task_to_nats\(request, branch, "task\.dispatch", false\)\.await/);
   assert.match(server, /fn default_dispatch_mode/);
   assert.match(server, /REST_API_DEFAULT_DISPATCH_MODE/);
@@ -92,7 +97,11 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /CONTAINER_POOL_BASE_URL/);
   assert.match(consumer, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH/);
   assert.match(consumer, /fn env_bool/);
+  assert.match(consumer, /dispatch_mode: Option<String>/);
+  assert.match(consumer, /container_pool_dispatch: Option<bool>/);
+  assert.match(consumer, /should_dispatch_to_container_pool/);
   assert.match(consumer, /dispatch_to_container_pool/);
+  assert.match(consumer, /dispatch_to_deterministic_worker/);
   assert.match(consumer, /dispatch_to_rest_api/);
   assert.match(consumer, /repo_pool_slug/);
   assert.match(consumer, /nodejs-chat-claude-/);
@@ -110,14 +119,18 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /Synchronous REST dispatch owns worker creation and task execution/);
   assert.match(consumer, /shadow-prepare-failed/);
   assert.match(consumer, /non-executing handoff/);
-  assert.match(consumer, /if direct_dispatch \{[\s\S]*Ok\(\(\)\)[\s\S]*\} else if shadow \{[\s\S]*prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await[\s\S]*\} else \{/);
+  assert.match(consumer, /if direct_dispatch \{[\s\S]*Ok\(\(\)\)[\s\S]*\} else if shadow \{[\s\S]*prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await[\s\S]*\} else if !container_pool_dispatch \{/);
+  assert.match(consumer, /deterministic-worker-dispatch/);
+  assert.match(consumer, /without container-pool/);
+  assert.match(consumer, /deterministic-worker-accepted/);
+  assert.match(consumer, /deterministic-worker-failed/);
   assert.match(consumer, /container-pool-dispatch/);
   assert.match(consumer, /let pool = task[\s\S]*repo_pool_slug\(repo, task\.base_branch\.as_deref\(\)\.unwrap_or\("dev"\)\)/);
   assert.match(consumer, /match dispatch_to_container_pool\(&http, &container_pool_url, &secret, &task\)\.await/);
   assert.match(consumer, /container-pool-failed/);
   assert.match(consumer, /rest-fallback-dispatch/);
-  assert.match(consumer, /prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await\?/);
-  assert.match(consumer, /dispatch_to_rest_api\(&http, &rest_api_url, &secret, &task\)\.await/);
+  assert.match(consumer, /prepare_thread\(http, rest_api_url, secret, &task\.thread_id\)\.await\?/);
+  assert.match(consumer, /dispatch_to_rest_api\(http, rest_api_url, secret, task\)\.await/);
   assert.match(consumer, /"dispatchMode": "direct"/);
   assert.match(consumer, /rest-fallback-accepted/);
   assert.match(consumer, /rest-fallback-failed/);

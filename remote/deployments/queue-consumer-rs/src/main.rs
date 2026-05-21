@@ -26,6 +26,8 @@ struct QueueTaskMessage {
     context_ids: Option<Vec<String>>,
     shadow: Option<bool>,
     direct_dispatch: Option<bool>,
+    dispatch_mode: Option<String>,
+    container_pool_dispatch: Option<bool>,
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -55,7 +57,12 @@ fn env_u64(key: &str, fallback: u64) -> u64 {
 fn env_bool(key: &str, fallback: bool) -> bool {
     env::var(key)
         .ok()
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(fallback)
 }
 
@@ -111,6 +118,23 @@ fn is_shadow_task(task: &QueueTaskMessage) -> bool {
             .message_kind
             .as_deref()
             .is_some_and(|kind| kind == "task.shadow")
+}
+
+fn is_container_pool_dispatch_mode(mode: &str) -> bool {
+    matches!(
+        mode,
+        "queued-pool" | "nats-pool" | "container-pool" | "pool"
+    )
+}
+
+fn should_dispatch_to_container_pool(task: &QueueTaskMessage) -> bool {
+    task.container_pool_dispatch.unwrap_or_else(|| {
+        task.dispatch_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|mode| !mode.is_empty())
+            .is_some_and(is_container_pool_dispatch_mode)
+    })
 }
 
 fn now_ms() -> u128 {
@@ -389,6 +413,16 @@ async fn dispatch_to_rest_api(
     .into())
 }
 
+async fn dispatch_to_deterministic_worker(
+    http: &reqwest::Client,
+    rest_api_url: &str,
+    secret: &str,
+    task: &QueueTaskMessage,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    prepare_thread(http, rest_api_url, secret, &task.thread_id).await?;
+    dispatch_to_rest_api(http, rest_api_url, secret, task).await
+}
+
 async fn build_jetstream_consumer(
     client: async_nats::Client,
     stream_name: &str,
@@ -529,6 +563,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .await;
         let direct_dispatch = task.direct_dispatch.unwrap_or(false);
+        let container_pool_dispatch = should_dispatch_to_container_pool(&task);
         let result = if direct_dispatch {
             emit_queue_status_event(
                 &http,
@@ -559,6 +594,54 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             )
             .await;
             prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
+        } else if !container_pool_dispatch {
+            emit_queue_status_event(
+                &http,
+                &nats_client,
+                &rest_api_url,
+                &secret,
+                &task,
+                -930,
+                "deterministic-worker-dispatch",
+                "dispatching to deterministic worker",
+                "Queued NATS mode is preparing the UUID-bound thread worker and dispatching through REST, without container-pool.",
+                json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false }),
+            )
+            .await;
+            match dispatch_to_deterministic_worker(&http, &rest_api_url, &secret, &task).await {
+                Ok(()) => {
+                    emit_queue_status_event(
+                        &http,
+                        &nats_client,
+                        &rest_api_url,
+                        &secret,
+                        &task,
+                        -920,
+                        "deterministic-worker-accepted",
+                        "deterministic worker accepted",
+                        "UUID-bound thread worker accepted the queued NATS task dispatch.",
+                        json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false }),
+                    )
+                    .await;
+                    Ok(())
+                }
+                Err(error) => {
+                    emit_queue_status_event(
+                        &http,
+                        &nats_client,
+                        &rest_api_url,
+                        &secret,
+                        &task,
+                        -920,
+                        "deterministic-worker-failed",
+                        "deterministic worker failed",
+                        "Queued NATS mode could not prepare or dispatch to the UUID-bound thread worker.",
+                        json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false, "error": error.to_string() }),
+                    )
+                    .await;
+                    Err(error)
+                }
+            }
         } else {
             let pool = task
                 .repo
@@ -634,8 +717,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                             json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
                         )
                         .await;
-                        prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await?;
-                        match dispatch_to_rest_api(&http, &rest_api_url, &secret, &task).await {
+                        match dispatch_to_deterministic_worker(&http, &rest_api_url, &secret, &task)
+                            .await
+                        {
                             Ok(()) => {
                                 emit_queue_status_event(
                                     &http,
