@@ -344,7 +344,7 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
     /CONTAINER_POOL_NATS_SUBJECT[\s\S]*dd\.remote\.container_pool\.\*\.requests/,
   );
   assert.match(deployment, /CONTAINER_POOL_NERDCTL_BIN[\s\S]*\/usr\/local\/bin\/nerdctl/);
-  assert.match(deployment, /CONTAINER_POOL_CONTAINERD_NAMESPACE[\s\S]*value:\s*k8s\.io/);
+  assert.match(deployment, /CONTAINER_POOL_CONTAINERD_NAMESPACE[\s\S]*value:\s*dd-pool/);
   assert.match(deployment, /CONTAINER_POOL_APP_CONFIG_SCOPE[\s\S]*value:\s*default/);
   assert.match(
     deployment,

@@ -287,6 +287,22 @@ jobs:
           import os
           import shlex
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          tag_images = r'''set -euo pipefail
+          echo "=== copying dd-dev-server:dev image into dd-pool containerd namespace ==="
+          sudo ctr -n dd-pool namespace ls >/dev/null 2>&1 || sudo ctr namespace create dd-pool || true
+          if sudo nerdctl -n k8s.io images --quiet docker.io/library/dd-dev-server:dev >/tmp/dd-dev-server.found 2>/dev/null && [ -s /tmp/dd-dev-server.found ]; then
+            sudo ctr -n k8s.io image export /tmp/dd-dev-server.tar docker.io/library/dd-dev-server:dev
+            sudo ctr -n dd-pool image import /tmp/dd-dev-server.tar || true
+            sudo rm -f /tmp/dd-dev-server.tar
+            sudo nerdctl -n dd-pool images | grep dd-dev-server || true
+          else
+            echo "dd-dev-server:dev not present in k8s.io; skipping image copy"
+          fi
+          echo "=== removing any stale dd-pool managed containers in k8s.io ==="
+          for c in $(sudo nerdctl -n k8s.io ps -aq --filter label=dd.container-pool.managed=true 2>/dev/null); do
+            sudo nerdctl -n k8s.io rm -f "$c" || true
+          done
+          '''
           diag = r'''set -euo pipefail
           echo "=== live-mutex pool snapshot ==="
           pod="$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath='{.items[0].metadata.name}')"
@@ -294,28 +310,28 @@ jobs:
             kubectl -n default exec "$pod" -- bash -lc 'secret="${SERVER_AUTH_SECRET:-}"; curl -fsS -H "X-Server-Auth: $secret" http://127.0.0.1:8102/pools/nodejs-chat-claude-live-mutex-dev || true' | head -c 2000
             echo
           fi
-          echo "=== managed nerdctl workers ==="
-          sudo nerdctl -n k8s.io ps -a --format "{{.ID}} {{.Status}} {{.Names}}" | grep -E "dd-pool" || true
+          echo "=== managed nerdctl workers (dd-pool namespace) ==="
+          sudo nerdctl -n dd-pool ps -a --format "{{.ID}} {{.Status}} {{.Names}}" | grep -E "dd-pool" || true
           echo "=== nerdctl inspect first worker ==="
-          first_worker="$(sudo nerdctl -n k8s.io ps -a --format '{{.Names}}' | grep '^dd-pool' | head -n1 || true)"
+          first_worker="$(sudo nerdctl -n dd-pool ps -a --format '{{.Names}}' | grep '^dd-pool' | head -n1 || true)"
           if [ -n "$first_worker" ]; then
             echo "worker=$first_worker"
-            echo "--- raw inspect stdout (first 2000 chars) ---"
-            sudo nerdctl -n k8s.io inspect "$first_worker" 2>/tmp/inspect.err | head -c 2000 || true
+            echo "--- raw inspect State ---"
+            sudo nerdctl -n dd-pool inspect "$first_worker" 2>/tmp/inspect.err | jq -r '.[0].State' 2>&1 | head -c 800 || true
             echo
             echo "--- inspect stderr ---"
             cat /tmp/inspect.err | head -c 600 || true
             echo
             echo "--- ctr container/task state ---"
-            sudo ctr -n k8s.io containers ls 2>&1 | grep "$first_worker" | head -c 400 || true
+            sudo ctr -n dd-pool containers ls 2>&1 | grep "$first_worker" | head -c 400 || true
             echo
-            sudo ctr -n k8s.io tasks ls 2>&1 | grep "$first_worker" | head -c 400 || true
+            sudo ctr -n dd-pool tasks ls 2>&1 | grep "$first_worker" | head -c 400 || true
             echo
             echo "--- worker logs ---"
-            sudo nerdctl -n k8s.io logs --tail 40 "$first_worker" 2>&1 | head -c 1500 || true
+            sudo nerdctl -n dd-pool logs --tail 40 "$first_worker" 2>&1 | head -c 1500 || true
           fi
-          echo "=== local images ==="
-          sudo nerdctl -n k8s.io images | grep -E "dd-dev-server|dd-container-pool|nodejs-runtime" || true
+          echo "=== dd-pool images ==="
+          sudo nerdctl -n dd-pool images | grep -E "dd-dev-server|dd-container-pool|nodejs-runtime" || true
           echo "=== container-pool recent logs ==="
           for p in $(kubectl -n default get pods -l app=dd-container-pool -o name); do
             kubectl -n default logs "$p" --tail=120 2>&1 | tail -100 || true
@@ -328,6 +344,7 @@ jobs:
           commands = [
               "set -euo pipefail",
               f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
+              f"bash -lc {shlex.quote(tag_images)}",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-secrets.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml'",

@@ -70,7 +70,7 @@ spec:
             - name: CONTAINER_POOL_NERDCTL_BIN
               value: /usr/local/bin/nerdctl
             - name: CONTAINER_POOL_CONTAINERD_NAMESPACE
-              value: k8s.io
+              value: dd-pool
             - name: CONTAINER_POOL_APP_CONFIG_SCOPE
               value: default
             - name: CONTAINER_POOL_APP_CONFIG_KEY
