@@ -6,6 +6,10 @@ on:
       - dev
     paths:
       - ".github/workflows/remote-k8s-maintenance.yml"
+      - "remote/deployments/container-pool-rs/**"
+      - "remote/deployments/queue-consumer-rs/**"
+      - "remote/deployments/rest-api-rs/**"
+      - "remote/argocd/dd-next-runtime/**"
   workflow_dispatch:
     inputs:
       operation:
@@ -53,7 +57,7 @@ jobs:
       - name: Run maintenance command through SSM
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          OPERATION: ${{ inputs.operation || 'inspect-unhealthy' }}
+          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
