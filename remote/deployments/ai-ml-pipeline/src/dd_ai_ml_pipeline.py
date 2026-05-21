@@ -8,6 +8,8 @@ import re
 import socket
 import threading
 import time
+import urllib.error
+import urllib.request
 import uuid
 from hmac import compare_digest
 from dataclasses import dataclass, field
@@ -1029,10 +1031,208 @@ class PipelineApp:
                     print(f"invalid nats telemetry message: {error}", flush=True)
 
 
+class RuntimeConfigClient:
+    """Process-wide receiver for dd-runtime-config push messages.
+
+    Mirrors `remote/libs/runtime-config-client-rs` and the equivalent Node
+    helper. Backed by an in-memory dict guarded by a threading.RLock so the
+    snapshot can be served and mutated from the stdlib ThreadingHTTPServer
+    handler pool without races. Registration with the control plane runs on
+    a daemon thread that retries with exponential backoff (15s → 5min cap).
+    """
+
+    SNAPSHOT_ROUTE = "/internal/runtime-config"
+    APPLY_ROUTE = "/internal/update-runtime-config"
+    RESET_ROUTE = "/internal/runtime-config/reset"
+
+    _REGISTER_BACKOFF_SECONDS = 15.0
+    _REGISTER_MAX_BACKOFF_SECONDS = 5 * 60.0
+    _REGISTER_TIMEOUT_SECONDS = 10.0
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._snapshot_version: int = 0
+        self._entries: dict[str, Any] = {}
+        self._applied_at: Optional[str] = None
+        self._last_push_id: Optional[str] = None
+        self._last_reason: Optional[str] = None
+        self._server_secret = os.getenv("RUNTIME_CONFIG_SERVER_SECRET", "").strip() or None
+        self._allow_unauthenticated = _runtime_config_bool_env("RUNTIME_CONFIG_ALLOW_UNAUTHENTICATED")
+        self._service_name = os.getenv("RUNTIME_CONFIG_SERVICE_NAME", "").strip() or SERVICE_NAME
+        self._scope = os.getenv("RUNTIME_CONFIG_SCOPE", "").strip() or self._service_name
+        self._env_label = (os.getenv("RUNTIME_CONFIG_ENV") or "stage").strip() or "stage"
+        self._register_url = os.getenv("RUNTIME_CONFIG_REGISTER_URL", "").strip() or None
+        self._apply_url = os.getenv("RUNTIME_CONFIG_APPLY_URL", "").strip() or None
+
+    @property
+    def snapshot_version(self) -> int:
+        with self._lock:
+            return self._snapshot_version
+
+    def get(self, key: str, default: Any = None) -> Any:
+        with self._lock:
+            return self._entries.get(key, default)
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "service": self._service_name,
+                "scope": self._scope,
+                "env": self._env_label,
+                "snapshotVersion": self._snapshot_version,
+                "appliedAt": self._applied_at,
+                "entries": dict(self._entries),
+                "lastPushId": self._last_push_id,
+                "lastReason": self._last_reason,
+            }
+
+    def reset(self) -> None:
+        with self._lock:
+            self._snapshot_version = 0
+            self._entries = {}
+            self._applied_at = None
+            self._last_push_id = None
+            self._last_reason = None
+
+    def apply(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("apply payload must be a JSON object")
+        snapshot = payload.get("snapshot")
+        if not isinstance(snapshot, dict):
+            raise ValueError("snapshot is required")
+        entries_in: list[Any] = []
+        applied_version = 0
+        raw_version = snapshot.get("snapshotVersion")
+        if isinstance(raw_version, int):
+            applied_version = raw_version
+        entries_field = snapshot.get("entries")
+        if isinstance(entries_field, list):
+            entries_in = entries_field
+        new_entries: dict[str, Any] = {}
+        for entry in entries_in:
+            if isinstance(entry, dict) and isinstance(entry.get("key"), str):
+                new_entries[entry["key"]] = entry.get("value")
+        applied_at = _iso_now()
+        push_id = payload.get("pushId") if isinstance(payload.get("pushId"), str) else None
+        reason = payload.get("reason") if isinstance(payload.get("reason"), str) else None
+        with self._lock:
+            previous_version = self._snapshot_version
+            if applied_version < previous_version:
+                return {
+                    "ok": True,
+                    "service": self._service_name,
+                    "appliedAt": self._applied_at or applied_at,
+                    "appliedVersion": previous_version,
+                    "previousVersion": previous_version,
+                    "stale": True,
+                    "ignoredVersion": applied_version,
+                }
+            self._snapshot_version = applied_version
+            self._entries = new_entries
+            self._applied_at = applied_at
+            self._last_push_id = push_id
+            self._last_reason = reason
+        return {
+            "ok": True,
+            "service": self._service_name,
+            "appliedAt": applied_at,
+            "appliedVersion": applied_version,
+            "previousVersion": previous_version,
+        }
+
+    def check_server_auth(self, header_value: Optional[str]) -> bool:
+        if self._server_secret is None:
+            return self._allow_unauthenticated
+        if not header_value:
+            return False
+        return compare_digest(header_value, self._server_secret)
+
+    def start_registration_thread(self) -> None:
+        if not self._register_url or not self._apply_url:
+            print(
+                "[runtime-config] RUNTIME_CONFIG_REGISTER_URL or _APPLY_URL not set; skipping registration",
+                flush=True,
+            )
+            return
+        thread = threading.Thread(
+            target=self._register_loop,
+            name="dd-runtime-config-register",
+            daemon=True,
+        )
+        thread.start()
+
+    def _register_loop(self) -> None:
+        assert self._register_url is not None
+        assert self._apply_url is not None
+        body = json.dumps(
+            {
+                "env": self._env_label,
+                "name": self._service_name,
+                "scope": self._scope,
+                "applyUrl": self._apply_url,
+            }
+        ).encode("utf-8")
+        headers = {"content-type": "application/json"}
+        if self._server_secret:
+            headers["x-server-auth"] = self._server_secret
+        delay = self._REGISTER_BACKOFF_SECONDS
+        while True:
+            try:
+                request_obj = urllib.request.Request(
+                    self._register_url,
+                    data=body,
+                    headers=headers,
+                    method="POST",
+                )
+                with urllib.request.urlopen(
+                    request_obj, timeout=self._REGISTER_TIMEOUT_SECONDS
+                ) as response:
+                    if 200 <= response.status < 300:
+                        print(
+                            f"[runtime-config] registered with control plane at {self._register_url}",
+                            flush=True,
+                        )
+                        return
+                    print(
+                        f"[runtime-config] register returned HTTP {response.status}; retrying in {int(delay)}s",
+                        flush=True,
+                    )
+            except urllib.error.HTTPError as error:
+                print(
+                    f"[runtime-config] register returned HTTP {error.code}; retrying in {int(delay)}s",
+                    flush=True,
+                )
+            except (urllib.error.URLError, OSError, ConnectionError) as error:
+                print(
+                    f"[runtime-config] register transport error: {error}; retrying in {int(delay)}s",
+                    flush=True,
+                )
+            time.sleep(delay)
+            delay = min(delay * 2.0, self._REGISTER_MAX_BACKOFF_SECONDS)
+
+
+RUNTIME_CONFIG_PATHS = frozenset(
+    {
+        RuntimeConfigClient.SNAPSHOT_ROUTE,
+        RuntimeConfigClient.APPLY_ROUTE,
+        RuntimeConfigClient.RESET_ROUTE,
+    }
+)
+
+
+def _iso_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + ".000Z"
+
+
+def _runtime_config_bool_env(name: str) -> bool:
+    return (os.getenv(name) or "").strip() in {"1", "true", "TRUE", "yes", "YES"}
+
+
 class PipelineHTTPServer(ThreadingHTTPServer):
     def __init__(self, server_address: tuple[str, int], handler: type[BaseHTTPRequestHandler], app: PipelineApp) -> None:
         super().__init__(server_address, handler)
         self.app = app
+        self.runtime_config = RuntimeConfigClient()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1050,6 +1250,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         self.server.app.metrics.inc("requests_total")
         path = self._normalized_path()
+        if path == RuntimeConfigClient.SNAPSHOT_ROUTE:
+            self._json(HTTPStatus.OK, self.server.runtime_config.snapshot())
+            return
         if path in {"/", ""}:
             if not self._is_authorized():
                 return
@@ -1084,6 +1287,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         self.server.app.metrics.inc("requests_total")
         path = self._normalized_path()
+        if path in RUNTIME_CONFIG_PATHS:
+            self._handle_runtime_config_post(path)
+            return
         try:
             if not self._is_authorized():
                 return
@@ -1113,6 +1319,27 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/ml/"):
             return path[3:]
         return path
+
+    def _handle_runtime_config_post(self, path: str) -> None:
+        client = self.server.runtime_config
+        if not client.check_server_auth(self.headers.get("x-server-auth")):
+            self._json(HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
+            return
+        if path == RuntimeConfigClient.RESET_ROUTE:
+            client.reset()
+            self._json(HTTPStatus.OK, {"ok": True})
+            return
+        try:
+            payload = self._read_json()
+        except ValueError as error:
+            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
+            return
+        try:
+            response = client.apply(payload)
+        except ValueError as error:
+            self._json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(error)})
+            return
+        self._json(HTTPStatus.OK, response)
 
     def _read_json(self) -> dict[str, Any]:
         content_type = self.headers.get("Content-Type", "")
@@ -1175,6 +1402,7 @@ def main() -> None:
     app = PipelineApp(config)
     app.start_nats_consumer()
     server = PipelineHTTPServer((config.host, config.port), Handler, app)
+    server.runtime_config.start_registration_thread()
     print(f"{SERVICE_NAME} listening on {config.host}:{config.port}", flush=True)
     server.serve_forever()
 

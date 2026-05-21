@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>gleamlang-server-nats-bridge API docs</title>
   <style>
-    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; }
+    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; --runtime:#3a4d8a; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     header, main { width:min(1180px, calc(100% - 32px)); margin:0 auto; }
@@ -18,6 +18,7 @@
     .service { color:var(--service); }
     .user-generated { color:var(--custom); }
     .internal-db { color:var(--internal); }
+    .runtime-config { color:var(--runtime); }
     table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
     th, td { padding:12px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
     th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0; background:#fbfcfd; }
@@ -45,7 +46,8 @@
       <span>node</span>
       <span>4 service</span>
       <span>1 user-generated</span>
-      
+
+
     </div>
   </header>
   <main>

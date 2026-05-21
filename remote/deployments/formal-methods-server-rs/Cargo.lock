@@ -168,6 +168,7 @@ name = "dd-formal-methods-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dd-runtime-config-client",
  "hex",
  "hmac",
  "regex",
@@ -177,6 +178,17 @@ dependencies = [
  "sha2",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "dd-runtime-config-client"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

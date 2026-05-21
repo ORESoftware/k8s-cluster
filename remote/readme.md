@@ -19,6 +19,14 @@ Today there are several key runtime services:
 - [`deployments/trading-server-rs/`](./deployments/trading-server-rs/) — Rust trading decision service that turns scraper,
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
+- [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
+  source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
+  current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and
+  the admin UI at `/runtime-config/admin` triggers on-demand pushes. Short-lived consumers
+  (lambdas, container-pool images, cron jobs) pull through the rest-api at
+  `/api/runtime-config/snapshot/{env}`. Shared payload types live in
+  [`libs/interfaces/shared/`](./libs/interfaces/shared/) and are generated from JSON Schema into
+  Rust, TypeScript, Python, and Gleam.
 
 Future entries (a long-running queue worker, a stateful LLM evaluator, a headless browser farm,
 etc.) would live as siblings.

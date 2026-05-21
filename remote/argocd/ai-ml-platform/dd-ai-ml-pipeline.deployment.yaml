@@ -86,6 +86,26 @@ spec:
               value: '2048'
             - name: ML_MAX_PUBLISH_BYTES
               value: '524288'
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes. ai-ml-pipeline lives in the `ai-ml`
+            # namespace so the apply URL is fully qualified for cross-ns push.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-ai-ml-pipeline
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-ai-ml-pipeline
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-ai-ml-pipeline.ai-ml.svc.cluster.local:8099/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: http
               containerPort: 8099

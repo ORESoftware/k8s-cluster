@@ -66,6 +66,7 @@ import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
 import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
+import { registerRuntimeConfigRoutes, registerWithControlPlane } from './runtime-config.js';
 
 // ---------- Config ----------
 
@@ -3936,13 +3937,29 @@ function registerWorkerWebSocketUpgrade(): void {
 
 fastify.addHook('preHandler', async (req, reply) => {
   const requestPath = req.url.split('?')[0] ?? req.url;
-  if (requestPath === '/healthz' || requestPath === '/metrics' || requestPath === '/favicon.ico') {
+  if (
+    requestPath === '/healthz' ||
+    requestPath === '/metrics' ||
+    requestPath === '/favicon.ico' ||
+    requestPath === '/docs/api' ||
+    requestPath === '/api/docs' ||
+    requestPath === '/api/docs.json'
+  ) {
     return;
   }
   // GET /stream/:taskId may auth via short-lived HMAC token (?token=)
   // for direct browser → docker SSE connections that bypass Vercel's
   // 800s function cap. Defer that check to the route handler.
   if (req.method === 'GET' && requestPath.startsWith('/stream/')) {
+    return;
+  }
+  // The runtime-config receive helper does its own X-Server-Auth check
+  // against RUNTIME_CONFIG_SERVER_SECRET; defer to it so operators can use a
+  // different secret for the config control plane if they want to.
+  if (
+    requestPath.startsWith('/internal/runtime-config') ||
+    requestPath === '/internal/update-runtime-config'
+  ) {
     return;
   }
 
@@ -3982,6 +3999,24 @@ fastify.get('/metrics', async (_req, reply) => {
   reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return renderMetrics();
 });
+
+fastify.get('/docs/api', async (_req, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+
+fastify.get('/api/docs', async (_req, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+
+fastify.get('/api/docs.json', async (_req, reply) => {
+  reply.header('content-type', 'application/json; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.json', import.meta.url), 'utf8');
+});
+
+registerRuntimeConfigRoutes(fastify);
+void registerWithControlPlane();
 
 fastify.get('/status', async () => ({
   ok: true,

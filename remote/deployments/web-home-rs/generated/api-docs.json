@@ -1,0 +1,512 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "web-home-rs",
+  "language": "rust",
+  "routeCount": 29,
+  "routeTypeCounts": {
+    "service": 4,
+    "user-generated": 22,
+    "runtime-config": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "root"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/agents/tasks",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_tasks_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/agents/tasks/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_tasks_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/agents/threads",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_threads_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/agents/threads/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_threads_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/agents-tasks.css",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_tasks_css"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/agents-tasks.html",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_tasks_html_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/agents-tasks.js",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_tasks_js"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/agents-threads.css",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_threads_css"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/agents-threads.html",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_threads_html_fragment"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/agents-threads.js",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_threads_js"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/shared-header.css",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "shared_header_css"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/assets/web-home/shared-header.js",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "shared_header_js"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/container-pool/config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "container_pool_config_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/container-pool/config/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "container_pool_config_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/favicon.ico",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "favicon"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "home"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/home/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "root"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "handlers": [
+        "dd_runtime_config_client::handle_get"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "handlers": [
+        "dd_runtime_config_client::handle_reset"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "handlers": [
+        "dd_runtime_config_client::handle_apply"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/lambdas/functions",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "lambda_functions_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/lambdas/functions/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "lambda_functions_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/presence-test",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "presence_test_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/presence-test/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "presence_test_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/wss-test",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "wss_test_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/wss-test/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "wss_test_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

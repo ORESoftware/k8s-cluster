@@ -111,6 +111,26 @@ spec:
             # See remote/deployments/runtime-config-rs/readme.md.
             - name: RUNTIME_CONFIG_BASE_URL
               value: http://dd-runtime-config.default.svc.cluster.local:8110
+            # runtime-config receive helper: registers this pod with the control
+            # plane so it receives /internal/update-runtime-config pushes too,
+            # in addition to acting as the public pull-proxy for short-lived
+            # consumers (lambdas, gateway-fronted clients).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-remote-rest-api
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-remote-rest-api
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-remote-rest-api.default.svc.cluster.local:8082/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           envFrom:
             - secretRef:
                 name: dd-agent-secrets

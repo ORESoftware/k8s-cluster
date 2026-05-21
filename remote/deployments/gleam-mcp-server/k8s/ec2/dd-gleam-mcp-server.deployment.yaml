@@ -96,6 +96,24 @@ spec:
               value: '262144'
             - name: MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES
               value: '32768'
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-gleam-mcp-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleam-mcp-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-gleam-mcp-server.default.svc.cluster.local:8090/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           envFrom:
             - secretRef:
                 name: dd-gleam-mcp-server-secrets

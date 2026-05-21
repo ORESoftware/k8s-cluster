@@ -123,7 +123,7 @@ fn is_shadow_task(task: &QueueTaskMessage) -> bool {
 fn is_container_pool_dispatch_mode(mode: &str) -> bool {
     matches!(
         mode,
-        "queued-pool" | "nats-pool" | "container-pool" | "pool"
+        "queued" | "nats" | "async" | "queued-pool" | "nats-pool" | "container-pool" | "pool"
     )
 }
 
@@ -485,7 +485,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "http://dd-container-pool.default.svc.cluster.local:8102",
     );
     let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);
-    let fallback_rest_dispatch = env_bool("QUEUE_CONSUMER_FALLBACK_REST_DISPATCH", false);
+    let fallback_rest_dispatch = env_bool("QUEUE_CONSUMER_FALLBACK_REST_DISPATCH", true);
     let receipts_dir = env_value(
         "QUEUE_CONSUMER_RECEIPTS_DIR",
         "/tmp/dd-remote-queue-consumer/tasks",

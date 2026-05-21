@@ -488,7 +488,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/login", href: Some("/auth/login") }, PathEntry { label: "/auth/logout", href: Some("/auth/logout") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
     PathRow { paths: &[PathEntry { label: "/bastion/runtime/deployments", href: Some("/bastion/runtime/deployments") }, PathEntry { label: "/bastion/profile", href: Some("/bastion/profile") }, PathEntry { label: "/bastion/terminal", href: None }], target: "Rust bastion/jumphost access broker", access: SERVER_AUTH, notes: "Same-origin gateway access to bastion inventory and allowlisted browser exec terminals." },
     PathRow { paths: &[PathEntry { label: "/headlamp/", href: Some("/headlamp/") }], target: "Headlamp Kubernetes UI", access: SERVER_AUTH, notes: "Read-only cluster browser for workload, pod, container, logs, node, Argo CD, KEDA, and External Secrets state. Paste a token from `kubectl -n headlamp create token headlamp-viewer`." },
-    PathRow { paths: &[PathEntry { label: "dd.remote.thread.*.tasks", href: None }, PathEntry { label: "POST /api/agents/threads/<uuid>/prepare", href: Some("/api/agents/threads/example-thread-id/prepare") }], target: "Rust NATS Queue Consumer", access: INTERNAL_ACCESS, notes: "Shadow consumer reads task messages, keeps thread affinity, and prepares the matching UUID-bound worker. It does not execute prompts." },
+    PathRow { paths: &[PathEntry { label: "dd.remote.thread.*.tasks", href: None }, PathEntry { label: "POST /api/agents/threads/<uuid>/prepare", href: Some("/api/agents/threads/example-thread-id/prepare") }], target: "Rust NATS Queue Consumer", access: INTERNAL_ACCESS, notes: "Queued consumer reads task.dispatch messages, routes repo-matched work into warm container pools, and falls back to the UUID-bound worker when needed. Legacy shadow messages only prepare workers." },
     PathRow { paths: &[PathEntry { label: "/dd-thread/<short>", href: Some("/dd-thread/example") }, PathEntry { label: "/dd-thread/<short>/tasks", href: Some("/dd-thread/example/tasks") }, PathEntry { label: "/dd-thread/<short>/stream/<taskId>", href: Some("/dd-thread/example/stream/example-task-id") }, PathEntry { label: "/dd-thread/<short>/ws", href: Some("/dd-thread/example/ws") }], target: "Kubernetes per-thread Ingress", access: SERVER_AUTH, notes: "Ingress selects the UUID-bound worker Service; Node.js handles only the task inside that selected container." },
     PathRow { paths: &[PathEntry { label: "/gleam/home", href: Some("/gleam/home") }, PathEntry { label: "/gleam/healthz", href: Some("/gleam/healthz") }, PathEntry { label: "/gleam/metrics", href: Some("/gleam/metrics") }, PathEntry { label: "/gleam/ws", href: None }], target: "Gleam WebSocket service", access: INTERNAL_ACCESS, notes: "Gleam/OTP fan-out socket behind the gateway; WebSocket endpoint is wss://<host>/gleam/ws." },
     PathRow { paths: &[PathEntry { label: "/mcp", href: Some("/mcp") }, PathEntry { label: "/mcp/home", href: Some("/mcp/home") }, PathEntry { label: "/mcp/healthz", href: Some("/mcp/healthz") }, PathEntry { label: "/mcp/metrics", href: Some("/mcp/metrics") }], target: "Gleam MCP service", access: INTERNAL_ACCESS, notes: "Dedicated MCP deployment with read-only runtime tools, Prometheus metrics, and Loki-collected stdout logs." },
@@ -1559,10 +1559,13 @@ fn agents_threads_body() -> Markup {
                     section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel" {
                         div class="topbar thread-control-heading" {
                             div {
-                                h2 { "Thread Control" }
+                                h2 id="thread-control-title" { "Thread Control" }
                                 p id="thread-control-subtitle" { "Select an existing worker thread or prepare a new one." }
                             }
-                            span id="thread-mode" class="pill warn" { "select thread" }
+                            div class="thread-control-tools" {
+                                span id="thread-mode" class="pill warn" { "select thread" }
+                                button id="thread-control-toggle" class="icon" type="button" title="Expand Thread Control" aria-expanded="false" { "^" }
+                            }
                         }
                         div class="form-grid" {
                             label {
@@ -1933,6 +1936,7 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         gap: 16px;
         overflow: hidden auto;
         overscroll-behavior: contain;
+        scroll-padding-bottom: 96px;
       }
       .main.mode-empty #sleep-thread,
       .main.mode-empty #archive-thread,
@@ -2067,19 +2071,20 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         min-height: 0;
       }
       .workspace-flow {
-        flex: 0 0 auto;
-        min-height: auto;
+        flex: 1 0 auto;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 14px;
         overflow: visible;
       }
       .stream-panel {
-        flex: 0 0 auto;
+        flex: 1 0 auto;
         min-height: 260px;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow: visible;
+        scroll-margin-bottom: 96px;
       }
       .main.mode-empty #response-stream-panel,
       .main.mode-new:not(.stream-active) #response-stream-panel,
@@ -2099,20 +2104,33 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         order: 2;
       }
       .main.control-sliding-down #thread-control-panel {
-        animation: control-slide-down 260ms ease;
+        animation: control-dock-travel 1500ms cubic-bezier(0.2, 0.82, 0.18, 1);
       }
-      .main.control-bottom .stream-panel {
-        height: clamp(360px, 66dvh, 760px);
-        flex-basis: clamp(360px, 66dvh, 760px);
+      .main.control-sliding-down #thread-control-panel > * {
+        animation: control-dock-morph 500ms ease;
       }
-      @keyframes control-slide-down {
+      @keyframes control-dock-travel {
         from {
-          opacity: 0.82;
-          transform: translateY(-20px);
+          transform: translateY(var(--control-shift-y, -160px));
+        }
+        33% {
+          filter: grayscale(0.7);
+          opacity: 0.72;
         }
         to {
-          opacity: 1;
           transform: translateY(0);
+          filter: grayscale(0);
+          opacity: 1;
+        }
+      }
+      @keyframes control-dock-morph {
+        from {
+          filter: grayscale(1);
+          opacity: 0.5;
+        }
+        to {
+          filter: grayscale(0);
+          opacity: 1;
         }
       }
       .prompt-panel {
@@ -2128,7 +2146,31 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         max-height: none;
       }
       .main.control-bottom .prompt-panel {
-        max-height: none;
+        position: sticky;
+        bottom: 0;
+        z-index: 6;
+        max-height: min(76dvh, 720px);
+        overflow: auto;
+        overscroll-behavior: contain;
+        box-shadow: 0 -18px 36px rgba(0, 0, 0, 0.28);
+      }
+      .main.control-bottom.control-collapsed .prompt-panel {
+        min-height: 58px;
+        max-height: 66px;
+        overflow: hidden;
+        padding-block: 12px;
+      }
+      .main.control-bottom.control-collapsed #thread-control-subtitle,
+      .main.control-bottom.control-collapsed .form-grid,
+      .main.control-bottom.control-collapsed .prompt-actions,
+      .main.control-bottom.control-collapsed .status-line {
+        display: none;
+      }
+      .main.control-bottom.control-collapsed .thread-control-heading {
+        margin-bottom: 0;
+      }
+      .main.control-bottom.control-expanded {
+        scroll-padding-bottom: min(76dvh, 720px);
       }
       .main.mode-existing.control-bottom textarea {
         min-height: 78px;
@@ -2136,6 +2178,18 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       }
       .thread-control-heading {
         margin-bottom: 12px;
+      }
+      .thread-control-heading h2 {
+        margin-bottom: 0;
+      }
+      .thread-control-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .main.control-top #thread-control-toggle {
+        display: none;
       }
       .prompt-panel label,
       .form-grid > label,
@@ -2289,9 +2343,8 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         gap: 10px;
         min-height: 0;
         max-height: none;
-        overflow: auto;
-        overscroll-behavior: contain;
-        padding-right: 3px;
+        overflow: visible;
+        padding-right: 0;
       }
       .terminal-inline {
         flex: 1 1 auto;
@@ -2402,6 +2455,15 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         .workspace-flow {
           min-height: min(540px, 100%);
         }
+        .main.control-bottom.control-expanded .prompt-panel {
+          position: fixed;
+          left: 14px;
+          right: 14px;
+          bottom: 14px;
+          z-index: 1200;
+          width: auto;
+          max-height: calc(100dvh - 28px);
+        }
         .app.tasks-collapsed .tasks-sidebar {
           padding-block: 9px;
         }
@@ -2465,6 +2527,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         threadSidebarCollapsed: false,
         tasksSidebarCollapsed: false,
         taskSearch: "",
+        threadControlCollapsed: true,
         controlAnimationTimer: null,
         lastRuntimeErrorMessage: "",
       };
@@ -2553,28 +2616,69 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
+      function syncThreadControlTitle() {
+        const workspace = $("thread-workspace");
+        const newThreadAtTop = state.threadUiMode === "new" && workspace.classList.contains("control-top");
+        $("thread-control-title").textContent = newThreadAtTop ? "New thread" : "Thread Control";
+      }
+
+      function threadControlCanCollapse() {
+        const workspace = $("thread-workspace");
+        return workspace.classList.contains("control-bottom") && state.threadUiMode !== "empty";
+      }
+
+      function setThreadControlCollapsed(collapsed, options = {}) {
+        const workspace = $("thread-workspace");
+        const panel = $("thread-control-panel");
+        const toggle = $("thread-control-toggle");
+        const canCollapse = threadControlCanCollapse();
+        const next = canCollapse ? Boolean(collapsed) : false;
+        state.threadControlCollapsed = next;
+        workspace.classList.toggle("control-collapsed", canCollapse && next);
+        workspace.classList.toggle("control-expanded", canCollapse && !next);
+        panel.setAttribute("aria-expanded", String(!next));
+        toggle.setAttribute("aria-expanded", String(!next));
+        toggle.textContent = next ? "^" : "v";
+        toggle.title = next ? "Expand Thread Control" : "Collapse Thread Control";
+        if (!next && options.scrollIntoView) {
+          requestAnimationFrame(() => {
+            panel.scrollIntoView({ block: "end", behavior: options.smooth ? "smooth" : "auto" });
+          });
+        }
+      }
+
       function setControlPosition(position, options = {}) {
         const workspace = $("thread-workspace");
+        const panel = $("thread-control-panel");
         const next = position === "bottom" ? "bottom" : "top";
         const wasBottom = workspace.classList.contains("control-bottom");
+        const animateDock = next === "bottom" && (!wasBottom || options.forceAnimation);
+        const fromRect = animateDock ? panel.getBoundingClientRect() : null;
         workspace.classList.remove("control-top", "control-bottom", "control-sliding-down");
         workspace.classList.add(`control-${next}`);
+        syncThreadControlTitle();
         if (state.controlAnimationTimer !== null) {
           window.clearTimeout(state.controlAnimationTimer);
           state.controlAnimationTimer = null;
         }
         if (next !== "bottom") {
           workspace.classList.remove("stream-deferred");
+          setThreadControlCollapsed(false);
           return;
         }
-        if (!wasBottom || options.forceAnimation) {
-          workspace.classList.add("stream-deferred");
+        const preserveExpanded = wasBottom && state.threadControlCollapsed === false && options.collapseControl !== true;
+        setThreadControlCollapsed(preserveExpanded ? false : true);
+        if (animateDock) {
           requestAnimationFrame(() => {
+            const toRect = panel.getBoundingClientRect();
+            const shift = fromRect ? Math.round(fromRect.top - toRect.top) : -160;
+            panel.style.setProperty("--control-shift-y", `${shift}px`);
             workspace.classList.add("control-sliding-down");
             state.controlAnimationTimer = window.setTimeout(() => {
-              workspace.classList.remove("control-sliding-down", "stream-deferred");
+              workspace.classList.remove("control-sliding-down");
+              panel.style.removeProperty("--control-shift-y");
               state.controlAnimationTimer = null;
-            }, 280);
+            }, 1500);
           });
         } else {
           workspace.classList.remove("stream-deferred");
@@ -2600,6 +2704,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         workspace.classList.add(`mode-${modeName}`);
         setStreamActive(modeName === "existing");
         setControlPosition(modeName === "existing" ? "bottom" : "top");
+        syncThreadControlTitle();
         updateTasksSidebarVisibility();
         $("new-task").disabled = modeName === "empty";
         $("send").textContent = modeName === "new" ? "Create thread & send" : modeName === "existing" ? "Send task" : "Send";
@@ -2611,6 +2716,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function setTaskStreamLayout(mode) {
         if (mode === "tasks") setTasksSidebarCollapsed(false);
         setWorkspaceLayout("lower");
+        if (mode === "stream") setThreadControlCollapsed(true);
       }
 
       function setThreadsSidebarCollapsed(collapsed) {
@@ -2652,6 +2758,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function handleControlPanelClick(event) {
         if (shouldIgnorePanelShortcut(event.target)) return;
+        if (threadControlCanCollapse()) {
+          if (state.threadControlCollapsed) setThreadControlCollapsed(false, { scrollIntoView: true, smooth: true });
+          return;
+        }
         setWorkspaceLayout(state.threadUiMode === "existing" ? "lower" : "control");
       }
 
@@ -2664,6 +2774,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (shouldIgnorePanelShortcut(event.target)) return;
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
+        if (threadControlCanCollapse()) {
+          setThreadControlCollapsed(!state.threadControlCollapsed, { scrollIntoView: state.threadControlCollapsed, smooth: true });
+          return;
+        }
         setWorkspaceLayout(state.threadUiMode === "existing" ? "lower" : "control");
       }
 
@@ -3709,6 +3823,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
+      function scrollResponseToLatest() {
+        const workspace = $("thread-workspace");
+        const responsePanel = $("response-stream-panel");
+        const controlPanel = $("thread-control-panel");
+        if (!workspace || !responsePanel || responsePanel.offsetParent === null) return;
+        const controlOffset = workspace.classList.contains("control-bottom") ? controlPanel.offsetHeight + 24 : 24;
+        const targetTop = responsePanel.offsetTop + responsePanel.offsetHeight - workspace.clientHeight + controlOffset;
+        workspace.scrollTo({ top: Math.max(0, targetTop), behavior: "auto" });
+      }
+
       function appendEventElement({ row, kind, seq, seqLabel, text, feedbackSeq }) {
         const item = document.createElement("article");
         item.className = `event ${kind === "claude" ? "agent" : kind === "error" ? "error" : ""}`;
@@ -3752,7 +3876,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
         $("stream").appendChild(item);
         trimStreamDom();
-        $("stream").scrollTop = $("stream").scrollHeight;
+        scrollResponseToLatest();
         setStreamState("showing events", "ok");
       }
 
@@ -4110,7 +4234,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setControlPosition("bottom", { forceAnimation: true });
         $("thread-workspace").scrollTo({ top: 0, behavior: "smooth" });
         replaceSelectionUrl(threadId, taskId);
-        const dispatchStatus = usesContainerPool ? "queueing container-pool task" : usesQueuedDispatch ? "queueing NATS task" : "waking worker";
+        const dispatchStatus = usesQueuedDispatch ? "queued via NATS" : "waking worker";
         clearStream(dispatchStatus);
         openRustRuntimeSocket(threadId, taskId);
         openGleamLiveSocket(threadId, taskId);
@@ -4405,6 +4529,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("zero-context").addEventListener("change", renderContextCandidates);
       $("thread-control-panel").addEventListener("click", handleControlPanelClick);
       $("thread-control-panel").addEventListener("keydown", handleControlPanelKey);
+      $("thread-control-toggle").addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!threadControlCanCollapse()) return;
+        setThreadControlCollapsed(!state.threadControlCollapsed, { scrollIntoView: state.threadControlCollapsed, smooth: true });
+      });
       $("previous-tasks-panel").addEventListener("click", (event) => handleLowerPanelClick(event, "tasks"));
       $("previous-tasks-panel").addEventListener("keydown", (event) => handlePanelKey(event, "tasks"));
       $("response-stream-panel").addEventListener("click", (event) => handleLowerPanelClick(event, "stream"));
@@ -8917,6 +9046,11 @@ async fn main() {
         queue_consumer_label: "Rust NATS shadow preparer (dd-remote-queue-consumer)".to_string(),
     };
 
+    // Mount the receive helper at /internal/update-runtime-config (+ snapshot
+    // + reset). The control plane pushes a payload here every 5 min.
+    let runtime_config_router = dd_runtime_config_client::router();
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+
     let app = Router::new()
         .route("/", get(root))
         .route("/home", get(home))
@@ -8953,7 +9087,8 @@ async fn main() {
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/favicon.ico", get(favicon))
-        .with_state(state);
+        .with_state(state)
+        .merge(runtime_config_router);
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

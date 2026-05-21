@@ -5,10 +5,11 @@
     {
       "service": "agent-worker-broker-rs",
       "language": "rust",
-      "routeCount": 6,
+      "routeCount": 9,
       "routeTypeCounts": {
         "user-generated": 1,
-        "service": 5
+        "service": 5,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/agent-worker-broker-rs/generated/api-docs.json",
@@ -18,10 +19,11 @@
     {
       "service": "ai-ml-pipeline",
       "language": "python",
-      "routeCount": 11,
+      "routeCount": 14,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 4
+        "user-generated": 4,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/ai-ml-pipeline/generated/api-docs.json",
@@ -31,10 +33,11 @@
     {
       "service": "auth-server-rs",
       "language": "rust",
-      "routeCount": 7,
+      "routeCount": 10,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 2
+        "user-generated": 2,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/auth-server-rs/generated/api-docs.json",
@@ -44,10 +47,11 @@
     {
       "service": "bastion-rs",
       "language": "rust",
-      "routeCount": 11,
+      "routeCount": 14,
       "routeTypeCounts": {
         "service": 4,
-        "user-generated": 7
+        "user-generated": 7,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/bastion-rs/generated/api-docs.json",
@@ -57,10 +61,11 @@
     {
       "service": "build-server-rs",
       "language": "rust",
-      "routeCount": 9,
+      "routeCount": 12,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 3
+        "user-generated": 3,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/build-server-rs/generated/api-docs.json",
@@ -70,9 +75,10 @@
     {
       "service": "container-pool-rs",
       "language": "rust",
-      "routeCount": 9,
+      "routeCount": 12,
       "routeTypeCounts": {
         "service": 5,
+        "runtime-config": 3,
         "user-generated": 4
       },
       "generated": [
@@ -83,10 +89,11 @@
     {
       "service": "contract-service-rs",
       "language": "rust",
-      "routeCount": 12,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 6
+        "user-generated": 6,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/contract-service-rs/generated/api-docs.json",
@@ -96,9 +103,10 @@
     {
       "service": "des-simulator-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 16,
       "routeTypeCounts": {
         "service": 6,
+        "runtime-config": 3,
         "user-generated": 7
       },
       "generated": [
@@ -107,12 +115,27 @@
       ]
     },
     {
+      "service": "dev-server",
+      "language": "node",
+      "routeCount": 19,
+      "routeTypeCounts": {
+        "user-generated": 10,
+        "service": 6,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/dev-server/generated/api-docs.json",
+        "remote/deployments/dev-server/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "formal-methods-server-rs",
       "language": "rust",
-      "routeCount": 12,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 6
+        "user-generated": 6,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/formal-methods-server-rs/generated/api-docs.json",
@@ -122,10 +145,11 @@
     {
       "service": "formal-methods-service-rs",
       "language": "rust",
-      "routeCount": 7,
+      "routeCount": 10,
       "routeTypeCounts": {
         "service": 4,
-        "user-generated": 3
+        "user-generated": 3,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
@@ -135,10 +159,11 @@
     {
       "service": "gleam-lambda-runner",
       "language": "gleam",
-      "routeCount": 9,
+      "routeCount": 12,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 4
+        "user-generated": 4,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleam-lambda-runner/generated/api-docs.json",
@@ -148,10 +173,11 @@
     {
       "service": "gleam-mcp-server",
       "language": "gleam",
-      "routeCount": 9,
+      "routeCount": 12,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 3
+        "user-generated": 3,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleam-mcp-server/generated/api-docs.json",
@@ -161,10 +187,11 @@
     {
       "service": "gleamlang-presence-server",
       "language": "gleam",
-      "routeCount": 14,
+      "routeCount": 17,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 9
+        "user-generated": 9,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
@@ -174,10 +201,11 @@
     {
       "service": "gleamlang-server",
       "language": "gleam",
-      "routeCount": 9,
+      "routeCount": 12,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 4
+        "user-generated": 4,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleamlang-server/generated/api-docs.json",
@@ -200,10 +228,11 @@
     {
       "service": "gleamlang-ws-server",
       "language": "gleam",
-      "routeCount": 18,
+      "routeCount": 21,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 12
+        "user-generated": 12,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleamlang-ws-server/generated/api-docs.json",
@@ -213,9 +242,10 @@
     {
       "service": "mdp-optimizer-rs",
       "language": "rust",
-      "routeCount": 8,
+      "routeCount": 11,
       "routeTypeCounts": {
         "service": 6,
+        "runtime-config": 3,
         "user-generated": 2
       },
       "generated": [
@@ -226,11 +256,12 @@
     {
       "service": "rest-api-rs",
       "language": "rust",
-      "routeCount": 35,
+      "routeCount": 39,
       "routeTypeCounts": {
-        "user-generated": 20,
+        "user-generated": 21,
         "service": 5,
-        "internal-db": 10
+        "internal-db": 10,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/rest-api-rs/generated/api-docs.json",
@@ -238,12 +269,26 @@
       ]
     },
     {
+      "service": "runtime-config-rs",
+      "language": "rust",
+      "routeCount": 15,
+      "routeTypeCounts": {
+        "service": 3,
+        "user-generated": 12
+      },
+      "generated": [
+        "remote/deployments/runtime-config-rs/generated/api-docs.json",
+        "remote/deployments/runtime-config-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "trading-server-rs",
       "language": "rust",
-      "routeCount": 10,
+      "routeCount": 13,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 3
+        "user-generated": 3,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/trading-server-rs/generated/api-docs.json",
@@ -253,9 +298,10 @@
     {
       "service": "wal-gateway-rs",
       "language": "rust",
-      "routeCount": 7,
+      "routeCount": 10,
       "routeTypeCounts": {
-        "service": 7
+        "service": 7,
+        "runtime-config": 3
       },
       "generated": [
         "remote/deployments/wal-gateway-rs/generated/api-docs.json",
@@ -263,11 +309,26 @@
       ]
     },
     {
+      "service": "web-home-rs",
+      "language": "rust",
+      "routeCount": 29,
+      "routeTypeCounts": {
+        "service": 4,
+        "user-generated": 22,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/web-home-rs/generated/api-docs.json",
+        "remote/deployments/web-home-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "webrtc-signaling-rs",
       "language": "rust",
-      "routeCount": 16,
+      "routeCount": 19,
       "routeTypeCounts": {
         "service": 8,
+        "runtime-config": 3,
         "user-generated": 8
       },
       "generated": [

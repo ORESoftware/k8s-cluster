@@ -1,0 +1,277 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "runtime-config-rs",
+  "language": "rust",
+  "routeCount": 15,
+  "routeTypeCounts": {
+    "service": 3,
+    "user-generated": 12
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "admin_root"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/admin",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "admin_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/admin/push/:env",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "admin_push_now"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/admin/upsert",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "admin_upsert"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/entries/:env",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_entries",
+        "upsert_entry_handler"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/entries/:env/:scope/:key",
+      "methods": [
+        "GET",
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "delete_entry_handler",
+        "get_entry"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/entries/:env/:scope/:key/delete",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "admin_delete_entry"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/push/:env",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "push_now"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/snapshot/:env",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_entries"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/subscribers",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "register_subscriber"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/subscribers/:env",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_subscribers"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/subscribers/:env/:name",
+      "methods": [
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "delete_subscriber_handler"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/subscribers/:env/:name/delete",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "admin_delete_subscriber"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

@@ -400,6 +400,7 @@ dependencies = [
  "async-nats",
  "axum",
  "dd-pg-defs",
+ "dd-runtime-config-client",
  "dd-wal-consumer",
  "once_cell",
  "prometheus",
@@ -414,6 +415,17 @@ dependencies = [
  "tokio-postgres",
  "tokio-postgres-rustls",
  "webpki-roots 0.26.7",
+]
+
+[[package]]
+name = "dd-runtime-config-client"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

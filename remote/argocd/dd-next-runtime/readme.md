@@ -317,8 +317,8 @@ The runtime now uses a NATS queued execution path by default:
 4. KEDA watches that JetStream consumer lag and scales `dd-remote-queue-consumer` from 1 to 8 pods
    when pending messages build up, then returns to 1 after the stream drains.
 5. The consumer dispatches real `task.dispatch` messages to the repo-scoped container pool with
-   `affinityKey=<threadId>`; legacy shadow messages are the only messages that prepare the
-   deterministic `dd-thread-<short>` Deployment.
+   `affinityKey=<threadId>` and falls back to the deterministic worker only if the matching repo
+   pool is unavailable or rejects the task. Legacy shadow messages are prepare-only.
 6. The queue consumer stores taskId receipts under `/tmp/dd-remote-queue-consumer/tasks`; the
    Node.js worker also stores taskId receipts under its log directory. Repeated messages are
    accepted idempotently and do not start duplicate agent runs.

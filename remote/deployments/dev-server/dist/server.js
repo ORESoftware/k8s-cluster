@@ -38,6 +38,7 @@ import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
 import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
+import { registerRuntimeConfigRoutes, registerWithControlPlane } from './runtime-config.js';
 // ---------- Config ----------
 const DEFAULT_AGENT_PROVIDER = 'generic-ai-sdk';
 const AGENT_FALLBACK_PROVIDER = 'generic-ai-sdk';
@@ -55,6 +56,47 @@ const GENERATED_GIT_EXCLUDE_PATHS = ['.pnpm-store', 'node_modules', '.next', '.t
 const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS.map((path) => `:(exclude)${path}`);
 function configAgentProvider(value, fallback) {
     return value && CONFIG_AGENT_PROVIDERS.has(value) ? value : fallback;
+}
+// Normalize a git remote so that equivalent forms compare equal:
+//   git@github.com:Owner/Repo.git  <->  https://github.com/Owner/Repo
+//   git+https://github.com/Owner/Repo.git  <->  https://github.com/owner/repo.git
+// Returns null for an empty/unparseable input. Host and owner-or-org/path are
+// lowercased; trailing `.git` and trailing `/` are stripped. Userinfo is
+// dropped so credentials embedded in the URL never affect equality.
+function canonicalRepoKey(input) {
+    if (!input)
+        return null;
+    let value = String(input).trim();
+    if (!value)
+        return null;
+    value = value.replace(/^git\+/i, '');
+    const scpMatch = value.match(/^([^@\s]+)@([^:\s]+):(.+)$/);
+    if (scpMatch && scpMatch[2] && scpMatch[3]) {
+        const host = scpMatch[2].toLowerCase();
+        const pathPart = scpMatch[3].replace(/^\/+/, '');
+        value = `https://${host}/${pathPart}`;
+    }
+    try {
+        const url = new URL(value);
+        const host = url.hostname.toLowerCase();
+        let pathPart = url.pathname.replace(/^\/+/, '').replace(/\/+$/, '');
+        if (pathPart.toLowerCase().endsWith('.git')) {
+            pathPart = pathPart.slice(0, -4);
+        }
+        return `${host}/${pathPart.toLowerCase()}`;
+    }
+    catch {
+        let stripped = value.replace(/\/+$/, '');
+        if (stripped.toLowerCase().endsWith('.git')) {
+            stripped = stripped.slice(0, -4);
+        }
+        return stripped.toLowerCase();
+    }
+}
+function repoUrlsMatch(a, b) {
+    const ka = canonicalRepoKey(a);
+    const kb = canonicalRepoKey(b);
+    return ka !== null && kb !== null && ka === kb;
 }
 function configAgentProviderList(value, fallback) {
     const requested = value
@@ -368,8 +410,15 @@ function modelLabel(provider, model) {
         .toLowerCase();
     return label;
 }
+function stripNegatedPullRequestPhrases(prompt) {
+    return prompt
+        .replace(/\b(?:do\s+not|don't|dont|never)\s+(?:(?:open|create|submit|make|raise)\s+)?(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/gi, ' ')
+        .replace(/\b(?:without|no)\s+(?:(?:opening|creating|submitting|making|raising)\s+)?(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)s?\b/gi, ' ')
+        .replace(/\b(?:without|no)\s+(?:pr|pull\s+request|merge\s+request)s?\b/gi, ' ');
+}
 function promptRequestsPullRequest(prompt) {
-    return /\b(?:open|create|submit|make|raise)\s+(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt) || /\b(?:pr|pull\s+request|merge\s+request)\b/i.test(prompt);
+    const prPrompt = stripNegatedPullRequestPhrases(prompt);
+    return /\b(?:open|create|submit|make|raise)\s+(?:a\s+)?(?:draft\s+)?(?:pr|pull\s+request|merge\s+request)\b/i.test(prPrompt) || /\b(?:pr|pull\s+request|merge\s+request)\b/i.test(prPrompt);
 }
 function stripNegatedWorkspaceChangePhrases(prompt) {
     return prompt
@@ -3099,13 +3148,25 @@ function registerWorkerWebSocketUpgrade() {
 }
 fastify.addHook('preHandler', async (req, reply) => {
     const requestPath = req.url.split('?')[0] ?? req.url;
-    if (requestPath === '/healthz' || requestPath === '/metrics' || requestPath === '/favicon.ico') {
+    if (requestPath === '/healthz' ||
+        requestPath === '/metrics' ||
+        requestPath === '/favicon.ico' ||
+        requestPath === '/docs/api' ||
+        requestPath === '/api/docs' ||
+        requestPath === '/api/docs.json') {
         return;
     }
     // GET /stream/:taskId may auth via short-lived HMAC token (?token=)
     // for direct browser → docker SSE connections that bypass Vercel's
     // 800s function cap. Defer that check to the route handler.
     if (req.method === 'GET' && requestPath.startsWith('/stream/')) {
+        return;
+    }
+    // The runtime-config receive helper does its own X-Server-Auth check
+    // against RUNTIME_CONFIG_SERVER_SECRET; defer to it so operators can use a
+    // different secret for the config control plane if they want to.
+    if (requestPath.startsWith('/internal/runtime-config') ||
+        requestPath === '/internal/update-runtime-config') {
         return;
     }
     if (!config.serverAuthSecret || req.headers['x-server-auth'] !== config.serverAuthSecret) {
@@ -3140,6 +3201,20 @@ fastify.get('/metrics', async (_req, reply) => {
     reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
     return renderMetrics();
 });
+fastify.get('/docs/api', async (_req, reply) => {
+    reply.header('content-type', 'text/html; charset=utf-8');
+    return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs', async (_req, reply) => {
+    reply.header('content-type', 'text/html; charset=utf-8');
+    return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs.json', async (_req, reply) => {
+    reply.header('content-type', 'application/json; charset=utf-8');
+    return readFile(new URL('../generated/api-docs.json', import.meta.url), 'utf8');
+});
+registerRuntimeConfigRoutes(fastify);
+void registerWithControlPlane();
 fastify.get('/status', async () => ({
     ok: true,
     serverInstanceId,
@@ -3364,10 +3439,11 @@ fastify.post('/tasks', async (req, reply) => {
             });
         }
         const requestedRepo = parsed.data.repo?.trim();
-        if (requestedRepo && requestedRepo !== config.repoUrl) {
+        if (requestedRepo && !repoUrlsMatch(requestedRepo, config.repoUrl)) {
             return reply.code(409).send({
                 error: 'container is bound to a different repo',
                 boundRepo: config.repoUrl,
+                requestedRepo,
             });
         }
         const requestedBaseBranch = parsed.data.baseBranch?.trim();

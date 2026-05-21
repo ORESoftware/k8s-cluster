@@ -1597,9 +1597,7 @@ async fn run_command(
     if output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stderr_trimmed = stderr.trim();
-        if !stderr_trimmed.is_empty()
-            && args.iter().any(|arg| arg == "run" || arg == "inspect")
-        {
+        if !stderr_trimmed.is_empty() && args.iter().any(|arg| arg == "run" || arg == "inspect") {
             eprintln!(
                 "{program} stderr (exit 0, args={args:?}): {}",
                 stderr_trimmed.chars().take(1500).collect::<String>()
@@ -2162,6 +2160,59 @@ fn target_url(container: &WarmContainer, path: &str) -> String {
     format!("http://127.0.0.1:{}{path}", container.port)
 }
 
+fn payload_string<'a>(body: &'a Value, camel_key: &str, snake_key: &str) -> Option<&'a str> {
+    body.get(camel_key)
+        .or_else(|| body.get(snake_key))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn normalized_repo_identity(value: &str) -> String {
+    let mut repo = value.trim().trim_end_matches('/').trim_end_matches(".git");
+    if let Some(rest) = repo.strip_prefix("git@github.com:") {
+        repo = rest;
+    } else if let Some(rest) = repo.strip_prefix("ssh://git@github.com/") {
+        repo = rest;
+    } else if let Some(rest) = repo.strip_prefix("https://github.com/") {
+        repo = rest;
+    } else if let Some(rest) = repo.strip_prefix("http://github.com/") {
+        repo = rest;
+    }
+    repo.to_ascii_lowercase()
+}
+
+fn validate_repo_affinity(pool: &PoolConfig, body: &Value) -> Result<(), String> {
+    let Some(configured_repo) = pool.env.get("DD_REPO_URL").map(String::as_str) else {
+        return Ok(());
+    };
+    let Some(request_repo) = payload_string(body, "repo", "repo") else {
+        return Ok(());
+    };
+    if normalized_repo_identity(configured_repo) != normalized_repo_identity(request_repo) {
+        return Err(format!(
+            "pool {} is configured for repo {configured_repo}, not {request_repo}",
+            pool.slug
+        ));
+    }
+
+    let configured_branch = pool
+        .env
+        .get("BASE_BRANCH")
+        .or_else(|| pool.env.get("DD_REPO_REF"))
+        .map(String::as_str)
+        .unwrap_or("dev")
+        .trim();
+    let request_branch = payload_string(body, "baseBranch", "base_branch").unwrap_or("dev");
+    if configured_branch != request_branch {
+        return Err(format!(
+            "pool {} is configured for baseBranch {configured_branch}, not {request_branch}",
+            pool.slug
+        ));
+    }
+    Ok(())
+}
+
 fn apply_forward_headers(
     mut builder: reqwest::RequestBuilder,
     headers: Option<&BTreeMap<String, String>>,
@@ -2272,6 +2323,14 @@ async fn dispatch_to_pool_inner(
     };
     let url = target_url(&lease.container, &path);
     let body = dispatch_body(&request);
+    if let Err(error) = validate_repo_affinity(&lease.pool, &body) {
+        release_container(state, &lease.container.name, true).await;
+        state
+            .metrics
+            .dispatch_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        return Err(error);
+    }
     let request_id = request_id_from_request(&request);
     let backfill_state = state.clone();
     let backfill_pool_id = lease.pool.id.clone();
@@ -2934,7 +2993,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/pools/:pool/warm", post(warm_pool))
         .route("/pools/:pool/dispatch", post(dispatch_pool))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let host = env_value("HOST", "0.0.0.0");
     let port = env_u16("PORT", DEFAULT_PORT);

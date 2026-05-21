@@ -70,6 +70,27 @@ spec:
             # does not retain Postgres WAL per pod.
             - name: PRESENCE_WAL_ENABLED
               value: "false"
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            # APPLY_URL uses POD_NAME so each replica registers itself
+            # individually under the headless service — every pod gets the
+            # push.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: "dd-gleamlang-presence-server-$(POD_NAME)"
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleamlang-presence-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: "http://$(POD_NAME).presence-svc.presence.svc.cluster.local:8081/internal/update-runtime-config"
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: ws
               containerPort: 8081

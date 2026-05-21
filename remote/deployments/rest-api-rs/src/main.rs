@@ -4289,7 +4289,7 @@ fn is_queued_dispatch_mode(mode: &str) -> bool {
 fn is_container_pool_dispatch_mode(mode: &str) -> bool {
     matches!(
         mode,
-        "queued-pool" | "nats-pool" | "container-pool" | "pool"
+        "queued" | "nats" | "async" | "queued-pool" | "nats-pool" | "container-pool" | "pool"
     )
 }
 
@@ -5692,8 +5692,103 @@ async fn metrics() -> impl IntoResponse {
     )
 }
 
+// ---------- Runtime-config proxy ----------
+//
+// Short-lived consumers (gleam-lambda-runner child runtimes, container-pool
+// images, ad-hoc cron jobs) pull their snapshot at boot from
+// /api/runtime-config/snapshot/{env}?scope=...
+// The rest-api forwards to the in-cluster dd-runtime-config service. We keep
+// the snapshot endpoint unauthenticated through the gateway (same posture as
+// the agents tasks UI fetch); secrets must not be put in runtime-config
+// entries.
+async fn runtime_config_snapshot(
+    axum::extract::Path(env_label): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if env_label != "stage" && env_label != "prod" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": "env must be 'stage' or 'prod'" })),
+        )
+            .into_response();
+    }
+    let base = first_env(&["RUNTIME_CONFIG_BASE_URL"])
+        .unwrap_or_else(|| "http://dd-runtime-config.default.svc.cluster.local:8110".to_string());
+    let mut url = format!("{base}/snapshot/{env_label}");
+    if let Some(scope) = query.get("scope") {
+        url.push_str(&format!("?scope={}", urlencoding_minimal(scope)));
+    }
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("http client init failed: {error}"),
+                })),
+            )
+                .into_response();
+        }
+    };
+    let response = match client.get(&url).send().await {
+        Ok(response) => response,
+        Err(error) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("upstream runtime-config unreachable: {error}"),
+                })),
+            )
+                .into_response();
+        }
+    };
+    let status = response.status();
+    let bytes = match response.bytes().await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("upstream body read failed: {error}"),
+                })),
+            )
+                .into_response();
+        }
+    };
+    (
+        axum::http::StatusCode::from_u16(status.as_u16()).unwrap_or(axum::http::StatusCode::OK),
+        [(header::CONTENT_TYPE, "application/json".to_string())],
+        bytes,
+    )
+        .into_response()
+}
+
+fn urlencoding_minimal(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '~' | '*' | ':' | '/') {
+            out.push(ch);
+        } else {
+            for byte in ch.to_string().as_bytes() {
+                out.push_str(&format!("%{byte:02X}"));
+            }
+        }
+    }
+    out
+}
+
 fn code_first_router() -> Router {
     Router::new()
+        .route(
+            "/api/runtime-config/snapshot/:env",
+            get(runtime_config_snapshot),
+        )
         .route("/api/agents/tasks", get(agents_tasks))
         .route(
             "/api/agents/git-repos",
@@ -5777,6 +5872,7 @@ fn app_router() -> Router {
         .route("/api/docs", get(api_docs::html))
         .route("/api/docs.json", get(api_docs::json))
         .merge(code_first_router())
+        .merge(dd_runtime_config_client::router())
         .route("/metrics", get(metrics));
 
     if internal_db_routes_enabled() {
@@ -5797,6 +5893,7 @@ async fn main() {
     pg_contract::assert_canonical_schema_matches_local_reads();
 
     tokio::spawn(run_cdc_fanout_subscriptions());
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT")

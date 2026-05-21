@@ -1,3 +1,4 @@
+import dd_runtime_config_client
 import gleam/erlang/process
 import gleam/int
 import gleam/io
@@ -19,6 +20,8 @@ pub fn main() -> Nil {
     )
     |> supervisor.add(http_server.supervised(metrics_name))
     |> supervisor.start
+
+  let _ = dd_runtime_config_client.start_registration_loop()
 
   io.println(
     "dd gleam MCP server listening on "

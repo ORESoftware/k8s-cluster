@@ -1622,7 +1622,10 @@ async fn main() {
         .route("/deployments", get(runtime_deployments))
         .route("/terminal", get(terminal_page))
         .route("/terminal/ws", get(terminal_ws))
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     println!("{SERVICE_NAME} listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr)

@@ -261,7 +261,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs.json", get(api_docs_json))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics_handler))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("0.0.0.0:{}", config.http_port).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;

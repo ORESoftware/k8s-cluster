@@ -1968,7 +1968,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/simulate", post(simulate_http))
         .route("/simulations/:job_id", get(job_status))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     println!("dd-des-simulator listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;

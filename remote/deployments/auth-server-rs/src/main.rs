@@ -380,7 +380,10 @@ async fn main() {
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
-        .route("/metrics", get(metrics));
+        .route("/metrics", get(metrics))
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

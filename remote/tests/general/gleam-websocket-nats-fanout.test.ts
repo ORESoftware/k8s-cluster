@@ -99,9 +99,9 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(main, /PG_DATABASE_URL/);
   assert.match(main, /PRESENCE_NOTIFY_SHARDS/);
   assert.match(main, /PRESENCE_WAL_ENABLED/);
-  assert.match(pgListen, /expected_channel\(event\) == channel/);
-  assert.match(pgListen, /valid_shard\(event\.conv_shard, n_shards\)/);
-  assert.match(pgListen, /valid_op\(op\)/);
+  assert.match(pgListen, /channel_accepts_event\(channel, event\)/);
+  assert.match(pgListen, /valid_shard\(fields\.conv_shard, n_shards\)/);
+  assert.match(pgListen, /parse_op\(fields\.op\)/);
   assert.match(env, /publish_nats\/1/);
   assert.match(env, /json_message_id\/1/);
   assert.match(env, /now_ms\/0/);
@@ -170,7 +170,8 @@ test('rust task page opens websocket before dispatch and dedupes with sse fallba
   assert.match(home, /select id="dispatch-mode"/);
   assert.match(home, /option value="queued" selected \{ "queued NATS" \}/);
   assert.match(home, /const usesQueuedDispatch = dispatchMode === "queued" \|\| dispatchMode === "queued-pool"/);
-  assert.match(home, /clearStream\(usesQueuedDispatch \? "queued via NATS" : "waking worker"\)/);
+  assert.match(home, /const dispatchStatus = usesQueuedDispatch \? "queued via NATS" : "waking worker"/);
+  assert.match(home, /clearStream\(dispatchStatus\)/);
   assert.match(home, /openGleamLiveSocket\(threadId, taskId\);[\s\S]*fetch\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/tasks`/);
   assert.match(home, /if \(!usesQueuedDispatch\) openLiveStream\(threadId, taskId\)/);
   assert.match(home, /new EventSource\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/stream\/\$\{encodeURIComponent\(taskId\)\}`\)/);

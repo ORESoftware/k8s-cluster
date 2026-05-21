@@ -261,6 +261,49 @@ data:
         proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
       }
 
+      # /api/runtime-config/snapshot/{stage|prod} — proxied through the rest-api
+      # for short-lived consumers (lambdas, container-pool images, cron). Read
+      # only; no secret material should ever live in runtime-config entries.
+      location /api/runtime-config/ {
+        if ($request_method !~ ^(GET)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 10;
+        proxy_read_timeout 30;
+        proxy_send_timeout 30;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://dd-remote-rest-api.default.svc.cluster.local:8082;
+      }
+
+      # /runtime-config/admin — operator-cookie-gated HTML admin UI.
+      # All form posts (entries/{env}/{scope}/{key}/delete, /admin/upsert,
+      # /admin/push/{env}, /subscribers/{env}/{name}/delete) live under
+      # /runtime-config/* so this single block covers the whole admin
+      # surface. The trailing slash on proxy_pass strips the prefix so the
+      # upstream sees /admin, /admin/upsert, etc.
+      location /runtime-config/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        client_max_body_size 1m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 30;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header X-Admin-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-runtime-config.default.svc.cluster.local:8110/;
+      }
+
       location /api/agent-worker/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;

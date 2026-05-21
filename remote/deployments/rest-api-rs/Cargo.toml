@@ -13,6 +13,11 @@ axum = { version = "0.7", features = ["macros"] }
 # schema.sql immediately surfaces here (instead of silently shipping a
 # stale read or write).
 dd-pg-defs = { path = "../../libs/pg-defs/generated/rust" }
+# Receive runtime-config push updates from dd-runtime-config so the public
+# proxy at /api/runtime-config/snapshot/:env and the gateway-fronted admin
+# UI keep this REST API's own runtime overrides (auth flags, rate limits,
+# experiment toggles) hot-swappable without a rolling restart.
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 # WAL gateway subscription. The REST API already publishes NATS events
 # from its own write handlers, but CDC gives us a coalesced fan-out for
 # *every* row change — including writes made via psql, direct migrations,

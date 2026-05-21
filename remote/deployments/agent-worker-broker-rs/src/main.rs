@@ -664,7 +664,10 @@ async fn main() {
             "/api/agent-worker/threads/:thread_id/tasks",
             post(dispatch_task),
         )
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

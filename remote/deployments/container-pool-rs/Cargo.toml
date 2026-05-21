@@ -10,6 +10,7 @@ axum = { version = "0.7", features = ["macros"] }
 # `app_config.trading.container_pools.*` or direct edits to
 # `container_pool_configs`) refresh pools within a second, instead of
 # waiting up to CONTAINER_POOL_CONFIG_REFRESH_SECONDS for the poll.
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 dd-wal-consumer = { path = "../../libs/wal-consumer-rs" }
 futures-util = "0.3"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }

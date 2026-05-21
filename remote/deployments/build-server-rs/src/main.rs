@@ -1486,7 +1486,10 @@ async fn main() {
         .route("/builds", get(list_builds).post(submit_build))
         .route("/builds/:job_id", get(get_build))
         .route("/builds/:job_id/logs", get(get_build_logs))
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

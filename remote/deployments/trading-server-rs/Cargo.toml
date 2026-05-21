@@ -10,6 +10,7 @@ axum = { version = "0.7", features = ["macros"] }
 # arrive sub-second instead of waiting up to TRADING_CONFIG_REFRESH_SECONDS
 # for the next poll. The poll loop is still on as a belt-and-braces
 # fallback (interval extended once CDC is enabled).
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 dd-wal-consumer = { path = "../../libs/wal-consumer-rs" }
 futures-util = "0.3"
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }

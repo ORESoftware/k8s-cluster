@@ -29,6 +29,7 @@
 ////
 //// Each layer dedupes against the others so duplicate deliveries collapse.
 
+import dd_runtime_config_client
 import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/int
@@ -150,6 +151,8 @@ pub fn main() {
     |> supervisor.add(http_server.supervised(port: port, deps: deps))
     |> supervisor.start()
   io.println("presence: listening on 0.0.0.0:" <> int.to_string(port))
+
+  let _ = dd_runtime_config_client.start_registration_loop()
 
   process.sleep_forever()
 }

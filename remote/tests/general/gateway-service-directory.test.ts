@@ -192,7 +192,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
     '/api/agents/threads/example-thread-id/prepare',
   );
   assertDeploymentRow(home, 'dd-remote-queue-consumer');
-  assert.match(home, /It does not execute prompts/);
+  assert.match(home, /routes repo-matched work into warm container pools/);
   assertPathEntry(home, '/gleam/home', '/gleam/home');
   assertPathEntry(home, '/gleam/healthz', '/gleam/healthz');
   assertPathEntry(home, '/gleam/metrics', '/gleam/metrics');
@@ -949,18 +949,19 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
   );
-  assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
+  assert.match(server, /\.stream \{[\s\S]*overflow: visible;[\s\S]*padding-right: 0;/);
   assert.match(server, /\.thread-meta > span \{[\s\S]*text-overflow: ellipsis;/);
   assert.match(
     server,
     /section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel"/,
   );
-  assert.match(server, /h2 \{ "Thread Control" \}/);
+  assert.match(server, /h2 id="thread-control-title" \{ "Thread Control" \}/);
   assert.match(server, /span id="thread-mode" class="pill warn" \{ "select thread" \}/);
+  assert.match(server, /button id="thread-control-toggle" class="icon" type="button" title="Expand Thread Control" aria-expanded="false" \{ "\^" \}/);
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(
     server,
-    /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/,
+    /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: visible;/,
   );
   assert.match(
     server,
@@ -968,7 +969,10 @@ test('rust agent threads page renders stored response events and feedback contro
   );
   assert.match(server, /\.main\.control-top #thread-control-panel \{[\s\S]*order: 1;/);
   assert.match(server, /\.main\.control-bottom #thread-control-panel \{[\s\S]*order: 2;/);
-  assert.match(server, /\.main\.control-sliding-down #thread-control-panel \{[\s\S]*animation: control-slide-down 260ms ease;/);
+  assert.match(server, /\.main\.control-sliding-down #thread-control-panel \{[\s\S]*animation: control-dock-travel 1500ms/);
+  assert.match(server, /@keyframes control-dock-morph \{[\s\S]*opacity: 0\.5;/);
+  assert.match(server, /\.main\.control-bottom \.prompt-panel \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
+  assert.match(server, /\.main\.control-bottom\.control-collapsed \.prompt-panel \{[\s\S]*max-height: 66px;[\s\S]*overflow: hidden;/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
   assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
@@ -977,6 +981,9 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/);
   assert.match(server, /function setWorkspaceLayout\(mode\) \{/);
   assert.match(server, /function setControlPosition\(position, options = \{\}\) \{/);
+  assert.match(server, /function setThreadControlCollapsed\(collapsed, options = \{\}\) \{/);
+  assert.match(server, /function syncThreadControlTitle\(\) \{/);
+  assert.match(server, /function scrollResponseToLatest\(\) \{/);
   assert.match(server, /function setThreadUiMode\(modeName\) \{/);
   assert.match(server, /const UUID_PATTERN = \/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/i;/);
   assert.match(server, /function readUuidInput\(id, label, options = \{\}\) \{/);
@@ -986,6 +993,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.main\.mode-new #terminal-thread[\s\S]*display: none;/);
   assert.match(server, /\$\("send"\)\.textContent = modeName === "new" \? "Create thread & send"/);
   assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", handleControlPanelClick\)/);
+  assert.match(server, /\$\("thread-control-toggle"\)\.addEventListener\("click", \(event\) => \{/);
   assert.match(server, /function setTaskStreamLayout\(mode\) \{/);
   assert.match(server, /function handleLowerPanelClick\(event, mode\) \{/);
   assert.match(server, /\$\("previous-tasks-panel"\)\.addEventListener\("click", \(event\) => handleLowerPanelClick\(event, "tasks"\)\)/);
@@ -1104,7 +1112,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /leftGroup\.appendChild\(modelChip\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
   assert.match(server, /NATS container pool/);
-  assert.match(server, /queueing container-pool task/);
+  assert.match(server, /queued via NATS/);
   assert.match(server, /thread UUID as the affinity key/);
   assert.match(server, /lastRuntimeData: null/);
   assert.match(server, /async function readableFetchFailure\(response, label\) \{/);
@@ -1154,7 +1162,7 @@ test('rust agent threads page renders stored response events and feedback contro
     /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
   );
   assert.match(server, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/);
-  assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
+  assert.match(server, /\.stream \{[\s\S]*overflow: visible;[\s\S]*padding-right: 0;/);
   assert.match(server, /\.thread-meta span \{[\s\S]*text-overflow: ellipsis;/);
   assert.match(
     server,
@@ -1168,11 +1176,13 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*min-height: 154px;[\s\S]*max-height: none;[\s\S]*overflow: visible;[\s\S]*z-index: 1;/,
   );
+  assert.match(server, /\.main\.control-bottom \.prompt-panel \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
+  assert.match(server, /\.main\.control-bottom\.control-collapsed #thread-control-subtitle,[\s\S]*\.main\.control-bottom\.control-collapsed \.form-grid,/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
   assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
   assert.match(server, /aside id="previous-tasks-panel" class="tasks-sidebar" tabindex="0" aria-label="Thread tasks sidebar"/);
-  assert.match(server, /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/);
+  assert.match(server, /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: visible;/);
   assert.match(
     server,
     /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/,
@@ -1181,6 +1191,7 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /@media \(max-width: 980px\) \{[\s\S]*\.app \{[\s\S]*grid-template-rows: minmax\(132px, 24dvh\) minmax\(0, 1fr\) minmax\(132px, 28dvh\);/,
   );
+  assert.match(server, /@media \(max-width: 980px\) \{[\s\S]*\.main\.control-bottom\.control-expanded \.prompt-panel \{[\s\S]*z-index: 1200;/);
   assert.match(
     server,
     /@media \(max-width: 980px\) \{[\s\S]*\.main \{[\s\S]*overflow: hidden auto;[\s\S]*overscroll-behavior: contain;/,

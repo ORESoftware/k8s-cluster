@@ -1,3 +1,4 @@
+import dd_runtime_config_client
 import gleam/erlang/process
 import gleam/io
 import gleam/otp/static_supervisor as supervisor
@@ -22,6 +23,8 @@ pub fn main() -> Nil {
     )
     |> supervisor.add(http_server.supervised(broker_name))
     |> supervisor.start
+
+  let _ = dd_runtime_config_client.start_registration_loop()
 
   io.println("dd gleamlang-server listening on :8081")
   process.sleep_forever()

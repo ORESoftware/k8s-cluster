@@ -46,6 +46,8 @@ resources:
   - dd-webrtc-signaling.service.yaml
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
+  - dd-runtime-config.deployment.yaml
+  - dd-runtime-config.service.yaml
   - dd-idle-reaper.configmap.yaml
   - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml

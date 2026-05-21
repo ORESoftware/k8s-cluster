@@ -152,6 +152,12 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /x-container-pool-auth/);
   assert.match(source, /transfer-encoding/);
   assert.match(source, /proxy-/);
+  assert.match(source, /fn validate_repo_affinity/);
+  assert.match(source, /normalized_repo_identity/);
+  assert.match(source, /payload_string\(body, "baseBranch", "base_branch"\)/);
+  assert.match(source, /pool \{\} is configured for repo/);
+  assert.match(source, /pool \{\} is configured for baseBranch/);
+  assert.match(source, /validate_repo_affinity\(&lease\.pool, &body\)/);
   assert.match(source, /dd\.container-pool\.managed=true/);
   assert.match(source, /max_concurrency_per_container/);
   assert.match(source, /available_capacity/);
@@ -300,7 +306,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
     }
     assert.equal(pool.healthPath, parsed.runtimeContract.defaultHealthPath);
     assert.equal(pool.containerPort, parsed.runtimeContract.defaultContainerPort);
-    if (pool.slug === 'nodejs-chat-claude-live-mutex-dev') {
+    if (pool.slug.startsWith('nodejs-chat-claude-')) {
       assert.ok(pool.minWarm >= 2, `pool ${pool.slug} should keep at least two warm workers`);
     } else {
       assert.ok(pool.minWarm >= 0, `pool ${pool.slug} should allow disabled prewarm`);

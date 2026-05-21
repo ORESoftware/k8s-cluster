@@ -92,9 +92,10 @@ cold-start a UUID-bound worker, `/agents/threads` shows visible waking/still-wai
 instead of leaving the response pane stuck on a generic dispatch message. While the dispatch
 request is still pending, the page also polls `GET /api/agents/threads/:threadId/runtime` so the
 operator can see the Kubernetes Deployment, Pod phase, container readiness, and waiting reason.
-Thread Control expands while creating a new worker, while selecting Previous tasks or Response
-stream gives those lower panels the larger share. Existing-thread-only controls stay hidden until
-the selected UUID is backed by a stored thread.
+Thread Control expands while creating a new worker, then docks into a collapsed sticky bottom sheet
+once the response stream takes over the middle column. The middle column owns response scrolling,
+while the left thread list and right task list keep their independent sidebar scrolls.
+Existing-thread-only controls stay hidden until the selected UUID is backed by a stored thread.
 
 Both UI pages target the per-thread Ingress shape:
 
