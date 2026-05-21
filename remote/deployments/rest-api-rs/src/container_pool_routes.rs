@@ -20,9 +20,9 @@
 //! a `nerdctl build` invoked by hand from the repo.
 //!
 //! Auth: protected at the gateway via `dd_gateway_auth_ok` (mirrors
-//! `/api/lambdas/`). No additional REST-layer check is added here because
-//! reusing the gateway gate is consistent with every other operator-only
-//! page on this service.
+//! `/api/lambdas/`) and again in this service with `X-Server-Auth`, so
+//! direct in-cluster callers cannot start privileged image builds unless
+//! they have the service secret.
 
 use std::{
     env, fs,
@@ -32,8 +32,10 @@ use std::{
 };
 
 use axum::{
+    body::Body,
     extract::{Path, Query},
-    http::StatusCode,
+    http::{HeaderMap, Request, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -195,14 +197,72 @@ fn builds_enabled() -> bool {
         || env_bool("LAMBDA_IMAGE_BUILD_ENABLED", false)
 }
 
+fn api_auth_required() -> bool {
+    env_bool("CONTAINER_POOL_IMAGE_API_AUTH_REQUIRED", true)
+}
+
+fn custom_test_commands_enabled() -> bool {
+    env_bool("CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED", false)
+}
+
+fn operator_api_secret() -> Option<String> {
+    env::var("CONTAINER_POOL_IMAGE_API_SECRET")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("REMOTE_DEV_SERVER_SECRET")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| {
+            env::var("SERVER_AUTH_SECRET")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+}
+
+fn request_has_operator_auth(headers: &HeaderMap) -> bool {
+    if !api_auth_required() {
+        return true;
+    }
+    let Some(expected) = operator_api_secret() else {
+        return false;
+    };
+    headers
+        .get("x-server-auth")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == expected)
+}
+
+fn unauthorized_response() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({
+            "ok": false,
+            "error": "unauthorized",
+        })),
+    )
+        .into_response()
+}
+
+async fn require_operator_auth(req: Request<Body>, next: Next) -> Response {
+    if request_has_operator_auth(req.headers()) {
+        next.run(req).await
+    } else {
+        unauthorized_response()
+    }
+}
+
 fn validate_path_under_root(path: &FsPath) -> Result<(), String> {
     if path.is_absolute() {
         return Err("path must be relative to the repo root".to_string());
     }
-    if path
-        .components()
-        .any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
-    {
+    if path.components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
         return Err("path must not contain `..` or absolute components".to_string());
     }
     Ok(())
@@ -216,8 +276,7 @@ fn resolve_repo_path(rel: &str) -> Result<PathBuf, String> {
 
 fn read_disk_dockerfile(entry: &CatalogEntry) -> Result<String, String> {
     let path = resolve_repo_path(entry.dockerfile_path)?;
-    fs::read_to_string(&path)
-        .map_err(|err| format!("failed to read {}: {err}", path.display()))
+    fs::read_to_string(&path).map_err(|err| format!("failed to read {}: {err}", path.display()))
 }
 
 fn sha256_hex(value: &str) -> String {
@@ -231,14 +290,35 @@ fn truncate_log(value: &str, max: usize) -> String {
     if value.len() <= max {
         return value.to_string();
     }
-    let head = max / 2;
-    let tail = max - head - 32;
-    format!(
-        "{}\n\n... [truncated {} bytes] ...\n\n{}",
-        &value[..head],
-        value.len() - max,
-        &value[value.len() - tail..]
-    )
+    let marker = format!(
+        "\n\n... [truncated {} bytes] ...\n\n",
+        value.len().saturating_sub(max)
+    );
+    let budget = max.saturating_sub(marker.len());
+    if budget == 0 {
+        return marker.trim().to_string();
+    }
+    let head_budget = budget / 2;
+    let tail_budget = budget - head_budget;
+    let head = floor_char_boundary(value, head_budget);
+    let tail = ceil_char_boundary(value, value.len().saturating_sub(tail_budget));
+    format!("{}{}{}", &value[..head], marker, &value[tail..])
+}
+
+fn floor_char_boundary(value: &str, preferred: usize) -> usize {
+    let mut idx = preferred.min(value.len());
+    while idx > 0 && !value.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
+fn ceil_char_boundary(value: &str, preferred: usize) -> usize {
+    let mut idx = preferred.min(value.len());
+    while idx < value.len() && !value.is_char_boundary(idx) {
+        idx += 1;
+    }
+    idx
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -297,80 +377,6 @@ struct BuildRunRow {
     updated_at: Option<String>,
     build_log_excerpt: Option<String>,
     test_log_excerpt: Option<String>,
-}
-
-/// Idempotent runtime bootstrap of the two container-pool tables (mirrors
-/// the canonical definition in `remote/libs/pg-defs/schema/schema.sql`).
-/// Called from every handler before issuing queries so the page Just Works
-/// on a fresh database without a separate migration step. The CREATE
-/// statements use `if not exists` so this is safe to call concurrently.
-async fn ensure_schema(client: &tokio_postgres::Client) -> Result<(), String> {
-    client
-        .batch_execute(
-            r#"
-            create table if not exists container_pool_image_revisions (
-              id uuid primary key default gen_random_uuid(),
-              image_slug varchar(120) not null,
-              image_ref text not null,
-              dockerfile_path text not null,
-              build_context text not null,
-              dockerfile_text text not null,
-              dockerfile_sha256 varchar(64) not null,
-              source varchar(32) default 'user' not null,
-              notes text default '' not null,
-              status varchar(32) default 'candidate' not null,
-              meta_data jsonb default '{}'::jsonb not null,
-              is_soft_deleted boolean default false not null,
-              created_at timestamptz default now() not null,
-              updated_at timestamptz default now() not null,
-              created_by uuid,
-              updated_by uuid
-            );
-            create index if not exists container_pool_image_revisions_slug_idx
-              on container_pool_image_revisions (image_slug, created_at desc)
-              where is_soft_deleted = false;
-            create unique index if not exists container_pool_image_revisions_slug_sha_uq
-              on container_pool_image_revisions (image_slug, dockerfile_sha256)
-              where is_soft_deleted = false;
-            create table if not exists container_pool_build_runs (
-              id uuid primary key default gen_random_uuid(),
-              image_slug varchar(120) not null,
-              revision_id uuid not null references container_pool_image_revisions(id),
-              image_ref text not null,
-              candidate_tag text not null,
-              build_status varchar(32) default 'queued' not null,
-              test_status varchar(32) default 'not_started' not null,
-              overall_status varchar(32) default 'queued' not null,
-              test_command text default '' not null,
-              build_started_at timestamptz,
-              build_finished_at timestamptz,
-              test_started_at timestamptz,
-              test_finished_at timestamptz,
-              build_log_excerpt text default '' not null,
-              test_log_excerpt text default '' not null,
-              error_message text,
-              triggered_by uuid,
-              meta_data jsonb default '{}'::jsonb not null,
-              is_soft_deleted boolean default false not null,
-              created_at timestamptz default now() not null,
-              updated_at timestamptz default now() not null
-            );
-            create index if not exists container_pool_build_runs_slug_idx
-              on container_pool_build_runs (image_slug, created_at desc)
-              where is_soft_deleted = false;
-            create index if not exists container_pool_build_runs_overall_idx
-              on container_pool_build_runs (overall_status)
-              where is_soft_deleted = false;
-            "#,
-        )
-        .await
-        .map_err(|err| format!("ensure container pool schema: {err}"))
-}
-
-async fn connect_and_ensure() -> Result<tokio_postgres::Client, String> {
-    let client = connect_postgres().await?;
-    ensure_schema(&client).await?;
-    Ok(client)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -466,10 +472,7 @@ async fn latest_revision_for(
     Ok(row.as_ref().map(|r| row_to_revision(r, false)))
 }
 
-async fn revision_count_for(
-    client: &tokio_postgres::Client,
-    slug: &str,
-) -> Result<i64, String> {
+async fn revision_count_for(client: &tokio_postgres::Client, slug: &str) -> Result<i64, String> {
     let row = client
         .query_one(
             "select count(*)::bigint as n from container_pool_image_revisions \
@@ -498,10 +501,7 @@ async fn latest_build_for(
     Ok(row.as_ref().map(|r| row_to_build(r, false)))
 }
 
-async fn build_count_for(
-    client: &tokio_postgres::Client,
-    slug: &str,
-) -> Result<i64, String> {
+async fn build_count_for(client: &tokio_postgres::Client, slug: &str) -> Result<i64, String> {
     let row = client
         .query_one(
             "select count(*)::bigint as n from container_pool_build_runs \
@@ -614,7 +614,14 @@ async fn current_revision(
         }
     }
     let text = read_disk_dockerfile(entry)?;
-    insert_revision(client, entry, &text, "disk-default", "Loaded from on-disk Dockerfile.").await
+    insert_revision(
+        client,
+        entry,
+        &text,
+        "disk-default",
+        "Loaded from on-disk Dockerfile.",
+    )
+    .await
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -639,14 +646,21 @@ fn ok_response(value: Value) -> Response {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async fn list_images() -> Response {
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     let mut images: Vec<ImageSummary> = Vec::with_capacity(CATALOG.len());
     for entry in CATALOG.iter() {
-        let disk_sha = read_disk_dockerfile(entry).ok().map(|text| sha256_hex(&text));
-        let latest_revision = latest_revision_for(&client, entry.slug).await.ok().flatten();
+        let disk_sha = read_disk_dockerfile(entry)
+            .ok()
+            .map(|text| sha256_hex(&text));
+        let latest_revision = latest_revision_for(&client, entry.slug)
+            .await
+            .ok()
+            .flatten();
         let latest_build = latest_build_for(&client, entry.slug).await.ok().flatten();
         let revision_count = revision_count_for(&client, entry.slug).await.unwrap_or(0);
         let build_count = build_count_for(&client, entry.slug).await.unwrap_or(0);
@@ -677,14 +691,19 @@ async fn get_image(Path(slug): Path<String>) -> Response {
     let Some(entry) = catalog_entry(&slug) else {
         return error_response(StatusCode::NOT_FOUND, "unknown image slug");
     };
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     let current = match current_revision(&client, entry).await {
         Ok(r) => r,
         Err(err) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("revision: {err}"))
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("revision: {err}"),
+            )
         }
     };
     let latest_build = latest_build_for(&client, entry.slug).await.ok().flatten();
@@ -739,21 +758,24 @@ async fn get_dockerfile(
             Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, err),
         };
     }
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     if let Some(revision_id) = query.revision_id.as_deref() {
         return match fetch_revision_by_id(&client, revision_id).await {
-            Ok(Some(revision)) if revision.image_slug == slug => {
-                ok_response(json!({
-                    "slug": entry.slug,
-                    "source": "revision",
-                    "revision": revision,
-                }))
-            }
+            Ok(Some(revision)) if revision.image_slug == slug => ok_response(json!({
+                "slug": entry.slug,
+                "source": "revision",
+                "revision": revision,
+            })),
             Ok(_) => error_response(StatusCode::NOT_FOUND, "revision not found"),
-            Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("revision: {err}")),
+            Err(err) => error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("revision: {err}"),
+            ),
         };
     }
     match current_revision(&client, entry).await {
@@ -762,7 +784,10 @@ async fn get_dockerfile(
             "source": revision.source,
             "revision": revision,
         })),
-        Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("revision: {err}")),
+        Err(err) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("revision: {err}"),
+        ),
     }
 }
 
@@ -774,10 +799,7 @@ struct PutDockerfileBody {
     notes: Option<String>,
 }
 
-async fn put_dockerfile(
-    Path(slug): Path<String>,
-    Json(body): Json<PutDockerfileBody>,
-) -> Response {
+async fn put_dockerfile(Path(slug): Path<String>, Json(body): Json<PutDockerfileBody>) -> Response {
     let Some(entry) = catalog_entry(&slug) else {
         return error_response(StatusCode::NOT_FOUND, "unknown image slug");
     };
@@ -804,9 +826,11 @@ async fn put_dockerfile(
         .chars()
         .take(8_000)
         .collect::<String>();
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     match insert_revision(&client, entry, &text, "user", &notes).await {
         Ok(revision) => ok_response(json!({
@@ -827,17 +851,16 @@ fn clamp_limit(value: Option<i64>, default: i64, max: i64) -> i64 {
     v.clamp(1, max)
 }
 
-async fn list_revisions(
-    Path(slug): Path<String>,
-    Query(query): Query<LimitQuery>,
-) -> Response {
+async fn list_revisions(Path(slug): Path<String>, Query(query): Query<LimitQuery>) -> Response {
     if catalog_entry(&slug).is_none() {
         return error_response(StatusCode::NOT_FOUND, "unknown image slug");
     }
     let limit = clamp_limit(query.limit, 25, 100);
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     let sql = format!(
         "select {cols} from container_pool_image_revisions \
@@ -855,17 +878,16 @@ async fn list_revisions(
     ok_response(json!({ "slug": slug, "revisions": revisions }))
 }
 
-async fn list_builds(
-    Path(slug): Path<String>,
-    Query(query): Query<LimitQuery>,
-) -> Response {
+async fn list_builds(Path(slug): Path<String>, Query(query): Query<LimitQuery>) -> Response {
     if catalog_entry(&slug).is_none() {
         return error_response(StatusCode::NOT_FOUND, "unknown image slug");
     }
     let limit = clamp_limit(query.limit, 25, 100);
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     let sql = format!(
         "select {cols} from container_pool_build_runs \
@@ -884,9 +906,11 @@ async fn list_builds(
 }
 
 async fn get_build(Path(build_id): Path<String>) -> Response {
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     match fetch_build_by_id(&client, &build_id).await {
         Ok(Some(build)) => ok_response(json!({ "build": build })),
@@ -907,10 +931,7 @@ struct BuildTestBody {
     notes: Option<String>,
 }
 
-async fn trigger_build_test(
-    Path(slug): Path<String>,
-    Json(body): Json<BuildTestBody>,
-) -> Response {
+async fn trigger_build_test(Path(slug): Path<String>, Json(body): Json<BuildTestBody>) -> Response {
     let Some(entry) = catalog_entry(&slug) else {
         return error_response(StatusCode::NOT_FOUND, "unknown image slug");
     };
@@ -920,9 +941,11 @@ async fn trigger_build_test(
             "container pool image builds disabled (CONTAINER_POOL_IMAGE_BUILDS_ENABLED=false)",
         );
     }
-    let client = match connect_and_ensure().await {
+    let client = match connect_postgres().await {
         Ok(c) => c,
-        Err(err) => return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}")),
+        Err(err) => {
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, format!("postgres: {err}"))
+        }
     };
     let revision = if let Some(text) = body.dockerfile_text.as_deref() {
         let notes = body
@@ -943,24 +966,42 @@ async fn trigger_build_test(
             Ok(Some(r)) if r.image_slug == slug => r,
             Ok(_) => return error_response(StatusCode::NOT_FOUND, "revision not found"),
             Err(err) => {
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("revision: {err}"))
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("revision: {err}"),
+                )
             }
         }
     } else {
         match current_revision(&client, entry).await {
             Ok(r) => r,
             Err(err) => {
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("revision: {err}"))
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("revision: {err}"),
+                )
             }
         }
     };
-    let test_command = body
+    let requested_test_command = body
         .test_command
         .as_deref()
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(entry.default_test_command)
-        .to_string();
+        .filter(|value| !value.is_empty());
+    if requested_test_command.is_some() && !custom_test_commands_enabled() {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "custom testCommand is disabled; set CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED=true to allow it",
+        );
+    }
+    let test_command = requested_test_command.unwrap_or(entry.default_test_command);
+    if test_command.len() > 4_096 || test_command.contains('\0') {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "testCommand must be <= 4096 bytes and must not contain NUL bytes",
+        );
+    }
+    let test_command = test_command.to_string();
     let candidate_tag = format!(
         "{}-cpool-test:{}",
         entry.image_ref.split(':').next().unwrap_or(entry.image_ref),
@@ -989,7 +1030,10 @@ async fn trigger_build_test(
     {
         Ok(r) => row_to_build(&r, true),
         Err(err) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, format!("insert build: {err}"))
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("insert build: {err}"),
+            )
         }
     };
     let revision_for_task = revision.clone();
@@ -1000,7 +1044,11 @@ async fn trigger_build_test(
             eprintln!("container-pool build/test orchestration failed: {err}");
         }
     });
-    (StatusCode::ACCEPTED, Json(json!({ "ok": true, "build": build_row }))).into_response()
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "ok": true, "build": build_row })),
+    )
+        .into_response()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1020,7 +1068,12 @@ async fn run_build_and_test(
 
     let work_root = build_root();
     if let Err(err) = fs::create_dir_all(&work_root) {
-        update_build_error(&build_id, "build", &format!("mkdir build root failed: {err}")).await?;
+        update_build_error(
+            &build_id,
+            "build",
+            &format!("mkdir build root failed: {err}"),
+        )
+        .await?;
         return Err(format!("mkdir build root failed: {err}"));
     }
     let work_dir = work_root.join(&build_id);
@@ -1369,7 +1422,11 @@ async fn update_build_finished(
     error_message: &str,
 ) -> Result<(), String> {
     let client = connect_postgres().await?;
-    let error_opt: Option<&str> = if error_message.is_empty() { None } else { Some(error_message) };
+    let error_opt: Option<&str> = if error_message.is_empty() {
+        None
+    } else {
+        Some(error_message)
+    };
     let log_owned = truncate_log(log, 60_000);
     let log_ref: &str = log_owned.as_str();
     // Compute the next overall_status here so each SQL parameter has exactly one
@@ -1406,7 +1463,10 @@ async fn update_build_finished(
         _ => return Err(format!("unknown phase: {phase}")),
     };
     client
-        .execute(sql, &[&build_id, &status, &log_ref, &error_opt, &overall_next])
+        .execute(
+            sql,
+            &[&build_id, &status, &log_ref, &error_opt, &overall_next],
+        )
         .await
         .map_err(|err| err.to_string())?;
     Ok(())
@@ -1449,4 +1509,5 @@ pub fn router() -> Router {
             post(trigger_build_test),
         )
         .route("/api/container-pool/builds/:build_id", get(get_build))
+        .route_layer(middleware::from_fn(require_operator_auth))
 }

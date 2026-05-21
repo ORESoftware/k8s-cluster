@@ -87,6 +87,10 @@ spec:
               value: nodejs
             - name: CONTAINER_POOL_IMAGE_BUILDS_ENABLED
               value: 'true'
+            - name: CONTAINER_POOL_IMAGE_API_AUTH_REQUIRED
+              value: 'true'
+            - name: CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED
+              value: 'false'
             - name: CONTAINER_POOL_IMAGE_BUILD_ROOT
               value: /var/lib/dd-container-pool-images
             # Builds run in the same containerd namespace as the host

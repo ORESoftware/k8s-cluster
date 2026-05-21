@@ -47,6 +47,14 @@ README is narrative context, not the route inventory source of truth. HTML is av
 | `POST /api/container-pool/images/:slug/build-test`   | enqueue a `nerdctl build` + smoke-run for the editor contents or a saved revision; returns the build run id         |
 | `GET /api/container-pool/builds/:buildId`            | full status + logs for a specific build run                                                                         |
 
+`/api/container-pool/*` is an operator surface. The gateway gates it with the `dd_auth` operator
+cookie and forwards `X-Server-Auth`; the REST API also verifies that header by default
+(`CONTAINER_POOL_IMAGE_API_AUTH_REQUIRED=true`) so direct in-cluster requests without the service
+secret are rejected. Build/test history tables are owned by
+`remote/libs/pg-defs/schema/schema.sql`; the route module intentionally does not create or migrate
+tables at runtime. Custom smoke-test commands are disabled unless
+`CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED=true`.
+
 The public REST API is intentionally domain/code-first:
 
 - Code-first routes (`/api/agents/*`, `/api/lambdas/*`) keep hand-shaped product behavior,

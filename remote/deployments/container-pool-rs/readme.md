@@ -52,9 +52,13 @@ tag via `idle-reaper-rs` or `nerdctl build` on the host once a candidate passes 
 
 The build/test flow is wired through `dd-remote-rest-api`, which reuses the same
 `/run/containerd/containerd.sock` + `/usr/local/bin/nerdctl` hostPath mounts as the existing lambda
-image builds. Enable the surface with `CONTAINER_POOL_IMAGE_BUILDS_ENABLED=true`; tune limits with
-`CONTAINER_POOL_IMAGE_BUILD_TIMEOUT_SECONDS` (default 1200) and
-`CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS` (default 120).
+image builds. The API is gateway-gated and also requires `X-Server-Auth` by default
+(`CONTAINER_POOL_IMAGE_API_AUTH_REQUIRED=true`) so direct in-cluster callers cannot trigger builds
+without the service secret. Enable the surface with `CONTAINER_POOL_IMAGE_BUILDS_ENABLED=true`;
+tune limits with `CONTAINER_POOL_IMAGE_BUILD_TIMEOUT_SECONDS` (default 1200) and
+`CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS` (default 120). Custom smoke commands are disabled by
+default (`CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED=false`); the catalog default command is
+used unless an operator deliberately enables that escape hatch.
 
 Protected HTTP routes require `SERVER_AUTH_SECRET` through `X-Server-Auth`,
 `X-Container-Pool-Auth`, or `X-Agent-Auth`. The gateway injects `X-Server-Auth` for
