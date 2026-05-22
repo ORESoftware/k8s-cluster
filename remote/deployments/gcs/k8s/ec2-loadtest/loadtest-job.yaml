@@ -43,7 +43,12 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: loadtest
-          image: docker.io/library/node:20-bookworm
+          # node:22 (not 20) — the chat-vibe test/cli/*.js scripts use the
+          # built-in `WebSocket` global which is only an unconditional
+          # non-experimental global in Node >= 21. Node 20 has it behind
+          # --experimental-websocket and the scripts check `typeof
+          # WebSocket === 'undefined'` and bail out otherwise.
+          image: docker.io/library/node:22-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -94,19 +99,28 @@ spec:
 
               fail=0
 
+              snapshot_router_metrics() {
+                # Snapshot live router state. The Service round-robins
+                # across router pods so each call may hit a different
+                # router pod; the gauges are per-pod (endpoint set is
+                # consistent across pods, active_conns is per-pod).
+                if ! command -v curl >/dev/null 2>&1; then
+                  echo "(curl not installed in base image)"; return
+                fi
+                local body http_code
+                body=$(curl -sS --max-time 5 -w '\nHTTP_CODE=%{http_code}' \
+                  http://gcs-router.default.svc.cluster.local:9100/metrics 2>&1) || {
+                  echo "(curl failed: $body)"; return
+                }
+                http_code=$(printf '%s\n' "$body" | awk -F= '/^HTTP_CODE=/{print $2}')
+                printf '%s\n' "$body" | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns)' || {
+                  echo "(no matching gcs_router_* gauges; http_code=${http_code:-unknown}; first 6 lines of body follow)"
+                  printf '%s\n' "$body" | head -6
+                }
+              }
+
               hr "1/4: gcs-router /metrics BEFORE tests"
-              # Show router routing-state up front so we can compare
-              # the ring with what shows up post-test. The Service
-              # round-robins across router pods so the snapshot will
-              # come from whichever router pod answered first.
-              if command -v curl >/dev/null 2>&1; then
-                curl -sS --max-time 5 \
-                  http://gcs-router.default.svc.cluster.local:9100/metrics \
-                  | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns)' \
-                  || echo "(no router metric snapshot)"
-              else
-                echo "(curl not installed in base image)"
-              fi
+              snapshot_router_metrics
 
               hr "2/4: multi-device-test.js (${MD_CONVS} convs x ${MD_USERS_PER_CONV} users x ${MD_DEVICES_PER_USER} devices)"
               node test/cli/multi-device-test.js \
@@ -139,12 +153,7 @@ spec:
               [ "$rc" -ne 0 ] && fail=1
 
               hr "router /metrics AFTER tests"
-              if command -v curl >/dev/null 2>&1; then
-                curl -sS --max-time 5 \
-                  http://gcs-router.default.svc.cluster.local:9100/metrics \
-                  | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns)' \
-                  || echo "(no router metric snapshot)"
-              fi
+              snapshot_router_metrics
 
               hr "summary"
               if [ "$fail" -eq 0 ]; then
