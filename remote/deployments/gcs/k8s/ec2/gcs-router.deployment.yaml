@@ -27,7 +27,13 @@ metadata:
   labels:
     app: gcs-router
 spec:
-  replicas: 1
+  # gcs-router is stateless; the readme calls for >=2 router replicas
+  # once gcs itself is >=2 so a router pod restart / rollout doesn't
+  # drop all in-flight WS upgrades. With gcs at 3 we keep router at 2:
+  # round-robin between routers at the gateway, consistent-hash inside
+  # each router across the same gcs endpoint set, no router-level
+  # stickiness needed.
+  replicas: 2
   strategy:
     # Single-node CPU-bound cluster: surge=0 to avoid Pending pods
     # blocking the rollout. Brief downtime is acceptable for the

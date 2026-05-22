@@ -211,3 +211,48 @@ kubectl get pods -l app=gcs -n default
 When the chat image pipeline is ready again, update
 `remote/deployments/gcs/k8s/ec2/gcs.deployment.yaml` to the desired image tag and remove the
 EC2 hostPath source mount.
+
+## Load test / WS fan-out test
+
+A one-shot in-cluster Job is checked in at
+`remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml`. It mounts the same
+`chat-vibe` submodule via hostPath that `gcs.deployment.yaml` mounts and runs
+the three chat-vibe `test/cli` scripts sequentially against the in-cluster
+`gcs-router` Service (bypassing the public gateway / `dd-remote-gateway` auth):
+
+1. `multi-device-test.js` — 3 convs × 4 users × 3 devices fan-out + isolation
+2. `cross-conv-test.js`   — 4 convs × 5 clients cross-conv isolation
+3. `test-colocation.sh`   — 6 clients on one conv, asserts conv-hash pinning
+
+The Job lives OUTSIDE the Argo CD source path (`.../k8s/ec2`) on purpose, so
+Argo CD does not try to manage / prune it.
+
+```bash
+# from the EC2 host (or any kubectl with cluster access):
+kubectl apply -f remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml
+kubectl logs -n default -f job/gcs-loadtest
+# (auto-cleaned 10min after completion via ttlSecondsAfterFinished)
+
+# To re-run, delete the previous Job first (Job names are immutable):
+kubectl delete job/gcs-loadtest -n default --ignore-not-found
+kubectl apply -f remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml
+```
+
+The Job prints `gcs_router_routed_total`, `gcs_router_endpoints`, and
+`gcs_router_active_conns` from `gcs-router:9100/metrics` before and after the
+test runs, so the router's view of the gcs endpoint set (e.g. 3 ready pods) and
+its routing decisions are captured alongside the per-test pass/fail output.
+
+Knobs (env on the Job container — edit the manifest to tune):
+
+| env                  | default | meaning                          |
+| -------------------- | ------- | -------------------------------- |
+| `MD_CONVS`           | 3       | multi-device: conversations       |
+| `MD_USERS_PER_CONV`  | 4       | multi-device: users per conv      |
+| `MD_DEVICES_PER_USER`| 3       | multi-device: devices per user    |
+| `MD_MESSAGES`        | 6       | multi-device: messages per sender |
+| `CC_CONVS`           | 4       | cross-conv: conversations         |
+| `CC_CLIENTS_PER_CONV`| 5       | cross-conv: clients per conv      |
+| `CC_MESSAGES`        | 8       | cross-conv: messages per sender   |
+| `COLOC_N`            | 6       | colocation: ws-clients on 1 conv  |
+| `COLOC_DURATION`     | 8       | colocation: hold seconds          |
