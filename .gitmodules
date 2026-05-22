@@ -6,3 +6,12 @@
 	path = remote/libs/async-java
 	url = git@github.com:async-java/async.java.git
 	branch = master
+[submodule "remote/modules/github/oresoftware/json-logging"]
+	path = remote/modules/github/oresoftware/json-logging
+	url = https://github.com/oresoftware/json-logging.git
+[submodule "remote/modules/github/oresoftware/cmd-line-parser"]
+	path = remote/modules/github/oresoftware/cmd-line-parser
+	url = https://github.com/oresoftware/cmd-line-parser.git
+[submodule "remote/modules/github/oresoftware/go-iterators"]
+	path = remote/modules/github/oresoftware/go-iterators
+	url = https://github.com/oresoftware/go-iterators.git

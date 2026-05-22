@@ -117,7 +117,20 @@ data:
         proxy_pass http://dd-remote-web-home.default.svc.cluster.local:8080;
       }
 
+      # Operator-only HTML pages backed by /api/agents/* (which IS auth-gated
+      # below). Without the same auth gate here a fresh visit to
+      # /agents/threads would render the HTML, then the agents-threads UI
+      # would issue fetch("/api/agents/tasks?limit=200") and the gateway
+      # would return the JSON 401 ('missing required dd header') because no
+      # dd_auth cookie was ever obtained — visible in the browser console
+      # as "snapshot failed 401". Gating the page itself makes the
+      # error_page 401 = @auth_required redirect kick in and bounce the
+      # browser to /auth?return=/agents/threads, after which the cookie is
+      # set and every subsequent /api/agents/* fetch succeeds.
       location /agents/tasks {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -125,6 +138,9 @@ data:
       }
 
       location /agents/threads {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
