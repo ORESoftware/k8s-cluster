@@ -238,9 +238,9 @@ fn home_summary() -> Markup {
             "Public entrypoint for the EC2 Kubernetes runtime. Open paths: "
             code { "/" } ", " code { "/home" } ", " code { "/auth" } ", "
             code { "/agents/tasks" } ", " code { "/agents/threads" } ", "
-            code { "/api/agents/tasks" } ", " code { "/presence-test" } ", "
+            code { "/presence-test" } ", "
             code { "/wss-test" } ". Server-auth paths: "
-            code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
+            code { "/api/agents/" } ", " code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
             code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
             code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
@@ -454,7 +454,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-remote-gateway"], service: &["dd-remote-gateway:80/443"], service_note: None, access: PUBLIC, notes: "nginx Ingress for the EC2 single-node cluster. Owns hostPort 80/443 and proxies every documented public/auth path into its in-cluster service." },
     DeploymentRow { deployments: &["dd-remote-web-home"], service: &["dd-remote-web-home:8080"], service_note: None, access: PUBLIC, notes: "This Rust service. Renders /, /home, /agents/tasks, /agents/threads, /lambdas/functions, /presence-test, and /wss-test; also exposes /healthz and /metrics." },
     DeploymentRow { deployments: &["dd-remote-auth"], service: &["dd-remote-auth:8083"], service_note: None, access: PUBLIC, notes: "Rust PIN auth service. Issues the short-lived dd_auth cookie that the gateway accepts in place of the legacy Auth header for browser sessions." },
-    DeploymentRow { deployments: &["dd-remote-rest-api"], service: &["dd-remote-rest-api:8082"], service_note: None, access: PUBLIC, notes: "Rust REST API boundary for RDS/Postgres-backed agent task data. Serves /api/agents/* and /api/lambdas/* JSON." },
+    DeploymentRow { deployments: &["dd-remote-rest-api"], service: &["dd-remote-rest-api:8082"], service_note: None, access: SERVER_AUTH, notes: "Rust REST API boundary for RDS/Postgres-backed agent task data. Serves /api/agents/* and /api/lambdas/* JSON behind gateway auth." },
     DeploymentRow { deployments: &["dd-agent-worker-broker"], service: &["dd-agent-worker-broker:8098"], service_note: None, access: SERVER_AUTH, notes: "Rust NATS-first worker dispatch broker behind /api/agent-worker/. Handles wakeup and direct-if-awake handoff to the UUID-pinned worker." },
     DeploymentRow { deployments: &["dd-dev-server-api"], service: &["dd-dev-server-api:8080"], service_note: None, access: SERVER_AUTH, notes: "Bootstrap Node.js coding-agent task manager. Backs /tasks, /status, /agents, /healthz, and /stream/<taskId> until per-thread Ingress is the only path." },
     DeploymentRow { deployments: &["dd-remote-queue-consumer"], service: &["dd-remote-queue-consumer"], service_note: None, access: INTERNAL, notes: "Rust NATS shadow consumer. Reads dd.remote.thread.*.tasks, pins thread affinity, and prepares the matching UUID-bound worker; it does not execute prompts." },
@@ -481,7 +481,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
 static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/", href: Some("/") }, PathEntry { label: "/home", href: Some("/home") }, PathEntry { label: "/agents/tasks", href: Some("/agents/tasks") }, PathEntry { label: "/agents/threads", href: Some("/agents/threads") }], target: "Rust web homepage deployment", access: PUBLIC, notes: "Service directory plus cluster-served task/thread/PR UI. Browser UIs call JSON APIs for stored state while runtime invocation paths stay separate." },
     PathRow { paths: &[PathEntry { label: "/tasks", href: Some("/tasks") }, PathEntry { label: "/status", href: Some("/status") }, PathEntry { label: "/stream/<uuid>", href: Some("/stream/example-task-id") }], target: "Node.js Coding Agent Task Manager", access: SERVER_AUTH, notes: "Runs inside the already-selected worker container. It executes prompts, tracks taskIds, streams events, and rejects requests for the wrong pinned thread." },
-    PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: PUBLIC, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks." },
+    PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: SERVER_AUTH, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks and uses the dd_auth cookie for same-origin API reads." },
     PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
     PathRow { paths: &[PathEntry { label: "/presence-test", href: Some("/presence-test?user=alice&device=d1&autoconnect=1") }], target: "gleamlang-presence-server browser harness", access: PUBLIC, notes: "Self-contained page that opens one user-scoped ws plus N conv-scoped ws connections against the presence server." },
     PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness. Preset health checks and sockets use gateway-authenticated upstream routes when they leave the public page." },
@@ -1611,13 +1611,14 @@ fn agents_threads_body() -> Markup {
                                 textarea id="prompt" placeholder="Ask this thread worker to do something" {}
                             }
                             div id="context-picker" class="context-picker field-wide" {
-                                div class="context-picker-head" {
-                                    label class="checkbox-row" {
-                                        input id="zero-context" type="checkbox";
-                                        span { "Start with zero context" }
-                                    }
-                                    span id="context-summary" class="muted" { "Context review will run before first dispatch." }
-                                }
+                                  div class="context-picker-head" {
+                                      label class="checkbox-row" {
+                                          input id="zero-context" type="checkbox";
+                                          span { "Start with zero context" }
+                                      }
+                                      input id="context-filter" class="context-filter" autocomplete="off" spellcheck="false" placeholder="Filter context";
+                                      span id="context-summary" class="muted" { "Context review will run before first dispatch." }
+                                  }
                                 div id="context-candidates" class="context-candidates" aria-live="polite" {
                                     p class="muted" { "No context loaded yet." }
                                 }
@@ -2266,22 +2267,27 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         gap: 8px;
         min-width: 0;
       }
-      .context-picker-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        min-width: 0;
-      }
+        .context-picker-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+          min-width: 0;
+        }
       .checkbox-row {
         display: inline-flex;
         align-items: center;
         gap: 8px;
         min-width: 0;
       }
-      .checkbox-row span {
-        margin: 0;
-      }
+        .checkbox-row span {
+          margin: 0;
+        }
+        .context-filter {
+          flex: 1 1 160px;
+          min-width: 120px;
+        }
       .context-candidates {
         display: grid;
         gap: 7px;
@@ -2310,6 +2316,28 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       .context-row small {
         color: var(--muted);
         margin-top: 3px;
+      }
+      .context-row-breadcrumb {
+        border-style: dashed;
+      }
+      .context-badge {
+        display: inline-block;
+        font-size: 10px;
+        line-height: 1;
+        padding: 2px 6px;
+        border-radius: 999px;
+        margin-right: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        background: var(--panel-3);
+        color: var(--muted);
+        border: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      .context-badge-breadcrumb {
+        background: rgba(255, 168, 79, 0.18);
+        color: #f3a55b;
+        border-color: rgba(255, 168, 79, 0.45);
       }
       label span {
         display: block;
@@ -2517,11 +2545,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         snapshotRetryTimer: null,
         agentTextBuffer: null,
         agentTextFlushTimer: null,
-        contextPromptKey: "",
-        contextCandidates: [],
-        contextReady: false,
-        contextLoading: false,
-        contextErrors: [],
+          contextPromptKey: "",
+          contextCandidates: [],
+          contextSelection: new Set(),
+          contextReady: false,
+          contextLoading: false,
+          contextErrors: [],
         optimisticThreads: new Map(),
         optimisticTasks: new Map(),
         threadSidebarCollapsed: false,
@@ -2960,27 +2989,44 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return JSON.stringify([threadId, prompt, repo, baseBranch]);
       }
 
-      function resetContextReview(message = "Context review will run before first dispatch.") {
-        state.contextPromptKey = "";
-        state.contextCandidates = [];
-        state.contextReady = false;
-        state.contextLoading = false;
-        state.contextErrors = [];
-        $("context-summary").textContent = message;
-        $("context-candidates").innerHTML = '<p class="muted">No context loaded yet.</p>';
-      }
+        function resetContextReview(message = "Context review will run before first dispatch.") {
+          state.contextPromptKey = "";
+          state.contextCandidates = [];
+          state.contextSelection = new Set();
+          state.contextReady = false;
+          state.contextLoading = false;
+          state.contextErrors = [];
+          $("context-summary").textContent = message;
+          $("context-candidates").innerHTML = '<p class="muted">No context loaded yet.</p>';
+        }
+
+        function contextCandidateSearchText(item) {
+          return [
+            item.contextId,
+            item.contextTitle,
+            item.matchSource,
+            item.kind,
+            item.updatedAt,
+          ].filter(Boolean).join(" ").toLowerCase();
+        }
+
+        function visibleContextCandidates() {
+          const filter = $("context-filter").value.trim().toLowerCase();
+          if (!filter) return state.contextCandidates;
+          return state.contextCandidates.filter((item) => contextCandidateSearchText(item).includes(filter));
+        }
 
       function renderContextCandidates() {
         const container = $("context-candidates");
         container.textContent = "";
-        if ($("zero-context").checked) {
-          $("context-summary").textContent = "Zero context selected.";
-          const empty = document.createElement("p");
-          empty.className = "muted";
-          empty.textContent = "The worker will receive only the current prompt and thread log.";
-          container.appendChild(empty);
-          return;
-        }
+          if ($("zero-context").checked) {
+            $("context-summary").textContent = "Zero context selected.";
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No previous tasks, breadcrumbs, or selected blobs will be sent.";
+            container.appendChild(empty);
+            return;
+          }
         if (state.contextLoading) {
           $("context-summary").textContent = "Finding relevant context...";
           const loading = document.createElement("p");
@@ -2996,29 +3042,53 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           empty.textContent = "No context loaded yet.";
           container.appendChild(empty);
           return;
-        }
-        const errors = state.contextErrors?.length ? ` · ${state.contextErrors.length} fallback note(s)` : "";
-        $("context-summary").textContent = `${state.contextCandidates.length} suggested context blob(s)${errors}`;
-        if (!state.contextCandidates.length) {
-          const empty = document.createElement("p");
-          empty.className = "muted";
-          empty.textContent = "No matching context blobs were found. Final submit will start without selected blobs.";
-          container.appendChild(empty);
-          return;
-        }
-        for (const item of state.contextCandidates) {
-          const row = document.createElement("label");
-          row.className = "context-row";
+          }
+          const errors = state.contextErrors?.length ? ` · ${state.contextErrors.length} fallback note(s)` : "";
+          const visible = visibleContextCandidates();
+          $("context-summary").textContent = `${state.contextSelection.size}/${state.contextCandidates.length} context item(s) selected${errors}`;
+          if (!state.contextCandidates.length) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No matching context blobs were found. Final submit will start without selected blobs.";
+            container.appendChild(empty);
+            return;
+          }
+          if (!visible.length) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No context matches the filter.";
+            container.appendChild(empty);
+            return;
+          }
+          for (const item of visible) {
+            const isBreadcrumb = item.kind === "breadcrumb";
+            const row = document.createElement("label");
+            row.className = "context-row" + (isBreadcrumb ? " context-row-breadcrumb" : "");
           const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.className = "context-checkbox";
-          checkbox.value = item.contextId || "";
-          checkbox.checked = true;
+            checkbox.type = "checkbox";
+            checkbox.className = "context-checkbox";
+            checkbox.value = item.contextId || "";
+            checkbox.checked = state.contextSelection.has(item.contextId || "");
+            if (item.kind) checkbox.dataset.kind = item.kind;
+            checkbox.addEventListener("change", () => {
+              if (!item.contextId) return;
+              if (checkbox.checked) state.contextSelection.add(item.contextId);
+              else state.contextSelection.delete(item.contextId);
+              renderContextCandidates();
+            });
           const text = document.createElement("div");
           const title = document.createElement("strong");
-          title.textContent = item.contextTitle || item.contextId || "context blob";
+          const titleText = item.contextTitle || item.contextId || (isBreadcrumb ? "breadcrumb" : "context blob");
+          if (isBreadcrumb) {
+            const badge = document.createElement("span");
+            badge.className = "context-badge context-badge-breadcrumb";
+            badge.textContent = "breadcrumb";
+            title.append(badge, document.createTextNode(" " + titleText));
+          } else {
+            title.textContent = titleText;
+          }
           const detail = document.createElement("small");
-          const source = item.matchSource || "context";
+          const source = item.matchSource || (isBreadcrumb ? "breadcrumb" : "context");
           const score = Number.isFinite(item.score) ? ` · score ${Number(item.score).toFixed(3)}` : "";
           detail.textContent = `${item.contextId || "context"} · ${source}${score}`;
           text.append(title, detail);
@@ -3039,11 +3109,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         const body = await response.text();
         if (!response.ok) throw new Error(`context candidates failed ${response.status}: ${body}`);
-        const data = JSON.parse(body);
-        state.contextPromptKey = promptKey;
-        state.contextCandidates = data.candidates || [];
-        state.contextErrors = data.errors || [];
-        state.contextReady = true;
+          const data = JSON.parse(body);
+          state.contextPromptKey = promptKey;
+          state.contextCandidates = data.candidates || [];
+          state.contextSelection = new Set(state.contextCandidates.map((item) => item.contextId).filter(Boolean));
+          state.contextErrors = data.errors || [];
+          state.contextReady = true;
         state.contextLoading = false;
         renderContextCandidates();
       }
@@ -3055,10 +3126,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (!state.contextReady || state.contextPromptKey !== promptKey) {
           return null;
         }
-        const ids = Array.from(document.querySelectorAll(".context-checkbox:checked"))
-          .map((item) => item.value)
-          .filter(Boolean)
-          .slice(0, 10);
+          const ids = Array.from(state.contextSelection)
+            .filter(Boolean)
+            .slice(0, 50);
         return { contextMode: ids.length ? "selected" : "none", contextIds: ids };
       }
 
@@ -4524,9 +4594,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("repo-url-new").addEventListener("input", () => $("repo-url-new").setCustomValidity(""));
       $("repo-url").addEventListener("change", contextInputsChanged);
       $("repo-url-new").addEventListener("input", contextInputsChanged);
-      $("base-branch").addEventListener("input", contextInputsChanged);
-      $("prompt").addEventListener("input", contextInputsChanged);
-      $("zero-context").addEventListener("change", renderContextCandidates);
+        $("base-branch").addEventListener("input", contextInputsChanged);
+        $("prompt").addEventListener("input", contextInputsChanged);
+        $("zero-context").addEventListener("change", renderContextCandidates);
+        $("context-filter").addEventListener("input", renderContextCandidates);
       $("thread-control-panel").addEventListener("click", handleControlPanelClick);
       $("thread-control-panel").addEventListener("keydown", handleControlPanelKey);
       $("thread-control-toggle").addEventListener("click", (event) => {

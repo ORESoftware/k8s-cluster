@@ -234,9 +234,10 @@ const config = {
   ),
   agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
-  breadcrumbTailLimit: Number(process.env.THREAD_BREADCRUMB_TAIL_LIMIT ?? 100),
+  // Breadcrumb writes still go to rest-api-rs in the background. Tail reads
+  // are no longer pulled from this server: prompt context for breadcrumbs is
+  // selected via the /agents/threads picker and arrives in `contextBlobs`.
   breadcrumbWriteTimeoutMs: Number(process.env.THREAD_BREADCRUMB_WRITE_TIMEOUT_MS ?? 5_000),
-  breadcrumbReadTimeoutMs: Number(process.env.THREAD_BREADCRUMB_READ_TIMEOUT_MS ?? 10_000),
   skipBootGitSync: process.env.SKIP_BOOT_GIT_SYNC === 'true',
   sessionIdleGcAfterMs: Number(process.env.SESSION_IDLE_GC_AFTER_MS ?? 6 * 60 * 60 * 1000),
   prAuthor: {
@@ -411,6 +412,13 @@ type SelectedContextBlob = {
   matchSource?: string;
   embeddingModel?: string | null;
   updatedAt?: string | null;
+  /**
+   * 'context-blob' (default) for long-lived agent_context_blobs rows;
+   * 'thread-task' for previous agent_remote_dev_tasks rows; 'breadcrumb' for
+   * agent_remote_dev_breadcrumbs rows that the operator checked in the picker.
+   * Drives which prompt section the row lands in.
+   */
+  kind?: 'context-blob' | 'thread-task' | 'breadcrumb';
 };
 
 const tasks = new Map<string, TaskState>();
@@ -2126,6 +2134,14 @@ function formatThreadContextTasks(
     .join('\n\n');
 }
 
+function isBreadcrumbContextItem(item: SelectedContextBlob): boolean {
+  return item.kind === 'breadcrumb';
+}
+
+function isThreadTaskContextItem(item: SelectedContextBlob): boolean {
+  return item.kind === 'thread-task';
+}
+
 function formatSelectedContextBlobs(state: TaskState): string {
   if (state.contextMode === 'none' || !state.contextBlobs?.length) {
     return '';
@@ -2135,11 +2151,14 @@ function formatSelectedContextBlobs(state: TaskState): string {
   const maxBlobChars = 6_000;
   let usedChars = 0;
   const sections: string[] = [];
-  for (const [index, item] of state.contextBlobs.entries()) {
+  let index = 0;
+  for (const item of state.contextBlobs) {
+    if (isBreadcrumbContextItem(item) || isThreadTaskContextItem(item)) continue;
+    index += 1;
     const title = item.contextTitle.trim() || item.contextId;
     const blob = truncateContextBlob(item.contextBlob.trim(), maxBlobChars);
     const section = [
-      `Context ${index + 1}: ${title}`,
+      `Context ${index}: ${title}`,
       `contextId: ${item.contextId}`,
       item.projectId ? `projectId: ${item.projectId}` : '',
       item.matchSource ? `matchSource: ${item.matchSource}` : '',
@@ -2158,62 +2177,88 @@ function formatSelectedContextBlobs(state: TaskState): string {
   return sections.join('\n\n---\n\n');
 }
 
-type BreadcrumbTailItem = {
-  id?: number;
-  threadId?: string;
-  taskId?: string | null;
-  kind?: string;
-  payload?: unknown;
-  emittedAt?: string;
-  podName?: string | null;
-  branch?: string | null;
-  provider?: string | null;
-};
-
-async function fetchThreadBreadcrumbTail(state: TaskState): Promise<string> {
-  const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
-  if (!state.threadId || !base) return '';
-  try {
-    const params = new URLSearchParams({
-      excludeTaskId: state.taskId,
-      limit: String(Math.max(1, Math.min(500, config.breadcrumbTailLimit))),
-    });
-    const response = await fetch(
-      `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/breadcrumbs/tail?${params.toString()}`,
-      { signal: AbortSignal.timeout(config.breadcrumbReadTimeoutMs) },
-    );
-    if (!response.ok) return '';
-    const body = (await response.json()) as { items?: BreadcrumbTailItem[] };
-    const items = (body.items ?? []).slice().reverse();
-    if (items.length === 0) return '';
-    const lines = items
-      .map((item) =>
-        JSON.stringify({
-          ts: item.emittedAt,
-          taskId: item.taskId,
-          threadId: item.threadId,
-          provider: item.provider,
-          kind: item.kind,
-          payload: item.payload,
-        }),
-      )
-      .join('\n');
-    return truncateContext(lines, Math.min(config.threadContextMaxChars, 24_000));
-  } catch (err) {
-    process.stderr.write(
-      `[remote-dev breadcrumb] tail fetch failed (thread=${state.threadId}): ${
-        err instanceof Error ? err.message : String(err)
-      }\n`,
-    );
+/**
+ * The picker can hand us breadcrumb rows alongside long-lived context blobs by
+ * sending `kind: 'breadcrumb'` with a JSON-serialized AgentBreadcrumbRow in
+ * `contextBlob`. We render those into <thread_breadcrumb_tail> rather than
+ * <selected_context_blobs> so prompt structure matches operator intent.
+ */
+function formatSelectedBreadcrumbs(state: TaskState): string {
+  if (state.contextMode === 'none' || !state.contextBlobs?.length) {
     return '';
   }
+  const lines: string[] = [];
+  for (const item of state.contextBlobs) {
+    if (!isBreadcrumbContextItem(item)) continue;
+    let payload: unknown = item.contextBlob;
+    try {
+      payload = JSON.parse(item.contextBlob);
+    } catch {
+      // fall back to raw blob string
+    }
+    lines.push(JSON.stringify(payload));
+  }
+  if (lines.length === 0) return '';
+  return truncateContext(lines.join('\n'), Math.min(config.threadContextMaxChars, 24_000));
 }
+
+function formatSelectedThreadTasks(state: TaskState): string {
+  if (state.contextMode === 'none' || !state.contextBlobs?.length) {
+    return '';
+  }
+  const sections = state.contextBlobs
+    .filter(isThreadTaskContextItem)
+    .map((item) => item.contextBlob.trim())
+    .filter(Boolean);
+  if (sections.length === 0) return '';
+  return truncateContext(sections.join('\n\n---\n\n'), config.threadContextMaxChars);
+}
+
+async function fetchSelectedContextBlobs(state: TaskState): Promise<SelectedContextBlob[]> {
+  if (state.contextBlobs?.length) return state.contextBlobs;
+  if (state.contextMode !== 'selected' || !state.contextIds?.length || !state.threadId) return [];
+  const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
+  if (!base) return [];
+  try {
+    const response = await fetch(
+      `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context-candidates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: state.prompt,
+          repo: config.repoUrl,
+          baseBranch: config.baseBranch,
+          contextIds: state.contextIds,
+          limit: Math.max(1, Math.min(50, state.contextIds.length)),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!response.ok) return [];
+    const body = (await response.json()) as { candidates?: SelectedContextBlob[] };
+    return body.candidates ?? [];
+  } catch (err) {
+    emit(state, {
+      kind: 'stderr',
+      text: `selected context lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return [];
+  }
+}
+
+// Breadcrumb prompt context is now driven by explicit picker selection. Workers
+// no longer fetch the full thread tail unconditionally; instead, the dispatch
+// payload carries a `contextBlobs` array containing the breadcrumb rows the
+// operator kept checked in the /agents/threads picker. Unchecked rows simply
+// never reach the worker, which is how "remove from context" is implemented.
 
 async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
   const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
   let restContextText = '';
   let restContextSource = 'none';
-  if (state.threadId && base) {
+  const automaticThreadContext = !state.contextMode || state.contextMode === 'auto';
+  if (state.threadId && base && automaticThreadContext) {
     try {
       const response = await fetch(
         `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context?limit=${config.threadContextLimit}`,
@@ -2232,10 +2277,15 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     }
   }
 
-  const localContextText = state.threadId ? await fetchThreadBreadcrumbTail(state) : '';
   const repoContext = await readRepoContextEntrypoint(state.worktreePath);
 
+  const fetchedContextBlobs = await fetchSelectedContextBlobs(state);
+  if (fetchedContextBlobs.length && !state.contextBlobs?.length) {
+    state.contextBlobs = fetchedContextBlobs;
+  }
   const selectedContext = formatSelectedContextBlobs(state);
+  const selectedThreadTasks = formatSelectedThreadTasks(state);
+  const selectedBreadcrumbs = formatSelectedBreadcrumbs(state);
   const runtimeContext = clusterMcpPromptSection(config.agentMcpUrl);
   const promptSections = [
     state.threadId ? `You are continuing remote development thread ${state.threadId}.` : 'You are starting a remote development task.',
@@ -2269,13 +2319,27 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
   }
 
   if (selectedContext) {
+    const blobCount =
+      state.contextBlobs?.filter(
+        (item) => !isBreadcrumbContextItem(item) && !isThreadTaskContextItem(item),
+      ).length ?? 0;
     emit(state, {
       kind: 'status',
       status: 'thread-context:selected-blobs',
-      message: `${state.contextBlobs?.length ?? 0} selected context blob(s) injected into the task prompt.`,
+      message: `${blobCount} selected context blob(s) injected into the task prompt.`,
     });
     promptSections.push('', '<selected_context_blobs>', selectedContext, '</selected_context_blobs>');
   }
+
+    if (selectedThreadTasks) {
+      const taskCount = state.contextBlobs?.filter(isThreadTaskContextItem).length ?? 0;
+      emit(state, {
+        kind: 'status',
+        status: 'thread-context:selected-tasks',
+        message: `${taskCount} selected previous task context item(s) injected into the task prompt.`,
+      });
+      promptSections.push('', '<previous_thread_context>', selectedThreadTasks, '</previous_thread_context>');
+    }
 
   if (restContextText) {
     const cappedContext = truncateContext(restContextText, config.threadContextMaxChars);
@@ -2283,10 +2347,15 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     promptSections.push('', '<previous_thread_context>', cappedContext, '</previous_thread_context>');
   }
 
-  if (localContextText) {
-    const cappedContext = truncateContext(localContextText, Math.min(config.threadContextMaxChars, 24_000));
-    emit(state, { kind: 'status', status: 'thread-context:postgres-breadcrumb-tail' });
-    promptSections.push('', '<thread_breadcrumb_tail>', cappedContext, '</thread_breadcrumb_tail>');
+  if (selectedBreadcrumbs) {
+    const breadcrumbCount =
+      state.contextBlobs?.filter(isBreadcrumbContextItem).length ?? 0;
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:selected-breadcrumbs',
+      message: `${breadcrumbCount} selected breadcrumb row(s) injected into the task prompt.`,
+    });
+    promptSections.push('', '<thread_breadcrumb_tail>', selectedBreadcrumbs, '</thread_breadcrumb_tail>');
   }
 
   if (runtimeContext) {
@@ -4133,7 +4202,7 @@ const ContainerPoolTaskSchema = ContainerPoolRequestSchema.extend({
 
 const SelectedContextBlobSchema = z.object({
   contextId: z.string().min(1).max(200),
-  projectId: z.string().min(1).max(120).optional(),
+  projectId: z.string().max(120).optional(),
   repoId: z.string().uuid().nullish(),
   contextTitle: z.string().min(1).max(300),
   contextBlob: z.string().min(1).max(200_000),
@@ -4141,6 +4210,11 @@ const SelectedContextBlobSchema = z.object({
   matchSource: z.string().min(1).max(80).optional(),
   embeddingModel: z.string().min(1).max(120).nullish(),
   updatedAt: z.string().min(1).max(80).nullish(),
+  // 'context-blob' (long-lived agent_context_blobs row), 'thread-task'
+  // (previous agent_remote_dev_tasks row), or 'breadcrumb'
+  // (agent_remote_dev_breadcrumbs row). Older dispatchers don't set this;
+  // treat omitted as 'context-blob'.
+  kind: z.enum(['context-blob', 'thread-task', 'breadcrumb']).optional(),
 });
 
 fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
@@ -4196,8 +4270,8 @@ const DispatchSchema = z.object({
     ])
     .nullish(),
   contextMode: z.enum(['none', 'selected', 'auto']).nullish(),
-  contextIds: z.array(z.string().min(1).max(200)).max(10).nullish(),
-  contextBlobs: z.array(SelectedContextBlobSchema).max(10).nullish(),
+  contextIds: z.array(z.string().min(1).max(200)).max(50).nullish(),
+  contextBlobs: z.array(SelectedContextBlobSchema).max(50).nullish(),
   containerPool: ContainerPoolTaskSchema.nullish(),
 });
 

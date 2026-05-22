@@ -33,8 +33,9 @@ to exactly one thread and should only accept tasks for that thread.
 
 `/agents/tasks` and `/agents/threads` are SSR shells rendered by the Rust web layer with Maud. Each
 page has same-origin CSS, JavaScript, and HTML-fragment bundle endpoints under `/assets/web-home/`.
-Their browser JavaScript calls the public gateway routes `GET /api/agents/tasks?limit=...` and
-`GET /api/agents/tasks/:taskId/events?limit=...` directly.
+Their browser JavaScript calls the same-origin gateway routes `GET /api/agents/tasks?limit=...` and
+`GET /api/agents/tasks/:taskId/events?limit=...` directly. The gateway requires the operator
+`dd_auth` cookie or legacy `Auth` header before forwarding those JSON routes to the REST API.
 
 The REST API owns RDS/Postgres, Supabase fallback, and later NATS/Postgres event write paths. This
 keeps page rendering separate from data access without making the webserver a proxy.

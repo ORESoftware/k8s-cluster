@@ -369,6 +369,9 @@ data:
       }
 
       location /api/agents/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_http_version 1.1;
         proxy_buffering off;
         proxy_connect_timeout 30;
@@ -996,6 +999,9 @@ data:
       }
 
       location ~ "^/dd-thread/(?<thread_short>[a-z0-9]{12})/ws$" {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         set $dd_thread_service dd-thread-$thread_short.default.svc.cluster.local;
         proxy_http_version 1.1;
         proxy_buffering off;
@@ -1006,7 +1012,8 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
+        proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://$dd_thread_service:8080/ws$is_args$args;
       }
 
@@ -1028,7 +1035,7 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header X-Server-Auth $dd_dev_server_auth_header;
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://$dd_thread_service:8080$dd_thread_proxy_path;
       }

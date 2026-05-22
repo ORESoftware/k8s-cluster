@@ -123,7 +123,17 @@ struct AgentContextCandidate {
     match_source: String,
     embedding_model: Option<String>,
     updated_at: Option<String>,
+    /// Discriminator for the picker so breadcrumbs and context blobs can ride
+    /// the same `contextIds` / `contextBlobs` rails without the worker having
+    /// to guess. `"context-blob"` is the legacy default; `"breadcrumb"` rows
+    /// carry a serialized AgentBreadcrumbRow JSON in `context_blob`.
+    kind: String,
 }
+
+const CONTEXT_KIND_BLOB: &str = "context-blob";
+const CONTEXT_KIND_BREADCRUMB: &str = "breadcrumb";
+const CONTEXT_KIND_TASK: &str = "thread-task";
+const BREADCRUMB_CANDIDATE_PREFIX: &str = "breadcrumb:";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -357,6 +367,12 @@ struct AgentContextCandidatesRequest {
     base_branch: Option<String>,
     project_id: Option<String>,
     limit: Option<i64>,
+    /// When set, the candidates endpoint returns only the matching items
+    /// resolved against blob/task/breadcrumb tables. Used by dev-server's
+    /// `fetchSelectedContextBlobs` to refetch full payloads it received only
+    /// as IDs.
+    #[serde(default)]
+    context_ids: Option<Vec<String>>,
 }
 
 struct ExistingTaskDispatch {
@@ -2859,19 +2875,317 @@ async fn ensure_agent_context_schema(client: &tokio_postgres::Client) -> Result<
               on agent_context_embeddings (context_blob_id);
             "#,
         )
+         .await
+         .map_err(|error| error.to_string())
+}
+
+fn task_context_id(task_id: &str) -> String {
+    format!("task:{task_id}")
+}
+
+fn task_id_from_context_id(context_id: &str) -> Option<&str> {
+    context_id.strip_prefix("task:").filter(|value| !value.is_empty())
+}
+
+fn truncate_for_context_blob(value: &str, limit: usize) -> String {
+    let trimmed = value.trim();
+    let mut chars = trimmed.chars();
+    let truncated = chars.by_ref().take(limit).collect::<String>();
+    if chars.next().is_none() {
+        trimmed.to_string()
+    } else {
+        format!("{truncated}...")
+    }
+}
+
+fn format_task_context_blob(task: &AgentTaskRow) -> String {
+    let mut lines = vec![
+        format!("taskId: {}", task.id),
+        format!("threadId: {}", task.thread_id),
+        format!("status: {}", task.status),
+    ];
+    if let Some(branch) = task.branch.as_deref().filter(|value| !value.is_empty()) {
+        lines.push(format!("branch: {branch}"));
+    }
+    if let Some(exit_reason) = task.exit_reason.as_deref().filter(|value| !value.is_empty()) {
+        lines.push(format!("exit: {exit_reason}"));
+    }
+    if let Some(error_message) = task.error_message.as_deref().filter(|value| !value.is_empty()) {
+        lines.push(format!(
+            "error: {}",
+            truncate_for_context_blob(error_message, 1200)
+        ));
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "prompt: {}",
+        truncate_for_context_blob(&task.prompt, 4000)
+    ));
+    if let Some(latest) = task.latest_payload.as_deref().filter(|value| !value.is_empty()) {
+        lines.push(String::new());
+        lines.push(format!(
+            "latestEvent: {}",
+            truncate_for_context_blob(latest, 4000)
+        ));
+    }
+    lines.join("\n")
+}
+
+fn task_context_candidate(task: &AgentTaskRow, prompt: &str) -> AgentContextCandidate {
+    let title = format!(
+        "Previous task {}",
+        task.id.chars().take(8).collect::<String>()
+    );
+    let blob = format_task_context_blob(task);
+    AgentContextCandidate {
+        context_id: task_context_id(&task.id),
+        project_id: "thread".to_string(),
+        repo_id: None,
+        context_title: title,
+        context_blob: blob.clone(),
+        score: lexical_context_score(prompt, &task.prompt, &blob),
+        match_source: CONTEXT_KIND_TASK.to_string(),
+        embedding_model: None,
+        updated_at: task.updated_at.clone().or_else(|| task.created_at.clone()),
+        kind: CONTEXT_KIND_TASK.to_string(),
+    }
+}
+
+async fn fetch_thread_task_context_candidates_from_postgres(
+    thread_id: &str,
+    prompt: &str,
+    limit: i64,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    Ok(fetch_thread_context_from_postgres(thread_id, limit)
+        .await?
+        .iter()
+        .map(|task| task_context_candidate(task, prompt))
+        .collect())
+}
+
+async fn fetch_blob_context_candidates_from_postgres(
+    selected_ids: &[String],
+    project_id: &str,
+    repo_id: &str,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    if selected_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = connect_postgres().await?;
+    ensure_agent_context_schema(&client).await?;
+    let rows = client
+        .query(
+            r#"
+            select
+              c.context_id,
+              c.project_id,
+              c.repo_id::text as repo_id,
+              c.context_title,
+              left(c.context_blob, 20000) as context_blob,
+              to_char(c.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+              e.embedding_model
+            from agent_context_blobs c
+            left join lateral (
+              select embedding_model
+              from agent_context_embeddings
+              where context_blob_id = c.id
+              order by created_at desc
+              limit 1
+            ) e on true
+            where c.is_soft_deleted = false
+              and c.status = 'active'
+              and c.project_id = $1
+              and c.repo_id = $2::text::uuid
+              and c.context_id = any($3)
+            "#,
+            &[&project_id, &repo_id, &selected_ids],
+        )
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| AgentContextCandidate {
+            context_id: row_string(row, "context_id"),
+            project_id: row_string(row, "project_id"),
+            repo_id: row_opt_string(row, "repo_id"),
+            context_title: row_string(row, "context_title"),
+            context_blob: row_string(row, "context_blob"),
+            score: 1.0,
+            match_source: "selected".to_string(),
+            embedding_model: row_opt_string(row, "embedding_model"),
+            updated_at: row_opt_string(row, "updated_at"),
+            kind: CONTEXT_KIND_BLOB.to_string(),
+        })
+        .collect())
+}
+
+async fn fetch_breadcrumb_context_candidates_by_ids_from_postgres(
+    thread_id: &str,
+    selected_ids: &[String],
+    repo_id: String,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    let numeric_ids = selected_ids
+        .iter()
+        .filter_map(|id| {
+            id.strip_prefix(BREADCRUMB_CANDIDATE_PREFIX)
+                .and_then(|tail| tail.parse::<i64>().ok())
+        })
+        .collect::<Vec<_>>();
+    if numeric_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = connect_postgres().await?;
+    let rows = client
+        .query(
+            r#"
+            select
+              id,
+              thread_id::text as thread_id,
+              task_id::text as task_id,
+              kind,
+              payload,
+              to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+              pod_name,
+              branch,
+              provider
+            from agent_remote_dev_breadcrumbs
+            where thread_id = $1::text::uuid
+              and id = any($2)
+            "#,
+            &[&thread_id, &numeric_ids],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| {
+            let breadcrumb = AgentBreadcrumbRow {
+                id: row.try_get::<_, i64>("id").unwrap_or(0),
+                thread_id: row_string(row, "thread_id"),
+                task_id: row_opt_string(row, "task_id"),
+                kind: row_string(row, "kind"),
+                payload: row
+                    .try_get::<_, Value>("payload")
+                    .unwrap_or(Value::Object(Default::default())),
+                emitted_at: row_string(row, "emitted_at"),
+                pod_name: row_opt_string(row, "pod_name"),
+                branch: row_opt_string(row, "branch"),
+                provider: row_opt_string(row, "provider"),
+            };
+            breadcrumb_row_to_candidate(breadcrumb, repo_id.clone())
+        })
+        .collect())
+}
+
+async fn fetch_selected_context_candidates_from_postgres(
+    thread_id: &str,
+    prompt: &str,
+    selected_ids: &[String],
+    repo_config: &ThreadRepoConfig,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    let project_id = normalize_context_project_id(None)?;
+    let mut breadcrumb_ids = Vec::new();
+    let mut blob_ids = Vec::new();
+    let mut task_ids = HashSet::new();
+    for id in selected_ids {
+        if id.starts_with(BREADCRUMB_CANDIDATE_PREFIX) {
+            breadcrumb_ids.push(id.clone());
+        } else if let Some(task_id) = task_id_from_context_id(id) {
+            task_ids.insert(task_id.to_string());
+        } else {
+            blob_ids.push(id.clone());
+        }
+    }
+    let repo = if blob_ids.is_empty() && breadcrumb_ids.is_empty() {
+        None
+    } else {
+        Some(
+            upsert_known_git_repo_to_postgres(
+                &repo_config.repo,
+                None,
+                None,
+                Some(&repo_config.base_branch),
+            )
+            .await?,
+        )
+    };
+    let blob_candidates = if let Some(repo) = repo.as_ref() {
+        fetch_blob_context_candidates_from_postgres(&blob_ids, &project_id, &repo.id).await?
+    } else {
+        Vec::new()
+    };
+    let breadcrumb_candidates = if let Some(repo) = repo.as_ref() {
+        fetch_breadcrumb_context_candidates_by_ids_from_postgres(
+            thread_id,
+            &breadcrumb_ids,
+            repo.id.clone(),
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    let task_candidates = if task_ids.is_empty() {
+        Vec::new()
+    } else {
+        fetch_thread_task_context_candidates_from_postgres(thread_id, prompt, 100)
+            .await?
+            .into_iter()
+            .filter(|candidate| {
+                task_id_from_context_id(&candidate.context_id)
+                    .is_some_and(|task_id| task_ids.contains(task_id))
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut by_id = blob_candidates
+        .into_iter()
+        .chain(breadcrumb_candidates)
+        .chain(task_candidates)
+        .map(|candidate| (candidate.context_id.clone(), candidate))
+        .collect::<HashMap<_, _>>();
+    Ok(selected_ids
+        .iter()
+        .filter_map(|id| by_id.remove(id))
+        .collect::<Vec<_>>())
 }
 
 async fn fetch_agent_context_candidates_from_postgres(
     thread_id: &str,
     request: &AgentContextCandidatesRequest,
 ) -> Result<AgentContextCandidatesResponse, String> {
-    let repo_url = normalize_repo_url(&request.repo)?;
-    let base_branch = normalize_base_branch(request.base_branch.as_deref())?;
-    let project_id = normalize_context_project_id(request.project_id.as_deref())?;
-    let limit = context_candidate_limit(request.limit);
-    let repo = upsert_known_git_repo_to_postgres(&repo_url, None, None, Some(&base_branch)).await?;
+     let repo_url = normalize_repo_url(&request.repo)?;
+     let base_branch = normalize_base_branch(request.base_branch.as_deref())?;
+     let project_id = normalize_context_project_id(request.project_id.as_deref())?;
+     let limit = context_candidate_limit(request.limit);
+      let selected_ids = request.context_ids.clone().unwrap_or_default();
+      if !selected_ids.is_empty() {
+          let repo_config = ThreadRepoConfig {
+              repo: repo_url,
+              base_branch,
+              thread_title: None,
+          };
+          // Use the helper-based path here (not the dispatch path) to avoid an
+          // async recursion cycle through fetch_selected_agent_context_*.
+          let candidates = fetch_selected_context_candidates_from_postgres(
+              thread_id,
+              &request.prompt,
+              &selected_ids,
+              &repo_config,
+          )
+          .await?;
+          return Ok(AgentContextCandidatesResponse {
+              ok: true,
+              source: "postgres".to_string(),
+              thread_id: thread_id.to_string(),
+              generated_at_ms: now_ms(),
+              project_id,
+              repo_id: None,
+              candidates,
+              errors: Vec::new(),
+          });
+      }
+      let repo = upsert_known_git_repo_to_postgres(&repo_url, None, None, Some(&base_branch)).await?;
     let client = connect_postgres().await?;
     ensure_agent_context_schema(&client).await?;
 
@@ -2952,16 +3266,46 @@ async fn fetch_agent_context_candidates_from_postgres(
                 },
                 embedding_model,
                 updated_at: row_opt_string(row, "updated_at"),
+                kind: CONTEXT_KIND_BLOB.to_string(),
             }
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
+          })
+          .collect::<Vec<_>>();
+      let task_candidates =
+          match fetch_thread_task_context_candidates_from_postgres(thread_id, &request.prompt, 20)
+              .await
+          {
+              Ok(items) => items,
+              Err(error) => {
+                  errors.push(format!(
+                      "thread task context unavailable; continuing without it: {error}"
+                  ));
+                  Vec::new()
+              }
+          };
+      candidates.extend(task_candidates);
+      candidates.sort_by(|a, b| {
+          b.score
+              .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.context_title.cmp(&b.context_title))
     });
     candidates.truncate(limit as usize);
+
+    // Surface recent breadcrumbs alongside long-lived context blobs so the same
+    // picker can include / exclude them with checkboxes. Breadcrumb candidates
+    // ride the same `contextIds` rail using the `breadcrumb:<numeric-id>`
+    // prefix, and the same `contextBlobs` payload using `kind: "breadcrumb"`.
+    let breadcrumb_candidates =
+        match fetch_breadcrumb_candidates_for_thread(thread_id, repo.id.clone()).await {
+            Ok(items) => items,
+            Err(error) => {
+                errors.push(format!(
+                    "breadcrumb candidates unavailable; continuing without them: {error}"
+                ));
+                Vec::new()
+            }
+        };
+    candidates.extend(breadcrumb_candidates);
 
     Ok(AgentContextCandidatesResponse {
         ok: true,
@@ -2973,6 +3317,90 @@ async fn fetch_agent_context_candidates_from_postgres(
         candidates,
         errors,
     })
+}
+
+/// How many recent breadcrumbs to surface in the context picker. The picker UI
+/// is checkbox-based so this is a soft cap on visible rows, not a prompt
+/// budget; the actual prompt cost is governed by which boxes the user keeps
+/// checked.
+const BREADCRUMB_CANDIDATE_LIMIT: i64 = 25;
+
+async fn fetch_breadcrumb_candidates_for_thread(
+    thread_id: &str,
+    repo_id: String,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    let rows =
+        fetch_agent_breadcrumb_tail_from_postgres(thread_id, BREADCRUMB_CANDIDATE_LIMIT, None)
+            .await?;
+    let candidates = rows
+        .into_iter()
+        .map(|row| breadcrumb_row_to_candidate(row, repo_id.clone()))
+        .collect();
+    Ok(candidates)
+}
+
+fn breadcrumb_row_to_candidate(row: AgentBreadcrumbRow, repo_id: String) -> AgentContextCandidate {
+    let summary = breadcrumb_payload_summary(&row.payload);
+    let title = if summary.is_empty() {
+        format!("breadcrumb · {} · {}", row.kind, row.emitted_at)
+    } else {
+        format!(
+            "breadcrumb · {} · {} · {summary}",
+            row.kind, row.emitted_at
+        )
+    };
+    let blob_payload = json!({
+        "id": row.id,
+        "kind": row.kind,
+        "emittedAt": row.emitted_at,
+        "taskId": row.task_id,
+        "podName": row.pod_name,
+        "branch": row.branch,
+        "provider": row.provider,
+        "payload": row.payload,
+    });
+    let blob = serde_json::to_string(&blob_payload)
+        .unwrap_or_else(|_| format!("{{\"kind\":\"{}\"}}", row.kind));
+    AgentContextCandidate {
+        context_id: format!("{BREADCRUMB_CANDIDATE_PREFIX}{}", row.id),
+        project_id: String::new(),
+        repo_id: Some(repo_id),
+        context_title: title,
+        context_blob: blob,
+        // Breadcrumbs sort below high-confidence semantic context but above
+        // unrelated lexical noise. Operators decide via checkboxes; the score
+        // only seeds default ordering.
+        score: 0.55,
+        match_source: CONTEXT_KIND_BREADCRUMB.to_string(),
+        embedding_model: None,
+        updated_at: Some(row.emitted_at),
+        kind: CONTEXT_KIND_BREADCRUMB.to_string(),
+    }
+}
+
+fn breadcrumb_payload_summary(payload: &Value) -> String {
+    if let Some(object) = payload.as_object() {
+        for key in [
+            "summary",
+            "message",
+            "status",
+            "branch",
+            "kind",
+            "exitReason",
+        ] {
+            if let Some(value) = object.get(key).and_then(Value::as_str) {
+                let trimmed = value.trim();
+                if !trimmed.is_empty() {
+                    let mut snippet: String = trimmed.chars().take(80).collect();
+                    if trimmed.chars().count() > 80 {
+                        snippet.push('\u{2026}');
+                    }
+                    return snippet;
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 async fn fetch_selected_agent_context_from_postgres(
@@ -2993,6 +3421,7 @@ async fn fetch_selected_agent_context_from_postgres(
                 base_branch: Some(repo_config.base_branch.clone()),
                 project_id: None,
                 limit: Some(10),
+                context_ids: None,
             },
         )
         .await?
@@ -3002,49 +3431,68 @@ async fn fetch_selected_agent_context_from_postgres(
         return Ok(Vec::new());
     }
 
-    let project_id = normalize_context_project_id(None)?;
-    let repo = upsert_known_git_repo_to_postgres(
-        &repo_config.repo,
-        None,
-        None,
-        Some(&repo_config.base_branch),
-    )
-    .await?;
-    let client = connect_postgres().await?;
-    ensure_agent_context_schema(&client).await?;
-    let rows = client
-        .query(
-            r#"
-            select
-              c.context_id,
-              c.project_id,
-              c.repo_id::text as repo_id,
-              c.context_title,
-              left(c.context_blob, 20000) as context_blob,
-              to_char(c.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-              e.embedding_model
-            from agent_context_blobs c
-            left join lateral (
-              select embedding_model
-              from agent_context_embeddings
-              where context_blob_id = c.id
-              order by created_at desc
-              limit 1
-            ) e on true
-            where c.is_soft_deleted = false
-              and c.status = 'active'
-              and c.project_id = $1
-              and c.repo_id = $2::text::uuid
-              and c.context_id = any($3)
-            "#,
-            &[&project_id, &repo.id, &selected_ids],
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+      // The picker mixes context-blob IDs, breadcrumb IDs (`breadcrumb:<numeric>`),
+      // and previous task IDs (`task:<uuid>`). Split them so each side queries
+      // its own table and rejoin in the original user-selected order so prompt
+      // sections render top-to-bottom matching the checkbox order.
+      let mut breadcrumb_ids: Vec<&String> = Vec::new();
+      let mut task_ids: HashSet<String> = HashSet::new();
+      let mut blob_ids: Vec<&String> = Vec::new();
+      for id in &selected_ids {
+          if id.starts_with(BREADCRUMB_CANDIDATE_PREFIX) {
+              breadcrumb_ids.push(id);
+          } else if let Some(task_id) = task_id_from_context_id(id) {
+              task_ids.insert(task_id.to_string());
+          } else {
+              blob_ids.push(id);
+          }
+      }
 
-    let mut by_id = rows
-        .iter()
-        .map(|row| {
+    let mut by_id: HashMap<String, AgentContextCandidate> = HashMap::new();
+
+    if !blob_ids.is_empty() {
+        let project_id = normalize_context_project_id(None)?;
+        let repo = upsert_known_git_repo_to_postgres(
+            &repo_config.repo,
+            None,
+            None,
+            Some(&repo_config.base_branch),
+        )
+        .await?;
+        let client = connect_postgres().await?;
+        ensure_agent_context_schema(&client).await?;
+        let blob_id_strings: Vec<String> = blob_ids.iter().map(|id| (*id).clone()).collect();
+        let rows = client
+            .query(
+                r#"
+                select
+                  c.context_id,
+                  c.project_id,
+                  c.repo_id::text as repo_id,
+                  c.context_title,
+                  left(c.context_blob, 20000) as context_blob,
+                  to_char(c.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+                  e.embedding_model
+                from agent_context_blobs c
+                left join lateral (
+                  select embedding_model
+                  from agent_context_embeddings
+                  where context_blob_id = c.id
+                  order by created_at desc
+                  limit 1
+                ) e on true
+                where c.is_soft_deleted = false
+                  and c.status = 'active'
+                  and c.project_id = $1
+                  and c.repo_id = $2::text::uuid
+                  and c.context_id = any($3)
+                "#,
+                &[&project_id, &repo.id, &blob_id_strings],
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+
+        for row in rows.iter() {
             let candidate = AgentContextCandidate {
                 context_id: row_string(row, "context_id"),
                 project_id: row_string(row, "project_id"),
@@ -3055,12 +3503,91 @@ async fn fetch_selected_agent_context_from_postgres(
                 match_source: "selected".to_string(),
                 embedding_model: row_opt_string(row, "embedding_model"),
                 updated_at: row_opt_string(row, "updated_at"),
+                kind: CONTEXT_KIND_BLOB.to_string(),
             };
-            (candidate.context_id.clone(), candidate)
-        })
-        .collect::<HashMap<_, _>>();
+            by_id.insert(candidate.context_id.clone(), candidate);
+        }
+    }
 
-    Ok(selected_ids
+      if !breadcrumb_ids.is_empty() {
+        let numeric_ids: Vec<i64> = breadcrumb_ids
+            .iter()
+            .filter_map(|id| {
+                id.strip_prefix(BREADCRUMB_CANDIDATE_PREFIX)
+                    .and_then(|tail| tail.parse::<i64>().ok())
+            })
+            .collect();
+        if !numeric_ids.is_empty() {
+            let client = connect_postgres().await?;
+            let rows = client
+                .query(
+                    r#"
+                    select
+                      id,
+                      thread_id::text as thread_id,
+                      task_id::text as task_id,
+                      kind,
+                      payload,
+                      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+                      pod_name,
+                      branch,
+                      provider
+                    from agent_remote_dev_breadcrumbs
+                    where thread_id = $1::text::uuid
+                      and id = any($2)
+                    "#,
+                    &[&request.thread_id, &numeric_ids],
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+            // Use the same repo we already resolved (or resolve fresh if no
+            // blobs were selected) so the picker stays consistent.
+            let repo_id = if let Some(any_row) = by_id.values().next() {
+                any_row.repo_id.clone().unwrap_or_default()
+            } else {
+                upsert_known_git_repo_to_postgres(
+                    &repo_config.repo,
+                    None,
+                    None,
+                    Some(&repo_config.base_branch),
+                )
+                .await
+                .map(|repo| repo.id)
+                .unwrap_or_default()
+            };
+            for row in rows.iter() {
+                let breadcrumb = AgentBreadcrumbRow {
+                    id: row.try_get::<_, i64>("id").unwrap_or(0),
+                    thread_id: row_string(row, "thread_id"),
+                    task_id: row_opt_string(row, "task_id"),
+                    kind: row_string(row, "kind"),
+                    payload: row
+                        .try_get::<_, Value>("payload")
+                        .unwrap_or(Value::Object(Default::default())),
+                    emitted_at: row_string(row, "emitted_at"),
+                    pod_name: row_opt_string(row, "pod_name"),
+                    branch: row_opt_string(row, "branch"),
+                    provider: row_opt_string(row, "provider"),
+                };
+                let candidate = breadcrumb_row_to_candidate(breadcrumb, repo_id.clone());
+                by_id.insert(candidate.context_id.clone(), candidate);
+            }
+          }
+      }
+      if !task_ids.is_empty() {
+          for candidate in
+              fetch_thread_task_context_candidates_from_postgres(&request.thread_id, &request.prompt, 100)
+                  .await?
+          {
+              if task_id_from_context_id(&candidate.context_id)
+                  .is_some_and(|task_id| task_ids.contains(task_id))
+              {
+                  by_id.insert(candidate.context_id.clone(), candidate);
+              }
+          }
+      }
+
+      Ok(selected_ids
         .iter()
         .filter_map(|id| by_id.remove(id))
         .collect::<Vec<_>>())

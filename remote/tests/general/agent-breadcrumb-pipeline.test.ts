@@ -82,18 +82,11 @@ test('dev-server uses the rest-api breadcrumb endpoints instead of writing tmp/c
   assert.match(server, /async function postBreadcrumb\(/);
   assert.match(server, /async function postSessionBreadcrumb\(/);
   assert.match(server, /async function postTaskBreadcrumb\(/);
-  assert.match(server, /async function fetchThreadBreadcrumbTail\(/);
   assert.match(
     server,
     /\/api\/agents\/threads\/\$\{encodeURIComponent\(input\.threadId\)\}\/breadcrumbs/,
   );
-  assert.match(
-    server,
-    /\/api\/agents\/threads\/\$\{encodeURIComponent\(state\.threadId\)\}\/breadcrumbs\/tail/,
-  );
-  assert.match(server, /breadcrumbTailLimit:/);
   assert.match(server, /breadcrumbWriteTimeoutMs:/);
-  assert.match(server, /breadcrumbReadTimeoutMs:/);
   assert.match(server, /sanitizeBreadcrumbPayload/);
 
   // No file-system breadcrumb writes inside the workspace.
@@ -102,6 +95,50 @@ test('dev-server uses the rest-api breadcrumb endpoints instead of writing tmp/c
   assert.doesNotMatch(server, /getSessionLogPath/);
   assert.doesNotMatch(server, /appendThreadLog/);
   assert.doesNotMatch(server, /readLocalThreadContext/);
+
+  // Auto-tail fetch is gone — breadcrumbs only enter the prompt via explicit
+  // picker selection in `contextBlobs`.
+  assert.doesNotMatch(server, /async function fetchThreadBreadcrumbTail\(/);
+  assert.doesNotMatch(server, /\/breadcrumbs\/tail/);
+});
+
+test('breadcrumbs ride the context picker as checkbox-selectable candidates', async () => {
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const devServer = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+
+  // 1. AgentContextCandidate carries a `kind` discriminator; breadcrumbs are
+  //    fetched alongside agent_context_blobs in the same response.
+  assert.match(restServer, /kind: String,?\s*\}/);
+  assert.match(restServer, /CONTEXT_KIND_BREADCRUMB: &str = "breadcrumb"/);
+  assert.match(restServer, /CONTEXT_KIND_BLOB: &str = "context-blob"/);
+  assert.match(restServer, /BREADCRUMB_CANDIDATE_PREFIX: &str = "breadcrumb:"/);
+  assert.match(restServer, /async fn fetch_breadcrumb_candidates_for_thread\(/);
+  assert.match(restServer, /fn breadcrumb_row_to_candidate\(/);
+
+  // 2. Selected-context fetch splits ids into blob + breadcrumb buckets so a
+  //    `breadcrumb:<n>` selection resolves to an agent_remote_dev_breadcrumbs
+  //    row, not a missing context-blob.
+  assert.match(restServer, /if id\.starts_with\(BREADCRUMB_CANDIDATE_PREFIX\)/);
+  assert.match(
+    restServer,
+    /from agent_remote_dev_breadcrumbs[\s\S]*?where thread_id = \$1::text::uuid[\s\S]*?and id = any\(\$2\)/,
+  );
+
+  // 3. dev-server treats kind: 'breadcrumb' rows as the source of
+  //    <thread_breadcrumb_tail>; kind: 'context-blob' stays in
+  //    <selected_context_blobs>. Unchecked rows never reach the worker.
+  assert.match(devServer, /kind: z\.enum\(\[[^\]]*'breadcrumb'[^\]]*\]\)\.optional\(\)/);
+  assert.match(devServer, /function isBreadcrumbContextItem\(/);
+  assert.match(devServer, /function formatSelectedBreadcrumbs\(/);
+  assert.match(devServer, /<thread_breadcrumb_tail>/);
+  assert.match(devServer, /thread-context:selected-breadcrumbs/);
+
+  // 4. Picker UI shows breadcrumbs with a distinct badge/class so operators
+  //    can tell what they're un-checking.
+  assert.match(webHome, /context-row-breadcrumb/);
+  assert.match(webHome, /context-badge-breadcrumb/);
+  assert.match(webHome, /item\.kind === "breadcrumb"/);
 });
 
 test('redis interfaces package exposes the agent breadcrumb cache schema for cross-runtime consumers', async () => {

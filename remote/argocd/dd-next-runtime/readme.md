@@ -61,7 +61,7 @@ Gateway path map:
 - `/`, `/home` -> `dd-remote-web-home:8080`
 - `/auth` -> `dd-remote-auth:8083`
 - `/agents/tasks` -> `dd-remote-web-home:8080`
-- `/api/agents/tasks` -> `dd-remote-rest-api:8082`
+- `/api/agents/*` -> `dd-remote-rest-api:8082` (gateway auth required)
 - `/api/agents/threads/<uuid>/prepare` -> `dd-remote-rest-api:8082` (internal auth required)
 - `POST /api/agent-worker/threads/<uuid>/tasks` -> `dd-agent-worker-broker:8098`
 - `/container-pools`, `/container-pools/<pool>`,
@@ -96,7 +96,8 @@ Gateway path map:
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
 - `/dd-thread/<short>/...` -> target per-thread Kubernetes Ingress shape; the selected Node.js
   worker is pinned to one thread and does not route UUIDs itself. `/dd-thread/<short>/ws` is the
-  direct worker WebSocket for replay/live task events.
+  direct worker WebSocket for replay/live task events; both routes require gateway auth before the
+  gateway injects the worker `X-Server-Auth` header.
 
 Availability guardrail for `/agents/tasks`: the HTML route is owned by
 `dd-remote-web-home`, so it should keep `replicas: 2`, rolling updates with
@@ -239,7 +240,7 @@ Use `dd-gleam-lambda-runner-secrets` for independent lambda runtime values:
 - runtime-specific provider keys that user lambdas are allowed to consume
 
 The web deployment serves HTML only and does not mount database secrets. Browser JavaScript calls
-`/api/agents/tasks` and `/api/lambdas/functions` through the gateway directly. Lambda invocation
+`/api/agents/tasks` and `/api/lambdas/functions` through the authenticated gateway directly. Lambda invocation
 traffic uses `/lambdas/invoke/<function-id>` and goes from the gateway to the Gleam runner without
 passing through the REST API. The runner reads `LAMBDA_DATABASE_URL` from
 `dd-gleam-lambda-runner-secrets` and uses Postgres to resolve that immutable UUID to a lambda

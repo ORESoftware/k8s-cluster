@@ -54,7 +54,7 @@ function assertGatewayLocationRequiresAuth(source: string, locationPattern: RegE
   assert.match(match[0], /if \(\$dd_gateway_auth_ok = 0\) \{\s*return 401;\s*\}/);
 }
 
-test('rust homepage lists public task paths and protected ops paths', async () => {
+test('rust homepage lists public pages and protected ops/data paths', async () => {
   const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(home, /dd remote service directory/);
@@ -65,7 +65,6 @@ test('rust homepage lists public task paths and protected ops paths', async () =
     '/auth',
     '/agents/tasks',
     '/agents/threads',
-    '/api/agents/tasks',
     '/presence-test',
     '/wss-test',
   ]) {
@@ -75,6 +74,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   for (const path of [
     '/lambdas/functions',
     '/lambdas/invoke/<function-id>',
+    '/api/agents/',
     '/api/lambdas/',
     '/api/agent-worker/',
     '/container-pools',
@@ -238,7 +238,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   );
 });
 
-test('gateway exposes public task paths and protects ops paths behind temporary Auth header', async () => {
+test('gateway exposes public task pages and protects ops/data paths behind temporary Auth header', async () => {
   const gateway = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
   );
@@ -314,7 +314,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   assert.match(
     gateway,
-    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\/ws\$"[\s\S]*proxy_pass http:\/\/\$dd_thread_service:8080\/ws\$is_args\$args/,
+    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\/ws\$"[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*proxy_set_header Auth \$dd_gateway_auth_header[\s\S]*proxy_pass http:\/\/\$dd_thread_service:8080\/ws\$is_args\$args/,
   );
   assert.match(
     gateway,
@@ -325,10 +325,10 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /if \(\$dd_thread_proxy_path = ""\) {\s*set \$dd_thread_proxy_path \/;\s*}/,
   );
-  assert.match(gateway, /proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"/);
+  assert.match(gateway, /proxy_set_header X-Server-Auth \$dd_dev_server_auth_header/);
   assert.match(
     gateway,
-    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\(\?<thread_path>\/\.\*\)\?\$"[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade/,
+    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\(\?<thread_path>\/\.\*\)\?\$"[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header/,
   );
   assert.match(gateway, /proxy_pass http:\/\/\$dd_thread_service:8080\$dd_thread_proxy_path/);
   assert.doesNotMatch(gateway, /location ~ "\^\/dd-thread\/\(\[a-z0-9\]\{12\}\)\(\/\.\*\)\$"/);
@@ -353,7 +353,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   assert.match(
     gateway,
-    /location\s+\/api\/agents\/[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+    /location\s+\/api\/agents\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*proxy_set_header X-Agent-Auth \$dd_dev_server_auth_header[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
   );
   assert.match(gateway, /location = \/bastion[\s\S]*return 302 \/bastion\/profile/);
   assert.match(

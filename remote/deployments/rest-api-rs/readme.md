@@ -40,6 +40,11 @@ README is narrative context, not the route inventory source of truth. HTML is av
 | `GET /api/lambdas/functions/:idOrSlug`               | fetch one lambda definition over HTTP so non-REST deployments do not need direct RDS TCP credentials                |
 | `GET /api/container-pool/images`                     | catalog of warm-pool images + latest revision/build status (backs `/container-pool/config`)                         |
 | `GET /api/container-pool/images/:slug`               | per-image detail including current revision text and last build run                                                 |
+
+Through `dd-remote-gateway`, `/api/agents/*` requires the operator `dd_auth` cookie or legacy
+`Auth` header before nginx injects `X-Server-Auth` / `X-Agent-Auth`. Cluster-local callers that
+address `dd-remote-rest-api.default.svc.cluster.local:8082` directly must still provide the
+route-specific internal headers for ingest and lifecycle mutation routes.
 | `GET /api/container-pool/images/:slug/dockerfile`    | current Dockerfile text; `?source=disk-default` returns the on-disk default, `?revisionId=` returns a saved one     |
 | `PUT /api/container-pool/images/:slug/dockerfile`    | save a new Dockerfile revision (content-addressed; duplicate saves coalesce)                                        |
 | `GET /api/container-pool/images/:slug/revisions`     | last N saved revisions for an image                                                                                 |

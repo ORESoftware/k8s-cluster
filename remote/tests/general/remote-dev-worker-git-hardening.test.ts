@@ -144,9 +144,11 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /async function postBreadcrumb\(input:/);
   assert.match(server, /async function postSessionBreadcrumb\(/);
   assert.match(server, /async function postTaskBreadcrumb\(/);
-  assert.match(server, /async function fetchThreadBreadcrumbTail\(state: TaskState\): Promise<string>/);
   assert.match(server, /\/api\/agents\/threads\/\$\{encodeURIComponent\(input\.threadId\)\}\/breadcrumbs/);
-  assert.match(server, /\/api\/agents\/threads\/\$\{encodeURIComponent\(state\.threadId\)\}\/breadcrumbs\/tail/);
+  // Breadcrumbs no longer auto-fetch as a tail. Prompt context comes
+  // exclusively from the /agents/threads picker.
+  assert.doesNotMatch(server, /async function fetchThreadBreadcrumbTail\(/);
+  assert.doesNotMatch(server, /\/breadcrumbs\/tail/);
   assert.match(server, /void postSessionBreadcrumb\(session, 'session-ready'/);
   assert.match(server, /void postSessionBreadcrumb\(session, 'merge-upstream-start'/);
   assert.match(server, /void postSessionBreadcrumb\(session, 'merge-upstream-done'/);
@@ -178,7 +180,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /<agent_operating_mode>/);
   assert.match(server, /Do not stop to ask the human user a question before acting/);
   assert.match(server, /<thread_breadcrumb_tail>/);
-  assert.match(server, /thread-context:postgres-breadcrumb-tail/);
+  assert.match(server, /thread-context:selected-breadcrumbs/);
   assert.doesNotMatch(server, /<local_thread_log_tail>/);
   assert.doesNotMatch(server, /readLocalThreadContext/);
   assert.match(server, /const runtimeContext = clusterMcpPromptSection\(config\.agentMcpUrl\)/);
