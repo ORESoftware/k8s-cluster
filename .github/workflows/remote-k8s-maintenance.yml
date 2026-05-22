@@ -976,6 +976,102 @@ jobs:
           }))
           PY
               ;;
+            bootstrap-thread-go-services)
+              # One-shot kubectl-apply for the two new Argo CD Application
+              # manifests added on dev. Once registered, ArgoCD's
+              # automated/prune/selfHeal sync keeps both Apps in step with
+              # the dev branch on every subsequent push, so this operation
+              # only needs to run when bootstrapping the Apps for the
+              # first time (or after a deliberate prune).
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout ==="
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block bootstrap-thread-go-services" >&2
+            exit 1
+          fi
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== render manifests as a sanity check ==="
+          kubectl kustomize remote/deployments/thread-operator-go/k8s/ec2 | wc -l
+          kubectl kustomize remote/deployments/thread-fleet-exporter-go/k8s/ec2 | wc -l
+
+          echo "=== apply Argo CD Application manifests ==="
+          kubectl apply -f remote/argocd/apps/dd-thread-operator.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-thread-fleet-exporter.application.yaml
+
+          echo "=== nudge Argo CD to sync now ==="
+          kubectl -n argocd annotate \
+            application/dd-thread-operator \
+            application/dd-thread-fleet-exporter \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== wait for child Deployments ==="
+          for app in dd-thread-operator dd-thread-fleet-exporter; do
+            for attempt in $(seq 1 30); do
+              if kubectl -n default get deploy "$app" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 5
+            done
+            kubectl -n default rollout status deployment/"$app" --timeout=300s || true
+          done
+
+          echo "=== Argo CD application status ==="
+          kubectl -n argocd get application/dd-thread-operator application/dd-thread-fleet-exporter -o wide || true
+
+          echo "=== applied resources ==="
+          kubectl -n default get deploy,svc -l app.kubernetes.io/component=thread-operator -o wide || true
+          kubectl -n default get deploy,svc -l app.kubernetes.io/component=fleet-exporter -o wide || true
+          kubectl get crd threads.dd.dev -o wide || true
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-thread-go-services)
+              # Read-only smoke test: confirm operator and fleet-exporter
+              # pods are Running, /metrics responds, the Thread CRD is
+              # registered, and the operator has no Thread CRs adopted
+              # by accident (sanity check on the opt-in safety contract).
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== thread-operator + fleet-exporter pods ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods,deploy -l app=dd-thread-operator -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods,deploy -l app=dd-thread-fleet-exporter -o wide || true'",
+              "echo '=== Thread CRD ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get crd threads.dd.dev -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl get threads --all-namespaces || true'",
+              "echo '=== operator log tail ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-thread-operator -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --tail=120\" || true; done",
+              "echo '=== fleet-exporter log tail ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-thread-fleet-exporter -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --tail=120\" || true; done",
+              "echo '=== fleet-exporter /metrics smoke ==='",
+              "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-thread-fleet-exporter -o jsonpath=\"{.items[0].metadata.name}\" 2>/dev/null); if [ -n \"$pod\" ]; then kubectl -n default exec \"$pod\" -- sh -lc \"wget -qO- http://127.0.0.1:9103/metrics 2>/dev/null | grep -E \\\"^dd_thread_fleet_(total|replicas|pvcs|threads|scrape)\\\" | head -40\"; else echo \"no fleet-exporter pod found yet\"; fi'",
+              "echo '=== operator /metrics smoke ==='",
+              "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-thread-operator -o jsonpath=\"{.items[0].metadata.name}\" 2>/dev/null); if [ -n \"$pod\" ]; then kubectl -n default exec \"$pod\" -- sh -lc \"wget -qO- http://127.0.0.1:9101/metrics 2>/dev/null | grep -E \\\"^controller_runtime_|^workqueue_\\\" | head -20\"; else echo \"no operator pod found yet\"; fi'",
+              "echo '=== Argo CD application sync state ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-thread-operator application/dd-thread-fleet-exporter -o wide || true'"
+            ]
+          }
+          JSON
+              ;;
             *)
               echo "Unsupported operation: $OPERATION" >&2
               exit 64
