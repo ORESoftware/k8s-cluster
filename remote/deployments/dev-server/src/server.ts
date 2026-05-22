@@ -82,8 +82,25 @@ const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
   'openai-codex-cli',
   'openai-sdk',
 ]);
-const GENERATED_GIT_EXCLUDE_PATHS = ['.pnpm-store', 'node_modules', '.next', '.turbo'];
+// Paths the dev-server owns by contract and must never treat as user
+// repo content (commits, dirty-state guards, install-artifact cleans):
+//   - dependency caches that should not pollute commits or dirty checks
+//   - tmp/convos: per-thread breadcrumb log written by this server even
+//     when the underlying repo does not gitignore tmp/. See
+//     `remote/deployments/dev-server/readme.md` (THREAD_LOG_RELATIVE_PATH)
+//     and AGENTS.md for the breadcrumb contract.
+const GENERATED_GIT_EXCLUDE_PATHS = [
+  '.pnpm-store',
+  'node_modules',
+  '.next',
+  '.turbo',
+  'tmp/convos',
+];
 const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS.map((path) => `:(exclude)${path}`);
+const GENERATED_GIT_CLEAN_EXCLUDE_FLAGS = GENERATED_GIT_EXCLUDE_PATHS.flatMap((path) => [
+  '--exclude',
+  path,
+]);
 
 function configAgentProvider(value: string | undefined, fallback: AgentProvider): AgentProvider {
   return value && CONFIG_AGENT_PROVIDERS.has(value as AgentProvider) ? (value as AgentProvider) : fallback;
@@ -164,6 +181,7 @@ const config = {
   // Per-thread pods set REMOTE_DEV_THREAD_ID. Repo-scoped warm pool workers
   // leave it unset and accept tasks for any thread in the configured repo.
   threadId: process.env.REMOTE_DEV_THREAD_ID ?? process.env.THREAD_ID ?? null,
+  threadTitle: process.env.REMOTE_DEV_THREAD_TITLE ?? process.env.THREAD_TITLE ?? null,
   workerBindMode:
     process.env.WORKER_BIND_MODE ?? (process.env.REMOTE_DEV_THREAD_ID || process.env.THREAD_ID ? 'thread' : 'repo'),
   userId: process.env.USER_ID ?? null,
@@ -1012,7 +1030,7 @@ async function resetDependencyInstallArtifacts(workspacePath: string): Promise<v
   });
   await shCapture(
     'git',
-    ['clean', '-fdx', '--exclude=node_modules', '--exclude=.pnpm-store', '--exclude=.next', '--exclude=.turbo'],
+    ['clean', '-fdx', ...GENERATED_GIT_CLEAN_EXCLUDE_FLAGS],
     workspacePath,
     { timeoutMs: TIMEOUT_GIT_QUICK },
   );
@@ -1121,9 +1139,24 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
   if (currentBranch !== session.branch) {
     const status = await gitWorkspaceStatus(session.workspacePath);
     if (status.trim()) {
-      throw new Error(
-        `workspace has uncommitted changes while on ${currentBranch ?? 'detached HEAD'}; refusing to switch to ${session.branch}`,
-      );
+      // Boot stubs the worker on a placeholder branch (`<prefix>/<sid>/<sid>`)
+      // and writes its own session-ready breadcrumb to tmp/convos/thread.log
+      // *after* resetDependencyInstallArtifacts, so by the time the first
+      // task arrives the workspace has unrelated dev-server-owned residue
+      // sitting on the placeholder branch. That residue isn't agent work —
+      // there has been no task on the placeholder by definition — so reset
+      // it instead of refusing the title-derived branch switch. We keep the
+      // strict throw for non-placeholder branches so a crashed mid-task pod
+      // still refuses to silently drop uncommitted agent work.
+      const onPlaceholder =
+        currentBranch !== null &&
+        isPlaceholderSessionBranch(session.sessionId, currentBranch);
+      if (!onPlaceholder) {
+        throw new Error(
+          `workspace has uncommitted changes while on ${currentBranch ?? 'detached HEAD'}; refusing to switch to ${session.branch}`,
+        );
+      }
+      await resetDependencyInstallArtifacts(session.workspacePath);
     }
     await shCapture(
       'git',
@@ -4865,6 +4898,7 @@ async function main(): Promise<void> {
     const bootSession = getOrCreateSession({
       taskId: config.threadId,
       threadId: config.threadId,
+      threadTitle: config.threadTitle ?? undefined,
     });
     await bootSession.ready;
   }

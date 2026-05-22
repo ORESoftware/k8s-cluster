@@ -28,6 +28,7 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /struct NatsTaskMessage/);
   assert.match(server, /dispatch_mode: String/);
   assert.match(server, /container_pool_dispatch: bool/);
+  assert.match(server, /thread_title: Option<String>/);
   assert.match(server, /fn nats_task_subject/);
   assert.match(server, /dd\.remote\.thread\.\{thread_id\}\.tasks/);
   assert.match(server, /fn nats_task_stream_name/);
@@ -54,15 +55,18 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /unwrap_or_else\(\|\| "queued"\.to_string\(\)\)/);
   assert.match(server, /fn is_container_pool_dispatch_mode/);
   assert.match(server, /"queued" \| "nats" \| "async" \| "queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(server, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(server, /plain_queued_modes_use_uuid_bound_worker_queue/);
   assert.match(server, /publish_task_dispatch_to_nats\(&request, None\)\.await/);
   assert.match(server, /"directDispatch": false/);
   assert.match(server, /"task\.dispatch"/);
   assert.match(server, /dispatch_mode/);
   assert.match(server, /"stage": "nats-publish-failed"/);
   assert.match(server, /requestedDispatchMode/);
+  assert.match(server, /thread_title: repo_config\.thread_title\.clone\(\)/);
   assert.ok(
     server.indexOf('publish_task_dispatch_to_nats(&request, None).await')
-      < server.indexOf('ensure_thread_worker(&thread_id'),
+      < server.indexOf('let Ok((namespace, name, _results)) = ensure_thread_worker('),
     'queued NATS publish must happen before the synchronous worker wake path',
   );
   assert.match(server, /shadow: bool/);
@@ -100,12 +104,14 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /dispatch_mode: Option<String>/);
   assert.match(consumer, /container_pool_dispatch: Option<bool>/);
   assert.match(consumer, /should_dispatch_to_container_pool/);
+  assert.match(consumer, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
   assert.match(consumer, /dispatch_to_container_pool/);
   assert.match(consumer, /dispatch_to_deterministic_worker/);
   assert.match(consumer, /dispatch_to_rest_api/);
   assert.match(consumer, /repo_pool_slug/);
   assert.match(consumer, /nodejs-chat-claude-/);
   assert.match(consumer, /"affinityKey": &task\.thread_id/);
+  assert.match(consumer, /"freshAffinity": true/);
   assert.match(consumer, /HashSet/);
   assert.match(consumer, /has_task_receipt/);
   assert.match(consumer, /write_task_receipt/);

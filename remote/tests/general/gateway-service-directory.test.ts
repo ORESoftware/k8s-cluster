@@ -730,7 +730,10 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
-  assert.match(dockerfile, /COPY --from=build \/app\/target\/release\/dd-remote-web-home/);
+  assert.match(
+    dockerfile,
+    /COPY --from=build \/app\/deployments\/web-home-rs\/target\/release\/dd-remote-web-home/,
+  );
   assert.match(dockerfile, /USER 10001:10001/);
   assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/dd-remote-web-home"\]/);
   assert.match(refreshWorkflow, /name: Refresh remote web-home local image/);
@@ -746,11 +749,11 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(refreshWorkflow, /aws-region: \$\{\{ vars\.AWS_REGION \|\| secrets\.AWS_REGION \|\| 'us-east-1' \}\}/);
   assert.match(
     refreshWorkflow,
-    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/deployments\/web-home-rs/,
+    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-f remote\/deployments\/web-home-rs\/Dockerfile -t docker\.io\/library\/dd-remote-web-home:dev remote/,
   );
   assert.match(
     refreshWorkflow,
-    /sudo -u ec2-user -H bash -lc '\\''cd \/home\/ec2-user\/codes\/dd\/dd-next-1 && kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
+    /sudo -u ec2-user -H bash -lc '\\''refresh_root=\$\(cat \/tmp\/dd-web-home-refresh-root\); cd \\"\$refresh_root\\" && kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
   );
   assert.match(
     refreshWorkflow,
@@ -1228,10 +1231,12 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
     restServer,
     /prune_awake_thread_workers_for_capacity\(&namespace, &name\)\.await/,
   );
+  assert.match(restServer, /REMOTE_DEV_THREAD_TITLE/);
+  assert.match(restServer, /title as thread_title/);
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,
-    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
+    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(\s*&thread_id,\s*&repo_config\.repo,\s*&repo_config\.base_branch,\s*repo_config\.thread_title\.as_deref\(\),\s*\)/,
   );
   assert.match(restServer, /fn default_dispatch_mode/);
   assert.match(restServer, /REST_API_DEFAULT_DISPATCH_MODE/);

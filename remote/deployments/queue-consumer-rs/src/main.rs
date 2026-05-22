@@ -123,7 +123,7 @@ fn is_shadow_task(task: &QueueTaskMessage) -> bool {
 fn is_container_pool_dispatch_mode(mode: &str) -> bool {
     matches!(
         mode,
-        "queued" | "nats" | "async" | "queued-pool" | "nats-pool" | "container-pool" | "pool"
+        "queued-pool" | "nats-pool" | "container-pool" | "pool"
     )
 }
 
@@ -321,6 +321,7 @@ async fn dispatch_to_container_pool(
             "requestId": &task.task_id,
             "poolSlug": pool,
             "affinityKey": &task.thread_id,
+            "freshAffinity": true,
             "path": "/tasks",
             "payload": {
                 "taskId": &task.task_id,

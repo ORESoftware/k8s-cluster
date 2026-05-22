@@ -418,6 +418,7 @@ struct NatsTaskMessage {
     base_branch: String,
     feature_branch: Option<String>,
     prompt: String,
+    thread_title: Option<String>,
     context_mode: Option<String>,
     context_ids: Option<Vec<String>>,
     created_at_ms: u128,
@@ -427,6 +428,7 @@ struct NatsTaskMessage {
 struct ThreadRepoConfig {
     repo: String,
     base_branch: String,
+    thread_title: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -670,6 +672,10 @@ fn normalized_repo_config(request: &DispatchTaskRequest) -> Result<ThreadRepoCon
     Ok(ThreadRepoConfig {
         repo: normalize_repo_url(&request.repo)?,
         base_branch: normalize_base_branch(request.base_branch.as_deref())?,
+        thread_title: request
+            .thread_title
+            .clone()
+            .or_else(|| Some(request.prompt.chars().take(80).collect::<String>())),
     })
 }
 
@@ -1572,8 +1578,30 @@ fn render_thread_deployment(
     thread_id: &str,
     repo_url: &str,
     base_branch: &str,
+    thread_title: Option<&str>,
 ) -> Value {
     let image = thread_runtime_image();
+    let mut env = vec![
+        json!({ "name": "REMOTE_DEV_THREAD_ID", "value": thread_id }),
+        json!({ "name": "DD_REPO_URL", "value": repo_url }),
+        json!({ "name": "BASE_BRANCH", "value": base_branch }),
+        json!({ "name": "IDLE_TIMEOUT_MS", "value": "0" }),
+        json!({ "name": "OTEL_SERVICE_NAME", "value": name }),
+        json!({ "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://dd-otel-collector.observability.svc.cluster.local:4318" }),
+        json!({ "name": "THREAD_CONTEXT_BASE_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082" }),
+        json!({ "name": "AGENT_MCP_URL", "value": "http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp" }),
+        json!({ "name": "AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000" }),
+        json!({ "name": "EVENT_INGEST_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events" }),
+        json!({ "name": "EVENT_INGEST_SECRET", "valueFrom": { "secretKeyRef": { "name": "dd-agent-secrets", "key": "SERVER_AUTH_SECRET" } } }),
+        json!({ "name": "NATS_URL", "value": "nats://dd-nats.messaging.svc.cluster.local:4222" }),
+        json!({ "name": "NATS_EVENT_SUBJECT", "value": "dd.remote.events" }),
+    ];
+    if let Some(thread_title) = thread_title
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        env.push(json!({ "name": "REMOTE_DEV_THREAD_TITLE", "value": thread_title }));
+    }
     json!({
         "apiVersion": "apps/v1",
         "kind": "Deployment",
@@ -1621,21 +1649,7 @@ fn render_thread_deployment(
                             "runAsGroup": 1000
                         },
                         "ports": [{ "containerPort": 8080, "name": "http" }],
-                        "env": [
-                            { "name": "REMOTE_DEV_THREAD_ID", "value": thread_id },
-                            { "name": "DD_REPO_URL", "value": repo_url },
-                            { "name": "BASE_BRANCH", "value": base_branch },
-                            { "name": "IDLE_TIMEOUT_MS", "value": "0" },
-                            { "name": "OTEL_SERVICE_NAME", "value": name },
-                            { "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://dd-otel-collector.observability.svc.cluster.local:4318" },
-                            { "name": "THREAD_CONTEXT_BASE_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082" },
-                            { "name": "AGENT_MCP_URL", "value": "http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp" },
-                            { "name": "AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000" },
-                            { "name": "EVENT_INGEST_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events" },
-                            { "name": "EVENT_INGEST_SECRET", "valueFrom": { "secretKeyRef": { "name": "dd-agent-secrets", "key": "SERVER_AUTH_SECRET" } } },
-                            { "name": "NATS_URL", "value": "nats://dd-nats.messaging.svc.cluster.local:4222" },
-                            { "name": "NATS_EVENT_SUBJECT", "value": "dd.remote.events" }
-                        ],
+                        "env": env,
                         "envFrom": [
                             { "secretRef": { "name": "dd-agent-secrets", "optional": true } }
                         ],
@@ -1688,6 +1702,7 @@ async fn ensure_thread_worker(
     thread_id: &str,
     repo_url: &str,
     base_branch: &str,
+    thread_title: Option<&str>,
 ) -> Result<(String, String, Vec<ThreadActionResult>), String> {
     let namespace = thread_runtime_namespace();
     let name = thread_resource_name(thread_id);
@@ -1695,7 +1710,14 @@ async fn ensure_thread_worker(
     if let Err(error) = prune_awake_thread_workers_for_capacity(&namespace, &name).await {
         eprintln!("thread capacity prune skipped before waking {name}: {error}");
     }
-    let deployment = render_thread_deployment(&namespace, &name, thread_id, repo_url, base_branch);
+    let deployment = render_thread_deployment(
+        &namespace,
+        &name,
+        thread_id,
+        repo_url,
+        base_branch,
+        thread_title,
+    );
 
     results.push(
         k8s_create_request(
@@ -1737,8 +1759,13 @@ async fn prepare_thread_worker(thread_id: &str) -> Result<ThreadActionResponse, 
     let repo_config = fetch_thread_repo_config_from_postgres(thread_id)
         .await?
         .ok_or_else(|| "thread repo config is not configured".to_string())?;
-    let (namespace, name, results) =
-        ensure_thread_worker(thread_id, &repo_config.repo, &repo_config.base_branch).await?;
+    let (namespace, name, results) = ensure_thread_worker(
+        thread_id,
+        &repo_config.repo,
+        &repo_config.base_branch,
+        repo_config.thread_title.as_deref(),
+    )
+    .await?;
     let Some(secret) = worker_auth_secret() else {
         return Err(missing_worker_auth_secret_message().to_string());
     };
@@ -1946,21 +1973,27 @@ async fn ensure_thread_worker_for_control(
         }
     };
 
-    let (namespace, name, _results) =
-        match ensure_thread_worker(thread_id, &repo_config.repo, &repo_config.base_branch).await {
-            Ok(result) => result,
-            Err(error) => {
-                return Err(ThreadActionResponse {
-                    ok: false,
-                    action: action.to_string(),
-                    thread_id: thread_id.to_string(),
-                    k8s_name: name,
-                    namespace,
-                    results: Vec::new(),
-                    errors: vec![error],
-                });
-            }
-        };
+    let (namespace, name, _results) = match ensure_thread_worker(
+        thread_id,
+        &repo_config.repo,
+        &repo_config.base_branch,
+        repo_config.thread_title.as_deref(),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            return Err(ThreadActionResponse {
+                ok: false,
+                action: action.to_string(),
+                thread_id: thread_id.to_string(),
+                k8s_name: name,
+                namespace,
+                results: Vec::new(),
+                errors: vec![error],
+            });
+        }
+    };
 
     if let Err(error) = wait_thread_worker_ready(&namespace, &name, &secret).await {
         return Err(ThreadActionResponse {
@@ -3241,7 +3274,7 @@ async fn fetch_thread_repo_config_from_postgres(
     let row = client
         .query_opt(
             r#"
-            select repo, base_branch
+            select repo, base_branch, title as thread_title
             from agent_remote_dev_threads
             where id = $1::text::uuid
               and is_soft_deleted = false
@@ -3255,6 +3288,7 @@ async fn fetch_thread_repo_config_from_postgres(
     Ok(row.map(|row| ThreadRepoConfig {
         repo: row_string(&row, "repo"),
         base_branch: row_string(&row, "base_branch"),
+        thread_title: row_opt_string(&row, "thread_title"),
     }))
 }
 
@@ -4289,7 +4323,7 @@ fn is_queued_dispatch_mode(mode: &str) -> bool {
 fn is_container_pool_dispatch_mode(mode: &str) -> bool {
     matches!(
         mode,
-        "queued" | "nats" | "async" | "queued-pool" | "nats-pool" | "container-pool" | "pool"
+        "queued-pool" | "nats-pool" | "container-pool" | "pool"
     )
 }
 
@@ -4333,6 +4367,7 @@ async fn publish_task_to_nats(
         base_branch: repo_config.base_branch,
         feature_branch: branch.map(str::to_string),
         prompt: request.prompt.clone(),
+        thread_title: repo_config.thread_title.clone(),
         context_mode: Some(normalize_context_mode(
             request.context_mode.as_deref(),
             request.context_ids.as_ref().map_or(0, Vec::len),
@@ -5335,8 +5370,13 @@ async fn dispatch_thread_task(
             .into_response();
     }
 
-    let Ok((namespace, name, _results)) =
-        ensure_thread_worker(&thread_id, &repo_config.repo, &repo_config.base_branch).await
+    let Ok((namespace, name, _results)) = ensure_thread_worker(
+        &thread_id,
+        &repo_config.repo,
+        &repo_config.base_branch,
+        repo_config.thread_title.as_deref(),
+    )
+    .await
     else {
         return (
             StatusCode::BAD_GATEWAY,
@@ -6053,6 +6093,18 @@ mod dispatch_path_tests {
                 dispatch_path_for_mode(mode),
                 DispatchPath::NatsQueue {
                     container_pool: true
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn plain_queued_modes_use_uuid_bound_worker_queue() {
+        for mode in ["queued", "nats", "async"] {
+            assert_eq!(
+                dispatch_path_for_mode(mode),
+                DispatchPath::NatsQueue {
+                    container_pool: false
                 }
             );
         }

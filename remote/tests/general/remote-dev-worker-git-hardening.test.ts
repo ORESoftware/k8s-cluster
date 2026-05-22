@@ -129,6 +129,15 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /return branch/);
   assert.match(server, /function isPlaceholderSessionBranch\(sessionId: string, branch: string\): boolean/);
   assert.match(server, /existing\.taskIds\.size === 0[\s\S]*isPlaceholderSessionBranch\(sessionId, existing\.branch\)/);
+  // The placeholder→title-derived branch transition must self-heal: boot
+  // writes tmp/convos/thread.log after resetDependencyInstallArtifacts, so
+  // the second prepareSessionWorkspace can race the breadcrumb. We discard
+  // residue on the placeholder branch instead of throwing, but keep the
+  // strict guard for non-placeholder (mid-task) branches.
+  assert.match(
+    server,
+    /const onPlaceholder =\s*currentBranch !== null &&\s*isPlaceholderSessionBranch\(session\.sessionId, currentBranch\);\s*if \(!onPlaceholder\) \{\s*throw new Error\(\s*`workspace has uncommitted changes while on \$\{currentBranch \?\? 'detached HEAD'\}; refusing to switch to \$\{session\.branch\}`,\s*\);\s*\}\s*await resetDependencyInstallArtifacts\(session\.workspacePath\);/,
+  );
   assert.match(server, /prompt,\s*\}\);/);
   assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
@@ -199,10 +208,25 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /status: `pushing to \$\{gitBranchTarget\(state\.branch\)\}`/);
   assert.match(server, /status: `pushed to \$\{gitBranchTarget\(state\.branch\)\}`/);
   assert.match(server, /status: `completed task on \$\{gitBranchTarget\(state\.branch\)\}`/);
-  assert.match(server, /const GENERATED_GIT_EXCLUDE_PATHS = \['\.pnpm-store', 'node_modules', '\.next', '\.turbo'\]/);
+  assert.match(
+    server,
+    /const GENERATED_GIT_EXCLUDE_PATHS = \[\s*'\.pnpm-store',\s*'node_modules',\s*'\.next',\s*'\.turbo',\s*'tmp\/convos',\s*\]/,
+  );
   assert.match(server, /const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS\.map/);
+  assert.match(
+    server,
+    /const GENERATED_GIT_CLEAN_EXCLUDE_FLAGS = GENERATED_GIT_EXCLUDE_PATHS\.flatMap\(\(path\) => \[\s*'--exclude',\s*path,\s*\]\);/,
+  );
   assert.match(server, /\['add', '-A', '--', '\.'\]/);
   assert.match(server, /\['reset', '-q', 'HEAD', '--', \.\.\.GENERATED_GIT_EXCLUDE_PATHS\]/);
+  assert.match(
+    server,
+    /\['clean', '-fdx', \.\.\.GENERATED_GIT_CLEAN_EXCLUDE_FLAGS\]/,
+  );
+  assert.doesNotMatch(
+    server,
+    /\['clean', '-fdx', '--exclude=node_modules', '--exclude=\.pnpm-store', '--exclude=\.next', '--exclude=\.turbo'\]/,
+  );
   assert.match(server, /async function gitWorkspaceStatus\(workspacePath: string\): Promise<string>/);
   assert.match(server, /async function gitAddWorkspaceChanges\(workspacePath: string\): Promise<void>/);
   assert.match(server, /function stripNegatedWorkspaceChangePhrases\(prompt: string\): string/);

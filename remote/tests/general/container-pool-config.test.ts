@@ -163,10 +163,13 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /available_capacity/);
   assert.match(source, /affinity: HashMap<String, String>/);
   assert.match(source, /affinity_key: Option<String>/);
+  assert.match(source, /fresh_affinity: Option<bool>/);
   assert.match(source, /normalized_affinity_key/);
   assert.match(source, /affinity_map_key/);
   assert.match(source, /remove_affinity_for_container/);
   assert.match(source, /container_can_accept/);
+  assert.match(source, /container_matches_affinity_request/);
+  assert.match(source, /container\.request_count == 0/);
   assert.match(source, /lease_container\([\s\S]*affinity_key: Option<&str>/);
   assert.match(source, /dd_container_pool_dispatch_total/);
   assert.match(source, /dd_container_pool_container_health_checks_total/);

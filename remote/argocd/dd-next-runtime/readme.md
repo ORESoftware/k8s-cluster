@@ -9,7 +9,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-container-pool` (Rust Postgres-configured warm container pool over HTTP or NATS)
 - `dd-build-server` (Rust CI/CD build server for repo image builds and controlled k8s deploys)
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
-- `dd-remote-queue-consumer` (Rust NATS queue consumer for repo-scoped warm workers)
+- `dd-remote-queue-consumer` (Rust NATS queue consumer for UUID-bound workers and explicit pool dispatch)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
@@ -316,9 +316,11 @@ The runtime now uses a NATS queued execution path by default:
    `DD_REMOTE_TASKS` stream.
 4. KEDA watches that JetStream consumer lag and scales `dd-remote-queue-consumer` from 1 to 8 pods
    when pending messages build up, then returns to 1 after the stream drains.
-5. The consumer dispatches real `task.dispatch` messages to the repo-scoped container pool with
-   `affinityKey=<threadId>` and falls back to the deterministic worker only if the matching repo
-   pool is unavailable or rejects the task. Legacy shadow messages are prepare-only.
+5. The consumer dispatches plain queued `task.dispatch` messages to the UUID-bound deterministic
+   worker. Explicit pool modes (`queued-pool`, `nats-pool`, `container-pool`, or `pool`) go to the
+   repo-scoped container pool with `affinityKey=<threadId>` and can fall back to the deterministic
+   worker only if the matching repo pool is unavailable or rejects the task. Legacy shadow messages
+   are prepare-only.
 6. The queue consumer stores taskId receipts under `/tmp/dd-remote-queue-consumer/tasks`; the
    Node.js worker also stores taskId receipts under its log directory. Repeated messages are
    accepted idempotently and do not start duplicate agent runs.
@@ -330,9 +332,9 @@ fanout still works as the normal telemetry bus, but web-home can receive the ini
 failure statuses over Gleam or Rust websocket fanout even when `dd.remote.events` is degraded.
 
 This proves the queue handoff and warmup behavior without allowing arbitrary generic workers to
-steal coding-agent execution. Real queued `task.dispatch` messages are routed to repo-scoped
-Node chat/Claude warm pools with `threadId` affinity; the queue consumer does not use direct REST
-fallback for real queued messages, preserving one execution owner.
+steal coding-agent execution. Plain queued `task.dispatch` messages stay on UUID-bound thread
+workers; explicit pool messages are routed to repo-scoped Node chat/Claude warm pools with
+`threadId` affinity.
 
 `dd-agent-worker-broker` is the additive long-run replacement for REST-owned worker dispatch. Its
 first route, `POST /api/agent-worker/threads/<threadId>/tasks`, direct-posts to the deterministic

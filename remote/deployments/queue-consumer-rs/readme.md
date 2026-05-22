@@ -17,12 +17,12 @@ POST /api/agents/threads/:threadId/prepare
 ```
 
 Real `task.dispatch` messages are routed by the `dispatchMode` fields in the NATS
-payload. Plain `queued`/`nats` messages and the explicit `queued-pool`/
+payload. Plain `queued`/`nats`/`async` messages are handed to the UUID-bound
+deterministic worker path. Only explicit `queued-pool`/`nats-pool`/
 `container-pool` aliases are handed to a repo-scoped warm Node chat/Claude
-container pool first. If that repo pool is missing, unhealthy, or rejects the
-request, the consumer can fall back to the deterministic worker path. The
-fallback is enabled by default through
-`QUEUE_CONSUMER_FALLBACK_REST_DISPATCH`.
+container pool first. If that repo pool is missing, unhealthy, or rejects an
+explicit pool request, the consumer can fall back to the deterministic worker
+path. The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_DISPATCH`.
 
 ## Environment
 
@@ -56,9 +56,12 @@ and acknowledged only after the queued handoff succeeds.
 ## Thread Affinity
 
 The consumer does not assign coding-agent work to an arbitrary generic worker.
-For queued execution it derives a repo-scoped pool slug from the task repo and
-base branch, for example `nodejs-chat-claude-live-mutex-dev`, then sends the
-task to that pool with `threadId` as the affinity key.
+For explicit pool execution it derives a repo-scoped pool slug from the task repo
+and base branch, for example `nodejs-chat-claude-live-mutex-dev`, then sends the
+task to that pool with `threadId` as the affinity key and `freshAffinity: true`.
+That lets follow-up tasks reuse the same affinity-bound container while preventing
+a brand-new thread from being assigned to an unbound worker that has already
+handled another request.
 
 The consumer also keeps an in-memory taskId set and writes JSON receipts under
 `QUEUE_CONSUMER_RECEIPTS_DIR`. A duplicate NATS delivery for the same taskId is

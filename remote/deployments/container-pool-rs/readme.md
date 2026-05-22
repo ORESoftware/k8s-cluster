@@ -28,6 +28,11 @@ enabled by `CONTAINER_POOL_REDIS_URL`; when unset, local development keeps the p
 behavior. Lock ownership is checked with `WATCH`/`MULTI`/`EXEC` on release because Redis scripts are
 disabled in the shared cache ACL.
 
+Remote-dev task dispatches also set `freshAffinity: true`. For a new `affinityKey`, that prevents
+the pool from binding the thread to an unbound container that has already handled a request; the
+thread can use an already-bound same-key worker, a never-used warm worker, or a newly started
+container. Follow-up tasks for the same thread keep using the same affinity-bound worker.
+
 `nerdctl -n k8s.io run -d` for a cold worker uses
 `CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS` (default 180s) so a busy containerd host can finish
 namespace, cgroup, and overlay setup without timing out. Short bookkeeping commands such as

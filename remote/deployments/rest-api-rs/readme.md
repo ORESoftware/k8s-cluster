@@ -123,8 +123,10 @@ persists the task, publishes a real `task.dispatch` message to
 `dd.remote.thread.<threadId>.tasks`, emits `dd.remote.orchestrator.wakeup`, and returns
 `202 Accepted` without waiting for a worker container. Direct dispatch remains an explicit escape
 hatch: `dispatchMode: "direct"` calls the deterministic thread worker and does not publish a task
-message to NATS. Queued dispatch relies on the NATS consumer to hand the task to a repo-scoped warm
-Node chat/Claude pool with `threadId` affinity.
+message to NATS. Plain queued dispatch relies on the NATS consumer to create or wake the
+UUID-bound deterministic worker. Explicit pool modes (`queued-pool`, `nats-pool`,
+`container-pool`, or `pool`) hand the task to a repo-scoped warm Node chat/Claude pool with
+`threadId` affinity.
 The internal prepare route remains for legacy shadow task messages that only warm the deterministic
 thread worker and do not own real task execution.
 
