@@ -698,6 +698,97 @@ class AgentRemoteDevEventInsert(BaseModel):
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
+class AgentRemoteDevBreadcrumb(Base):
+    __tablename__ = "agent_remote_dev_breadcrumbs"
+    __table_args__ = (
+        CheckConstraint("kind ~ '^[A-Za-z0-9._:-]{1,80}$'", name="agent_remote_dev_breadcrumbs_kind_format_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="agent_remote_dev_breadcrumbs_payload_object_chk"),
+        CheckConstraint("pod_name is null or octet_length(pod_name) <= 253", name="agent_remote_dev_breadcrumbs_pod_name_size_chk"),
+        CheckConstraint("branch is null or octet_length(branch) <= 120", name="agent_remote_dev_breadcrumbs_branch_size_chk"),
+        CheckConstraint("provider is null or octet_length(provider) <= 60", name="agent_remote_dev_breadcrumbs_provider_size_chk"),
+        Index("agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx", "thread_id", text("emitted_at desc")),
+        Index("agent_remote_dev_breadcrumbs_task_id_emitted_at_idx", "task_id", text("emitted_at desc"), postgresql_where=text("task_id is not null")),
+        Index("agent_remote_dev_breadcrumbs_emitted_at_idx", text("emitted_at desc")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    thread_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    task_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    emitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    pod_name: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True)
+
+class AgentRemoteDevBreadcrumbRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    threadId: UUID
+    taskId: UUID | None = None
+    kind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any]
+    emittedAt: datetime
+    podName: str | None = Field(None, max_length=253)
+    branch: str | None = Field(None, max_length=120)
+    provider: str | None = Field(None, max_length=60)
+
+    @field_validator("podName")
+    @classmethod
+    def validate_pod_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes")
+        return value
+
+    @field_validator("branch")
+    @classmethod
+    def validate_branch(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 60:
+            raise ValueError("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes")
+        return value
+
+class AgentRemoteDevBreadcrumbInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int | None = None
+    threadId: UUID
+    taskId: UUID | None = None
+    kind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    emittedAt: datetime | None = None
+    podName: str | None = Field(None, max_length=253)
+    branch: str | None = Field(None, max_length=120)
+    provider: str | None = Field(None, max_length=60)
+
+    @field_validator("podName")
+    @classmethod
+    def validate_pod_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes")
+        return value
+
+    @field_validator("branch")
+    @classmethod
+    def validate_branch(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 60:
+            raise ValueError("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes")
+        return value
+
 AgentRemoteDevArtifactStorageProvider = Literal["s3", "r2", "gcs", "drive", "local"]
 
 class AgentRemoteDevArtifact(Base):

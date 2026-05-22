@@ -266,6 +266,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
       'nodejs',
       'nodejs-chat-claude-k8s-cluster-dev',
       'nodejs-chat-claude-live-mutex-dev',
+      'nodejs-chat-claude-us-anti-corruption-court-project-main',
       'rust',
       'golang',
       'python3',
@@ -292,6 +293,10 @@ test('container pool app_config seed is a complete runtime contract', async () =
       const expectedRepoBySlug = new Map([
         ['nodejs-chat-claude-live-mutex-dev', 'git@github.com:ORESoftware/live-mutex.git'],
         ['nodejs-chat-claude-k8s-cluster-dev', 'git@github.com:ORESoftware/k8s-cluster.git'],
+        [
+          'nodejs-chat-claude-us-anti-corruption-court-project-main',
+          'git@github.com:ORESoftware/us-anti-corruption-court-project.git',
+        ],
       ]);
       assert.equal(pool.env.DD_REPO_URL, expectedRepoBySlug.get(pool.slug));
       assert.equal(pool.env.AGENT_PROVIDER, 'claude-sdk');

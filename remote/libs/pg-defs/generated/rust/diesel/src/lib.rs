@@ -466,6 +466,48 @@ pub struct AgentRemoteDevEventDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    agent_remote_dev_breadcrumbs (id) {
+        id -> Int8,
+        thread_id -> Uuid,
+        task_id -> Nullable<Uuid>,
+        kind -> Varchar,
+        payload -> Jsonb,
+        emitted_at -> Timestamptz,
+        pod_name -> Nullable<Varchar>,
+        branch -> Nullable<Varchar>,
+        provider -> Nullable<Varchar>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = agent_remote_dev_breadcrumbs)]
+pub struct AgentRemoteDevBreadcrumbDieselRow {
+    pub id: i64,
+    pub thread_id: Uuid,
+    pub task_id: Option<Uuid>,
+    pub kind: String,
+    pub payload: Value,
+    pub emitted_at: DateTime<Utc>,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = agent_remote_dev_breadcrumbs)]
+pub struct AgentRemoteDevBreadcrumbDieselInsert {
+    pub thread_id: Option<Uuid>,
+    pub task_id: Option<Uuid>,
+    pub kind: Option<String>,
+    pub payload: Option<Value>,
+    pub emitted_at: Option<DateTime<Utc>>,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     agent_remote_dev_artifacts (id) {
         id -> Uuid,
         task_id -> Uuid,

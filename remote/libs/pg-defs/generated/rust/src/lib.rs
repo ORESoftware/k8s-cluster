@@ -1064,6 +1064,89 @@ pub fn validate_agent_remote_dev_events_insert(value: &AgentRemoteDevEventInsert
     Ok(())
 }
 
+pub const AGENT_REMOTE_DEV_BREADCRUMBS_TABLE: &str = "agent_remote_dev_breadcrumbs";
+pub const AGENT_REMOTE_DEV_BREADCRUMBS_COLUMNS: &[&str] = &["id", "thread_id", "task_id", "kind", "payload", "emitted_at", "pod_name", "branch", "provider"];
+pub const AGENT_REMOTE_DEV_BREADCRUMBS_SELECT_SQL: &str = r###"select
+      id,
+      thread_id::text as thread_id,
+      task_id::text as task_id,
+      kind,
+      payload,
+      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+      pod_name,
+      branch,
+      provider
+    from agent_remote_dev_breadcrumbs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRemoteDevBreadcrumbRow {
+    pub id: i64,
+    pub thread_id: String,
+    pub task_id: Option<String>,
+    pub kind: String,
+    pub payload: Value,
+    pub emitted_at: String,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRemoteDevBreadcrumbInsert {
+    pub id: Option<i64>,
+    pub thread_id: Option<String>,
+    pub task_id: Option<String>,
+    pub kind: Option<String>,
+    pub payload: Option<Value>,
+    pub emitted_at: Option<String>,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+pub fn validate_agent_remote_dev_breadcrumbs_row(value: &AgentRemoteDevBreadcrumbRow) -> Result<(), String> {
+    validate_string_length("agent_remote_dev_breadcrumbs.kind", &value.kind, Some(1), Some(80))?;
+    if !(&value.payload).is_object() { return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string()); }
+    if let Some(value) = &value.pod_name {
+        validate_string_length("agent_remote_dev_breadcrumbs.pod_name", value, None, Some(253))?;
+        if (value).as_bytes().len() > 253 { return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string()); }
+    }
+    if let Some(value) = &value.branch {
+        validate_string_length("agent_remote_dev_breadcrumbs.branch", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider {
+        validate_string_length("agent_remote_dev_breadcrumbs.provider", value, None, Some(60))?;
+        if (value).as_bytes().len() > 60 { return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_agent_remote_dev_breadcrumbs_insert(value: &AgentRemoteDevBreadcrumbInsert) -> Result<(), String> {
+    if let Some(value) = &value.kind {
+        validate_string_length("agent_remote_dev_breadcrumbs.kind", value, Some(1), Some(80))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.pod_name {
+        validate_string_length("agent_remote_dev_breadcrumbs.pod_name", value, None, Some(253))?;
+        if (value).as_bytes().len() > 253 { return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string()); }
+    }
+    if let Some(value) = &value.branch {
+        validate_string_length("agent_remote_dev_breadcrumbs.branch", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider {
+        validate_string_length("agent_remote_dev_breadcrumbs.provider", value, None, Some(60))?;
+        if (value).as_bytes().len() > 60 { return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string()); }
+    }
+    Ok(())
+}
+
 pub const AGENT_REMOTE_DEV_ARTIFACTS_TABLE: &str = "agent_remote_dev_artifacts";
 pub const AGENT_REMOTE_DEV_ARTIFACTS_COLUMNS: &[&str] = &["id", "task_id", "thread_id", "filename", "content_type", "size_bytes", "storage_provider", "storage_bucket", "storage_key", "url", "signed_url_expires_at", "sha256", "meta", "created_at"];
 pub const AGENT_REMOTE_DEV_ARTIFACTS_SELECT_SQL: &str = r###"select

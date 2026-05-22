@@ -28,6 +28,7 @@ var agentContextEmbeddingsContentSha256Pattern = regexp.MustCompile(`^[a-f0-9]{6
 var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -429,6 +430,47 @@ type AgentRemoteDevEventBun struct {
 func (value AgentRemoteDevEventBun) Validate() error {
 	if !agentRemoteDevEventEventKindPattern.MatchString(value.EventKind) { return errors.New("agent_remote_dev_events.event_kind does not match the required pattern") }
 	if !validateRawJSON(value.Payload) { return errors.New("agent_remote_dev_events.payload must be valid JSON") }
+	return nil
+}
+
+const AgentRemoteDevBreadcrumbTable = "agent_remote_dev_breadcrumbs"
+const AgentRemoteDevBreadcrumbSelectSQL = `select
+      id,
+      thread_id::text as thread_id,
+      task_id::text as task_id,
+      kind,
+      payload,
+      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+      pod_name,
+      branch,
+      provider
+    from agent_remote_dev_breadcrumbs`
+
+type AgentRemoteDevBreadcrumbBun struct {
+	bun.BaseModel `bun:"table:agent_remote_dev_breadcrumbs"`
+	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	ThreadId uuid.UUID `bun:"thread_id,type:uuid" json:"threadId"`
+	TaskId *uuid.UUID `bun:"task_id,type:uuid,nullzero" json:"taskId,omitempty"`
+	Kind string `bun:"kind,type:varchar(80)" json:"kind"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	EmittedAt time.Time `bun:"emitted_at,type:timestamptz,default:now()" json:"emittedAt"`
+	PodName *string `bun:"pod_name,type:varchar(253),nullzero" json:"podName,omitempty"`
+	Branch *string `bun:"branch,type:varchar(120),nullzero" json:"branch,omitempty"`
+	Provider *string `bun:"provider,type:varchar(60),nullzero" json:"provider,omitempty"`
+}
+
+func (value AgentRemoteDevBreadcrumbBun) Validate() error {
+	if !agentRemoteDevBreadcrumbKindPattern.MatchString(value.Kind) { return errors.New("agent_remote_dev_breadcrumbs.kind does not match the required pattern") }
+	if !validateRawJSON(value.Payload) { return errors.New("agent_remote_dev_breadcrumbs.payload must be valid JSON") }
+	if value.PodName != nil {
+		if len([]byte(*value.PodName)) > 253 { return errors.New("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes") }
+	}
+	if value.Branch != nil {
+		if len([]byte(*value.Branch)) > 120 { return errors.New("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes") }
+	}
+	if value.Provider != nil {
+		if len([]byte(*value.Provider)) > 60 { return errors.New("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes") }
+	}
 	return nil
 }
 

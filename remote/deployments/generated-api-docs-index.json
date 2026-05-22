@@ -256,9 +256,9 @@
     {
       "service": "rest-api-rs",
       "language": "rust",
-      "routeCount": 39,
+      "routeCount": 41,
       "routeTypeCounts": {
-        "user-generated": 21,
+        "user-generated": 23,
         "service": 5,
         "internal-db": 10,
         "runtime-config": 3

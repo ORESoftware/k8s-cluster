@@ -28,6 +28,7 @@ var agentContextEmbeddingsContentSha256Pattern = regexp.MustCompile(`^[a-f0-9]{6
 var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -437,6 +438,48 @@ func (AgentRemoteDevEventGorm) TableName() string { return AgentRemoteDevEventTa
 func (value AgentRemoteDevEventGorm) Validate() error {
 	if !agentRemoteDevEventEventKindPattern.MatchString(value.EventKind) { return errors.New("agent_remote_dev_events.event_kind does not match the required pattern") }
 	if !validateJSONString(value.Payload) { return errors.New("agent_remote_dev_events.payload must be valid JSON") }
+	return nil
+}
+
+const AgentRemoteDevBreadcrumbTable = "agent_remote_dev_breadcrumbs"
+const AgentRemoteDevBreadcrumbSelectSQL = `select
+      id,
+      thread_id::text as thread_id,
+      task_id::text as task_id,
+      kind,
+      payload,
+      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+      pod_name,
+      branch,
+      provider
+    from agent_remote_dev_breadcrumbs`
+
+type AgentRemoteDevBreadcrumbGorm struct {
+	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
+	ThreadId uuid.UUID `gorm:"column:thread_id;type:uuid;not null" json:"threadId"`
+	TaskId *uuid.UUID `gorm:"column:task_id;type:uuid" json:"taskId,omitempty"`
+	Kind string `gorm:"column:kind;type:varchar(80);not null" json:"kind"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	EmittedAt time.Time `gorm:"column:emitted_at;type:timestamptz;default:now();not null" json:"emittedAt"`
+	PodName *string `gorm:"column:pod_name;type:varchar(253)" json:"podName,omitempty"`
+	Branch *string `gorm:"column:branch;type:varchar(120)" json:"branch,omitempty"`
+	Provider *string `gorm:"column:provider;type:varchar(60)" json:"provider,omitempty"`
+}
+
+func (AgentRemoteDevBreadcrumbGorm) TableName() string { return AgentRemoteDevBreadcrumbTable }
+
+func (value AgentRemoteDevBreadcrumbGorm) Validate() error {
+	if !agentRemoteDevBreadcrumbKindPattern.MatchString(value.Kind) { return errors.New("agent_remote_dev_breadcrumbs.kind does not match the required pattern") }
+	if !validateJSONString(value.Payload) { return errors.New("agent_remote_dev_breadcrumbs.payload must be valid JSON") }
+	if value.PodName != nil {
+		if len([]byte(*value.PodName)) > 253 { return errors.New("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes") }
+	}
+	if value.Branch != nil {
+		if len([]byte(*value.Branch)) > 120 { return errors.New("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes") }
+	}
+	if value.Provider != nil {
+		if len([]byte(*value.Provider)) > 60 { return errors.New("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes") }
+	}
 	return nil
 }
 

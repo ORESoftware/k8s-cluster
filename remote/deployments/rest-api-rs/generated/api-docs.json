@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "rest-api-rs",
   "language": "rust",
-  "routeCount": 39,
+  "routeCount": 41,
   "routeTypeCounts": {
-    "user-generated": 21,
+    "user-generated": 23,
     "service": 5,
     "internal-db": 10,
     "runtime-config": 3
@@ -114,6 +114,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "archive_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/breadcrumbs",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ingest_agent_breadcrumb"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/breadcrumbs/tail",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agent_thread_breadcrumb_tail"
       ],
       "sourceFiles": [
         "remote/deployments/rest-api-rs/src/main.rs"

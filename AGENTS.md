@@ -23,8 +23,11 @@ task instead of relying only on prompt history.
 Agents launched by `remote/deployments/dev-server` may receive selected Postgres context blobs in
 the prompt. Treat those as task-specific memory, and treat this file plus the docs above
 as persistent repo memory.
-They also receive the previous local `tmp/convos/thread.log` tail when it exists; use that as the
-per-thread breadcrumb trail for earlier prompts, events, failures, and summaries.
+They also receive a per-thread breadcrumb tail (`<thread_breadcrumb_tail>` block) fetched from
+`/api/agents/threads/<uuid>/breadcrumbs/tail`; that tail is the durable record of earlier prompts,
+events, failures, and summaries for the thread, persisted in Postgres
+(`agent_remote_dev_breadcrumbs`). See `remote/libs/interfaces/redis` for the optional Redis cache
+shape and `remote/libs/pg-defs/schema/schema.sql` for the table contract.
 
 When the cluster MCP server is configured as `dd_cluster`, use it before guessing live EC2
 Kubernetes deployment state, service wiring, inventory, or observability status. The MCP surface is

@@ -1522,7 +1522,7 @@ test('node worker opens draft PRs only through explicit control action', async (
   assert.match(server, /'--draft'/);
   assert.match(server, /\['rev-list', '--left-right', '--count', `origin\/\$\{config\.baseBranch\}\.\.\.HEAD`\]/);
   assert.match(server, /'--allow-empty'/);
-  assert.match(server, /kind: 'open-pr-marker-commit'/);
+  assert.match(server, /postSessionBreadcrumb\(input\.session, 'open-pr-marker-commit'/);
   assert.match(
     server,
     /const title = rawTitle\.startsWith\('WIP - '\) \? rawTitle : `WIP - \$\{rawTitle\}`/,

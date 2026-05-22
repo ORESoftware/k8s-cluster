@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/redis/runtime-config-redis.schema.json",
+  "title": "RuntimeConfigRedis",
+  "description": "Redis layout used by dd-runtime-config to back its config control plane. Value types live in @dd/shared-interfaces (RuntimeConfigEntry, RuntimeConfigSubscriber); this schema only declares the canonical key namespace so other services can read the cache directly without duplicating the format string.",
+  "type": "object",
+  "$dd:redis": {
+    "service": "dd-runtime-config",
+    "summary": "Redis is the storage backend for the runtime-config control plane. Keys are namespaced per env (stage/prod) so the two are fully isolated.",
+    "keys": [
+      {
+        "name": "RuntimeConfigEntryKey",
+        "description": "JSON-encoded RuntimeConfigEntry from @dd/shared-interfaces.",
+        "pattern": "{prefix}:{env}:entry:{scope}:{key}",
+        "defaultPrefix": "dd:rc",
+        "params": [
+          { "name": "prefix", "type": "string", "description": "Configurable prefix; defaults to 'dd:rc'." },
+          { "name": "env", "type": "string", "description": "Runtime config env token: 'stage' or 'prod'." },
+          { "name": "scope", "type": "string", "description": "Service or logical grouping the entry belongs to." },
+          { "name": "key", "type": "string", "description": "Stable per-scope config key." }
+        ],
+        "valueType": "json-shared-interface",
+        "valueRef": "RuntimeConfigEntry"
+      },
+      {
+        "name": "RuntimeConfigEntryIndexKey",
+        "description": "Redis SET of '{scope}:{key}' members listing every entry that exists in this env.",
+        "pattern": "{prefix}:{env}:entry-index",
+        "defaultPrefix": "dd:rc",
+        "params": [
+          { "name": "prefix", "type": "string" },
+          { "name": "env", "type": "string" }
+        ],
+        "valueType": "set-of-string"
+      },
+      {
+        "name": "RuntimeConfigGenerationKey",
+        "description": "Monotonic snapshot generation counter for this env. Bumped on every entry write so subscribers can detect changes.",
+        "pattern": "{prefix}:{env}:generation",
+        "defaultPrefix": "dd:rc",
+        "params": [
+          { "name": "prefix", "type": "string" },
+          { "name": "env", "type": "string" }
+        ],
+        "valueType": "integer"
+      },
+      {
+        "name": "RuntimeConfigSubscriberKey",
+        "description": "JSON-encoded RuntimeConfigSubscriber from @dd/shared-interfaces.",
+        "pattern": "{prefix}:{env}:subs:{name}",
+        "defaultPrefix": "dd:rc",
+        "params": [
+          { "name": "prefix", "type": "string" },
+          { "name": "env", "type": "string" },
+          { "name": "name", "type": "string", "description": "Subscriber name (typically the deployment name)." }
+        ],
+        "valueType": "json-shared-interface",
+        "valueRef": "RuntimeConfigSubscriber"
+      },
+      {
+        "name": "RuntimeConfigSubscriberIndexKey",
+        "description": "Redis SET of subscriber names registered for this env.",
+        "pattern": "{prefix}:{env}:subs-index",
+        "defaultPrefix": "dd:rc",
+        "params": [
+          { "name": "prefix", "type": "string" },
+          { "name": "env", "type": "string" }
+        ],
+        "valueType": "set-of-string"
+      }
+    ]
+  }
+}

@@ -19,6 +19,7 @@ defmodule DdPgDefs do
     DdPgDefs.AgentRemoteDevThreads,
     DdPgDefs.AgentRemoteDevTasks,
     DdPgDefs.AgentRemoteDevEvents,
+    DdPgDefs.AgentRemoteDevBreadcrumbs,
     DdPgDefs.AgentRemoteDevArtifacts,
     DdPgDefs.AgentRemoteDevRuntimeLocks,
     DdPgDefs.LambdaFunctions,

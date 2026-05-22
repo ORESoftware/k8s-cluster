@@ -384,6 +384,42 @@ struct AgentEventIngestRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct AgentBreadcrumbIngestRequest {
+    thread_id: String,
+    task_id: Option<String>,
+    kind: String,
+    payload: Option<Value>,
+    pod_name: Option<String>,
+    branch: Option<String>,
+    provider: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentBreadcrumbRow {
+    id: i64,
+    thread_id: String,
+    task_id: Option<String>,
+    kind: String,
+    payload: Value,
+    emitted_at: String,
+    pod_name: Option<String>,
+    branch: Option<String>,
+    provider: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentBreadcrumbTailResponse {
+    thread_id: String,
+    items: Vec<AgentBreadcrumbRow>,
+    source: &'static str,
+    excluded_task_id: Option<String>,
+    limit: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AgentFeedbackRequest {
     target_seq: Option<i32>,
     vote: String,
@@ -4179,6 +4215,133 @@ async fn persist_agent_event_to_postgres(
     Ok(())
 }
 
+async fn persist_agent_breadcrumb_to_postgres(
+    request: &AgentBreadcrumbIngestRequest,
+) -> Result<AgentBreadcrumbRow, String> {
+    let payload = request
+        .payload
+        .clone()
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if !payload.is_object() {
+        return Err("payload must be a JSON object".to_string());
+    }
+    let client = connect_postgres().await?;
+    let row = client
+        .query_one(
+            r#"
+            insert into agent_remote_dev_breadcrumbs
+              (thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider)
+            values
+              ($1::text::uuid, $2::text::uuid, $3, $4, now(), $5, $6, $7)
+            returning
+              id,
+              thread_id::text as thread_id,
+              task_id::text as task_id,
+              kind,
+              payload,
+              to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+              pod_name,
+              branch,
+              provider
+            "#,
+            &[
+                &request.thread_id,
+                &request.task_id,
+                &request.kind,
+                &payload,
+                &request.pod_name,
+                &request.branch,
+                &request.provider,
+            ],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(AgentBreadcrumbRow {
+        id: row.try_get::<_, i64>("id").map_err(|error| error.to_string())?,
+        thread_id: row_string(&row, "thread_id"),
+        task_id: row_opt_string(&row, "task_id"),
+        kind: row_string(&row, "kind"),
+        payload: row
+            .try_get::<_, Value>("payload")
+            .unwrap_or(Value::Object(Default::default())),
+        emitted_at: row_string(&row, "emitted_at"),
+        pod_name: row_opt_string(&row, "pod_name"),
+        branch: row_opt_string(&row, "branch"),
+        provider: row_opt_string(&row, "provider"),
+    })
+}
+
+async fn fetch_agent_breadcrumb_tail_from_postgres(
+    thread_id: &str,
+    limit: i64,
+    exclude_task_id: Option<&str>,
+) -> Result<Vec<AgentBreadcrumbRow>, String> {
+    let client = connect_postgres().await?;
+    let rows = match exclude_task_id {
+        Some(task_id) => client
+            .query(
+                r#"
+                select
+                  id,
+                  thread_id::text as thread_id,
+                  task_id::text as task_id,
+                  kind,
+                  payload,
+                  to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+                  pod_name,
+                  branch,
+                  provider
+                from agent_remote_dev_breadcrumbs
+                where thread_id = $1::text::uuid
+                  and (task_id is null or task_id <> $2::text::uuid)
+                order by emitted_at desc, id desc
+                limit $3
+                "#,
+                &[&thread_id, &task_id, &limit],
+            )
+            .await,
+        None => client
+            .query(
+                r#"
+                select
+                  id,
+                  thread_id::text as thread_id,
+                  task_id::text as task_id,
+                  kind,
+                  payload,
+                  to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+                  pod_name,
+                  branch,
+                  provider
+                from agent_remote_dev_breadcrumbs
+                where thread_id = $1::text::uuid
+                order by emitted_at desc, id desc
+                limit $2
+                "#,
+                &[&thread_id, &limit],
+            )
+            .await,
+    }
+    .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| AgentBreadcrumbRow {
+            id: row.try_get::<_, i64>("id").unwrap_or(0),
+            thread_id: row_string(row, "thread_id"),
+            task_id: row_opt_string(row, "task_id"),
+            kind: row_string(row, "kind"),
+            payload: row
+                .try_get::<_, Value>("payload")
+                .unwrap_or(Value::Object(Default::default())),
+            emitted_at: row_string(row, "emitted_at"),
+            pod_name: row_opt_string(row, "pod_name"),
+            branch: row_opt_string(row, "branch"),
+            provider: row_opt_string(row, "provider"),
+        })
+        .collect())
+}
+
 async fn fetch_agent_events_from_postgres(
     task_id: &str,
     limit: i64,
@@ -5508,6 +5671,109 @@ async fn ingest_agent_event(
     }
 }
 
+async fn ingest_agent_breadcrumb(
+    headers: HeaderMap,
+    Path(thread_id): Path<String>,
+    Json(mut request): Json<AgentBreadcrumbIngestRequest>,
+) -> Response {
+    record_request(
+        "POST",
+        "/api/agents/threads/:threadId/breadcrumbs",
+        StatusCode::OK,
+    );
+    if !authorized_internal_request(&headers) {
+        return unauthorized_response();
+    }
+    if request.thread_id.is_empty() {
+        request.thread_id = thread_id.clone();
+    } else if request.thread_id != thread_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "thread_id in body does not match :threadId path" })),
+        )
+            .into_response();
+    }
+    if request.kind.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "kind is required" })),
+        )
+            .into_response();
+    }
+    match persist_agent_breadcrumb_to_postgres(&request).await {
+        Ok(row) => Json(json!({ "ok": true, "breadcrumb": row })).into_response(),
+        Err(error) => {
+            eprintln!("agent breadcrumb ingest failed: {error}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "error": public_data_source_error("postgres breadcrumb ingest"),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn agent_thread_breadcrumb_tail(
+    Path(thread_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    record_request(
+        "GET",
+        "/api/agents/threads/:threadId/breadcrumbs/tail",
+        StatusCode::OK,
+    );
+    let limit = query
+        .get("limit")
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .map(|value| value.min(500))
+        .unwrap_or(100);
+    let exclude_task_id = query
+        .get("excludeTaskId")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    if postgres_database_url().is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "ok": false,
+                "error": "postgres database URL is not configured",
+            })),
+        )
+            .into_response();
+    }
+    match fetch_agent_breadcrumb_tail_from_postgres(
+        &thread_id,
+        limit,
+        exclude_task_id.as_deref(),
+    )
+    .await
+    {
+        Ok(items) => Json(AgentBreadcrumbTailResponse {
+            thread_id,
+            items,
+            source: "postgres",
+            excluded_task_id: exclude_task_id,
+            limit,
+        })
+        .into_response(),
+        Err(error) => {
+            eprintln!("agent breadcrumb tail fetch failed: {error}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "ok": false,
+                    "error": public_data_source_error("postgres breadcrumb tail"),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 async fn prepare_thread(headers: HeaderMap, Path(thread_id): Path<String>) -> Response {
     record_request(
         "POST",
@@ -5848,6 +6114,14 @@ fn code_first_router() -> Router {
             post(agent_task_feedback),
         )
         .route("/api/agents/events", post(ingest_agent_event))
+        .route(
+            "/api/agents/threads/:thread_id/breadcrumbs",
+            post(ingest_agent_breadcrumb),
+        )
+        .route(
+            "/api/agents/threads/:thread_id/breadcrumbs/tail",
+            get(agent_thread_breadcrumb_tail),
+        )
         .route(
             "/api/agents/threads/:thread_id/context",
             get(thread_context),

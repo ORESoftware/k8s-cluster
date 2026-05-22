@@ -121,6 +121,21 @@ update agent_remote_dev_events set task_id = $2, thread_id = $3, seq = $4, event
 -- name: DeleteAgentRemoteDevEvents :exec
 delete from agent_remote_dev_events where id = $1;
 
+-- name: ListAgentRemoteDevBreadcrumbs :many
+select id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider from agent_remote_dev_breadcrumbs;
+
+-- name: GetAgentRemoteDevBreadcrumbs :one
+select id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider from agent_remote_dev_breadcrumbs where id = $1 limit 1;
+
+-- name: CreateAgentRemoteDevBreadcrumbs :one
+insert into agent_remote_dev_breadcrumbs (id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider;
+
+-- name: UpdateAgentRemoteDevBreadcrumbs :one
+update agent_remote_dev_breadcrumbs set thread_id = $2, task_id = $3, kind = $4, payload = $5, emitted_at = $6, pod_name = $7, branch = $8, provider = $9 where id = $1 returning id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider;
+
+-- name: DeleteAgentRemoteDevBreadcrumbs :exec
+delete from agent_remote_dev_breadcrumbs where id = $1;
+
 -- name: ListAgentRemoteDevArtifacts :many
 select id, task_id, thread_id, filename, content_type, size_bytes, storage_provider, storage_bucket, storage_key, url, signed_url_expires_at, sha256, meta, created_at from agent_remote_dev_artifacts;
 

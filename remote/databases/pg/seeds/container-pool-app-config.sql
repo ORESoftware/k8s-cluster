@@ -149,6 +149,31 @@ values (
         "labels": ["runtime", "nodejs", "agent", "claude", "repo:k8s-cluster"]
       },
       {
+        "slug": "nodejs-chat-claude-us-anti-corruption-court-project-main",
+        "displayName": "Node.js chat/Claude warm workers for ORESoftware/us-anti-corruption-court-project main",
+        "image": "docker.io/library/dd-dev-server:dev",
+        "command": [],
+        "env": {
+          "DD_REPO_URL": "git@github.com:ORESoftware/us-anti-corruption-court-project.git",
+          "BASE_BRANCH": "main",
+          "WORKER_BIND_MODE": "repo",
+          "AGENT_PROVIDER": "claude-sdk",
+          "WORKER_FANOUT_WS_BASE_URL": "ws://dd-gleamlang-server.default.svc.cluster.local:8081/worker-ws"
+        },
+        "requestPath": "/tasks",
+        "healthPath": "/healthz",
+        "containerPort": 8080,
+        "readOnly": false,
+        "user": "1000:1000",
+        "minWarm": 2,
+        "maxWarm": 4,
+        "maxConcurrencyPerContainer": 1,
+        "requestTimeoutMs": 180000,
+        "idleTtlSeconds": 1800,
+        "natsSubject": "dd.remote.container_pool.nodejs-chat-claude-us-anti-corruption-court-project-main.requests",
+        "labels": ["runtime", "nodejs", "agent", "claude", "repo:us-anti-corruption-court-project"]
+      },
+      {
         "slug": "rust",
         "displayName": "Rust warm runtime",
         "image": "docker.io/library/dd-container-pool-rust-runtime:dev",

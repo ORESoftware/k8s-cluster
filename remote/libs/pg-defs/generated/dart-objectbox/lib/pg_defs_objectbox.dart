@@ -723,6 +723,71 @@ class AgentRemoteDevEventObjectBox {
 }
 
 @Entity()
+class AgentRemoteDevBreadcrumbObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int id;
+
+  String threadId;
+
+  String? taskId;
+
+  String kind;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String emittedAt;
+
+  String? podName;
+
+  String? branch;
+
+  String? provider;
+
+
+  AgentRemoteDevBreadcrumbObjectBox({
+    required this.id,
+    required this.threadId,
+    this.taskId,
+    required this.kind,
+    required this.payload,
+    required this.emittedAt,
+    this.podName,
+    this.branch,
+    this.provider,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "threadId": threadId,
+    "taskId": taskId,
+    "kind": kind,
+    "payload": jsonDecode(payload),
+    "emittedAt": emittedAt,
+    "podName": podName,
+    "branch": branch,
+    "provider": provider,
+  };
+
+  static AgentRemoteDevBreadcrumbObjectBox fromJson(Map<String, Object?> json) {
+    return AgentRemoteDevBreadcrumbObjectBox(
+      id: (json["id"] as num).toInt(),
+      threadId: json["threadId"] as String,
+      taskId: json["taskId"] as String?,
+      kind: json["kind"] as String,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      emittedAt: json["emittedAt"] as String,
+      podName: json["podName"] as String?,
+      branch: json["branch"] as String?,
+      provider: json["provider"] as String?,
+    );
+  }
+}
+
+@Entity()
 class AgentRemoteDevArtifactObjectBox {
   @Id()
   int obxId = 0;

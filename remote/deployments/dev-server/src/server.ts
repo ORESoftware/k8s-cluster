@@ -16,7 +16,9 @@
 // Per thread, the server prepares/reuses a stable branch
 // agent/k8s/openai-5.5/<threadId>/<slugified-title>.
 // Per task, it runs the selected provider, streams sequenced events,
-// appends tmp/convos/thread.log, and pushes the branch. PR creation is an
+// posts breadcrumbs to rest-api (persisted in Postgres
+// `agent_remote_dev_breadcrumbs`; see @dd/redis-interfaces for the
+// optional cache shape), and pushes the branch. PR creation is an
 // explicit UI/API action.
 //
 // Worktrees + finished tasks are GC'd one hour after completion.
@@ -84,17 +86,16 @@ const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
 ]);
 // Paths the dev-server owns by contract and must never treat as user
 // repo content (commits, dirty-state guards, install-artifact cleans):
-//   - dependency caches that should not pollute commits or dirty checks
-//   - tmp/convos: per-thread breadcrumb log written by this server even
-//     when the underlying repo does not gitignore tmp/. See
-//     `remote/deployments/dev-server/readme.md` (THREAD_LOG_RELATIVE_PATH)
-//     and AGENTS.md for the breadcrumb contract.
+// dependency caches that should not pollute commits or dirty checks. The
+// per-thread breadcrumb log is no longer written into the workspace; it
+// is sent to rest-api and persisted in Postgres via
+// agent_remote_dev_breadcrumbs (see @dd/redis-interfaces +
+// remote/libs/pg-defs).
 const GENERATED_GIT_EXCLUDE_PATHS = [
   '.pnpm-store',
   'node_modules',
   '.next',
   '.turbo',
-  'tmp/convos',
 ];
 const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS.map((path) => `:(exclude)${path}`);
 const GENERATED_GIT_CLEAN_EXCLUDE_FLAGS = GENERATED_GIT_EXCLUDE_PATHS.flatMap((path) => [
@@ -233,7 +234,9 @@ const config = {
   ),
   agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
-  threadLogRelativePath: process.env.THREAD_LOG_RELATIVE_PATH ?? 'tmp/convos/thread.log',
+  breadcrumbTailLimit: Number(process.env.THREAD_BREADCRUMB_TAIL_LIMIT ?? 100),
+  breadcrumbWriteTimeoutMs: Number(process.env.THREAD_BREADCRUMB_WRITE_TIMEOUT_MS ?? 5_000),
+  breadcrumbReadTimeoutMs: Number(process.env.THREAD_BREADCRUMB_READ_TIMEOUT_MS ?? 10_000),
   skipBootGitSync: process.env.SKIP_BOOT_GIT_SYNC === 'true',
   sessionIdleGcAfterMs: Number(process.env.SESSION_IDLE_GC_AFTER_MS ?? 6 * 60 * 60 * 1000),
   prAuthor: {
@@ -303,7 +306,6 @@ type ThreadSession = {
   userId?: string;
   workspacePath: string;
   branch: string;
-  logPath: string;
   ready: Promise<void>;
   queue: Promise<void>;
   taskIds: Set<string>;
@@ -376,7 +378,6 @@ type TaskState = {
   finishedAt?: number;
   worktreePath: string;
   branch: string;
-  logPath: string;
 };
 
 type TaskReceipt = {
@@ -849,12 +850,10 @@ async function applyDeterministicWorkspaceEdit(
     relativePath,
     appendedChars: appendEdit.text.length,
   };
-  await appendThreadLog(state, {
-    kind: 'deterministic-edit',
+  void postTaskBreadcrumb(state, 'deterministic-edit', {
     action: result.action,
     relativePath: result.relativePath,
     appendedChars: result.appendedChars,
-    branch: state.branch,
   });
   emit(state, {
     kind: 'status',
@@ -1057,10 +1056,6 @@ function isPlaceholderSessionBranch(sessionId: string, branch: string): boolean 
   return branch === getSessionBranch(sessionId);
 }
 
-function getSessionLogPath(workspacePath: string): string {
-  return join(workspacePath, config.threadLogRelativePath);
-}
-
 async function remoteBranchExists(branch: string): Promise<boolean> {
   assertSafeGitBranchName(branch, 'remote branch');
   const out = await shCapture(
@@ -1110,20 +1105,12 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
 
   if (config.skipBootGitSync) {
     await configureGitIdentity(session.workspacePath);
-    await mkdir(dirname(session.logPath), { recursive: true });
-    await appendFile(
-      session.logPath,
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        kind: 'session-ready',
-        sessionId: session.sessionId,
-        branch: session.branch,
-        workspacePath: session.workspacePath,
-        repo: config.repoUrl,
-        baseBranch: config.baseBranch,
-        skippedBootGitSync: true,
-      }) + '\n',
-    );
+    void postSessionBreadcrumb(session, 'session-ready', {
+      workspacePath: session.workspacePath,
+      repo: config.repoUrl,
+      baseBranch: config.baseBranch,
+      skippedBootGitSync: true,
+    });
     return;
   }
 
@@ -1139,24 +1126,9 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
   if (currentBranch !== session.branch) {
     const status = await gitWorkspaceStatus(session.workspacePath);
     if (status.trim()) {
-      // Boot stubs the worker on a placeholder branch (`<prefix>/<sid>/<sid>`)
-      // and writes its own session-ready breadcrumb to tmp/convos/thread.log
-      // *after* resetDependencyInstallArtifacts, so by the time the first
-      // task arrives the workspace has unrelated dev-server-owned residue
-      // sitting on the placeholder branch. That residue isn't agent work —
-      // there has been no task on the placeholder by definition — so reset
-      // it instead of refusing the title-derived branch switch. We keep the
-      // strict throw for non-placeholder branches so a crashed mid-task pod
-      // still refuses to silently drop uncommitted agent work.
-      const onPlaceholder =
-        currentBranch !== null &&
-        isPlaceholderSessionBranch(session.sessionId, currentBranch);
-      if (!onPlaceholder) {
-        throw new Error(
-          `workspace has uncommitted changes while on ${currentBranch ?? 'detached HEAD'}; refusing to switch to ${session.branch}`,
-        );
-      }
-      await resetDependencyInstallArtifacts(session.workspacePath);
+      throw new Error(
+        `workspace has uncommitted changes while on ${currentBranch ?? 'detached HEAD'}; refusing to switch to ${session.branch}`,
+      );
     }
     await shCapture(
       'git',
@@ -1184,21 +1156,13 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
   await resetDependencyInstallArtifacts(session.workspacePath);
 
   await configureGitIdentity(session.workspacePath);
-  await mkdir(dirname(session.logPath), { recursive: true });
-  await appendFile(
-    session.logPath,
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      kind: 'session-ready',
-      sessionId: session.sessionId,
-      branch: session.branch,
-      workspacePath: session.workspacePath,
-      repo: config.repoUrl,
-      baseBranch: config.baseBranch,
-      dependencyInstallOk: installResult.ok,
-      dependencyInstallError: installResult.error,
-    }) + '\n',
-  );
+  void postSessionBreadcrumb(session, 'session-ready', {
+    workspacePath: session.workspacePath,
+    repo: config.repoUrl,
+    baseBranch: config.baseBranch,
+    dependencyInstallOk: installResult.ok,
+    dependencyInstallError: installResult.error,
+  });
 }
 
 function getOrCreateSession(input: {
@@ -1235,7 +1199,6 @@ function getOrCreateSession(input: {
     userId: input.userId,
     workspacePath,
     branch: desiredBranch,
-    logPath: getSessionLogPath(workspacePath),
     ready: Promise.resolve(),
     queue: Promise.resolve(),
     taskIds: new Set(),
@@ -1248,30 +1211,89 @@ function getOrCreateSession(input: {
   return session;
 }
 
-async function appendThreadLog(state: TaskState, payload: Record<string, unknown>): Promise<void> {
+async function postBreadcrumb(input: {
+  threadId: string | undefined;
+  taskId: string | undefined;
+  kind: string;
+  payload: Record<string, unknown>;
+  branch?: string;
+  provider?: AgentProvider;
+}): Promise<void> {
+  if (!input.threadId) return;
+  const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
+  if (!base) return;
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (config.eventIngestSecret) {
+    headers.authorization = `Bearer ${config.eventIngestSecret}`;
+  } else if (config.serverAuthSecret) {
+    headers.authorization = `Bearer ${config.serverAuthSecret}`;
+  }
   try {
-    await access(state.worktreePath);
-    await mkdir(dirname(state.logPath), { recursive: true });
-    await appendFile(
-      state.logPath,
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        taskId: state.taskId,
-        threadId: state.threadId,
-        provider: state.provider,
-        ...payload,
-      }) + '\n',
+    await fetch(
+      `${base}/api/agents/threads/${encodeURIComponent(input.threadId)}/breadcrumbs`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          threadId: input.threadId,
+          taskId: input.taskId ?? null,
+          kind: input.kind,
+          payload: sanitizeBreadcrumbPayload(input.payload),
+          podName: process.env.HOSTNAME ?? null,
+          branch: input.branch ?? null,
+          provider: input.provider ?? null,
+        }),
+        signal: AbortSignal.timeout(config.breadcrumbWriteTimeoutMs),
+      },
     );
   } catch (err) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
-      return;
-    }
     process.stderr.write(
-      `[remote-dev thread-log] append failed: ${
+      `[remote-dev breadcrumb] post failed (kind=${input.kind}, thread=${input.threadId}): ${
         err instanceof Error ? err.message : String(err)
       }\n`,
     );
   }
+}
+
+function sanitizeBreadcrumbPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const text = JSON.stringify(payload);
+  const scrubbed = sanitizeEventText(text);
+  if (scrubbed === text) return payload;
+  try {
+    return JSON.parse(scrubbed) as Record<string, unknown>;
+  } catch {
+    return { redacted: 'breadcrumb payload contained sensitive content; replaced with placeholder' };
+  }
+}
+
+async function postSessionBreadcrumb(
+  session: ThreadSession,
+  kind: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const threadId = config.threadId ?? session.sessionId;
+  return postBreadcrumb({
+    threadId,
+    taskId: undefined,
+    kind,
+    payload: { sessionId: session.sessionId, branch: session.branch, ...payload },
+    branch: session.branch,
+  });
+}
+
+async function postTaskBreadcrumb(
+  state: TaskState,
+  kind: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  return postBreadcrumb({
+    threadId: state.threadId,
+    taskId: state.taskId,
+    kind,
+    payload,
+    branch: state.branch,
+    provider: state.provider,
+  });
 }
 
 function taskReceiptPath(taskId: string): string {
@@ -1585,7 +1607,7 @@ function emit(state: TaskState, event: WrappedEvent): void {
     kind: event.kind,
     provider: state.provider,
   });
-  void appendThreadLog(state, { kind: 'event', seq: stored.seq, event });
+  void postTaskBreadcrumb(state, 'event', { seq: stored.seq, event });
   if (event.kind === 'done') {
     incCounter('dd_runtime_tasks_total', {
       service: 'dd-dev-server-api',
@@ -1722,16 +1744,9 @@ async function mergeUpstreamForThread(input: {
     .catch(() => undefined)
     .then(async () => {
       session.lastActiveAt = Date.now();
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'merge-upstream-start',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'merge-upstream-start', {
+        baseBranch: config.baseBranch,
+      });
       const before = (
         await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
           timeoutMs: TIMEOUT_GIT_QUICK,
@@ -1770,18 +1785,11 @@ async function mergeUpstreamForThread(input: {
         })
       ).trim();
       await pushSessionBranch(session);
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'merge-upstream-done',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-          before,
-          after,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'merge-upstream-done', {
+        baseBranch: config.baseBranch,
+        before,
+        after,
+      });
       return {
         ok: true as const,
         threadId,
@@ -1857,16 +1865,7 @@ async function makeCommitForThread(input: {
           timeoutMs: TIMEOUT_GIT_QUICK,
         })
       ).trim();
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'make-commit-start',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          taskId,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'make-commit-start', { taskId });
       const status = await gitWorkspaceStatus(session.workspacePath);
       const hasChanges = status.trim().length > 0;
       if (hasChanges) {
@@ -1885,19 +1884,12 @@ async function makeCommitForThread(input: {
       ).trim();
       await assertSessionOnFeatureBranch(session);
       await pushSessionBranch(session);
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'make-commit-done',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          taskId,
-          before,
-          after,
-          committed: hasChanges,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'make-commit-done', {
+        taskId,
+        before,
+        after,
+        committed: hasChanges,
+      });
       if (taskState) {
         emit(taskState, {
           kind: 'status',
@@ -1970,36 +1962,22 @@ async function openPullRequestForThread(input: {
     .catch(() => undefined)
     .then(async () => {
       session.lastActiveAt = Date.now();
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'open-pr-start',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-          taskId,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'open-pr-start', {
+        baseBranch: config.baseBranch,
+        taskId,
+      });
       const result = await ensurePullRequestForSession({
         session,
         taskId,
         threadTitle: input.threadTitle ?? input.reason,
       });
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'open-pr-done',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-          taskId,
-          prUrl: result.prUrl,
-          draft: result.draft,
-          reused: result.reused,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'open-pr-done', {
+        baseBranch: config.baseBranch,
+        taskId,
+        prUrl: result.prUrl,
+        draft: result.draft,
+        reused: result.reused,
+      });
       if (taskState) {
         emit(taskState, {
           kind: 'pr_open',
@@ -2180,22 +2158,53 @@ function formatSelectedContextBlobs(state: TaskState): string {
   return sections.join('\n\n---\n\n');
 }
 
-async function readLocalThreadContext(state: TaskState): Promise<string> {
+type BreadcrumbTailItem = {
+  id?: number;
+  threadId?: string;
+  taskId?: string | null;
+  kind?: string;
+  payload?: unknown;
+  emittedAt?: string;
+  podName?: string | null;
+  branch?: string | null;
+  provider?: string | null;
+};
+
+async function fetchThreadBreadcrumbTail(state: TaskState): Promise<string> {
+  const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
+  if (!state.threadId || !base) return '';
   try {
-    const text = await readFile(state.logPath, 'utf8');
-    const previousTaskLines = text
-      .split('\n')
-      .filter((line) => {
-        const trimmed = line.trim();
-        return (
-          trimmed &&
-          !trimmed.includes(`"taskId":"${state.taskId}"`) &&
-          !trimmed.includes(`"taskId": "${state.taskId}"`)
-        );
-      })
+    const params = new URLSearchParams({
+      excludeTaskId: state.taskId,
+      limit: String(Math.max(1, Math.min(500, config.breadcrumbTailLimit))),
+    });
+    const response = await fetch(
+      `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/breadcrumbs/tail?${params.toString()}`,
+      { signal: AbortSignal.timeout(config.breadcrumbReadTimeoutMs) },
+    );
+    if (!response.ok) return '';
+    const body = (await response.json()) as { items?: BreadcrumbTailItem[] };
+    const items = (body.items ?? []).slice().reverse();
+    if (items.length === 0) return '';
+    const lines = items
+      .map((item) =>
+        JSON.stringify({
+          ts: item.emittedAt,
+          taskId: item.taskId,
+          threadId: item.threadId,
+          provider: item.provider,
+          kind: item.kind,
+          payload: item.payload,
+        }),
+      )
       .join('\n');
-    return truncateContext(previousTaskLines, Math.min(config.threadContextMaxChars, 24_000));
-  } catch {
+    return truncateContext(lines, Math.min(config.threadContextMaxChars, 24_000));
+  } catch (err) {
+    process.stderr.write(
+      `[remote-dev breadcrumb] tail fetch failed (thread=${state.threadId}): ${
+        err instanceof Error ? err.message : String(err)
+      }\n`,
+    );
     return '';
   }
 }
@@ -2223,7 +2232,7 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     }
   }
 
-  const localContextText = state.threadId ? await readLocalThreadContext(state) : '';
+  const localContextText = state.threadId ? await fetchThreadBreadcrumbTail(state) : '';
   const repoContext = await readRepoContextEntrypoint(state.worktreePath);
 
   const selectedContext = formatSelectedContextBlobs(state);
@@ -2276,8 +2285,8 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
 
   if (localContextText) {
     const cappedContext = truncateContext(localContextText, Math.min(config.threadContextMaxChars, 24_000));
-    emit(state, { kind: 'status', status: 'thread-context:local-thread-log' });
-    promptSections.push('', '<local_thread_log_tail>', cappedContext, '</local_thread_log_tail>');
+    emit(state, { kind: 'status', status: 'thread-context:postgres-breadcrumb-tail' });
+    promptSections.push('', '<thread_breadcrumb_tail>', cappedContext, '</thread_breadcrumb_tail>');
   }
 
   if (runtimeContext) {
@@ -2471,9 +2480,7 @@ async function mergeBaseBranchBeforeTask(state: TaskState): Promise<void> {
     );
   }
 
-  await appendThreadLog(state, {
-    kind: 'merge-base-before-task-start',
-    branch: session.branch,
+  void postTaskBreadcrumb(state, 'merge-base-before-task-start', {
     baseBranch: config.baseBranch,
   });
   emit(state, {
@@ -2502,9 +2509,7 @@ async function mergeBaseBranchBeforeTask(state: TaskState): Promise<void> {
       status: 'merge-conflict:resolving-before-task',
       message: `Resolving ${conflicts.length} conflicted file(s) before starting the user task.`,
     });
-    await appendThreadLog(state, {
-      kind: 'merge-base-conflicts-before-task',
-      branch: session.branch,
+    void postTaskBreadcrumb(state, 'merge-base-conflicts-before-task', {
       baseBranch: config.baseBranch,
       conflicts,
     });
@@ -2531,9 +2536,7 @@ async function mergeBaseBranchBeforeTask(state: TaskState): Promise<void> {
   if (before !== after) {
     await pushSessionBranch(session);
   }
-  await appendThreadLog(state, {
-    kind: 'merge-base-before-task-done',
-    branch: session.branch,
+  void postTaskBreadcrumb(state, 'merge-base-before-task-done', {
     baseBranch: config.baseBranch,
     before,
     after,
@@ -2586,11 +2589,9 @@ async function runTask(state: TaskState): Promise<void> {
       // adapter, emitting an `artifact` event per file.
       const taskOutputsDir = join(config.outputsDir, state.taskId);
       await mkdir(taskOutputsDir, { recursive: true });
-      await appendThreadLog(state, {
-        kind: 'prompt',
+      void postTaskBreadcrumb(state, 'prompt', {
         prompt: state.prompt,
         workspacePath: state.worktreePath,
-        branch: state.branch,
         contextMode: state.contextMode,
         contextIds: state.contextIds,
         contextTitles: state.contextBlobs?.map((item) => ({
@@ -2615,8 +2616,7 @@ async function runTask(state: TaskState): Promise<void> {
             poolSlug: state.containerPool.request.poolSlug ?? state.containerPool.pool,
           },
         );
-        await appendThreadLog(state, {
-          kind: 'container-pool-result',
+        void postTaskBreadcrumb(state, 'container-pool-result', {
           pool: state.containerPool.pool,
           response,
         });
@@ -2978,19 +2978,12 @@ async function ensurePullRequestForSession(input: {
       })
     ).trim();
     await pushSessionBranch(input.session);
-    await appendFile(
-      input.session.logPath,
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        kind: 'open-pr-marker-commit',
-        sessionId: input.session.sessionId,
-        branch: input.session.branch,
-        baseBranch: config.baseBranch,
-        before,
-        after,
-        fastForwardedBase: behindCount > 0,
-      }) + '\n',
-    );
+    void postSessionBreadcrumb(input.session, 'open-pr-marker-commit', {
+      baseBranch: config.baseBranch,
+      before,
+      after,
+      fastForwardedBase: behindCount > 0,
+    });
   }
 
   const commitTitle = (
@@ -4375,7 +4368,6 @@ fastify.post('/tasks', async (req, reply) => {
         cancelled: false,
         worktreePath: session.workspacePath,
         branch: session.branch,
-        logPath: session.logPath,
       };
       span.setAttribute('dd.remote.provider', state.provider);
       span.setAttribute('dd.remote.branch', state.branch);

@@ -611,6 +611,60 @@ export type AgentRemoteDevEventRow = z.infer<typeof agentRemoteDevEventRowSchema
 export type AgentRemoteDevEventInsert = z.infer<typeof agentRemoteDevEventInsertSchema>;
 export type AgentRemoteDevEventUpdate = z.infer<typeof agentRemoteDevEventUpdateSchema>;
 
+export const agentRemoteDevBreadcrumbs = pgTable(
+  "agent_remote_dev_breadcrumbs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    threadId: uuid("thread_id").notNull(),
+    taskId: uuid("task_id"),
+    kind: varchar("kind", { length: 80 }).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    emittedAt: timestamp("emitted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    podName: varchar("pod_name", { length: 253 }),
+    branch: varchar("branch", { length: 120 }),
+    provider: varchar("provider", { length: 60 }),
+  },
+  (table) => ({
+    agentRemoteDevBreadcrumbsKindFormatChk: check("agent_remote_dev_breadcrumbs_kind_format_chk", sql.raw("kind ~ '^[A-Za-z0-9._:-]{1,80}$'")),
+    agentRemoteDevBreadcrumbsPayloadObjectChk: check("agent_remote_dev_breadcrumbs_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    agentRemoteDevBreadcrumbsPodNameSizeChk: check("agent_remote_dev_breadcrumbs_pod_name_size_chk", sql.raw("pod_name is null or octet_length(pod_name) <= 253")),
+    agentRemoteDevBreadcrumbsBranchSizeChk: check("agent_remote_dev_breadcrumbs_branch_size_chk", sql.raw("branch is null or octet_length(branch) <= 120")),
+    agentRemoteDevBreadcrumbsProviderSizeChk: check("agent_remote_dev_breadcrumbs_provider_size_chk", sql.raw("provider is null or octet_length(provider) <= 60")),
+    agentRemoteDevBreadcrumbsThreadIdEmittedAtIdx: index("agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx").on(table.threadId, table.emittedAt.desc()),
+    agentRemoteDevBreadcrumbsTaskIdEmittedAtIdx: index("agent_remote_dev_breadcrumbs_task_id_emitted_at_idx").on(table.taskId, table.emittedAt.desc()).where(sql.raw("task_id is not null")),
+    agentRemoteDevBreadcrumbsEmittedAtIdx: index("agent_remote_dev_breadcrumbs_emitted_at_idx").on(table.emittedAt.desc()),
+  }),
+);
+
+export const agentRemoteDevBreadcrumbRowSchema = z.object({
+  id: z.number().int(),
+  threadId: z.string().uuid(),
+  taskId: z.string().uuid().nullable(),
+  kind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema,
+  emittedAt: z.string().datetime(),
+  podName: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes").nullable(),
+  branch: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  provider: z.string().max(60).refine((value) => byteLength(value) <= 60, "Must be at most 60 bytes").nullable(),
+});
+
+export const agentRemoteDevBreadcrumbInsertSchema = z.object({
+  id: z.number().int().optional(),
+  threadId: z.string().uuid(),
+  taskId: z.string().uuid().nullable().optional(),
+  kind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema.optional().default({}),
+  emittedAt: z.string().datetime().optional(),
+  podName: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes").nullable().optional(),
+  branch: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  provider: z.string().max(60).refine((value) => byteLength(value) <= 60, "Must be at most 60 bytes").nullable().optional(),
+});
+
+export const agentRemoteDevBreadcrumbUpdateSchema = agentRemoteDevBreadcrumbInsertSchema.partial();
+export type AgentRemoteDevBreadcrumbRow = z.infer<typeof agentRemoteDevBreadcrumbRowSchema>;
+export type AgentRemoteDevBreadcrumbInsert = z.infer<typeof agentRemoteDevBreadcrumbInsertSchema>;
+export type AgentRemoteDevBreadcrumbUpdate = z.infer<typeof agentRemoteDevBreadcrumbUpdateSchema>;
+
 export const agentRemoteDevArtifactStorageProviderValues = ["s3","r2","gcs","drive","local"] as const;
 export const agentRemoteDevArtifactStorageProviderSchema = z.enum(agentRemoteDevArtifactStorageProviderValues);
 export type AgentRemoteDevArtifactStorageProvider = z.infer<typeof agentRemoteDevArtifactStorageProviderSchema>;

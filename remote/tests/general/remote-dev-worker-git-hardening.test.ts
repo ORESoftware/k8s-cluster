@@ -129,15 +129,39 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /return branch/);
   assert.match(server, /function isPlaceholderSessionBranch\(sessionId: string, branch: string\): boolean/);
   assert.match(server, /existing\.taskIds\.size === 0[\s\S]*isPlaceholderSessionBranch\(sessionId, existing\.branch\)/);
-  // The placeholder→title-derived branch transition must self-heal: boot
-  // writes tmp/convos/thread.log after resetDependencyInstallArtifacts, so
-  // the second prepareSessionWorkspace can race the breadcrumb. We discard
-  // residue on the placeholder branch instead of throwing, but keep the
-  // strict guard for non-placeholder (mid-task) branches.
+  // Breadcrumbs are now POSTed to rest-api (Postgres-backed
+  // agent_remote_dev_breadcrumbs) instead of being written into
+  // workspace/tmp/convos/thread.log, so prepareSessionWorkspace can rely
+  // on a clean workspace and never has to self-heal the placeholder
+  // branch. The strict guard against switching off uncommitted changes
+  // is the canonical behavior.
   assert.match(
     server,
-    /const onPlaceholder =\s*currentBranch !== null &&\s*isPlaceholderSessionBranch\(session\.sessionId, currentBranch\);\s*if \(!onPlaceholder\) \{\s*throw new Error\(\s*`workspace has uncommitted changes while on \$\{currentBranch \?\? 'detached HEAD'\}; refusing to switch to \$\{session\.branch\}`,\s*\);\s*\}\s*await resetDependencyInstallArtifacts\(session\.workspacePath\);/,
+    /if \(status\.trim\(\)\) \{\s*throw new Error\(\s*`workspace has uncommitted changes while on \$\{currentBranch \?\? 'detached HEAD'\}; refusing to switch to \$\{session\.branch\}`,\s*\);\s*\}/,
   );
+  assert.doesNotMatch(server, /isPlaceholderSessionBranch\(session\.sessionId, currentBranch\)/);
+  assert.doesNotMatch(server, /async function appendThreadLog\(/);
+  assert.match(server, /async function postBreadcrumb\(input:/);
+  assert.match(server, /async function postSessionBreadcrumb\(/);
+  assert.match(server, /async function postTaskBreadcrumb\(/);
+  assert.match(server, /async function fetchThreadBreadcrumbTail\(state: TaskState\): Promise<string>/);
+  assert.match(server, /\/api\/agents\/threads\/\$\{encodeURIComponent\(input\.threadId\)\}\/breadcrumbs/);
+  assert.match(server, /\/api\/agents\/threads\/\$\{encodeURIComponent\(state\.threadId\)\}\/breadcrumbs\/tail/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'session-ready'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'merge-upstream-start'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'merge-upstream-done'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'make-commit-start'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'make-commit-done'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'open-pr-start'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'open-pr-done'/);
+  assert.match(server, /void postSessionBreadcrumb\(input\.session, 'open-pr-marker-commit'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'event'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'merge-base-before-task-start'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'merge-base-conflicts-before-task'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'merge-base-before-task-done'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'prompt'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'container-pool-result'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'deterministic-edit'/);
   assert.match(server, /prompt,\s*\}\);/);
   assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
@@ -153,7 +177,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /<repo_context_files>/);
   assert.match(server, /<agent_operating_mode>/);
   assert.match(server, /Do not stop to ask the human user a question before acting/);
-  assert.match(server, /<local_thread_log_tail>/);
+  assert.match(server, /<thread_breadcrumb_tail>/);
+  assert.match(server, /thread-context:postgres-breadcrumb-tail/);
+  assert.doesNotMatch(server, /<local_thread_log_tail>/);
+  assert.doesNotMatch(server, /readLocalThreadContext/);
   assert.match(server, /const runtimeContext = clusterMcpPromptSection\(config\.agentMcpUrl\)/);
   assert.match(server, /thread-context:cluster-mcp/);
   assert.match(server, /<runtime_context>/);
@@ -210,8 +237,9 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /status: `completed task on \$\{gitBranchTarget\(state\.branch\)\}`/);
   assert.match(
     server,
-    /const GENERATED_GIT_EXCLUDE_PATHS = \[\s*'\.pnpm-store',\s*'node_modules',\s*'\.next',\s*'\.turbo',\s*'tmp\/convos',\s*\]/,
+    /const GENERATED_GIT_EXCLUDE_PATHS = \[\s*'\.pnpm-store',\s*'node_modules',\s*'\.next',\s*'\.turbo',\s*\]/,
   );
+  assert.doesNotMatch(server, /'tmp\/convos',/);
   assert.match(server, /const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS\.map/);
   assert.match(
     server,
@@ -426,12 +454,16 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(readme, /REPO_CONTEXT_MAX_CHARS/);
   assert.match(readme, /AGENT_OPTIMISTIC_MODE/);
   assert.match(readme, /AGENTS\.md`\/`agents\/\*\.md`\/`docs\/\*\.md/);
-  assert.match(readme, /local `tmp\/convos\/thread\.log` tail/);
+  assert.match(readme, /\/api\/agents\/threads\/<uuid>\/breadcrumbs\/tail/);
+  assert.match(readme, /agent_remote_dev_breadcrumbs/);
+  assert.match(readme, /THREAD_BREADCRUMB_TAIL_LIMIT/);
   assert.match(readme, /Generic AI SDK and OpenCode receive bounded workspace\s+tools/);
   assert.match(readme, /dd_cluster/);
   assert.match(readme, /CLI runners still get the prompt hint/);
   assert.match(agentsMd, /docs\/agent-context-memory\.md/);
-  assert.match(agentsMd, /tmp\/convos\/thread\.log/);
+  assert.match(agentsMd, /<thread_breadcrumb_tail>/);
+  assert.match(agentsMd, /agent_remote_dev_breadcrumbs/);
+  assert.doesNotMatch(agentsMd, /tmp\/convos\/thread\.log/);
   assert.match(lockfile, /^lockfileVersion: '9\.0'$/m);
   assert.match(lockfile, /^importers:\s*$/m);
 

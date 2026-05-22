@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/redis/container-pool-affinity-lock.schema.json",
+  "title": "ContainerPoolAffinityLock",
+  "description": "Affinity lock used by container-pool-rs to serialize dispatches into a single warm container per (poolSlug, threadId). Acquired with SET NX + TTL; the value is an opaque ASCII token used by the caller to prove ownership during release. Source: remote/deployments/container-pool-rs/src/main.rs.",
+  "type": "object",
+  "$dd:redis": {
+    "service": "dd-container-pool",
+    "summary": "Distributed mutex around dispatch into a warm container, keyed by container pool + thread.",
+    "keys": [
+      {
+        "name": "ContainerPoolAffinityLockKey",
+        "description": "Redis key for the per-(pool, thread) dispatch affinity lock. Caller is expected to acquire with `SET <key> <token> NX PX <ttlMs>` and release with a WATCH/MULTI compare-and-delete using the same token.",
+        "pattern": "{prefix}:{poolSlug}:{threadId}",
+        "defaultPrefix": "dd:container-pool:affinity",
+        "params": [
+          {
+            "name": "prefix",
+            "type": "string",
+            "description": "Configurable lock-key prefix; defaults to 'dd:container-pool:affinity'. Operators may override via CONTAINER_POOL_REDIS_LOCK_PREFIX."
+          },
+          {
+            "name": "poolSlug",
+            "type": "string",
+            "description": "Container-pool slug, e.g. 'nodejs-default'."
+          },
+          {
+            "name": "threadId",
+            "type": "string",
+            "description": "Thread UUID for which the affinity lock is being claimed."
+          }
+        ],
+        "valueType": "opaque-string",
+        "valueDescription": "A short ASCII lock token chosen by the caller. Verified on release; mismatched tokens are a no-op."
+      }
+    ]
+  }
+}
