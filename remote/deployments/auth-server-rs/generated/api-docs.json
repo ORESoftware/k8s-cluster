@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "auth-server-rs",
   "language": "rust",
-  "routeCount": 10,
+  "routeCount": 11,
   "routeTypeCounts": {
     "service": 5,
-    "user-generated": 2,
+    "user-generated": 3,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -81,6 +81,23 @@
       "handlers": [
         "auth_form",
         "auth_submit"
+      ],
+      "sourceFiles": [
+        "remote/deployments/auth-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/auth/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "auth_status"
       ],
       "sourceFiles": [
         "remote/deployments/auth-server-rs/src/main.rs"
