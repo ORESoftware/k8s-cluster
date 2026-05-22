@@ -2320,6 +2320,9 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       .context-row-breadcrumb {
         border-style: dashed;
       }
+      .context-row-task {
+        border-color: rgba(120, 190, 255, 0.45);
+      }
       .context-badge {
         display: inline-block;
         font-size: 10px;
@@ -2338,6 +2341,11 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         background: rgba(255, 168, 79, 0.18);
         color: #f3a55b;
         border-color: rgba(255, 168, 79, 0.45);
+      }
+      .context-badge-task {
+        background: rgba(120, 190, 255, 0.16);
+        color: #8fc8ff;
+        border-color: rgba(120, 190, 255, 0.42);
       }
       label span {
         display: block;
@@ -2996,6 +3004,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           state.contextReady = false;
           state.contextLoading = false;
           state.contextErrors = [];
+          $("context-filter").value = "";
           $("context-summary").textContent = message;
           $("context-candidates").innerHTML = '<p class="muted">No context loaded yet.</p>';
         }
@@ -3007,6 +3016,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
             item.matchSource,
             item.kind,
             item.updatedAt,
+            item.contextBlob,
           ].filter(Boolean).join(" ").toLowerCase();
         }
 
@@ -3062,8 +3072,11 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           }
           for (const item of visible) {
             const isBreadcrumb = item.kind === "breadcrumb";
+            const isTask = item.kind === "thread-task";
             const row = document.createElement("label");
-            row.className = "context-row" + (isBreadcrumb ? " context-row-breadcrumb" : "");
+            row.className = "context-row"
+              + (isBreadcrumb ? " context-row-breadcrumb" : "")
+              + (isTask ? " context-row-task" : "");
           const checkbox = document.createElement("input");
             checkbox.type = "checkbox";
             checkbox.className = "context-checkbox";
@@ -3078,17 +3091,17 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
             });
           const text = document.createElement("div");
           const title = document.createElement("strong");
-          const titleText = item.contextTitle || item.contextId || (isBreadcrumb ? "breadcrumb" : "context blob");
-          if (isBreadcrumb) {
+          const titleText = item.contextTitle || item.contextId || (isBreadcrumb ? "breadcrumb" : isTask ? "previous task" : "context blob");
+          if (isBreadcrumb || isTask) {
             const badge = document.createElement("span");
-            badge.className = "context-badge context-badge-breadcrumb";
-            badge.textContent = "breadcrumb";
+            badge.className = "context-badge " + (isBreadcrumb ? "context-badge-breadcrumb" : "context-badge-task");
+            badge.textContent = isBreadcrumb ? "breadcrumb" : "task";
             title.append(badge, document.createTextNode(" " + titleText));
           } else {
             title.textContent = titleText;
           }
           const detail = document.createElement("small");
-          const source = item.matchSource || (isBreadcrumb ? "breadcrumb" : "context");
+          const source = item.matchSource || (isBreadcrumb ? "breadcrumb" : isTask ? "thread-task" : "context");
           const score = Number.isFinite(item.score) ? ` · score ${Number(item.score).toFixed(3)}` : "";
           detail.textContent = `${item.contextId || "context"} · ${source}${score}`;
           text.append(title, detail);

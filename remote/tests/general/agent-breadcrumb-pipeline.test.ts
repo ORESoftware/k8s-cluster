@@ -112,9 +112,14 @@ test('breadcrumbs ride the context picker as checkbox-selectable candidates', as
   assert.match(restServer, /kind: String,?\s*\}/);
   assert.match(restServer, /CONTEXT_KIND_BREADCRUMB: &str = "breadcrumb"/);
   assert.match(restServer, /CONTEXT_KIND_BLOB: &str = "context-blob"/);
+  assert.match(restServer, /CONTEXT_KIND_TASK: &str = "thread-task"/);
   assert.match(restServer, /BREADCRUMB_CANDIDATE_PREFIX: &str = "breadcrumb:"/);
   assert.match(restServer, /async fn fetch_breadcrumb_candidates_for_thread\(/);
+  assert.match(restServer, /async fn fetch_breadcrumb_context_candidates_by_ids_from_postgres\(/);
+  assert.match(restServer, /async fn fetch_thread_task_context_candidates_from_postgres\(/);
+  assert.match(restServer, /fn task_context_id\(/);
   assert.match(restServer, /fn breadcrumb_row_to_candidate\(/);
+  assert.match(restServer, /context_ids: Option<Vec<String>>/);
 
   // 2. Selected-context fetch splits ids into blob + breadcrumb buckets so a
   //    `breadcrumb:<n>` selection resolves to an agent_remote_dev_breadcrumbs
@@ -126,19 +131,36 @@ test('breadcrumbs ride the context picker as checkbox-selectable candidates', as
   );
 
   // 3. dev-server treats kind: 'breadcrumb' rows as the source of
-  //    <thread_breadcrumb_tail>; kind: 'context-blob' stays in
-  //    <selected_context_blobs>. Unchecked rows never reach the worker.
-  assert.match(devServer, /kind: z\.enum\(\[[^\]]*'breadcrumb'[^\]]*\]\)\.optional\(\)/);
+  //    <thread_breadcrumb_tail>, kind: 'thread-task' as selected previous
+  //    task context, and kind: 'context-blob' as <selected_context_blobs>.
+  //    Unchecked rows never reach the worker.
+  assert.match(
+    devServer,
+    /kind: z\.enum\(\[[^\]]*'context-blob'[^\]]*'thread-task'[^\]]*'breadcrumb'[^\]]*\]\)\.optional\(\)/,
+  );
+  assert.match(devServer, /async function fetchSelectedContextBlobs\(/);
+  assert.match(devServer, /\/context-candidates/);
   assert.match(devServer, /function isBreadcrumbContextItem\(/);
+  assert.match(devServer, /function isThreadTaskContextItem\(/);
   assert.match(devServer, /function formatSelectedBreadcrumbs\(/);
+  assert.match(devServer, /function formatSelectedThreadTasks\(/);
+  assert.match(devServer, /hasSelectedThreadTasks/);
   assert.match(devServer, /<thread_breadcrumb_tail>/);
   assert.match(devServer, /thread-context:selected-breadcrumbs/);
+  assert.match(devServer, /thread-context:selected-tasks/);
 
   // 4. Picker UI shows breadcrumbs with a distinct badge/class so operators
-  //    can tell what they're un-checking.
+  //    can tell what they're un-checking, and keeps selection state separate
+  //    from the visible filter.
+  assert.match(webHome, /id="context-filter"/);
+  assert.match(webHome, /contextSelection: new Set\(\)/);
+  assert.match(webHome, /function visibleContextCandidates\(/);
+  assert.match(webHome, /state\.contextSelection\.delete\(item\.contextId\)/);
   assert.match(webHome, /context-row-breadcrumb/);
   assert.match(webHome, /context-badge-breadcrumb/);
+  assert.match(webHome, /context-badge-task/);
   assert.match(webHome, /item\.kind === "breadcrumb"/);
+  assert.match(webHome, /item\.kind === "thread-task"/);
 });
 
 test('redis interfaces package exposes the agent breadcrumb cache schema for cross-runtime consumers', async () => {

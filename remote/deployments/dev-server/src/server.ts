@@ -2257,7 +2257,9 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
   const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
   let restContextText = '';
   let restContextSource = 'none';
-  const automaticThreadContext = !state.contextMode || state.contextMode === 'auto';
+  const hasSelectedThreadTasks = Boolean(state.contextBlobs?.some(isThreadTaskContextItem));
+  const automaticThreadContext =
+    (!state.contextMode || state.contextMode === 'auto') && !hasSelectedThreadTasks;
   if (state.threadId && base && automaticThreadContext) {
     try {
       const response = await fetch(
@@ -2331,15 +2333,15 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     promptSections.push('', '<selected_context_blobs>', selectedContext, '</selected_context_blobs>');
   }
 
-    if (selectedThreadTasks) {
-      const taskCount = state.contextBlobs?.filter(isThreadTaskContextItem).length ?? 0;
-      emit(state, {
-        kind: 'status',
-        status: 'thread-context:selected-tasks',
-        message: `${taskCount} selected previous task context item(s) injected into the task prompt.`,
-      });
-      promptSections.push('', '<previous_thread_context>', selectedThreadTasks, '</previous_thread_context>');
-    }
+  if (selectedThreadTasks) {
+    const taskCount = state.contextBlobs?.filter(isThreadTaskContextItem).length ?? 0;
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:selected-tasks',
+      message: `${taskCount} selected previous task context item(s) injected into the task prompt.`,
+    });
+    promptSections.push('', '<previous_thread_context>', selectedThreadTasks, '</previous_thread_context>');
+  }
 
   if (restContextText) {
     const cappedContext = truncateContext(restContextText, config.threadContextMaxChars);
