@@ -44,9 +44,11 @@ spec:
               rm -rf /tmp/dd-gleam-mcp-server
               mkdir -p \
                 "$WORK_ROOT/remote/deployments/gleam-mcp-server" \
-                "$WORK_ROOT/remote/libs/pg-defs/generated"
+                "$WORK_ROOT/remote/libs/pg-defs/generated" \
+                "$WORK_ROOT/remote/libs/runtime-config-client-gleam"
               cp -R "$SRC_ROOT/remote/deployments/gleam-mcp-server"/. "$WORK_ROOT/remote/deployments/gleam-mcp-server"/
               cp -R "$SRC_ROOT/remote/libs/pg-defs/generated/gleam" "$WORK_ROOT/remote/libs/pg-defs/generated/gleam"
+              cp -R "$SRC_ROOT/remote/libs/runtime-config-client-gleam"/. "$WORK_ROOT/remote/libs/runtime-config-client-gleam"/
               cd "$WORK_ROOT/remote/deployments/gleam-mcp-server"
               if [ ! -f manifest.toml ]; then
                 echo "manifest.toml is required for offline-safe Gleam startup; run gleam deps download and commit the manifest"
