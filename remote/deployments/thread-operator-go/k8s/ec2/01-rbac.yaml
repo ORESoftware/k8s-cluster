@@ -1,0 +1,130 @@
+# RBAC for dd-thread-operator.
+#
+# Posture: least-privilege.
+#
+#   - Cluster-scoped read on the Thread CRD itself plus status patch.
+#   - Namespace-scoped CRUD on Deployments / Services / Ingresses /
+#     PVCs / Pods / Events in dd-dev only.
+#   - No access to Secrets, ConfigMaps, ServiceAccounts, or any
+#     other namespace.
+#
+# If you need the operator to manage threads in additional
+# namespaces, add another RoleBinding pointing at this same SA. Do
+# not promote the resource Role to a ClusterRole.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-thread-operator
+  namespace: default
+  labels:
+    app: dd-thread-operator
+automountServiceAccountToken: true
+---
+# Cluster-scoped: the CRD listing must work cluster-wide for Argo
+# CD diffing and for the controller to subscribe to its own
+# resource. We do NOT grant any other cluster-wide permission.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-thread-operator-cr-watch
+rules:
+  - apiGroups: ['dd.dev']
+    resources: [threads]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['dd.dev']
+    resources: [threads/status]
+    verbs: [get, update, patch]
+  - apiGroups: ['dd.dev']
+    resources: [threads/finalizers]
+    verbs: [update]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-thread-operator-cr-watch
+subjects:
+  - kind: ServiceAccount
+    name: dd-thread-operator
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-thread-operator-cr-watch
+---
+# Namespace-scoped: the actual reconcile target is dd-dev. Repeat
+# this Role + RoleBinding pair for every additional namespace you
+# want the operator to manage.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-thread-operator-children
+  namespace: dd-dev
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: ['']
+    resources: [services, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    verbs: [get, update, patch]
+  - apiGroups: [apps]
+    resources: [deployments/status]
+    verbs: [get]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-thread-operator-children
+  namespace: dd-dev
+subjects:
+  - kind: ServiceAccount
+    name: dd-thread-operator
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-thread-operator-children
+---
+# Leader-election lease in the operator's own namespace so two
+# operator pods (e.g. during rolling update) can't fight.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-thread-operator-leader-election
+  namespace: default
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-thread-operator-leader-election
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: dd-thread-operator
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-thread-operator-leader-election

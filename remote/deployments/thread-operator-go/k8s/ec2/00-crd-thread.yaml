@@ -1,0 +1,138 @@
+# CustomResourceDefinition for the Thread CR managed by
+# dd-thread-operator. Cluster-scoped registration; the resource
+# itself is namespaced (lives wherever the operator runs reconciles,
+# typically dd-dev).
+#
+# Schema validation is deliberately light: required fields catch
+# obvious typos, but optional fields use `x-kubernetes-preserve-
+# unknown-fields: false` semantics by default. Tighten with
+# regex/min/max in v1beta1+ once the spec stabilizes.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: threads.dd.dev
+spec:
+  group: dd.dev
+  scope: Namespaced
+  names:
+    plural: threads
+    singular: thread
+    kind: Thread
+    shortNames:
+      - thrd
+    categories:
+      - dd
+      - dd-remote-dev
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Desired
+          type: string
+          jsonPath: .spec.desiredState
+        - name: Ready
+          type: integer
+          jsonPath: .status.replicasReady
+        - name: ThreadID
+          type: string
+          jsonPath: .spec.threadId
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required:
+                - threadId
+                - userId
+                - ingressHost
+                - image
+              properties:
+                threadId:
+                  type: string
+                  description: Full UUID for this thread.
+                threadIdShort:
+                  type: string
+                  description: Short id used in resource names. Derived from threadId when empty.
+                userId:
+                  type: string
+                ingressHost:
+                  type: string
+                image:
+                  type: string
+                imagePullPolicy:
+                  type: string
+                  enum: [Always, IfNotPresent, Never]
+                workspaceSize:
+                  type: string
+                  description: Quantity (e.g. 5Gi) for the workspace PVC.
+                storageClassName:
+                  type: string
+                configMapName:
+                  type: string
+                secretName:
+                  type: string
+                resources:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                desiredState:
+                  type: string
+                  enum: [Running, Sleeping]
+                  default: Running
+                idleTimeoutSeconds:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                ttlSecondsAfterIdle:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                lastActivityAt:
+                  type: string
+                  format: date-time
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Active, Sleeping, Failed, Terminating]
+                observedGeneration:
+                  type: integer
+                  format: int64
+                podIP:
+                  type: string
+                podName:
+                  type: string
+                nodeName:
+                  type: string
+                replicasReady:
+                  type: integer
+                  format: int32
+                replicasDesired:
+                  type: integer
+                  format: int32
+                lastReconcileTime:
+                  type: string
+                  format: date-time
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status]
+                    properties:
+                      type: { type: string }
+                      status: { type: string, enum: ["True", "False", "Unknown"] }
+                      reason: { type: string }
+                      message: { type: string }
+                      lastTransitionTime: { type: string, format: date-time }
+                      observedGeneration: { type: integer, format: int64 }

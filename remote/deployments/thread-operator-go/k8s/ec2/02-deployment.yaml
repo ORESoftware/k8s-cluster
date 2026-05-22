@@ -1,0 +1,130 @@
+# dd-thread-operator: Go controller-manager that reconciles
+# Thread CRs into per-thread PVC + Deployment + Service + Ingress.
+#
+# Build model matches dd-idle-reaper / gcs-router: a golang base
+# image mounts the in-repo source via hostPath and runs `go build`
+# at startup. This avoids needing ECR credentials while the image
+# pipeline for new in-cluster Go services is being set up.
+#
+# When ECR is wired up, swap to:
+#   image: REPLACE_ME_ECR_URI/dd-thread-operator:latest
+#   command/args: omit, the Dockerfile already ENTRYPOINTs the bin
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-thread-operator
+  namespace: default
+  labels:
+    app: dd-thread-operator
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: thread-operator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-thread-operator
+  template:
+    metadata:
+      labels:
+        app: dd-thread-operator
+        app.kubernetes.io/part-of: dd-remote-dev
+        app.kubernetes.io/component: thread-operator
+    spec:
+      serviceAccountName: dd-thread-operator
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      # The build script writes only to /tmp (GOCACHE/GOMODCACHE/WORK)
+      # and the exec'd binary doesn't need root. Match the per-thread
+      # pod posture in builders.go.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: operator
+          image: docker.io/library/golang:1.23-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+            readOnlyRootFilesystem: false
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export HOME=/tmp
+              export GO111MODULE=on
+              export GOPROXY=https://proxy.golang.org,direct
+              export GOSUMDB=off
+              export GOCACHE=/tmp/go-build
+              export GOMODCACHE=/tmp/go-mod
+
+              SRC=/opt/operator-src
+              WORK=/tmp/operator
+              BIN=/tmp/dd-thread-operator
+
+              if [ ! -x "$BIN" ]; then
+                rm -rf "$WORK"
+                mkdir -p "$WORK" "$GOCACHE" "$GOMODCACHE"
+                cp -R --no-preserve=mode,ownership,timestamps "$SRC"/. "$WORK"/
+                cd "$WORK"
+                /usr/local/go/bin/go mod download
+                /usr/local/go/bin/go build -trimpath -ldflags="-s -w" \
+                  -o "$BIN" ./cmd/operator
+              fi
+
+              exec "$BIN" \
+                --metrics-bind-address=:9101 \
+                --health-probe-bind-address=:9102 \
+                --leader-elect=true
+          ports:
+            - name: metrics
+              containerPort: 9101
+            - name: probe
+              containerPort: 9102
+          startupProbe:
+            httpGet: { path: /healthz, port: probe }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /readyz, port: probe }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: probe }
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: operator-src
+              mountPath: /opt/operator-src
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: operator-src
+          hostPath:
+            # Matches the established cluster pattern. The repo is
+            # cloned at /home/ec2-user/codes/dd/dd-next-1; the
+            # operator source lives under remote/deployments.
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/thread-operator-go
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

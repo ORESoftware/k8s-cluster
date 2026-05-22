@@ -39,6 +39,14 @@ There are also runtime siblings for queueing, scheduling, and optimization:
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
 - [`deployments/mdp-optimizer-rs/`](./deployments/mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
+- [`deployments/thread-operator-go/`](./deployments/thread-operator-go/) — Go Kubernetes operator that owns the
+  per-thread workspace lifecycle as a `Thread` CRD (`dd.dev/v1alpha1`). Strictly opt-in: only
+  reconciles `Thread` CRs and refuses to adopt resources that lack the
+  `dd.dev/managed-by=dd-thread-operator` label, so existing template-provisioned threads are
+  unaffected.
+- [`deployments/thread-fleet-exporter-go/`](./deployments/thread-fleet-exporter-go/) — Go Prometheus exporter
+  for the `dd-dev` thread fleet. Read-only; exposes the same `active|starting|sleeping|failed|dead`
+  taxonomy used by `/u/admin/k8s` so Grafana and alert rules can finally see thread health.
 
 The AI/ML platform seed layer lives in
 [`argocd/ai-ml-platform/`](./argocd/ai-ml-platform/) and is managed by the

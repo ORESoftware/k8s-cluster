@@ -1,0 +1,17 @@
+# Metrics-only Service. Prometheus / OTel Collector should scrape
+# dd-thread-fleet-exporter.default.svc.cluster.local:9103/metrics.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-thread-fleet-exporter
+  namespace: default
+  labels:
+    app: dd-thread-fleet-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-thread-fleet-exporter
+  ports:
+    - name: metrics
+      port: 9103
+      targetPort: metrics
