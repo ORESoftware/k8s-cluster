@@ -83,10 +83,20 @@ spec:
           ports:
             - name: metrics
               containerPort: 9103
+          # Build-at-runtime sizing: this container starts from
+          # docker.io/library/golang:1.23-bookworm and runs `go build` of
+          # the exporter (client-go + prometheus/client_golang) on first
+          # start. Peak RSS during the cold compile is well under 1Gi
+          # but 256Mi was OOMKilled in production. After the first
+          # successful build the binary is cached at
+          # /tmp/dd-thread-fleet-exporter and steady-state RSS sits well
+          # under 64Mi, so the limit is sized for the build peak only.
+          # The startup probe matches the gcs-router convention:
+          # 2s period * 120 failures = 4 minute build window.
           startupProbe:
             httpGet: { path: /healthz, port: metrics }
-            periodSeconds: 5
-            failureThreshold: 60
+            periodSeconds: 2
+            failureThreshold: 120
           readinessProbe:
             httpGet: { path: /healthz, port: metrics }
             periodSeconds: 10
@@ -98,10 +108,10 @@ spec:
           resources:
             requests:
               cpu: 25m
-              memory: 64Mi
+              memory: 128Mi
             limits:
-              cpu: 250m
-              memory: 256Mi
+              cpu: 500m
+              memory: 1Gi
           volumeMounts:
             - name: exporter-src
               mountPath: /opt/exporter-src
@@ -115,4 +125,4 @@ spec:
             type: Directory
         - name: tmp
           emptyDir:
-            sizeLimit: 512Mi
+            sizeLimit: 1Gi

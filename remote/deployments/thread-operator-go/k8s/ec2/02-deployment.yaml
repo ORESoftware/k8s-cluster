@@ -92,10 +92,22 @@ spec:
               containerPort: 9101
             - name: probe
               containerPort: 9102
+          # Build-at-runtime sizing: this container starts from
+          # docker.io/library/golang:1.23-bookworm and runs `go build` of
+          # the operator (controller-runtime + apimachinery + client-go +
+          # the operator's own packages) on first start. Peak RSS during
+          # `go build` for that dependency graph is ~1.4-1.7 GiB on
+          # bookworm; 1Gi was OOMKilled during the cold compile in
+          # production. After the first successful build the binary is
+          # cached at /tmp/dd-thread-operator and steady-state RSS sits
+          # well under 128Mi, so the limit is sized for the build peak,
+          # not for runtime. The startup probe matches the gcs-router
+          # convention: 2s period * 180 failures = 6 minute build window
+          # for a cold module cache on the EC2 host.
           startupProbe:
             httpGet: { path: /healthz, port: probe }
-            periodSeconds: 5
-            failureThreshold: 60
+            periodSeconds: 2
+            failureThreshold: 180
           readinessProbe:
             httpGet: { path: /readyz, port: probe }
             periodSeconds: 10
@@ -109,8 +121,8 @@ spec:
               cpu: 50m
               memory: 128Mi
             limits:
-              cpu: 500m
-              memory: 1Gi
+              cpu: '1'
+              memory: 2Gi
           volumeMounts:
             - name: operator-src
               mountPath: /opt/operator-src
@@ -127,4 +139,4 @@ spec:
             type: Directory
         - name: tmp
           emptyDir:
-            sizeLimit: 1Gi
+            sizeLimit: 2Gi
