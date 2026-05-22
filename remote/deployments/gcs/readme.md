@@ -153,29 +153,39 @@ decision.
 
 ### Scaling `gcs` past 1 pod
 
-`gcs-router`'s upstreams point at the `gcs-headless` Service, which
-returns one A record per ready gcs pod. OSS NGINX only resolves
-upstream DNS at startup, so when you scale gcs from 1 -> N pods, do:
+`gcs-router` is a small Go reverse proxy (no NGINX) that lives in the
+`chat.vibe` submodule at `src/gcs-router/`. It watches
+`EndpointSlices` for `gcs-headless` via the in-cluster Kubernetes
+API and maintains a deterministic FNV-1a Ketama-style ring with
+`--vnodes` virtual nodes per pod IP. Scaling `gcs` from 1 -> N
+pods is picked up automatically within a few seconds — no
+`kubectl rollout restart deployment/gcs-router` needed.
 
-```bash
-kubectl rollout restart deployment/gcs-router -n default
-```
+Routing rules:
 
-That picks up the new endpoint list. Existing WS connections stay on
-their current pod (the proxy can't migrate an upgraded WS); only new
-WS upgrades use the updated ring.
+- `/conv/<convId>[/...]` -> consistent-hash pool keyed on the convId
+  segment. Pinned same-conv WS connections to the same gcs pod so
+  in-pod fan-out keeps working.
+- everything else -> least-connections pool over the same live peer
+  set.
 
-Future-proof alternatives (when scale-events get frequent):
+The router surfaces routing decisions on every response via the
+`X-Gcs-Pool` (`conv-hash` or `least-conn`) and `X-Gcs-Upstream`
+headers, exposes `/healthz` on the WS listener, and exports
+Prometheus-style metrics on `:9100/metrics`.
 
-1. Replace `gcs-router` with the same nginx image plus a sidecar that
-   periodically reloads on endpoint change (poll k8s API,
-   `nginx -s reload`).
-2. Switch the image to `openresty/openresty` and use
-   `balancer_by_lua_block` + `lua-resty-balancer` for true dynamic
-   peer updates.
-3. Replace `gcs-router` entirely with Envoy / Istio. Envoy's EDS picks
-   up endpoint changes from the k8s API in seconds, and the consistent-
-   hash policy is a one-line `DestinationRule`.
+The earlier NGINX OSS implementation was retired because OSS NGINX
+only resolves upstream DNS once at startup and picks a single A
+record (the `resolve` keyword is NGINX Plus only) — with a headless
+Service pointing at multiple pods, NGINX OSS would route everything
+to a single, possibly stale, pod IP, making consistent hashing a
+no-op. See the deployment yaml header comment in
+`k8s/ec2/gcs-router.deployment.yaml` for the full rationale.
+
+Existing WS connections still stay on their current pod through a
+ring change (the proxy can't migrate an upgraded WS); only new WS
+upgrades use the updated ring. That is intrinsic to the WebSocket
+upgrade model, not a router limitation.
 
 ### Scaling `gcs-router` itself
 
