@@ -43,6 +43,7 @@
     "test:cli:trading-server-config": "pnpm exec tsx --test general/trading-server-config.test.ts",
     "test:cli:vpn-config": "pnpm exec tsx --test general/vpn-config.test.ts",
     "test:cli:web-scraper-config": "pnpm exec tsx --test general/web-scraper-config.test.ts",
+    "test:cli:web-home-agents-threads-container-state": "pnpm exec tsx --test general/web-home-agents-threads-container-state.test.ts",
     "test:cli:ws-loadtest-config": "pnpm exec tsx --test general/ws-loadtest-config.test.ts",
     "test:ui:playwright": "node ui-playwright-smoke.mjs",
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",

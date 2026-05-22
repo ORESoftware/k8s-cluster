@@ -155,12 +155,22 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
 
   assert.match(ec2Deployment, /name:\s*dd-gleam-mcp-server/);
   assert.match(ec2Deployment, /ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine/);
+  // The EC2 overlay runs the MCP server straight out of the mounted
+  // checkout (`hostPath: /home/ec2-user/codes/dd/dd-next-1` →
+  // `/opt/dd-next-1` inside the pod) and refuses to start without a
+  // committed `manifest.toml`, so no `cp -R`/`gleam deps download`
+  // step is needed at boot. See commit `073e451` for the rationale.
   assert.match(
     ec2Deployment,
-    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*WORK_ROOT=\/tmp\/dd-gleam-mcp-server\/dd-next-1[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\.[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*exec gleam run/,
+    /cd \/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*exec gleam run/,
+  );
+  assert.match(
+    ec2Deployment,
+    /hostPath:\s*\n\s+path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
   );
   assert.doesNotMatch(ec2Deployment, /apk add/);
   assert.doesNotMatch(ec2Deployment, /^\s*gleam deps download\s*$/m);
+  assert.doesNotMatch(ec2Deployment, /\bcp -R\b/);
   assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
   assert.match(ec2Deployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
@@ -226,6 +236,13 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2NetworkPolicy, /port:\s*16686/);
   assert.match(ec2NetworkPolicy, /port:\s*443/);
   assert.match(ec2NetworkPolicy, /port:\s*5432/);
+  // Warm worker containers spawned by `dd-container-pool` reach MCP from
+  // the EC2 node host network, so the policy must allow RFC1918 ingress
+  // on :8090 in addition to the labelled podSelector clauses above.
+  assert.match(
+    ec2NetworkPolicy,
+    /ipBlock:\s*\n\s+cidr:\s*10\.0\.0\.0\/8[\s\S]*ipBlock:\s*\n\s+cidr:\s*172\.16\.0\.0\/12[\s\S]*ipBlock:\s*\n\s+cidr:\s*192\.168\.0\.0\/16[\s\S]*ports:[\s\S]*port:\s*8090/,
+  );
   assert.match(minikubeDeployment, /image:\s*dd-gleam-mcp-server:dev/);
   assert.match(minikubeDeployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
   assert.match(minikubeDeployment, /automountServiceAccountToken:\s*true/);
@@ -264,6 +281,13 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(minikubeNetworkPolicy, /port:\s*7777/);
   assert.match(minikubeNetworkPolicy, /port:\s*8222/);
   assert.match(minikubeNetworkPolicy, /port:\s*443/);
+  // Mirror of the EC2 host-network ingress allowance: warm worker
+  // containers spawned by `dd-container-pool` use host networking and
+  // need RFC1918 ingress on :8090 to reach MCP.
+  assert.match(
+    minikubeNetworkPolicy,
+    /ipBlock:\s*\n\s+cidr:\s*10\.0\.0\.0\/8[\s\S]*ipBlock:\s*\n\s+cidr:\s*172\.16\.0\.0\/12[\s\S]*ipBlock:\s*\n\s+cidr:\s*192\.168\.0\.0\/16[\s\S]*ports:[\s\S]*port:\s*8090/,
+  );
   assert.match(ec2App, /path:\s*remote\/deployments\/gleam-mcp-server\/k8s\/ec2/);
   assert.match(minikubeApp, /path:\s*remote\/deployments\/gleam-mcp-server\/k8s\/minikube/);
   assert.match(ec2Verifier, /^#!\/usr\/bin\/env bash/m);

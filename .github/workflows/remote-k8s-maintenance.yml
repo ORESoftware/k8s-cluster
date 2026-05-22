@@ -31,6 +31,8 @@ on:
           - sync-agent-gh-pat
           - sync-agent-model-keys
           - verify-gleam-mcp-server
+          - bootstrap-thread-go-services
+          - verify-thread-go-services
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false

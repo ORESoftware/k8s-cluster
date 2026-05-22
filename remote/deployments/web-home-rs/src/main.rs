@@ -1532,6 +1532,7 @@ fn agents_threads_body() -> Markup {
                         p id="selected-subtitle" { "Pick a thread from the sidebar or start a new one." }
                     }
                     div class="row" {
+                        span id="container-state" class="pill warn clickable" role="button" tabindex="0" aria-busy="false" aria-live="polite" title="Container lifecycle state for the selected thread. Polls /api/agents/threads/:id/runtime every 10s. Click to probe now." { "container: no thread" }
                         a href="/agents/tasks" { "Diagnostics table" }
                         a href="/home" { "Service directory" }
                     }
@@ -1986,6 +1987,31 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       }
       .pill.warn { border-color: rgba(250, 204, 21, 0.4); color: var(--warn); }
       .pill.bad { border-color: rgba(251, 113, 133, 0.4); color: var(--danger); }
+      .pill.clickable {
+        cursor: pointer;
+        user-select: none;
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+      .pill.clickable:hover {
+        background: rgba(110, 231, 183, 0.12);
+        border-color: rgba(110, 231, 183, 0.55);
+      }
+      .pill.clickable.warn:hover {
+        background: rgba(250, 204, 21, 0.12);
+        border-color: rgba(250, 204, 21, 0.55);
+      }
+      .pill.clickable.bad:hover {
+        background: rgba(251, 113, 133, 0.12);
+        border-color: rgba(251, 113, 133, 0.55);
+      }
+      .pill.clickable:focus-visible {
+        outline: 2px solid rgba(110, 231, 183, 0.7);
+        outline-offset: 2px;
+      }
+      .pill.clickable.probing {
+        opacity: 0.7;
+        cursor: progress;
+      }
       .thread-list {
         display: grid;
         align-content: start;
@@ -2567,6 +2593,15 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         threadControlCollapsed: true,
         controlAnimationTimer: null,
         lastRuntimeErrorMessage: "",
+        containerStatePoll: null,
+        containerStatePolledThread: null,
+        containerStateLastKey: "",
+        containerStateRequestToken: 0,
+        containerStateAbortController: null,
+        containerStateFailureCount: 0,
+        containerStateLastFetchAt: 0,
+        containerStateLastManualAt: 0,
+        containerStateVisibilityBound: false,
       };
 
       const AGENT_TEXT_JOIN_DELAY_MS = 1200;
@@ -3483,6 +3518,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (thread?.baseBranch) $("base-branch").value = thread.baseBranch;
         if (!state.selectedTaskId) $("task-id").value = makeUuid();
         updateThreadMode();
+        syncContainerStatePolling();
       }
 
       function selectThread(threadId) {
@@ -4056,6 +4092,425 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return lines.join("\n");
       }
 
+      const CONTAINER_FAIL_REASONS = new Set([
+        "CrashLoopBackOff",
+        "ImagePullBackOff",
+        "ErrImagePull",
+        "InvalidImageName",
+        "CreateContainerConfigError",
+        "CreateContainerError",
+        "RunContainerError",
+      ]);
+      const CONTAINER_WARM_REASONS = new Set([
+        "ContainerCreating",
+        "PodInitializing",
+      ]);
+
+      function classifyContainerState(data, opts = {}) {
+        if (!data) {
+          return { label: "container: idle", kind: "warn", title: "Awaiting first runtime poll." };
+        }
+        const errors = Array.isArray(data.errors) ? data.errors : [];
+        if (errors.length) {
+          return {
+            label: "container: runtime error",
+            kind: "bad",
+            title: errors.join("\n"),
+          };
+        }
+        const summary = data.summary || {};
+        const deployment = data.deployment || {};
+        const pods = (Array.isArray(data.pods) ? data.pods : []).filter(
+          (pod) => pod && typeof pod === "object"
+        );
+        if (!deployment.name) {
+          const threadExists = Boolean(opts.threadExists);
+          return {
+            label: threadExists ? "container: non-existent" : "container: never-lived",
+            kind: "warn",
+            title: threadExists
+              ? "No Kubernetes Deployment found for this thread UUID. It may have been deleted or never created."
+              : "No Kubernetes Deployment exists for this thread UUID yet. Sending a task will create one.",
+          };
+        }
+        const containers = pods.flatMap((pod) => {
+          const podName = pod.name || "pod";
+          const init = (Array.isArray(pod.initContainers) ? pod.initContainers : []).filter(
+            (container) => container && typeof container === "object"
+          );
+          const main = (Array.isArray(pod.containers) ? pod.containers : []).filter(
+            (container) => container && typeof container === "object"
+          );
+          return [...init, ...main].map((container) => ({
+            podName,
+            podPhase: pod.phase || "Unknown",
+            name: container.name || "container",
+            ready: container.ready === true,
+            restartCount: container.restartCount || 0,
+            waiting: container.state?.waiting || null,
+            running: container.state?.running || null,
+            terminated: container.state?.terminated || null,
+          }));
+        });
+        const unscheduled = pods
+          .map((pod) => {
+            const conditions = Array.isArray(pod.conditions) ? pod.conditions : [];
+            return {
+              podName: pod.name || "pod",
+              condition: conditions.find((condition) =>
+                condition && condition.type === "PodScheduled" && condition.status === "False"
+              ),
+            };
+          })
+          .find((item) => item.condition);
+        if (unscheduled) {
+          const reason = unscheduled.condition.reason || "Unschedulable";
+          return {
+            label: `container: pending (${reason})`,
+            kind: "warn",
+            title: `${unscheduled.podName}: ${reason}${unscheduled.condition.message ? `: ${unscheduled.condition.message}` : ""}`,
+          };
+        }
+        const failed = containers.find((container) =>
+          (container.waiting && CONTAINER_FAIL_REASONS.has(container.waiting.reason || "")) ||
+          (container.terminated && container.terminated.exitCode && container.terminated.exitCode !== 0)
+        );
+        if (failed) {
+          const reason = failed.waiting?.reason || failed.terminated?.reason || `exit ${failed.terminated?.exitCode || "?"}`;
+          const detail = failed.waiting?.message || failed.terminated?.message || "";
+          return {
+            label: `container: dead (${reason})`,
+            kind: "bad",
+            title: `${failed.podName}/${failed.name}: ${detail || reason}`,
+          };
+        }
+        if (summary.desiredReplicas === 0) {
+          return {
+            label: "container: suspended",
+            kind: "warn",
+            title: "Deployment scaled to zero replicas (sleep/archive). Sending a task or merge action will wake it.",
+          };
+        }
+        if (summary.phase === "ready") {
+          const running = containers.find((container) => container.running?.startedAt)?.running?.startedAt;
+          return {
+            label: "container: running",
+            kind: "ok",
+            title: [
+              `${summary.readyPodCount || 0}/${summary.podCount || pods.length} pods ready`,
+              `${summary.availableReplicas || 0}/${summary.desiredReplicas || 0} replicas available`,
+              running ? `oldest running since ${running}` : null,
+            ].filter(Boolean).join("\n"),
+          };
+        }
+        const warming = containers.find((container) =>
+          container.waiting && CONTAINER_WARM_REASONS.has(container.waiting.reason || "")
+        );
+        if (warming) {
+          return {
+            label: `container: warming (${warming.waiting.reason})`,
+            kind: "warn",
+            title: `${warming.podName}/${warming.name}: ${warming.waiting.message || warming.waiting.reason}`,
+          };
+        }
+        if (summary.phase === "creating") {
+          return {
+            label: "container: cold-start",
+            kind: "warn",
+            title: "Deployment exists, pod not yet scheduled. First-time cold start is typically 30-90 seconds.",
+          };
+        }
+        if (summary.phase === "starting") {
+          return {
+            label: "container: starting",
+            kind: "warn",
+            title: `Pods scheduled, ${summary.readyPodCount || 0}/${summary.podCount || pods.length} ready.`,
+          };
+        }
+        return {
+          label: `container: ${summary.phase || "unknown"}`,
+          kind: "warn",
+          title: "",
+        };
+      }
+
+      function pillClassFromKind(kind) {
+        if (kind === "ok") return "pill";
+        if (kind === "bad") return "pill bad";
+        return "pill warn";
+      }
+
+      function containerStatePillClass(kind, probing) {
+        const classes = [pillClassFromKind(kind), "clickable"];
+        if (probing) classes.push("probing");
+        return classes.join(" ");
+      }
+
+      function setContainerStatePill(info) {
+        const node = $("container-state");
+        if (!node) return;
+        const next = info || { label: "container: no thread", kind: "warn", title: "Select a thread to see its container state. Click to probe now." };
+        const probing = Boolean(next.probing);
+        const disabled = !state.selectedThreadId;
+        const key = `${next.kind || "warn"}|${next.label || ""}|${next.title || ""}|${probing ? 1 : 0}|${disabled ? 1 : 0}`;
+        if (state.containerStateLastKey === key) return;
+        state.containerStateLastKey = key;
+        node.textContent = next.label || "container: unknown";
+        node.className = containerStatePillClass(next.kind, probing);
+        node.title = next.title || "";
+        node.setAttribute("aria-busy", probing ? "true" : "false");
+        node.setAttribute("aria-disabled", disabled ? "true" : "false");
+      }
+
+      function refreshContainerStatePill(data) {
+        const threadId = state.selectedThreadId;
+        if (!threadId) {
+          setContainerStatePill(null);
+          return;
+        }
+        setContainerStatePill(classifyContainerState(data, { threadExists: Boolean(existingThread(threadId)) }));
+      }
+
+      const CONTAINER_STATE_POLL_MS = 10000;
+      const CONTAINER_STATE_POLL_HIDDEN_MS = 60000;
+      const CONTAINER_STATE_FETCH_TIMEOUT_MS = 15000;
+      const CONTAINER_STATE_MANUAL_DEBOUNCE_MS = 500;
+      const CONTAINER_STATE_BACKOFF_BASE_MS = 5000;
+      const CONTAINER_STATE_BACKOFF_MAX_MS = 60000;
+      const CONTAINER_STATE_BACKOFF_CAP_EXP = 4;
+
+      function documentHidden() {
+        return typeof document !== "undefined" && document.visibilityState === "hidden";
+      }
+
+      function containerStatePollInterval() {
+        if (documentHidden()) return CONTAINER_STATE_POLL_HIDDEN_MS;
+        const failures = state.containerStateFailureCount || 0;
+        if (failures <= 0) return CONTAINER_STATE_POLL_MS;
+        const exp = Math.min(CONTAINER_STATE_BACKOFF_CAP_EXP, failures - 1);
+        return Math.min(CONTAINER_STATE_BACKOFF_MAX_MS, CONTAINER_STATE_BACKOFF_BASE_MS * Math.pow(2, exp));
+      }
+
+      function abortInflightContainerStateFetch() {
+        if (state.containerStateAbortController) {
+          try {
+            state.containerStateAbortController.abort();
+          } catch (_error) {}
+          state.containerStateAbortController = null;
+        }
+      }
+
+      const CONTAINER_STATE_TOOLTIP_MAX = 200;
+
+      function capContainerStateText(value) {
+        const text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+        if (text.length <= CONTAINER_STATE_TOOLTIP_MAX) return text;
+        return `${text.slice(0, CONTAINER_STATE_TOOLTIP_MAX - 1)}…`;
+      }
+
+      function applyContainerStateError(threadId, label, title) {
+        if (state.selectedThreadId !== threadId) return;
+        const suffix = state.containerStateFailureCount > 1
+          ? ` (${state.containerStateFailureCount} consecutive failures)`
+          : "";
+        setContainerStatePill({
+          label,
+          kind: "bad",
+          title: `${capContainerStateText(title)}${suffix}. Click to retry.`,
+        });
+      }
+
+      async function loadContainerState(threadId, opts = {}) {
+        if (!threadId) return null;
+        const manual = Boolean(opts.manual);
+        if (manual) {
+          const now = Date.now();
+          if (now - state.containerStateLastManualAt < CONTAINER_STATE_MANUAL_DEBOUNCE_MS) {
+            return null;
+          }
+          state.containerStateLastManualAt = now;
+        }
+        abortInflightContainerStateFetch();
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        state.containerStateAbortController = controller;
+        const token = ++state.containerStateRequestToken;
+        // Auto-polls keep the previous resolved label visible so screen readers (and the
+        // operator) are not nudged every 10s with "probing" -> "running" cycles. The probing
+        // pill is reserved for manual probes and the very first probe after thread selection.
+        const showProbingVisual = manual || !state.containerStateLastKey;
+        if (state.selectedThreadId === threadId && showProbingVisual) {
+          setContainerStatePill({
+            label: "container: probing",
+            kind: "warn",
+            title: `Probing runtime state for ${threadId}`,
+            probing: true,
+          });
+        }
+        const timeoutId = controller
+          ? window.setTimeout(() => {
+              try { controller.abort(); } catch (_error) {}
+            }, CONTAINER_STATE_FETCH_TIMEOUT_MS)
+          : null;
+        const isStale = () => token !== state.containerStateRequestToken;
+        const clearControllerIfCurrent = () => {
+          if (state.containerStateAbortController === controller) {
+            state.containerStateAbortController = null;
+          }
+        };
+        let response;
+        try {
+          response = await fetch(
+            `/api/agents/threads/${encodeURIComponent(threadId)}/runtime`,
+            controller
+              ? { cache: "no-store", credentials: "same-origin", signal: controller.signal }
+              : { cache: "no-store", credentials: "same-origin" },
+          );
+        } catch (error) {
+          if (timeoutId !== null) window.clearTimeout(timeoutId);
+          clearControllerIfCurrent();
+          if (isStale()) return null;
+          const aborted = controller && controller.signal && controller.signal.aborted;
+          state.containerStateFailureCount += 1;
+          applyContainerStateError(
+            threadId,
+            aborted ? "container: probe timed out" : "container: probe error",
+            aborted
+              ? `Runtime probe aborted after ${CONTAINER_STATE_FETCH_TIMEOUT_MS}ms`
+              : `Runtime probe network error: ${error?.message ? error.message : error}`,
+          );
+          throw error;
+        }
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        clearControllerIfCurrent();
+        if (isStale()) return null;
+        if (!response.ok) {
+          state.containerStateFailureCount += 1;
+          applyContainerStateError(
+            threadId,
+            `container: probe failed (${response.status})`,
+            `Runtime probe HTTP ${response.status}`,
+          );
+          throw new Error(`runtime request failed ${response.status}`);
+        }
+        let data;
+        try {
+          data = await response.json();
+        } catch (error) {
+          if (isStale()) return null;
+          state.containerStateFailureCount += 1;
+          applyContainerStateError(
+            threadId,
+            "container: invalid response",
+            "Runtime probe returned non-JSON body",
+          );
+          throw error;
+        }
+        if (isStale()) return null;
+        state.containerStateFailureCount = 0;
+        state.containerStateLastFetchAt = Date.now();
+        if (state.selectedThreadId === threadId) {
+          state.lastRuntimeData = data;
+          refreshContainerStatePill(data);
+        }
+        return data;
+      }
+
+      function refreshContainerStateNow() {
+        const threadId = state.selectedThreadId;
+        if (!threadId) {
+          setContainerStatePill(null);
+          return;
+        }
+        // Cancel any scheduled auto-poll up front so it cannot race the manual probe and
+        // abort it through the shared AbortController; the .finally() schedules a fresh
+        // poll cadence from this manual probe instead.
+        if (state.containerStatePoll) {
+          window.clearTimeout(state.containerStatePoll);
+          state.containerStatePoll = null;
+        }
+        loadContainerState(threadId, { manual: true })
+          .catch((error) => warnAdminDetail("container state manual probe failed", error))
+          .finally(() => scheduleNextContainerStatePoll(threadId));
+      }
+
+      function scheduleNextContainerStatePoll(threadId) {
+        if (state.containerStatePolledThread !== threadId) return;
+        if (state.selectedThreadId !== threadId) {
+          stopContainerStatePolling();
+          return;
+        }
+        if (state.containerStatePoll) {
+          window.clearTimeout(state.containerStatePoll);
+          state.containerStatePoll = null;
+        }
+        state.containerStatePoll = window.setTimeout(() => {
+          state.containerStatePoll = null;
+          if (state.selectedThreadId !== threadId) {
+            stopContainerStatePolling();
+            return;
+          }
+          loadContainerState(threadId)
+            .catch((error) => warnAdminDetail("container state probe failed", error))
+            .finally(() => scheduleNextContainerStatePoll(threadId));
+        }, containerStatePollInterval());
+      }
+
+      function stopContainerStatePolling() {
+        if (state.containerStatePoll) {
+          window.clearTimeout(state.containerStatePoll);
+          state.containerStatePoll = null;
+        }
+        state.containerStateRequestToken += 1;
+        abortInflightContainerStateFetch();
+        state.containerStatePolledThread = null;
+        state.containerStateFailureCount = 0;
+      }
+
+      function bindContainerStateVisibility() {
+        if (state.containerStateVisibilityBound) return;
+        if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+        state.containerStateVisibilityBound = true;
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState !== "visible") return;
+          const threadId = state.containerStatePolledThread;
+          if (!threadId || threadId !== state.selectedThreadId) return;
+          loadContainerState(threadId)
+            .catch((error) => warnAdminDetail("container state visibility probe failed", error))
+            .finally(() => scheduleNextContainerStatePoll(threadId));
+        });
+      }
+
+      function startContainerStatePolling(threadId) {
+        if (!threadId) {
+          stopContainerStatePolling();
+          setContainerStatePill(null);
+          return;
+        }
+        if (state.containerStatePolledThread === threadId && state.containerStatePoll) return;
+        stopContainerStatePolling();
+        bindContainerStateVisibility();
+        state.containerStatePolledThread = threadId;
+        setContainerStatePill({
+          label: "container: probing",
+          kind: "warn",
+          title: `Probing runtime state for ${threadId}`,
+          probing: true,
+        });
+        loadContainerState(threadId)
+          .catch((error) => warnAdminDetail("container state probe failed", error))
+          .finally(() => scheduleNextContainerStatePoll(threadId));
+      }
+
+      function syncContainerStatePolling() {
+        const threadId = state.selectedThreadId;
+        if (!threadId) {
+          stopContainerStatePolling();
+          setContainerStatePill(null);
+          return;
+        }
+        startContainerStatePolling(threadId);
+      }
+
       async function loadRuntimeState(threadId, render = true) {
         if (!threadId) return null;
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/runtime`, { cache: "no-store" });
@@ -4063,6 +4518,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const data = await response.json();
         const summary = workerRuntimeSummary(data);
         state.lastRuntimeData = data;
+        if (state.selectedThreadId === threadId) refreshContainerStatePill(data);
         if (render && summary !== state.lastRuntimeSummary) {
           state.lastRuntimeSummary = summary;
           renderEventRow({
@@ -4625,6 +5081,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("terminal-close").addEventListener("click", (event) => {
         event.stopPropagation();
         closeInlineTerminal();
+      });
+      $("container-state").addEventListener("click", refreshContainerStateNow);
+      $("container-state").addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        refreshContainerStateNow();
       });
       $("new-thread").addEventListener("click", () => {
         state.selectedThreadId = makeUuid();

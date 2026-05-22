@@ -184,10 +184,12 @@ It does not expose write-capable telemetry, Kubernetes, AWS, or secret-managemen
 operations. The deployment includes a NetworkPolicy that permits ingress from the
 gateway, the dev-server supervisor (`app: dd-dev-server-api`), per-thread agent
 worker pods (`app.kubernetes.io/part-of: dd-remote-dev` +
-`app.kubernetes.io/component: thread-pod`), and metrics scrapers in the
-`observability` namespace; DNS egress, bounded egress to observability and NATS
-telemetry ports, Kubernetes API egress on TCP 443, and database egress for
-future read-only PG-backed MCP tools.
+`app.kubernetes.io/component: thread-pod`), metrics scrapers in the
+`observability` namespace, and warm worker containers managed by
+`dd-container-pool` (RFC1918 `ipBlock` on :8090 for sources arriving on
+the node host network — see below); DNS egress, bounded egress to
+observability and NATS telemetry ports, Kubernetes API egress on TCP 443,
+and database egress for future read-only PG-backed MCP tools.
 
 If you add a new in-cluster MCP caller, give its pod template one of those
 labels (or extend the NetworkPolicy ingress in
@@ -196,6 +198,17 @@ The most common symptom of a missing entry is the OpenAI Agents SDK runner
 emitting `openai-sdk: MCP server dd_cluster unavailable at
 http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp` because the TCP
 SYN is dropped at the CNI before reaching the MCP pod.
+
+`dd-container-pool` itself runs with `hostNetwork: true` and spawns warm worker
+containers (Node.js chat/Claude workers, Rust runtimes, etc.) via
+`nerdctl run --network host`, so those workers share the EC2 node's network
+namespace and reach the cluster from the host IP rather than a pod identity. To
+keep them reachable, the `dd-gleam-mcp-server` NetworkPolicy includes a
+secondary ingress rule that whitelists RFC1918 (`10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`) on TCP 8090. Auth posture is preserved
+because the `/mcp` JSON-RPC surface is intentionally read-only and the
+ops/runtime-config paths still require `X-Server-Auth
+(RUNTIME_CONFIG_SERVER_SECRET)`.
 
 ## Kubernetes
 
