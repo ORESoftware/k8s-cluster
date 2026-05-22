@@ -102,6 +102,40 @@ const CODEGEN_METADATA = {
         },
       },
     },
+    agent_remote_dev_breadcrumbs: {
+      description: "Thread-scoped operational breadcrumbs (session-ready, prompt, merge-base, container-pool-result, etc.) used by dev-server to inject prior-task context and by operators to trace worker lifecycle without grepping logs. Postgres is the durable single source of truth for these; Redis (see @dd/redis-interfaces / agent-thread-breadcrumb-cache) is an optional hot-read cache.",
+      names: {
+        typescript: "agentRemoteDevBreadcrumbs",
+        rust: "AgentRemoteDevBreadcrumb",
+        gleam: "AgentRemoteDevBreadcrumb",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        kind: {
+          validation: {
+            minLength: 1,
+            maxLength: 80,
+          },
+        },
+        pod_name: {
+          validation: {
+            maxLength: 253,
+          },
+        },
+        branch: {
+          validation: {
+            maxLength: 120,
+          },
+        },
+        provider: {
+          validation: {
+            maxLength: 60,
+          },
+        },
+      },
+    },
     agent_remote_dev_artifacts: {
       description: "Artifacts published by remote agent tasks, such as logs, reports, patches, and output files.",
       names: {

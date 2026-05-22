@@ -217,6 +217,26 @@ class AgentRemoteDevEventTable extends Table {
   };
 }
 
+@DataClassName("AgentRemoteDevBreadcrumbData")
+class AgentRemoteDevBreadcrumbTable extends Table {
+  @override String get tableName => "agent_remote_dev_breadcrumbs";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  TextColumn get threadId => text().named("thread_id").customConstraint("UUID")();
+  TextColumn get taskId => text().named("task_id").nullable().customConstraint("UUID")();
+  TextColumn get kind => text().named("kind").withLength(max: 80)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get emittedAt => dateTime().named("emitted_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get podName => text().named("pod_name").withLength(max: 253).nullable()();
+  TextColumn get branch => text().named("branch").withLength(max: 120).nullable()();
+  TextColumn get provider => text().named("provider").withLength(max: 60).nullable()();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("AgentRemoteDevArtifactData")
 class AgentRemoteDevArtifactTable extends Table {
   @override String get tableName => "agent_remote_dev_artifacts";
@@ -479,6 +499,7 @@ const List<Type> registeredDriftTables = <Type>[
   AgentRemoteDevThreadTable,
   AgentRemoteDevTaskTable,
   AgentRemoteDevEventTable,
+  AgentRemoteDevBreadcrumbTable,
   AgentRemoteDevArtifactTable,
   AgentRemoteDevRuntimeLockTable,
   LambdaFunctionTable,

@@ -194,6 +194,23 @@ model AgentRemoteDevEvent {
   @@map("agent_remote_dev_events")
 }
 
+model AgentRemoteDevBreadcrumb {
+  id BigInt @id @default(autoincrement()) @db.BigInt
+  threadId String @map("thread_id") @db.Uuid
+  taskId String? @map("task_id") @db.Uuid
+  kind String @db.VarChar(80)
+  payload Json @default("{}")
+  emittedAt DateTime @map("emitted_at") @default(now()) @db.Timestamptz(6)
+  podName String? @map("pod_name") @db.VarChar(253)
+  branch String? @db.VarChar(120)
+  provider String? @db.VarChar(60)
+  @@index([threadId, emittedAt], map: "agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx")
+  // agent_remote_dev_breadcrumbs_task_id_emitted_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([emittedAt], map: "agent_remote_dev_breadcrumbs_emitted_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("agent_remote_dev_breadcrumbs")
+}
+
 model AgentRemoteDevArtifact {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   taskId String @map("task_id") @db.Uuid

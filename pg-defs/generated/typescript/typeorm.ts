@@ -398,6 +398,40 @@ export class AgentRemoteDevEventEntity {
 
 }
 
+// agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_breadcrumbs_task_id_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_breadcrumbs_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "agent_remote_dev_breadcrumbs" })
+export class AgentRemoteDevBreadcrumbEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "thread_id", type: "uuid" })
+  threadId!: string;
+
+  @Column({ name: "task_id", type: "uuid", nullable: true })
+  taskId!: string | null;
+
+  @Column({ name: "kind", type: "varchar", length: 80 })
+  kind!: string;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "emitted_at", type: "timestamptz", default: () => "now()" })
+  emittedAt!: Date;
+
+  @Column({ name: "pod_name", type: "varchar", length: 253, nullable: true })
+  podName!: string | null;
+
+  @Column({ name: "branch", type: "varchar", length: 120, nullable: true })
+  branch!: string | null;
+
+  @Column({ name: "provider", type: "varchar", length: 60, nullable: true })
+  provider!: string | null;
+
+}
+
 // agent_remote_dev_artifacts_task_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // agent_remote_dev_artifacts_thread_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // agent_remote_dev_artifacts_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

@@ -511,6 +511,31 @@ pub fn validate_agent_remote_dev_events_slug(value: String) -> Result(String, St
   }
 }
 
+pub const agent_remote_dev_breadcrumbs_table = "agent_remote_dev_breadcrumbs"
+pub const agent_remote_dev_breadcrumbs_select_sql = "select\n      id,\n      thread_id::text as thread_id,\n      task_id::text as task_id,\n      kind,\n      payload::text as payload_json,\n      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as emitted_at,\n      pod_name,\n      branch,\n      provider\n    from agent_remote_dev_breadcrumbs"
+
+pub type AgentRemoteDevBreadcrumbRow {
+  AgentRemoteDevBreadcrumbRow(
+    id: Int,
+    thread_id: String,
+    task_id: Option(String),
+    kind: String,
+    payload_json: String,
+    emitted_at: String,
+    pod_name: Option(String),
+    branch: Option(String),
+    provider: Option(String),
+  )
+}
+
+pub fn validate_agent_remote_dev_breadcrumbs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("agent_remote_dev_breadcrumbs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const agent_remote_dev_artifacts_table = "agent_remote_dev_artifacts"
 pub const agent_remote_dev_artifacts_select_sql = "select\n      id::text as id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      filename,\n      content_type,\n      size_bytes,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      url,\n      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as signed_url_expires_at,\n      sha256,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_artifacts"
 

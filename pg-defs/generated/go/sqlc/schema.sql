@@ -372,6 +372,38 @@ create index if not exists agent_remote_dev_events_thread_id_created_at_idx
 create index if not exists agent_remote_dev_events_created_at_idx
   on agent_remote_dev_events (created_at desc);
 
+create table if not exists agent_remote_dev_breadcrumbs (
+  id bigserial primary key,
+  thread_id uuid not null,
+  task_id uuid,
+  kind varchar(80) not null,
+  payload jsonb default '{}'::jsonb not null,
+  emitted_at timestamptz default now() not null,
+  pod_name varchar(253),
+  branch varchar(120),
+  provider varchar(60),
+  constraint agent_remote_dev_breadcrumbs_kind_format_chk
+    check (kind ~ '^[A-Za-z0-9._:-]{1,80}$'),
+  constraint agent_remote_dev_breadcrumbs_payload_object_chk
+    check (jsonb_typeof(payload) = 'object'),
+  constraint agent_remote_dev_breadcrumbs_pod_name_size_chk
+    check (pod_name is null or octet_length(pod_name) <= 253),
+  constraint agent_remote_dev_breadcrumbs_branch_size_chk
+    check (branch is null or octet_length(branch) <= 120),
+  constraint agent_remote_dev_breadcrumbs_provider_size_chk
+    check (provider is null or octet_length(provider) <= 60)
+);
+
+create index if not exists agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx
+  on agent_remote_dev_breadcrumbs (thread_id, emitted_at desc);
+
+create index if not exists agent_remote_dev_breadcrumbs_task_id_emitted_at_idx
+  on agent_remote_dev_breadcrumbs (task_id, emitted_at desc)
+  where task_id is not null;
+
+create index if not exists agent_remote_dev_breadcrumbs_emitted_at_idx
+  on agent_remote_dev_breadcrumbs (emitted_at desc);
+
 create table if not exists agent_remote_dev_artifacts (
   id uuid primary key default gen_random_uuid(),
   task_id uuid not null,

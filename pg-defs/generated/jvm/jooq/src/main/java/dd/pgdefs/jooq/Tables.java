@@ -158,6 +158,18 @@ public final class Tables {
     public static final Field<JSONB> AGENT_REMOTE_DEV_EVENTS_PAYLOAD = DSL.field(DSL.name("agent_remote_dev_events", "payload"), SQLDataType.JSONB);
     public static final Field<OffsetDateTime> AGENT_REMOTE_DEV_EVENTS_CREATED_AT = DSL.field(DSL.name("agent_remote_dev_events", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name AGENT_REMOTE_DEV_BREADCRUMBS_NAME = DSL.name("agent_remote_dev_breadcrumbs");
+    public static final Table<org.jooq.Record> AGENT_REMOTE_DEV_BREADCRUMBS = DSL.table(AGENT_REMOTE_DEV_BREADCRUMBS_NAME);
+    public static final Field<Long> AGENT_REMOTE_DEV_BREADCRUMBS_ID = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "id"), SQLDataType.BIGINT);
+    public static final Field<UUID> AGENT_REMOTE_DEV_BREADCRUMBS_THREAD_ID = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "thread_id"), SQLDataType.UUID);
+    public static final Field<UUID> AGENT_REMOTE_DEV_BREADCRUMBS_TASK_ID = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "task_id"), SQLDataType.UUID);
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_KIND = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "kind"), SQLDataType.VARCHAR(80));
+    public static final Field<JSONB> AGENT_REMOTE_DEV_BREADCRUMBS_PAYLOAD = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> AGENT_REMOTE_DEV_BREADCRUMBS_EMITTED_AT = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "emitted_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_POD_NAME = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "pod_name"), SQLDataType.VARCHAR(253));
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_BRANCH = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "branch"), SQLDataType.VARCHAR(120));
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_PROVIDER = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "provider"), SQLDataType.VARCHAR(60));
+
     public static final Name AGENT_REMOTE_DEV_ARTIFACTS_NAME = DSL.name("agent_remote_dev_artifacts");
     public static final Table<org.jooq.Record> AGENT_REMOTE_DEV_ARTIFACTS = DSL.table(AGENT_REMOTE_DEV_ARTIFACTS_NAME);
     public static final Field<UUID> AGENT_REMOTE_DEV_ARTIFACTS_ID = DSL.field(DSL.name("agent_remote_dev_artifacts", "id"), SQLDataType.UUID);

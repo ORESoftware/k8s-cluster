@@ -280,6 +280,30 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "agent_remote_dev_breadcrumbs")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    #[sea_orm(column_name = "thread_id")]
+    pub thread_id: Uuid,
+    #[sea_orm(column_name = "task_id")]
+    pub task_id: Option<Uuid>,
+    pub kind: String,
+    pub payload: Json,
+    #[sea_orm(column_name = "emitted_at")]
+    pub emitted_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "pod_name")]
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_artifacts")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]

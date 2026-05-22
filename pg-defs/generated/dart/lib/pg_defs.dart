@@ -781,6 +781,76 @@ class AgentRemoteDevEventRow {
   }
 }
 
+const agentRemoteDevBreadcrumbTable = "agent_remote_dev_breadcrumbs";
+const agentRemoteDevBreadcrumbSelectSql = "select\n      id,\n      thread_id::text as thread_id,\n      task_id::text as task_id,\n      kind,\n      payload::text as payload_json,\n      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as emitted_at,\n      pod_name,\n      branch,\n      provider\n    from agent_remote_dev_breadcrumbs";
+
+class AgentRemoteDevBreadcrumbRow {
+  const AgentRemoteDevBreadcrumbRow({
+    required this.id,
+    required this.threadId,
+    this.taskId,
+    required this.kind,
+    required this.payload,
+    required this.emittedAt,
+    this.podName,
+    this.branch,
+    this.provider,
+  });
+
+  final int id;
+  final String threadId;
+  final String? taskId;
+  final String kind;
+  final Map<String, Object?> payload;
+  final String emittedAt;
+  final String? podName;
+  final String? branch;
+  final String? provider;
+
+  factory AgentRemoteDevBreadcrumbRow.fromJson(Map<String, Object?> json) {
+    return AgentRemoteDevBreadcrumbRow(
+      id: _readRequiredInt(json, "id"),
+      threadId: _readRequiredString(json, "threadId"),
+      taskId: _readOptionalString(json, "taskId"),
+      kind: _readRequiredString(json, "kind"),
+      payload: _readRequiredObject(json, "payload"),
+      emittedAt: _readRequiredString(json, "emittedAt"),
+      podName: _readOptionalString(json, "podName"),
+      branch: _readOptionalString(json, "branch"),
+      provider: _readOptionalString(json, "provider"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "threadId": threadId,
+    "taskId": taskId,
+    "kind": kind,
+    "payload": payload,
+    "emittedAt": emittedAt,
+    "podName": podName,
+    "branch": branch,
+    "provider": provider,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(kind)) {
+      errors.add("agent_remote_dev_breadcrumbs.kind does not match the required pattern");
+    }
+    if (podName != null && utf8.encode(podName!).length > 253) {
+      errors.add("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes");
+    }
+    if (branch != null && utf8.encode(branch!).length > 120) {
+      errors.add("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes");
+    }
+    if (provider != null && utf8.encode(provider!).length > 60) {
+      errors.add("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes");
+    }
+    return errors;
+  }
+}
+
 const agentRemoteDevArtifactTable = "agent_remote_dev_artifacts";
 const agentRemoteDevArtifactSelectSql = "select\n      id::text as id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      filename,\n      content_type,\n      size_bytes,\n      storage_provider,\n      storage_bucket,\n      storage_key,\n      url,\n      to_char(signed_url_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as signed_url_expires_at,\n      sha256,\n      meta::text as meta_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_artifacts";
 
