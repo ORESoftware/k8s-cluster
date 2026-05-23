@@ -29,6 +29,7 @@ const ContractsSolanaResultsSubject = "dd.remote.contracts.solana.results"
 // Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 // Service: dd-contract-service
 const ContractsSolanaValidateSubject = "dd.remote.contracts.solana.validate"
+const ContractsSolanaValidateQueueGroup = "dd-contract-service"
 
 // Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.
 // Service: dd-remote-rest-api
@@ -42,6 +43,11 @@ const DesResultsSubject = "dd.remote.des.results"
 // Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT.
 // Service: dd-ai-ml-pipeline
 const DesSimulateSubject = "dd.remote.des.simulate"
+const DesSimulateQueueGroup = "dd-des-simulator"
+
+// Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
+// Service: shared
+const GitReposChangesSubject = "dd.remote.git-repos.changes"
 
 // Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
 // Service: dd-gleam-lambda-runner
@@ -54,6 +60,7 @@ const LambdasResultsSubject = "dd.remote.lambdas.results"
 // MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 // Service: dd-ai-ml-pipeline
 const MdpOptimizeSubject = "dd.remote.mdp.optimize"
+const MdpOptimizeQueueGroup = "dd-mdp-optimizer"
 
 // MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
 // Service: dd-ai-ml-pipeline
@@ -95,6 +102,7 @@ const TradingOrderIntentsSubject = "dd.remote.trading.order_intents"
 // Inbound market signals consumed by the trading server. Default for TRADING_SIGNAL_SUBJECT.
 // Service: dd-trading-server
 const TradingSignalsSubject = "dd.remote.trading.signals"
+const TradingSignalsQueueGroup = "dd-trading-server"
 
 // WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
 // Service: shared
@@ -138,6 +146,51 @@ func ParseCdcRowChangeSubject(subject string) (*CdcRowChangeSubjectParts, bool) 
 				parts.Table = s
 			case "op":
 				parts.Op = s
+			default:
+				return nil, false
+			}
+			continue
+		}
+		if p != s {
+			return nil, false
+		}
+	}
+	return parts, true
+}
+
+// Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.
+// Service: dd-wal-gateway
+const CdcTableFilterPattern = "{prefix}.{schema}.{table}.>"
+const CdcTableFilterWildcard = "{prefix}.>"
+const CdcTableFilterStream = "CDC"
+type CdcTableFilterSubjectParts struct {
+	Prefix string
+	Schema string
+	Table string
+}
+
+func CdcTableFilterSubject(prefix string, schema string, table string) string {
+	return fmt.Sprintf("%s.%s.%s.>", prefix, schema, table)
+}
+
+func ParseCdcTableFilterSubject(subject string) (*CdcTableFilterSubjectParts, bool) {
+	patternTokens := strings.Split("{prefix}.{schema}.{table}.>", ".")
+	subjectTokens := strings.Split(subject, ".")
+	if len(patternTokens) != len(subjectTokens) {
+		return nil, false
+	}
+	parts := &CdcTableFilterSubjectParts{}
+	for i, p := range patternTokens {
+		s := subjectTokens[i]
+		if strings.HasPrefix(p, "{") && strings.HasSuffix(p, "}") {
+			name := p[1 : len(p)-1]
+			switch name {
+			case "prefix":
+				parts.Prefix = s
+			case "schema":
+				parts.Schema = s
+			case "table":
+				parts.Table = s
 			default:
 				return nil, false
 			}

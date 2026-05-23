@@ -20,6 +20,7 @@ pub const CONTRACTS_SOLANA_RESULTS_SUBJECT: &str = "dd.remote.contracts.solana.r
 /// Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 /// Service: dd-contract-service
 pub const CONTRACTS_SOLANA_VALIDATE_SUBJECT: &str = "dd.remote.contracts.solana.validate";
+pub const CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP: &str = "dd-contract-service";
 
 /// Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.
 /// Service: dd-remote-rest-api
@@ -33,6 +34,11 @@ pub const DES_RESULTS_SUBJECT: &str = "dd.remote.des.results";
 /// Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 pub const DES_SIMULATE_SUBJECT: &str = "dd.remote.des.simulate";
+pub const DES_SIMULATE_QUEUE_GROUP: &str = "dd-des-simulator";
+
+/// Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
+/// Service: shared
+pub const GIT_REPOS_CHANGES_SUBJECT: &str = "dd.remote.git-repos.changes";
 
 /// Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
 /// Service: dd-gleam-lambda-runner
@@ -45,6 +51,7 @@ pub const LAMBDAS_RESULTS_SUBJECT: &str = "dd.remote.lambdas.results";
 /// MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 pub const MDP_OPTIMIZE_SUBJECT: &str = "dd.remote.mdp.optimize";
+pub const MDP_OPTIMIZE_QUEUE_GROUP: &str = "dd-mdp-optimizer";
 
 /// MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
 /// Service: dd-ai-ml-pipeline
@@ -86,6 +93,7 @@ pub const TRADING_ORDER_INTENTS_SUBJECT: &str = "dd.remote.trading.order_intents
 /// Inbound market signals consumed by the trading server. Default for TRADING_SIGNAL_SUBJECT.
 /// Service: dd-trading-server
 pub const TRADING_SIGNALS_SUBJECT: &str = "dd.remote.trading.signals";
+pub const TRADING_SIGNALS_QUEUE_GROUP: &str = "dd-trading-server";
 
 /// WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
 /// Service: shared
@@ -141,6 +149,53 @@ pub fn parse_cdc_row_change_subject(subject: &str) -> Option<CdcRowChangeSubject
         schema: schema?,
         table: table?,
         op: op?,
+    })
+}
+
+/// Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.
+/// Service: dd-wal-gateway
+pub const CDC_TABLE_FILTER_PATTERN: &str = "{prefix}.{schema}.{table}.>";
+pub const CDC_TABLE_FILTER_WILDCARD: &str = "{prefix}.>";
+pub const CDC_TABLE_FILTER_STREAM: &str = "CDC";
+pub fn cdc_table_filter_subject(prefix: &str, schema: &str, table: &str) -> String {
+    format!("{}.{}.{}.>", prefix, schema, table)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CdcTableFilterSubjectParts {
+    pub prefix: String,
+    pub schema: String,
+    pub table: String,
+}
+
+pub fn parse_cdc_table_filter_subject(subject: &str) -> Option<CdcTableFilterSubjectParts> {
+    let pattern_tokens: &[&str] = &["{prefix}", "{schema}", "{table}", ">"];
+    let subject_tokens: Vec<&str> = subject.split('.').collect();
+    let mut prefix: Option<String> = None;
+    let mut schema: Option<String> = None;
+    let mut table: Option<String> = None;
+    let mut si: usize = 0;
+    for tok in pattern_tokens.iter() {
+        if tok.starts_with('{') && tok.ends_with('}') {
+            if si >= subject_tokens.len() { return None; }
+            let name = &tok[1..tok.len()-1];
+            match name {
+                "prefix" => { prefix = Some(subject_tokens[si].to_string()); }
+                "schema" => { schema = Some(subject_tokens[si].to_string()); }
+                "table" => { table = Some(subject_tokens[si].to_string()); }
+                _ => return None,
+            }
+            si += 1;
+            continue;
+        }
+        if si >= subject_tokens.len() || subject_tokens[si] != *tok { return None; }
+        si += 1;
+    }
+    if si != subject_tokens.len() { return None; }
+    Some(CdcTableFilterSubjectParts {
+        prefix: prefix?,
+        schema: schema?,
+        table: table?,
     })
 }
 

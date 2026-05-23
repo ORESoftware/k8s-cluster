@@ -41,6 +41,7 @@
         "description": "MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.",
         "kind": "static",
         "subject": "dd.remote.mdp.optimize",
+        "queueGroup": "dd-mdp-optimizer",
         "direction": "both"
       },
       {
@@ -55,6 +56,7 @@
         "description": "Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT.",
         "kind": "static",
         "subject": "dd.remote.des.simulate",
+        "queueGroup": "dd-des-simulator",
         "direction": "both"
       },
       {

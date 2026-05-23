@@ -22,6 +22,20 @@
         ],
         "direction": "both",
         "stream": "CDC"
+      },
+      {
+        "name": "CdcTableFilter",
+        "description": "Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.",
+        "kind": "parameterized",
+        "pattern": "{prefix}.{schema}.{table}.>",
+        "wildcard": "{prefix}.>",
+        "params": [
+          { "name": "prefix", "type": "string", "description": "Subject prefix (default 'cdc')." },
+          { "name": "schema", "type": "string", "description": "Postgres schema (e.g. 'public')." },
+          { "name": "table", "type": "string", "description": "Postgres table name." }
+        ],
+        "direction": "subscribe",
+        "stream": "CDC"
       }
     ],
     "streams": [
