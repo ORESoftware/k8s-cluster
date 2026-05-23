@@ -1,23 +1,27 @@
-/// One file = the full body of work that runs *inside* a per-connection
-/// session isolate.
+/// Session runtime + host isolate entry point.
 ///
-/// The shape is deliberately Phoenix-ish: every connected WebSocket peer is
-/// matched 1:1 with a Dart `Isolate` (BEAM process analogue) that owns:
+/// The shape used to be deliberately Phoenix-ish: one [Isolate] per
+/// connected WebSocket peer. That gave perfect crash isolation but cost
+/// ~290 KB per session in heap/event-loop overhead and capped a single
+/// pod at ~3K connections before main-isolate spawn churn saturated the
+/// liveness probe (see the 20K loadtest writeup).
 ///
-///   * a private mutable state record (counters, last-seen, etc.)
-///   * a private RxDart broadcast stream of decoded inbound events
-///   * an outbound channel back to the main isolate (HTTP/WS bridge)
-///   * pg-style topic subscriptions via [BusJoin] / [BusPublish]
+/// New shape: a small pool of "session-host" isolates, each running N
+/// sessions side-by-side as plain Dart objects inside one event loop. N
+/// is configurable (`SESSIONS_PER_HOST`, default 100, range 1..2000).
+/// Each session still owns its private RxDart graph, mutable state
+/// record, and outbound SendPort — only the *isolate* boundary is now
+/// shared across N peers.
 ///
-/// Killing the isolate kills the session. Crashing it is contained: the
-/// supervisor on the main isolate observes the exit port and tears down the
-/// associated WebSocket. Nothing else in the process is affected.
+/// `Session` (the class) is intentionally isolate-agnostic: instantiate
+/// it on any isolate, feed inbound events into [Session.deliver], and
+/// it pushes outbound frames through the SendPort it was constructed
+/// with. The host loop in [hostIsolateEntry] just multiplexes incoming
+/// `AttachSession` / `RouteToSession` / `DetachSession` messages into
+/// the right `Session` instance.
 ///
 /// HTML for HTMX OOB swaps is produced by **Jaspr components** (see
-/// `wss_components.dart`) — never by string concatenation. Each pipeline
-/// builds a typed `Component`, which Jaspr then renders to a properly
-/// escaped HTML fragment. That gives us composability, unit-testability,
-/// and zero manual `htmlEscape` callsites.
+/// `wss_components.dart`) — never by string concatenation.
 library;
 
 import 'dart:async';
@@ -40,38 +44,88 @@ const String _lobbyTopic = 'lobby';
 const String _presenceTopic = 'presence';
 const String _convListTopic = 'conv-list';
 
-Future<void> isolateSessionEntry(SendPort handshakePort) async {
+/// Entry point for a session-host isolate. Receives a one-time handshake
+/// SendPort, replies with its own mailbox, then loops forever multiplexing
+/// `AttachSession` / `RouteToSession` / `DetachSession` frames coming in
+/// from the supervisor on the main isolate.
+///
+/// Errors raised inside one session are swallowed here so a panic in
+/// session A cannot kill sessions B..N sharing the same host. Spawn the
+/// host with `errorsAreFatal: false`; the supervisor still watches the
+/// error / exit ports and tears down all attached sessions on a hard
+/// host-level failure.
+Future<void> hostIsolateEntry(SendPort handshakePort) async {
   ensureJasprInit();
 
-  final mailbox = ReceivePort();
+  final mailbox = ReceivePort('dd-dart-host-mailbox');
   handshakePort.send(mailbox.sendPort);
 
-  final iter = StreamIterator<dynamic>(mailbox);
-  if (!await iter.moveNext()) return;
+  final sessions = <String, Session>{};
 
-  final bootRaw = iter.current;
-  if (bootRaw is! SessionBootMessage) {
-    throw StateError('isolate boot frame was not a SessionBootMessage');
-  }
-  final boot = bootRaw;
-  final outbound = boot.outbound as SendPort;
-
-  final session = _Session(boot, outbound);
-  try {
-    await session.run(iter);
-  } finally {
-    await iter.cancel();
-    mailbox.close();
+  await for (final raw in mailbox) {
+    try {
+      if (raw is AttachSession) {
+        final session = Session(raw.boot);
+        sessions[raw.boot.sessionId] = session;
+        unawaited(() async {
+          try {
+            await session.run();
+          } catch (_) {
+            // Session-level error — already logged via the outbound
+            // MetricEvent path inside Session. Swallow to keep the host
+            // alive for sibling sessions.
+          } finally {
+            sessions.remove(raw.boot.sessionId);
+          }
+        }());
+      } else if (raw is RouteToSession) {
+        sessions[raw.sessionId]?.deliver(raw.event);
+      } else if (raw is DetachSession) {
+        final s = sessions.remove(raw.sessionId);
+        s?.requestShutdown();
+      } else if (raw == _hostShutdownSentinel) {
+        for (final s in sessions.values) {
+          s.requestShutdown();
+        }
+        sessions.clear();
+        mailbox.close();
+        return;
+      }
+    } catch (_) {
+      // Defensive: never let a malformed frame from main kill the host.
+    }
   }
 }
 
-class _Session {
-  _Session(this._boot, this._outbound);
+/// Sentinel the supervisor can send to a host mailbox to ask it to drain
+/// all sessions and exit cleanly.
+const String _hostShutdownSentinel = '__host_shutdown__';
+
+/// Asks a host mailbox to gracefully shut down (drain sessions, return).
+void requestHostShutdown(SendPort hostMailbox) {
+  hostMailbox.send(_hostShutdownSentinel);
+}
+
+/// One connected WebSocket peer's worth of state and behaviour. Lives
+/// entirely on whichever isolate constructed it; communication with the
+/// outside world goes through:
+///
+///   * [deliver] — push an [InboundEvent] (WS frame OR bus delivery)
+///     onto the session's private inbox stream.
+///   * `boot.outbound` — a SendPort owned by the supervisor; the session
+///     writes [OutboundFrame]s here and the supervisor dispatches them
+///     to the WebSocket / metrics / EventBus / presence index.
+class Session {
+  Session(this._boot);
 
   final SessionBootMessage _boot;
-  final SendPort _outbound;
+  late final SendPort _outbound = _boot.outbound as SendPort;
 
-  final _inbound = PublishSubject<HtmxInbound>();
+  /// Per-session inbox. Filled by the host's mailbox loop in response
+  /// to `RouteToSession` frames; drained by [run].
+  final _inbox = StreamController<dynamic>(sync: false);
+
+  final _inboundHtmx = PublishSubject<HtmxInbound>();
   final _busInbound = PublishSubject<BusDelivery>();
 
   /// Counter widget value (per-session).
@@ -111,14 +165,29 @@ class _Session {
 
   Timer? _ticker;
   final _subs = <StreamSubscription<dynamic>>[];
+  bool _disposed = false;
 
-  Future<void> run(StreamIterator<dynamic> iter) async {
+  /// Push an inbound event (WS frame or bus delivery) into the session.
+  /// Safe to call from the host's mailbox loop. Drops cleanly after
+  /// `_dispose()` has run.
+  void deliver(dynamic event) {
+    if (_inbox.isClosed) return;
+    _inbox.add(event);
+  }
+
+  /// Ask the session to drain and exit. The mailbox loop in [run] sees
+  /// the [_shutdownSentinel] and breaks. Idempotent.
+  void requestShutdown() {
+    if (_inbox.isClosed) return;
+    _inbox.add(_shutdownSentinel);
+  }
+
+  Future<void> run() async {
     _wirePipelines();
     _joinTopics();
     await _emitGreeting();
 
-    while (await iter.moveNext()) {
-      final raw = iter.current;
+    await for (final raw in _inbox.stream) {
       if (raw is InboundEvent) {
         switch (raw) {
           case InboundText(:final payload):
@@ -204,7 +273,7 @@ class _Session {
     );
 
     // HTMX inbound → state.
-    _subs.add(_inbound.listen(_handleHtmxTrigger));
+    _subs.add(_inboundHtmx.listen(_handleHtmxTrigger));
 
     // Bus inbound → state mutations.
     _subs.add(_busInbound.listen(_handleBusDelivery));
@@ -266,7 +335,7 @@ class _Session {
       unawaited(_emitFragment(const StatusPill('non-json frame ignored')));
       return;
     }
-    _inbound.add(parsed);
+    _inboundHtmx.add(parsed);
   }
 
   void _send(OutboundFrame frame) => _outbound.send(frame);
@@ -484,6 +553,8 @@ class _Session {
   }
 
   Future<void> _dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     _ticker?.cancel();
     _send(BusPublish(
       topic: _lobbyTopic,
@@ -499,7 +570,7 @@ class _Session {
         await sub.cancel();
       } catch (_) {/* swallow */}
     }
-    await _inbound.close();
+    await _inboundHtmx.close();
     await _busInbound.close();
     await _counter.close();
     await _history.close();
@@ -508,12 +579,7 @@ class _Session {
     await _activeConv.close();
     await _convMessages.close();
     await _convDirectory.close();
+    if (!_inbox.isClosed) await _inbox.close();
     _send(const MetricEvent('dart_sessions_closed_total'));
   }
-}
-
-/// Convenience: the supervisor calls this to wake an isolate's mailbox loop
-/// in its dispose path. Sends a sentinel object the loop knows to break on.
-void requestSessionShutdown(SendPort sessionPort) {
-  sessionPort.send('__shutdown__');
 }

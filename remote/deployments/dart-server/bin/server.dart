@@ -1,6 +1,23 @@
 /// dd-dart-server process entry point.
 ///
-/// One process, one main isolate, N session isolates (one per WebSocket).
+/// Isolate topology
+/// ----------------
+///   * **Gateway (main isolate, 1)** — owns `HttpServer.bind`, every HTTP
+///     route handler (`/healthz`, `/readyz`, `/metrics`, `/dart/pages/*`,
+///     `/dart/app/*`, `/dart/mobile/*`, `/dart/assets/*`), the WSS
+///     upgrade path, the per-WS socket reader/writer pumps, and the
+///     supervisor state (`EventBus`, `Presence`, `ConversationRegistry`).
+///     **All HTTP requests share this single isolate** — there is no
+///     HTTP request fanout. HTTP work never runs on a session-host
+///     isolate.
+///   * **Session-host pool (M isolates)** — each owns up to
+///     `SESSIONS_PER_HOST` (default 100, range 1..2000) WebSocket
+///     session runtimes as plain Dart objects sharing one event loop.
+///     Hosts are spawned lazily by `SessionSupervisor` as load arrives;
+///     `M = ceil(connections / SESSIONS_PER_HOST)`.
+///
+/// Setting `SESSIONS_PER_HOST=1` reproduces the legacy
+/// one-isolate-per-WebSocket model for direct A/B comparison.
 ///
 /// Routes:
 ///   GET  /healthz            — liveness probe
@@ -9,7 +26,7 @@
 ///   GET  /                   — 302 → /dart/pages
 ///   GET  /dart/pages         — Jaspr SSR home
 ///   GET  /dart/pages/*       — Jaspr SSR routed pages
-///   GET  /dart/wss           — WebSocket upgrade → per-connection isolate
+///   GET  /dart/wss           — WebSocket upgrade → routed onto a session-host isolate
 ///   GET  /dart/app           — Flutter web SPA index.html
 ///   GET  /dart/app/*         — Flutter web SPA (with index.html fallback)
 ///   GET  /dart/mobile        — Mobile-optimized Flutter web bundle index.html
@@ -50,6 +67,10 @@ Future<void> main(List<String> args) async {
       Platform.environment['MOBILE_STATIC_DIR'] ?? './mobile-public';
   final ready = Platform.environment['READY_AT_BOOT'] != 'false';
   final hotReloadEnabled = Platform.environment['HOT_RELOAD'] == 'true';
+  final sessionsPerHost = int.tryParse(
+        Platform.environment['SESSIONS_PER_HOST'] ?? '',
+      ) ??
+      kDefaultSessionsPerHost;
   final watchPaths = (Platform.environment['HOT_RELOAD_PATHS'] ?? 'lib,bin')
       .split(',')
       .map((s) => s.trim())
@@ -89,6 +110,7 @@ Future<void> main(List<String> args) async {
     bus: bus,
     presence: presence,
     conversations: conversations,
+    sessionsPerHost: sessionsPerHost,
   );
   final staticFiles = StaticFileServer(Directory(staticDirPath));
   final mobileStaticFiles = StaticFileServer(
@@ -99,6 +121,13 @@ Future<void> main(List<String> args) async {
   metrics
     ..registerGauge('dart_sessions_live', () => supervisor.liveCount)
     ..registerGauge('dart_sessions_spawned', () => supervisor.spawnedTotal)
+    ..registerGauge('dart_session_hosts_live', () => supervisor.hostCount)
+    ..registerGauge(
+        'dart_session_hosts_spawned', () => supervisor.hostsSpawnedTotal)
+    ..registerGauge('dart_session_hosts_terminated',
+        () => supervisor.hostsTerminatedTotal)
+    ..registerGauge(
+        'dart_sessions_per_host_cap', () => supervisor.sessionsPerHost)
     ..registerGauge('dart_eventbus_topics', () => bus.topicCount)
     ..registerGauge('dart_eventbus_sessions', () => bus.sessionCount)
     ..registerGauge('dart_eventbus_total_joins', () => bus.totalJoinCount)
@@ -148,6 +177,8 @@ Future<void> main(List<String> args) async {
     'static_dir': staticDirPath,
     'mobile_static_dir': mobileStaticDirPath,
     'ready': ready,
+    'sessions_per_host_requested': sessionsPerHost,
+    'sessions_per_host_effective': supervisor.sessionsPerHost,
   }));
 
   ProcessSignal.sigterm.watch().listen((_) async {

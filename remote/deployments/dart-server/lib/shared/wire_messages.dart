@@ -245,3 +245,41 @@ final class ConversationDelete extends OutboundFrame {
   const ConversationDelete(this.conversationId);
   final String conversationId;
 }
+
+// ---------------------------------------------------------------------------
+// Host-pool routing (main isolate ↔ session-host isolate)
+// ---------------------------------------------------------------------------
+//
+// `SessionSupervisor` keeps a pool of "session-host" isolates. Each host
+// owns N sessions (N configurable, default 100). Host mailboxes accept
+// these three message types. `_Session` instances inside the host never
+// see them directly — the host's run loop demultiplexes onto per-session
+// inbox streams.
+
+/// Tells a host to instantiate a new in-host `_Session` from [boot] and
+/// start its pipelines. The session's `outbound` SendPort is reused from
+/// [boot], same as in the legacy 1-isolate-per-session model, so the
+/// supervisor's outbound listener doesn't need any changes.
+final class AttachSession {
+  const AttachSession(this.boot);
+  final SessionBootMessage boot;
+}
+
+/// Tells a host to dispose the session identified by [sessionId]. Idempotent.
+/// Triggers the session's normal `_dispose` path, which emits "left"
+/// announcements on the lobby/conv topics before unwinding RxDart.
+final class DetachSession {
+  const DetachSession(this.sessionId);
+  final String sessionId;
+}
+
+/// Forwards an [InboundEvent] (raw WS frames AND `BusDelivery`s) to a
+/// specific session inside the host. The host looks up the session by
+/// id and pushes the event onto its per-session inbox. Unknown ids are
+/// silently dropped (covers the race between detach-decided-on-main and
+/// in-flight forwards).
+final class RouteToSession {
+  const RouteToSession({required this.sessionId, required this.event});
+  final String sessionId;
+  final InboundEvent event;
+}

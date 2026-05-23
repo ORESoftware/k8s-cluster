@@ -2,15 +2,16 @@
 ///
 /// Conceptually mirrors Erlang's [`:pg`](https://www.erlang.org/doc/man/pg)
 /// process-group registry: any session can `join(topic)` and any session
-/// can `publish(topic, ...)` to fan a payload out to every joiner. The
-/// difference is that "process" here means a Dart `Isolate` (one per
-/// WebSocket), and "send" here means putting a [BusDelivery] onto that
-/// isolate's mailbox SendPort.
+/// can `publish(topic, ...)` to fan a payload out to every joiner.
 ///
-/// The bus lives on the main isolate. Sessions never address each other
-/// directly; they only know topic names. This keeps the SendPort topology
-/// star-shaped (every session ↔ bridge) which is the only topology the
-/// bridge can actually pump frames over.
+/// In the host-pool architecture each session lives inside one of M
+/// session-host isolates; the bus does not address sessions directly but
+/// addresses `(hostMailbox, sessionId)` pairs. Each registered "mailbox"
+/// is the SendPort of the session-host isolate that owns the session,
+/// and every delivery is wrapped in [RouteToSession] so the host can
+/// demultiplex. This lets sessions sharing a host receive bus events
+/// independently while keeping the SendPort topology star-shaped from
+/// the bus's perspective.
 ///
 /// Threading / concurrency model
 /// -----------------------------
@@ -36,9 +37,13 @@ import '../shared/wire_messages.dart';
 import 'metrics.dart';
 
 class _Subscriber {
-  _Subscriber(this.sessionId, this.mailbox);
+  _Subscriber(this.sessionId, this.hostMailbox);
   final String sessionId;
-  final SendPort mailbox;
+
+  /// SendPort of the session-host isolate that owns [sessionId]. The
+  /// bus pushes `RouteToSession(sessionId, BusDelivery(...))` onto this
+  /// port; the host's mailbox loop demultiplexes per-session.
+  final SendPort hostMailbox;
 }
 
 class EventBus {
@@ -54,7 +59,9 @@ class EventBus {
   /// disconnect.
   final _bySession = <String, Set<String>>{};
 
-  /// sessionId → mailbox SendPort (the session isolate's receive port).
+  /// sessionId → host-mailbox SendPort (the session-host isolate that
+  /// currently owns the session). May get rewritten if the supervisor
+  /// ever migrates a session between hosts; never null while registered.
   final _mailboxes = <String, SendPort>{};
 
   /// Live event log for observability. The metrics endpoint and tests can
@@ -89,10 +96,12 @@ class EventBus {
       _bySession[sessionId] ?? const <String>{};
 
   /// Register a session with the bus. Must be called once per session,
-  /// before any join/publish from that session is processed. The bus only
-  /// remembers the SendPort; teardown is the supervisor's responsibility.
-  void register(String sessionId, SendPort mailbox) {
-    _mailboxes[sessionId] = mailbox;
+  /// before any join/publish from that session is processed. [hostMailbox]
+  /// is the SendPort of the session-host isolate that currently owns the
+  /// session; the bus only stores the reference and lets the supervisor
+  /// drive teardown.
+  void register(String sessionId, SendPort hostMailbox) {
+    _mailboxes[sessionId] = hostMailbox;
     _bySession[sessionId] ??= <String>{};
     metrics.inc('dart_eventbus_register_total');
     _events.add(EventBusChange.register(sessionId));
@@ -116,12 +125,12 @@ class EventBus {
 
   /// Add [sessionId] to [topic]'s member list. Idempotent.
   void join(String sessionId, String topic) {
-    final mailbox = _mailboxes[sessionId];
-    if (mailbox == null) return;
+    final hostMailbox = _mailboxes[sessionId];
+    if (hostMailbox == null) return;
     final joined = _bySession[sessionId] ??= <String>{};
     if (!joined.add(topic)) return; // already joined
     final list = _topics.putIfAbsent(topic, () => <_Subscriber>[]);
-    list.add(_Subscriber(sessionId, mailbox));
+    list.add(_Subscriber(sessionId, hostMailbox));
     metrics.inc('dart_eventbus_join_total');
     _events.add(EventBusChange.join(sessionId, topic));
   }
@@ -167,11 +176,14 @@ class EventBus {
     for (final sub in list) {
       if (!includeSelf && sub.sessionId == fromSessionId) continue;
       try {
-        sub.mailbox.send(delivery);
+        sub.hostMailbox.send(RouteToSession(
+          sessionId: sub.sessionId,
+          event: delivery,
+        ));
         delivered++;
       } catch (_) {
         // SendPort lifetime is owned by the supervisor. If the receiver
-        // isolate has already exited the send is a no-op; we ignore.
+        // host isolate has already exited the send is a no-op; we ignore.
       }
     }
     metrics.inc('dart_eventbus_publish_total');

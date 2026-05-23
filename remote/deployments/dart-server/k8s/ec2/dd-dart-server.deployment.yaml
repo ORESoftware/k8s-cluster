@@ -23,7 +23,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-22-prebuilt-image'
+        dd.dev/code-revision: '2026-05-23-host-pool-architecture'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -62,6 +62,13 @@ spec:
               value: /opt/dd-dart-server/mobile-public
             - name: READY_AT_BOOT
               value: 'true'
+            # Host-pool tuning: how many WebSocket sessions share one
+            # session-host isolate. 100 is the conservative default; the
+            # supervisor lazily spawns hosts up to ceil(connections/100).
+            # Range 1..2000. Setting 1 reproduces the legacy
+            # one-isolate-per-session behaviour for A/B comparison.
+            - name: SESSIONS_PER_HOST
+              value: '100'
           ports:
             - name: http
               containerPort: 8089
@@ -87,11 +94,13 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
-          # NOTE: limits sized for the 20K-WS load test against /dart/wss
-          # (one Dart isolate per session). The single-EC2-node cluster has
-          # 123 GiB RAM available, so 32 GiB is well within budget while
-          # leaving room for everything else. Drop these back to 1 CPU /
-          # 384 Mi after the comparison run if you don't need the headroom.
+          # NOTE: limits sized for the 20K-WS load test against /dart/wss.
+          # The host-pool architecture is dramatically lighter than the
+          # legacy 1-isolate-per-session model (≈ 200 hosts at default
+          # SESSIONS_PER_HOST=100 vs 20K isolates), but we keep the same
+          # ceiling for direct A/B comparison. Drop these back to
+          # 1 CPU / 384 Mi after the comparison run if you don't need
+          # the headroom.
           resources:
             requests:
               cpu: '1'

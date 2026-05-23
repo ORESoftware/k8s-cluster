@@ -1,28 +1,33 @@
-/// Phoenix-style per-connection supervisor.
+/// Host-pool session supervisor.
 ///
-/// Lives on the main isolate. For each accepted WebSocket it:
+/// Lives on the main isolate. Maintains a small pool of "session-host"
+/// isolates spawned lazily as load arrives. Each host runs up to
+/// [SessionSupervisor.sessionsPerHost] sessions side-by-side as plain
+/// Dart objects in one event loop (see `Session` in `isolate_session.dart`).
 ///
-///   1. Spawns a fresh session isolate (`isolateSessionEntry`).
-///   2. Performs the SendPort handshake.
-///   3. Sends a [SessionBootMessage] to the isolate.
-///   4. Pumps WS inbound frames into the isolate as [InboundEvent]s.
-///   5. Pumps [OutboundFrame]s coming out of the isolate back into the WS
-///      (or into the metrics aggregator / pg-style EventBus / Presence /
-///      ConversationRegistry, depending on type).
-///   6. Cleans up on disconnect / error / `errorsAreFatal` exit.
+/// For each accepted WebSocket the supervisor:
 ///
-/// The supervisor never blocks one session on another: each connection owns
-/// its own isolate and its own RxDart graph.
+///   1. Picks the least-loaded host that still has free capacity, or
+///      spawns a fresh host if none exist / all are full.
+///   2. Creates a per-session outbound `ReceivePort`, sends an
+///      `AttachSession(boot)` to the host where `boot.outbound` points
+///      at that ReceivePort's SendPort.
+///   3. Pumps WS inbound frames into the host as `RouteToSession(...)`.
+///   4. Pumps `OutboundFrame`s coming back on the per-session
+///      ReceivePort into the WS / metrics aggregator / EventBus /
+///      Presence / ConversationRegistry, exactly as before.
+///   5. Cleans up on disconnect / host-error / host-exit.
 ///
-/// In addition to per-session plumbing, the supervisor owns the
+/// The `adopt(...)` API and the OutboundFrame protocol are unchanged
+/// from the original 1-isolate-per-session implementation. Only the
+/// "where the session runtime actually executes" knob has changed.
+///
+/// In addition to per-session plumbing, the supervisor still owns the
 /// integration glue that keeps the four main-isolate stores consistent:
 ///
 ///   * [EventBus]              — pubsub / fanout topology
 ///   * [Presence]              — userId ↔ sessionId index
 ///   * [ConversationRegistry]  — conversations / members / recent-msgs cache
-///
-/// Sessions only ever talk to the supervisor (via OutboundFrame) and to
-/// each other through the bus.
 library;
 
 import 'dart:async';
@@ -46,25 +51,55 @@ const String presenceTopic = 'presence';
 /// directory" mutate (created/deleted, message counts).
 const String conversationListTopic = 'conv-list';
 
+/// Default capacity per host isolate. Override with `SESSIONS_PER_HOST`.
+const int kDefaultSessionsPerHost = 100;
+
+/// Hard floor / ceiling for the per-host capacity. Tuning under 10 makes
+/// the host pool degenerate into "almost one isolate per session"; over
+/// 2000 the per-host event loop saturation we just escaped from comes
+/// back, since 2K RxDart graphs on one isolate do real work per tick.
+const int kMinSessionsPerHost = 1;
+const int kMaxSessionsPerHost = 2000;
+
 class SessionSupervisor {
   SessionSupervisor({
     required this.metrics,
     required this.bus,
     required this.presence,
     required this.conversations,
-  });
+    int sessionsPerHost = kDefaultSessionsPerHost,
+  }) : sessionsPerHost = sessionsPerHost
+            .clamp(kMinSessionsPerHost, kMaxSessionsPerHost);
 
   final Metrics metrics;
   final EventBus bus;
   final Presence presence;
   final ConversationRegistry conversations;
 
+  /// Maximum sessions one session-host isolate is allowed to own. The
+  /// supervisor lazily spawns a new host when all existing hosts are
+  /// at this cap.
+  final int sessionsPerHost;
+
+  final _hosts = <_HostState>[];
+
   final _liveCount = BehaviorSubject<int>.seeded(0);
   int _spawnedTotal = 0;
+  int _hostsSpawnedTotal = 0;
+  int _hostsTerminatedTotal = 0;
 
   Stream<int> get liveCountStream => _liveCount.stream;
   int get liveCount => _liveCount.value;
   int get spawnedTotal => _spawnedTotal;
+
+  /// Number of session-host isolates currently alive.
+  int get hostCount => _hosts.where((h) => !h.dead).length;
+
+  /// Total session-host isolates ever spawned in this process.
+  int get hostsSpawnedTotal => _hostsSpawnedTotal;
+
+  /// Total session-host isolates that have exited (clean or otherwise).
+  int get hostsTerminatedTotal => _hostsTerminatedTotal;
 
   Future<void> adopt(
     WebSocket socket, {
@@ -73,17 +108,14 @@ class SessionSupervisor {
     required String requestPath,
     required Map<String, String> headers,
   }) async {
-    final handshake = ReceivePort('dd-dart-handshake-$sessionId');
-    final outbound = ReceivePort('dd-dart-outbound-$sessionId');
-    final exit = ReceivePort('dd-dart-exit-$sessionId');
-    final error = ReceivePort('dd-dart-error-$sessionId');
+    // Pick or spawn a host BEFORE we start mutating session-scoped state
+    // — if Isolate.spawn fails we want a clean error.
+    final host = await _acquireHost();
 
-    Isolate? isolate;
-    SendPort? sessionMailbox;
+    final outbound = ReceivePort('dd-dart-outbound-$sessionId');
+
     StreamSubscription<dynamic>? inboundSub;
     StreamSubscription<dynamic>? outboundSub;
-    StreamSubscription<dynamic>? exitSub;
-    StreamSubscription<dynamic>? errorSub;
     var teardownStarted = false;
     final done = Completer<void>();
 
@@ -116,25 +148,18 @@ class SessionSupervisor {
       bus.unregister(sessionId);
       _liveCount.add((_liveCount.value - 1).clamp(0, 1 << 30));
 
+      // Detach from host BEFORE we close ports so any in-flight bus
+      // delivery has somewhere to land. The host is allowed to silently
+      // drop after the session is removed from its routing table.
+      host.detach(sessionId);
+
       try {
         await inboundSub?.cancel();
       } catch (_) {/* swallow */}
       try {
         await outboundSub?.cancel();
       } catch (_) {/* swallow */}
-      try {
-        await exitSub?.cancel();
-      } catch (_) {/* swallow */}
-      try {
-        await errorSub?.cancel();
-      } catch (_) {/* swallow */}
-      handshake.close();
       outbound.close();
-      exit.close();
-      error.close();
-      try {
-        isolate?.kill(priority: Isolate.beforeNextEvent);
-      } catch (_) {/* swallow */}
       try {
         if (socket.readyState != WebSocket.closed) {
           await socket.close(1000, why);
@@ -143,52 +168,47 @@ class SessionSupervisor {
       if (!done.isCompleted) done.complete();
     }
 
-    try {
-      isolate = await Isolate.spawn<SendPort>(
-        isolateSessionEntry,
-        handshake.sendPort,
-        debugName: 'dd-dart-session-$sessionId',
-        errorsAreFatal: true,
-        onExit: exit.sendPort,
-        onError: error.sendPort,
-      );
-    } catch (e) {
-      metrics.inc('dart_sessions_spawn_failed_total');
-      await teardown('spawn_failed:$e');
-      rethrow;
-    }
-
-    _spawnedTotal++;
-    _liveCount.add(_liveCount.value + 1);
-    metrics.inc('dart_sessions_spawned_total');
-
-    sessionMailbox = (await handshake.first) as SendPort;
-
-    // Pre-register with the bus + presence index BEFORE handing the boot
-    // message to the isolate, so the session can issue BusJoin /
-    // ConversationJoin synchronously during its bootstrap.
-    bus.register(sessionId, sessionMailbox);
-    presence.bind(
-      sessionId,
-      _anonymousUserIdFor(sessionId),
-      displayName: _anonymousDisplayNameFor(sessionId),
-    );
-
-    sessionMailbox.send(SessionBootMessage(
+    final boot = SessionBootMessage(
       sessionId: sessionId,
       remoteAddr: remoteAddr,
       requestPath: requestPath,
       headers: headers,
       outbound: outbound.sendPort,
       spawnedAtUs: DateTime.now().microsecondsSinceEpoch,
-    ));
+    );
+
+    // Pre-register with the bus + presence index BEFORE handing the
+    // attach message to the host, so the session can issue BusJoin /
+    // ConversationJoin synchronously during its bootstrap and have
+    // those land on the supervisor in order.
+    bus.register(sessionId, host.mailbox);
+    presence.bind(
+      sessionId,
+      _anonymousUserIdFor(sessionId),
+      displayName: _anonymousDisplayNameFor(sessionId),
+    );
+
+    // Route this session's lifetime to the host so the supervisor can
+    // tear down the WS if the host isolate ever dies.
+    host.attach(sessionId, () => unawaited(teardown('host_failed')));
+    _spawnedTotal++;
+    _liveCount.add(_liveCount.value + 1);
+    metrics.inc('dart_sessions_spawned_total');
+
+    host.mailbox.send(AttachSession(boot));
 
     inboundSub = socket.listen(
       (data) {
         if (data is String) {
-          sessionMailbox?.send(InboundText(data));
+          host.mailbox.send(RouteToSession(
+            sessionId: sessionId,
+            event: InboundText(data),
+          ));
         } else if (data is List<int>) {
-          sessionMailbox?.send(InboundBinary(_asUint8List(data)));
+          host.mailbox.send(RouteToSession(
+            sessionId: sessionId,
+            event: InboundBinary(_asUint8List(data)),
+          ));
         }
       },
       onError: (Object err, StackTrace st) {
@@ -196,7 +216,10 @@ class SessionSupervisor {
         unawaited(teardown('ws_error:$err'));
       },
       onDone: () {
-        sessionMailbox?.send(InboundClosed(socket.closeCode, socket.closeReason));
+        host.mailbox.send(RouteToSession(
+          sessionId: sessionId,
+          event: InboundClosed(socket.closeCode, socket.closeReason),
+        ));
         unawaited(teardown('ws_done'));
       },
       cancelOnError: true,
@@ -247,20 +270,111 @@ class SessionSupervisor {
       }
     });
 
-    exitSub = exit.listen((_) {
-      unawaited(teardown('isolate_exit'));
-    });
-    errorSub = error.listen((err) {
-      metrics.inc('dart_sessions_isolate_error_total');
-      unawaited(teardown('isolate_error:$err'));
-    });
-
     socket.done.whenComplete(() {
       if (!done.isCompleted) {
         unawaited(teardown('socket_done'));
       }
     });
     return done.future;
+  }
+
+  // ---- Host-pool management ---------------------------------------------
+
+  /// Returns a host with at least one free slot, spawning a new one if
+  /// every existing host is dead or full. Increments the host's reserved
+  /// count synchronously so concurrent adopt() calls don't oversubscribe.
+  Future<_HostState> _acquireHost() async {
+    _HostState? best;
+    for (final h in _hosts) {
+      if (h.dead) continue;
+      if (h.sessionCount + h.pendingAttaches >= sessionsPerHost) continue;
+      if (best == null ||
+          h.sessionCount + h.pendingAttaches <
+              best.sessionCount + best.pendingAttaches) {
+        best = h;
+      }
+    }
+    if (best != null) {
+      best.pendingAttaches++;
+      return best;
+    }
+    final fresh = await _spawnHost();
+    fresh.pendingAttaches++;
+    return fresh;
+  }
+
+  Future<_HostState> _spawnHost() async {
+    final hostId = _hostsSpawnedTotal;
+    final handshake = ReceivePort('dd-dart-host-handshake-$hostId');
+    final exit = ReceivePort('dd-dart-host-exit-$hostId');
+    final error = ReceivePort('dd-dart-host-error-$hostId');
+
+    Isolate isolate;
+    try {
+      isolate = await Isolate.spawn<SendPort>(
+        hostIsolateEntry,
+        handshake.sendPort,
+        debugName: 'dd-dart-session-host-$hostId',
+        // Sessions inside a host swallow their own errors. We only kill
+        // the host on a truly hard failure, in which case the supervisor
+        // observes via `error` / `exit` and tears down all attached
+        // sessions.
+        errorsAreFatal: true,
+        onExit: exit.sendPort,
+        onError: error.sendPort,
+      );
+    } catch (e) {
+      handshake.close();
+      exit.close();
+      error.close();
+      metrics.inc('dart_session_hosts_spawn_failed_total');
+      rethrow;
+    }
+
+    final mailbox = (await handshake.first) as SendPort;
+    handshake.close();
+
+    final state = _HostState(
+      hostId: hostId,
+      isolate: isolate,
+      mailbox: mailbox,
+    );
+    _hosts.add(state);
+    _hostsSpawnedTotal++;
+    metrics.inc('dart_session_hosts_spawned_total');
+
+    state.exitSub = exit.listen((_) {
+      _markHostDead(state, 'exit');
+      exit.close();
+    });
+    state.errorSub = error.listen((err) {
+      metrics.inc('dart_session_hosts_error_total');
+      _markHostDead(state, 'error:$err');
+      error.close();
+    });
+
+    return state;
+  }
+
+  void _markHostDead(_HostState host, String reason) {
+    if (host.dead) return;
+    host.dead = true;
+    _hostsTerminatedTotal++;
+    metrics.inc('dart_session_hosts_terminated_total');
+    // Snapshot then iterate; teardown callbacks will mutate the map.
+    final attached = host.attachments.entries.toList(growable: false);
+    host.attachments.clear();
+    for (final entry in attached) {
+      try {
+        entry.value();
+      } catch (_) {/* swallow */}
+    }
+    try {
+      host.exitSub?.cancel();
+    } catch (_) {/* swallow */}
+    try {
+      host.errorSub?.cancel();
+    } catch (_) {/* swallow */}
   }
 
   // ---- Identity / conversation handlers ---------------------------------
@@ -465,7 +579,64 @@ class SessionSupervisor {
   // ---- Lifecycle --------------------------------------------------------
 
   Future<void> close() async {
+    for (final host in _hosts) {
+      if (host.dead) continue;
+      try {
+        requestHostShutdown(host.mailbox);
+      } catch (_) {/* swallow */}
+      host.dead = true;
+      try {
+        host.exitSub?.cancel();
+      } catch (_) {/* swallow */}
+      try {
+        host.errorSub?.cancel();
+      } catch (_) {/* swallow */}
+      try {
+        host.isolate.kill(priority: Isolate.beforeNextEvent);
+      } catch (_) {/* swallow */}
+    }
+    _hosts.clear();
     await _liveCount.close();
+  }
+}
+
+class _HostState {
+  _HostState({
+    required this.hostId,
+    required this.isolate,
+    required this.mailbox,
+  });
+
+  final int hostId;
+  final Isolate isolate;
+  final SendPort mailbox;
+
+  /// `sessionId → teardown callback`. The supervisor invokes the
+  /// callback when the host dies so each session's WebSocket is closed
+  /// cleanly even though the runtime that was driving it is gone.
+  final attachments = <String, void Function()>{};
+
+  /// Counts adopt() calls that reserved a slot but haven't yet fully
+  /// attached. Prevents oversubscription when many adopts race in.
+  int pendingAttaches = 0;
+
+  bool dead = false;
+  StreamSubscription<dynamic>? exitSub;
+  StreamSubscription<dynamic>? errorSub;
+
+  int get sessionCount => attachments.length;
+
+  void attach(String sessionId, void Function() onHostFailure) {
+    attachments[sessionId] = onHostFailure;
+    if (pendingAttaches > 0) pendingAttaches--;
+  }
+
+  void detach(String sessionId) {
+    if (attachments.remove(sessionId) == null) return;
+    if (dead) return;
+    try {
+      mailbox.send(DetachSession(sessionId));
+    } catch (_) {/* swallow */}
   }
 }
 
