@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod connections;
 pub mod customers;
 pub mod health;
@@ -14,6 +15,7 @@ pub mod webhooks;
 
 use axum::Router;
 use axum::http::StatusCode;
+use axum::middleware;
 use axum::routing::{get, post};
 use std::time::Duration;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -24,6 +26,18 @@ use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     let admin_enabled = state.cfg.admin_ui_enabled;
+    let api_auth = auth::ApiAuth::from_config(&state.cfg);
+    if api_auth.bearer.is_none() {
+        // Single boot-time warning so operators know they're in
+        // open-API mode. Production manifests inject the bearer via
+        // SealedSecrets; this catches the misconfig.
+        tracing::warn!(
+            "BILLING_API_AUTH_BEARER is unset — JSON API is unauthenticated. \
+             Set it for any reachable-from-network deployment."
+        );
+    } else {
+        tracing::info!("JSON API bearer auth enabled");
+    }
 
     let mut router = Router::new()
         .route("/healthz", get(health::healthz))
@@ -156,6 +170,10 @@ pub fn build_router(state: AppState) -> Router {
             "/v1/tenants/{tenant_id}/notification-dispatches",
             get(notifications::list_dispatches),
         )
+        .layer(middleware::from_fn_with_state(
+            api_auth.clone(),
+            auth::require_api_auth,
+        ))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,

@@ -84,6 +84,7 @@ pub async fn sync_revolut(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({
                                     "revolut_last_seen_at": ts.to_rfc3339()
@@ -109,6 +110,7 @@ pub async fn sync_revolut(
     if let Some(ts) = newest_seen {
         ctx.connections
             .merge_metadata(
+                conn.tenant_id,
                 conn.id,
                 serde_json::json!({
                     "revolut_last_seen_at": ts.to_rfc3339()

@@ -16,6 +16,7 @@ use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::config::Config;
 use crate::error::{AppError, AppResult};
 use crate::scheduler::{JobContext, JobHandler, JobOutput};
 use crate::shard::Region;
@@ -27,13 +28,19 @@ use super::types::*;
 pub struct RuleEvaluatorJob {
     pool: PgPool,
     notifications: Arc<NotificationService>,
+    cfg: Arc<Config>,
 }
 
 impl RuleEvaluatorJob {
-    pub fn new(pool: PgPool, notifications: Arc<NotificationService>) -> Self {
+    pub fn new(
+        pool: PgPool,
+        notifications: Arc<NotificationService>,
+        cfg: Arc<Config>,
+    ) -> Self {
         Self {
             pool,
             notifications,
+            cfg,
         }
     }
 }
@@ -111,12 +118,13 @@ impl JobHandler for RuleEvaluatorJob {
                         )
                         .await?;
 
+                    let block_private = self.cfg.block_private_outbound;
                     let result = match rule.channel {
                         NotificationChannel::Webhook => {
-                            deliver_webhook(&rule.target, &m.payload, None).await
+                            deliver_webhook(&rule.target, &m.payload, None, block_private).await
                         }
                         NotificationChannel::Slack => {
-                            deliver_slack(&rule.target, &m.payload, None).await
+                            deliver_slack(&rule.target, &m.payload, None, block_private).await
                         }
                         NotificationChannel::Email => {
                             deliver_email(&rule.target, &m.payload, None).await

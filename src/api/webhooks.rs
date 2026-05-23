@@ -14,7 +14,6 @@ use axum::http::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::providers::connection::ProviderConnection;
@@ -33,13 +32,17 @@ use crate::providers::{
 };
 use crate::state::AppState;
 
+/// Public webhook acknowledgement. We deliberately do NOT include the
+/// resolved `tenant_id`, `connection_id`, or even the synthesized
+/// event-id in the response: returning those let a probing attacker
+/// enumerate valid identifiers by sending crafted bodies.
+///
+/// Internally the full mapping is logged via tracing for ops, and
+/// stored in `webhook_events` for the dispatcher. Providers only need
+/// "did you receive this?" — `{"received": true}`.
 #[derive(Serialize)]
 pub struct Ack {
     pub received: bool,
-    pub event_id: Option<String>,
-    pub signature_ok: bool,
-    pub tenant_id: Option<Uuid>,
-    pub connection_id: Option<Uuid>,
 }
 
 pub async fn stripe(
@@ -245,17 +248,35 @@ async fn record_event(
     .execute(&state.pool)
     .await?;
 
-    if state.cfg.require_webhook_signatures && !signature_ok {
-        return Err(AppError::Unauthorized);
+    if state.cfg.require_webhook_signatures {
+        if !signature_ok {
+            return Err(AppError::Unauthorized);
+        }
+        // In strict mode we additionally insist on a tenant-bound
+        // connection. Otherwise a globally-signed provider payload
+        // (Stripe Connect, Plaid, …) could be accepted with
+        // `tenant_id = NULL` and processed by a downstream system
+        // that has no way to map it back to its owner.
+        if connection_id.is_none() {
+            tracing::warn!(
+                provider = provider.tag(),
+                event_id = %external_event_id,
+                external_account_id = ?external_account_id,
+                "strict mode: refused webhook with no tenant-bound connection"
+            );
+            return Err(AppError::Unauthorized);
+        }
     }
 
-    Ok(Json(Ack {
-        received: true,
-        event_id: Some(external_event_id),
+    tracing::debug!(
+        provider = provider.tag(),
+        event_id = %external_event_id,
         signature_ok,
-        tenant_id,
-        connection_id,
-    }))
+        tenant_id = ?tenant_id,
+        connection_id = ?connection_id,
+        "webhook accepted"
+    );
+    Ok(Json(Ack { received: true }))
 }
 
 async fn verify_delivery(
@@ -695,6 +716,23 @@ fn payload_sha_payload(payload: &Value) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // ---- public ack shape -------------------------------------------
+
+    /// The ack is the public face of every webhook endpoint. It is
+    /// intentionally a single field so we don't leak resolved
+    /// tenant/connection IDs to senders who may be probing.
+    #[test]
+    fn ack_serialises_to_received_only() {
+        let ack = Ack { received: true };
+        let s = serde_json::to_value(&ack).unwrap();
+        assert_eq!(s, json!({ "received": true }));
+        // Explicit defense: no tenant_id / connection_id keys, ever.
+        assert!(s.get("tenant_id").is_none());
+        assert!(s.get("connection_id").is_none());
+        assert!(s.get("event_id").is_none());
+        assert!(s.get("signature_ok").is_none());
+    }
 
     // ---- event_id extraction ----------------------------------------
 

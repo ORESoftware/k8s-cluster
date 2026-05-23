@@ -58,11 +58,23 @@ pub struct PostTxResp {
 pub async fn post_transaction(
     State(state): State<AppState>,
     Path(tenant_id): Path<Uuid>,
-    Json(mut draft): Json<DraftTransaction>,
+    Json(draft): Json<DraftTransaction>,
 ) -> AppResult<Json<PostTxResp>> {
-    if draft.tenant_id != tenant_id {
-        draft.tenant_id = tenant_id;
+    // Defense in depth: refuse rather than silently rewrite. A body
+    // tenant_id that disagrees with the path almost always signals a
+    // bug in the caller (which they want to know about) or an attempt
+    // to write into another tenant (which we want to reject loudly).
+    //
+    // Nil UUIDs in the body are tolerated because clients sometimes
+    // omit the field; serde fills it with `Uuid::nil()`.
+    if !draft.tenant_id.is_nil() && draft.tenant_id != tenant_id {
+        return Err(AppError::BadRequest(format!(
+            "body.tenant_id {} does not match path tenant_id {}",
+            draft.tenant_id, tenant_id
+        )));
     }
+    let mut draft = draft;
+    draft.tenant_id = tenant_id;
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
     let tx_id = state.ledger.post_transaction(&draft, region).await?;
@@ -92,4 +104,86 @@ pub async fn account_balance(
         .account_balance(tenant_id, &code, currency)
         .await?;
     Ok(Json(bal))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ledger::{Direction, DraftPosting};
+
+    fn draft_with(tenant_id: Uuid) -> DraftTransaction {
+        DraftTransaction {
+            tenant_id,
+            kind: "test".into(),
+            idempotency_key: "k1".into(),
+            description: None,
+            metadata: serde_json::json!({}),
+            postings: vec![
+                DraftPosting {
+                    account_code: "a".into(),
+                    direction: Direction::Debit,
+                    amount_minor: 100,
+                    currency: "USD".into(),
+                    source: String::new(),
+                    source_event_id: String::new(),
+                    metadata: serde_json::json!({}),
+                },
+                DraftPosting {
+                    account_code: "b".into(),
+                    direction: Direction::Credit,
+                    amount_minor: 100,
+                    currency: "USD".into(),
+                    source: String::new(),
+                    source_event_id: String::new(),
+                    metadata: serde_json::json!({}),
+                },
+            ],
+        }
+    }
+
+    /// Replicate the body/path tenant-mismatch check that the handler
+    /// runs before touching the DB. We can't easily mock `AppState`
+    /// here, but the check itself is the load-bearing fix; keep its
+    /// behavior pinned with a unit test that mirrors the handler's
+    /// branch order.
+    fn validate_body_tenant(
+        path_tenant_id: Uuid,
+        draft: &DraftTransaction,
+    ) -> Result<(), String> {
+        if !draft.tenant_id.is_nil() && draft.tenant_id != path_tenant_id {
+            return Err(format!(
+                "body.tenant_id {} does not match path tenant_id {}",
+                draft.tenant_id, path_tenant_id
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn body_tenant_matching_path_is_ok() {
+        let t = Uuid::new_v4();
+        assert!(validate_body_tenant(t, &draft_with(t)).is_ok());
+    }
+
+    #[test]
+    fn body_tenant_nil_is_ok_and_will_be_filled_by_handler() {
+        let t = Uuid::new_v4();
+        assert!(validate_body_tenant(t, &draft_with(Uuid::nil())).is_ok());
+    }
+
+    #[test]
+    fn body_tenant_mismatch_is_rejected() {
+        let path = Uuid::new_v4();
+        let body = Uuid::new_v4();
+        assert!(validate_body_tenant(path, &draft_with(body)).is_err());
+    }
+
+    #[test]
+    fn body_tenant_mismatch_error_mentions_both_uuids() {
+        let path = Uuid::new_v4();
+        let body = Uuid::new_v4();
+        let err = validate_body_tenant(path, &draft_with(body)).unwrap_err();
+        assert!(err.contains(&body.to_string()));
+        assert!(err.contains(&path.to_string()));
+    }
 }

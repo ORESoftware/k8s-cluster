@@ -167,14 +167,18 @@ pub async fn attach_api_key(
     if let Some(ext) = external_account_id.as_deref() {
         let _ = state
             .connections
-            .set_external_account(connection_id, ext)
+            .set_external_account(tenant_id, connection_id, ext)
             .await;
     }
 
     if let Some(env) = req.environment.as_deref() {
         let _ = state
             .connections
-            .merge_metadata(connection_id, serde_json::json!({ "environment": env }))
+            .merge_metadata(
+                tenant_id,
+                connection_id,
+                serde_json::json!({ "environment": env }),
+            )
             .await;
     }
 

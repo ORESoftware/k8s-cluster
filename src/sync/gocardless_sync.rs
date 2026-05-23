@@ -79,6 +79,7 @@ pub async fn sync_gocardless(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({ "gocardless_cursor": id }),
                             )
@@ -100,6 +101,7 @@ pub async fn sync_gocardless(
     if let Some(id) = &cursor {
         ctx.connections
             .merge_metadata(
+                conn.tenant_id,
                 conn.id,
                 serde_json::json!({ "gocardless_cursor": id }),
             )

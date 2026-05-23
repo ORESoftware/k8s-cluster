@@ -68,6 +68,7 @@ pub async fn sync_bridge(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({ "bridge_cursor": id }),
                             )
@@ -89,6 +90,7 @@ pub async fn sync_bridge(
     if let Some(id) = &cursor {
         ctx.connections
             .merge_metadata(
+                conn.tenant_id,
                 conn.id,
                 serde_json::json!({ "bridge_cursor": id }),
             )

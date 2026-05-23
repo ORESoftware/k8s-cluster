@@ -33,9 +33,13 @@ pub fn build_registry(state: &AppState) -> crate::scheduler::HandlerRegistry {
             Arc::new(RuleEvaluatorJob::new(
                 state.pool.clone(),
                 state.notifications.clone(),
+                state.cfg.clone(),
             )),
         )
-        .register("tenant.webhook", Arc::new(TenantWebhookJob))
+        .register(
+            "tenant.webhook",
+            Arc::new(TenantWebhookJob::new(state.cfg.clone())),
+        )
         .register(
             "sync.connection",
             Arc::new(ConnectionSyncJob::new(
@@ -151,7 +155,15 @@ impl JobHandler for AnchorSweeperJob {
 /// Tenants register one of these for payroll, AP runs, end-of-month close,
 /// etc. The platform doesn't execute the business logic — it just calls the
 /// tenant on schedule with a signed payload they can verify came from us.
-pub struct TenantWebhookJob;
+pub struct TenantWebhookJob {
+    cfg: std::sync::Arc<crate::config::Config>,
+}
+
+impl TenantWebhookJob {
+    pub fn new(cfg: std::sync::Arc<crate::config::Config>) -> Self {
+        Self { cfg }
+    }
+}
 
 #[async_trait]
 impl JobHandler for TenantWebhookJob {
@@ -190,6 +202,7 @@ impl JobHandler for TenantWebhookJob {
             &url,
             &body_with_meta,
             secret.as_deref(),
+            self.cfg.block_private_outbound,
         )
         .await
         .map_err(|e| crate::error::AppError::Provider {

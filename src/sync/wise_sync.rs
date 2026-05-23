@@ -85,7 +85,11 @@ pub async fn sync_wise(
 
     if let Some(ref c) = cursor {
         ctx.connections
-            .merge_metadata(conn.id, serde_json::json!({ "wise_activity_cursor": c }))
+            .merge_metadata(
+                conn.tenant_id,
+                conn.id,
+                serde_json::json!({ "wise_activity_cursor": c }),
+            )
             .await?;
     }
 

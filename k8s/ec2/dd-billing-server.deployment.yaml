@@ -63,6 +63,27 @@ spec:
               value: 'true'
             - name: BILLING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS
               value: '300'
+            # Refuse outbound HTTP to private / loopback / link-local
+            # IPs (SSRF guard for tenant.webhook + notification webhooks).
+            # Production never legitimately POSTs into the cluster from
+            # tenant-supplied URLs.
+            - name: BILLING_BLOCK_PRIVATE_OUTBOUND
+              value: 'true'
+            # The JSON API is gated by a bearer token in addition to
+            # any upstream gateway (`dd-remote-auth`). Without this set
+            # the API is open to anyone who can reach the listener.
+            - name: BILLING_API_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: api_auth_bearer
+            # Admin UI is mounted at /admin; require its own bearer
+            # even when fronted by the gateway.
+            - name: BILLING_ADMIN_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: admin_auth_bearer
             - name: STRIPE_API_VERSION
               value: 2026-04-22.dahlia
             - name: PAYPAL_ENV

@@ -94,6 +94,7 @@ pub async fn sync_coinflow(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({
                                     "coinflow_last_seen_at": ts.to_rfc3339()
@@ -117,6 +118,7 @@ pub async fn sync_coinflow(
     if let Some(ts) = newest_seen {
         ctx.connections
             .merge_metadata(
+                conn.tenant_id,
                 conn.id,
                 serde_json::json!({
                     "coinflow_last_seen_at": ts.to_rfc3339()
