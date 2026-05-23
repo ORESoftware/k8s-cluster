@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ws-loadtest-rs-go-wss
+  namespace: default
+  labels:
+    app: dd-ws-loadtest-rs-go-wss
+    role: loadtest
+    target: dd-go-wss-server
+spec:
+  # WebSocket clients from a fan of loader pods against
+  # dd-go-wss-server. Each replica drives CLIENT_COUNT connections;
+  # total simultaneous connections at peak == replicas × CLIENT_COUNT.
+  #
+  # Default replicas: 0 — the operator scales to N for the duration of
+  # a load test and back to 0 afterwards.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dd-ws-loadtest-rs-go-wss
+  template:
+    metadata:
+      labels:
+        app: dd-ws-loadtest-rs-go-wss
+        role: loadtest
+        target: dd-go-wss-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              ulimit -n 131072 || true
+              export PATH="/usr/local/cargo/bin:${PATH}"
+              cd /opt/dd-next-1/remote/deployments/ws-loadtest-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-go-wss-server.default.svc.cluster.local:8107/
+            - name: LOAD_MODE
+              value: "pipeline"
+            - name: CLIENT_COUNT
+              value: "7500"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "1.0"
+            - name: MESSAGE_PAYLOAD
+              value: "go-wss-bench-payload"
+            - name: HOLD_SECONDS
+              value: "600"
+            - name: CONNECT_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECEIVE_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECONNECT_DELAY_MS
+              value: "2000"
+            - name: RAMP_DELAY_MS
+              value: "3"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+            - name: CORRELATION_TIMEOUT_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "4"
+              memory: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

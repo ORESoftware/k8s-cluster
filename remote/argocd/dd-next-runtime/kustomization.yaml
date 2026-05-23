@@ -39,6 +39,8 @@ resources:
   - dd-redis-cache.service.yaml
   - dd-web-scraper.deployment.yaml
   - dd-web-scraper.service.yaml
+  - dd-browser-test-server.deployment.yaml
+  - dd-browser-test-server.service.yaml
   - dd-remote-web-home.deployment.yaml
   - dd-remote-web-home.pdb.yaml
   - dd-remote-web-home.service.yaml
@@ -46,6 +48,8 @@ resources:
   - dd-webrtc-signaling.service.yaml
   - dd-rust-wss-server.deployment.yaml
   - dd-rust-wss-server.service.yaml
+  - dd-go-wss-server.deployment.yaml
+  - dd-go-wss-server.service.yaml
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
   - dd-runtime-config.deployment.yaml

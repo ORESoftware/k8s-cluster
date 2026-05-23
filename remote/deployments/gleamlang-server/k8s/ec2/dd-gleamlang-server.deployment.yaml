@@ -115,11 +115,20 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
+            # Bumped from 1/1Gi/4/8Gi for the cross-language WSS
+            # benchmark (5-way Dart/Rust/Gleam/Akka/Go comparison at
+            # 30K connections). Matches dd-rust-wss-server,
+            # dd-dart-server, dd-akka-ws-server, dd-go-wss-server so
+            # any CPU/mem differences are framework/runtime-attributable
+            # rather than artefacts of the cgroup cap. The earlier 4-core
+            # cap was visible in the May 23 HIGH (10 msg/s) run where
+            # gleamlang-server pinned at 3995-4000m and the loader saw
+            # cascading 71K connect failures.
             requests:
               cpu: '1'
-              memory: 1Gi
+              memory: 2Gi
             limits:
-              cpu: '4'
+              cpu: '6'
               memory: 8Gi
           volumeMounts:
             - name: repo
