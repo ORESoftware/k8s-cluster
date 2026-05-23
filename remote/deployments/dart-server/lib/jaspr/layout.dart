@@ -89,6 +89,11 @@ class _Nav extends StatelessComponent {
         link('hot-reload', 'hot reload', '/dart/pages/hot-reload'),
         link('about', 'about', '/dart/pages/about'),
         a(
+          href: '/dart/mobile/',
+          classes: 'nav-link mobile-link',
+          [Component.text('mobile')],
+        ),
+        a(
           href: '/dart/app',
           classes: 'nav-link cta',
           [Component.text('open Flutter SPA →')],
@@ -137,6 +142,8 @@ code { background: var(--surface); padding: 1px 4px; border-radius: 3px; font-si
 .top-nav .links { display: flex; gap: 16px; flex-wrap: wrap; }
 .nav-link.active { color: var(--accent-strong); font-weight: 600; }
 .nav-link.cta { padding: 4px 8px; border: 1px solid var(--accent); border-radius: 4px; }
+.nav-link.mobile-link { font-size: 12px; color: var(--muted); }
+.nav-link.mobile-link:hover { color: var(--accent-strong); }
 .main-content { padding: 8px 0 32px; }
 .hero { padding: 24px 0; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin: 16px 0; }

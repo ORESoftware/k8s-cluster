@@ -1,18 +1,23 @@
 # Multi-stage build for dd-dart-server.
 #
 # Stage 1 (flutter-build): uses the cirruslabs Flutter SDK image to compile
-#   the Flutter web app to JavaScript with the offline-first PWA strategy.
-#   `flutter build web` emits everything into build/web — including the
-#   service worker (`flutter_service_worker.js`) and the bootstrapper
-#   (`flutter_bootstrap.js`).
+#   the desktop-shaped Flutter web SPA at /dart/app/ to JavaScript with
+#   the offline-first PWA strategy. `flutter build web` emits everything
+#   into build/web — including the service worker (`flutter_service_worker.js`)
+#   and the bootstrapper (`flutter_bootstrap.js`).
+#
+# Stage 1b (flutter-mobile-build): identical shape, separate Flutter project
+#   at flutter_mobile_app/, compiled with --base-href=/dart/mobile/ for the
+#   mobile-optimized landing surface served at /dart/mobile/.
 #
 # Stage 2 (dart-build): uses the official Dart SDK image to AOT-compile the
 #   server entry point and run jaspr_builder so `lib/jaspr_options.dart`
 #   exists. The result is a self-contained native executable.
 #
 # Stage 3 (runtime): Debian-slim with glibc + ca-certificates + tzdata.
-#   The compiled server binary plus the Flutter web bundle are copied in,
-#   and the container runs as an unprivileged user.
+#   The compiled server binary plus both Flutter web bundles are copied in
+#   (public/ for /dart/app/, mobile-public/ for /dart/mobile/), and the
+#   container runs as an unprivileged user.
 #
 # Build from the repo root:
 #   docker build \
@@ -43,6 +48,25 @@ RUN flutter build web \
       --release \
       --pwa-strategy=offline-first \
       --base-href=/dart/app/
+
+# -- Stage 1b: Flutter mobile web build --------------------------------------
+# Independent Flutter web bundle, served at /dart/mobile/. Mirrors the
+# /dart/app/ build above so both bundles ship side-by-side in the
+# runtime image at /opt/dd-dart-server/{public,mobile-public}.
+FROM ghcr.io/cirruslabs/flutter:3.44.0 AS flutter-mobile-build
+
+WORKDIR /workspace
+COPY remote/deployments/dart-server/flutter_mobile_app /workspace/flutter_mobile_app
+
+WORKDIR /workspace/flutter_mobile_app
+RUN flutter --disable-analytics
+RUN flutter create --project-name dd_dart_flutter_mobile_app --platforms=web --org dev.dd .
+RUN flutter pub get
+
+RUN flutter build web \
+      --release \
+      --pwa-strategy=offline-first \
+      --base-href=/dart/mobile/
 
 # -- Stage 2: Dart server AOT build ------------------------------------------
 FROM dart:stable AS dart-build
@@ -87,8 +111,9 @@ RUN apt-get update \
 
 WORKDIR /opt/dd-dart-server
 
-COPY --from=dart-build    /tmp/dd-dart-server                    /opt/dd-dart-server/dd-dart-server
-COPY --from=flutter-build /workspace/flutter_app/build/web       /opt/dd-dart-server/public
+COPY --from=dart-build           /tmp/dd-dart-server                          /opt/dd-dart-server/dd-dart-server
+COPY --from=flutter-build        /workspace/flutter_app/build/web             /opt/dd-dart-server/public
+COPY --from=flutter-mobile-build /workspace/flutter_mobile_app/build/web      /opt/dd-dart-server/mobile-public
 
 RUN chown -R dart:dart /opt/dd-dart-server
 
@@ -96,7 +121,8 @@ USER 10001:10001
 
 ENV HTTP_HOST=0.0.0.0 \
     HTTP_PORT=8089 \
-    STATIC_DIR=/opt/dd-dart-server/public
+    STATIC_DIR=/opt/dd-dart-server/public \
+    MOBILE_STATIC_DIR=/opt/dd-dart-server/mobile-public
 
 EXPOSE 8089
 

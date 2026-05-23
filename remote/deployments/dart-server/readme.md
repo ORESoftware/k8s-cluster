@@ -15,6 +15,8 @@ A single Dart binary serves:
 | `GET /dart/wss`         | WebSocket upgrade. Spawns a per-connection isolate session.                 |
 | `GET /dart/app`         | Flutter web SPA (`index.html`).                                             |
 | `GET /dart/app/*`       | Flutter web SPA assets (with index.html SPA fallback).                      |
+| `GET /dart/mobile`      | Mobile-optimized Flutter web bundle (`index.html`).                         |
+| `GET /dart/mobile/*`    | Mobile-optimized Flutter web bundle assets (with index.html SPA fallback).  |
 | `GET /dart/assets/*`    | Same physical bundle as `/dart/app/*`, exposed under a stable `/assets/` URL.|
 | `GET /dart/admin/hot-reload-status` | JSON status (only when `HOT_RELOAD=true`).                       |
 | `GET\|POST /dart/admin/reload`      | Trigger hot reload across every isolate (only when `HOT_RELOAD=true`). |
@@ -77,6 +79,14 @@ remote/deployments/dart-server/
 │   └── lib/
 │       ├── main.dart            # Material shell + Stream-driven cards
 │       └── wss_client.dart      # speaks the HTMX/WS protocol; RxDart subjects
+├── flutter_mobile_app/
+│   ├── pubspec.yaml             # mobile-shaped Flutter web bundle (separate project)
+│   ├── analysis_options.yaml
+│   ├── web/
+│   │   ├── index.html           # `/dart/mobile/index.html`, base href `/dart/mobile/`
+│   │   └── manifest.json        # PWA manifest
+│   └── lib/
+│       └── main.dart            # one-column landing list + stub /dart/wss connect button
 ├── k8s/ec2/
 │   ├── dd-dart-server.deployment.yaml
 │   ├── dd-dart-server.service.yaml
@@ -561,6 +571,41 @@ Same physical bundle, mounted at a stable `/dart/assets/` prefix. Public
 SSR pages reference `/dart/assets/manifest.json` etc. so they don't
 have to know the SPA's internal layout.
 
+### `GET /dart/mobile` & `GET /dart/mobile/*`
+
+Independent Flutter web bundle, built from the sibling `flutter_mobile_app/`
+project with `flutter build web --base-href=/dart/mobile/`. Served from
+`MOBILE_STATIC_DIR` (defaults: `./mobile-public` locally,
+`/opt/dd-dart-server/mobile-public` in the Docker runtime image,
+`/opt/dd-next-1/remote/deployments/dart-server/mobile-public` on the
+EC2-mounted repo path).
+
+The bundle is a tiny landing surface: a single-column list of the Jaspr
+SSR pages with large tap targets, plus a stubbed "Connect to /dart/wss"
+button. Real session adoption lives in `flutter_app/` for now; the
+mobile bundle's job is to be a fast, viewport-locked entry point that
+links across the deployment.
+
+The Jaspr SSR layer at `/dart/pages/*` does **not** route through the
+mobile bundle — mobile is owned entirely by the static handler at
+`/dart/mobile/*`, and the SSR registry in `lib/jaspr/pages.dart` is
+unchanged.
+
+#### Mobile front-end — local dev
+
+```bash
+cd remote/deployments/dart-server/flutter_mobile_app
+flutter pub get
+flutter run -d chrome              # served at http://localhost:<random>/
+# or, against the live server route:
+flutter build web --release --base-href=/dart/mobile/
+# then point STATIC_DIR/MOBILE_STATIC_DIR at build/web and run the server.
+```
+
+`scripts/build-and-run.sh` builds the mobile bundle alongside
+`flutter_app/` and atomically swaps the result into `MOBILE_STATIC_DIR`,
+so the in-cluster path is a no-op once you've pushed.
+
 ---
 
 ## Build
@@ -635,6 +680,7 @@ prefixed `dart_*`:
 | `dart_pages_rendered_total`                 | counter | Jaspr SSR success                          |
 | `dart_pages_render_error_total`             | counter | Jaspr SSR failure                          |
 | `dart_app_requests_total`                   | counter | `/dart/app/*` requests                     |
+| `dart_mobile_requests_total`                | counter | `/dart/mobile/*` requests                  |
 | `dart_assets_requests_total`                | counter | `/dart/assets/*` requests                  |
 | `dart_wss_upgrade_total`                    | counter | WS upgrade requests                        |
 | `dart_sessions_spawned_total`               | counter | isolates ever spawned                      |

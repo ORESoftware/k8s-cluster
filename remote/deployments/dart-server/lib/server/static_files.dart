@@ -14,9 +14,19 @@ import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
 
 class StaticFileServer {
-  StaticFileServer(this.baseDir);
+  StaticFileServer(
+    this.baseDir, {
+    this.serviceWorkerAllowedScope = '/dart/app/',
+  });
 
   final Directory baseDir;
+
+  /// Scope advertised via the `service-worker-allowed` response header.
+  /// Each Flutter web bundle (the SPA at `/dart/app/`, the mobile shell at
+  /// `/dart/mobile/`) is served through its own [StaticFileServer]
+  /// instance with the appropriate scope so the SW can register at the
+  /// correct path even behind a TLS-terminating reverse proxy.
+  final String serviceWorkerAllowedScope;
 
   /// Serve `requestPath` (already stripped of any URL prefix). Returns
   /// `false` when nothing matched so the caller can return a 404 itself.
@@ -65,10 +75,11 @@ class StaticFileServer {
     req.response.headers
       ..contentType = ContentType.parse(mime)
       ..set('cache-control', _cacheControlFor(file.path))
-      // The Flutter SW relies on a same-origin scope for /dart/app/. Make
-      // sure we always emit that header to avoid stale cross-origin denies
-      // when the page is served behind a TLS termination proxy.
-      ..set('service-worker-allowed', '/dart/app/');
+      // The Flutter SW relies on a same-origin scope for the bundle's
+      // base href (e.g. /dart/app/, /dart/mobile/). Always emit the
+      // header so the SW can register correctly behind a TLS-terminating
+      // reverse proxy.
+      ..set('service-worker-allowed', serviceWorkerAllowedScope);
 
     await req.response.addStream(file.openRead());
     await req.response.close();

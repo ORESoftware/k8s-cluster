@@ -12,6 +12,8 @@
 ///   GET  /dart/wss           — WebSocket upgrade → per-connection isolate
 ///   GET  /dart/app           — Flutter web SPA index.html
 ///   GET  /dart/app/*         — Flutter web SPA (with index.html fallback)
+///   GET  /dart/mobile        — Mobile-optimized Flutter web bundle index.html
+///   GET  /dart/mobile/*      — Mobile-optimized Flutter web bundle (with index.html fallback)
 ///   GET  /dart/assets/*      — Flutter web build assets (JS bundle, SW, icons)
 library;
 
@@ -34,12 +36,18 @@ import 'package:dd_dart_server/jaspr/render.dart';
 const _wssPath = '/dart/wss';
 const _pagesPrefix = '/dart/pages';
 const _appPrefix = '/dart/app';
+const _mobilePrefix = '/dart/mobile';
 const _assetsPrefix = '/dart/assets';
 
 Future<void> main(List<String> args) async {
   final host = Platform.environment['HTTP_HOST'] ?? '0.0.0.0';
   final port = int.tryParse(Platform.environment['HTTP_PORT'] ?? '') ?? 8089;
   final staticDirPath = Platform.environment['STATIC_DIR'] ?? './public';
+  // Independent Flutter web bundle served at /dart/mobile/. Defaults
+  // mirror STATIC_DIR's local-dev shape so a fresh checkout works even
+  // before scripts/build-and-run.sh has populated either tree.
+  final mobileStaticDirPath =
+      Platform.environment['MOBILE_STATIC_DIR'] ?? './mobile-public';
   final ready = Platform.environment['READY_AT_BOOT'] != 'false';
   final hotReloadEnabled = Platform.environment['HOT_RELOAD'] == 'true';
   final watchPaths = (Platform.environment['HOT_RELOAD_PATHS'] ?? 'lib,bin')
@@ -83,6 +91,10 @@ Future<void> main(List<String> args) async {
     conversations: conversations,
   );
   final staticFiles = StaticFileServer(Directory(staticDirPath));
+  final mobileStaticFiles = StaticFileServer(
+    Directory(mobileStaticDirPath),
+    serviceWorkerAllowedScope: '$_mobilePrefix/',
+  );
 
   metrics
     ..registerGauge('dart_sessions_live', () => supervisor.liveCount)
@@ -134,6 +146,7 @@ Future<void> main(List<String> args) async {
     'host': host,
     'port': port,
     'static_dir': staticDirPath,
+    'mobile_static_dir': mobileStaticDirPath,
     'ready': ready,
   }));
 
@@ -153,6 +166,7 @@ Future<void> main(List<String> args) async {
       metrics: metrics,
       supervisor: supervisor,
       staticFiles: staticFiles,
+      mobileStaticFiles: mobileStaticFiles,
       ready: ready,
       hotReloader: hotReloader,
       pgPool: pgPool,
@@ -174,6 +188,7 @@ Future<void> _route(
   required Metrics metrics,
   required SessionSupervisor supervisor,
   required StaticFileServer staticFiles,
+  required StaticFileServer mobileStaticFiles,
   required bool ready,
   HotReloader? hotReloader,
   PgPool? pgPool,
@@ -282,6 +297,30 @@ Future<void> _route(
     );
     if (!served) {
       await _plain(req, 'flutter app not built\n', status: HttpStatus.notFound);
+    }
+    return;
+  }
+
+  // ---- Flutter mobile bundle static files -------------------------------
+  // Independent Flutter web bundle, base-href=/dart/mobile/, lives in its
+  // own MOBILE_STATIC_DIR. Jaspr SSR at /dart/pages is unaffected; this
+  // handler only owns /dart/mobile/* and never falls through to pickPage.
+  if (method == 'GET' &&
+      (path == _mobilePrefix || path.startsWith('$_mobilePrefix/'))) {
+    final rel =
+        path == _mobilePrefix ? '' : path.substring(_mobilePrefix.length + 1);
+    metrics.inc('dart_mobile_requests_total');
+    final served = await mobileStaticFiles.tryServe(
+      req,
+      requestPath: rel,
+      fallbackHtml: 'index.html',
+    );
+    if (!served) {
+      await _plain(
+        req,
+        'flutter mobile app not built\n',
+        status: HttpStatus.notFound,
+      );
     }
     return;
   }

@@ -9,6 +9,7 @@ analyzer:
     invalid_annotation_target: ignore
   exclude:
     - "flutter_app/**"
+    - "flutter_mobile_app/**"
 
 linter:
   rules:

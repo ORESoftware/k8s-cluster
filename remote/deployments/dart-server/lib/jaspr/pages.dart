@@ -75,6 +75,9 @@ class HomePage extends StatelessComponent {
               a(href: '/dart/app', [Component.text('Flutter SPA')]),
             ]),
             li([
+              a(href: '/dart/mobile/', [Component.text('Mobile front-end')]),
+            ]),
+            li([
               a(href: '/dart/pages/about', [Component.text('About')]),
             ]),
           ]),

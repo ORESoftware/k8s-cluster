@@ -15,6 +15,8 @@ build/
 **/windows/
 flutter_app/.dart_tool/
 flutter_app/build/
+flutter_mobile_app/.dart_tool/
+flutter_mobile_app/build/
 
 # Editor / VCS junk
 .idea/
