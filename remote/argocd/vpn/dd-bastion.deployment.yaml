@@ -67,8 +67,15 @@ spec:
               value: 'true'
             - name: BASTION_KUBECTL_BIN
               value: /usr/bin/kubectl
+            # Browser exec terminals for the managed-deployment allowlist
+            # (see MANAGED_DEPLOYMENTS in remote/deployments/bastion-rs).
+            # Paired with the dd-bastion-exec ClusterRoleBinding which is the
+            # only piece of RBAC that grants `create` on `pods/exec`. To
+            # disable the terminal entirely, flip this back to 'false' and
+            # remove the dd-bastion-exec ClusterRoleBinding from
+            # dd-bastion-rbac.yaml.
             - name: BASTION_TERMINAL_ENABLED
-              value: 'false'
+              value: 'true'
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:

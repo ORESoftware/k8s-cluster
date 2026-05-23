@@ -101,12 +101,20 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   assert.match(rbac, /kind:\s*ClusterRole[\s\S]*name:\s*dd-bastion-readonly/);
   assert.match(rbac, /resources:[\s\S]*-\s*pods[\s\S]*-\s*services[\s\S]*-\s*deployments/);
   assert.match(rbac, /verbs:[\s\S]*-\s*get[\s\S]*-\s*list[\s\S]*-\s*watch/);
-  assert.doesNotMatch(rbac, /pods\/exec/);
-  assert.doesNotMatch(rbac, /-\s*secrets/);
-  assert.doesNotMatch(rbac, /-\s*create/);
-  assert.doesNotMatch(rbac, /-\s*patch/);
-  assert.doesNotMatch(rbac, /-\s*update/);
-  assert.doesNotMatch(rbac, /-\s*delete/);
+  // Read-only access to metrics-server and kubectl logs for the live
+  // container cards on the homepage.
+  assert.match(rbac, /apiGroups:\s*\[metrics\.k8s\.io\][\s\S]*resources:[\s\S]*-\s*pods/);
+  assert.match(rbac, /resources:[\s\S]*-\s*pods\/log[\s\S]*verbs:[\s\S]*-\s*get/);
+  // Exec is allowed only via the dedicated dd-bastion-exec role; the
+  // read-only role must not gain mutation verbs.
+  assert.match(rbac, /kind:\s*ClusterRole[\s\S]*name:\s*dd-bastion-exec[\s\S]*pods\/exec[\s\S]*verbs:[\s\S]*-\s*create/);
+  assert.match(rbac, /kind:\s*ClusterRoleBinding[\s\S]*name:\s*dd-bastion-exec[\s\S]*name:\s*dd-bastion-exec/);
+  // Hardened defaults: no Secret access, no mutation verbs other than
+  // `pods/exec` create above.
+  assert.doesNotMatch(rbac, /-\s*secrets\b/);
+  assert.doesNotMatch(rbac, /-\s*patch\b/);
+  assert.doesNotMatch(rbac, /-\s*update\b/);
+  assert.doesNotMatch(rbac, /-\s*delete\b/);
 
   assert.match(externalSecret, /name:\s*dd-bastion-secrets/);
   assert.match(externalSecret, /key:\s*dd\/remote-dev\/agent-secrets/);
@@ -128,7 +136,9 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   assert.match(deployment, /BASTION_KUBECONFIG_ENABLED[\s\S]*value:\s*'true'/);
   assert.match(deployment, /BASTION_KUBECTL_BIN[\s\S]*value:\s*\/usr\/bin\/kubectl/);
   assert.doesNotMatch(deployment, /BASTION_SCRIPT_BIN/);
-  assert.match(deployment, /BASTION_TERMINAL_ENABLED[\s\S]*value:\s*'false'/);
+  // The browser terminal is enabled by default in this deployment; the
+  // matching pods/exec verb is granted only by ClusterRole dd-bastion-exec.
+  assert.match(deployment, /BASTION_TERMINAL_ENABLED[\s\S]*value:\s*'true'/);
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-bastion-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
@@ -146,7 +156,8 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
 
   assert.match(vpnReadme, /Bastion\/access broker/);
   assert.match(vpnReadme, /runtime\/deployments/);
-  assert.match(vpnReadme, /terminal access is disabled\s+by default/);
+  assert.match(vpnReadme, /dd-bastion-exec/);
+  assert.match(vpnReadme, /metrics-server/);
   assert.match(vpnReadme, /not a public MCP server that can mint AWS access/);
   assert.match(vpnReadme, /AWS credentials stay\s+in AWS Secrets Manager/);
   assert.match(ec2Readme, /inbound UDP `51820`/);

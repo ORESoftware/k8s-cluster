@@ -124,12 +124,24 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assert.match(home, /openRuntimeSocket\("gleam", `\/admin\/gleam\/ws\?channel=k8s-runtime-admin&client=home-\$\{clientId\}`\)/);
   assert.match(home, /openRuntimeSocket\("rust", `\/admin\/webrtc\/runtime\/ws\?client=home-\$\{clientId\}`\)/);
   assert.match(home, /startTimedReload\(\)/);
-  assert.match(home, /home-terminal-frame/);
-  assert.match(home, /Open bastion exec terminal/);
+  // The terminal pane is now an inline expanding row underneath the pod
+  // it targets rather than a fixed dock at the bottom of the section. The
+  // logs button uses the same panel mechanism but talks to the new
+  // /bastion/logs/ws endpoint that streams kubectl logs -f.
+  assert.match(home, /openTerminalPanel\(/);
+  assert.match(home, /openLogsPanel\(/);
+  assert.match(home, /Open inline bastion exec terminal/);
+  assert.match(home, /Open inline kubectl logs -f stream/);
   assert.match(home, /const safeBastionTerminalUrl = \(value\) =>/);
-  assert.match(home, /url\.pathname !== "\/bastion\/terminal"/);
-  assert.match(home, /ignored unsafe bastion terminal URL/);
+  assert.match(home, /const safeBastionLogsUrl = \(value\) =>/);
+  assert.match(home, /expectedPath/);
+  assert.match(home, /safeBastionUrl\(value, "\/bastion\/terminal"\)/);
+  assert.match(home, /safeBastionUrl\(value, "\/bastion\/logs\/ws"\)/);
   assert.match(home, /const safeTerminalUrl = safeBastionTerminalUrl\(container\.terminalUrl\)/);
+  assert.match(home, /const safeLogsUrl = safeBastionLogsUrl\(container\.logsUrl\)/);
+  // CPU/memory chips are rendered when metrics-server returns a snapshot.
+  assert.match(home, /metricChip\("cpu"/);
+  assert.match(home, /metricChip\("mem"/);
   assertPathEntry(home, 'POST /builds', '/builds');
   assertPathEntry(home, '/builds/<jobId>/logs', '/builds/example-job/logs');
   assertDeploymentRow(home, 'dd-gleam-lambda-runner', 'dd-gleam-lambda-runner:8083');

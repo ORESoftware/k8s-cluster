@@ -518,8 +518,10 @@ struct RuntimeDeploymentsResponse {
     service: &'static str,
     generated_at_ms: u128,
     terminal_enabled: bool,
+    metrics_available: bool,
     deployments: Vec<ManagedDeploymentInfo>,
     errors: Vec<String>,
+    metrics_errors: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -896,9 +898,116 @@ fn summarize_deployment(deployment: &Value) -> Value {
     })
 }
 
-fn summarize_pod(pod: &Value, deployment_name: &str, terminal_base: &str) -> Value {
+/// Container-level CPU + memory snapshot, expressed in millicores and bytes.
+#[derive(Clone, Copy, Default)]
+struct ContainerMetrics {
+    cpu_millicores: i64,
+    memory_bytes: i64,
+}
+
+/// `kubectl get --raw /apis/metrics.k8s.io/v1beta1/namespaces/<ns>/pods` does
+/// NOT support label-selecting, so we fetch all pods in the managed
+/// namespace once and look entries up by name. The result lookup is keyed
+/// by `(pod_name, container_name)` so per-container rows can carry their
+/// own usage values.
+type PodMetricsLookup = BTreeMap<(String, String), ContainerMetrics>;
+
+fn build_metrics_lookup(metrics_payload: &Value) -> PodMetricsLookup {
+    let mut lookup = PodMetricsLookup::new();
+    for item in json_items(metrics_payload) {
+        let Some(pod_name) = json_at_string(&item, &["metadata", "name"]) else {
+            continue;
+        };
+        let Some(containers) = item.get("containers").and_then(Value::as_array) else {
+            continue;
+        };
+        for container in containers {
+            let Some(name) = json_at_string(container, &["name"]) else {
+                continue;
+            };
+            let cpu_millicores = json_at_string(container, &["usage", "cpu"])
+                .and_then(|raw| parse_cpu_millicores(&raw))
+                .unwrap_or(0);
+            let memory_bytes = json_at_string(container, &["usage", "memory"])
+                .and_then(|raw| parse_memory_bytes(&raw))
+                .unwrap_or(0);
+            lookup.insert(
+                (pod_name.clone(), name),
+                ContainerMetrics {
+                    cpu_millicores,
+                    memory_bytes,
+                },
+            );
+        }
+    }
+    lookup
+}
+
+/// Parse a Kubernetes CPU quantity into integer millicores.
+///
+/// metrics-server reports CPU in nanoCPU (suffix `n`), but other producers
+/// occasionally hand back micro/milli/integer values. Always returns a
+/// non-negative count of millicores; out-of-range values fall back to 0.
+fn parse_cpu_millicores(raw: &str) -> Option<i64> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(prefix) = trimmed.strip_suffix('n') {
+        return prefix.parse::<i64>().ok().map(|v| v / 1_000_000);
+    }
+    if let Some(prefix) = trimmed.strip_suffix('u') {
+        return prefix.parse::<i64>().ok().map(|v| v / 1_000);
+    }
+    if let Some(prefix) = trimmed.strip_suffix('m') {
+        return prefix.parse::<i64>().ok();
+    }
+    trimmed
+        .parse::<f64>()
+        .ok()
+        .map(|cpus| (cpus * 1_000.0).round() as i64)
+}
+
+/// Parse a Kubernetes memory quantity into bytes.
+fn parse_memory_bytes(raw: &str) -> Option<i64> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    const SUFFIXES: &[(&str, i64)] = &[
+        ("Ei", 1_152_921_504_606_846_976),
+        ("Pi", 1_125_899_906_842_624),
+        ("Ti", 1_099_511_627_776),
+        ("Gi", 1_073_741_824),
+        ("Mi", 1_048_576),
+        ("Ki", 1_024),
+        ("E", 1_000_000_000_000_000_000),
+        ("P", 1_000_000_000_000_000),
+        ("T", 1_000_000_000_000),
+        ("G", 1_000_000_000),
+        ("M", 1_000_000),
+        ("k", 1_000),
+    ];
+    for (suffix, multiplier) in SUFFIXES {
+        if let Some(prefix) = trimmed.strip_suffix(*suffix) {
+            return prefix.parse::<i64>().ok().map(|v| v * multiplier);
+        }
+    }
+    trimmed.parse::<i64>().ok()
+}
+
+fn summarize_pod(
+    pod: &Value,
+    deployment_name: &str,
+    terminal_base: &str,
+    logs_base: &str,
+    metrics: Option<&PodMetricsLookup>,
+) -> Value {
     let namespace = json_at_string(pod, &["metadata", "namespace"]).unwrap_or_default();
     let pod_name = json_at_string(pod, &["metadata", "name"]).unwrap_or_default();
+    let mut pod_cpu = 0_i64;
+    let mut pod_mem = 0_i64;
+    let mut pod_has_metrics = false;
     let containers = json_at(pod, &["status", "containerStatuses"])
         .and_then(Value::as_array)
         .cloned()
@@ -906,18 +1015,29 @@ fn summarize_pod(pod: &Value, deployment_name: &str, terminal_base: &str) -> Val
         .into_iter()
         .map(|container| {
             let name = json_at_string(&container, &["name"]).unwrap_or_default();
-            let terminal_url = if !namespace.is_empty()
-                && !deployment_name.is_empty()
-                && !pod_name.is_empty()
-                && !name.is_empty()
-                && !terminal_base.is_empty()
-            {
-                format!(
-                    "{terminal_base}?namespace={namespace}&deployment={deployment_name}&pod={pod_name}&container={name}"
-                )
-            } else {
-                String::new()
+            let make_link = |base: &str| -> String {
+                if !namespace.is_empty()
+                    && !deployment_name.is_empty()
+                    && !pod_name.is_empty()
+                    && !name.is_empty()
+                    && !base.is_empty()
+                {
+                    format!(
+                        "{base}?namespace={namespace}&deployment={deployment_name}&pod={pod_name}&container={name}"
+                    )
+                } else {
+                    String::new()
+                }
             };
+            let terminal_url = make_link(terminal_base);
+            let logs_url = make_link(logs_base);
+            let container_metrics = metrics
+                .and_then(|lookup| lookup.get(&(pod_name.clone(), name.clone())).copied());
+            if let Some(values) = container_metrics {
+                pod_cpu = pod_cpu.saturating_add(values.cpu_millicores);
+                pod_mem = pod_mem.saturating_add(values.memory_bytes);
+                pod_has_metrics = true;
+            }
             json!({
                 "name": name,
                 "ready": container.get("ready").and_then(Value::as_bool).unwrap_or(false),
@@ -928,6 +1048,11 @@ fn summarize_pod(pod: &Value, deployment_name: &str, terminal_base: &str) -> Val
                 "state": container.get("state").cloned().unwrap_or_else(|| json!({})),
                 "lastState": container.get("lastState").cloned().unwrap_or_else(|| json!({})),
                 "terminalUrl": terminal_url,
+                "logsUrl": logs_url,
+                "metrics": container_metrics.map(|values| json!({
+                    "cpuMillicores": values.cpu_millicores,
+                    "memoryBytes": values.memory_bytes,
+                })),
             })
         })
         .collect::<Vec<_>>();
@@ -940,12 +1065,35 @@ fn summarize_pod(pod: &Value, deployment_name: &str, terminal_base: &str) -> Val
         "podIp": json_at_string(pod, &["status", "podIP"]),
         "createdAt": json_at_string(pod, &["metadata", "creationTimestamp"]),
         "containers": containers,
+        "metrics": if pod_has_metrics {
+            json!({
+                "cpuMillicores": pod_cpu,
+                "memoryBytes": pod_mem,
+            })
+        } else {
+            Value::Null
+        },
     })
 }
 
+/// Default kubectl timeout used by the inventory + terminal/log validation
+/// paths. metrics-server lookups override this with a tighter
+/// `METRICS_KUBECTL_TIMEOUT` so a sick aggregation API never stalls the
+/// rest of the inventory.
+const DEFAULT_KUBECTL_TIMEOUT: Duration = Duration::from_secs(15);
+const METRICS_KUBECTL_TIMEOUT: Duration = Duration::from_secs(3);
+
 async fn kubectl_json(config: &Config, args: &[String]) -> Result<Value, String> {
+    kubectl_json_with_timeout(config, args, DEFAULT_KUBECTL_TIMEOUT).await
+}
+
+async fn kubectl_json_with_timeout(
+    config: &Config,
+    args: &[String],
+    timeout: Duration,
+) -> Result<Value, String> {
     let output = tokio::time::timeout(
-        Duration::from_secs(15),
+        timeout,
         Command::new(&config.kubectl_bin).args(args).output(),
     )
     .await
@@ -999,29 +1147,78 @@ fn managed_deployment_namespaces() -> Vec<&'static str> {
         .collect()
 }
 
+/// Combined per-namespace result: deployment list, pod list, and the raw
+/// metrics-server payload for that namespace, each independently fallible.
+type NamespaceFetch = (
+    &'static str,
+    Result<Value, String>,
+    Result<Value, String>,
+    Result<Value, String>,
+);
+
+/// Issue all kubectl calls for a single namespace concurrently.
+///
+/// We run deployments + pods (15 s timeout) alongside the
+/// metrics.k8s.io/v1beta1 raw GET (3 s timeout) under the same task. The
+/// short metrics timeout keeps a sick aggregation API from stalling the
+/// inventory: when metrics fail, the rest of the row still ships.
+async fn fetch_namespace(config: Arc<Config>, namespace: &'static str) -> NamespaceFetch {
+    let deployments_args = vec![
+        "-n".to_string(),
+        namespace.to_string(),
+        "get".to_string(),
+        "deployments".to_string(),
+        "-o".to_string(),
+        "json".to_string(),
+    ];
+    let pods_args = vec![
+        "-n".to_string(),
+        namespace.to_string(),
+        "get".to_string(),
+        "pods".to_string(),
+        "-o".to_string(),
+        "json".to_string(),
+    ];
+    let metrics_args = vec![
+        "get".to_string(),
+        "--raw".to_string(),
+        format!("/apis/metrics.k8s.io/v1beta1/namespaces/{namespace}/pods"),
+    ];
+
+    let deployments_fut = kubectl_json(&config, &deployments_args);
+    let pods_fut = kubectl_json(&config, &pods_args);
+    let metrics_fut = kubectl_json_with_timeout(&config, &metrics_args, METRICS_KUBECTL_TIMEOUT);
+
+    let (deployments, pods, metrics) = tokio::join!(deployments_fut, pods_fut, metrics_fut);
+    (namespace, deployments, pods, metrics)
+}
+
 async fn managed_deployment_infos(
-    config: &Config,
+    config: Arc<Config>,
     terminal_base: &str,
-) -> (Vec<ManagedDeploymentInfo>, Vec<String>) {
+    logs_base: &str,
+) -> (Vec<ManagedDeploymentInfo>, Vec<String>, Vec<String>) {
     let mut deployments_by_namespace = BTreeMap::new();
     let mut pods_by_namespace = BTreeMap::new();
+    let mut metrics_by_namespace: BTreeMap<&'static str, PodMetricsLookup> = BTreeMap::new();
     let mut deployment_errors = BTreeMap::new();
     let mut pod_errors = BTreeMap::new();
+    let mut metrics_errors = BTreeMap::new();
 
+    // Fan out one async task per namespace; each task issues its three
+    // kubectl calls concurrently with `tokio::join!`. Total wall-clock is
+    // therefore max(slowest single kubectl call) instead of sum, which
+    // keeps the homepage refresh fast as we add namespaces.
+    let mut tasks: tokio::task::JoinSet<NamespaceFetch> = tokio::task::JoinSet::new();
     for namespace in managed_deployment_namespaces() {
-        match kubectl_json(
-            config,
-            &[
-                "-n".to_string(),
-                namespace.to_string(),
-                "get".to_string(),
-                "deployments".to_string(),
-                "-o".to_string(),
-                "json".to_string(),
-            ],
-        )
-        .await
-        {
+        tasks.spawn(fetch_namespace(Arc::clone(&config), namespace));
+    }
+
+    while let Some(joined) = tasks.join_next().await {
+        let Ok((namespace, deployments, pods, metrics)) = joined else {
+            continue;
+        };
+        match deployments {
             Ok(value) => {
                 deployments_by_namespace.insert(namespace, json_items_by_name(&value));
             }
@@ -1029,25 +1226,24 @@ async fn managed_deployment_infos(
                 deployment_errors.insert(namespace, error);
             }
         }
-
-        match kubectl_json(
-            config,
-            &[
-                "-n".to_string(),
-                namespace.to_string(),
-                "get".to_string(),
-                "pods".to_string(),
-                "-o".to_string(),
-                "json".to_string(),
-            ],
-        )
-        .await
-        {
+        match pods {
             Ok(value) => {
                 pods_by_namespace.insert(namespace, json_items(&value));
             }
             Err(error) => {
                 pod_errors.insert(namespace, error);
+            }
+        }
+        // metrics-server (the kube-system Argo CD app) is the source of
+        // truth for CPU and memory snapshots. The bastion fails open: if
+        // the API is not yet installed or the per-call timeout fires, the
+        // route still serves inventory without metrics.
+        match metrics {
+            Ok(value) => {
+                metrics_by_namespace.insert(namespace, build_metrics_lookup(&value));
+            }
+            Err(error) => {
+                metrics_errors.insert(namespace, error);
             }
         }
     }
@@ -1080,10 +1276,19 @@ async fn managed_deployment_infos(
 
             let pods = if let Some(deployment) = deployment.as_ref() {
                 if let Some(namespace_pods) = pods_by_namespace.get(target.namespace) {
+                    let metrics = metrics_by_namespace.get(target.namespace);
                     namespace_pods
                         .iter()
                         .filter(|pod| selector_matches_pod(deployment, pod))
-                        .map(|pod| summarize_pod(pod, target.deployment, terminal_base))
+                        .map(|pod| {
+                            summarize_pod(
+                                pod,
+                                target.deployment,
+                                terminal_base,
+                                logs_base,
+                                metrics,
+                            )
+                        })
                         .collect::<Vec<_>>()
                 } else {
                     if let Some(error) = pod_errors.get(target.namespace) {
@@ -1117,7 +1322,16 @@ async fn managed_deployment_infos(
         })
         .collect::<Vec<_>>();
 
-    (deployments, errors.into_iter().collect())
+    let metrics_errors_vec = metrics_errors
+        .into_iter()
+        .map(|(namespace, error)| format!("metrics for namespace {namespace}: {error}"))
+        .collect::<Vec<_>>();
+
+    (
+        deployments,
+        errors.into_iter().collect(),
+        metrics_errors_vec,
+    )
 }
 
 async fn runtime_deployments(
@@ -1130,15 +1344,22 @@ async fn runtime_deployments(
     } else {
         ""
     };
-    let (deployments, errors) = managed_deployment_infos(&state.config, terminal_base).await;
+    // Logs are read-only and don't require pods/exec, so they are exposed
+    // even when BASTION_TERMINAL_ENABLED=false. The actual route returns
+    // 403 if pods/log permission is missing.
+    let logs_base = "/bastion/logs/ws";
+    let (deployments, errors, metrics_errors) =
+        managed_deployment_infos(Arc::clone(&state.config), terminal_base, logs_base).await;
 
     Ok(Json(RuntimeDeploymentsResponse {
         ok: errors.is_empty(),
         service: SERVICE_NAME,
         generated_at_ms: now_millis(),
         terminal_enabled: state.config.terminal_enabled,
+        metrics_available: metrics_errors.is_empty(),
         deployments,
         errors,
+        metrics_errors,
     }))
 }
 
@@ -1149,11 +1370,19 @@ fn find_managed_deployment(namespace: &str, deployment: &str) -> Option<ManagedD
         .find(|target| target.namespace == namespace && target.deployment == deployment)
 }
 
-async fn validate_terminal_target(
+/// Shared allowlist + selector check for terminal exec and log streaming.
+///
+/// Both endpoints take the same `namespace + deployment + pod + container`
+/// quad and need to confirm the deployment is in the managed allowlist, the
+/// pod is actually selected by the deployment, and the named container
+/// exists on that pod. The exec endpoint additionally requires that
+/// `BASTION_TERMINAL_ENABLED` is true; logs do not.
+async fn resolve_pod_target(
     config: &Config,
     query: TerminalQuery,
+    require_terminal: bool,
 ) -> Result<TerminalTarget, Response> {
-    if !config.terminal_enabled {
+    if require_terminal && !config.terminal_enabled {
         return Err((
             StatusCode::FORBIDDEN,
             Json(json!({ "error": "terminal sessions are disabled" })),
@@ -1176,7 +1405,9 @@ async fn validate_terminal_target(
     let Some(target) = find_managed_deployment(&query.namespace, &query.deployment) else {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(json!({ "error": "deployment is not in the bastion terminal allowlist" })),
+            Json(
+                json!({ "error": "deployment is not in the bastion managed allowlist" }),
+            ),
         )
             .into_response());
     };
@@ -1252,6 +1483,13 @@ async fn validate_terminal_target(
         pod: query.pod,
         container: query.container,
     })
+}
+
+async fn validate_terminal_target(
+    config: &Config,
+    query: TerminalQuery,
+) -> Result<TerminalTarget, Response> {
+    resolve_pod_target(config, query, true).await
 }
 
 fn terminal_page_html(target: &TerminalTarget) -> String {
@@ -1586,6 +1824,176 @@ async fn handle_terminal_socket(
     let _ = child.kill().await;
 }
 
+/// `/logs/ws`: stream `kubectl logs -f --tail=N` for an allowlisted pod.
+///
+/// Lighter than terminal exec because it only requires the `pods/log` read
+/// verb that the read-only `dd-bastion-readonly` ClusterRole already grants.
+/// The bastion deliberately runs `kubectl logs` rather than streaming the
+/// `pods/log` HTTP endpoint directly so it inherits the same auth + cluster
+/// resolution path the rest of the service uses.
+async fn logs_ws(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TerminalQuery>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if let Err(response) = require_auth(&headers, &state) {
+        return response;
+    }
+
+    let target = match resolve_pod_target(&state.config, query, false).await {
+        Ok(target) => target,
+        Err(response) => return response,
+    };
+
+    let kubectl_bin = state.config.kubectl_bin.clone();
+    ws.on_upgrade(move |socket| handle_logs_socket(socket, kubectl_bin, target))
+}
+
+async fn handle_logs_socket(mut socket: WebSocket, kubectl_bin: String, target: TerminalTarget) {
+    let _ = send_terminal_json(
+        &mut socket,
+        json!({
+            "type": "logs-status",
+            "source": "dd-bastion",
+            "status": "starting-logs",
+            "namespace": target.namespace,
+            "deployment": target.deployment,
+            "pod": target.pod,
+            "container": target.container,
+            "atMs": now_millis(),
+        }),
+    )
+    .await;
+
+    let mut command = Command::new(&kubectl_bin);
+    command.args([
+        "-n",
+        &target.namespace,
+        "logs",
+        "-f",
+        "--tail=500",
+        &target.pod,
+        "-c",
+        &target.container,
+    ]);
+
+    let mut child = match command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = send_terminal_json(
+                &mut socket,
+                json!({
+                    "type": "logs-error",
+                    "source": "dd-bastion",
+                    "message": format!("failed to start kubectl logs: {error}"),
+                    "atMs": now_millis(),
+                }),
+            )
+            .await;
+            return;
+        }
+    };
+
+    let mut stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => return,
+    };
+    let mut stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => return,
+    };
+    let mut stdout_open = true;
+    let mut stderr_open = true;
+    let mut stdout_buf = [0_u8; 4096];
+    let mut stderr_buf = [0_u8; 4096];
+
+    let _ = send_terminal_json(
+        &mut socket,
+        json!({
+            "type": "logs-status",
+            "source": "dd-bastion",
+            "status": "streaming",
+            "atMs": now_millis(),
+        }),
+    )
+    .await;
+
+    loop {
+        tokio::select! {
+            message = socket.recv() => {
+                match message {
+                    Some(Ok(Message::Ping(bytes))) => {
+                        let _ = socket.send(Message::Pong(bytes)).await;
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+            read = stdout.read(&mut stdout_buf), if stdout_open => {
+                match read {
+                    Ok(0) => stdout_open = false,
+                    Ok(n) => {
+                        if !send_terminal_json(&mut socket, json!({
+                            "type": "logs-output",
+                            "source": "dd-bastion",
+                            "stream": "stdout",
+                            "data": String::from_utf8_lossy(&stdout_buf[..n]).to_string(),
+                            "atMs": now_millis(),
+                        })).await {
+                            break;
+                        }
+                    }
+                    Err(_) => stdout_open = false,
+                }
+            }
+            read = stderr.read(&mut stderr_buf), if stderr_open => {
+                match read {
+                    Ok(0) => stderr_open = false,
+                    Ok(n) => {
+                        if !send_terminal_json(&mut socket, json!({
+                            "type": "logs-output",
+                            "source": "dd-bastion",
+                            "stream": "stderr",
+                            "data": String::from_utf8_lossy(&stderr_buf[..n]).to_string(),
+                            "atMs": now_millis(),
+                        })).await {
+                            break;
+                        }
+                    }
+                    Err(_) => stderr_open = false,
+                }
+            }
+            status = child.wait() => {
+                let (code, signal) = match status {
+                    Ok(status) => (status.code(), None::<String>),
+                    Err(error) => (None, Some(error.to_string())),
+                };
+                let _ = send_terminal_json(&mut socket, json!({
+                    "type": "logs-exit",
+                    "source": "dd-bastion",
+                    "code": code,
+                    "signal": signal,
+                    "atMs": now_millis(),
+                })).await;
+                break;
+            }
+        }
+
+        if !stdout_open && !stderr_open {
+            break;
+        }
+    }
+
+    let _ = child.kill().await;
+}
+
 async fn api_docs_html() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../generated/api-docs.html"))
 }
@@ -1622,6 +2030,7 @@ async fn main() {
         .route("/deployments", get(runtime_deployments))
         .route("/terminal", get(terminal_page))
         .route("/terminal/ws", get(terminal_ws))
+        .route("/logs/ws", get(logs_ws))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
 
@@ -1637,4 +2046,68 @@ async fn main() {
         })
         .await
         .expect("bastion server failed");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_cpu_handles_nano_micro_milli_and_whole_cores() {
+        // metrics-server reports nano-CPU; one full core = 1_000_000_000 n.
+        assert_eq!(parse_cpu_millicores("5000000n"), Some(5));
+        assert_eq!(parse_cpu_millicores("1000000000n"), Some(1000));
+        assert_eq!(parse_cpu_millicores("250m"), Some(250));
+        assert_eq!(parse_cpu_millicores("100u"), Some(0));
+        assert_eq!(parse_cpu_millicores("2"), Some(2_000));
+        assert_eq!(parse_cpu_millicores("0.5"), Some(500));
+        assert_eq!(parse_cpu_millicores(""), None);
+    }
+
+    #[test]
+    fn parse_memory_handles_binary_and_decimal_suffixes() {
+        assert_eq!(parse_memory_bytes("1024Ki"), Some(1_048_576));
+        assert_eq!(parse_memory_bytes("256Mi"), Some(268_435_456));
+        assert_eq!(parse_memory_bytes("2Gi"), Some(2_147_483_648));
+        assert_eq!(parse_memory_bytes("500M"), Some(500_000_000));
+        assert_eq!(parse_memory_bytes("12345"), Some(12_345));
+        assert_eq!(parse_memory_bytes(""), None);
+    }
+
+    #[test]
+    fn build_metrics_lookup_groups_pods_and_containers() {
+        let payload = json!({
+            "kind": "PodMetricsList",
+            "items": [
+                {
+                    "metadata": { "name": "dd-bastion-abc", "namespace": "vpn" },
+                    "containers": [
+                        { "name": "bastion", "usage": { "cpu": "12000000n", "memory": "32Mi" } },
+                    ],
+                },
+                {
+                    "metadata": { "name": "dd-billing-server-xyz", "namespace": "default" },
+                    "containers": [
+                        { "name": "server", "usage": { "cpu": "0", "memory": "0" } },
+                        { "name": "sidecar", "usage": { "cpu": "5m", "memory": "1Mi" } },
+                    ],
+                },
+            ],
+        });
+
+        let lookup = build_metrics_lookup(&payload);
+        let bastion = lookup
+            .get(&("dd-bastion-abc".to_string(), "bastion".to_string()))
+            .copied()
+            .expect("bastion entry");
+        assert_eq!(bastion.cpu_millicores, 12);
+        assert_eq!(bastion.memory_bytes, 32 * 1024 * 1024);
+
+        let sidecar = lookup
+            .get(&("dd-billing-server-xyz".to_string(), "sidecar".to_string()))
+            .copied()
+            .expect("sidecar entry");
+        assert_eq!(sidecar.cpu_millicores, 5);
+        assert_eq!(sidecar.memory_bytes, 1024 * 1024);
+    }
 }

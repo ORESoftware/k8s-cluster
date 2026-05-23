@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "bastion-rs",
   "language": "rust",
-  "routeCount": 14,
+  "routeCount": 15,
   "routeTypeCounts": {
     "service": 4,
-    "user-generated": 7,
+    "user-generated": 8,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -179,6 +179,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "kubeconfig"
+      ],
+      "sourceFiles": [
+        "remote/deployments/bastion-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/logs/ws",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "logs_ws"
       ],
       "sourceFiles": [
         "remote/deployments/bastion-rs/src/main.rs"

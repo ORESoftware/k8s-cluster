@@ -38,12 +38,20 @@ operators reach through WireGuard or the gateway-proxied `/bastion/...` paths:
 
 Protected routes accept `X-Bastion-Auth`, `X-Server-Auth`, `Auth`, or `Authorization: Bearer ...`
 with `SERVER_AUTH_SECRET`. The generated kubeconfig is bound to
-`ClusterRole/dd-bastion-readonly`; it intentionally does not grant Kubernetes Secret access,
-patch/update/delete verbs, general pod creation, or `pods/exec`.
+`ClusterRole/dd-bastion-readonly`; it intentionally does not grant Kubernetes Secret access or
+patch/update/delete verbs.
 
-The browser terminal code path is compiled into the Rust service, but terminal access is disabled
-by default in the Kubernetes deployment and the shipped RBAC does not grant `pods/exec`. Enable it
-only after a separate review of the exact pod allowlist and operational need.
+`dd-bastion-readonly` was extended to also grant read access to `metrics.k8s.io` and `pods/log`
+so the homepage "Live containers" cards can show per-container CPU/memory and stream logs without
+needing exec. CPU and memory come from the cluster's `metrics-server` Argo CD app (kube-system)
+and are read through the metrics aggregation API.
+
+The browser terminal at `/bastion/terminal` is enabled in this Kubernetes deployment
+(`BASTION_TERMINAL_ENABLED=true`) and the matching `pods/exec` `create` verb is granted by a
+separate `ClusterRole`/`ClusterRoleBinding` named `dd-bastion-exec`. To revoke browser terminal
+access without touching inventory routes, flip the env var back to `false` and remove the
+`dd-bastion-exec` `ClusterRoleBinding` from `dd-bastion-rbac.yaml`. Read-only inventory + log
+streaming continues to work even when `dd-bastion-exec` is detached.
 
 ## Recommended access model
 

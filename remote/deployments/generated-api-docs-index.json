@@ -47,10 +47,10 @@
     {
       "service": "bastion-rs",
       "language": "rust",
-      "routeCount": 14,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 4,
-        "user-generated": 7,
+        "user-generated": 8,
         "runtime-config": 3
       },
       "generated": [

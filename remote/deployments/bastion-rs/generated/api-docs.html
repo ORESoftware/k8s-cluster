@@ -42,10 +42,10 @@
     <h1>bastion-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>14 routes</span>
+      <span>15 routes</span>
       <span>rust</span>
       <span>4 service</span>
-      <span>7 user-generated</span>
+      <span>8 user-generated</span>
       
       <span>3 runtime-config</span>
     </div>
@@ -132,6 +132,14 @@
   <td data-label="Path"><code>/kubeconfig</code></td>
   <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><code>kubeconfig</code></td>
+  <td data-label="Auth">service-defined</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/logs/ws</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
+  <td data-label="Handlers"><code>logs_ws</code></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>

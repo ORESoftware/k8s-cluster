@@ -325,16 +325,21 @@ fn live_containers_section() -> Markup {
                 }
                 button id="live-containers-refresh" type="button" { "Refresh" }
             }
-            table {
+            table class="live-containers-table" {
                 thead {
                     tr {
-                        th style="width: 20%" { "Deployment" }
-                        th style="width: 14%" { "Namespace" }
-                        th style="width: 23%" { "Pod" }
+                        th style="width: 18%" { "Deployment" }
+                        th style="width: 12%" { "Namespace" }
+                        th style="width: 22%" { "Pod" }
                         th { "Containers" }
-                        th style="width: 13%" { "Terminal" }
+                        th style="width: 17%" { "Actions" }
                     }
                 }
+                // Each pod row gets a sibling expansion row that the JS
+                // populates on demand with an inline terminal/logs panel.
+                // The expansion row is rendered in-place beneath its pod
+                // row, so opening a session pushes the rest of the table
+                // down rather than docking it elsewhere on the page.
                 tbody id="live-containers-body" {
                     tr {
                         td colspan="5" class="muted" {
@@ -342,16 +347,6 @@ fn live_containers_section() -> Markup {
                         }
                     }
                 }
-            }
-            div id="home-terminal" class="terminal-dock" hidden="hidden" {
-                div class="terminal-head" {
-                    div {
-                        h2 { "Container terminal" }
-                        p id="home-terminal-caption" { "bastion exec session" }
-                    }
-                    button id="home-terminal-close" type="button" { "Close" }
-                }
-                iframe id="home-terminal-frame" class="terminal-frame" title="Bastion container terminal" {}
             }
         }
     }
@@ -1020,24 +1015,112 @@ button:disabled {
   display: grid;
   gap: 5px;
 }
-.terminal-dock {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
+.metrics-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
 }
-.terminal-dock[hidden] { display: none; }
-.terminal-head {
+.metric-chip {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(94, 234, 212, 0.06);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.metric-chip span.label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.metric-chip.metric-warn {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: var(--warn);
+}
+.container-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.container-actions .row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.container-actions .row > .name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+button.action-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+button.action-btn.active {
+  border-color: rgba(94, 234, 212, 0.72);
+  background: rgba(94, 234, 212, 0.18);
+  color: var(--accent);
+}
+tr.inline-panel-row > td {
+  padding: 0;
+  background: var(--panel-2, #0f1720);
+  border-top: 1px dashed var(--line);
+}
+.inline-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.inline-panel-head {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: center;
 }
-.terminal-frame {
+.inline-panel-head h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.inline-panel-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.inline-panel iframe {
   width: 100%;
   height: 460px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #05080d;
+}
+.inline-panel pre.logs {
+  margin: 0;
+  width: 100%;
+  height: 460px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #05080d;
+  color: #d5f5e3;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 ol {
   margin: 8px 0 0;
@@ -1060,10 +1143,6 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   const body = document.getElementById("live-containers-body");
   const status = document.getElementById("live-containers-status");
   const refresh = document.getElementById("live-containers-refresh");
-  const dock = document.getElementById("home-terminal");
-  const frame = document.getElementById("home-terminal-frame");
-  const caption = document.getElementById("home-terminal-caption");
-  const close = document.getElementById("home-terminal-close");
   const runtimeReloadIntervalMs = 30000;
   let inventoryStatus = "loading managed deployment pods from bastion";
   let lastUpdatedAt = "";
@@ -1071,10 +1150,15 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   let reloadTimer = 0;
   let liveInventoryEnabled = false;
   let runtimeSocketsStarted = false;
+  let metricsAvailable = false;
+  // Active inline panels keyed by `${podKey}::${kind}::${container}` so the
+  // open panels survive table re-renders triggered by the 30s reload.
+  const inlinePanels = new Map();
   const wsStatus = { gleam: "idle", rust: "idle" };
   const renderStatus = () => {
     const updated = lastUpdatedAt ? ` · updated ${lastUpdatedAt}` : "";
-    status.textContent = `${inventoryStatus}${updated} · gleam ws ${wsStatus.gleam} · rust ws ${wsStatus.rust}`;
+    const metrics = metricsAvailable ? "metrics ok" : "metrics unavailable";
+    status.textContent = `${inventoryStatus}${updated} · ${metrics} · gleam ws ${wsStatus.gleam} · rust ws ${wsStatus.rust}`;
   };
   const setStatus = (message) => {
     inventoryStatus = message;
@@ -1110,10 +1194,45 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     if (state.terminated) return "terminated " + (state.terminated.reason || "unknown");
     return "unknown";
   };
-  const safeBastionTerminalUrl = (value) => {
+  const formatCpu = (millicores) => {
+    if (millicores == null) return "";
+    if (millicores < 1) return "0m";
+    if (millicores < 1000) return `${millicores}m`;
+    return `${(millicores / 1000).toFixed(2)} cores`;
+  };
+  const formatMemory = (bytes) => {
+    if (bytes == null) return "";
+    const kib = bytes / 1024;
+    if (kib < 1024) return `${kib.toFixed(0)} KiB`;
+    const mib = kib / 1024;
+    if (mib < 1024) return `${mib.toFixed(1)} MiB`;
+    const gib = mib / 1024;
+    return `${gib.toFixed(2)} GiB`;
+  };
+  const metricChip = (label, value, warn) => {
+    if (value === "") return null;
+    const el = document.createElement("span");
+    el.className = warn ? "metric-chip metric-warn" : "metric-chip";
+    const labelEl = document.createElement("span");
+    labelEl.className = "label";
+    labelEl.textContent = label;
+    el.append(labelEl, document.createTextNode(value));
+    return el;
+  };
+  const metricsLine = (metrics) => {
+    if (!metrics) return null;
+    const wrap = document.createElement("span");
+    wrap.className = "metrics-line";
+    const cpu = metricChip("cpu", formatCpu(metrics.cpuMillicores ?? 0));
+    const mem = metricChip("mem", formatMemory(metrics.memoryBytes ?? 0));
+    if (cpu) wrap.appendChild(cpu);
+    if (mem) wrap.appendChild(mem);
+    return wrap.children.length ? wrap : null;
+  };
+  const safeBastionUrl = (value, expectedPath) => {
     try {
       const url = new URL(String(value || ""), window.location.origin);
-      if (url.origin !== window.location.origin || url.pathname !== "/bastion/terminal") return "";
+      if (url.origin !== window.location.origin || url.pathname !== expectedPath) return "";
       for (const key of ["namespace", "deployment", "pod", "container"]) {
         if (!url.searchParams.get(key)) return "";
       }
@@ -1122,17 +1241,9 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       return "";
     }
   };
-  const openTerminal = (url, label) => {
-    const targetUrl = safeBastionTerminalUrl(url);
-    if (!targetUrl) {
-      setStatus("ignored unsafe bastion terminal URL");
-      return;
-    }
-    caption.textContent = label;
-    frame.src = targetUrl;
-    dock.hidden = false;
-    dock.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const safeBastionTerminalUrl = (value) => safeBastionUrl(value, "/bastion/terminal");
+  const safeBastionLogsUrl = (value) => safeBastionUrl(value, "/bastion/logs/ws");
+  const podKey = (deployment, pod) => `${deployment.namespace}/${deployment.deployment}/${pod.name}`;
   const renderEmpty = (message) => {
     body.textContent = "";
     const tr = document.createElement("tr");
@@ -1143,7 +1254,118 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     tr.appendChild(td);
     body.appendChild(tr);
   };
+  const closeInlinePanel = (panelKey) => {
+    const tracked = inlinePanels.get(panelKey);
+    if (!tracked) return;
+    const { row, button, cleanup } = tracked;
+    if (cleanup) {
+      try { cleanup(); } catch (_error) {}
+    }
+    if (row && row.parentNode) row.parentNode.removeChild(row);
+    if (button) button.classList.remove("active");
+    inlinePanels.delete(panelKey);
+  };
+  const closeAllInlinePanels = () => {
+    for (const key of Array.from(inlinePanels.keys())) closeInlinePanel(key);
+  };
+  const openTerminalPanel = (anchorRow, deployment, pod, container, url, button) => {
+    const panelKey = `${podKey(deployment, pod)}::terminal::${container.name}`;
+    if (inlinePanels.has(panelKey)) {
+      closeInlinePanel(panelKey);
+      return;
+    }
+    const tr = document.createElement("tr");
+    tr.className = "inline-panel-row";
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    const wrap = document.createElement("div");
+    wrap.className = "inline-panel";
+    const head = document.createElement("div");
+    head.className = "inline-panel-head";
+    const title = document.createElement("div");
+    const h3 = document.createElement("h3");
+    h3.textContent = `${deployment.namespace}/${pod.name}/${container.name} terminal`;
+    const sub = document.createElement("p");
+    sub.textContent = "Bastion exec session · runs as the in-cluster service account.";
+    title.append(h3, sub);
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Close";
+    closeBtn.addEventListener("click", () => closeInlinePanel(panelKey));
+    head.append(title, closeBtn);
+    const iframe = document.createElement("iframe");
+    iframe.title = "Bastion container terminal";
+    iframe.src = url;
+    wrap.append(head, iframe);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    anchorRow.parentNode.insertBefore(tr, anchorRow.nextSibling);
+    button.classList.add("active");
+    inlinePanels.set(panelKey, {
+      row: tr,
+      button,
+      cleanup: () => { iframe.src = "about:blank"; },
+    });
+  };
+  const openLogsPanel = (anchorRow, deployment, pod, container, url, button) => {
+    const panelKey = `${podKey(deployment, pod)}::logs::${container.name}`;
+    if (inlinePanels.has(panelKey)) {
+      closeInlinePanel(panelKey);
+      return;
+    }
+    const tr = document.createElement("tr");
+    tr.className = "inline-panel-row";
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    const wrap = document.createElement("div");
+    wrap.className = "inline-panel";
+    const head = document.createElement("div");
+    head.className = "inline-panel-head";
+    const title = document.createElement("div");
+    const h3 = document.createElement("h3");
+    h3.textContent = `${deployment.namespace}/${pod.name}/${container.name} logs`;
+    const sub = document.createElement("p");
+    sub.textContent = "kubectl logs -f --tail=500 (live stream)";
+    title.append(h3, sub);
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Close";
+    closeBtn.addEventListener("click", () => closeInlinePanel(panelKey));
+    head.append(title, closeBtn);
+    const pre = document.createElement("pre");
+    pre.className = "logs";
+    wrap.append(head, pre);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    anchorRow.parentNode.insertBefore(tr, anchorRow.nextSibling);
+    button.classList.add("active");
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${protocol}://${window.location.host}${url}`);
+    const append = (line) => {
+      const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+      pre.appendChild(document.createTextNode(line));
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+    };
+    ws.onopen = () => append("[connected]\n");
+    ws.onmessage = (event) => {
+      let parsed;
+      try { parsed = JSON.parse(event.data); } catch { append(String(event.data)); return; }
+      if (parsed.type === "logs-output") append(String(parsed.data || ""));
+      else if (parsed.type === "logs-status") append(`[${parsed.status || "status"}]\n`);
+      else if (parsed.type === "logs-error") append(`[error] ${parsed.message || "logs error"}\n`);
+      else if (parsed.type === "logs-exit") append(`[exit code=${parsed.code} signal=${parsed.signal || "none"}]\n`);
+    };
+    ws.onerror = () => append("[connection error]\n");
+    ws.onclose = () => append("[disconnected]\n");
+    inlinePanels.set(panelKey, {
+      row: tr,
+      button,
+      cleanup: () => { try { ws.close(1000, "panel closed"); } catch (_error) {} },
+    });
+  };
   const render = (data) => {
+    metricsAvailable = !!data.metricsAvailable;
+    closeAllInlinePanels();
     body.textContent = "";
     let rowCount = 0;
     let containerCount = 0;
@@ -1167,8 +1389,8 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
         containerCount += containers.length;
         const containerCell = document.createElement("div");
         containerCell.className = "container-cell";
-        const actions = document.createElement("div");
-        actions.className = "service-actions";
+        const actionsCell = document.createElement("div");
+        actionsCell.className = "container-actions";
         for (const container of containers) {
           const item = document.createElement("div");
           item.className = "container-item";
@@ -1186,29 +1408,71 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
             idLine.append(code(shortContainerId(container.containerId)));
             item.appendChild(idLine);
           }
+          const containerMetrics = metricsLine(container.metrics);
+          if (containerMetrics) item.appendChild(containerMetrics);
           containerCell.appendChild(item);
+
+          const actionRow = document.createElement("div");
+          actionRow.className = "row";
+          const actionLabel = document.createElement("span");
+          actionLabel.className = "name";
+          actionLabel.textContent = container.name;
+          actionRow.appendChild(actionLabel);
+
           const safeTerminalUrl = safeBastionTerminalUrl(container.terminalUrl);
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = "Terminal";
-          button.disabled = !safeTerminalUrl || !data.terminalEnabled;
-          button.title = button.disabled ? "terminal unavailable" : "Open bastion exec terminal";
-          button.addEventListener("click", () => openTerminal(safeTerminalUrl, deployment.namespace + "/" + pod.name + "/" + container.name));
-          actions.appendChild(button);
+          const termBtn = document.createElement("button");
+          termBtn.type = "button";
+          termBtn.className = "action-btn";
+          termBtn.textContent = "Terminal";
+          termBtn.disabled = !safeTerminalUrl || !data.terminalEnabled;
+          termBtn.title = termBtn.disabled
+            ? "terminal unavailable (set BASTION_TERMINAL_ENABLED=true and the dd-bastion-exec ClusterRoleBinding)"
+            : "Open inline bastion exec terminal";
+          actionRow.appendChild(termBtn);
+
+          const safeLogsUrl = safeBastionLogsUrl(container.logsUrl);
+          const logsBtn = document.createElement("button");
+          logsBtn.type = "button";
+          logsBtn.className = "action-btn";
+          logsBtn.textContent = "Logs";
+          logsBtn.disabled = !safeLogsUrl;
+          logsBtn.title = logsBtn.disabled
+            ? "logs unavailable"
+            : "Open inline kubectl logs -f stream";
+          actionRow.appendChild(logsBtn);
+
+          actionsCell.appendChild(actionRow);
+
+          // Wire the click handlers after the pod row is appended so we can
+          // pass the actual <tr> as the insertion anchor.
+          termBtn.addEventListener("click", () => {
+            if (!safeTerminalUrl || !data.terminalEnabled) return;
+            openTerminalPanel(podRow, deployment, pod, container, safeTerminalUrl, termBtn);
+          });
+          logsBtn.addEventListener("click", () => {
+            if (!safeLogsUrl) return;
+            openLogsPanel(podRow, deployment, pod, container, safeLogsUrl, logsBtn);
+          });
         }
         const podCell = document.createElement("div");
         podCell.className = "container-cell";
-        podCell.append(code(pod.name));
-        podCell.append(pill(pod.phase || "unknown", pod.phase !== "Running"));
-        const tr = document.createElement("tr");
-        tr.append(
+        const podLine = document.createElement("span");
+        podLine.append(code(pod.name));
+        podLine.append(" ");
+        podLine.append(pill(pod.phase || "unknown", pod.phase !== "Running"));
+        podCell.appendChild(podLine);
+        const podMetrics = metricsLine(pod.metrics);
+        if (podMetrics) podCell.appendChild(podMetrics);
+
+        const podRow = document.createElement("tr");
+        podRow.append(
           cell(deployment.deployment),
           cell(deployment.namespace),
           cell(podCell),
           cell(containerCell),
-          cell(actions)
+          cell(actionsCell)
         );
-        body.appendChild(tr);
+        body.appendChild(podRow);
         rowCount += 1;
       }
     }
@@ -1292,10 +1556,6 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   refresh.addEventListener("click", () => {
     liveInventoryEnabled = true;
     load();
-  });
-  close.addEventListener("click", () => {
-    frame.src = "about:blank";
-    dock.hidden = true;
   });
   renderEmpty("Sign in through /auth?return=/home, then refresh to load live containers and bastion terminals.");
   setStatus("auth required for live container inventory");
