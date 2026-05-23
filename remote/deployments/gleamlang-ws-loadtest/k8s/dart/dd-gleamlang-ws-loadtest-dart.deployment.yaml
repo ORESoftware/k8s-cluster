@@ -8,15 +8,14 @@ metadata:
     role: loadtest
     target: dd-dart-server
 spec:
-  # Dart-targeted variant of the Gleam JS WS loadtest. Same source, just
-  # pointed at /dart/wss on dd-dart-server so we get an apples-to-apples
-  # mem/cpu comparison between BEAM-driven Gleam-on-JVM (default) and
-  # Dart's session-host pool.
+  # Dart-targeted variant of the Gleam JS WS loadtest. Each replica
+  # drives CLIENT_COUNT connections; total simultaneous == replicas ×
+  # CLIENT_COUNT. The Gleam loader is single-threaded JS so each pod
+  # tops out around 5K connections; shard via replicas to scale higher.
   #
-  # Default replicas: 0 — ramp up manually with `kubectl scale deploy
-  # dd-gleamlang-ws-loadtest-dart --replicas=1` for the duration of the
-  # test, then back to 0. Argo CD self-heal is disabled on this app so
-  # the operator decides when load is on/off.
+  # Default replicas: 0 — operator scales to N for the duration of the
+  # test and back to 0 afterwards. Argo CD self-heal is disabled on
+  # this app so the manual scale sticks.
   replicas: 0
   selector:
     matchLabels:

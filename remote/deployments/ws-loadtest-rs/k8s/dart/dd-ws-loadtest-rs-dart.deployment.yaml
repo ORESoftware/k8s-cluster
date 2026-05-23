@@ -8,16 +8,18 @@ metadata:
     role: loadtest
     target: dd-dart-server
 spec:
-  # 20K WebSocket clients from one loader pod against /dart/wss.
+  # WebSocket clients from a fan of loader pods against /dart/wss.
+  # Each replica drives CLIENT_COUNT connections; total simultaneous
+  # connections at peak == replicas × CLIENT_COUNT.
   #
-  # As of 2026-05-23 the Dart server runs a session-host pool (multiple
-  # WS sessions per Dart isolate, sized via SESSIONS_PER_HOST) plus a
-  # dedicated HTTP isolate on a separate port. This loader still hits
-  # the WS gateway at :8089 and produces a directly comparable mem/cpu
-  # number against `dd-ws-loadtest-rs` (Gleam/BEAM target) and
-  # `dd-ws-loadtest-rs-akkaws-*` (JVM/Akka targets).
+  # As of 2026-05-23 dd-dart-server runs replicas=4 with a single
+  # gateway isolate per pod. One Rust loader pod hit a 4-CPU ceiling
+  # at ~6.8K connections last run, so we shard the loader to match the
+  # server: 4 replicas × 5K clients = 20K total, with 60s ramp per pod
+  # (3 ms/client). Kube-proxy iptables NAT distributes the connections
+  # across the 4 server pods naturally.
   #
-  # Default replicas: 0 — the operator scales to 1 for the duration of
+  # Default replicas: 0 — the operator scales to 4 for the duration of
   # a load test and back to 0 afterwards. The Argo CD app no longer
   # selfHeals so the manual scale sticks for the test window.
   replicas: 0
@@ -55,8 +57,9 @@ spec:
           env:
             - name: TARGET_WS_URL
               value: ws://dd-dart-server.default.svc.cluster.local:8089/dart/wss
+            # Per-pod client count. With replicas=4 this gives 20K total.
             - name: CLIENT_COUNT
-              value: "20000"
+              value: "5000"
             # 120s sustained hold once the ramp has finished, then per-client
             # reconnect — long enough to capture a steady-state mem/cpu read
             # without burning hours of EC2 time.

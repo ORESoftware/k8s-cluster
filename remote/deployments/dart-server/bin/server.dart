@@ -86,6 +86,24 @@ Future<void> main(List<String> args) async {
         Platform.environment['WS_IDLE_TIMEOUT_SECONDS'] ?? '',
       ) ??
       kDefaultIdleTimeoutSeconds;
+  final wsMaxInboundBytes = int.tryParse(
+        Platform.environment['WS_MAX_INBOUND_BYTES'] ?? '',
+      ) ??
+      kDefaultMaxInboundBytes;
+  final wsMaxOutboundRate = int.tryParse(
+        Platform.environment['WS_MAX_OUTBOUND_RATE_PER_SECOND'] ?? '',
+      ) ??
+      kDefaultMaxOutboundRatePerSecond;
+  final wsSlowClientWindows = int.tryParse(
+        Platform.environment['WS_SLOW_CLIENT_WINDOWS'] ?? '',
+      ) ??
+      kDefaultSlowClientWindows;
+  // SIGTERM gives us up to `terminationGracePeriodSeconds` to drain.
+  // Reserve 5s for the kernel to actually deliver SIGKILL.
+  final shutdownGraceSeconds = int.tryParse(
+        Platform.environment['SHUTDOWN_GRACE_SECONDS'] ?? '',
+      ) ??
+      25;
   final watchPaths = (Platform.environment['HOT_RELOAD_PATHS'] ?? 'lib,bin')
       .split(',')
       .map((s) => s.trim())
@@ -127,6 +145,9 @@ Future<void> main(List<String> args) async {
     conversations: conversations,
     sessionsPerHost: sessionsPerHost,
     idleTimeoutSeconds: wsIdleTimeoutSeconds,
+    maxInboundBytes: wsMaxInboundBytes,
+    maxOutboundRatePerSecond: wsMaxOutboundRate,
+    slowClientWindows: wsSlowClientWindows,
   );
 
   // HTTP isolate folds its per-route counters into the gateway's
@@ -230,13 +251,51 @@ Future<void> main(List<String> args) async {
     'ws_idle_timeout_seconds': supervisor.idleTimeoutSeconds,
   }));
 
-  ProcessSignal.sigterm.watch().listen((_) async {
+  // Graceful shutdown:
+  //   1. Stop accepting new connections (server.close).
+  //   2. Tell every host to drain its sessions; each session emits a
+  //      4002 `server_shutdown` close so peers can reconnect cleanly
+  //      instead of seeing a TCP RST.
+  //   3. Wait up to SHUTDOWN_GRACE_SECONDS for liveCount → 0.
+  //   4. Hard-kill remaining hosts and exit.
+  //
+  // Idempotent: the second SIGTERM (kubelet escalates to SIGKILL after
+  // the gracePeriod anyway) just re-enters the same future.
+  Completer<void>? shuttingDown;
+  Future<void> beginShutdown(String signal) async {
+    if (shuttingDown != null) return shuttingDown!.future;
+    final c = Completer<void>();
+    shuttingDown = c;
     // ignore: avoid_print
-    print(jsonEncode({'event': 'sigterm_received'}));
-    await server.close(force: false);
+    print(jsonEncode({
+      'event': 'shutdown_begin',
+      'signal': signal,
+      'live_sessions': supervisor.liveCount,
+      'live_hosts': supervisor.hostCount,
+      'grace_seconds': shutdownGraceSeconds,
+    }));
+    try {
+      await server.close(force: false);
+    } catch (_) {/* swallow */}
+    supervisor.requestDrain();
+    final deadline = DateTime.now().add(Duration(seconds: shutdownGraceSeconds));
+    while (supervisor.liveCount > 0 && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    // ignore: avoid_print
+    print(jsonEncode({
+      'event': 'shutdown_drain_complete',
+      'live_sessions': supervisor.liveCount,
+      'live_hosts': supervisor.hostCount,
+    }));
+    c.complete();
+  }
+
+  ProcessSignal.sigterm.watch().listen((_) {
+    unawaited(beginShutdown('SIGTERM'));
   });
-  ProcessSignal.sigint.watch().listen((_) async {
-    await server.close(force: false);
+  ProcessSignal.sigint.watch().listen((_) {
+    unawaited(beginShutdown('SIGINT'));
   });
 
   await for (final req in server) {
@@ -301,8 +360,29 @@ Future<void> _route(
       );
       return;
     }
+    if (supervisor.isDraining) {
+      metrics.inc('dart_wss_upgrade_refused_draining_total');
+      // Still upgrade, then send a clean close so the client gets a
+      // proper WebSocket handshake/close cycle instead of a 503 in the
+      // middle of an HTTP/1.1 upgrade.
+      try {
+        final s = await WebSocketTransformer.upgrade(req);
+        await s.close(1012, 'server_draining');
+      } catch (_) {/* swallow */}
+      return;
+    }
     metrics.inc('dart_wss_upgrade_total');
-    final socket = await WebSocketTransformer.upgrade(req);
+    final WebSocket socket;
+    try {
+      socket = await WebSocketTransformer.upgrade(req);
+    } catch (e) {
+      metrics.inc('dart_wss_upgrade_failed_total');
+      try {
+        await _plain(req, 'upgrade_failed\n',
+            status: HttpStatus.internalServerError);
+      } catch (_) {/* swallow */}
+      return;
+    }
     final sessionId = _newSessionId();
     final remote = req.connectionInfo?.remoteAddress.address ?? 'unknown';
     final headers = <String, String>{};
@@ -322,6 +402,7 @@ Future<void> _route(
         headers: headers,
       );
     } catch (e, st) {
+      metrics.inc('dart_sessions_adopt_failed_total');
       // ignore: avoid_print
       print(jsonEncode({
         'event': 'wss_session_error',
@@ -329,6 +410,14 @@ Future<void> _route(
         'error': '$e',
         'stack': '$st',
       }));
+      // adopt() failed BEFORE the inbound listener was wired up — most
+      // commonly a host-spawn OOM. Send a 1011 (server_error) close so
+      // the loader can reconnect with a clean state instead of seeing a
+      // half-open socket. We swallow secondary errors because by the
+      // time we get here the socket is in an undefined state.
+      try {
+        await socket.close(1011, 'server_overloaded');
+      } catch (_) {/* swallow */}
     }
     return;
   }

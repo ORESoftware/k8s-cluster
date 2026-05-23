@@ -6,10 +6,23 @@ metadata:
   labels:
     app: dd-dart-server
 spec:
-  replicas: 1
-  # Zero-surge rollout: same shape as dd-akka-ws-server / dd-billing-server.
-  # The single-node EC2 cluster cannot host two replicas during a rolling
-  # deploy.
+  # Multi-replica horizontal sharding for the WS gateway.
+  #
+  # Each Dart pod has a single gateway isolate (one event loop) doing
+  # accept + WS upgrade + per-frame socket I/O for every connection it
+  # owns. That single event loop tops out around ~6.8K concurrent WS
+  # peers on one EC2 c5 vCPU before connect timeouts dominate. With
+  # replicas=4 + kube-proxy iptables LB we cap each pod at ~5K and
+  # leave headroom for the 1Hz clock fan-out and bus deliveries.
+  #
+  # The cluster is single-node, so all replicas land on the same EC2
+  # host. CPU request stays at 1 (4 vCPU total scheduled) but the limit
+  # remains 8 per pod for burst capacity. Memory request 2 Gi × 4 = 8
+  # Gi steady-state; the node has 32 Gi.
+  replicas: 4
+  # Sequential rolling update: bring one pod down, one up, repeat.
+  # The single-node EC2 cluster has limited spare capacity, so we
+  # avoid surging extra replicas during deploys.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -23,7 +36,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-23-http-isolate-split-and-idle-timeout'
+        dd.dev/code-revision: '2026-05-23-hardening-and-replica-shard'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -79,6 +92,21 @@ spec:
             # to 0 to disable.
             - name: WS_IDLE_TIMEOUT_SECONDS
               value: '300'
+            # Hardening knobs (see lib/server/session_supervisor.dart):
+            #   * frame size cap — kills 1009 (`message too big`).
+            #   * outbound rate cap — kills 1011 slow-client.
+            - name: WS_MAX_INBOUND_BYTES
+              value: '65536'
+            - name: WS_MAX_OUTBOUND_RATE_PER_SECOND
+              value: '200'
+            - name: WS_SLOW_CLIENT_WINDOWS
+              value: '5'
+            # SIGTERM grace: the supervisor stops accepting + asks all
+            # hosts to drain. The pod also has terminationGracePeriod=30
+            # so we reserve 5s for the kubelet to actually deliver
+            # SIGKILL after our drain budget elapses.
+            - name: SHUTDOWN_GRACE_SECONDS
+              value: '25'
           ports:
             - name: ws
               containerPort: 8089

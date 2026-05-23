@@ -65,6 +65,28 @@ const int kMaxSessionsPerHost = 2000;
 /// with `WS_IDLE_TIMEOUT_SECONDS`. Set to 0 to disable.
 const int kDefaultIdleTimeoutSeconds = 300;
 
+/// Maximum size, in bytes, of an inbound WS text/binary frame the
+/// supervisor will accept from a peer. Anything larger triggers a
+/// 1009 (`message too big`) close. Override with `WS_MAX_INBOUND_BYTES`.
+/// 64 KiB is plenty for our HTMX form payloads (which are tiny JSON
+/// objects); raising it is cheap memory-wise but expands the DoS
+/// surface for slow-byte / huge-frame attackers.
+const int kDefaultMaxInboundBytes = 64 * 1024;
+
+/// Outbound frames per second a session is allowed to emit before the
+/// supervisor treats it as a slow / runaway client and force-closes.
+/// The 1 Hz clock fragment is the only steady-state emitter, so even
+/// a chatty bus subscriber typically stays under 50 fps. Override with
+/// `WS_MAX_OUTBOUND_RATE_PER_SECOND`.
+const int kDefaultMaxOutboundRatePerSecond = 200;
+
+/// Number of consecutive 1-second windows the per-session outbound
+/// counter must exceed [kDefaultMaxOutboundRatePerSecond] before the
+/// session is killed. Lets a transient burst (e.g. a join flood)
+/// settle before we punish it. Override with
+/// `WS_SLOW_CLIENT_WINDOWS`.
+const int kDefaultSlowClientWindows = 5;
+
 class SessionSupervisor {
   SessionSupervisor({
     required this.metrics,
@@ -73,6 +95,9 @@ class SessionSupervisor {
     required this.conversations,
     int sessionsPerHost = kDefaultSessionsPerHost,
     this.idleTimeoutSeconds = kDefaultIdleTimeoutSeconds,
+    this.maxInboundBytes = kDefaultMaxInboundBytes,
+    this.maxOutboundRatePerSecond = kDefaultMaxOutboundRatePerSecond,
+    this.slowClientWindows = kDefaultSlowClientWindows,
   }) : sessionsPerHost = sessionsPerHost
             .clamp(kMinSessionsPerHost, kMaxSessionsPerHost);
 
@@ -91,6 +116,24 @@ class SessionSupervisor {
   /// Sessions silent for this long emit a 4001 `idle_timeout` close.
   /// 0 disables the check.
   final int idleTimeoutSeconds;
+
+  /// Inbound text/binary frames larger than this trigger a 1009
+  /// `message too big` close. Set to 0 to disable.
+  final int maxInboundBytes;
+
+  /// Outbound rate (frames/second) above which a session is treated as
+  /// a slow/runaway client. Set to 0 to disable.
+  final int maxOutboundRatePerSecond;
+
+  /// Consecutive over-limit windows before we actually kill the slow
+  /// session. Smooths over transient bursts.
+  final int slowClientWindows;
+
+  /// `true` once SIGTERM (or supervisor.requestDrain) has run. The
+  /// supervisor refuses new attaches and forwards the drain sentinel
+  /// to all hosts. Idempotent.
+  bool _draining = false;
+  bool get isDraining => _draining;
 
   final _hosts = <_HostState>[];
 
@@ -119,6 +162,16 @@ class SessionSupervisor {
     required String requestPath,
     required Map<String, String> headers,
   }) async {
+    // Refuse new sessions during drain. Caller is expected to have
+    // already accepted the upgrade; close cleanly instead of attaching.
+    if (_draining) {
+      metrics.inc('dart_sessions_refused_draining_total');
+      try {
+        await socket.close(1012, 'server_draining');
+      } catch (_) {/* swallow */}
+      return;
+    }
+
     // Pick or spawn a host BEFORE we start mutating session-scoped state
     // — if Isolate.spawn fails we want a clean error.
     final host = await _acquireHost();
@@ -209,14 +262,33 @@ class SessionSupervisor {
 
     host.mailbox.send(AttachSession(boot));
 
+    // Slow-client tracker. We bucket outbound frames into 1-second
+    // windows and compare against [maxOutboundRatePerSecond]. The
+    // supervisor force-closes a session that exceeds the limit for
+    // [slowClientWindows] consecutive seconds.
+    var outboundWindowStartMs =
+        DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    var outboundFramesThisWindow = 0;
+    var consecutiveOverLimit = 0;
+
     inboundSub = socket.listen(
       (data) {
         if (data is String) {
+          if (maxInboundBytes > 0 && data.length > maxInboundBytes) {
+            metrics.inc('dart_sessions_oversized_inbound_total');
+            unawaited(socket.close(1009, 'frame_too_large'));
+            return;
+          }
           host.mailbox.send(RouteToSession(
             sessionId: sessionId,
             event: InboundText(data),
           ));
         } else if (data is List<int>) {
+          if (maxInboundBytes > 0 && data.length > maxInboundBytes) {
+            metrics.inc('dart_sessions_oversized_inbound_total');
+            unawaited(socket.close(1009, 'frame_too_large'));
+            return;
+          }
           host.mailbox.send(RouteToSession(
             sessionId: sessionId,
             event: InboundBinary(_asUint8List(data)),
@@ -237,11 +309,38 @@ class SessionSupervisor {
       cancelOnError: true,
     );
 
+    /// Returns true if the current frame should be dropped because the
+    /// peer is too slow to drain. Updates the per-second sliding window
+    /// each call and force-closes the WS once the over-limit counter
+    /// breaches [slowClientWindows].
+    bool tickOutbound() {
+      if (maxOutboundRatePerSecond <= 0) return false;
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      if (nowSec != outboundWindowStartMs) {
+        if (outboundFramesThisWindow > maxOutboundRatePerSecond) {
+          consecutiveOverLimit++;
+          if (consecutiveOverLimit >= slowClientWindows) {
+            metrics.inc('dart_sessions_slow_client_killed_total');
+            unawaited(socket.close(1011, 'slow_client'));
+            return true;
+          }
+        } else {
+          consecutiveOverLimit = 0;
+        }
+        outboundWindowStartMs = nowSec;
+        outboundFramesThisWindow = 0;
+      }
+      outboundFramesThisWindow++;
+      return false;
+    }
+
     outboundSub = outbound.listen((msg) {
       switch (msg) {
         case OutboundText(:final text):
+          if (tickOutbound()) return;
           if (socket.readyState == WebSocket.open) socket.add(text);
         case OutboundBinary(:final bytes):
+          if (tickOutbound()) return;
           if (socket.readyState == WebSocket.open) socket.add(bytes);
         case OutboundClose(:final code, :final reason):
           unawaited(socket.close(code, reason));
@@ -589,6 +688,27 @@ class SessionSupervisor {
   }
 
   // ---- Lifecycle --------------------------------------------------------
+
+  /// Switch the supervisor into drain mode: refuse new attaches, ask
+  /// every live host to detach all its sessions (which emits a clean
+  /// close to each peer). Idempotent.
+  ///
+  /// The caller is expected to wait for `liveCount` to hit 0 (with a
+  /// timeout) before calling [close].
+  void requestDrain() {
+    if (_draining) return;
+    _draining = true;
+    metrics.inc('dart_sessions_drain_requested_total');
+    for (final host in _hosts) {
+      if (host.dead) continue;
+      // Tell the host to gracefully drain its sessions. The host's
+      // mailbox loop will dispose each session, which emits the
+      // OutboundClose → supervisor → socket.close path naturally.
+      try {
+        requestHostShutdown(host.mailbox);
+      } catch (_) {/* swallow */}
+    }
+  }
 
   Future<void> close() async {
     for (final host in _hosts) {
