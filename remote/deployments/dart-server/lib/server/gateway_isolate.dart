@@ -57,7 +57,7 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
   // /metrics on port 8088 stays globally accurate. Gauges only live
   // here; we periodically push their snapshots to the coordinator
   // via [GaugeReport].
-  final metrics = _ForwardingMetrics(Metrics(), boot.metricsBus);
+  final metrics = _ForwardingMetrics(boot.metricsBus);
 
   final bus = EventBus(metrics: metrics);
   final presence = Presence();
@@ -214,33 +214,23 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
   await metrics.close();
 }
 
-/// `Metrics`-shaped wrapper that increments locally AND forwards every
-/// counter mutation to the coordinator. `registerGauge` / `render` /
-/// `close` proxy to the local instance — the coordinator never asks
-/// for rendered exposition from a shard, only forwarded counters and
-/// periodic gauge reports.
-class _ForwardingMetrics implements Metrics {
-  _ForwardingMetrics(this._local, this._bus);
-  final Metrics _local;
+/// `Metrics` subclass that increments locally AND forwards every
+/// counter mutation to the coordinator as a [MetricEvent]. The
+/// coordinator never asks the shard for rendered exposition — its
+/// /metrics is rendered from the canonical (main-isolate) `Metrics`
+/// instance — but the local copy keeps gauges callable inside the
+/// shard for the periodic [GaugeReport] path.
+class _ForwardingMetrics extends Metrics {
+  _ForwardingMetrics(this._bus);
   final SendPort _bus;
 
   @override
   void inc(String name, [int delta = 1]) {
-    _local.inc(name, delta);
+    super.inc(name, delta);
     try {
       _bus.send(MetricEvent(name, delta));
     } catch (_) {/* coordinator gone or in shutdown */}
   }
-
-  @override
-  void registerGauge(String name, num Function() reader) =>
-      _local.registerGauge(name, reader);
-
-  @override
-  String render() => _local.render();
-
-  @override
-  Future<void> close() => _local.close();
 }
 
 Future<void> _route(
