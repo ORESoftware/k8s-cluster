@@ -45,7 +45,16 @@ spec:
               set -euo pipefail
               cd /opt/dd-next-1/remote/deployments/akka-ws-server
               echo "Building dd-akka-ws-server with Maven..."
-              mvn -B -e -DskipTests package
+              # `clean` is required: maven-shade-plugin's AppendingTransformer
+              # concatenates reference.conf into the previous build's shaded
+              # jar on every package run, accumulating duplicate
+              # akka.license-key entries until HOCON's substitution resolver
+              # falls into a ConfigDelayedMerge -> ConfigReference cycle and
+              # never returns. See commit bdb7374 (2026-05-20) for the
+              # license-key conditional that triggered this; before that
+              # commit there was no application.conf override of license-key
+              # and the duplicated reference.conf blocks merged silently.
+              mvn -B -e -DskipTests clean package
               exec java $JAVA_OPTS -jar target/dd-akka-ws-server.jar
           env:
             - name: HTTP_HOST
