@@ -885,14 +885,14 @@ class WssDemoPage extends StatelessComponent {
       title: 'WSS demo — dd-dart-server',
       active: 'wss',
       children: [
-        // HTMX bootstrap. Loaded from a CDN here for the public SSR demo;
-        // the Flutter SPA at /dart/app pulls htmx from a local /dart/assets
-        // bundle so it works offline through the service worker.
+        // Same-origin htmx + htmx-ext-ws. Vendored into the Flutter SPA
+        // bundle (see Dockerfile stage 1) so this page never depends on
+        // unpkg.com being reachable from the user's network — corp
+        // proxies, ad-blocker rules, and offline browsers all load these.
         Component.element(
           tag: 'script',
           attributes: const {
-            'src': 'https://unpkg.com/htmx.org@2.0.6',
-            'crossorigin': 'anonymous',
+            'src': '/dart/app/vendor/htmx.min.js',
             'defer': 'defer',
           },
           children: const [],
@@ -900,8 +900,7 @@ class WssDemoPage extends StatelessComponent {
         Component.element(
           tag: 'script',
           attributes: const {
-            'src': 'https://unpkg.com/htmx-ext-ws@2.0.4',
-            'crossorigin': 'anonymous',
+            'src': '/dart/app/vendor/htmx-ext-ws.min.js',
             'defer': 'defer',
           },
           children: const [],
@@ -914,6 +913,24 @@ class WssDemoPage extends StatelessComponent {
             'pg-style EventBus.',
           ),
         ]),
+        // Always-visible WebSocket status badge. Reflects htmx-ext-ws
+        // events directly so a stuck "connecting…" panel can't be
+        // mistaken for the whole page being dead.
+        Component.element(
+          tag: 'div',
+          attributes: const {
+            'id': 'wss-debug',
+            'class': 'wss-debug',
+          },
+          children: [
+            Component.text('WebSocket: '),
+            Component.element(
+              tag: 'code',
+              attributes: const {'id': 'wss-debug-state'},
+              children: [Component.text('initializing…')],
+            ),
+          ],
+        ),
         Component.element(
           tag: 'div',
           attributes: const {
@@ -933,6 +950,42 @@ class WssDemoPage extends StatelessComponent {
             div(id: 'conv-list-panel', classes: 'conv-list-slot', const []),
             div(id: 'conv-panel', classes: 'conv-slot', const []),
             div(id: 'session-status', classes: 'status-slot', const []),
+          ],
+        ),
+        // Inline diagnostic — wires the status badge above to htmx-ext-ws
+        // events and surfaces the case where htmx itself failed to load
+        // (blocked vendor script, etc) within 3s so the browser doesn't
+        // silently appear "frozen at connecting…".
+        Component.element(
+          tag: 'script',
+          attributes: const {},
+          children: const [
+            Component.text(r'''
+(function () {
+  function el() { return document.getElementById('wss-debug-state'); }
+  function set(text, color) {
+    var e = el();
+    if (!e) return;
+    e.textContent = text;
+    if (color) e.style.color = color;
+  }
+  document.body.addEventListener('htmx:wsConnecting',  function () { set('connecting…'); });
+  document.body.addEventListener('htmx:wsOpen',        function () { set('open ✓', '#0a8a3a'); });
+  document.body.addEventListener('htmx:wsClose',       function () { set('closed', '#a86400'); });
+  document.body.addEventListener('htmx:wsError',       function (ev) {
+    set('error: ' + (ev && ev.detail && ev.detail.error || 'unknown'), '#b91c1c');
+  });
+  document.body.addEventListener('htmx:wsAfterMessage', function () {
+    var e = el();
+    if (e && !e.dataset.gotMessage) { e.dataset.gotMessage = '1'; set('open ✓ (receiving)', '#0a8a3a'); }
+  });
+  setTimeout(function () {
+    if (typeof window.htmx === 'undefined') {
+      set('HTMX failed to load — vendor script blocked?', '#b91c1c');
+    }
+  }, 3000);
+})();
+'''),
           ],
         ),
       ],
@@ -1035,8 +1088,7 @@ class HotReloadPage extends StatelessComponent {
         Component.element(
           tag: 'script',
           attributes: const {
-            'src': 'https://unpkg.com/htmx.org@2.0.6',
-            'crossorigin': 'anonymous',
+            'src': '/dart/app/vendor/htmx.min.js',
             'defer': 'defer',
           },
           children: const [],

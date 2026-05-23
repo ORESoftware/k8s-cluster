@@ -150,6 +150,8 @@ code { background: var(--surface); padding: 1px 4px; border-radius: 3px; font-si
 .nav-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; padding: 0; list-style: none; }
 .nav-cards li a { display: block; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
 .site-footer { color: var(--muted); border-top: 1px solid var(--border); padding-top: 12px; margin-top: 32px; font-size: 12px; }
+.wss-debug { margin: 8px 0 16px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--muted); }
+.wss-debug code { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); color: var(--text); }
 .wss-root { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .wss-root > div { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px; min-height: 64px; }
 .wss-root .meta-slot, .wss-root .status-slot, .wss-root .identity-slot { grid-column: 1 / -1; }
