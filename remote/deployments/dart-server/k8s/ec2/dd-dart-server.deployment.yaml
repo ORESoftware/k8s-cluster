@@ -23,7 +23,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-22-fix-connection-state-collision'
+        dd.dev/code-revision: '2026-05-22-skip-flutter-build'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -82,6 +82,12 @@ spec:
             # mode without rebuilding an image.
             - name: DEV_MODE
               value: 'false'
+            # Skip the in-pod `flutter build web` step. The Jaspr SSR
+            # pages at /dart/pages/* and the /dart/wss endpoint do not
+            # depend on Flutter; flipping this to 'false' re-enables the
+            # full SPA + mobile bundles at /dart/app/ and /dart/mobile/.
+            - name: SKIP_FLUTTER_BUILD
+              value: 'true'
             # `flutter pub get` writes to a per-user cache. Anchor it at a
             # hostPath volume so subsequent boots don't re-download all of
             # pub.
