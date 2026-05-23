@@ -58,14 +58,22 @@ spec:
           env:
             - name: TARGET_WS_URL
               value: ws://dd-dart-server.default.svc.cluster.local:8089/dart/wss
-            # Per-pod client count. With replicas=4 this gives 50K total.
+            - name: LOAD_MODE
+              value: "pipeline"
+            # 7500/pod * 4 replicas = 30K conns. Matches the cross-language
+            # WSS benchmark baseline (rust-wss, fsharp-rx, akkaws-akkastreams,
+            # gleamlang loaders). Bump to 12500 for 50K runs.
             - name: CLIENT_COUNT
-              value: "12500"
+              value: "7500"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "1.0"
+            - name: MESSAGE_PAYLOAD
+              value: "dart-bench-payload"
             # 300s sustained hold so a 4-minute snapshot window can sit
             # entirely inside the steady-state phase without per-client
             # reconnect cycles muddying the numbers.
             - name: HOLD_SECONDS
-              value: "300"
+              value: "600"
             - name: CONNECT_TIMEOUT_SECONDS
               value: "30"
             # Receive timeout has to be loose enough to accommodate
@@ -76,13 +84,15 @@ spec:
               value: "30"
             - name: RECONNECT_DELAY_MS
               value: "2000"
-            # 12500 clients * 3 ms = 37.5 s ramp per pod (4 pods ramp
-            # in parallel so peak is ~40 s after scale-up). Slow enough
+            # 7500 clients * 3 ms = 22.5 s ramp per pod (4 pods ramp
+            # in parallel so peak is ~25 s after scale-up). Slow enough
             # we don't overwhelm the listen backlog of 8 shards.
             - name: RAMP_DELAY_MS
               value: "3"
             - name: REPORT_INTERVAL_SECONDS
-              value: "5"
+              value: "10"
+            - name: CORRELATION_TIMEOUT_SECONDS
+              value: "10"
           resources:
             requests:
               cpu: 250m
