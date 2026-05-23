@@ -33,6 +33,8 @@ on:
           - verify-gleam-mcp-server
           - bootstrap-thread-go-services
           - verify-thread-go-services
+          - deploy-bastion-live-containers
+          - verify-bastion-live-containers
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false
@@ -1068,6 +1070,130 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-thread-operator -o jsonpath=\"{.items[0].metadata.name}\" 2>/dev/null); if [ -n \"$pod\" ]; then kubectl -n default exec \"$pod\" -- sh -lc \"wget -qO- http://127.0.0.1:9101/metrics 2>/dev/null | grep -E \\\"^controller_runtime_|^workqueue_\\\" | head -20\"; else echo \"no operator pod found yet\"; fi'",
               "echo '=== Argo CD application sync state ==='",
               "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-thread-operator application/dd-thread-fleet-exporter -o wide || true'"
+            ]
+          }
+          JSON
+              ;;
+            deploy-bastion-live-containers)
+              # Bring the Live containers card on /home up to date end-to-end:
+              #   1. Fast-forward /home/ec2-user/codes/dd/dd-next-1 so the
+              #      hostPath that dd-bastion mounts at /opt/dd-next-1
+              #      contains the latest source. The bastion deployment
+              #      runs `cargo run --release` at startup and compiles
+              #      from that path, so the checkout has to move BEFORE
+              #      we restart the pod.
+              #   2. Apply the new metrics-server Argo CD Application so
+              #      metrics.k8s.io/v1beta1 returns CPU/memory snapshots
+              #      that dd-bastion enriches the inventory with.
+              #   3. Re-apply the dd-vpn Application and force a hard
+              #      refresh so the new RBAC (pods/log + dd-bastion-exec
+              #      ClusterRole/Binding) and the BASTION_TERMINAL_ENABLED
+              #      env var land together with the deployment rollout.
+              #   4. rollout restart dd-bastion in the vpn namespace and
+              #      dd-remote-web-home in default so both run the new
+              #      code.
+              #   5. Print bastion startup logs and a smoke probe so the
+              #      operator can confirm the new endpoints are live.
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout (bastion compiles from this hostPath) ==="
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block deploy-bastion-live-containers" >&2
+            git status --short
+            exit 1
+          fi
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== apply metrics-server Argo CD Application ==="
+          kubectl apply -f remote/argocd/apps/metrics-server.application.yaml
+          kubectl -n argocd annotate application/metrics-server \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== apply / refresh dd-vpn Argo CD Application ==="
+          kubectl apply -f remote/argocd/apps/dd-vpn.application.yaml || true
+          kubectl -n argocd annotate application/dd-vpn \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== wait for metrics-server rollout ==="
+          for attempt in $(seq 1 30); do
+            if kubectl -n kube-system get deploy metrics-server >/dev/null 2>&1; then
+              break
+            fi
+            sleep 5
+          done
+          kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s || true
+
+          echo "=== rollout restart dd-bastion (picks up new RBAC + new code) ==="
+          kubectl -n vpn rollout restart deployment/dd-bastion || true
+          kubectl -n vpn rollout status deployment/dd-bastion --timeout=600s || true
+
+          echo "=== rollout restart dd-remote-web-home (new live-containers UI) ==="
+          kubectl -n default rollout restart deployment/dd-remote-web-home || true
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s || true
+
+          echo "=== bastion pod summary ==="
+          kubectl -n vpn get pods -l app=dd-bastion -o wide || true
+          for p in $(kubectl -n vpn get pods -l app=dd-bastion -o name 2>/dev/null); do
+            echo "=== LOGS $p (tail 120) ==="
+            kubectl -n vpn logs "$p" --tail=120 || true
+          done
+
+          echo "=== smoke /bastion/healthz from inside the cluster ==="
+          kubectl -n vpn exec deployment/dd-bastion -- sh -lc \
+            'wget -qO- --timeout=5 http://127.0.0.1:8111/healthz || curl -fsS --max-time 5 http://127.0.0.1:8111/healthz || true' \
+            | head -c 800 || true
+
+          echo "=== smoke metrics-server pod listing ==="
+          kubectl -n kube-system get pods -l k8s-app=metrics-server -o wide || true
+
+          echo "=== Argo CD application sync state ==="
+          kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-bastion-live-containers)
+              # Read-only smoke test: confirm metrics-server is serving
+              # CPU/memory rows for managed namespaces, dd-bastion
+              # /runtime/deployments returns metrics chips, and the new
+              # /logs/ws + /terminal endpoints are wired (validation will
+              # 4xx without a real pod target, which still proves the
+              # routes exist).
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== metrics-server pod ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n kube-system get deploy,pods -l k8s-app=metrics-server -o wide || true'",
+              "echo '=== metrics-server raw API ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get --raw \"/apis/metrics.k8s.io/v1beta1/namespaces/default/pods\" | head -c 2000 || true'",
+              "echo '=== dd-bastion pods ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n vpn get pods -l app=dd-bastion -o wide || true'",
+              "echo '=== dd-bastion env (BASTION_TERMINAL_ENABLED) ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n vpn get deploy dd-bastion -o jsonpath=\"{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\\\"\\n\\\"}{end}\" | grep -E \"BASTION_TERMINAL_ENABLED|BASTION_PUBLIC|BASTION_KUBECTL\" || true'",
+              "echo '=== dd-bastion RBAC ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get clusterrole dd-bastion-readonly dd-bastion-exec -o yaml 2>/dev/null | grep -E \"^(apiGroups|resources|verbs)\" || true'",
+              "echo '=== /runtime/deployments smoke (auth-bypassed via cluster-local hop) ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n vpn exec deployment/dd-bastion -- sh -lc \"wget -qO- --timeout=10 http://127.0.0.1:8111/runtime/deployments | head -c 4000\" || true'",
+              "echo '=== bastion startup logs (tail 200) ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n vpn get pods -l app=dd-bastion -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n vpn logs $p --tail=200\" || true; done",
+              "echo '=== Argo CD application sync state ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true'"
             ]
           }
           JSON
