@@ -1346,12 +1346,15 @@ jobs:
           # do not hard-code a name that differs from the deployment
           # template (the bastion validates target.container before the
           # WS upgrade).
-          target_container=$(echo "$response" | jq -r "
-            (.deployments[]
-              | select(.namespace == \"default\" and .name == \"dd-remote-web-home\")
-              | .pods[] | select(.name == \"$target\") | .containers[0].name) // empty
-          " 2>/dev/null || true)
+          target_container=$(echo "$response" \
+            | jq --arg pod "$target" -r "[.deployments[].pods[] | select(.name == \$pod) | .containers[].name] | first // empty" 2>/tmp/jq_err || true)
           echo "target_container=$target_container"
+          if [ -z "$target_container" ]; then
+            echo "jq_err:"; cat /tmp/jq_err 2>/dev/null | head -5
+            echo "response length=${#response}"
+            target_container="remote-web-home"
+            echo "fallback target_container=$target_container"
+          fi
           if [ -n "$bastion_pod" ] && [ -n "$target" ] && [ -n "$target_container" ] && [ -n "$server_auth" ]; then
             kubectl -n vpn exec "$bastion_pod" -- sh -lc "
               python3 - <<'PYEOF'
