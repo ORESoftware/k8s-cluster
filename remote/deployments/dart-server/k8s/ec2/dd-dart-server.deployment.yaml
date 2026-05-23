@@ -87,10 +87,15 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+          # NOTE: limits sized for the 20K-WS load test against /dart/wss
+          # (one Dart isolate per session). The single-EC2-node cluster has
+          # 123 GiB RAM available, so 32 GiB is well within budget while
+          # leaving room for everything else. Drop these back to 1 CPU /
+          # 384 Mi after the comparison run if you don't need the headroom.
           resources:
             requests:
-              cpu: 25m
-              memory: 96Mi
-            limits:
               cpu: '1'
-              memory: 384Mi
+              memory: 2Gi
+            limits:
+              cpu: '8'
+              memory: 32Gi

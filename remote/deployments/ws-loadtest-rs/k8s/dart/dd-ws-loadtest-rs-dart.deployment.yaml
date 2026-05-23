@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ws-loadtest-rs-dart
+  namespace: default
+  labels:
+    app: dd-ws-loadtest-rs-dart
+    role: loadtest
+    target: dd-dart-server
+spec:
+  # 20K WebSocket clients from one loader pod against /dart/wss. The Dart
+  # server uses one isolate per session (Phoenix-style), so this lights up
+  # the full isolate-per-WS path that the Jaspr SSR demo at
+  # /dart/pages/wss uses, and produces a directly comparable mem/cpu
+  # number against `dd-ws-loadtest-rs` (Gleam/BEAM target) and
+  # `dd-ws-loadtest-rs-akkaws-*` (JVM/Akka targets).
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-ws-loadtest-rs-dart
+  template:
+    metadata:
+      labels:
+        app: dd-ws-loadtest-rs-dart
+        role: loadtest
+        target: dd-dart-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              # Raise the per-process FD ceiling so 20K open WS sockets fit.
+              ulimit -n 131072 || true
+              export PATH="/usr/local/cargo/bin:${PATH}"
+              cd /opt/dd-next-1/remote/deployments/ws-loadtest-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-dart-server.default.svc.cluster.local:8089/dart/wss
+            - name: CLIENT_COUNT
+              value: "20000"
+            # 120s sustained hold once the ramp has finished, then per-client
+            # reconnect — long enough to capture a steady-state mem/cpu read
+            # without burning hours of EC2 time.
+            - name: HOLD_SECONDS
+              value: "120"
+            - name: CONNECT_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECEIVE_TIMEOUT_SECONDS
+              value: "5"
+            - name: RECONNECT_DELAY_MS
+              value: "5000"
+            # 20000 clients * 3 ms = 60s ramp. Slow enough that we don't
+            # overwhelm the listen backlog, fast enough that we hit peak in
+            # under a minute.
+            - name: RAMP_DELAY_MS
+              value: "3"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "5"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+            limits:
+              cpu: "4"
+              memory: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
