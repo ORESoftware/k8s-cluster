@@ -23,7 +23,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-23-http-isolate-split'
+        dd.dev/code-revision: '2026-05-23-http-isolate-split-and-idle-timeout'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -74,6 +74,11 @@ spec:
             # and with the ingress route for non-WS /dart/* paths.
             - name: HTTP_INTERNAL_PORT
               value: '8090'
+            # Max idle time (in seconds) the server tolerates on a WS
+            # session before emitting a 4001 `idle_timeout` close. Set
+            # to 0 to disable.
+            - name: WS_IDLE_TIMEOUT_SECONDS
+              value: '300'
           ports:
             - name: ws
               containerPort: 8089

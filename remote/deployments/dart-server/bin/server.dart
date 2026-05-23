@@ -82,6 +82,10 @@ Future<void> main(List<String> args) async {
         Platform.environment['SESSIONS_PER_HOST'] ?? '',
       ) ??
       kDefaultSessionsPerHost;
+  final wsIdleTimeoutSeconds = int.tryParse(
+        Platform.environment['WS_IDLE_TIMEOUT_SECONDS'] ?? '',
+      ) ??
+      kDefaultIdleTimeoutSeconds;
   final watchPaths = (Platform.environment['HOT_RELOAD_PATHS'] ?? 'lib,bin')
       .split(',')
       .map((s) => s.trim())
@@ -122,6 +126,7 @@ Future<void> main(List<String> args) async {
     presence: presence,
     conversations: conversations,
     sessionsPerHost: sessionsPerHost,
+    idleTimeoutSeconds: wsIdleTimeoutSeconds,
   );
 
   // HTTP isolate folds its per-route counters into the gateway's
@@ -169,6 +174,8 @@ Future<void> main(List<String> args) async {
         () => supervisor.hostsTerminatedTotal)
     ..registerGauge(
         'dart_sessions_per_host_cap', () => supervisor.sessionsPerHost)
+    ..registerGauge('dart_ws_idle_timeout_seconds',
+        () => supervisor.idleTimeoutSeconds)
     ..registerGauge('dart_eventbus_topics', () => bus.topicCount)
     ..registerGauge('dart_eventbus_sessions', () => bus.sessionCount)
     ..registerGauge('dart_eventbus_total_joins', () => bus.totalJoinCount)
@@ -220,6 +227,7 @@ Future<void> main(List<String> args) async {
     'ready': ready,
     'sessions_per_host_requested': sessionsPerHost,
     'sessions_per_host_effective': supervisor.sessionsPerHost,
+    'ws_idle_timeout_seconds': supervisor.idleTimeoutSeconds,
   }));
 
   ProcessSignal.sigterm.watch().listen((_) async {

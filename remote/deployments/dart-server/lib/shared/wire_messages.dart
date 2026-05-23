@@ -31,6 +31,7 @@ final class SessionBootMessage {
     required this.headers,
     required this.outbound,
     required this.spawnedAtUs,
+    this.idleTimeoutSeconds = 300,
   });
 
   final String sessionId;
@@ -43,6 +44,14 @@ final class SessionBootMessage {
   final dynamic outbound;
 
   final int spawnedAtUs;
+
+  /// If a session goes [idleTimeoutSeconds] without receiving any
+  /// inbound WS frame from the peer, the session emits an
+  /// [OutboundClose] (code 4001 `idle_timeout`) and the supervisor
+  /// closes the socket. Server-driven outbound frames (the 1Hz clock,
+  /// bus deliveries, OOB swaps) do NOT count as activity — only frames
+  /// from the client. Set to 0 to disable.
+  final int idleTimeoutSeconds;
 }
 
 // ---------------------------------------------------------------------------

@@ -61,6 +61,10 @@ const int kDefaultSessionsPerHost = 100;
 const int kMinSessionsPerHost = 1;
 const int kMaxSessionsPerHost = 2000;
 
+/// Default idle timeout for WebSocket sessions (5 minutes). Override
+/// with `WS_IDLE_TIMEOUT_SECONDS`. Set to 0 to disable.
+const int kDefaultIdleTimeoutSeconds = 300;
+
 class SessionSupervisor {
   SessionSupervisor({
     required this.metrics,
@@ -68,6 +72,7 @@ class SessionSupervisor {
     required this.presence,
     required this.conversations,
     int sessionsPerHost = kDefaultSessionsPerHost,
+    this.idleTimeoutSeconds = kDefaultIdleTimeoutSeconds,
   }) : sessionsPerHost = sessionsPerHost
             .clamp(kMinSessionsPerHost, kMaxSessionsPerHost);
 
@@ -80,6 +85,12 @@ class SessionSupervisor {
   /// supervisor lazily spawns a new host when all existing hosts are
   /// at this cap.
   final int sessionsPerHost;
+
+  /// Per-session idle timeout, in seconds, propagated into the
+  /// `SessionBootMessage` so each session enforces it independently.
+  /// Sessions silent for this long emit a 4001 `idle_timeout` close.
+  /// 0 disables the check.
+  final int idleTimeoutSeconds;
 
   final _hosts = <_HostState>[];
 
@@ -175,6 +186,7 @@ class SessionSupervisor {
       headers: headers,
       outbound: outbound.sendPort,
       spawnedAtUs: DateTime.now().microsecondsSinceEpoch,
+      idleTimeoutSeconds: idleTimeoutSeconds,
     );
 
     // Pre-register with the bus + presence index BEFORE handing the

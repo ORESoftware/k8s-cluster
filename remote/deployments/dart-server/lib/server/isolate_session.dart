@@ -125,6 +125,14 @@ class Session {
   /// to `RouteToSession` frames; drained by [run].
   final _inbox = StreamController<dynamic>(sync: false);
 
+  /// Microseconds-since-epoch at the last inbound WS frame from the
+  /// peer (text or binary). Bus deliveries and server-emitted clock
+  /// frames do NOT update this. Used by the per-tick idle check to
+  /// gracefully close sessions that have been silent for longer than
+  /// `_boot.idleTimeoutSeconds`.
+  int _lastInboundUs = DateTime.now().microsecondsSinceEpoch;
+  bool _idleClosing = false;
+
   final _inboundHtmx = PublishSubject<HtmxInbound>();
   final _busInbound = PublishSubject<BusDelivery>();
 
@@ -172,6 +180,9 @@ class Session {
   /// `_dispose()` has run.
   void deliver(dynamic event) {
     if (_inbox.isClosed) return;
+    if (event is InboundText || event is InboundBinary) {
+      _lastInboundUs = DateTime.now().microsecondsSinceEpoch;
+    }
     _inbox.add(event);
   }
 
@@ -278,12 +289,38 @@ class Session {
     // Bus inbound → state mutations.
     _subs.add(_busInbound.listen(_handleBusDelivery));
 
-    // Server-driven 1Hz tick.
+    // Server-driven 1Hz tick. Drives the visible clock fragment AND
+    // the idle-disconnect check; both are cheap enough to share one
+    // timer.
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       unawaited(_emitFragment(
         Clock(DateTime.now().toUtc().toIso8601String()),
       ));
+      _checkIdle();
     });
+  }
+
+  /// If the peer hasn't sent any inbound WS frame for longer than
+  /// [SessionBootMessage.idleTimeoutSeconds], emit an [OutboundClose]
+  /// and ask the run-loop to drain. Idempotent: the `_idleClosing`
+  /// flag prevents repeat closes once a timeout fires.
+  void _checkIdle() {
+    if (_idleClosing) return;
+    final timeoutSec = _boot.idleTimeoutSeconds;
+    if (timeoutSec <= 0) return;
+    final idleUs = DateTime.now().microsecondsSinceEpoch - _lastInboundUs;
+    if (idleUs < timeoutSec * 1000000) return;
+    _idleClosing = true;
+    _send(const MetricEvent('dart_session_idle_timeout_total'));
+    _send(OutboundClose(
+      code: 4001,
+      reason: 'idle_timeout_${timeoutSec}s',
+    ));
+    // The OutboundClose will reach the supervisor and close the WS;
+    // that will fire `socket.done` → InboundClosed back into this
+    // session. Belt-and-braces: also poke our own shutdown sentinel so
+    // RxDart pipelines drain even if the gateway is slow.
+    requestShutdown();
   }
 
   void _joinTopics() {
