@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/contracts.schema.json",
+  "title": "ContractsNats",
+  "description": "NATS subjects owned by dd-contract-service-rs (Solana contract validation + simulation).",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-contract-service",
+    "summary": "Solana contract validation and result subjects.",
+    "subjects": [
+      {
+        "name": "ContractsSolanaValidate",
+        "description": "Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.contracts.solana.validate",
+        "direction": "both"
+      },
+      {
+        "name": "ContractsSolanaResults",
+        "description": "Published validation/simulation results. Default for CONTRACT_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.contracts.solana.results",
+        "direction": "both"
+      }
+    ]
+  }
+}

@@ -60,17 +60,24 @@ spec:
             # Per-pod client count. With replicas=4 this gives 20K total.
             - name: CLIENT_COUNT
               value: "5000"
-            # 120s sustained hold once the ramp has finished, then per-client
-            # reconnect — long enough to capture a steady-state mem/cpu read
-            # without burning hours of EC2 time.
+            # 300s sustained hold so a 4-minute snapshot window can sit
+            # entirely inside the steady-state phase without per-client
+            # reconnect cycles muddying the numbers.
             - name: HOLD_SECONDS
-              value: "120"
+              value: "300"
             - name: CONNECT_TIMEOUT_SECONDS
               value: "30"
+            # Receive timeout has to be loose enough to accommodate
+            # gateway burst-write delay during ramp. The dd-dart-server
+            # gateway emits a 1 Hz clock to every session; under heavy
+            # outbound fan-out it can take 1–10 s to drain the queue
+            # for any single session. 5 s was the previous value and
+            # caused 80% of clients to disconnect with a "no frame in
+            # 5 s" error during the 20K ramp; 30 s gives 30× slack.
             - name: RECEIVE_TIMEOUT_SECONDS
-              value: "5"
+              value: "30"
             - name: RECONNECT_DELAY_MS
-              value: "5000"
+              value: "2000"
             # 20000 clients * 3 ms = 60s ramp. Slow enough that we don't
             # overwhelm the listen backlog, fast enough that we hit peak in
             # under a minute.

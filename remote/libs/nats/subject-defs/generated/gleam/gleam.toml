@@ -1,0 +1,7 @@
+name = "dd_nats_subject_defs"
+version = "0.1.0"
+description = "Generated Gleam constants, formatters and parsers for dd NATS subject conventions. Do not edit by hand."
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = ">= 0.40.0 and < 2.0.0"

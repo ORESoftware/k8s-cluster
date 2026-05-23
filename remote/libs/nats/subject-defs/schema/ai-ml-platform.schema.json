@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/ai-ml-platform.schema.json",
+  "title": "AiMlPlatformNats",
+  "description": "NATS subjects for the AI/ML telemetry + MDP/POMDP optimizer + DES simulator stack. Mirrors remote/argocd/ai-ml-platform/dd-ai-ml-data-contracts.configmap.yaml.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-ai-ml-pipeline",
+    "summary": "Telemetry ingress, ML feature publication, MDP optimization, and DES simulation subjects.",
+    "subjects": [
+      {
+        "name": "TelemetryRaw",
+        "description": "Raw runtime telemetry samples ingested by the ai-ml-pipeline. Default for ML_RAW_TELEMETRY_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.telemetry.raw",
+        "direction": "both"
+      },
+      {
+        "name": "MlFeatures",
+        "description": "Derived ML features (z-scores, EWMA baselines) published by ai-ml-pipeline. Default for ML_FEATURE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.ml.features",
+        "direction": "both"
+      },
+      {
+        "name": "TelemetryMdp",
+        "description": "MDP telemetry requests emitted by ai-ml-pipeline and consumed by the MDP optimizer. Default for ML_MDP_TELEMETRY_SUBJECT / MDP_TELEMETRY_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.telemetry.mdp",
+        "direction": "both"
+      },
+      {
+        "name": "MlDeadLetter",
+        "description": "Dead-letter target for ai-ml-pipeline messages that failed validation/processing. Default for ML_DEAD_LETTER_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.ml.deadletter",
+        "direction": "publish"
+      },
+      {
+        "name": "MdpOptimize",
+        "description": "MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.mdp.optimize",
+        "direction": "both"
+      },
+      {
+        "name": "MdpResults",
+        "description": "MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.mdp.results",
+        "direction": "both"
+      },
+      {
+        "name": "DesSimulate",
+        "description": "Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.des.simulate",
+        "direction": "both"
+      },
+      {
+        "name": "DesResults",
+        "description": "Discrete-event simulation results. Default for DES_RESULT_SUBJECT.",
+        "kind": "static",
+        "subject": "dd.remote.des.results",
+        "direction": "both"
+      }
+    ]
+  }
+}
