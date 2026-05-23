@@ -1472,6 +1472,27 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         name = container.name,
         bin = state.config.nerdctl_bin,
     );
+    // Surface the *names* (not values) of the env keys that end up forwarded
+    // into the warm worker. This makes silent-misconfig regressions obvious in
+    // pod logs — e.g. when EVENT_INGEST_URL/EVENT_INGEST_SECRET are missing,
+    // the dev-server's eventBus.startVercelIngest pipeline never starts and
+    // task events never reach the websocket fanout.
+    let mut env_keys: Vec<&str> = container_env.keys().map(String::as_str).collect();
+    env_keys.sort_unstable();
+    let event_ingest_url_present = container_env.contains_key("EVENT_INGEST_URL");
+    let event_ingest_secret_present = container_env.contains_key("EVENT_INGEST_SECRET");
+    let nats_url_present = container_env.contains_key("NATS_URL");
+    let worker_fanout_secret_present = container_env.contains_key("WORKER_FANOUT_WS_SECRET")
+        || container_env.contains_key("GLEAM_WORKER_WS_SECRET")
+        || container_env.contains_key("GLEAM_BROADCAST_SECRET");
+    eprintln!(
+        "dd-container-pool worker env for {name}: keys={env_keys:?} \
+         event_ingest_url={event_ingest_url_present} \
+         event_ingest_secret={event_ingest_secret_present} \
+         nats_url={nats_url_present} \
+         worker_fanout_secret={worker_fanout_secret_present}",
+        name = container.name,
+    );
     match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
         Ok(output) => {
             let trimmed = output.trim();

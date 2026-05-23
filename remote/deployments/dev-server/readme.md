@@ -120,11 +120,33 @@ workflow without a failing package install.
 ## Environment variables
 
 > **All credentials are read from `process.env` at runtime.** No secrets are baked into the image.
-> The image does bake git, OpenSSH, GitHub CLI, provider CLIs, the compiled server, and a warm
-> configured repo template owned by the built-in `node` user. In
-> production, the K8s `dd-agent-secrets` Secret (filled in from
+> The image does bake git, OpenSSH, GitHub CLI, provider CLIs, the compiled server, the system
+> agent rules at `/etc/agent/AGENTS.md`, and a warm configured repo template owned by the
+> built-in `node` user. In production, the K8s `dd-agent-secrets` Secret (filled in from
 > [`../../k8s/02-secrets.template.yaml`](../../k8s/02-secrets.template.yaml)) is consumed by every
 > per-thread pod via `envFrom`. Local dev: pass via `--env-file` or `docker run -e`.
+
+### System agent rules (PR / git / secret hygiene)
+
+`remote/deployments/dev-server/system-agents.md` is COPYed into every worker
+image at `/etc/agent/AGENTS.md`. `dd-dev-server` reads it on every task and
+prepends it to the prompt as `<system_agent_rules>` *before* the workspace
+`AGENTS.md`/`agents/*.md`/`docs/*.md` block. The two key contracts it locks
+in are:
+
+- **Pull requests are draft-only.** Workers may open drafts via
+  `gh pr create --draft`, post comments via the `pr_comment` workspace tool,
+  and replace the body via `pr_update_body`. `gh pr ready`, `gh pr merge`,
+  `gh pr close`, and any "auto-merge" flow are blocked at the tool layer
+  and called out as forbidden in the system rules.
+- **Workspace edits are not PR comments.** When the user prompt asks for a
+  PR comment or PR-body update, runners must use `pr_comment` /
+  `pr_update_body` (or `gh pr comment` from a shell-capable runner). File
+  appends are explicitly forbidden as a substitute.
+
+`SYSTEM_AGENTS_MD_PATH` overrides the path for local dev (omit / point at a
+test file). `SYSTEM_AGENTS_MD_MAX_CHARS` (default `16000`) caps the injected
+size.
 
 ### Required — server core
 

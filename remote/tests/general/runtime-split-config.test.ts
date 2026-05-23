@@ -51,6 +51,35 @@ test("node deployment is api-only and no longer binds hostPort 80", async () => 
   assert.doesNotMatch(nodeDeployment, /hostPort:\s*80/);
 });
 
+test("dev-server-api wires the full event-fanout env (REST + NATS + worker WS)", async () => {
+  const nodeDeployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml",
+  );
+
+  assert.match(
+    nodeDeployment,
+    /name:\s*EVENT_INGEST_URL[\s\S]*value:\s*http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082\/api\/agents\/events/,
+  );
+  assert.match(
+    nodeDeployment,
+    /name:\s*EVENT_INGEST_SECRET[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+  );
+  assert.match(
+    nodeDeployment,
+    /name:\s*NATS_URL[\s\S]*value:\s*nats:\/\/dd-nats\.messaging\.svc\.cluster\.local:4222/,
+  );
+  assert.match(nodeDeployment, /name:\s*NATS_EVENT_SUBJECT[\s\S]*value:\s*dd\.remote\.events/);
+  assert.match(
+    nodeDeployment,
+    /name:\s*THREAD_CONTEXT_BASE_URL[\s\S]*value:\s*http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+  );
+  // GLEAM_BROADCAST_SECRET lives in dd-gleamlang-server-secrets and is the
+  // dev-server's third-fallback for WORKER_FANOUT_WS_SECRET (see
+  // dev-server/src/ws-fanout.ts). Without this secretRef the outbound
+  // /worker-ws fanout silently disables itself.
+  assert.match(nodeDeployment, /dd-gleamlang-server-secrets/);
+});
+
 test("gateway routes homepage to rust and worker control paths to node api", async () => {
   const gatewayConfig = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",

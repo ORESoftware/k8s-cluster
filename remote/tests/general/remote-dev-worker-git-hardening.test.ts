@@ -50,6 +50,21 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const threadTemplate = await readRepoFile('remote/k8s/07-thread-deployment.template.yaml');
   const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   const agentsMd = await readRepoFile('AGENTS.md');
+  const systemAgentsMd = await readRepoFile('remote/deployments/dev-server/system-agents.md');
+
+  // System agent rules — these get baked into /etc/agent/AGENTS.md and
+  // prepended to every prompt. Lock the high-value contracts so a
+  // well-meaning edit can't silently drop "draft only" / "no auto-merge".
+  assert.match(systemAgentsMd, /Drafts only/);
+  assert.match(systemAgentsMd, /Never auto-merge/);
+  assert.match(systemAgentsMd, /Never close/);
+  assert.match(systemAgentsMd, /Comments are comments/);
+  assert.match(systemAgentsMd, /Appending to a workspace file is not a PR\s+comment/);
+  assert.match(systemAgentsMd, /No force-push to shared branches/);
+  assert.match(systemAgentsMd, /pr_comment/);
+  assert.match(systemAgentsMd, /pr_update_body/);
+  assert.match(systemAgentsMd, /pr_view/);
+  assert.match(systemAgentsMd, /\/etc\/agent\/AGENTS\.md/);
 
   assert.match(server, /async function remoteBranchExists\(branch: string\): Promise<boolean>/);
   assert.match(
@@ -333,6 +348,14 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   );
   assert.match(server, /threadTitle:\s*parsed\.data\.threadTitle \?\? undefined/);
   assert.match(server, /resolveAgentProvider\(parsed\.data\.provider \?\? undefined\)/);
+  // System AGENTS.md (PR draft-only / no auto-merge / secret hygiene) is
+  // injected unconditionally before the workspace AGENTS.md so policies
+  // cannot be silently weakened by a per-repo file.
+  assert.match(server, /systemAgentsMdPath: process\.env\.SYSTEM_AGENTS_MD_PATH \?\? '\/etc\/agent\/AGENTS\.md'/);
+  assert.match(server, /async function readSystemAgentsMd\(\): Promise<string>/);
+  assert.match(server, /const systemAgentsMd = await readSystemAgentsMd\(\)/);
+  assert.match(server, /<system_agent_rules source="' \+ config\.systemAgentsMdPath \+ '">/);
+  assert.match(server, /'thread-context:system-agents-md'/);
   assert.match(
     geminiRunner,
     /const primaryModel = opts\.env\.GEMINI_MODEL \?\? 'gemini-3\.1-pro-preview'/,
@@ -364,6 +387,15 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(genericRunner, /createWorkspaceTools/);
   assert.match(genericRunner, /tools: createWorkspaceTools\(opts\.cwd, opts\.emit\)/);
   assert.match(genericRunner, /stopWhen: stepCountIs\(8\)/);
+  // The runner system prompt must steer the model to pr_comment / pr_update_body
+  // for PR work, not file appends. This was the regression that produced the
+  // "fixin up her" workspace edit on https://github.com/ORESoftware/live-mutex/pull/119.
+  assert.match(genericRunner, /pr_comment.*pr_update_body|pr_update_body.*pr_comment/);
+  assert.match(genericRunner, /Never substitute append_file/);
+  assert.match(genericRunner, /Never call any tool that would merge, close, or mark-ready a PR/);
+  assert.match(opencodeRunner, /pr_comment.*pr_update_body|pr_update_body.*pr_comment/);
+  assert.match(opencodeRunner, /Never substitute append_file/);
+  assert.match(opencodeRunner, /Never call any tool that would merge, close, or mark-ready a PR/);
   assert.match(workspaceTools, /BLOCKED_PATH_SEGMENTS = new Set\(\['\.git', 'node_modules', '\.pnpm-store', '\.next', '\.turbo'\]\)/);
   assert.match(workspaceTools, /relativePath: relativePath \|\| '\.'/);
   assert.match(workspaceTools, /if \(segment && !pathSegmentAllowed\(segment\)\)/);
@@ -375,6 +407,28 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(workspaceTools, /workspace_status: tool/);
   assert.match(workspaceTools, /execFileAsync\('git', \['status', '--short'\]/);
   assert.doesNotMatch(workspaceTools, /execFileAsync\([^'"]/);
+  // PR-targeted tools wrap `gh pr view|comment|edit` server-side. The
+  // hardening contract is: never expose any subcommand that could merge,
+  // close, mark-ready, or change the base branch of a PR — that flow is
+  // human-only.
+  assert.match(workspaceTools, /pr_view: tool/);
+  assert.match(workspaceTools, /pr_comment: tool/);
+  assert.match(workspaceTools, /pr_update_body: tool/);
+  assert.match(workspaceTools, /ALLOWED_GH_SUBCOMMANDS = new Set\(\['view', 'comment', 'edit'\]\)/);
+  assert.doesNotMatch(workspaceTools, /pr_merge|pr_close|pr_ready|--auto|--squash|--rebase/);
+  assert.match(
+    workspaceTools,
+    /refused: PR merge \/ close \/ ready flags are not exposed to agent tools/,
+  );
+  assert.match(
+    workspaceTools,
+    /refused: PR has been marked ready by a human reviewer; agent tools do not edit non-draft PRs/,
+  );
+  // The agent never sees GH_PAT directly; pr_* tools must inject GH_TOKEN
+  // server-side from the worker's process.env so the credential never
+  // reaches the model.
+  assert.match(workspaceTools, /GH_TOKEN: ghToken/);
+  assert.match(workspaceTools, /process\.env\.GH_PAT/);
   assert.match(clusterMcp, /CLUSTER_MCP_SERVER_NAME = 'dd_cluster'/);
   assert.match(clusterMcp, /kubernetes_inventory/);
   assert.match(clusterMcp, /kubernetes_deployments/);
@@ -434,6 +488,14 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(
     dockerfile,
     /PNPM_STORE_DIR=\/home\/node\/repo-template\/\.pnpm-store pnpm install --frozen-lockfile/,
+  );
+  // Bake the system agent rules into the worker image so policies (drafts
+  // only, no auto-merge, secret hygiene) apply unconditionally — even when
+  // the cloned workspace has no AGENTS.md.
+  assert.match(dockerfile, /install -d -m 0755 -o root -g root \/etc\/agent/);
+  assert.match(
+    dockerfile,
+    /COPY --chown=root:root --chmod=0644 system-agents\.md \/etc\/agent\/AGENTS\.md/,
   );
   assert.match(dockerfile, /ENV HOME=\/home\/node \\\s+USER=node/);
   assert.match(dockerfile, /git clone --depth 1 --branch "\$DD_REPO_REF" "\$DD_REPO_URL" repo-template/);

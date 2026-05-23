@@ -418,6 +418,30 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /dd-remote-rest-api-secrets/);
   assert.match(deployment, /dd-container-pool-secrets/);
+  // Worker event-fanout wiring — without these the warm dev-server worker
+  // boots without EVENT_INGEST_URL/EVENT_INGEST_SECRET so its eventBus.startVercelIngest
+  // pipeline never starts and task events never reach the websocket fanout.
+  assert.match(
+    deployment,
+    /name:\s*EVENT_INGEST_URL[\s\S]*value:\s*http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082\/api\/agents\/events/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*EVENT_INGEST_SECRET[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+  );
+  assert.match(deployment, /name:\s*NATS_EVENT_SUBJECT[\s\S]*value:\s*dd\.remote\.events/);
+  assert.match(
+    deployment,
+    /name:\s*THREAD_CONTEXT_BASE_URL[\s\S]*value:\s*http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+  );
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*EVENT_INGEST_URL/);
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*EVENT_INGEST_SECRET/);
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*THREAD_CONTEXT_BASE_URL/);
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*GLEAM_BROADCAST_SECRET/);
+  // dd-gleamlang-server-secrets carries GLEAM_BROADCAST_SECRET, used as the
+  // workerFanoutWsUrlFromEnv() third-fallback secret so warm workers can
+  // authenticate to /worker-ws on the gleam server.
+  assert.match(deployment, /dd-gleamlang-server-secrets/);
   assert.match(deployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
   assert.match(deployment, /mountPath:\s*\/var\/lib\/containerd/);
   assert.match(deployment, /mountPropagation:\s*Bidirectional/);

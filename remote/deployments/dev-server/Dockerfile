@@ -88,6 +88,16 @@ RUN corepack enable \
  && npm i -g @anthropic-ai/claude-code \
  && (npm i -g @openai/codex 2>/dev/null || echo "codex CLI not installed; openai-codex-cli runner will be marked unavailable")
 
+# --- Baked-in system agent rules ---
+# /etc/agent/AGENTS.md ships with the image and is unconditionally injected
+# into every agent prompt by dd-dev-server.readRepoContextEntrypoint. Keeping
+# the rules in the image (rather than a per-repo AGENTS.md) means policies
+# like "PRs are drafts only" and "never auto-merge" apply even when the
+# cloned workspace has no AGENTS.md, and the rules cannot be silently
+# overridden by a malicious or out-of-date repo file.
+RUN install -d -m 0755 -o root -g root /etc/agent
+COPY --chown=root:root --chmod=0644 system-agents.md /etc/agent/AGENTS.md
+
 # --- Non-root user + writable dirs ---
 # node:22-bookworm-slim already ships with uid/gid 1000 (`node`). The runtime
 # image uses that user directly; Kubernetes init containers only chown mounted

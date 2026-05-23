@@ -112,12 +112,29 @@ spec:
             - name: CONTAINER_POOL_CLEANUP_ON_START
               value: 'true'
             - name: CONTAINER_POOL_FORWARD_ENV_KEYS
-              value: SERVER_AUTH_SECRET,REMOTE_DEV_SERVER_SECRET,GH_DEPLOY_KEY,GH_PAT,ANTHROPIC_API_KEY,ANTHROPIC_API_KEYS_JSON,CLAUDE_API_KEYS_JSON,OPENAI_API_KEY,OPENAI_API_KEYS_JSON,GOOGLE_API_KEY,GOOGLE_API_KEYS_JSON,GEMINI_API_KEY,GEMINI_API_KEYS_JSON,OPENCODE_API_KEY,OPENCODE_API_KEYS_JSON,OPENCODE_BASE_URL,OPENCODE_MODELS,DEEPSEEK_API_KEY,DEEPSEEK_API_KEYS_JSON,DEEPSEEK_BASE_URL,DEEPSEEK_MODELS,DASHSCOPE_API_KEY,DASHSCOPE_API_KEYS_JSON,DASHSCOPE_BASE_URL,QWEN_API_KEY,QWEN_API_KEYS_JSON,QWEN_BASE_URL,QWEN_MODELS,XAI_API_KEY,XAI_API_KEYS_JSON,XAI_BASE_URL,XAI_MODELS,GROK_API_KEY,GROK_API_KEYS_JSON,GROK_BASE_URL,GROK_MODELS,EVENT_INGEST_URL,EVENT_INGEST_SECRET,GLEAM_WORKER_WS_SECRET,WORKER_FANOUT_WS_SECRET,WORKER_FANOUT_WS_BASE_URL
+              value: SERVER_AUTH_SECRET,REMOTE_DEV_SERVER_SECRET,GH_DEPLOY_KEY,GH_PAT,ANTHROPIC_API_KEY,ANTHROPIC_API_KEYS_JSON,CLAUDE_API_KEYS_JSON,OPENAI_API_KEY,OPENAI_API_KEYS_JSON,GOOGLE_API_KEY,GOOGLE_API_KEYS_JSON,GEMINI_API_KEY,GEMINI_API_KEYS_JSON,OPENCODE_API_KEY,OPENCODE_API_KEYS_JSON,OPENCODE_BASE_URL,OPENCODE_MODELS,DEEPSEEK_API_KEY,DEEPSEEK_API_KEYS_JSON,DEEPSEEK_BASE_URL,DEEPSEEK_MODELS,DASHSCOPE_API_KEY,DASHSCOPE_API_KEYS_JSON,DASHSCOPE_BASE_URL,QWEN_API_KEY,QWEN_API_KEYS_JSON,QWEN_BASE_URL,QWEN_MODELS,XAI_API_KEY,XAI_API_KEYS_JSON,XAI_BASE_URL,XAI_MODELS,GROK_API_KEY,GROK_API_KEYS_JSON,GROK_BASE_URL,GROK_MODELS,EVENT_INGEST_URL,EVENT_INGEST_SECRET,NATS_EVENT_SUBJECT,THREAD_CONTEXT_BASE_URL,GLEAM_WORKER_WS_SECRET,WORKER_FANOUT_WS_SECRET,WORKER_FANOUT_WS_BASE_URL,GLEAM_BROADCAST_SECRET
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+            # Worker event-fanout wiring (forwarded into every warm worker via
+            # CONTAINER_POOL_FORWARD_ENV_KEYS). Without these, dd-dev-server in
+            # the warm pool starts with `EVENT_INGEST_URL`/`EVENT_INGEST_SECRET`
+            # unset, so the eventBus.startVercelIngest pipeline never runs and
+            # task events never reach the REST API → Postgres → websocket
+            # fanout. Mirrors the wiring used by dd-dev-server-api directly.
+            - name: EVENT_INGEST_URL
+              value: http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events
+            - name: EVENT_INGEST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: NATS_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: THREAD_CONTEXT_BASE_URL
+              value: http://dd-remote-rest-api.default.svc.cluster.local:8082
             # runtime-config wiring: registers this pod with the control plane
             # so it receives /internal/update-runtime-config pushes every 5 min
             # plus on-demand admin pushes.
@@ -146,6 +163,14 @@ spec:
                 optional: true
             - secretRef:
                 name: dd-container-pool-secrets
+                optional: true
+            # GLEAM_BROADCAST_SECRET lives in dd-gleamlang-server-secrets; the
+            # dev-server worker uses it as the third fallback for
+            # WORKER_FANOUT_WS_SECRET (see dev-server/src/ws-fanout.ts) so its
+            # outbound /worker-ws connection authenticates against the gleam
+            # broadcaster instead of falling back to NATS-only fanout.
+            - secretRef:
+                name: dd-gleamlang-server-secrets
                 optional: true
           ports:
             - name: http

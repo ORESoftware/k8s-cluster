@@ -10,6 +10,13 @@ import type { AgentRunnerEvent } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
+const PR_BODY_MAX_BYTES = 60_000;
+const PR_COMMENT_MAX_BYTES = 60_000;
+const GH_TIMEOUT_MS = 30_000;
+// Subcommands the workspace-tools-driven agent is allowed to invoke through gh.
+// Anything that closes, merges, or marks-ready a PR is intentionally absent.
+const ALLOWED_GH_SUBCOMMANDS = new Set(['view', 'comment', 'edit']);
+
 const BLOCKED_PATH_SEGMENTS = new Set(['.git', 'node_modules', '.pnpm-store', '.next', '.turbo']);
 const DEFAULT_READ_MAX_BYTES = 48_000;
 const MAX_READ_BYTES = 160_000;
@@ -223,5 +230,132 @@ export function createWorkspaceTools(cwd: string, emit: Emit): ToolSet {
         };
       },
     }),
+
+    pr_view: tool({
+      description:
+        'Read metadata for the draft pull request opened from the current branch (number, title, body, url, state, isDraft). Use this when the user asks about an existing PR before commenting or editing it.',
+      inputSchema: z.object({}),
+      execute: async () => githubPrAction(cwd, emit, 'view', []),
+    }),
+
+    pr_comment: tool({
+      description:
+        'Post a real comment on the GitHub pull request that is open from this workspace branch. The agent does not have GH credentials directly; this tool runs server-side with the worker token. Use this — not append_file — when the user asks for a PR comment.',
+      inputSchema: z.object({
+        body: z
+          .string()
+          .min(1)
+          .max(PR_COMMENT_MAX_BYTES)
+          .describe('Markdown body of the PR comment.'),
+      }),
+      execute: async ({ body }) =>
+        githubPrAction(cwd, emit, 'comment', ['--body', body]),
+    }),
+
+    pr_update_body: tool({
+      description:
+        'Replace the body (description) of the draft pull request open from this workspace branch. Title is left unchanged. Never marks the PR ready or merges; use the user-facing UI for that.',
+      inputSchema: z.object({
+        body: z
+          .string()
+          .min(1)
+          .max(PR_BODY_MAX_BYTES)
+          .describe('Replacement Markdown body.'),
+      }),
+      execute: async ({ body }) =>
+        githubPrAction(cwd, emit, 'edit', ['--body', body]),
+    }),
+  };
+}
+
+async function githubPrAction(
+  cwd: string,
+  emit: Emit,
+  subcommand: 'view' | 'comment' | 'edit',
+  extraArgs: string[],
+): Promise<{
+  ok: true;
+  subcommand: string;
+  url?: string;
+  number?: number;
+  title?: string;
+  state?: string;
+  isDraft?: boolean;
+  body?: string;
+  message: string;
+}> {
+  if (!ALLOWED_GH_SUBCOMMANDS.has(subcommand)) {
+    throw new Error(`gh pr ${subcommand} is not allowed by the workspace-tools allowlist`);
+  }
+  const ghToken = process.env.GH_PAT;
+  if (!ghToken) {
+    throw new Error(
+      'pr_comment / pr_update_body / pr_view require GH_PAT on the worker — surface this in the final summary instead of editing files',
+    );
+  }
+  if (extraArgs.some((arg) => /^--(merge|squash|rebase|delete-branch|ready|reopen|close)$/.test(arg))) {
+    throw new Error('refused: PR merge / close / ready flags are not exposed to agent tools');
+  }
+
+  let prMeta: { url?: string; number?: number; title?: string; state?: string; isDraft?: boolean; body?: string } = {};
+  const ghEnv = { ...process.env, GH_TOKEN: ghToken };
+  try {
+    const viewArgs = ['pr', 'view', '--json', 'url,number,title,state,isDraft,body'];
+    const { stdout } = await execFileAsync('gh', viewArgs, {
+      cwd,
+      env: ghEnv,
+      timeout: GH_TIMEOUT_MS,
+    });
+    prMeta = JSON.parse(stdout) as typeof prMeta;
+  } catch (err) {
+    throw new Error(
+      `gh pr view failed (is there an open PR for this branch?): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (subcommand === 'view') {
+    toolLog(emit, `workspace-tool:pr_view #${prMeta.number ?? '?'} state=${prMeta.state ?? 'unknown'}`);
+    return {
+      ok: true,
+      subcommand,
+      ...prMeta,
+      message: `pr_view ok for #${prMeta.number ?? 'unknown'}`,
+    };
+  }
+
+  if (prMeta.state && prMeta.state !== 'OPEN') {
+    throw new Error(
+      `refused: PR is in state ${prMeta.state}; agent tools only modify open draft PRs`,
+    );
+  }
+  if (subcommand === 'edit' && prMeta.isDraft === false) {
+    throw new Error(
+      'refused: PR has been marked ready by a human reviewer; agent tools do not edit non-draft PRs',
+    );
+  }
+
+  try {
+    const ghArgs = ['pr', subcommand, ...extraArgs];
+    await execFileAsync('gh', ghArgs, {
+      cwd,
+      env: ghEnv,
+      timeout: GH_TIMEOUT_MS,
+      maxBuffer: 1_000_000,
+    });
+  } catch (err) {
+    throw new Error(
+      `gh pr ${subcommand} failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  toolLog(
+    emit,
+    `workspace-tool:pr_${subcommand} #${prMeta.number ?? '?'} bytes=${extraArgs.find((_, i) => extraArgs[i - 1] === '--body')?.length ?? 0}`,
+  );
+  return {
+    ok: true,
+    subcommand,
+    ...prMeta,
+    message: `pr_${subcommand} ok for #${prMeta.number ?? 'unknown'}`,
   };
 }

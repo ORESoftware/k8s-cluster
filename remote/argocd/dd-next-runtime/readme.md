@@ -12,6 +12,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-remote-queue-consumer` (Rust NATS queue consumer for UUID-bound workers and explicit pool dispatch)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
+- `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
@@ -93,6 +94,9 @@ Gateway path map:
   `dd-trading-server:8103` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
+- `/browser-test`, `/browser-test/healthz`, `/browser-test/metrics`, `/browser-test/status`,
+  `/browser-test/tools` -> `dd-browser-test-server:8104` (internal auth required;
+  `POST /run` accepts a bounded scenario DSL across Playwright, Puppeteer, and Selenium)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
 - `/dd-thread/<short>/...` -> target per-thread Kubernetes Ingress shape; the selected Node.js
   worker is pinned to one thread and does not route UUIDs itself. `/dd-thread/<short>/ws` is the

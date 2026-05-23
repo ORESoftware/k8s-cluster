@@ -229,6 +229,13 @@ const config = {
   threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
   threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
   repoContextMaxChars: Number(process.env.REPO_CONTEXT_MAX_CHARS ?? 24_000),
+  // Path to the baked-in system agent rules (PR draft-only policy, no
+  // auto-merge, secret hygiene). Defaults to the location written by
+  // `remote/deployments/dev-server/Dockerfile`. Operators can point this
+  // at a different file in dev/test, but it must be readable by the
+  // container's `node` user.
+  systemAgentsMdPath: process.env.SYSTEM_AGENTS_MD_PATH ?? '/etc/agent/AGENTS.md',
+  systemAgentsMdMaxChars: Number(process.env.SYSTEM_AGENTS_MD_MAX_CHARS ?? 16_000),
   agentOptimisticMode: process.env.AGENT_OPTIMISTIC_MODE !== 'false',
   agentMcpUrl: process.env.AGENT_MCP_ENABLED === 'false' ? null : process.env.AGENT_MCP_URL ?? null,
   agentFallbackProvider: configuredAgentFallbackProvider,
@@ -2091,6 +2098,27 @@ async function existingContextFiles(workspacePath: string, relativePaths: string
   return out;
 }
 
+// Reads the baked-in system rules at /etc/agent/AGENTS.md. These rules are
+// authored in this repo (remote/deployments/dev-server/system-agents.md) and
+// COPYed into the worker image so they apply unconditionally — the workspace
+// AGENTS.md cannot silently weaken policies like "PRs are drafts only" or
+// "never auto-merge". Returns '' if the file is missing so dev/local runs
+// without the bake-in still work.
+async function readSystemAgentsMd(): Promise<string> {
+  const path = config.systemAgentsMdPath;
+  if (!path) return '';
+  try {
+    const fileStat = await stat(path);
+    if (!fileStat.isFile()) return '';
+    const text = await readFile(path, 'utf8');
+    const trimmed = text.trim();
+    if (!trimmed) return '';
+    return truncateRepoContextFile(trimmed, config.systemAgentsMdMaxChars);
+  } catch {
+    return '';
+  }
+}
+
 async function readRepoContextEntrypoint(workspacePath: string): Promise<string> {
   const rootAgents = await existingContextFiles(workspacePath, ['AGENTS.md']);
   const agentDocs = await listMarkdownChildren(workspacePath, 'agents');
@@ -2308,6 +2336,7 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     }
   }
 
+  const systemAgentsMd = await readSystemAgentsMd();
   const repoContext = await readRepoContextEntrypoint(state.worktreePath);
 
   const fetchedContextBlobs = await fetchSelectedContextBlobs(state);
@@ -2337,6 +2366,23 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
         'Prefer concrete repo inspection, tests, and small reversible changes over waiting for clarification.',
       ].join('\n'),
       '</agent_operating_mode>',
+    );
+  }
+
+  if (systemAgentsMd) {
+    // Surfacing this as its own status row makes it easy to confirm in the
+    // diagnostics UI that the baked-in PR / git / secret-hygiene rules
+    // actually reached the agent.
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:system-agents-md',
+      message: `Baked system agent rules (${config.systemAgentsMdPath}) injected into the task prompt.`,
+    });
+    promptSections.push(
+      '',
+      '<system_agent_rules source="' + config.systemAgentsMdPath + '">',
+      systemAgentsMd,
+      '</system_agent_rules>',
     );
   }
 

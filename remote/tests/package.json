@@ -8,6 +8,7 @@
     "test:cli": "node cli-smoke.mjs",
     "test:cli:ai-ml-platform": "pnpm exec tsx --test general/ai-ml-platform-config.test.ts",
     "test:cli:bastion-config": "pnpm exec tsx --test general/bastion-config.test.ts",
+    "test:cli:browser-test-server-config": "pnpm exec tsx --test general/browser-test-server-config.test.ts",
     "test:cli:build-server-config": "pnpm exec tsx --test general/build-server-config.test.ts",
     "test:cli:general": "pnpm exec tsx --test general/cli.test.ts",
     "test:cli:deep": "pnpm exec tsx --test general/cli.deep.test.ts",

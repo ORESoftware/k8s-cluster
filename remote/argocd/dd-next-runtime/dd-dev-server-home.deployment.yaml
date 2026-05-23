@@ -110,6 +110,13 @@ spec:
             - secretRef:
                 name: dd-agent-secrets
                 optional: true
+            # GLEAM_BROADCAST_SECRET is owned by dd-gleamlang-server-secrets;
+            # the dev-server uses it as the WORKER_FANOUT_WS_SECRET fallback so
+            # its outbound /worker-ws fanout authenticates against the gleam
+            # broadcaster (see dev-server/src/ws-fanout.ts).
+            - secretRef:
+                name: dd-gleamlang-server-secrets
+                optional: true
           ports:
             - name: http
               containerPort: 8080
