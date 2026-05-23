@@ -143,6 +143,8 @@ Future<void> main(List<String> args) async {
         Platform.environment['SHUTDOWN_GRACE_SECONDS'] ?? '',
       ) ??
       25;
+  final wsBenchmarkMode =
+      Platform.environment['WS_BENCHMARK_MODE']?.toLowerCase() == 'true';
   final watchPaths = (Platform.environment['HOT_RELOAD_PATHS'] ?? 'lib,bin')
       .split(',')
       .map((s) => s.trim())
@@ -234,6 +236,7 @@ Future<void> main(List<String> args) async {
           maxOutboundRatePerSecond: wsMaxOutboundRate,
           slowClientWindows: wsSlowClientWindows,
           clockIntervalSeconds: wsClockIntervalSeconds,
+          benchmarkMode: wsBenchmarkMode,
           gaugeReportIntervalMs: gaugeReportIntervalMs,
         ),
         debugName: 'dd-dart-gateway-shard-$shardId',
@@ -289,6 +292,7 @@ Future<void> main(List<String> args) async {
     'ws_max_age_seconds': wsMaxAgeSeconds,
     'ws_age_based_idle_seconds': wsAgeBasedIdleSeconds,
     'ws_clock_interval_seconds': wsClockIntervalSeconds,
+    'ws_benchmark_mode': wsBenchmarkMode,
   }));
 
   // ---- Coordinator gauges ------------------------------------------------

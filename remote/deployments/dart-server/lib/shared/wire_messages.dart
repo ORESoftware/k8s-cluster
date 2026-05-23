@@ -356,6 +356,7 @@ final class GatewayShardBoot {
     required this.maxOutboundRatePerSecond,
     required this.slowClientWindows,
     required this.clockIntervalSeconds,
+    required this.benchmarkMode,
     required this.gaugeReportIntervalMs,
   });
 
@@ -386,6 +387,7 @@ final class GatewayShardBoot {
   final int maxOutboundRatePerSecond;
   final int slowClientWindows;
   final int clockIntervalSeconds;
+  final bool benchmarkMode;
 
   /// How often the shard pushes a [GaugeReport] to [metricsBus].
   final int gaugeReportIntervalMs;

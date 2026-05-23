@@ -83,6 +83,16 @@ const int kDefaultAgeBasedIdleSeconds = 30;
 /// disables the clock entirely (idle/age timers still fire).
 const int kDefaultClockIntervalSeconds = 1;
 
+/// When `true`, supervisor.adopt skips the auto-bus-register +
+/// presence.bind path AND suppresses the `presence.session_joined` /
+/// `presence.session_left` broadcasts on connect/disconnect. Normal
+/// app traffic stays functional (sessions can still publish bus
+/// frames and identify) but connect/disconnect churn no longer scales
+/// O(N) per event. Override with `WS_BENCHMARK_MODE=true` while
+/// running pure-connection benchmarks to remove the O(N²) fanout
+/// death spiral that bites every event-bus design under high churn.
+const bool kDefaultBenchmarkMode = false;
+
 /// Maximum size, in bytes, of an inbound WS text/binary frame the
 /// supervisor will accept from a peer. Anything larger triggers a
 /// 1009 (`message too big`) close. Override with `WS_MAX_INBOUND_BYTES`.
@@ -119,6 +129,7 @@ class SessionSupervisor {
     this.maxOutboundRatePerSecond = kDefaultMaxOutboundRatePerSecond,
     this.slowClientWindows = kDefaultSlowClientWindows,
     this.clockIntervalSeconds = kDefaultClockIntervalSeconds,
+    this.benchmarkMode = kDefaultBenchmarkMode,
   }) : sessionsPerHost = sessionsPerHost
             .clamp(kMinSessionsPerHost, kMaxSessionsPerHost);
 
@@ -163,6 +174,12 @@ class SessionSupervisor {
   /// Per-session interval between Clock OOB swap fragments. Threaded
   /// into each [SessionBootMessage] so individual sessions enforce it.
   final int clockIntervalSeconds;
+
+  /// When true, the supervisor skips bus.register / presence.bind on
+  /// adopt and suppresses presence.session_joined / session_left
+  /// broadcasts. Removes the O(N²) fanout that otherwise dominates
+  /// CPU in pure-connection benchmarks at >10K live sessions.
+  final bool benchmarkMode;
 
   /// `true` once SIGTERM (or supervisor.requestDrain) has run. The
   /// supervisor refuses new attaches and forwards the drain sentinel
@@ -223,28 +240,29 @@ class SessionSupervisor {
       teardownStarted = true;
       metrics.inc('dart_sessions_teardown_total');
 
-      // Order matters: unbind presence + announce departure BEFORE we
-      // unregister from the bus, so the announcement actually fans out.
-      final userId = presence.userIdFor(sessionId);
-      if (userId != null) {
-        // Did this disconnect take the user offline (no remaining
-        // sessions)? Capture before we unbind.
-        final wasLastSession = presence.sessionsFor(userId).length <= 1;
-        presence.unbind(sessionId);
-        bus.publish(
-          topic: presenceTopic,
-          kind: 'presence.session_left',
-          data: <String, Object?>{
-            'sessionId': sessionId,
-            'userId': userId,
-            'displayName': presence.displayNameFor(userId),
-            'userOffline': wasLastSession,
-          },
-          fromSessionId: _systemSessionId,
-        );
+      if (!benchmarkMode) {
+        // Order matters: unbind presence + announce departure BEFORE we
+        // unregister from the bus, so the announcement actually fans out.
+        final userId = presence.userIdFor(sessionId);
+        if (userId != null) {
+          // Did this disconnect take the user offline (no remaining
+          // sessions)? Capture before we unbind.
+          final wasLastSession = presence.sessionsFor(userId).length <= 1;
+          presence.unbind(sessionId);
+          bus.publish(
+            topic: presenceTopic,
+            kind: 'presence.session_left',
+            data: <String, Object?>{
+              'sessionId': sessionId,
+              'userId': userId,
+              'displayName': presence.displayNameFor(userId),
+              'userOffline': wasLastSession,
+            },
+            fromSessionId: _systemSessionId,
+          );
+        }
+        bus.unregister(sessionId);
       }
-
-      bus.unregister(sessionId);
       _liveCount.add((_liveCount.value - 1).clamp(0, 1 << 30));
 
       // Detach from host BEFORE we close ports so any in-flight bus
@@ -280,16 +298,18 @@ class SessionSupervisor {
       clockIntervalSeconds: clockIntervalSeconds,
     );
 
-    // Pre-register with the bus + presence index BEFORE handing the
-    // attach message to the host, so the session can issue BusJoin /
-    // ConversationJoin synchronously during its bootstrap and have
-    // those land on the supervisor in order.
-    bus.register(sessionId, host.mailbox);
-    presence.bind(
-      sessionId,
-      _anonymousUserIdFor(sessionId),
-      displayName: _anonymousDisplayNameFor(sessionId),
-    );
+    if (!benchmarkMode) {
+      // Pre-register with the bus + presence index BEFORE handing the
+      // attach message to the host, so the session can issue BusJoin
+      // / ConversationJoin synchronously during its bootstrap and have
+      // those land on the supervisor in order.
+      bus.register(sessionId, host.mailbox);
+      presence.bind(
+        sessionId,
+        _anonymousUserIdFor(sessionId),
+        displayName: _anonymousDisplayNameFor(sessionId),
+      );
+    }
 
     // Route this session's lifetime to the host so the supervisor can
     // tear down the WS if the host isolate ever dies.
@@ -384,11 +404,18 @@ class SessionSupervisor {
           unawaited(socket.close(code, reason));
         case MetricEvent(:final name, :final delta):
           metrics.inc(name, delta);
+        // The bus / presence / conversation handlers below are
+        // skipped wholesale in benchmark mode so a Session that
+        // optimistically emits BusJoin during bootstrap doesn't end
+        // up registered against a topic it can't be delivered to.
         case BusJoin(:final topic):
+          if (benchmarkMode) break;
           bus.join(sessionId, topic);
         case BusLeave(:final topic):
+          if (benchmarkMode) break;
           bus.leave(sessionId, topic);
         case BusPublish(:final topic, :final kind, :final data, :final includeSelf):
+          if (benchmarkMode) break;
           bus.publish(
             topic: topic,
             kind: kind,
@@ -397,20 +424,26 @@ class SessionSupervisor {
             includeSelf: includeSelf,
           );
         case Identify(:final userId, :final displayName):
+          if (benchmarkMode) break;
           _handleIdentify(sessionId, userId, displayName);
         case ConversationOpen(
               :final conversationId,
               :final title,
               :final kind,
             ):
+          if (benchmarkMode) break;
           _handleConversationOpen(sessionId, conversationId, title, kind);
         case ConversationJoin(:final conversationId):
+          if (benchmarkMode) break;
           _handleConversationJoin(sessionId, conversationId);
         case ConversationLeave(:final conversationId, :final dropMembership):
+          if (benchmarkMode) break;
           _handleConversationLeave(sessionId, conversationId, dropMembership);
         case ConversationSay(:final conversationId, :final text):
+          if (benchmarkMode) break;
           _handleConversationSay(sessionId, conversationId, text);
         case ConversationDelete(:final conversationId):
+          if (benchmarkMode) break;
           _handleConversationDelete(sessionId, conversationId);
         case _:
           // Forward-compat: ignore unrecognised frames so a newer worker

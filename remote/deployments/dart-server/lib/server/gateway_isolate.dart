@@ -75,6 +75,7 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
     maxOutboundRatePerSecond: boot.maxOutboundRatePerSecond,
     slowClientWindows: boot.slowClientWindows,
     clockIntervalSeconds: boot.clockIntervalSeconds,
+    benchmarkMode: boot.benchmarkMode,
   );
 
   // Control port: the coordinator sends [ShardShutdown] when the pod
@@ -167,6 +168,7 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
     'idle_timeout_seconds': boot.idleTimeoutSeconds,
     'max_age_seconds': boot.maxAgeSeconds,
     'age_based_idle_seconds': boot.ageBasedIdleSeconds,
+    'benchmark_mode': boot.benchmarkMode,
   }));
 
   // Listen for ShardShutdown from the coordinator. Idempotent.

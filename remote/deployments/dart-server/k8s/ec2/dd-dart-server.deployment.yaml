@@ -36,7 +36,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-23-multi-isolate-shared-port-acceptors'
+        dd.dev/code-revision: '2026-05-23-multi-isolate-shared-port-with-benchmark-mode'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -121,6 +121,14 @@ spec:
             # Set to 0 to disable the visible clock entirely.
             - name: WS_CLOCK_INTERVAL_SECONDS
               value: '5'
+            # Pure-connection benchmark mode: disables the bus.register
+            # / presence.bind path on adopt and skips system-topic
+            # broadcasts (presence.session_joined / session_left). Cuts
+            # the O(N²) bus fanout that otherwise dominates CPU once
+            # live sessions exceed ~10K. Set to `false` for normal app
+            # traffic; `true` while running the 20K WS benchmark.
+            - name: WS_BENCHMARK_MODE
+              value: 'true'
             # Hardening knobs (see lib/server/session_supervisor.dart):
             #   * frame size cap — kills 1009 (`message too big`).
             #   * outbound rate cap — kills 1011 slow-client.
