@@ -23,76 +23,45 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-22-skip-flutter-build'
+        dd.dev/code-revision: '2026-05-22-prebuilt-image'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
         - name: dart-server
-          # ghcr.io/cirruslabs/flutter ships both the Dart SDK and the
-          # Flutter SDK in /opt/flutter, so a single image can build both
-          # the server (dart compile exe) and the web bundle (flutter build
-          # web). Pin to the same Flutter version we use for local builds.
-          image: ghcr.io/cirruslabs/flutter:3.44.0
+          # Pre-built multi-stage image (see ../../Dockerfile). Built on the
+          # EC2 host with:
+          #   docker build \
+          #     -f remote/deployments/dart-server/Dockerfile \
+          #     -t dd-dart-server:dev \
+          #     .
+          # All Flutter and Dart compilation happens at image-build time, so
+          # the pod only runs the AOT-compiled `dd-dart-server` binary and
+          # serves the pre-built Flutter SPA + mobile bundles. This matches
+          # the dd-formal-methods-server / dd-remote-web-home pattern.
+          image: docker.io/library/dd-dart-server:dev
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
             seccompProfile:
               type: RuntimeDefault
-          # Bash-only `set -o pipefail` lives in /bin/bash; the cirruslabs
-          # image ships it. (Same shape as the dash-vs-bash fix in
-          # commit b7b3c1b on fsharp-ws-server.)
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              cd /opt/dd-next-1/remote/deployments/dart-server
-              echo "[dd-dart-server] starting build-and-run.sh"
-              exec scripts/build-and-run.sh
           env:
             - name: HTTP_HOST
               value: 0.0.0.0
             - name: HTTP_PORT
               value: '8089'
             - name: STATIC_DIR
-              value: /opt/dd-next-1/remote/deployments/dart-server/public
-            # Independent Flutter web bundle served at /dart/mobile/.
-            # scripts/build-and-run.sh atomically swaps the
-            # `flutter_mobile_app/build/web` output into this stable
-            # path, mirroring the STATIC_DIR pattern above so the
-            # running server never sees a half-written tree.
+              value: /opt/dd-dart-server/public
             - name: MOBILE_STATIC_DIR
-              value: /opt/dd-next-1/remote/deployments/dart-server/mobile-public
+              value: /opt/dd-dart-server/mobile-public
             - name: READY_AT_BOOT
               value: 'true'
-            # Hot reload toggle. When DEV_MODE=true, the in-pod runner
-            # boots `dart run --enable-vm-service` (JIT) instead of
-            # `dart compile exe` (AOT) and the in-process HotReloader
-            # watches lib/ + bin/ for .dart changes — every isolate
-            # picks up new code without dropping any open WebSocket.
-            #
-            # Endpoints when DEV_MODE=true:
-            #   POST /dart/admin/reload            → reload all isolates
-            #   GET  /dart/admin/hot-reload-status → JSON status + last result
-            #
-            # Set this through ArgoCD's `Refresh` UI or by editing the
-            # Application's `parameters` so cluster ops can flip the
-            # mode without rebuilding an image.
-            - name: DEV_MODE
-              value: 'false'
-            # Skip the in-pod `flutter build web` step. The Jaspr SSR
-            # pages at /dart/pages/* and the /dart/wss endpoint do not
-            # depend on Flutter; flipping this to 'false' re-enables the
-            # full SPA + mobile bundles at /dart/app/ and /dart/mobile/.
-            - name: SKIP_FLUTTER_BUILD
-              value: 'true'
-            # `flutter pub get` writes to a per-user cache. Anchor it at a
-            # hostPath volume so subsequent boots don't re-download all of
-            # pub.
-            - name: PUB_CACHE
-              value: /home/cirrus/.pub-cache
           ports:
             - name: http
               containerPort: 8089
@@ -100,15 +69,13 @@ spec:
             httpGet:
               path: /healthz
               port: http
-            periodSeconds: 5
-            # Cold flutter+dart build can take a minute or two on a small
-            # EC2 host. Match the billing-server-rs cold-build budget.
-            failureThreshold: 120
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 2
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
@@ -116,34 +83,14 @@ spec:
             httpGet:
               path: /healthz
               port: http
-            initialDelaySeconds: 30
+            initialDelaySeconds: 10
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
             requests:
-              cpu: 50m
-              memory: 384Mi
+              cpu: 25m
+              memory: 96Mi
             limits:
-              cpu: '2'
-              memory: 1500Mi
-          volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-            - name: pub-cache
-              mountPath: /home/cirrus/.pub-cache
-            - name: flutter-cache
-              mountPath: /opt/flutter/bin/cache
-      volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
-        - name: pub-cache
-          hostPath:
-            path: /home/ec2-user/.cache/pub-cache-dart-server
-            type: DirectoryOrCreate
-        - name: flutter-cache
-          hostPath:
-            path: /home/ec2-user/.cache/flutter-cache-dart-server
-            type: DirectoryOrCreate
+              cpu: '1'
+              memory: 384Mi
