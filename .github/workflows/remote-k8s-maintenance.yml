@@ -1168,35 +1168,139 @@ jobs:
           PY
               ;;
             verify-bastion-live-containers)
-              # Read-only smoke test: confirm metrics-server is serving
-              # CPU/memory rows for managed namespaces, dd-bastion
-              # /runtime/deployments returns metrics chips, and the new
-              # /logs/ws + /terminal endpoints are wired (validation will
-              # 4xx without a real pod target, which still proves the
-              # routes exist).
-              cat > /tmp/remote-k8s-commands.json <<'JSON'
-          {
-            "commands": [
-              "set -euo pipefail",
-              "echo '=== metrics-server pod ==='",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n kube-system get deploy,pods -l k8s-app=metrics-server -o wide || true'",
-              "echo '=== metrics-server raw API ==='",
-              "sudo -u ec2-user -H bash -lc 'kubectl get --raw \"/apis/metrics.k8s.io/v1beta1/namespaces/default/pods\" | head -c 2000 || true'",
-              "echo '=== dd-bastion pods ==='",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n vpn get pods -l app=dd-bastion -o wide || true'",
-              "echo '=== dd-bastion env (BASTION_TERMINAL_ENABLED) ==='",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n vpn get deploy dd-bastion -o jsonpath=\"{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\\\"\\n\\\"}{end}\" | grep -E \"BASTION_TERMINAL_ENABLED|BASTION_PUBLIC|BASTION_KUBECTL\" || true'",
-              "echo '=== dd-bastion RBAC ==='",
-              "sudo -u ec2-user -H bash -lc 'kubectl get clusterrole dd-bastion-readonly dd-bastion-exec -o yaml 2>/dev/null | grep -E \"^(apiGroups|resources|verbs)\" || true'",
-              "echo '=== /runtime/deployments smoke (auth-bypassed via cluster-local hop) ==='",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n vpn exec deployment/dd-bastion -- sh -lc \"wget -qO- --timeout=10 http://127.0.0.1:8111/runtime/deployments | head -c 4000\" || true'",
-              "echo '=== bastion startup logs (tail 200) ==='",
-              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n vpn get pods -l app=dd-bastion -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n vpn logs $p --tail=200\" || true; done",
-              "echo '=== Argo CD application sync state ==='",
-              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true'"
-            ]
-          }
-          JSON
+              # Read-only deep smoke test: prove metrics-server is healthy,
+              # dd-bastion is running the new code (with metricsAvailable
+              # set in /runtime/deployments and the new /logs/ws route),
+              # the RBAC split landed, and the inventory route returns
+              # quickly. Uses the deployment label selector
+              # `app.kubernetes.io/name=dd-bastion` to match the actual
+              # pod template, plus `kubectl auth can-i` to confirm the
+              # ServiceAccount has the verbs we expect.
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+
+          script = r'''set +e
+          set -u
+          echo "=== HEAD on EC2 checkout ==="
+          ( cd /home/ec2-user/codes/dd/dd-next-1 && git rev-parse --short HEAD )
+
+          echo "=== metrics-server deployment + pod ==="
+          kubectl -n kube-system get deploy metrics-server -o wide || true
+          kubectl -n kube-system get pods -l app.kubernetes.io/name=metrics-server -o wide || true
+
+          echo "=== metrics-server raw API (default namespace, first 60 entries) ==="
+          kubectl get --raw "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods" \
+            | jq -r ".items[] | \"\\(.metadata.name)  cpu=\\(.containers[0].usage.cpu // \"-\")  mem=\\(.containers[0].usage.memory // \"-\")\"" \
+            | head -60 || true
+
+          echo "=== metrics-server raw API across managed namespaces ==="
+          for ns in default ai-ml argocd kube-system monitoring vpn; do
+            count=$(kubectl get --raw "/apis/metrics.k8s.io/v1beta1/namespaces/$ns/pods" 2>/dev/null \
+              | jq ".items | length" 2>/dev/null || echo "ERR")
+            echo "$ns -> $count pods reporting"
+          done
+
+          echo "=== dd-bastion pods ==="
+          kubectl -n vpn get pods -l app.kubernetes.io/name=dd-bastion -o wide || true
+          bastion_pod="$(kubectl -n vpn get pods -l app.kubernetes.io/name=dd-bastion -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || true)"
+          echo "bastion_pod=$bastion_pod"
+
+          echo "=== dd-bastion env (subset) ==="
+          kubectl -n vpn get deploy dd-bastion \
+            -o jsonpath="{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\"\n\"}{end}" \
+            | grep -E "BASTION_TERMINAL_ENABLED|BASTION_PUBLIC|BASTION_KUBECTL|BASTION_WIREGUARD" || true
+
+          echo "=== dd-bastion ClusterRoles ==="
+          kubectl get clusterrole dd-bastion-readonly dd-bastion-exec -o jsonpath="{range .items[*]}{.metadata.name}{\"\n\"}{end}" || true
+
+          echo "=== dd-bastion-readonly rules ==="
+          kubectl get clusterrole dd-bastion-readonly \
+            -o jsonpath="{range .rules[*]}apiGroups={.apiGroups} resources={.resources} verbs={.verbs}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== dd-bastion-exec rules ==="
+          kubectl get clusterrole dd-bastion-exec \
+            -o jsonpath="{range .rules[*]}apiGroups={.apiGroups} resources={.resources} verbs={.verbs}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== ClusterRoleBindings reference dd-bastion ==="
+          kubectl get clusterrolebinding dd-bastion-readonly dd-bastion-exec \
+            -o jsonpath="{range .items[*]}{.metadata.name} -> {.roleRef.name} for {.subjects}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== kubectl auth can-i for the dd-bastion ServiceAccount ==="
+          for verb_resource in \
+            "list pods" \
+            "get nodes.metrics.k8s.io" \
+            "list pods.metrics.k8s.io" \
+            "get pods/log" \
+            "create pods/exec"; do
+            verb=$(echo "$verb_resource" | awk "{print \$1}")
+            resource=$(echo "$verb_resource" | awk "{print \$2}")
+            ans=$(kubectl auth can-i "$verb" "$resource" \
+              --as=system:serviceaccount:vpn:dd-bastion -n default 2>&1 | head -1 || true)
+            echo "  can $verb $resource -> $ans"
+          done
+
+          echo "=== /runtime/deployments JSON shape (timed) ==="
+          if [ -n "$bastion_pod" ]; then
+            t0=$(date +%s%3N)
+            response=$(kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "wget -qO- --timeout=15 http://127.0.0.1:8111/runtime/deployments" 2>/dev/null || true)
+            t1=$(date +%s%3N)
+            elapsed=$((t1 - t0))
+            echo "request elapsed: ${elapsed} ms"
+            if [ -z "$response" ]; then
+              echo "WARN: /runtime/deployments returned empty body (cargo build still running?)"
+            else
+              echo "$response" | jq "{
+                metricsAvailable,
+                deploymentsCount: (.deployments | length),
+                metricsErrorsCount: (.metricsErrors | length),
+                metricsErrors,
+                samplePod: (.deployments[0].pods[0] | { name, namespace, cpuMilli, memoryBytes, terminalUrl, logsUrl, containers: ([.containers[] | { name, ready, cpuMilli, memoryBytes, terminalUrl, logsUrl }]) }),
+                managedNamespacesWithMetrics: (
+                  [.deployments[].pods[] | select(.cpuMilli != null) | .namespace] | unique
+                ),
+                podsWithMetricsCount: (
+                  [.deployments[].pods[] | select(.cpuMilli != null)] | length
+                ),
+                podsWithoutMetricsCount: (
+                  [.deployments[].pods[] | select(.cpuMilli == null)] | length
+                )
+              }" 2>&1 | head -80 || (echo "raw response (first 1500 chars):"; echo "$response" | head -c 1500)
+            fi
+          else
+            echo "no dd-bastion pod found"
+          fi
+
+          echo "=== /api/docs.json includes new routes ==="
+          if [ -n "$bastion_pod" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "wget -qO- http://127.0.0.1:8111/api/docs.json" 2>/dev/null \
+              | jq -r ".paths | keys[]" 2>/dev/null \
+              | grep -E "^/(logs/ws|runtime/deployments|terminal|healthz|kubeconfig)" \
+              | sort -u || echo "WARN: could not parse /api/docs.json"
+          fi
+
+          echo "=== bastion log scan for panic/error/warn (tail 400) ==="
+          if [ -n "$bastion_pod" ]; then
+            kubectl -n vpn logs "$bastion_pod" --tail=400 \
+              | grep -iE "panic|^error|fail|warn" \
+              | grep -v "Compiling" \
+              | head -40 || echo "(no panic/error/warn lines)"
+            echo "--- last 20 log lines ---"
+            kubectl -n vpn logs "$bastion_pod" --tail=20 || true
+          fi
+
+          echo "=== Argo CD application sync state ==="
+          kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  "sudo -u ec2-user -H bash -lc " + json.dumps(script),
+              ],
+          }))
+          PY
               ;;
             *)
               echo "Unsupported operation: $OPERATION" >&2
