@@ -196,26 +196,69 @@ as unverified, and strict mode rejects them. Backstop/on-demand
 
 The server ships with a read-mostly HTMX admin surface at `/admin` (the
 JSON API is untouched). It uses [Maud](https://maud.lambda.xyz/) for
-compile-time HTML templates plus [HTMX](https://htmx.org/) 2.0 loaded
-from jsdelivr with SRI integrity — no client toolchain, no bundler, no
-extra container.
+compile-time HTML templates plus [HTMX](https://htmx.org/) 2.0
+**vendored into the binary** and served from `/admin/static/htmx-<hash>.js`
+with SRI integrity — no client toolchain, no bundler, no extra
+container, no CDN fetched at runtime.
 
 What you get:
 
 - `/admin/` — dashboard with tenant / connection / job counts, a 5-second
   auto-refreshed status pill, and the most recent job runs across all
-  tenants.
+  tenants. All four counts are fetched in parallel so dashboard latency
+  is bounded by the slowest query, not their sum.
 - `/admin/tenants` — list table with an inline HTMX create form that
-  prepends new rows without a full reload.
+  prepends new rows without a full reload. The form's inputs carry
+  `pattern` / `minlength` / `maxlength` attributes that mirror the
+  server-side validators in `admin/validation.rs`.
 - `/admin/tenants/{id}` — tenant detail with HTMX-swapped tabs for
   Connections, Scheduled jobs, Leases, and Notifications. URLs are
   pushed (`hx-push-url`) so the active tab survives reloads and shares.
 - Inline HTMX actions: `Run now` and `Enable/Disable` on scheduled jobs,
-  `Sync now` on provider connections. Each returns just the updated row.
+  `Sync now` on provider connections. Each returns just the updated row,
+  is gated by an `hx-confirm` prompt, is tenant-scoped at the URL level
+  (`/admin/tenants/{tid}/jobs/{id}/run-now`), and is verified for
+  ownership before any side effect. Every write emits a structured
+  `admin.action=…` audit log line.
+
+### Security posture
+
+Layered defenses, designed to fail safely (see `src/admin/security.rs`
+and the wire-level tests in `src/admin/mod.rs`):
+
+- **Bearer auth (optional)** — set `BILLING_ADMIN_AUTH_BEARER=<token>`
+  to require `Authorization: Bearer <token>` on every `/admin/*`
+  request. Constant-time compared. When unset, the UI is unauthenticated
+  (intended for trusted networks / local dev).
+- **CSRF guard** — every POST/PUT/PATCH/DELETE must carry
+  `HX-Request: true` (HTMX always sends it; cross-origin browsers
+  cannot set it without a CORS preflight we do not grant) **and**, when
+  `Origin` is present, must come from the request `Host` or an entry in
+  `BILLING_ADMIN_ALLOWED_ORIGINS`.
+- **Strict CSP** — `default-src 'self'`, `script-src 'self'`,
+  `frame-ancestors 'none'`, `object-src 'none'`. No `'unsafe-eval'`, no
+  inline scripts, no third-party origins.
+- **Security headers on every response** — `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
+  `Cross-Origin-{Opener,Resource}-Policy: same-origin`, a restrictive
+  `Permissions-Policy`, and `X-Robots-Tag: noindex, nofollow, noarchive`.
+- **Sanitized errors** — handler failures are logged in full via
+  `tracing::warn!` but rendered to the user as `<action>: <kind> — check
+  server logs for details`. PG error text, schema names, and stack
+  fragments do not leak into HTML.
+- **Asset integrity verified at startup** — `assets::verify_integrity()`
+  recomputes the SHA-384 of the embedded htmx bytes and panics if they
+  drift from the pinned constant, so a sloppy vendor bump cannot ship
+  unverified JS to browsers.
+
+### Disabling / fronting
 
 Disable in production environments that have not yet wired
 `dd-remote-auth` in front by setting `BILLING_ADMIN_UI_ENABLED=false`.
-Per `AGENTS.md`, public gateway paths must stay authenticated.
+Per `AGENTS.md`, public gateway paths must stay authenticated. With
+`BILLING_ADMIN_AUTH_BEARER` set, the admin UI is safe to leave
+mounted behind a TLS-terminating gateway even when `dd-remote-auth` is
+the SSO layer in front.
 
 ## What is intentionally stubbed in this scaffold
 
