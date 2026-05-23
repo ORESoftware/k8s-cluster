@@ -1341,6 +1341,91 @@ jobs:
               | head -10 || true
           fi
 
+          echo "=== /bastion/logs/ws WebSocket smoke (one connect, read N lines) ==="
+          if [ -n "$bastion_pod" ] && [ -n "$target" ] && [ -n "$server_auth" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc "
+              python3 - <<'PYEOF'
+          import json, ssl, socket, base64, hashlib, secrets, urllib.parse, threading, time
+          host = '127.0.0.1'
+          port = 8111
+          path = '/logs/ws?namespace=default&deployment=dd-remote-web-home&pod=$target&container=web-home'
+          key = base64.b64encode(secrets.token_bytes(16)).decode()
+          headers = (
+              f'GET {path} HTTP/1.1\r\n'
+              f'Host: {host}:{port}\r\n'
+              f'Upgrade: websocket\r\n'
+              f'Connection: Upgrade\r\n'
+              f'Sec-WebSocket-Key: {key}\r\n'
+              f'Sec-WebSocket-Version: 13\r\n'
+              f'X-Server-Auth: $server_auth\r\n'
+              '\r\n'
+          )
+          s = socket.create_connection((host, port), timeout=15)
+          s.sendall(headers.encode())
+          buf = b''
+          while b'\r\n\r\n' not in buf:
+              chunk = s.recv(4096)
+              if not chunk:
+                  break
+              buf += chunk
+          status_line = buf.split(b'\r\n', 1)[0].decode(errors='replace')
+          print(f'handshake: {status_line}')
+          assert b'101' in buf.split(b'\r\n', 1)[0], 'expected 101 Switching Protocols'
+          deadline = time.time() + 4
+          frames = []
+          tail = buf.split(b'\r\n\r\n', 1)[1]
+          s.settimeout(2.5)
+          try:
+              while time.time() < deadline:
+                  if tail:
+                      data = tail
+                      tail = b''
+                  else:
+                      try:
+                          data = s.recv(8192)
+                      except socket.timeout:
+                          break
+                      if not data:
+                          break
+                  while data:
+                      if len(data) < 2:
+                          break
+                      b1 = data[0]
+                      b2 = data[1]
+                      opcode = b1 & 0x0f
+                      length = b2 & 0x7f
+                      offset = 2
+                      if length == 126:
+                          length = int.from_bytes(data[offset:offset+2], 'big'); offset += 2
+                      elif length == 127:
+                          length = int.from_bytes(data[offset:offset+8], 'big'); offset += 8
+                      if offset + length > len(data):
+                          break
+                      payload = data[offset:offset+length]
+                      data = data[offset+length:]
+                      if opcode == 1:
+                          frames.append(payload.decode('utf-8', errors='replace'))
+                      if len(frames) >= 5:
+                          break
+                  if len(frames) >= 5:
+                      break
+          finally:
+              try:
+                  s.close()
+              except Exception:
+                  pass
+          print(f'frames: {len(frames)}')
+          for f in frames[:5]:
+              print(f'frame: {f[:200]}')
+          PYEOF
+            " 2>&1 | head -25 || true
+          fi
+
+          echo "=== /home public HTML markers ==="
+          curl -k -fsS --max-time 10 https://54.91.17.58/home 2>/dev/null \
+            | grep -oE "openTerminalPanel|openLogsPanel|safeBastionLogsUrl|metricChip|inline-panel|home-terminal-frame|terminal-dock" \
+            | sort | uniq -c || true
+
           echo "=== bastion log scan for panic/error/warn (tail 400) ==="
           if [ -n "$bastion_pod" ]; then
             kubectl -n vpn logs "$bastion_pod" --tail=400 \
