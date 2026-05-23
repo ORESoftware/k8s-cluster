@@ -7,7 +7,8 @@ use uuid::Uuid;
 use crate::notifications::{DispatchStatus, NotificationChannel};
 use crate::state::AppState;
 
-use super::layout::{empty_row, flash_error, section_header, short_id};
+use super::errors;
+use super::layout::{empty_row, section_header, short_id};
 use super::time::rel;
 
 pub async fn page_fragment(
@@ -18,14 +19,26 @@ pub async fn page_fragment(
 }
 
 pub(super) async fn render_panel(state: &AppState, tenant_id: Uuid) -> Markup {
-    let rules_r = state.notifications.list_rules(tenant_id).await;
-    let dispatches_r = state.notifications.list_dispatches(tenant_id, 50).await;
+    // Parallelize the two reads so the panel render time is bounded by
+    // the slower of the two queries rather than their sum.
+    let (rules_r, dispatches_r) = tokio::join!(
+        state.notifications.list_rules(tenant_id),
+        state.notifications.list_dispatches(tenant_id, 50),
+    );
 
     let rules = match rules_r {
         Ok(r) => r,
-        Err(e) => return flash_error(e.to_string()),
+        Err(e) => return errors::sanitized("list notification rules", &e),
     };
-    let dispatches = dispatches_r.unwrap_or_default();
+    let dispatches = match dispatches_r {
+        Ok(d) => d,
+        Err(e) => {
+            // Don't blank out the rules table if dispatches happen to
+            // fail; surface the error and continue with an empty list.
+            tracing::warn!(error = %e, "admin: list dispatches failed");
+            Vec::new()
+        }
+    };
 
     html! {
         (section_header(

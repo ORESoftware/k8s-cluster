@@ -46,6 +46,21 @@ pub struct Config {
     /// either disable this (`BILLING_ADMIN_UI_ENABLED=false`) or front it
     /// with `dd-remote-auth` per the access-posture rule in `AGENTS.md`.
     pub admin_ui_enabled: bool,
+
+    /// When set, every `/admin/*` request must present
+    /// `Authorization: Bearer <this value>`. Constant-time compared. Leave
+    /// unset (default) for unauthenticated local dev. In production this
+    /// should be a high-entropy random string injected via SealedSecrets /
+    /// the External Secrets stack, mirroring how other webhook secrets
+    /// land in `BILLING_*` env vars.
+    pub admin_auth_bearer: Option<String>,
+
+    /// Cross-origin `Origin` values explicitly allowed to perform admin
+    /// writes. Same-origin (Origin host matches request Host) is always
+    /// allowed and does not need an entry here. Wire via the comma-
+    /// separated `BILLING_ADMIN_ALLOWED_ORIGINS` env var when an
+    /// operator dashboard hosted elsewhere needs to embed admin actions.
+    pub admin_allowed_origins: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,6 +155,13 @@ impl Config {
             .unwrap_or(300),
 
             admin_ui_enabled: env_bool("BILLING_ADMIN_UI_ENABLED", true),
+            admin_auth_bearer: env::var("BILLING_ADMIN_AUTH_BEARER")
+                .ok()
+                .and_then(|s| {
+                    let t = s.trim();
+                    if t.is_empty() { None } else { Some(t.to_string()) }
+                }),
+            admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
         })
     }
 
@@ -217,6 +239,8 @@ impl Config {
             require_webhook_signatures: false,
             webhook_signature_tolerance_seconds: 300,
             admin_ui_enabled: false,
+            admin_auth_bearer: None,
+            admin_allowed_origins: Vec::new(),
         }
     }
 }

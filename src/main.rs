@@ -41,6 +41,11 @@ use crate::state::AppState;
 async fn main() -> anyhow::Result<()> {
     init_tracing();
 
+    // Fail fast at startup if the vendored htmx bytes drifted from the
+    // pinned SRI hash. Browsers would otherwise refuse to execute the
+    // script and the admin UI would silently break.
+    admin::verify_asset_integrity();
+
     let cfg = Arc::new(Config::from_env()?);
     tracing::info!(host = %cfg.host, port = cfg.port, "billing-server-rs starting");
 

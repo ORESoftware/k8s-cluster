@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
-use super::layout::{empty_row, flash_error, section_header, short_id};
+use super::errors;
+use super::layout::{empty_row, section_header, short_id};
 use super::time::rel;
 
 pub async fn table_fragment(
@@ -19,7 +20,7 @@ pub async fn table_fragment(
 pub(super) async fn render_table(state: &AppState, tenant_id: Uuid) -> Markup {
     let rows = match state.locks.list(tenant_id).await {
         Ok(r) => r,
-        Err(e) => return flash_error(e.to_string()),
+        Err(e) => return errors::sanitized("list leases", &e),
     };
 
     html! {

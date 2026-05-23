@@ -14,18 +14,34 @@ use super::layout::{
 use super::time::rel;
 
 pub async fn page(State(state): State<AppState>) -> Markup {
-    let tenant_count = state.tenants.count().await.unwrap_or(0);
-    let conn_counts = state.connections.counts(None).await.unwrap_or(ConnectionCounts {
-        total: 0,
-        active: 0,
-        failing: 0,
+    // Fan out the four reads in parallel: dashboard latency is dominated
+    // by the slowest query rather than their sum. We use `tokio::join!`
+    // (not `try_join!`) so a single transient failure degrades the
+    // affected card to its zero/empty default rather than blanking the
+    // whole page.
+    let (tenant_r, conn_r, job_r, runs_r) = tokio::join!(
+        state.tenants.count(),
+        state.connections.counts(None),
+        state.scheduler.counts(None),
+        state.scheduler.recent_runs(None, 12),
+    );
+
+    let tenant_count = tenant_r.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "admin dashboard: tenant count failed");
+        0
     });
-    let job_counts = state.scheduler.counts(None).await.unwrap_or(JobCounts {
-        total: 0,
-        enabled: 0,
-        due_now: 0,
+    let conn_counts = conn_r.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "admin dashboard: connection counts failed");
+        ConnectionCounts { total: 0, active: 0, failing: 0 }
     });
-    let recent_runs = state.scheduler.recent_runs(None, 12).await.unwrap_or_default();
+    let job_counts = job_r.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "admin dashboard: job counts failed");
+        JobCounts { total: 0, enabled: 0, due_now: 0 }
+    });
+    let recent_runs = runs_r.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "admin dashboard: recent runs failed");
+        Vec::new()
+    });
 
     let conn_hint = if conn_counts.failing > 0 {
         format!("{} failing — investigate", conn_counts.failing)
