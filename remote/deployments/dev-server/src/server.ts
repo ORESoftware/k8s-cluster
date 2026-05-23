@@ -66,6 +66,7 @@ import {
 import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
+import { RUNTIME_EVENTS_SUBJECT } from './nats-subject-defs.js';
 import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
 import { registerRuntimeConfigRoutes, registerWithControlPlane } from './runtime-config.js';
@@ -217,7 +218,7 @@ const config = {
   eventIngestUrl: process.env.EVENT_INGEST_URL ?? null,
   eventIngestSecret: process.env.EVENT_INGEST_SECRET ?? null,
   natsUrl: process.env.NATS_URL ?? null,
-  natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events',
+  natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? RUNTIME_EVENTS_SUBJECT,
   workerFanoutWsUrl: workerFanoutWsUrlFromEnv(process.env),
   workerFanoutWsMaxQueueDepth: Number(process.env.WORKER_FANOUT_WS_MAX_QUEUE_DEPTH ?? 500),
   workerFanoutWsReconnectMs: Number(process.env.WORKER_FANOUT_WS_RECONNECT_MS ?? 1000),

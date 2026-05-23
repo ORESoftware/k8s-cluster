@@ -144,11 +144,29 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(natsModule, /pub fn publish\(subject: String, payload: String\)/);
   assert.match(lambdaNats, /-define\(SERVER, lambda_nats_singleton\)/);
   assert.match(lambdaNats, /gen_tcp:connect/);
+  // Subject + queue-group + functions defaults now resolve through
+  // dd_nats_subject_consts (generated from
+  // remote/libs/nats/subject-defs/schema/lambdas.schema.json) so a schema
+  // rename surfaces at build time instead of silently drifting.
   assert.match(lambdaNats, /NATS_LAMBDA_INVOKE_SUBJECT/);
-  assert.match(lambdaNats, /dd\.remote\.lambdas\.invoke\.\*/);
+  assert.match(
+    lambdaNats,
+    /env_binary\("NATS_LAMBDA_INVOKE_SUBJECT", dd_nats_subject_consts:lambdas_invoke_wildcard\(\)\)/,
+  );
   assert.match(lambdaNats, /NATS_LAMBDA_RESULT_SUBJECT/);
-  assert.match(lambdaNats, /dd\.remote\.lambdas\.results/);
+  assert.match(
+    lambdaNats,
+    /env_binary\("NATS_LAMBDA_RESULT_SUBJECT", dd_nats_subject_consts:lambdas_results_subject\(\)\)/,
+  );
   assert.match(lambdaNats, /NATS_LAMBDA_FUNCTIONS_SUBJECT/);
+  assert.match(
+    lambdaNats,
+    /env_binary\("NATS_LAMBDA_FUNCTIONS_SUBJECT", dd_nats_subject_consts:lambdas_functions_subject\(\)\)/,
+  );
+  assert.match(
+    lambdaNats,
+    /env_binary\("NATS_LAMBDA_QUEUE_GROUP", dd_nats_subject_consts:lambda_runner_queue_group\(\)\)/,
+  );
   assert.match(lambdaNats, /NATS_USERNAME/);
   assert.match(lambdaNats, /NATS_PASSWORD/);
   assert.match(lambdaNats, /NATS_TOKEN/);
@@ -217,7 +235,15 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(jsRunner, /dispatchContainerPool/);
   assert.match(jsRunner, /CONTAINER_POOL_NATS_URL/);
   assert.match(jsRunner, /CONTAINER_POOL_NATS_SUBJECT_PREFIX/);
-  assert.match(jsRunner, /dd\.remote\.container_pool/);
+  // js-function-runner now defaults the per-pool request subject through
+  // the generated containerPoolLanguageRequestsSubject() formatter so the
+  // dot layout stays in sync with
+  // remote/libs/nats/subject-defs/schema/container-pool.schema.json.
+  assert.match(
+    jsRunner,
+    /import \{\s*containerPoolLanguageRequestsSubject,?\s*\} from '\.\.\/\.\.\/\.\.\/libs\/nats\/subject-defs\/generated\/javascript\/index\.mjs';/,
+  );
+  assert.match(jsRunner, /containerPoolLanguageRequestsSubject\(poolSlug\)/);
   assert.match(jsRunner, /connectTcp/);
   assert.match(jsRunner, /PUB \$\{subject\} \$\{inbox\}/);
   assert.match(jsRunner, /LAMBDA_FUNCTION_CACHE_MAX/);

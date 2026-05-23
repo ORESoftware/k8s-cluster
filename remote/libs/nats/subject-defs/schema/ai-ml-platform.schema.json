@@ -13,6 +13,7 @@
         "description": "Raw runtime telemetry samples ingested by the ai-ml-pipeline. Default for ML_RAW_TELEMETRY_SUBJECT.",
         "kind": "static",
         "subject": "dd.remote.telemetry.raw",
+        "queueGroup": "dd-ai-ml-pipeline",
         "direction": "both"
       },
       {

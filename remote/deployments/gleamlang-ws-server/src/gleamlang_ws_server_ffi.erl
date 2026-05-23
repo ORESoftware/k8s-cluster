@@ -80,7 +80,16 @@ publish_nats(Payload) when is_binary(Payload) ->
             {error, nil};
         Secret ->
             Url = os:getenv("GLEAM_NATS_PUBLISH_URL", "http://127.0.0.1:8083/publish"),
-            Subject = os:getenv("NATS_PUBLISH_SUBJECT", "dd.remote.websocket.events"),
+            %% NATS_PUBLISH_SUBJECT default comes from dd_nats_subject_consts
+            %% (auto-generated from remote/libs/nats/subject-defs/schema/
+            %% runtime-events.schema.json) so a schema rename surfaces at
+            %% build time instead of silently drifting between Erlang FFI
+            %% and the rest of the codebase.
+            Subject = case os:getenv("NATS_PUBLISH_SUBJECT") of
+                false -> binary_to_list(dd_nats_subject_consts:websocket_events_subject());
+                "" -> binary_to_list(dd_nats_subject_consts:websocket_events_subject());
+                Override -> Override
+            end,
             spawn(fun() -> post_nats_publish(Url, Secret, Subject, Payload) end),
             {ok, nil}
     end.

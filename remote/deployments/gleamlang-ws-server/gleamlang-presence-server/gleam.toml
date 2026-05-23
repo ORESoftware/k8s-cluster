@@ -4,6 +4,7 @@ target = "erlang"
 description = "Websocket presence service: ETS subject registry on each node, Erlang `pg` for cross-node group membership, Postgres-backed conversation membership cached in memory, supervisor tree with automatic re-registration."
 
 [dependencies]
+dd_nats_subject_defs = { path = "../../../libs/nats/subject-defs/generated/gleam" }
 dd_pg_defs = { path = "../../../libs/pg-defs/generated/gleam" }
 gleam_stdlib = ">= 0.68.0 and < 2.0.0"
 gleam_erlang = ">= 1.3.0 and < 2.0.0"

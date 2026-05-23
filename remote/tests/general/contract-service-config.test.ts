@@ -122,7 +122,10 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(otel, /dd-contract-service\.default\.svc\.cluster\.local:8101/);
   assert.match(home, /Rust Solana contract service/);
   assert.match(home, /\/contracts\/schema/);
-  assert.match(home, /dd\.remote\.contracts\.solana\.validate/);
+  // web-home-rs now sources the displayed NATS subject from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: CONTRACTS_SOLANA_VALIDATE_SUBJECT/);
   assert.match(runtimeReadme, /`dd-contract-service`/);
   assert.match(runtimeReadme, /\/contracts\/schema/);
 });

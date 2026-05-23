@@ -26,6 +26,7 @@
     runtime_events_subject/0,
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
+    telemetry_raw_queue_group/0,
     trading_decisions_subject/0,
     trading_order_intents_subject/0,
     trading_signals_subject/0,
@@ -192,6 +193,7 @@ telemetry_mdp_subject() -> <<"dd.remote.telemetry.mdp"/utf8>>.
 %% Raw runtime telemetry samples ingested by the ai-ml-pipeline. Default for ML_RAW_TELEMETRY_SUBJECT.
 %% Service: dd-ai-ml-pipeline
 telemetry_raw_subject() -> <<"dd.remote.telemetry.raw"/utf8>>.
+telemetry_raw_queue_group() -> <<"dd-ai-ml-pipeline"/utf8>>.
 
 %% Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 %% Service: dd-trading-server

@@ -296,10 +296,10 @@ fn start_nats(
   }
   case nats_transport.start(url, on_msg) {
     Ok(started) -> {
-      nats_transport.subscribe(started.data, "presence.broadcast.conv.>")
+      nats_transport.subscribe(started.data, nats_transport.broadcast_conv_wildcard)
       io.println(
         "presence: nats transport started, subscribed to "
-        <> "presence.broadcast.conv.>",
+        <> nats_transport.broadcast_conv_wildcard,
       )
       option.Some(started.data)
     }

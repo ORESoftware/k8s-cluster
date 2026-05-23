@@ -6,6 +6,7 @@ import math
 import os
 import re
 import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -21,6 +22,30 @@ from urllib.parse import urlparse
 
 
 GENERATED_DOCS_DIR = Path(__file__).resolve().parents[1] / "generated"
+
+# Source-of-truth NATS subject constants. The repo is mounted at
+# /opt/dd-next-1 inside the pod, so the generated lib lives four parents up
+# from this file (.../remote/libs/nats/subject-defs/generated/python).
+# Injecting the path keeps the script standalone-runnable in CI/dev without
+# requiring a pip install.
+_NATS_SUBJECT_DEFS_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "libs"
+    / "nats"
+    / "subject-defs"
+    / "generated"
+    / "python"
+)
+if str(_NATS_SUBJECT_DEFS_DIR) not in sys.path:
+    sys.path.insert(0, str(_NATS_SUBJECT_DEFS_DIR))
+from dd_nats_subject_defs import (  # noqa: E402 - sys.path setup above
+    ML_DEAD_LETTER_SUBJECT,
+    ML_FEATURES_SUBJECT,
+    RUNTIME_EVENTS_SUBJECT,
+    TELEMETRY_MDP_SUBJECT,
+    TELEMETRY_RAW_QUEUE_GROUP,
+    TELEMETRY_RAW_SUBJECT,
+)
 
 
 def read_int_env(
@@ -275,22 +300,22 @@ class Config:
         )
     )
     raw_subject: str = field(
-        default_factory=lambda: env_value("ML_RAW_TELEMETRY_SUBJECT", "dd.remote.telemetry.raw")
+        default_factory=lambda: env_value("ML_RAW_TELEMETRY_SUBJECT", TELEMETRY_RAW_SUBJECT)
     )
     queue_group: str = field(
-        default_factory=lambda: env_value("ML_QUEUE_GROUP", "dd-ai-ml-pipeline")
+        default_factory=lambda: env_value("ML_QUEUE_GROUP", TELEMETRY_RAW_QUEUE_GROUP)
     )
     feature_subject: str = field(
-        default_factory=lambda: env_value("ML_FEATURE_SUBJECT", "dd.remote.ml.features")
+        default_factory=lambda: env_value("ML_FEATURE_SUBJECT", ML_FEATURES_SUBJECT)
     )
     mdp_subject: str = field(
-        default_factory=lambda: env_value("ML_MDP_TELEMETRY_SUBJECT", "dd.remote.telemetry.mdp")
+        default_factory=lambda: env_value("ML_MDP_TELEMETRY_SUBJECT", TELEMETRY_MDP_SUBJECT)
     )
     event_subject: str = field(
-        default_factory=lambda: env_value("ML_EVENT_SUBJECT", "dd.remote.events")
+        default_factory=lambda: env_value("ML_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT)
     )
     dead_letter_subject: str = field(
-        default_factory=lambda: env_value("ML_DEAD_LETTER_SUBJECT", "dd.remote.ml.deadletter")
+        default_factory=lambda: env_value("ML_DEAD_LETTER_SUBJECT", ML_DEAD_LETTER_SUBJECT)
     )
     min_samples_for_zscore: int = field(
         default_factory=lambda: read_int_env("ML_MIN_SAMPLES_FOR_ZSCORE", 4, 1, 10_000)

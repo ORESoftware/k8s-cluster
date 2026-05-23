@@ -21,9 +21,31 @@ test('node task workers publish every stream event to nats for websocket fanout'
   );
 
   assert.match(server, /new NatsPublisher\(config\.natsUrl\)/);
+  // dev-server now sources the default NATS event subject from the
+  // generated `dd-nats-subject-defs` mirror module instead of inlining the
+  // magic string, so the test asserts on the source-of-truth wiring.
   assert.match(
     server,
-    /natsEventSubject: process\.env\.NATS_EVENT_SUBJECT \?\? 'dd\.remote\.events'/,
+    /natsEventSubject: process\.env\.NATS_EVENT_SUBJECT \?\? RUNTIME_EVENTS_SUBJECT/,
+  );
+  assert.match(
+    server,
+    /import \{ RUNTIME_EVENTS_SUBJECT \} from '\.\/nats-subject-defs\.js';/,
+  );
+  // Local mirror equals the generated source of truth.
+  const mirror = await readRepoFile(
+    'remote/deployments/dev-server/src/nats-subject-defs.ts',
+  );
+  const generatedTs = await readRepoFile(
+    'remote/libs/nats/subject-defs/generated/typescript/index.ts',
+  );
+  const mirrorValue = /RUNTIME_EVENTS_SUBJECT = '([^']+)'/.exec(mirror)?.[1];
+  const generatedValue = /RUNTIME_EVENTS_SUBJECT = "([^"]+)"/.exec(generatedTs)?.[1];
+  assert.ok(mirrorValue, 'mirror RUNTIME_EVENTS_SUBJECT missing');
+  assert.equal(
+    mirrorValue,
+    generatedValue,
+    'dev-server/src/nats-subject-defs.ts must mirror the generated lib value',
   );
   assert.match(server, /type: 'task-event'/);
   assert.match(server, /messageId: randomUUID\(\)/);
@@ -107,6 +129,11 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(env, /now_ms\/0/);
   assert.match(env, /GLEAM_NATS_PUBLISH_URL/);
   assert.match(env, /NATS_PUBLISH_SUBJECT/);
+  // The NATS_PUBLISH_SUBJECT default now resolves through dd_nats_subject_consts
+  // (auto-generated mirror inside the Gleam dd_nats_subject_defs dep) so a
+  // subject rename in remote/libs/nats/subject-defs/schema/runtime-events.schema.json
+  // is caught here at build time.
+  assert.match(env, /dd_nats_subject_consts:websocket_events_subject\(\)/);
   assert.match(env, /gen_tcp:connect\(Host, Port/);
   assert.match(env, /"POST ", Path, " HTTP\/1\.1\\r\\n"/);
   assert.doesNotMatch(env, /httpc:request\(post/);
@@ -124,6 +151,14 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(bridge, /extractMessageId/);
   assert.match(bridge, /NATS_READ_SUBJECT/);
   assert.match(bridge, /NATS_PUBLISH_SUBJECT/);
+  // The nats-bridge .mjs files default the read/publish subjects from the
+  // generated `dd-nats-subject-defs` mirror module so a schema rename
+  // propagates through both directions of the websocket fan-out without
+  // touching this bridge file.
+  assert.match(
+    bridge,
+    /import \{\s*RUNTIME_EVENTS_SUBJECT,\s*WEBSOCKET_EVENTS_SUBJECT,?\s*\} from '\.\.\/\.\.\/libs\/nats\/subject-defs\/generated\/javascript\/index\.mjs';/,
+  );
   assert.match(bridge, /createServer/);
   assert.match(bridge, /url\.pathname !== '\/publish'/);
   assert.match(bridge, /http:\/\/127\.0\.0\.1:8081\/broadcast/);

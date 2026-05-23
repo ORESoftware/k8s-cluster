@@ -86,6 +86,7 @@ TELEMETRY_MDP_SUBJECT = "dd.remote.telemetry.mdp"
 # Raw runtime telemetry samples ingested by the ai-ml-pipeline. Default for ML_RAW_TELEMETRY_SUBJECT.
 # Service: dd-ai-ml-pipeline
 TELEMETRY_RAW_SUBJECT = "dd.remote.telemetry.raw"
+TELEMETRY_RAW_QUEUE_GROUP = "dd-ai-ml-pipeline"
 
 # Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 # Service: dd-trading-server

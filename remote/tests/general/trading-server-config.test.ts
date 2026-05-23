@@ -178,7 +178,11 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   );
   assert.match(home, /dd-trading-server/);
   assert.match(home, /POST \/trading\/decide/);
-  assert.match(home, /dd\.remote\.trading\.order_intents/);
+  // web-home-rs now sources the displayed NATS subjects from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: TRADING_ORDER_INTENTS_SUBJECT/);
+  assert.match(home, /label: TRADING_SIGNALS_SUBJECT/);
   assert.match(runtimeReadme, /dd-trading-server/);
   assert.match(runtimeReadme, /`POST \/trading\/decide`/);
   assert.match(remoteReadme, /trading-server-rs/);

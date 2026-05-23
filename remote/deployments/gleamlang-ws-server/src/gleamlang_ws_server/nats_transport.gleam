@@ -26,6 +26,11 @@
 ////   backoff (1s → 30s). In-flight subscriptions are replayed on
 ////   reconnect, so callers don't need to re-subscribe.
 
+import dd_nats_subject_defs.{
+  PresenceBroadcastConvSubjectParts, parse_presence_broadcast_conv_subject,
+  presence_broadcast_conv_subject as schema_conv_subject,
+  presence_broadcast_conv_wildcard,
+}
 import gleam/bit_array
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
@@ -153,18 +158,27 @@ pub fn stop(nats: Nats) -> Nil {
 
 /// Build the NATS subject for a conv broadcast. Stable so external
 /// publishers can target a conv directly without going through the HTTP
-/// API.
+/// API. Delegates to the source-of-truth schema formatter so a subject
+/// rename in remote/libs/nats/subject-defs/schema/presence.schema.json
+/// surfaces here at compile time.
 pub fn conv_subject(conv_id: String) -> String {
-  "presence.broadcast.conv." <> conv_id
+  schema_conv_subject(conv_id)
 }
 
+/// Wildcard subscription matching every `presence.broadcast.conv.*`
+/// subject. Re-exported as the source-of-truth schema constant so the
+/// gleam services stay in lockstep with the generator output.
+pub const broadcast_conv_wildcard = presence_broadcast_conv_wildcard
+
 /// Extract the `<conv_id>` suffix from a `presence.broadcast.conv.<id>`
-/// subject. Returns Error if the subject doesn't match.
+/// subject. Returns Error if the subject doesn't match. Delegates to the
+/// source-of-truth schema parser so subject renames are caught at compile
+/// time.
 pub fn conv_id_from_subject(subject: String) -> Result(String, Nil) {
-  let prefix = "presence.broadcast.conv."
-  case string.starts_with(subject, prefix) {
-    True -> Ok(string.drop_start(subject, string.length(prefix)))
-    False -> Error(Nil)
+  case parse_presence_broadcast_conv_subject(subject) {
+    option.Some(PresenceBroadcastConvSubjectParts(conv_id: conv_id)) ->
+      Ok(conv_id)
+    option.None -> Error(Nil)
   }
 }
 

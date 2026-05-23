@@ -125,6 +125,7 @@ public final class DdNatsSubjects {
      * Service: dd-ai-ml-pipeline
      */
     public static final String TELEMETRY_RAW_SUBJECT = "dd.remote.telemetry.raw";
+    public static final String TELEMETRY_RAW_QUEUE_GROUP = "dd-ai-ml-pipeline";
 
     /**
      * Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.

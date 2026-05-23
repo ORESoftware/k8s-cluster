@@ -1709,8 +1709,8 @@ async fn root() -> impl IntoResponse {
             "jobStatus": "GET /simulations/:jobId"
         },
         "nats": {
-            "simulateSubject": "dd.remote.des.simulate",
-            "resultSubject": "dd.remote.des.results"
+            "simulateSubject": DES_SIMULATE_SUBJECT,
+            "resultSubject": DES_RESULTS_SUBJECT
         },
         "atMs": now_ms()
     }))

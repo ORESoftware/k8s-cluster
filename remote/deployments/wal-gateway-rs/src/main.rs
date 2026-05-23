@@ -83,7 +83,13 @@ use tokio::time::sleep;
 
 const SERVICE_NAME: &str = "dd-wal-gateway";
 const SCHEMA_VERSION: &str = "cdc.row.v1";
-const DEFAULT_STREAM_NAME: &str = "CDC";
+// Stream name comes from the source-of-truth schema (CDC stream), so a
+// rename in remote/libs/nats/subject-defs/schema/wal-cdc.schema.json
+// surfaces here as a compile-time symbol break. The subject prefix is
+// still operator-tunable via WAL_GATEWAY_SUBJECT_PREFIX but defaults to
+// the cluster-wide "cdc" convention (every other consumer hardcodes
+// "cdc" as the first token).
+const DEFAULT_STREAM_NAME: &str = CDC_STREAM_NAME;
 const DEFAULT_SUBJECT_PREFIX: &str = "cdc";
 const DEFAULT_PORT: u16 = 8104;
 
@@ -94,6 +100,8 @@ const DEFAULT_PORT: u16 = 8104;
 /// in the same database. Computed as the BE bytes of the ASCII string
 /// "WALGATEW" so it's recognisable in `pg_locks` for ops.
 const LEADER_LOCK_KEY: i64 = i64::from_be_bytes(*b"WALGATEW");
+
+use dd_nats_subject_defs::{cdc_row_change_subject, CDC_STREAM_NAME};
 
 #[derive(Clone)]
 struct Config {
@@ -651,11 +659,11 @@ impl ChangeOp {
 
 impl ParsedChange {
     fn subject(&self, prefix: &str) -> String {
-        format!(
-            "{prefix}.{}.{}.{}",
-            self.schema,
-            self.table,
-            self.op.as_str()
+        cdc_row_change_subject(
+            prefix,
+            &self.schema,
+            &self.table,
+            self.op.as_str(),
         )
     }
 }

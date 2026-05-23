@@ -127,7 +127,10 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   assert.match(otel, /dd-des-simulator\.default\.svc\.cluster\.local:8099/);
   assert.match(home, /Rust discrete event simulator/);
   assert.match(home, /\/des\/model\/schema/);
-  assert.match(home, /dd\.remote\.des\.simulate/);
+  // web-home-rs now sources the displayed NATS subject from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: DES_SIMULATE_SUBJECT/);
   assert.match(runtimeReadme, /`dd-des-simulator`/);
   assert.match(runtimeReadme, /\/des\/model\/schema/);
 });
