@@ -1178,9 +1178,9 @@ jobs:
               # ServiceAccount has the verbs we expect.
               python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
+          import shlex
 
           script = r'''set +e
-          set -u
           echo "=== HEAD on EC2 checkout ==="
           ( cd /home/ec2-user/codes/dd/dd-next-1 && git rev-parse --short HEAD )
 
@@ -1297,7 +1297,7 @@ jobs:
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  "sudo -u ec2-user -H bash -lc " + json.dumps(script),
+                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
               ],
           }))
           PY
