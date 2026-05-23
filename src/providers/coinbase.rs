@@ -28,6 +28,16 @@ pub struct CoinbaseCredential {
     pub api_key: String,
     pub webhook_secret: String,
     pub variant: CoinbaseVariant,
+    /// Prime: HMAC-SHA256 signing secret (base64-encoded). Unused for
+    /// Commerce.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_secret: Option<String>,
+    /// Prime: API key passphrase chosen when the key was created.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passphrase: Option<String>,
+    /// Prime: portfolio (sub-account) UUID to scope queries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub portfolio_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -384,6 +394,150 @@ fn constant_time_eq_str(a: &str, b: &str) -> bool {
     diff == 0
 }
 
+// =========================================================================
+// Coinbase Prime — institutional REST API (different shape from Commerce)
+// =========================================================================
+//
+// Auth: `X-CB-ACCESS-{KEY,SIGNATURE,TIMESTAMP,PASSPHRASE}` headers,
+// where SIGNATURE = base64(HMAC-SHA256(api_secret_b64_decoded,
+// "{timestamp}{METHOD}{path_with_query}{body}")).
+//
+// Docs: https://docs.cdp.coinbase.com/prime/reference
+
+const PRIME_BASE: &str = "https://api.prime.coinbase.com";
+
+pub struct CoinbasePrimeApi {
+    cred: CoinbaseCredential,
+    http: reqwest::Client,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PrimeTransactionsPage {
+    #[serde(default)]
+    pub transactions: Vec<PrimeTransaction>,
+    pub pagination: Option<PrimePagination>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PrimePagination {
+    pub next_cursor: Option<String>,
+    #[serde(default)]
+    pub has_next: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PrimeTransaction {
+    pub id: String,
+    /// One of: DEPOSIT, WITHDRAWAL, REWARD, FEE, INTERNAL, CONVERSION, ...
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// One of: TRANSACTION_CREATED, TRANSACTION_REQUESTED,
+    /// TRANSACTION_APPROVED, TRANSACTION_PROCESSING,
+    /// TRANSACTION_COMPLETED, TRANSACTION_FAILED, TRANSACTION_CANCELED.
+    pub status: String,
+    pub created_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub symbol: Option<String>,
+    pub amount: Option<String>,
+    pub destination: Option<String>,
+    pub network_fees: Option<String>,
+    pub wallet_id: Option<String>,
+    #[serde(flatten)]
+    pub raw: serde_json::Value,
+}
+
+impl CoinbasePrimeApi {
+    pub fn new(cred: CoinbaseCredential) -> AppResult<Self> {
+        if cred.variant != CoinbaseVariant::Prime {
+            return Err(AppError::BadRequest(
+                "CoinbasePrimeApi requires variant=Prime".into(),
+            ));
+        }
+        Ok(Self {
+            cred,
+            http: reqwest::Client::new(),
+        })
+    }
+
+    pub fn portfolio_id(&self) -> AppResult<&str> {
+        self.cred
+            .portfolio_id
+            .as_deref()
+            .ok_or_else(|| AppError::BadRequest("coinbase prime portfolio_id missing".into()))
+    }
+
+    /// Sign + execute a GET against Coinbase Prime.
+    async fn signed_get(
+        &self,
+        path_with_query: &str,
+    ) -> AppResult<Vec<u8>> {
+        let api_secret_b64 = self.cred.api_secret.as_deref().ok_or_else(|| {
+            AppError::BadRequest("coinbase prime api_secret missing".into())
+        })?;
+        let passphrase = self.cred.passphrase.as_deref().ok_or_else(|| {
+            AppError::BadRequest("coinbase prime passphrase missing".into())
+        })?;
+
+        let timestamp = Utc::now().timestamp().to_string();
+        let signature =
+            prime_request_signature(api_secret_b64, &timestamp, "GET", path_with_query, b"")?;
+
+        let url = format!("{PRIME_BASE}{path_with_query}");
+        let resp = self
+            .http
+            .get(&url)
+            .header("X-CB-ACCESS-KEY", &self.cred.api_key)
+            .header("X-CB-ACCESS-PASSPHRASE", passphrase)
+            .header("X-CB-ACCESS-SIGNATURE", signature)
+            .header("X-CB-ACCESS-TIMESTAMP", timestamp)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| AppError::Provider {
+                provider: "coinbase_prime".into(),
+                message: format!("HTTP {path_with_query}: {e}"),
+            })?;
+        let status = resp.status();
+        let bytes = resp.bytes().await.map_err(|e| AppError::Provider {
+            provider: "coinbase_prime".into(),
+            message: format!("body {path_with_query}: {e}"),
+        })?;
+        if !status.is_success() {
+            return Err(AppError::Provider {
+                provider: "coinbase_prime".into(),
+                message: format!(
+                    "{path_with_query} {status}: {}",
+                    String::from_utf8_lossy(&bytes)
+                ),
+            });
+        }
+        Ok(bytes.to_vec())
+    }
+
+    /// `GET /v1/portfolios/{portfolio_id}/transactions?cursor=<>` —
+    /// cursor-paginated transaction history for a Prime portfolio.
+    pub async fn list_transactions(
+        &self,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> AppResult<PrimeTransactionsPage> {
+        let portfolio_id = self.portfolio_id()?.to_string();
+        let mut path = format!(
+            "/v1/portfolios/{portfolio_id}/transactions?limit={limit}"
+        );
+        if let Some(c) = cursor {
+            path.push_str(&format!("&cursor={c}"));
+        }
+        let bytes = self.signed_get(&path).await?;
+        let parsed: PrimeTransactionsPage =
+            serde_json::from_slice(&bytes).map_err(|e| AppError::Provider {
+                provider: "coinbase_prime".into(),
+                message: format!("transactions decode: {e}"),
+            })?;
+        Ok(parsed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,4 +557,68 @@ mod tests {
         let err = verify_commerce_signature(b"{}", "deadbeef", "secret").unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
     }
+
+    #[test]
+    fn prime_signature_is_deterministic() {
+        // Same inputs ⇒ same MAC. This is the core property of any HMAC
+        // — if it were ever salted, signed requests would fail to verify
+        // on the server side.
+        let secret = "c2hoaGgK"; // "shhhh\n" b64
+        let s1 = prime_request_signature(secret, "100", "GET", "/v1/x", b"").unwrap();
+        let s2 = prime_request_signature(secret, "100", "GET", "/v1/x", b"").unwrap();
+        assert_eq!(s1, s2);
+        // Output is base64.
+        use base64::Engine as _;
+        assert!(base64::engine::general_purpose::STANDARD.decode(&s1).is_ok());
+    }
+
+    #[test]
+    fn prime_signature_depends_on_every_field() {
+        let secret = "c2hoaGgK";
+        let base = prime_request_signature(secret, "100", "GET", "/v1/x", b"").unwrap();
+        let diff_ts = prime_request_signature(secret, "101", "GET", "/v1/x", b"").unwrap();
+        let diff_method = prime_request_signature(secret, "100", "POST", "/v1/x", b"").unwrap();
+        let diff_path = prime_request_signature(secret, "100", "GET", "/v1/y", b"").unwrap();
+        let diff_body =
+            prime_request_signature(secret, "100", "GET", "/v1/x", b"{}").unwrap();
+        assert_ne!(base, diff_ts);
+        assert_ne!(base, diff_method);
+        assert_ne!(base, diff_path);
+        assert_ne!(base, diff_body);
+    }
+
+    #[test]
+    fn prime_signature_rejects_invalid_base64_secret() {
+        let err =
+            prime_request_signature("@@not base64@@", "100", "GET", "/v1/x", b"").unwrap_err();
+        assert!(matches!(err, AppError::Crypto(_)));
+    }
+}
+
+/// Compute the Coinbase Prime request signature.
+///
+/// Prehash: `{timestamp}{METHOD}{path_with_query}{body}` (no separators).
+/// HMAC-SHA256 keyed with the base64-decoded `api_secret`. Returns the
+/// base64-encoded MAC (Coinbase's wire format on the
+/// `X-CB-ACCESS-SIGN` header).
+///
+/// Exposed at module scope so the tests can verify exact-property
+/// invariants without round-tripping through a live HTTP request.
+pub(crate) fn prime_request_signature(
+    api_secret_b64: &str,
+    timestamp: &str,
+    method: &str,
+    path_with_query: &str,
+    body: &[u8],
+) -> AppResult<String> {
+    use base64::Engine as _;
+    let secret_bytes = base64::engine::general_purpose::STANDARD
+        .decode(api_secret_b64.as_bytes())
+        .map_err(|e| AppError::Crypto(format!("coinbase api_secret b64: {e}")))?;
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(&secret_bytes)
+        .map_err(|e| AppError::Crypto(format!("hmac init: {e}")))?;
+    let prehash = format!("{timestamp}{method}{path_with_query}");
+    Mac::update(&mut mac, prehash.as_bytes());
+    Mac::update(&mut mac, body);
+    Ok(base64::engine::general_purpose::STANDARD.encode(Mac::finalize(mac).into_bytes()))
 }

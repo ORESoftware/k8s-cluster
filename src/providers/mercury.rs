@@ -239,6 +239,59 @@ fn constant_time_eq_str(a: &str, b: &str) -> bool {
     diff == 0
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sign(body: &[u8], ts: &str, secret: &str) -> String {
+        let prefix = format!("{ts}.");
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        Mac::update(&mut mac, prefix.as_bytes());
+        Mac::update(&mut mac, body);
+        hex::encode(Mac::finalize(mac).into_bytes())
+    }
+
+    #[test]
+    fn verifies_mercury_hmac() {
+        let body = br#"{"event":"payment.completed","id":"p1"}"#;
+        let ts = "1716423000";
+        let sig = sign(body, ts, "shh");
+        verify_webhook_signature(body, ts, &sig, "shh").unwrap();
+    }
+
+    #[test]
+    fn rejects_mercury_wrong_secret() {
+        let body = br#"{"id":"x"}"#;
+        let sig = sign(body, "1", "right");
+        assert!(matches!(
+            verify_webhook_signature(body, "1", &sig, "wrong").unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn rejects_mercury_tampered_body() {
+        let body = br#"{"amount":1}"#;
+        let sig = sign(body, "1", "k");
+        assert!(matches!(
+            verify_webhook_signature(b"{\"amount\":9}", "1", &sig, "k").unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn rejects_mercury_swapped_timestamp() {
+        let body = br#"{"id":"x"}"#;
+        let sig = sign(body, "1000", "k");
+        // Attacker replays an old signed payload with a fresh-looking ts.
+        assert!(matches!(
+            verify_webhook_signature(body, "9999", &sig, "k").unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+}
+
 // --- Normalization --------------------------------------------------------
 
 #[derive(Clone, Debug)]

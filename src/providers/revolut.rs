@@ -238,6 +238,78 @@ fn constant_time_eq_str(a: &str, b: &str) -> bool {
     diff == 0
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sign(body: &[u8], ts: &str, secret: &str) -> String {
+        let signed_payload = format!("{ts}.");
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
+        Mac::update(&mut mac, signed_payload.as_bytes());
+        Mac::update(&mut mac, body);
+        hex::encode(Mac::finalize(mac).into_bytes())
+    }
+
+    #[test]
+    fn verifies_revolut_v1_signature() {
+        let body = br#"{"event":"transaction.state_changed","id":"42"}"#;
+        let ts = "1716423000";
+        let sig = sign(body, ts, "topsecret");
+        let header = format!("v1={sig}");
+        verify_webhook_signature(body, ts, &header, "topsecret").unwrap();
+    }
+
+    #[test]
+    fn accepts_sha256_prefix_alias() {
+        let body = br#"{"id":"x"}"#;
+        let ts = "1";
+        let sig = sign(body, ts, "k");
+        let header = format!("sha256={sig}");
+        verify_webhook_signature(body, ts, &header, "k").unwrap();
+    }
+
+    #[test]
+    fn accepts_bare_hex_signature() {
+        let body = br#"{"id":"x"}"#;
+        let ts = "1";
+        let sig = sign(body, ts, "k");
+        verify_webhook_signature(body, ts, &sig, "k").unwrap();
+    }
+
+    #[test]
+    fn rejects_wrong_secret() {
+        let body = br#"{"id":"x"}"#;
+        let ts = "1";
+        let sig = sign(body, ts, "right");
+        let header = format!("v1={sig}");
+        let err =
+            verify_webhook_signature(body, ts, &header, "wrong").unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn rejects_tampered_body() {
+        let body = br#"{"amount":1}"#;
+        let ts = "1";
+        let sig = sign(body, ts, "k");
+        let header = format!("v1={sig}");
+        // Verify against a different body — must fail.
+        let err = verify_webhook_signature(b"{\"amount\":99}", ts, &header, "k")
+            .unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn rejects_tampered_timestamp() {
+        let body = br#"{"id":"x"}"#;
+        let sig = sign(body, "1000", "k");
+        let header = format!("v1={sig}");
+        let err = verify_webhook_signature(body, "1001", &header, "k").unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+}
+
 // --- Normalization --------------------------------------------------------
 
 #[derive(Clone, Debug)]

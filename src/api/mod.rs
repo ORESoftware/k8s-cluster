@@ -23,7 +23,9 @@ use tower_http::trace::TraceLayer;
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
-    Router::new()
+    let admin_enabled = state.cfg.admin_ui_enabled;
+
+    let mut router = Router::new()
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
         .route("/metrics", get(health::metrics))
@@ -94,6 +96,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/webhooks/gocardless", post(webhooks::gocardless))
         .route("/v1/webhooks/mercury", post(webhooks::mercury))
         .route("/v1/webhooks/bridge", post(webhooks::bridge))
+        .route("/v1/webhooks/fireblocks", post(webhooks::fireblocks))
+        .route("/v1/webhooks/circle", post(webhooks::circle))
         // Public verification (no auth required — that's the point)
         .route(
             "/v1/verify/tenants/{tenant_id}/postings/{id}",
@@ -157,6 +161,16 @@ pub fn build_router(state: AppState) -> Router {
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),
         ))
-        .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
-        .with_state(state)
+        .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024));
+
+    if admin_enabled {
+        // Mount the HTMX admin UI under /admin. Disable via
+        // `BILLING_ADMIN_UI_ENABLED=false` for prod gateways that have not
+        // wired `dd-remote-auth` in front yet. The admin router uses
+        // `route("/", ...)` for its index so nesting at `/admin` registers
+        // both `GET /admin` and `GET /admin/` through axum's normalization.
+        router = router.nest("/admin", crate::admin::build_router());
+    }
+
+    router.with_state(state)
 }

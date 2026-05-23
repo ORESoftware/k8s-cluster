@@ -61,6 +61,14 @@ pub struct JobRun {
     pub idempotency_key: String,
 }
 
+/// Aggregate scheduler stats used by the admin dashboard.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct JobCounts {
+    pub total: i64,
+    pub enabled: i64,
+    pub due_now: i64,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct CreateScheduledJob {
     pub kind: String,

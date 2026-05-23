@@ -60,7 +60,7 @@ impl SchedulerService {
                     next_run_at        = LEAST(scheduled_jobs.next_run_at, EXCLUDED.next_run_at),
                     updated_at         = now()
             RETURNING id, tenant_id, shard_key, kind, name,
-                      schedule_kind AS "schedule_kind: ScheduleKind",
+                      schedule_kind,
                       cron_expr, interval_seconds, one_shot_at, timezone,
                       payload, enabled, max_attempts, retry_backoff_secs,
                       timeout_seconds, next_run_at, last_run_at, created_at
@@ -93,7 +93,7 @@ impl SchedulerService {
                 sqlx::query(
                     r#"
                     SELECT id, tenant_id, shard_key, kind, name,
-                           schedule_kind AS "schedule_kind: ScheduleKind",
+                           schedule_kind,
                            cron_expr, interval_seconds, one_shot_at, timezone,
                            payload, enabled, max_attempts, retry_backoff_secs,
                            timeout_seconds, next_run_at, last_run_at, created_at
@@ -110,7 +110,7 @@ impl SchedulerService {
                 sqlx::query(
                     r#"
                     SELECT id, tenant_id, shard_key, kind, name,
-                           schedule_kind AS "schedule_kind: ScheduleKind",
+                           schedule_kind,
                            cron_expr, interval_seconds, one_shot_at, timezone,
                            payload, enabled, max_attempts, retry_backoff_secs,
                            timeout_seconds, next_run_at, last_run_at, created_at
@@ -130,7 +130,7 @@ impl SchedulerService {
         let row = sqlx::query(
             r#"
             SELECT id, tenant_id, shard_key, kind, name,
-                   schedule_kind AS "schedule_kind: ScheduleKind",
+                   schedule_kind,
                    cron_expr, interval_seconds, one_shot_at, timezone,
                    payload, enabled, max_attempts, retry_backoff_secs,
                    timeout_seconds, next_run_at, last_run_at, created_at
@@ -203,11 +203,101 @@ impl SchedulerService {
         Ok(())
     }
 
+    /// Recent runs across all jobs for a tenant (or globally if `tenant_id`
+    /// is `None`). Used by the admin dashboard for an at-a-glance health view.
+    pub async fn recent_runs(
+        &self,
+        tenant_id: Option<Uuid>,
+        limit: i64,
+    ) -> AppResult<Vec<JobRun>> {
+        let limit = limit.clamp(1, 500);
+        // NB: runtime `sqlx::query()` does NOT understand the
+        // `AS "col: Type"` cast hint syntax (that's only for the `query_as!`
+        // macro). Aliasing without it lets `row_to_run` decode the enum
+        // via the `sqlx::Type` derive on `JobRunStatus`.
+        let rows = match tenant_id {
+            Some(tid) => {
+                sqlx::query(
+                    r#"
+                    SELECT id, job_id, tenant_id, attempt, status,
+                           scheduled_for, claimed_at, claimed_by, finished_at,
+                           duration_ms, output, error, idempotency_key
+                    FROM job_runs
+                    WHERE tenant_id = $1
+                    ORDER BY scheduled_for DESC
+                    LIMIT $2
+                    "#,
+                )
+                .bind(tid)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query(
+                    r#"
+                    SELECT id, job_id, tenant_id, attempt, status,
+                           scheduled_for, claimed_at, claimed_by, finished_at,
+                           duration_ms, output, error, idempotency_key
+                    FROM job_runs
+                    ORDER BY scheduled_for DESC
+                    LIMIT $1
+                    "#,
+                )
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?
+            }
+        };
+        rows.iter().map(row_to_run).collect()
+    }
+
+    /// Aggregate counts for the admin dashboard: `(total, enabled, due_now)`.
+    pub async fn counts(&self, tenant_id: Option<Uuid>) -> AppResult<JobCounts> {
+        let row = match tenant_id {
+            Some(tid) => {
+                sqlx::query(
+                    r#"
+                    SELECT COUNT(*)                                AS total,
+                           COUNT(*) FILTER (WHERE enabled)         AS enabled,
+                           COUNT(*) FILTER (WHERE enabled
+                                                  AND next_run_at <= now())
+                                                                   AS due_now
+                    FROM scheduled_jobs
+                    WHERE tenant_id = $1
+                    "#,
+                )
+                .bind(tid)
+                .fetch_one(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query(
+                    r#"
+                    SELECT COUNT(*)                                AS total,
+                           COUNT(*) FILTER (WHERE enabled)         AS enabled,
+                           COUNT(*) FILTER (WHERE enabled
+                                                  AND next_run_at <= now())
+                                                                   AS due_now
+                    FROM scheduled_jobs
+                    "#,
+                )
+                .fetch_one(&self.pool)
+                .await?
+            }
+        };
+        Ok(JobCounts {
+            total: row.try_get("total")?,
+            enabled: row.try_get("enabled")?,
+            due_now: row.try_get("due_now")?,
+        })
+    }
+
     pub async fn list_runs(&self, job_id: Uuid, limit: i64) -> AppResult<Vec<JobRun>> {
         let rows = sqlx::query(
             r#"
             SELECT id, job_id, tenant_id, attempt,
-                   status AS "status: JobRunStatus",
+                   status,
                    scheduled_for, claimed_at, claimed_by, finished_at,
                    duration_ms, output, error, idempotency_key
             FROM job_runs

@@ -40,6 +40,12 @@ pub struct Config {
     pub oauth_return_to_allowed_prefixes: Vec<String>,
     pub require_webhook_signatures: bool,
     pub webhook_signature_tolerance_seconds: i64,
+
+    /// Mount the read-mostly HTMX admin UI at `/admin`. Defaults to ON for
+    /// dev convenience; production deployments behind public gateways should
+    /// either disable this (`BILLING_ADMIN_UI_ENABLED=false`) or front it
+    /// with `dd-remote-auth` per the access-posture rule in `AGENTS.md`.
+    pub admin_ui_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,6 +138,8 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(300),
+
+            admin_ui_enabled: env_bool("BILLING_ADMIN_UI_ENABLED", true),
         })
     }
 
@@ -167,6 +175,48 @@ impl Config {
             PlaidEnvironment::Production => "https://production.plaid.com",
             PlaidEnvironment::Development => "https://development.plaid.com",
             PlaidEnvironment::Sandbox => "https://sandbox.plaid.com",
+        }
+    }
+
+    /// Build a minimally-populated Config suitable for unit tests that
+    /// need to pass `&Config` somewhere but don't care about most
+    /// fields. Optional provider creds are left empty.
+    #[cfg(test)]
+    pub fn for_tests() -> Self {
+        Self {
+            host: "127.0.0.1".into(),
+            port: 0,
+            database_url: "postgres://test".into(),
+            run_migrations: false,
+            master_seal_key_b64: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
+            solana_rpc_url: "http://localhost".into(),
+            solana_anchor_keypair_b58: None,
+            solana_cluster: SolanaCluster::Devnet,
+            stripe_client_id: None,
+            stripe_client_secret: None,
+            stripe_api_key: None,
+            stripe_api_version: DEFAULT_STRIPE_API_VERSION.into(),
+            stripe_webhook_secret: None,
+            paypal_client_id: None,
+            paypal_client_secret: None,
+            paypal_env: ProviderEnvironment::Sandbox,
+            paypal_webhook_id: None,
+            braintree_client_id: None,
+            braintree_client_secret: None,
+            braintree_env: ProviderEnvironment::Sandbox,
+            plaid_client_id: None,
+            plaid_secret: None,
+            plaid_env: PlaidEnvironment::Sandbox,
+            coinbase_webhook_secret: None,
+            coinflow_webhook_validation_key: None,
+            revolut_webhook_secret: None,
+            gocardless_webhook_secret: None,
+            mercury_webhook_secret: None,
+            oauth_redirect_base: "http://localhost".into(),
+            oauth_return_to_allowed_prefixes: Vec::new(),
+            require_webhook_signatures: false,
+            webhook_signature_tolerance_seconds: 300,
+            admin_ui_enabled: false,
         }
     }
 }

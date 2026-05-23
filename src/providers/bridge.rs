@@ -180,12 +180,8 @@ pub fn parse_signature_header(header: &str) -> AppResult<BridgeSignatureHeader> 
     }
 }
 
-/// Verify the staleness check Bridge requires (timestamp not older than
-/// 10 minutes). The RSA-SHA256 PKCS1v15 cryptographic step requires a
-/// vetted asymmetric-crypto dep (next push) — until then we return
-/// `Ok(false)` for "structure was valid but signature not yet checked",
-/// matching the Plaid pattern. The caller passes `Ok(false)` through to
-/// `signature_ok=false` and `verification_error="signature_not_yet_verified"`.
+/// Staleness check Bridge requires (timestamp not older than 10 minutes
+/// in either direction). Returns Unauthorized on stale.
 pub fn validate_timestamp_freshness(
     parsed: &BridgeSignatureHeader,
     max_age_seconds: i64,
@@ -197,6 +193,47 @@ pub fn validate_timestamp_freshness(
         return Err(AppError::Unauthorized);
     }
     Ok(())
+}
+
+/// Full RSA-SHA256 PKCS1v15 verification of a Bridge webhook.
+///
+/// Bridge signs `{timestamp_ms}.{raw_body}` with an RSA private key.
+/// Each merchant has their own per-account public key (PEM) which we
+/// receive via `BridgeCredential.webhook_public_key_pem`. The signature
+/// in the `X-Webhook-Signature` header is base64-encoded.
+///
+/// Returns Ok(()) on success, Err(Unauthorized) on signature mismatch,
+/// Err(Crypto) on a malformed PEM / signature.
+pub fn verify_signature_rsa(
+    raw_body: &[u8],
+    parsed: &BridgeSignatureHeader,
+    public_key_pem: &str,
+) -> AppResult<()> {
+    use base64::Engine as _;
+    use rsa::pkcs1v15::{Signature, VerifyingKey};
+    use rsa::pkcs8::DecodePublicKey;
+    use rsa::sha2::Sha256;
+    use rsa::signature::Verifier;
+    use rsa::RsaPublicKey;
+
+    let pubkey = RsaPublicKey::from_public_key_pem(public_key_pem.trim())
+        .map_err(|e| AppError::Crypto(format!("bridge pubkey pem: {e}")))?;
+    let verifying_key = VerifyingKey::<Sha256>::new(pubkey);
+
+    let sig_bytes = base64::engine::general_purpose::STANDARD
+        .decode(parsed.signature_b64.as_bytes())
+        .map_err(|e| AppError::Crypto(format!("bridge sig b64: {e}")))?;
+    let signature = Signature::try_from(sig_bytes.as_slice())
+        .map_err(|e| AppError::Crypto(format!("bridge sig: {e}")))?;
+
+    let mut signed_payload = Vec::with_capacity(raw_body.len() + 24);
+    signed_payload.extend_from_slice(parsed.timestamp_ms.to_string().as_bytes());
+    signed_payload.push(b'.');
+    signed_payload.extend_from_slice(raw_body);
+
+    verifying_key
+        .verify(&signed_payload, &signature)
+        .map_err(|_| AppError::Unauthorized)
 }
 
 // --- Normalization --------------------------------------------------------
@@ -385,5 +422,183 @@ fn parse_amount_to_minor(amount: &str) -> AppResult<i128> {
             provider: "bridge".into(),
             message: format!("malformed amount {amount}"),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine as _;
+    use chrono::Duration;
+    // The rsa crate is pinned to rand_core 0.6 and re-exports `OsRng`
+    // from that version. The workspace's top-level `rand` is 0.10, so
+    // we must use the rsa-flavored RNG to satisfy its trait bounds.
+    use rsa::pkcs1v15::SigningKey;
+    use rsa::pkcs8::EncodePublicKey;
+    use rsa::rand_core::OsRng;
+    use rsa::sha2::Sha256;
+    use rsa::signature::{RandomizedSigner, SignatureEncoding};
+    use rsa::RsaPrivateKey;
+
+    /// Generate a small RSA keypair for tests (1024 bits is fine here
+    /// — we're not protecting anything, just exercising the verify path).
+    /// We keep the private key in-memory rather than PEM-roundtripping
+    /// it so we don't need to pull in the `DecodePrivateKey` trait.
+    fn make_test_keypair() -> (RsaPrivateKey, String) {
+        let private = RsaPrivateKey::new(&mut OsRng, 1024).unwrap();
+        let public_pem = private
+            .to_public_key()
+            .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+            .unwrap();
+        (private, public_pem)
+    }
+
+    fn sign_for_bridge(private: &RsaPrivateKey, ts_ms: i64, body: &[u8]) -> String {
+        let signing_key = SigningKey::<Sha256>::new(private.clone());
+        let mut payload = ts_ms.to_string().into_bytes();
+        payload.push(b'.');
+        payload.extend_from_slice(body);
+        let sig = signing_key.sign_with_rng(&mut OsRng, &payload);
+        base64::engine::general_purpose::STANDARD.encode(sig.to_bytes())
+    }
+
+    #[test]
+    fn parses_signature_header_round_trip() {
+        let h = parse_signature_header("t=1716423000000, v0=abc==").unwrap();
+        assert_eq!(h.timestamp_ms, 1716423000000);
+        assert_eq!(h.signature_b64, "abc==");
+    }
+
+    #[test]
+    fn parses_signature_header_order_insensitive() {
+        let h = parse_signature_header("v0=zz==,t=42").unwrap();
+        assert_eq!(h.timestamp_ms, 42);
+        assert_eq!(h.signature_b64, "zz==");
+    }
+
+    #[test]
+    fn rejects_missing_pieces() {
+        assert!(parse_signature_header("t=42").is_err());
+        assert!(parse_signature_header("v0=abc").is_err());
+        assert!(parse_signature_header("").is_err());
+    }
+
+    #[test]
+    fn freshness_accepts_recent() {
+        let now = Utc::now();
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: now.timestamp_millis() - 30_000, // 30s ago
+            signature_b64: "x".into(),
+        };
+        assert!(validate_timestamp_freshness(&parsed, 600, now).is_ok());
+    }
+
+    #[test]
+    fn freshness_rejects_stale() {
+        let now = Utc::now();
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: (now - Duration::seconds(700)).timestamp_millis(),
+            signature_b64: "x".into(),
+        };
+        let err = validate_timestamp_freshness(&parsed, 600, now).unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn freshness_rejects_future() {
+        // Symmetric: a timestamp from the FUTURE outside the tolerance
+        // is also rejected (clock-skew attack).
+        let now = Utc::now();
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: (now + Duration::seconds(700)).timestamp_millis(),
+            signature_b64: "x".into(),
+        };
+        assert!(validate_timestamp_freshness(&parsed, 600, now).is_err());
+    }
+
+    #[test]
+    fn rsa_verify_accepts_genuine_signature() {
+        let (private, pub_pem) = make_test_keypair();
+        let body = br#"{"event":"transfer.completed","id":"tr_1"}"#;
+        let ts = Utc::now().timestamp_millis();
+        let sig_b64 = sign_for_bridge(&private, ts, body);
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: ts,
+            signature_b64: sig_b64,
+        };
+        verify_signature_rsa(body, &parsed, &pub_pem).unwrap();
+    }
+
+    #[test]
+    fn rsa_verify_rejects_tampered_body() {
+        let (private, pub_pem) = make_test_keypair();
+        let body = br#"{"amount":100}"#;
+        let ts = Utc::now().timestamp_millis();
+        let sig_b64 = sign_for_bridge(&private, ts, body);
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: ts,
+            signature_b64: sig_b64,
+        };
+        // Attacker swaps the body but keeps the signature.
+        let tampered = br#"{"amount":99999}"#;
+        let err = verify_signature_rsa(tampered, &parsed, &pub_pem).unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn rsa_verify_rejects_tampered_timestamp() {
+        let (private, pub_pem) = make_test_keypair();
+        let body = br#"{"event":"x"}"#;
+        let ts = Utc::now().timestamp_millis();
+        let sig_b64 = sign_for_bridge(&private, ts, body);
+        // Same signature, but attacker shifts the timestamp — the
+        // signed payload doesn't match, so verify must fail.
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: ts + 1,
+            signature_b64: sig_b64,
+        };
+        assert!(matches!(
+            verify_signature_rsa(body, &parsed, &pub_pem).unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn rsa_verify_rejects_signature_from_different_keypair() {
+        let (_a_priv, pub_a) = make_test_keypair();
+        let (b_priv, _b_pub) = make_test_keypair();
+        let body = br#"{"event":"x"}"#;
+        let ts = Utc::now().timestamp_millis();
+        let sig_b64 = sign_for_bridge(&b_priv, ts, body);
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: ts,
+            signature_b64: sig_b64,
+        };
+        // Signed with B but verified against A — must fail.
+        assert!(matches!(
+            verify_signature_rsa(body, &parsed, &pub_a).unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn rsa_verify_rejects_malformed_pem() {
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: 0,
+            signature_b64: "AA==".into(),
+        };
+        let err = verify_signature_rsa(b"x", &parsed, "not a pem at all").unwrap_err();
+        assert!(matches!(err, AppError::Crypto(_)));
+    }
+
+    #[test]
+    fn rsa_verify_rejects_malformed_sig() {
+        let (_private, pub_pem) = make_test_keypair();
+        let parsed = BridgeSignatureHeader {
+            timestamp_ms: 0,
+            signature_b64: "@@@not base64@@@".into(),
+        };
+        let err = verify_signature_rsa(b"x", &parsed, &pub_pem).unwrap_err();
+        assert!(matches!(err, AppError::Crypto(_)));
     }
 }

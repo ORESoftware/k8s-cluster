@@ -79,7 +79,7 @@ impl SchedulerRunner {
             FROM due
             WHERE sj.id = due.id
             RETURNING sj.id, sj.tenant_id, sj.kind, sj.name, sj.payload,
-                      sj.schedule_kind AS "schedule_kind: ScheduleKind",
+                      sj.schedule_kind,
                       sj.cron_expr, sj.interval_seconds, sj.one_shot_at,
                       sj.timezone, sj.max_attempts, sj.retry_backoff_secs,
                       sj.timeout_seconds

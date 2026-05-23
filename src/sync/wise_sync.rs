@@ -145,6 +145,7 @@ async fn open_activity_break(
              external_ref, metadata)
         VALUES ($1, $2, 'wise'::provider_kind, $3,
                 'unposted_wise_activity', $4, $5)
+        ON CONFLICT DO NOTHING
         "#,
     )
     .bind(ctx.tenant_id)

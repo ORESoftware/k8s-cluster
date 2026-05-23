@@ -21,8 +21,10 @@ use crate::providers::connection::ProviderConnection;
 use crate::providers::{
     ProviderKind,
     bridge,
+    circle::{self, CircleCredential},
     coinbase::{self, CoinbaseCredential},
     coinflow::{self, CoinflowCredential},
+    fireblocks::{self, FireblocksCredential},
     gocardless::{self, GoCardlessCredential},
     mercury::{self, MercuryCredential},
     paypal,
@@ -112,6 +114,22 @@ pub async fn bridge(
     record_event(&state, WebhookProvider::Bridge, &headers, &body).await
 }
 
+pub async fn fireblocks(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Fireblocks, &headers, &body).await
+}
+
+pub async fn circle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> AppResult<Json<Ack>> {
+    record_event(&state, WebhookProvider::Circle, &headers, &body).await
+}
+
 #[derive(Clone, Copy)]
 enum WebhookProvider {
     Stripe,
@@ -123,6 +141,8 @@ enum WebhookProvider {
     GoCardless,
     Mercury,
     Bridge,
+    Fireblocks,
+    Circle,
 }
 
 impl WebhookProvider {
@@ -137,6 +157,8 @@ impl WebhookProvider {
             Self::GoCardless => ProviderKind::GoCardless,
             Self::Mercury => ProviderKind::Mercury,
             Self::Bridge => ProviderKind::Bridge,
+            Self::Fireblocks => ProviderKind::Fireblocks,
+            Self::Circle => ProviderKind::Circle,
         }
     }
 
@@ -318,12 +340,14 @@ async fn verify_delivery(
             Ok(true)
         }
         WebhookProvider::PlaidBank => {
-            // Plaid signs with a JWT in Plaid-Verification; full ES256/JWK
-            // validation is intentionally left out until we add a vetted JWT
-            // library. We still record the JWT presence and never process
-            // unverified events.
-            let _ = header_str(headers, "plaid-verification");
-            Ok(false)
+            let Some(jwt) = header_str(headers, "plaid-verification") else {
+                return Ok(false);
+            };
+            state
+                .plaid_webhook_verifier
+                .verify(&state.cfg, jwt, body, 300)
+                .await?;
+            Ok(true)
         }
         WebhookProvider::Revolut => {
             let Some(sig) = header_str(headers, "revolut-signature") else {
@@ -384,13 +408,75 @@ async fn verify_delivery(
                 Ok(p) => p,
                 Err(_) => return Ok(false),
             };
-            // Staleness check is the only cryptographic guard until we add
-            // the RSA verify dep (next push). We surface verification as
-            // false so signature_ok stays accurate.
             bridge::validate_timestamp_freshness(&parsed, 600, chrono::Utc::now())?;
-            Ok(false)
+            let Some(conn) = connection else {
+                return Ok(false);
+            };
+            let Some(pem) = load_bridge_public_key(state, conn).await? else {
+                return Ok(false);
+            };
+            bridge::verify_signature_rsa(body, &parsed, &pem)?;
+            Ok(true)
+        }
+        WebhookProvider::Fireblocks => {
+            let Some(sig) = header_str(headers, "fireblocks-signature") else {
+                return Ok(false);
+            };
+            let Some(conn) = connection else {
+                return Ok(false);
+            };
+            let Some(pem) = load_fireblocks_public_key(state, conn).await? else {
+                return Ok(false);
+            };
+            fireblocks::verify_webhook_signature(body, sig, &pem)?;
+            Ok(true)
+        }
+        WebhookProvider::Circle => {
+            let Some(sig) = header_str(headers, "circle-signature") else {
+                return Ok(false);
+            };
+            let Some(secret) = load_circle_secret(state, connection).await? else {
+                return Ok(false);
+            };
+            circle::verify_webhook_signature(body, sig, &secret)?;
+            Ok(true)
         }
     }
+}
+
+async fn load_fireblocks_public_key(
+    state: &AppState,
+    conn: &ProviderConnection,
+) -> AppResult<Option<String>> {
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: FireblocksCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "fireblocks".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_public_key_pem)
+}
+
+async fn load_circle_secret(
+    state: &AppState,
+    conn: Option<&ProviderConnection>,
+) -> AppResult<Option<String>> {
+    let Some(conn) = conn else {
+        return Ok(None);
+    };
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: CircleCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "circle".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_secret)
 }
 
 async fn load_mercury_secret(
@@ -457,6 +543,22 @@ async fn load_coinbase_secret(
     Ok(Some(cred.webhook_secret))
 }
 
+async fn load_bridge_public_key(
+    state: &AppState,
+    conn: &ProviderConnection,
+) -> AppResult<Option<String>> {
+    let plaintext = state
+        .connections
+        .load_credential(conn.tenant_id, conn.id)
+        .await?;
+    let cred: crate::providers::bridge::BridgeCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+            provider: "bridge".into(),
+            message: format!("decode sealed credential: {e}"),
+        })?;
+    Ok(cred.webhook_public_key_pem)
+}
+
 async fn load_coinflow_secret(
     state: &AppState,
     conn: &ProviderConnection,
@@ -484,6 +586,17 @@ fn event_id(provider: WebhookProvider, payload: &Value) -> Option<String> {
             .and_then(|v| v.as_str())
             .zip(payload.get("item_id").and_then(|v| v.as_str()))
             .map(|(code, item)| format!("{item}:{code}:{}", payload_sha_payload(payload))),
+        WebhookProvider::Fireblocks => payload
+            .pointer("/data/id")
+            .or_else(|| payload.get("id"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Circle => payload
+            .pointer("/notification/transfer/id")
+            .or_else(|| payload.pointer("/notification/id"))
+            .or_else(|| payload.get("subscriptionId"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
         _ => payload
             .get("id")
             .and_then(|v| v.as_str())
@@ -552,10 +665,289 @@ fn external_account_id(provider: WebhookProvider, payload: &Value) -> Option<Str
             .or_else(|| payload.get("customer_id"))
             .and_then(|v| v.as_str())
             .map(str::to_string),
+        WebhookProvider::Fireblocks => payload
+            // Fireblocks sends `apiKey` or `workspaceId` in the wrapper
+            // depending on the webhook type; we hash the API key on attach
+            // so most workspace lookups fall back to the connection's
+            // explicit external_account_id (the api_key uuid we stored).
+            .get("apiKey")
+            .or_else(|| payload.pointer("/data/apiKey"))
+            .or_else(|| payload.get("workspaceId"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        WebhookProvider::Circle => payload
+            // Circle wraps the actual event inside `notification`; the
+            // tenant-scoping field is `subscriptionId` (which maps 1:1
+            // to a connection we registered the webhook URL with).
+            .get("subscriptionId")
+            .or_else(|| payload.pointer("/notification/subscriptionId"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
     }
 }
 
 fn payload_sha_payload(payload: &Value) -> String {
     let bytes = serde_json::to_vec(payload).unwrap_or_default();
     hex::encode(Sha256::digest(&bytes))[..16].to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ---- event_id extraction ----------------------------------------
+
+    #[test]
+    fn event_id_stripe_uses_top_level_id() {
+        let p = json!({"id": "evt_123", "type": "balance.available"});
+        assert_eq!(
+            event_id(WebhookProvider::Stripe, &p),
+            Some("evt_123".into())
+        );
+    }
+
+    #[test]
+    fn event_id_paypal_uses_top_level_id() {
+        let p = json!({"id": "WH-EVT-9", "event_type": "PAYMENT.SALE.COMPLETED"});
+        assert_eq!(
+            event_id(WebhookProvider::Paypal, &p),
+            Some("WH-EVT-9".into())
+        );
+    }
+
+    #[test]
+    fn event_id_plaid_composes_item_code_and_hash() {
+        // Plaid doesn't supply a stable event ID; we synthesize one
+        // from (item_id, webhook_code, body_sha[..16]).
+        let p = json!({
+            "webhook_code": "SYNC_UPDATES_AVAILABLE",
+            "item_id": "item_X",
+            "new_transactions": 5,
+        });
+        let id = event_id(WebhookProvider::PlaidBank, &p).unwrap();
+        assert!(id.starts_with("item_X:SYNC_UPDATES_AVAILABLE:"));
+        assert_eq!(id.split(':').count(), 3);
+    }
+
+    #[test]
+    fn event_id_plaid_none_when_missing_pieces() {
+        assert!(event_id(WebhookProvider::PlaidBank, &json!({"item_id": "x"})).is_none());
+        assert!(
+            event_id(WebhookProvider::PlaidBank, &json!({"webhook_code": "x"})).is_none()
+        );
+    }
+
+    #[test]
+    fn event_id_fireblocks_pointer_then_top_level() {
+        let nested = json!({"data": {"id": "fb_nested"}});
+        assert_eq!(
+            event_id(WebhookProvider::Fireblocks, &nested),
+            Some("fb_nested".into())
+        );
+        let top = json!({"id": "fb_top"});
+        assert_eq!(
+            event_id(WebhookProvider::Fireblocks, &top),
+            Some("fb_top".into())
+        );
+    }
+
+    #[test]
+    fn event_id_circle_prefers_transfer_id() {
+        let p = json!({
+            "notification": {
+                "transfer": {"id": "transfer_42"},
+                "id": "notif_99"
+            },
+            "subscriptionId": "sub_1"
+        });
+        assert_eq!(
+            event_id(WebhookProvider::Circle, &p),
+            Some("transfer_42".into())
+        );
+    }
+
+    #[test]
+    fn event_id_circle_falls_back_to_notification_id_then_sub() {
+        let no_transfer = json!({
+            "notification": {"id": "notif_99"},
+            "subscriptionId": "sub_1"
+        });
+        assert_eq!(
+            event_id(WebhookProvider::Circle, &no_transfer),
+            Some("notif_99".into())
+        );
+        let only_sub = json!({"subscriptionId": "sub_1"});
+        assert_eq!(
+            event_id(WebhookProvider::Circle, &only_sub),
+            Some("sub_1".into())
+        );
+    }
+
+    // ---- event_type extraction --------------------------------------
+
+    #[test]
+    fn event_type_stripe_reads_type() {
+        let p = json!({"type": "balance.available"});
+        assert_eq!(
+            event_type(WebhookProvider::Stripe, &p),
+            Some("balance.available".into())
+        );
+    }
+
+    #[test]
+    fn event_type_paypal_reads_event_type() {
+        let p = json!({"event_type": "PAYMENT.SALE.COMPLETED"});
+        assert_eq!(
+            event_type(WebhookProvider::Paypal, &p),
+            Some("PAYMENT.SALE.COMPLETED".into())
+        );
+    }
+
+    #[test]
+    fn event_type_plaid_reads_webhook_code() {
+        let p = json!({"webhook_code": "DEFAULT_UPDATE"});
+        assert_eq!(
+            event_type(WebhookProvider::PlaidBank, &p),
+            Some("DEFAULT_UPDATE".into())
+        );
+    }
+
+    // ---- external_account_id extraction -----------------------------
+
+    #[test]
+    fn external_account_id_stripe() {
+        let p = json!({"account": "acct_AAA"});
+        assert_eq!(
+            external_account_id(WebhookProvider::Stripe, &p),
+            Some("acct_AAA".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_paypal_prefers_merchant_id_then_payee() {
+        let primary = json!({"resource": {"merchant_id": "M_PRIMARY"}});
+        assert_eq!(
+            external_account_id(WebhookProvider::Paypal, &primary),
+            Some("M_PRIMARY".into())
+        );
+        let payee = json!({"resource": {"payee": {"merchant_id": "M_PAYEE"}}});
+        assert_eq!(
+            external_account_id(WebhookProvider::Paypal, &payee),
+            Some("M_PAYEE".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_plaid_item_id() {
+        let p = json!({"item_id": "item_X"});
+        assert_eq!(
+            external_account_id(WebhookProvider::PlaidBank, &p),
+            Some("item_X".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_coinflow_camel_and_snake() {
+        let snake = json!({"merchant_id": "m1"});
+        assert_eq!(
+            external_account_id(WebhookProvider::Coinflow, &snake),
+            Some("m1".into())
+        );
+        let camel = json!({"merchantId": "m2"});
+        assert_eq!(
+            external_account_id(WebhookProvider::Coinflow, &camel),
+            Some("m2".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_coinbase_commerce_nested() {
+        let p = json!({"event": {"data": {"metadata": {"merchant_id": "cb_m"}}}});
+        assert_eq!(
+            external_account_id(WebhookProvider::CoinbaseCommerce, &p),
+            Some("cb_m".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_gocardless_first_event_organisation() {
+        let p = json!({
+            "events": [
+                {"id": "EV1", "links": {"organisation": "ORG_1"}},
+                {"id": "EV2", "links": {"organisation": "ORG_2"}}
+            ]
+        });
+        // Should always return the FIRST event's organisation — we
+        // tenant-scope on connection, so any GoCardless batch is
+        // already from a single tenant.
+        assert_eq!(
+            external_account_id(WebhookProvider::GoCardless, &p),
+            Some("ORG_1".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_bridge_event_object_then_top() {
+        let nested = json!({"event_object": {"customer_id": "cust_NEST"}});
+        assert_eq!(
+            external_account_id(WebhookProvider::Bridge, &nested),
+            Some("cust_NEST".into())
+        );
+        let top = json!({"customer_id": "cust_TOP"});
+        assert_eq!(
+            external_account_id(WebhookProvider::Bridge, &top),
+            Some("cust_TOP".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_fireblocks_falls_through_three_locations() {
+        let api_key = json!({"apiKey": "AK"});
+        assert_eq!(
+            external_account_id(WebhookProvider::Fireblocks, &api_key),
+            Some("AK".into())
+        );
+        let nested = json!({"data": {"apiKey": "AK2"}});
+        assert_eq!(
+            external_account_id(WebhookProvider::Fireblocks, &nested),
+            Some("AK2".into())
+        );
+        let ws = json!({"workspaceId": "WS"});
+        assert_eq!(
+            external_account_id(WebhookProvider::Fireblocks, &ws),
+            Some("WS".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_circle_subscription_top_then_nested() {
+        let top = json!({"subscriptionId": "sub_top"});
+        assert_eq!(
+            external_account_id(WebhookProvider::Circle, &top),
+            Some("sub_top".into())
+        );
+        let nested = json!({"notification": {"subscriptionId": "sub_nest"}});
+        assert_eq!(
+            external_account_id(WebhookProvider::Circle, &nested),
+            Some("sub_nest".into())
+        );
+    }
+
+    #[test]
+    fn external_account_id_returns_none_when_missing() {
+        let empty = json!({});
+        assert!(external_account_id(WebhookProvider::Stripe, &empty).is_none());
+        assert!(external_account_id(WebhookProvider::Paypal, &empty).is_none());
+        assert!(external_account_id(WebhookProvider::Circle, &empty).is_none());
+    }
+
+    #[test]
+    fn payload_sha_is_deterministic_and_truncated() {
+        let p = json!({"foo": "bar"});
+        let a = payload_sha_payload(&p);
+        let b = payload_sha_payload(&p);
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 16); // hex prefix
+    }
 }
