@@ -126,6 +126,9 @@ impl SchedulerService {
         rows.iter().map(row_to_job).collect()
     }
 
+    /// Global lookup, only used by admin and the scheduler runner (which
+    /// has already proven ownership via `job_runs.tenant_id`). API
+    /// callers MUST go through [`Self::get_for_tenant`].
     pub async fn get(&self, id: Uuid) -> AppResult<ScheduledJob> {
         let row = sqlx::query(
             r#"
@@ -145,12 +148,70 @@ impl SchedulerService {
         row_to_job(&row)
     }
 
+    /// Tenant-scoped lookup. `tenant_id=NULL` jobs (system jobs) are
+    /// not visible through this accessor — those are admin-only.
+    /// Returns NotFound (not Forbidden) on cross-tenant access to
+    /// avoid leaking whether a given job UUID exists.
+    pub async fn get_for_tenant(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> AppResult<ScheduledJob> {
+        let row = sqlx::query(
+            r#"
+            SELECT id, tenant_id, shard_key, kind, name,
+                   schedule_kind,
+                   cron_expr, interval_seconds, one_shot_at, timezone,
+                   payload, enabled, max_attempts, retry_backoff_secs,
+                   timeout_seconds, next_run_at, last_run_at, created_at
+            FROM scheduled_jobs
+            WHERE id = $1 AND tenant_id = $2
+            "#,
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("scheduled_job {id}")))?;
+
+        row_to_job(&row)
+    }
+
+    /// Admin-only: unscoped enable/disable. API callers must use
+    /// [`Self::set_enabled_for_tenant`].
     pub async fn set_enabled(&self, id: Uuid, enabled: bool) -> AppResult<()> {
         sqlx::query(r#"UPDATE scheduled_jobs SET enabled = $2, updated_at = now() WHERE id = $1"#)
             .bind(id)
             .bind(enabled)
             .execute(&self.pool)
             .await?;
+        Ok(())
+    }
+
+    /// Tenant-scoped enable/disable. Returns NotFound when the job
+    /// belongs to a different tenant.
+    pub async fn set_enabled_for_tenant(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        enabled: bool,
+    ) -> AppResult<()> {
+        let n = sqlx::query(
+            r#"
+            UPDATE scheduled_jobs
+            SET enabled = $3, updated_at = now()
+            WHERE id = $1 AND tenant_id = $2
+            "#,
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .bind(enabled)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if n == 0 {
+            return Err(AppError::NotFound(format!("scheduled_job {id}")));
+        }
         Ok(())
     }
 
@@ -192,7 +253,8 @@ impl SchedulerService {
         .await
     }
 
-    /// Force the next_run_at to "now" so the next dispatcher tick will pick it up.
+    /// Force the next_run_at to "now" so the next dispatcher tick will
+    /// pick it up. Admin/system path — bypasses tenant ownership.
     pub async fn run_now(&self, id: Uuid) -> AppResult<()> {
         sqlx::query(
             r#"UPDATE scheduled_jobs SET next_run_at = now(), updated_at = now() WHERE id = $1"#,
@@ -200,6 +262,30 @@ impl SchedulerService {
         .bind(id)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    /// Tenant-scoped variant of [`Self::run_now`].
+    pub async fn run_now_for_tenant(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> AppResult<()> {
+        let n = sqlx::query(
+            r#"
+            UPDATE scheduled_jobs
+            SET next_run_at = now(), updated_at = now()
+            WHERE id = $1 AND tenant_id = $2
+            "#,
+        )
+        .bind(id)
+        .bind(tenant_id)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if n == 0 {
+            return Err(AppError::NotFound(format!("scheduled_job {id}")));
+        }
         Ok(())
     }
 
@@ -293,6 +379,10 @@ impl SchedulerService {
         })
     }
 
+    /// Admin-only: unscoped list_runs. Currently unused (admin
+    /// dashboard surfaces job runs via [`Self::recent_runs`] instead);
+    /// keep it for the planned per-job admin drill-down.
+    #[allow(dead_code)]
     pub async fn list_runs(&self, job_id: Uuid, limit: i64) -> AppResult<Vec<JobRun>> {
         let rows = sqlx::query(
             r#"
@@ -311,6 +401,35 @@ impl SchedulerService {
         .fetch_all(&self.pool)
         .await?;
 
+        rows.iter().map(row_to_run).collect()
+    }
+
+    /// Tenant-scoped list_runs. Filters job_runs by both `job_id` AND
+    /// `tenant_id` so a leaked job UUID does not let another tenant
+    /// read its run history.
+    pub async fn list_runs_for_tenant(
+        &self,
+        tenant_id: Uuid,
+        job_id: Uuid,
+        limit: i64,
+    ) -> AppResult<Vec<JobRun>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, job_id, tenant_id, attempt,
+                   status,
+                   scheduled_for, claimed_at, claimed_by, finished_at,
+                   duration_ms, output, error, idempotency_key
+            FROM job_runs
+            WHERE job_id = $1 AND tenant_id = $2
+            ORDER BY scheduled_for DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(job_id)
+        .bind(tenant_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
         rows.iter().map(row_to_run).collect()
     }
 }

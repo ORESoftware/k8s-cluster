@@ -61,6 +61,25 @@ pub struct Config {
     /// separated `BILLING_ADMIN_ALLOWED_ORIGINS` env var when an
     /// operator dashboard hosted elsewhere needs to embed admin actions.
     pub admin_allowed_origins: Vec<String>,
+
+    /// Bearer token for the JSON API (`/v1/...`). When set, every
+    /// tenant-scoped route requires `Authorization: Bearer <token>`
+    /// (constant-time compared). Leave unset for unauthenticated local
+    /// dev, but **always** set this in production — without it the
+    /// entire API is open to anyone who can reach the listener.
+    ///
+    /// Production deployments should additionally front the listener
+    /// with `dd-remote-auth` or another gateway that enforces tenant
+    /// ownership; this token is the "fail-closed" floor.
+    pub api_auth_bearer: Option<String>,
+
+    /// Refuse outbound HTTP to private / loopback / link-local IPs.
+    /// Protects `tenant.webhook` jobs and notification channels from
+    /// being weaponized into an SSRF probe of the cluster's internal
+    /// services. Defaults to `true`; set
+    /// `BILLING_ALLOW_PRIVATE_OUTBOUND=true` to opt out (for dev /
+    /// integration tests against a local mock server).
+    pub block_private_outbound: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +181,16 @@ impl Config {
                     if t.is_empty() { None } else { Some(t.to_string()) }
                 }),
             admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
+            api_auth_bearer: env::var("BILLING_API_AUTH_BEARER")
+                .ok()
+                .and_then(|s| {
+                    let t = s.trim();
+                    if t.is_empty() { None } else { Some(t.to_string()) }
+                }),
+            // Default fail-closed: the only legitimate use for outbound
+            // private-IP traffic is dev/integration. Production callers
+            // should hit the public webhook URL of their tenant.
+            block_private_outbound: env_bool("BILLING_BLOCK_PRIVATE_OUTBOUND", true),
         })
     }
 
@@ -241,6 +270,9 @@ impl Config {
             admin_ui_enabled: false,
             admin_auth_bearer: None,
             admin_allowed_origins: Vec::new(),
+            api_auth_bearer: None,
+            // Tests sometimes hit localhost; default-allow keeps them simple.
+            block_private_outbound: false,
         }
     }
 }

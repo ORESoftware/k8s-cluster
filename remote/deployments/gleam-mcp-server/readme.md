@@ -210,6 +210,42 @@ because the `/mcp` JSON-RPC surface is intentionally read-only and the
 ops/runtime-config paths still require `X-Server-Auth
 (RUNTIME_CONFIG_SERVER_SECRET)`.
 
+## Warming `build/packages` on the EC2 host
+
+The pod boots from the `/home/ec2-user/codes/dd/dd-next-1` checkout on the EC2 node, and the
+NetworkPolicy intentionally blocks `repo.hex.pm`. That means `gleam run` inside the pod has to be
+able to compile fully offline: every package listed in `manifest.toml` must already exist under
+`remote/deployments/gleam-mcp-server/build/packages/` on the host, either as a directory (hex deps)
+or as a `<name>.config_fingerprint` file (local-path deps such as `dd_pg_defs` and
+`dd_runtime_config_client`).
+
+If `build/packages/` is stale (typical symptom: a new local-path dep was added but the host was
+never re-warmed) the `preflight` init container now fails fast and prints the missing names. The
+pod-side `boot:` block re-checks the same invariant after the copy-to-`/tmp` step, so the failure
+mode that previously surfaced as a public-gateway 502 (`Resolving versions` → `error sending
+request for url (https://repo.hex.pm/...)`) is now visible directly in `kubectl describe pod`.
+
+To warm the host checkout from any shell with AWS access (SSM Session Manager works; no VPN
+required):
+
+```sh
+sudo nerdctl pull ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+sudo nerdctl run --rm --net=host --memory=2g \
+  -v /home/ec2-user/codes/dd/dd-next-1:/opt/dd-next-1 \
+  --workdir /opt/dd-next-1/remote/deployments/gleam-mcp-server \
+  ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine \
+  /bin/sh -lc 'gleam deps download'
+sudo chown -R ec2-user:ec2-user \
+  /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server/build
+kubectl -n default rollout restart deploy/dd-gleam-mcp-server
+```
+
+`--net=host` is required so the warm-up has the same outbound path the EC2 node already uses
+(NetworkPolicy only applies to pod traffic, not host traffic). `--memory=2g` keeps the gleam
+compiler away from the unbounded-cgroup OOM kill we observed running it inside the `k8s.io`
+nerdctl namespace. The final `chown` puts the new `build/packages/` entries back under
+`ec2-user` so the read-only hostPath mount in the pod can still read them.
+
 ## Kubernetes
 
 EC2 is the production/canonical target for MCP:

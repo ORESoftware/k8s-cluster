@@ -255,33 +255,57 @@ impl ConnectionService {
         rows.iter().map(row_to_connection).collect()
     }
 
-    pub async fn mark_failed(&self, connection_id: Uuid, error: &str) -> AppResult<()> {
+    /// Mark a connection as token-refresh-failed.
+    ///
+    /// All callers must pass the `tenant_id` we expect this connection
+    /// to belong to. The UPDATE is filtered by both `id` and
+    /// `tenant_id` as defense in depth against a caller that learned a
+    /// connection UUID through a side channel.
+    ///
+    /// Currently no caller invokes this — the OAuth refresh path that
+    /// would set `token_refresh_failed` is not yet wired. Keep the
+    /// method (with the tenant-scoped signature) so the refresh worker
+    /// lands the right way from day one.
+    #[allow(dead_code)]
+    pub async fn mark_failed(
+        &self,
+        tenant_id: Uuid,
+        connection_id: Uuid,
+        error: &str,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE provider_connections
             SET status = 'token_refresh_failed'::connection_status,
-                last_error = $2,
+                last_error = $3,
                 updated_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND tenant_id = $2
             "#,
         )
         .bind(connection_id)
+        .bind(tenant_id)
         .bind(error)
         .execute(&self.pool)
         .await?;
         Ok(())
     }
 
-    pub async fn mark_sync_failed(&self, connection_id: Uuid, error: &str) -> AppResult<()> {
+    pub async fn mark_sync_failed(
+        &self,
+        tenant_id: Uuid,
+        connection_id: Uuid,
+        error: &str,
+    ) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE provider_connections
-            SET last_error = $2,
+            SET last_error = $3,
                 updated_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND tenant_id = $2
             "#,
         )
         .bind(connection_id)
+        .bind(tenant_id)
         .bind(error)
         .execute(&self.pool)
         .await?;
@@ -294,18 +318,20 @@ impl ConnectionService {
     /// in `sealed_credential`.
     pub async fn merge_metadata(
         &self,
+        tenant_id: Uuid,
         connection_id: Uuid,
         patch: serde_json::Value,
     ) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE provider_connections
-            SET metadata = metadata || $2,
+            SET metadata = metadata || $3,
                 updated_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND tenant_id = $2
             "#,
         )
         .bind(connection_id)
+        .bind(tenant_id)
         .bind(&patch)
         .execute(&self.pool)
         .await?;
@@ -314,20 +340,26 @@ impl ConnectionService {
 
     /// Update the connection's `external_account_id` (set when an OAuth
     /// callback first reveals e.g. the Stripe `stripe_user_id`).
+    ///
+    /// This UPDATE is the most sensitive of the lot: changing
+    /// `external_account_id` rebinds webhook routing
+    /// (`find_active_by_external_account`). Tenant-scope it strictly.
     pub async fn set_external_account(
         &self,
+        tenant_id: Uuid,
         connection_id: Uuid,
         external_account_id: &str,
     ) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE provider_connections
-            SET external_account_id = $2,
+            SET external_account_id = $3,
                 updated_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND tenant_id = $2
             "#,
         )
         .bind(connection_id)
+        .bind(tenant_id)
         .bind(external_account_id)
         .execute(&self.pool)
         .await?;
@@ -395,6 +427,7 @@ impl ConnectionService {
 
     pub async fn mark_synced(
         &self,
+        tenant_id: Uuid,
         connection_id: Uuid,
         next_cursor: Option<&str>,
     ) -> AppResult<()> {
@@ -402,13 +435,14 @@ impl ConnectionService {
             r#"
             UPDATE provider_connections
             SET last_sync_at = now(),
-                last_sync_cursor = COALESCE($2, last_sync_cursor),
+                last_sync_cursor = COALESCE($3, last_sync_cursor),
                 last_error = NULL,
                 updated_at = now()
-            WHERE id = $1
+            WHERE id = $1 AND tenant_id = $2
             "#,
         )
         .bind(connection_id)
+        .bind(tenant_id)
         .bind(next_cursor)
         .execute(&self.pool)
         .await?;

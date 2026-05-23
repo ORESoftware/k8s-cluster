@@ -99,6 +99,7 @@ pub async fn sync_mercury(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({
                                     "mercury_account_cursors": cursor_map,
@@ -125,6 +126,7 @@ pub async fn sync_mercury(
 
     ctx.connections
         .merge_metadata(
+            conn.tenant_id,
             conn.id,
             serde_json::json!({
                 "mercury_account_cursors": cursor_map,

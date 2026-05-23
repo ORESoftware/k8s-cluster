@@ -1,0 +1,42 @@
+# gitleaks configuration for the k8s-cluster repo.
+#
+# Source of truth for secret values is AWS Secrets Manager via External
+# Secrets Operator (see remote/argocd/secrets/readme.md). Nothing in
+# Git should carry a literal AWS, OpenAI, Anthropic, GitHub, xAI, or
+# Google API token; this config defines the shapes we will fail CI on.
+
+title = "k8s-cluster gitleaks ruleset"
+
+[extend]
+# Inherit the upstream default ruleset so we get the broad library of
+# detector rules for free, then layer the AWS-specific rules below.
+useDefault = true
+
+[[rules]]
+id = "aws-iam-access-key"
+description = "Long-lived AWS IAM access key id (AKIA…) — must come from AWS Secrets Manager via External Secrets, never from Git."
+regex = '''\b(AKIA[0-9A-Z]{16})\b'''
+tags = ["aws", "credentials", "key"]
+
+[[rules]]
+id = "aws-sts-access-key"
+description = "Short-lived AWS STS access key id (ASIA…) — produced by AssumeRole/SSO and must never be pasted into source or chat."
+regex = '''\b(ASIA[0-9A-Z]{16})\b'''
+tags = ["aws", "credentials", "sts"]
+
+[[rules]]
+id = "aws-sts-session-token"
+description = "AWS STS session token. v2 tokens are base64 blobs that begin with IQoJ (encoded protobuf header)."
+regex = '''\bIQoJ[A-Za-z0-9+/=_\-]{180,}\b'''
+tags = ["aws", "credentials", "sts", "session"]
+
+[allowlist]
+description = "Files where the AWS shapes are intentionally referenced for redaction logic and tests."
+paths = [
+  '''remote/deployments/dev-server/src/server\.ts''',
+  '''remote/deployments/dev-server/dist/server\.(js|js\.map)''',
+  '''remote/deployments/container-pool-rs/src/main\.rs''',
+  '''remote/tests/.*''',
+  '''\.github/workflows/secret-scan\.yml''',
+  '''\.github/gitleaks\.toml''',
+]

@@ -113,6 +113,7 @@ pub async fn sync_stripe(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({ "stripe_balance_cursor": c }),
                             )
@@ -138,7 +139,11 @@ pub async fn sync_stripe(
 
     if let Some(ref c) = last_newest_id {
         ctx.connections
-            .merge_metadata(conn.id, serde_json::json!({ "stripe_balance_cursor": c }))
+            .merge_metadata(
+                conn.tenant_id,
+                conn.id,
+                serde_json::json!({ "stripe_balance_cursor": c }),
+            )
             .await?;
     }
 

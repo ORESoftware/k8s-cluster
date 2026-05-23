@@ -1440,6 +1440,12 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     let scrubbed_args = args
         .iter()
         .map(|arg| {
+            // Match either env-name prefixes or value-bearing args whose
+            // name reveals sensitivity. The substring checks below catch
+            // any env name containing API_KEY/SECRET/DEPLOY_KEY/TOKEN
+            // (covers AWS_SESSION_TOKEN, GITHUB_TOKEN, etc.) and the
+            // explicit `AWS_` prefix scrubs AWS_ACCESS_KEY_ID, which
+            // would otherwise slip past every substring rule.
             if arg.starts_with("GH_DEPLOY_KEY=")
                 || arg.starts_with("SERVER_AUTH_SECRET=")
                 || arg.starts_with("ANTHROPIC_API_KEY=")
@@ -1448,9 +1454,11 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
                 || arg.starts_with("OPENAI_API_KEYS_JSON=")
                 || arg.starts_with("EVENT_INGEST_SECRET=")
                 || arg.starts_with("GH_PAT=")
+                || arg.starts_with("AWS_")
                 || arg.contains("API_KEY")
                 || arg.contains("SECRET")
                 || arg.contains("DEPLOY_KEY")
+                || arg.contains("TOKEN")
             {
                 let prefix = arg.splitn(2, '=').next().unwrap_or("").to_string();
                 format!("{prefix}=<redacted>")

@@ -1379,6 +1379,14 @@ function sanitizeEventText(value: string): string {
     'SERVER_AUTH_SECRET',
     'EVENT_INGEST_SECRET',
     'SUPABASE_SERVICE_ROLE_KEY',
+    // AWS credential env names. dd-build-server is the only deployment
+    // that consumes static AWS keys today, but ECR/SSM/STS workflows on
+    // the operator path may also export them, and a misconfigured agent
+    // could echo `env` or read `~/.aws/credentials`. Keep these here so
+    // the WS fan-out, breadcrumb log, and CLI streams never carry them.
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+    'AWS_SESSION_TOKEN',
   ]) {
     const secret = process.env[key];
     if (secret && secret.length >= 8) {
@@ -1391,7 +1399,17 @@ function sanitizeEventText(value: string): string {
     .replace(/\bAIza[A-Za-z0-9_*\-]{12,}\b/g, '[redacted-google-key]')
     .replace(/\bsk-oc-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-opencode-key]')
     .replace(/\bxai-[A-Za-z0-9_*.-]{24,}\b/g, '[redacted-xai-key]')
-    .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]');
+    .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]')
+    // AWS access-key id shapes: AKIA… (long-lived IAM user) and ASIA…
+    // (STS short-lived). 16-char base32 body matches the documented
+    // format. Catches keys that arrive from places we don't control
+    // (shell stdout, error messages, leaked aws config files).
+    .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[redacted-aws-access-key]')
+    // STS session tokens are long base64-ish blobs that conventionally
+    // start with `IQoJ` (the base64 encoding of the protobuf header
+    // AWS uses for v2 session tokens). Anchoring on that prefix avoids
+    // the false-positive risk of redacting unrelated long base64 data.
+    .replace(/\bIQoJ[A-Za-z0-9+/=_\-]{180,}\b/g, '[redacted-aws-session-token]');
 }
 
 function compactAgentErrorMessage(provider: AgentProvider, err: unknown): string {

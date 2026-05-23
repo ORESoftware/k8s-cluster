@@ -78,6 +78,7 @@ pub async fn sync_coinbase_commerce(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({
                                     "coinbase_commerce_cursor": id
@@ -100,6 +101,7 @@ pub async fn sync_coinbase_commerce(
     if let Some(id) = &last_charge_id {
         ctx.connections
             .merge_metadata(
+                conn.tenant_id,
                 conn.id,
                 serde_json::json!({ "coinbase_commerce_cursor": id }),
             )

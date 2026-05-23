@@ -47,10 +47,11 @@ spec:
           args:
             - |
               set -eu
+              PROJ=/opt/dd-next-1/remote/deployments/gleam-mcp-server
               missing=0
               for path in \
-                /opt/dd-next-1/remote/deployments/gleam-mcp-server/gleam.toml \
-                /opt/dd-next-1/remote/deployments/gleam-mcp-server/manifest.toml \
+                "$PROJ/gleam.toml" \
+                "$PROJ/manifest.toml" \
                 /opt/dd-next-1/remote/libs/pg-defs/generated/gleam/gleam.toml \
                 /opt/dd-next-1/remote/libs/runtime-config-client-gleam/gleam.toml; do
                 if [ ! -e "$path" ]; then
@@ -62,10 +63,41 @@ spec:
                 echo "preflight: warm /home/ec2-user/codes/dd/dd-next-1 on the EC2 node so the gleam-mcp-server hostPath mount has the full repo"
                 exit 1
               fi
-              if [ ! -d /opt/dd-next-1/remote/deployments/gleam-mcp-server/build/packages ] \
-                 || [ -z "$(ls -A /opt/dd-next-1/remote/deployments/gleam-mcp-server/build/packages 2>/dev/null)" ]; then
+              if [ ! -d "$PROJ/build/packages" ] \
+                 || [ -z "$(ls -A "$PROJ/build/packages" 2>/dev/null)" ]; then
                 echo "preflight: build/packages is empty in the host checkout, and this pod's NetworkPolicy blocks hex.pm"
                 echo "preflight: run 'gleam deps download' once on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server before deploying"
+                exit 1
+              fi
+              # Cross-check that every package listed in manifest.toml has a
+              # corresponding entry under build/packages/. Local-path deps
+              # show up as `<name>.config_fingerprint`, hex deps show up as
+              # `<name>/`. We hit this exact failure mode once: a new
+              # local-path dep (dd_runtime_config_client) was added to
+              # gleam.toml/manifest.toml but the host's build/packages was
+              # left stale from a previous warm, so `gleam run` inside the
+              # pod tried to resolve the missing dep over the network and
+              # crash-looped against the NetworkPolicy.
+              names=$(awk '/^packages = \[/,/^\]/' "$PROJ/manifest.toml" \
+                | grep -oE 'name = "[^"]+"' \
+                | awk -F'"' '{print $2}' \
+                | sort -u)
+              if [ -z "$names" ]; then
+                echo "preflight: could not parse package names from manifest.toml; refusing to start until the host checkout has a valid manifest"
+                exit 1
+              fi
+              stale=""
+              for name in $names; do
+                if [ -d "$PROJ/build/packages/$name" ] \
+                   || [ -f "$PROJ/build/packages/$name.config_fingerprint" ]; then
+                  continue
+                fi
+                stale="$stale $name"
+              done
+              if [ -n "$stale" ]; then
+                echo "preflight: build/packages on the host is stale, missing entries for:$stale"
+                echo "preflight: re-run 'gleam deps download' on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server"
+                echo "preflight: see remote/deployments/gleam-mcp-server/readme.md \"Warming build/packages on the EC2 host\" for the exact nerdctl one-liner"
                 exit 1
               fi
               echo "preflight: ok"
@@ -127,9 +159,18 @@ spec:
               SRC_ROOT=/opt/dd-next-1
               SCRATCH_ROOT=/tmp/dd-gleam-mcp-server
               WORK_ROOT="$SCRATCH_ROOT/dd-next-1"
-              if ! mountpoint -q "$SCRATCH_ROOT" 2>/dev/null; then
-                echo "boot: warning, expected an emptyDir mounted at $SCRATCH_ROOT (continuing on writable rootfs)"
+              # Probe-write into $SCRATCH_ROOT instead of guessing with
+              # `mountpoint -q`. Under readOnlyRootFilesystem: true the
+              # only way this write can succeed is if the `scratch`
+              # emptyDir is actually mounted at $SCRATCH_ROOT. Failing
+              # here gives an operator-actionable log instead of a noisy
+              # warning followed by a confusing EROFS.
+              if ! mkdir -p "$SCRATCH_ROOT" \
+                 || ! touch "$SCRATCH_ROOT/.boot-probe" 2>/dev/null; then
+                echo "boot: $SCRATCH_ROOT is not writable; expected an emptyDir mounted there (see scratch volume in the Deployment)"
+                exit 1
               fi
+              rm -f "$SCRATCH_ROOT/.boot-probe"
               # HOME, XDG_CACHE_HOME, and GLEAM_HOME are env-pinned below
               # to subdirectories of $SCRATCH_ROOT so the gleam image's
               # implicit writes (cache, lock files, transient compile
@@ -151,6 +192,30 @@ spec:
               fi
               if [ ! -d build/packages ] || [ -z "$(ls -A build/packages 2>/dev/null)" ]; then
                 echo "boot: build/packages is empty in the copied project; warm the host checkout with 'gleam deps download' before deploying (NetworkPolicy blocks hex.pm from inside the pod)"
+                exit 1
+              fi
+              # Defensive: re-check the manifest-vs-build/packages
+              # consistency inside the main container too. The preflight
+              # init container already did this against the hostPath, but
+              # because the copy above happens in a separate process and
+              # the manifest could in theory change mid-rollout, we
+              # duplicate the cheap check here. Same failure mode that
+              # produced the 502 once already.
+              names=$(awk '/^packages = \[/,/^\]/' manifest.toml \
+                | grep -oE 'name = "[^"]+"' \
+                | awk -F'"' '{print $2}' \
+                | sort -u)
+              stale=""
+              for name in $names; do
+                if [ -d "build/packages/$name" ] \
+                   || [ -f "build/packages/$name.config_fingerprint" ]; then
+                  continue
+                fi
+                stale="$stale $name"
+              done
+              if [ -n "$stale" ]; then
+                echo "boot: build/packages stale relative to manifest.toml, missing:$stale"
+                echo "boot: re-run 'gleam deps download' on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server"
                 exit 1
               fi
               exec gleam run

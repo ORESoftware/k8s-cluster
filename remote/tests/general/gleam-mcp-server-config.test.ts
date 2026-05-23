@@ -169,11 +169,28 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   // for the failure mode.
   assert.match(
     ec2Deployment,
-    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*SCRATCH_ROOT=\/tmp\/dd-gleam-mcp-server[\s\S]*WORK_ROOT="\$SCRATCH_ROOT\/dd-next-1"[\s\S]*mountpoint -q "\$SCRATCH_ROOT"[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\. "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam" "\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/runtime-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam"\/[\s\S]*cd "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*if \[ ! -d build\/packages \][\s\S]*exec gleam run/,
+    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*SCRATCH_ROOT=\/tmp\/dd-gleam-mcp-server[\s\S]*WORK_ROOT="\$SCRATCH_ROOT\/dd-next-1"[\s\S]*touch "\$SCRATCH_ROOT\/\.boot-probe"[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\. "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam" "\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/runtime-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam"\/[\s\S]*cd "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*if \[ ! -d build\/packages \][\s\S]*exec gleam run/,
   );
   assert.doesNotMatch(
     ec2Deployment,
     /\n\s+cd \/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server\n\s+if \[ ! -f manifest\.toml \]/,
+  );
+  // The boot script must use a deterministic write-probe instead of the
+  // older noisy `mountpoint -q` heuristic, and must defensively re-check
+  // that build/packages matches every entry in manifest.toml. The exact
+  // failure mode this catches: a new local-path dep is added to
+  // manifest.toml but the host's build/packages is left stale, so
+  // gleam tries to re-resolve over the network and trips the
+  // NetworkPolicy hex.pm block — visible end-to-end once as a public
+  // gateway 502 with `Resolving versions` in the pod logs.
+  assert.doesNotMatch(ec2Deployment, /mountpoint -q\s+"\$SCRATCH_ROOT"/);
+  assert.match(
+    ec2Deployment,
+    /touch "\$SCRATCH_ROOT\/\.boot-probe"[\s\S]*\$SCRATCH_ROOT is not writable/,
+  );
+  assert.match(
+    ec2Deployment,
+    /names=\$\(awk '\/\^packages = \\\[\/,\/\^\\\]\/' manifest\.toml[\s\S]*grep -oE 'name = "\[\^"\]\+"'[\s\S]*for name in \$names; do[\s\S]*build\/packages\/\$name\.config_fingerprint[\s\S]*build\/packages stale relative to manifest\.toml/,
   );
   assert.match(
     ec2Deployment,
@@ -255,7 +272,15 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   // into a visible `kubectl describe pod` error.
   assert.match(
     ec2Deployment,
-    /initContainers:[\s\S]*- name: preflight[\s\S]*image:\s*ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*for path in[\s\S]*\/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server\/manifest\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/gleam\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/runtime-config-client-gleam\/gleam\.toml[\s\S]*build\/packages is empty in the host checkout[\s\S]*gleam deps download[\s\S]*preflight: ok/,
+    /initContainers:[\s\S]*- name: preflight[\s\S]*image:\s*ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*for path in[\s\S]*\$PROJ\/gleam\.toml[\s\S]*\$PROJ\/manifest\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/gleam\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/runtime-config-client-gleam\/gleam\.toml[\s\S]*build\/packages is empty in the host checkout[\s\S]*gleam deps download[\s\S]*preflight: ok/,
+  );
+  // Preflight must also fail fast when the host's build/packages exists
+  // but is missing entries for packages listed in manifest.toml (the
+  // exact stale-cache failure mode we observed once: a new local-path
+  // dep was added but the host was never re-warmed).
+  assert.match(
+    ec2Deployment,
+    /initContainers:[\s\S]*- name: preflight[\s\S]*names=\$\(awk '\/\^packages = \\\[\/,\/\^\\\]\/' "\$PROJ\/manifest\.toml"[\s\S]*grep -oE 'name = "\[\^"\]\+"'[\s\S]*for name in \$names; do[\s\S]*build\/packages\/\$name\.config_fingerprint[\s\S]*build\/packages on the host is stale, missing entries for:[\s\S]*preflight: ok/,
   );
   // The init container reads the host repo but must never write to it.
   assert.match(
@@ -339,6 +364,20 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(
     ec2NetworkPolicy,
     /ipBlock:\s*\n\s+cidr:\s*10\.0\.0\.0\/8[\s\S]*ipBlock:\s*\n\s+cidr:\s*172\.16\.0\.0\/12[\s\S]*ipBlock:\s*\n\s+cidr:\s*192\.168\.0\.0\/16[\s\S]*ports:[\s\S]*port:\s*8090/,
+  );
+  // dd-runtime-config wires through env (RUNTIME_CONFIG_REGISTER_URL +
+  // RUNTIME_CONFIG_APPLY_URL). Egress on :8110 lets the pod subscribe;
+  // ingress on :8090 from the runtime-config pod lets it deliver the
+  // apply callback. Without these the pod logs
+  // "[runtime-config] register error: timeout; retrying in N s" forever
+  // while the rest of MCP works.
+  assert.match(
+    ec2NetworkPolicy,
+    /- to:\s*\n\s+- podSelector:\s*\n\s+matchLabels:\s*\n\s+app:\s*dd-runtime-config\s*\n\s+ports:\s*\n\s+- protocol:\s*TCP\s*\n\s+port:\s*8110/,
+  );
+  assert.match(
+    ec2NetworkPolicy,
+    /- from:\s*\n\s+- podSelector:\s*\n\s+matchLabels:\s*\n\s+app:\s*dd-runtime-config\s*\n\s+ports:\s*\n\s+- protocol:\s*TCP\s*\n\s+port:\s*8090/,
   );
   assert.match(minikubeDeployment, /image:\s*dd-gleam-mcp-server:dev/);
   assert.match(minikubeDeployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
@@ -467,6 +506,14 @@ test('Gleam MCP server exposes read-only observability tools', async () => {
   assert.match(readme, /remote\/ec2\/verify-gleam-mcp-server\.sh/);
   assert.match(readme, /minikube overlay is only a local mirror/);
   assert.match(readme, /Kubernetes API egress on TCP 443/);
+  // The hostPath-cache pattern is fragile in exactly one way (stale
+  // build/packages → 502 at the gateway). The readme must document the
+  // exact warm-up incantation operators should run on the EC2 node so
+  // the next person hitting this regression has a one-shot fix in front
+  // of them.
+  assert.match(readme, /Warming `build\/packages` on the EC2 host/);
+  assert.match(readme, /sudo nerdctl run --rm --net=host[\s\S]*ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine[\s\S]*gleam deps download/);
+  assert.match(readme, /kubectl -n default rollout restart deploy\/dd-gleam-mcp-server/);
   assert.match(readme, /observability_health/);
   assert.match(readme, /prometheus_up/);
   assert.match(readme, /loki_labels/);

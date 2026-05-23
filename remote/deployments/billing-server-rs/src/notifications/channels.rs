@@ -5,9 +5,19 @@
 //! the call came from us. Email/Slack/SMS share the same shape and are
 //! intentionally stubbed for now; wire them when the platform's outbound
 //! email provider (SES/SendGrid) is selected.
+//!
+//! ### SSRF guard
+//!
+//! Every outbound call goes through
+//! [`crate::api::auth::classify_outbound_url`] which rejects literal
+//! private / loopback / link-local / metadata IPs. DNS-rebinding is
+//! out of scope for the application layer — the cluster network policy
+//! is the load-bearing defense.
 
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
+
+use crate::api::auth::{UrlSafety, classify_outbound_url};
 
 use super::types::NotificationChannel;
 
@@ -16,11 +26,31 @@ pub struct WebhookDeliveryResult {
     pub http_status: u16,
 }
 
+/// Reject the request if `block_private` is true and the URL points at
+/// a private/loopback/link-local literal IP, or any non-http(s) scheme.
+fn enforce_outbound_safety(url: &str, block_private: bool) -> Result<(), String> {
+    let classification = classify_outbound_url(url);
+    match classification {
+        UrlSafety::Allowed => Ok(()),
+        UrlSafety::BlockedPrivate if block_private => {
+            Err("outbound URL blocked: private/loopback IP not allowed".into())
+        }
+        UrlSafety::BlockedPrivate => Ok(()),
+        UrlSafety::BlockedScheme => {
+            Err("outbound URL blocked: only http(s) schemes are allowed".into())
+        }
+        UrlSafety::Malformed => Err("outbound URL is not a valid http(s) URL".into()),
+    }
+}
+
 pub async fn deliver_webhook(
     target_url: &str,
     payload: &serde_json::Value,
     signing_secret: Option<&str>,
+    block_private: bool,
 ) -> Result<WebhookDeliveryResult, String> {
+    enforce_outbound_safety(target_url, block_private)?;
+
     let body = serde_json::to_vec(payload).map_err(|e| format!("encode: {e}"))?;
     let timestamp = chrono::Utc::now().timestamp().to_string();
 
@@ -71,7 +101,9 @@ pub async fn deliver_slack(
     target_url: &str,
     payload: &serde_json::Value,
     _signing_secret: Option<&str>,
+    block_private: bool,
 ) -> Result<WebhookDeliveryResult, String> {
+    enforce_outbound_safety(target_url, block_private)?;
     // Slack incoming webhooks accept a `{"text": "..."}` shape; just POST.
     let body = serde_json::json!({
         "text": payload.get("summary")
@@ -112,5 +144,45 @@ pub fn channel_name(c: NotificationChannel) -> &'static str {
         NotificationChannel::Webhook => "webhook",
         NotificationChannel::Slack => "slack",
         NotificationChannel::Sms => "sms",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safety_blocks_private_when_enabled() {
+        assert!(enforce_outbound_safety("http://127.0.0.1/x", true).is_err());
+        assert!(enforce_outbound_safety("http://10.0.0.1/x", true).is_err());
+        assert!(enforce_outbound_safety("http://169.254.169.254/", true).is_err());
+    }
+
+    #[test]
+    fn safety_allows_private_when_disabled() {
+        // Dev / integration: explicit opt-out via
+        // BILLING_BLOCK_PRIVATE_OUTBOUND=false.
+        assert!(enforce_outbound_safety("http://127.0.0.1/x", false).is_ok());
+    }
+
+    #[test]
+    fn safety_blocks_bad_scheme_regardless() {
+        // file://, gopher://, ftp:// are blocked even with
+        // block_private=false because they can never legitimately be
+        // tenant-supplied webhook URLs.
+        assert!(enforce_outbound_safety("file:///etc/passwd", false).is_err());
+        assert!(enforce_outbound_safety("gopher://x", false).is_err());
+    }
+
+    #[test]
+    fn safety_blocks_malformed_url() {
+        assert!(enforce_outbound_safety("not a url", true).is_err());
+        assert!(enforce_outbound_safety("", true).is_err());
+    }
+
+    #[test]
+    fn safety_allows_public_https() {
+        assert!(enforce_outbound_safety("https://api.example.com/x", true).is_ok());
+        assert!(enforce_outbound_safety("https://1.1.1.1/x", true).is_ok());
     }
 }

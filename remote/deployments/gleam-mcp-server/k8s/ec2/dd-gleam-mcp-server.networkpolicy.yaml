@@ -49,6 +49,19 @@ spec:
       ports:
         - protocol: TCP
           port: 8090
+    # dd-runtime-config posts back to /internal/update-runtime-config
+    # whenever its broadcast value changes. Without this rule the
+    # pod would still register fine (the egress rule below carries the
+    # outbound subscribe) but the apply callback would silently get
+    # dropped at the CNI. Authentication on /internal/* is enforced
+    # by the X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET) header.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8090
   egress:
     - to:
         - namespaceSelector:
@@ -100,3 +113,15 @@ spec:
           port: 443
         - protocol: TCP
           port: 5432
+    # dd-runtime-config registration. The pod's RUNTIME_CONFIG_REGISTER_URL
+    # env points at dd-runtime-config.default.svc:8110/subscribers and
+    # without this rule the registration loop logs
+    # "[runtime-config] register error: timeout; retrying in N s"
+    # forever (visible in stdout / Loki) while the rest of MCP works.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-runtime-config
+      ports:
+        - protocol: TCP
+          port: 8110

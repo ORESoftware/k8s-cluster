@@ -109,6 +109,17 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /CONTAINER_POOL_NOFILE_LIMIT/);
   assert.match(source, /CONTAINER_POOL_HEALTH_CHECK_SECONDS/);
   assert.match(source, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD/);
+  // The nerdctl arg scrubber must redact every AWS credential env name
+  // and any TOKEN-bearing arg before the warm-worker spawn line is
+  // logged. Substring rules already cover SECRET (catches
+  // AWS_SECRET_ACCESS_KEY); this asserts the explicit `AWS_` prefix
+  // (catches AWS_ACCESS_KEY_ID) and the TOKEN substring (catches
+  // AWS_SESSION_TOKEN, GITHUB_TOKEN, etc.).
+  assert.match(source, /arg\.starts_with\("AWS_"\)/);
+  assert.match(source, /arg\.contains\("TOKEN"\)/);
+  assert.match(source, /arg\.contains\("API_KEY"\)/);
+  assert.match(source, /arg\.contains\("SECRET"\)/);
+  assert.match(source, /arg\.contains\("DEPLOY_KEY"\)/);
   // Source-of-truth NATS subject constants come from the generated
   // @dd/nats-subject-defs crate.
   assert.match(

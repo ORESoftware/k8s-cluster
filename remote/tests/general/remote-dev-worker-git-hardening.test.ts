@@ -101,6 +101,14 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /XAI_API_KEYS_JSON/);
   assert.match(server, /GROK_API_KEYS_JSON/);
   assert.match(server, /redacted-xai-key/);
+  // sanitizeEventText must redact AWS credential env values and any
+  // AKIA/ASIA access-key shape or IQoJ-prefixed STS session token that
+  // shows up in stdout, breadcrumb payloads, or error messages.
+  assert.match(server, /'AWS_ACCESS_KEY_ID'[\s\S]*'AWS_SECRET_ACCESS_KEY'[\s\S]*'AWS_SESSION_TOKEN'/);
+  assert.match(server, /redacted-aws-access-key/);
+  assert.match(server, /redacted-aws-session-token/);
+  assert.match(server, /\\b\(\?:AKIA\|ASIA\)\[0-9A-Z\]\{16\}\\b/);
+  assert.match(server, /\\bIQoJ\[A-Za-z0-9\+\/=_\\-\]\{180,\}\\b/);
   assert.match(server, /GET  \/ws\s+— WebSocket replay\/live stream for pinned thread tasks/);
   assert.match(server, /function registerWorkerWebSocketUpgrade\(\): void/);
   assert.match(server, /requestUrl\.pathname !== '\/ws'/);
@@ -476,7 +484,10 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(packageJson, /@opentelemetry\/instrumentation/);
   assert.doesNotMatch(packageJson, /@opentelemetry\/auto-instrumentations-node/);
   assert.match(telemetry, /class ExplicitSpan implements TelemetrySpan/);
-  assert.match(telemetry, /await fetch\(otlpTraceUrl/);
+  // Commit 002ff5c switched the OTLP exporter from raw `fetch` to the
+  // request-context-aware `contextFetch` helper so traces inherit the
+  // worker's request span. Update the assertion to match.
+  assert.match(telemetry, /await contextFetch\(otlpTraceUrl/);
   assert.doesNotMatch(telemetry, /NodeSDK/);
   assert.doesNotMatch(telemetry, /registerInstrumentations/);
   assert.doesNotMatch(telemetry, /require-in-the-middle|shimmer|diagnostics_channel|async_hooks/);
@@ -519,7 +530,14 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(restServer, /"THREAD_CONTEXT_BASE_URL", "value": "http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082"/);
   assert.match(restServer, /"AGENT_MCP_URL", "value": "http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp"/);
   assert.match(restServer, /"AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000"/);
-  assert.match(restServer, /"NATS_EVENT_SUBJECT", "value": "dd\.remote\.events"/);
+  // The NATS event subject literal lives in the generated
+  // `dd_nats_subject_defs::RUNTIME_EVENTS_SUBJECT` constant; the env
+  // injection now references the constant rather than inlining the
+  // string. Assert both that the env entry references it and that the
+  // constant resolves to the expected legacy subject so downstream
+  // consumers don't silently move.
+  assert.match(restServer, /"NATS_EVENT_SUBJECT", "value": RUNTIME_EVENTS_SUBJECT/);
+  assert.match(restServer, /agent_remote_dev_events → dd\.remote\.events/);
   assert.match(restServer, /"envFrom": \[/);
   assert.match(
     restServer,

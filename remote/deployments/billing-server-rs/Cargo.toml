@@ -41,6 +41,8 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 rsa = { version = "0.9", default-features = false, features = ["pem", "sha2"] }
 jsonwebtoken = "9"
+# Parse + classify tenant-supplied outbound URLs (SSRF guard).
+url = "2"
 # Compile-time HTML templates for the optional /admin HTMX surface.
 # Enabling the `axum` feature gives us `IntoResponse` for `Markup`.
 maud = { version = "0.27", features = ["axum"] }

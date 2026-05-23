@@ -202,7 +202,7 @@ impl JobHandler for ConnectionSyncJob {
         match sync_result {
             Ok(summary) => {
                 self.connections
-                    .mark_synced(conn.id, summary.next_cursor.as_deref())
+                    .mark_synced(conn.tenant_id, conn.id, summary.next_cursor.as_deref())
                     .await?;
                 Ok(JobOutput::with_data(
                     summary.summary,
@@ -219,7 +219,10 @@ impl JobHandler for ConnectionSyncJob {
             Err(e) => {
                 let is_rate_limited = matches!(e, AppError::ProviderRateLimited { .. });
                 let err = e.to_string();
-                let _ = self.connections.mark_sync_failed(conn.id, &err).await;
+                let _ = self
+                    .connections
+                    .mark_sync_failed(conn.tenant_id, conn.id, &err)
+                    .await;
                 if is_rate_limited {
                     Err(e)
                 } else {
