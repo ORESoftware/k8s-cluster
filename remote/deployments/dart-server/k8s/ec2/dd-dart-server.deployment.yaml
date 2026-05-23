@@ -36,7 +36,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-23-multi-isolate-shared-port-with-benchmark-mode'
+        dd.dev/code-revision: '2026-05-23-30k-target-1000-sessions-per-host'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -98,9 +98,11 @@ spec:
               value: '8'
             # Sessions per session-host isolate (per shard). Each shard
             # lazily spawns ceil(shard_connections / SESSIONS_PER_HOST)
-            # host isolates. Range 1..2000.
+            # host isolates. Range 1..2000. 1000 is what the 30K
+            # benchmark uses: 8 shards × ~3.75 hosts × 1000 sessions
+            # ≈ 30K with ~30 host isolates total (vs ~150 at 200/host).
             - name: SESSIONS_PER_HOST
-              value: '200'
+              value: '1000'
             # Hard idle disconnect: a session that hasn't received an
             # inbound frame for this long emits a 4001 `idle_timeout`
             # close. 1200 = 20 min. Set to 0 to disable.
