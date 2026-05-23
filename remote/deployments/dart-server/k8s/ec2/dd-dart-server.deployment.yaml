@@ -139,17 +139,17 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
-          # NOTE: limits sized for the 20K-WS load test against /dart/wss.
-          # The host-pool architecture is dramatically lighter than the
-          # legacy 1-isolate-per-session model (≈ 200 hosts at default
-          # SESSIONS_PER_HOST=100 vs 20K isolates), but we keep the same
-          # ceiling for direct A/B comparison. Drop these back to
-          # 1 CPU / 384 Mi after the comparison run if you don't need
-          # the headroom.
+          # CPU REQUEST is intentionally low (250m) so 4 replicas fit on
+          # a single-node EC2 cluster alongside loader pods + the rest
+          # of the runtime; the LIMIT keeps each gateway free to burst
+          # to a full core under load. Memory request 1 Gi covers the
+          # AOT runtime + ~5K active session hosts; limit 8 Gi gives
+          # headroom for buffered bus deliveries during pathological
+          # fan-out.
           resources:
             requests:
-              cpu: '1'
-              memory: 2Gi
+              cpu: 250m
+              memory: 1Gi
             limits:
-              cpu: '8'
-              memory: 32Gi
+              cpu: '4'
+              memory: 8Gi
