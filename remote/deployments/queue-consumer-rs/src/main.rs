@@ -7,6 +7,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use dd_nats_subject_defs::{
+    DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
+    THREAD_TASKS_WILDCARD,
+};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -145,7 +149,7 @@ fn now_ms() -> u128 {
 }
 
 fn nats_event_subject() -> String {
-    env_value("NATS_EVENT_SUBJECT", "dd.remote.events")
+    env_value("NATS_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT)
 }
 
 fn task_message_id(task: &QueueTaskMessage, stage: &str) -> String {
@@ -468,9 +472,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "NATS_URL",
         "nats://dd-nats.messaging.svc.cluster.local:4222",
     );
-    let subject = env_value("NATS_TASK_SUBJECT", "dd.remote.thread.*.tasks");
-    let queue_group = env_value("NATS_QUEUE_GROUP", "dd-remote-thread-preparer");
-    let stream_name = env_value("NATS_TASK_STREAM", "DD_REMOTE_TASKS");
+    let subject = env_value("NATS_TASK_SUBJECT", THREAD_TASKS_WILDCARD);
+    let queue_group = env_value("NATS_QUEUE_GROUP", THREAD_PREPARER_QUEUE_GROUP);
+    let stream_name = env_value("NATS_TASK_STREAM", DD_REMOTE_TASKS_STREAM_NAME);
     let consumer_name = env_value("NATS_TASK_CONSUMER", &queue_group);
     let ack_wait_seconds = env_u64("NATS_TASK_ACK_WAIT_SECONDS", 120);
     let max_ack_pending = env_i64("NATS_TASK_MAX_ACK_PENDING", 256);

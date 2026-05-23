@@ -36,6 +36,7 @@ public final class DdNatsSubjects {
      * Service: dd-contract-service
      */
     public static final String CONTRACTS_SOLANA_VALIDATE_SUBJECT = "dd.remote.contracts.solana.validate";
+    public static final String CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP = "dd-contract-service";
 
     /**
      * Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.
@@ -55,6 +56,13 @@ public final class DdNatsSubjects {
      * Service: dd-ai-ml-pipeline
      */
     public static final String DES_SIMULATE_SUBJECT = "dd.remote.des.simulate";
+    public static final String DES_SIMULATE_QUEUE_GROUP = "dd-des-simulator";
+
+    /**
+     * Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
+     * Service: shared
+     */
+    public static final String GIT_REPOS_CHANGES_SUBJECT = "dd.remote.git-repos.changes";
 
     /**
      * Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
@@ -73,6 +81,7 @@ public final class DdNatsSubjects {
      * Service: dd-ai-ml-pipeline
      */
     public static final String MDP_OPTIMIZE_SUBJECT = "dd.remote.mdp.optimize";
+    public static final String MDP_OPTIMIZE_QUEUE_GROUP = "dd-mdp-optimizer";
 
     /**
      * MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
@@ -134,6 +143,7 @@ public final class DdNatsSubjects {
      * Service: dd-trading-server
      */
     public static final String TRADING_SIGNALS_SUBJECT = "dd.remote.trading.signals";
+    public static final String TRADING_SIGNALS_QUEUE_GROUP = "dd-trading-server";
 
     /**
      * WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
@@ -179,6 +189,44 @@ public final class DdNatsSubjects {
             }
         }
         return Optional.of(new CdcRowChangeSubjectParts(prefix, schema, table, op));
+    }
+
+    /**
+     * Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.
+     * Service: dd-wal-gateway
+     */
+    public static final String CDC_TABLE_FILTER_PATTERN = "{prefix}.{schema}.{table}.>";
+    public static final String CDC_TABLE_FILTER_WILDCARD = "{prefix}.>";
+    public static final String CDC_TABLE_FILTER_STREAM = "CDC";
+    public record CdcTableFilterSubjectParts(String prefix, String schema, String table) {}
+
+    public static String cdcTableFilterSubject(String prefix, String schema, String table) {
+        return prefix + "." + schema + "." + table + ".>";
+    }
+
+    public static Optional<CdcTableFilterSubjectParts> parseCdcTableFilterSubject(String subject) {
+        List<String> patternTokens = List.of("{prefix}", "{schema}", "{table}", ">");
+        String[] subjectTokens = subject.split("\\.");
+        if (patternTokens.size() != subjectTokens.length) return Optional.empty();
+        String prefix = null;
+        String schema = null;
+        String table = null;
+        for (int i = 0; i < patternTokens.size(); i += 1) {
+            String p = patternTokens.get(i);
+            String s = subjectTokens[i];
+            if (p.startsWith("{") && p.endsWith("}")) {
+                String name = p.substring(1, p.length() - 1);
+                switch (name) {
+                    case "prefix" -> prefix = s;
+                    case "schema" -> schema = s;
+                    case "table" -> table = s;
+                    default -> { return Optional.empty(); }
+                }
+            } else if (!p.equals(s)) {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(new CdcTableFilterSubjectParts(prefix, schema, table));
     }
 
     /**

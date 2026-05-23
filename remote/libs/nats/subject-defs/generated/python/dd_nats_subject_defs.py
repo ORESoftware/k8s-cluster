@@ -25,6 +25,7 @@ CONTRACTS_SOLANA_RESULTS_SUBJECT = "dd.remote.contracts.solana.results"
 # Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 # Service: dd-contract-service
 CONTRACTS_SOLANA_VALIDATE_SUBJECT = "dd.remote.contracts.solana.validate"
+CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP = "dd-contract-service"
 
 # Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.
 # Service: dd-remote-rest-api
@@ -38,6 +39,11 @@ DES_RESULTS_SUBJECT = "dd.remote.des.results"
 # Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT.
 # Service: dd-ai-ml-pipeline
 DES_SIMULATE_SUBJECT = "dd.remote.des.simulate"
+DES_SIMULATE_QUEUE_GROUP = "dd-des-simulator"
+
+# Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
+# Service: shared
+GIT_REPOS_CHANGES_SUBJECT = "dd.remote.git-repos.changes"
 
 # Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
 # Service: dd-gleam-lambda-runner
@@ -50,6 +56,7 @@ LAMBDAS_RESULTS_SUBJECT = "dd.remote.lambdas.results"
 # MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 # Service: dd-ai-ml-pipeline
 MDP_OPTIMIZE_SUBJECT = "dd.remote.mdp.optimize"
+MDP_OPTIMIZE_QUEUE_GROUP = "dd-mdp-optimizer"
 
 # MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
 # Service: dd-ai-ml-pipeline
@@ -91,6 +98,7 @@ TRADING_ORDER_INTENTS_SUBJECT = "dd.remote.trading.order_intents"
 # Inbound market signals consumed by the trading server. Default for TRADING_SIGNAL_SUBJECT.
 # Service: dd-trading-server
 TRADING_SIGNALS_SUBJECT = "dd.remote.trading.signals"
+TRADING_SIGNALS_QUEUE_GROUP = "dd-trading-server"
 
 # WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
 # Service: shared
@@ -133,6 +141,41 @@ def parse_cdc_row_change_subject(subject: str) -> Optional[CdcRowChangeSubjectPa
     if si != len(subject_tokens):
         return None
     return CdcRowChangeSubjectParts(prefix=result["prefix"], schema=result["schema"], table=result["table"], op=result["op"])
+
+# Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.
+# Service: dd-wal-gateway
+CDC_TABLE_FILTER_PATTERN = "{prefix}.{schema}.{table}.>"
+CDC_TABLE_FILTER_WILDCARD = "{prefix}.>"
+CDC_TABLE_FILTER_STREAM = "CDC"
+@dataclass(frozen=True)
+class CdcTableFilterSubjectParts:
+    prefix: str
+    schema: str
+    table: str
+
+def cdc_table_filter_subject(prefix: str, schema: str, table: str) -> str:
+    """Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange."""
+    return "{prefix}.{schema}.{table}.>".format(prefix=prefix, schema=schema, table=table)
+
+def parse_cdc_table_filter_subject(subject: str) -> Optional[CdcTableFilterSubjectParts]:
+    """Parse a resolved CdcTableFilter subject; returns None on mismatch."""
+    pattern_tokens = ["{prefix}","{schema}","{table}",">"]
+    subject_tokens = subject.split(".")
+    result: dict[str, str] = {}
+    si = 0
+    for tok in pattern_tokens:
+        if tok.startswith("{") and tok.endswith("}"):
+            if si >= len(subject_tokens):
+                return None
+            result[tok[1:-1]] = subject_tokens[si]
+            si += 1
+            continue
+        if si >= len(subject_tokens) or subject_tokens[si] != tok:
+            return None
+        si += 1
+    if si != len(subject_tokens):
+        return None
+    return CdcTableFilterSubjectParts(prefix=result["prefix"], schema=result["schema"], table=result["table"])
 
 # Per-pool event subject (built from pool slug at runtime).
 # Service: dd-container-pool

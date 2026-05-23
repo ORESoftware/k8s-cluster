@@ -41,6 +41,13 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
 
   assert.match(cargo, /name = "dd-contract-service"/);
   assert.match(cargo, /async-nats = "=0\.38\.0"/);
+  // Source-of-truth NATS subject + queue group constants come from the
+  // generated @dd/nats-subject-defs crate.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?CONTRACTS_SOLANA_RESULTS_SUBJECT[\s\S]*?CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP[\s\S]*?CONTRACTS_SOLANA_VALIDATE_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?\};/,
+  );
   assert.match(cargo, /reqwest[\s\S]*rustls-tls/);
   assert.match(cargo, /bs58/);
   assert.match(source, /const SCHEMA_VERSION: &str = "solana\.contract\.v1"/);
@@ -58,8 +65,9 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(source, /SOLANA_ALLOW_PRIVATE_RPC/);
   assert.match(source, /skipPreflight is disabled by policy/);
   assert.match(source, /sigVerify and replaceRecentBlockhash cannot both be true/);
-  assert.match(source, /dd\.remote\.contracts\.solana\.validate/);
-  assert.match(source, /dd\.remote\.contracts\.solana\.results/);
+  assert.match(source, /CONTRACTS_SOLANA_VALIDATE_SUBJECT/);
+  assert.match(source, /CONTRACTS_SOLANA_RESULTS_SUBJECT/);
+  assert.match(source, /CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP/);
   assert.match(source, /dd_contract_service_rpc_requests_total/);
   assert.match(source, /dd_contract_service_send_blocked_total/);
   assert.match(source, /DefaultBodyLimit::max\(MAX_HTTP_BODY_BYTES\)/);

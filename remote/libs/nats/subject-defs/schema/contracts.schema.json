@@ -13,6 +13,7 @@
         "description": "Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.",
         "kind": "static",
         "subject": "dd.remote.contracts.solana.validate",
+        "queueGroup": "dd-contract-service",
         "direction": "both"
       },
       {

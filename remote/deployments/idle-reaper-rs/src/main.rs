@@ -8,6 +8,10 @@ use std::{
 
 use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
+use dd_nats_subject_defs::{
+    DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
+    THREAD_TASKS_WILDCARD,
+};
 use futures_util::StreamExt;
 use reqwest::{Certificate, Client};
 use serde::Deserialize;
@@ -320,9 +324,9 @@ fn nats_watch_job_from_env() -> Option<NatsWatchJob> {
         nats_url: env_string("NATS_URL")
             .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
         task_subject: env_string("NATS_WATCH_TASK_SUBJECT")
-            .unwrap_or_else(|| "dd.remote.thread.*.tasks".to_string()),
+            .unwrap_or_else(|| THREAD_TASKS_WILDCARD.to_string()),
         event_subject: env_string("NATS_WATCH_EVENT_SUBJECT")
-            .unwrap_or_else(|| "dd.remote.events".to_string()),
+            .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string()),
         rest_api_url: env_string("NATS_WATCH_REST_API_URL").unwrap_or_else(|| {
             "http://dd-remote-rest-api.default.svc.cluster.local:8082".to_string()
         }),
@@ -355,11 +359,11 @@ fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
             .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
         task_subject: env_string("RUNTIME_FLOOR_NATS_TASK_SUBJECT")
             .or_else(|| env_string("NATS_WATCH_TASK_SUBJECT"))
-            .unwrap_or_else(|| "dd.remote.thread.*.tasks".to_string()),
+            .unwrap_or_else(|| THREAD_TASKS_WILDCARD.to_string()),
         task_stream: env_string("RUNTIME_FLOOR_NATS_TASK_STREAM")
-            .unwrap_or_else(|| "DD_REMOTE_TASKS".to_string()),
+            .unwrap_or_else(|| DD_REMOTE_TASKS_STREAM_NAME.to_string()),
         task_consumer: env_string("RUNTIME_FLOOR_NATS_TASK_CONSUMER")
-            .unwrap_or_else(|| "dd-remote-thread-preparer".to_string()),
+            .unwrap_or_else(|| THREAD_PREPARER_QUEUE_GROUP.to_string()),
         task_ack_wait_seconds: env_u64("RUNTIME_FLOOR_NATS_TASK_ACK_WAIT_SECONDS", 600),
         task_max_ack_pending: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_ACK_PENDING", 256),
         task_max_deliver: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_DELIVER", 5),
@@ -416,7 +420,7 @@ fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
         nats_url: env_string("NATS_URL")
             .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
         event_subject: env_string("WORKER_IMAGE_BUILD_EVENT_SUBJECT")
-            .unwrap_or_else(|| "dd.remote.events".to_string()),
+            .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string()),
         timezone,
         hour: env_u64("WORKER_IMAGE_BUILD_HOUR", 4).min(23) as u32,
         minute: env_u64("WORKER_IMAGE_BUILD_MINUTE", 0).min(59) as u32,
@@ -441,7 +445,7 @@ fn k8s_runtime_watch_job_from_env() -> Option<K8sRuntimeWatchJob> {
         nats_url: env_string("NATS_URL")
             .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
         event_subject: env_string("K8S_RUNTIME_WATCH_EVENT_SUBJECT")
-            .unwrap_or_else(|| "dd.remote.events".to_string()),
+            .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string()),
         namespaces,
         label_selector: env_string("K8S_RUNTIME_WATCH_LABEL_SELECTOR"),
         resync_interval_seconds,
@@ -1518,7 +1522,7 @@ impl RuntimeFloorJob {
     fn event_subject(&self) -> String {
         env_string("RUNTIME_FLOOR_EVENT_SUBJECT")
             .or_else(|| env_string("NATS_WATCH_EVENT_SUBJECT"))
-            .unwrap_or_else(|| "dd.remote.events".to_string())
+            .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string())
     }
 }
 

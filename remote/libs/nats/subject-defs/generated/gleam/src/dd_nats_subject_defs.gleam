@@ -20,6 +20,7 @@ pub const contracts_solana_results_subject = "dd.remote.contracts.solana.results
 /// Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 /// Service: dd-contract-service
 pub const contracts_solana_validate_subject = "dd.remote.contracts.solana.validate"
+pub const contracts_solana_validate_queue_group = "dd-contract-service"
 
 /// Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.
 /// Service: dd-remote-rest-api
@@ -33,6 +34,11 @@ pub const des_results_subject = "dd.remote.des.results"
 /// Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 pub const des_simulate_subject = "dd.remote.des.simulate"
+pub const des_simulate_queue_group = "dd-des-simulator"
+
+/// Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
+/// Service: shared
+pub const git_repos_changes_subject = "dd.remote.git-repos.changes"
 
 /// Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
 /// Service: dd-gleam-lambda-runner
@@ -45,6 +51,7 @@ pub const lambdas_results_subject = "dd.remote.lambdas.results"
 /// MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 pub const mdp_optimize_subject = "dd.remote.mdp.optimize"
+pub const mdp_optimize_queue_group = "dd-mdp-optimizer"
 
 /// MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
 /// Service: dd-ai-ml-pipeline
@@ -86,6 +93,7 @@ pub const trading_order_intents_subject = "dd.remote.trading.order_intents"
 /// Inbound market signals consumed by the trading server. Default for TRADING_SIGNAL_SUBJECT.
 /// Service: dd-trading-server
 pub const trading_signals_subject = "dd.remote.trading.signals"
+pub const trading_signals_queue_group = "dd-trading-server"
 
 /// WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
 /// Service: shared
@@ -134,6 +142,52 @@ pub fn parse_cdc_row_change_subject(subject: String) -> Option(CdcRowChangeSubje
           use table <- with_some(table)
           use op <- with_some(op)
           Some(CdcRowChangeSubjectParts(prefix: prefix, schema: schema, table: table, op: op))
+        }
+      }
+    }
+  }
+}
+
+/// Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.
+/// Service: dd-wal-gateway
+pub const cdc_table_filter_pattern = "{prefix}.{schema}.{table}.>"
+pub const cdc_table_filter_wildcard = "{prefix}.>"
+pub const cdc_table_filter_stream = "CDC"
+pub type CdcTableFilterSubjectParts {
+  CdcTableFilterSubjectParts(
+    prefix: String,
+    schema: String,
+    table: String
+  )
+}
+pub fn cdc_table_filter_subject(prefix prefix: String, schema schema: String, table table: String) -> String {
+  prefix <> "." <> schema <> "." <> table <> ".>"
+}
+
+pub fn parse_cdc_table_filter_subject(subject: String) -> Option(CdcTableFilterSubjectParts) {
+  let pattern_tokens = string.split("{prefix}.{schema}.{table}.>", on: ".")
+  let subject_tokens = string.split(subject, on: ".")
+  case list.length(pattern_tokens) == list.length(subject_tokens) {
+    False -> None
+    True -> {
+      let pairs = list.zip(pattern_tokens, subject_tokens)
+      let prefix = lookup_param(pairs, "{prefix}")
+      let schema = lookup_param(pairs, "{schema}")
+      let table = lookup_param(pairs, "{table}")
+      let literals_ok = list.all(pairs, fn(pair) {
+        let #(p, s) = pair
+        case string.starts_with(p, "{") && string.ends_with(p, "}") {
+          True -> True
+          False -> p == s
+        }
+      })
+      case literals_ok {
+        False -> None
+        True -> {
+          use prefix <- with_some(prefix)
+          use schema <- with_some(schema)
+          use table <- with_some(table)
+          Some(CdcTableFilterSubjectParts(prefix: prefix, schema: schema, table: table))
         }
       }
     }

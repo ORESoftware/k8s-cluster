@@ -18,6 +18,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::{
+    cdc_table_filter_subject, RUNTIME_EVENTS_SUBJECT, TRADING_DECISIONS_SUBJECT,
+    TRADING_ORDER_INTENTS_SUBJECT, TRADING_SIGNALS_QUEUE_GROUP, TRADING_SIGNALS_SUBJECT,
+};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -376,14 +380,14 @@ fn config_from_env() -> Config {
             "MDP_OPTIMIZER_BASE_URL",
             "http://dd-mdp-optimizer.default.svc.cluster.local:8096",
         ),
-        signal_subject: env_value("TRADING_SIGNAL_SUBJECT", "dd.remote.trading.signals"),
-        queue_group: env_value("TRADING_QUEUE_GROUP", "dd-trading-server"),
-        decision_subject: env_value("TRADING_DECISION_SUBJECT", "dd.remote.trading.decisions"),
+        signal_subject: env_value("TRADING_SIGNAL_SUBJECT", TRADING_SIGNALS_SUBJECT),
+        queue_group: env_value("TRADING_QUEUE_GROUP", TRADING_SIGNALS_QUEUE_GROUP),
+        decision_subject: env_value("TRADING_DECISION_SUBJECT", TRADING_DECISIONS_SUBJECT),
         order_intent_subject: env_value(
             "TRADING_ORDER_INTENT_SUBJECT",
-            "dd.remote.trading.order_intents",
+            TRADING_ORDER_INTENTS_SUBJECT,
         ),
-        event_subject: env_value("TRADING_EVENT_SUBJECT", "dd.remote.events"),
+        event_subject: env_value("TRADING_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT),
         default_limits: default_limits(),
     }
 }
@@ -962,7 +966,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
     let builder = dd_wal_consumer::Subscription::builder()
         .stream(env_value("TRADING_CDC_STREAM", "CDC"))
         .durable_name(label.clone())
-        .filter_subject("cdc.public.app_config.>");
+        .filter_subject(cdc_table_filter_subject("cdc", "public", "app_config"));
     let start = builder
         .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
             let scope = scope.clone();
@@ -2404,11 +2408,11 @@ mod tests {
             scraper_base_url: "http://scraper".to_string(),
             ml_base_url: "http://ml".to_string(),
             mdp_base_url: "http://mdp".to_string(),
-            signal_subject: "dd.remote.trading.signals".to_string(),
-            queue_group: "dd-trading-server".to_string(),
-            decision_subject: "dd.remote.trading.decisions".to_string(),
-            order_intent_subject: "dd.remote.trading.order_intents".to_string(),
-            event_subject: "dd.remote.events".to_string(),
+            signal_subject: TRADING_SIGNALS_SUBJECT.to_string(),
+            queue_group: TRADING_SIGNALS_QUEUE_GROUP.to_string(),
+            decision_subject: TRADING_DECISIONS_SUBJECT.to_string(),
+            order_intent_subject: TRADING_ORDER_INTENTS_SUBJECT.to_string(),
+            event_subject: RUNTIME_EVENTS_SUBJECT.to_string(),
             default_limits: RiskLimits {
                 max_order_notional: Some(1_000.0),
                 max_position_notional: Some(10_000.0),

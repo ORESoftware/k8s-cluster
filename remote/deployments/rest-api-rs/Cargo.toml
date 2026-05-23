@@ -13,6 +13,12 @@ axum = { version = "0.7", features = ["macros"] }
 # schema.sql immediately surfaces here (instead of silently shipping a
 # stale read or write).
 dd-pg-defs = { path = "../../libs/pg-defs/generated/rust" }
+# Source-of-truth NATS subject names, parameterized formatters
+# (e.g. thread_tasks_subject(thread_id), cdc_table_filter_subject(...))
+# and stream constants. Replaces the legacy "dd.remote.*" / "cdc.public.*"
+# magic strings so a subject rename in remote/libs/nats/subject-defs/schema/
+# breaks the build here instead of silently producing wrong subjects.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 # Receive runtime-config push updates from dd-runtime-config so the public
 # proxy at /api/runtime-config/snapshot/:env and the gateway-fronted admin
 # UI keep this REST API's own runtime overrides (auth flags, rate limits,

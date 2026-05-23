@@ -17,6 +17,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::{
+    cdc_table_filter_subject, container_pool_events_subject, container_pool_heartbeats_subject,
+    CONTAINER_POOL_REQUESTS_SUBJECT, CONTAINER_POOL_RESULTS_SUBJECT,
+};
 use futures_util::StreamExt;
 use reqwest::header::{HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -547,11 +551,11 @@ fn service_config_from_env() -> ServiceConfig {
         nats_url: first_env(&["NATS_URL"]),
         nats_subject: env_value(
             "CONTAINER_POOL_NATS_SUBJECT",
-            "dd.remote.container_pool.requests",
+            CONTAINER_POOL_REQUESTS_SUBJECT,
         ),
         nats_result_subject: env_value(
             "CONTAINER_POOL_NATS_RESULT_SUBJECT",
-            "dd.remote.container_pool.results",
+            CONTAINER_POOL_RESULTS_SUBJECT,
         ),
         nats_max_payload_bytes: env_usize(
             "CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES",
@@ -1409,10 +1413,10 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
             .or_insert_with(|| nats_url.to_string());
         container_env
             .entry("DD_POOL_NATS_EVENT_SUBJECT".to_string())
-            .or_insert_with(|| format!("dd.remote.container_pool.{}.events", pool.slug));
+            .or_insert_with(|| container_pool_events_subject(&pool.slug));
         container_env
             .entry("DD_POOL_NATS_HEARTBEAT_SUBJECT".to_string())
-            .or_insert_with(|| format!("dd.remote.container_pool.{}.heartbeats", pool.slug));
+            .or_insert_with(|| container_pool_heartbeats_subject(&pool.slug));
     }
     for key in &state.config.forward_env_keys {
         if container_env.contains_key(key) {
@@ -2767,10 +2771,11 @@ async fn run_cdc_refresh_subscription(state: AppState) {
             "dd-container-pool-app-config-{}",
             cdc_sanitize(&format!("{scope}.{key}"))
         );
+        let app_config_filter = cdc_table_filter_subject("cdc", "public", "app_config");
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream_name.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.app_config.>")
+            .filter_subject(app_config_filter.clone())
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let task_state = task_state.clone();
                 let scope = scope.clone();
@@ -2785,7 +2790,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
                 }
             })
             .await;
-        log_cdc_subscription_result(&durable, "cdc.public.app_config.>", result);
+        log_cdc_subscription_result(&durable, &app_config_filter, result);
     }
 
     // Subscription 2 — container_pool_configs (no row filter, every change
@@ -2793,10 +2798,11 @@ async fn run_cdc_refresh_subscription(state: AppState) {
     {
         let task_state = state.clone();
         let durable = "dd-container-pool-table".to_string();
+        let table_filter = cdc_table_filter_subject("cdc", "public", "container_pool_configs");
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream_name.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.container_pool_configs.>")
+            .filter_subject(table_filter.clone())
             .start(&jetstream, move |_change: dd_wal_consumer::RowChange| {
                 let task_state = task_state.clone();
                 async move {
@@ -2804,7 +2810,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
                 }
             })
             .await;
-        log_cdc_subscription_result(&durable, "cdc.public.container_pool_configs.>", result);
+        log_cdc_subscription_result(&durable, &table_filter, result);
     }
 }
 

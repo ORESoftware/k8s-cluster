@@ -7,13 +7,17 @@
     container_pool_results_subject/0,
     contracts_solana_results_subject/0,
     contracts_solana_validate_subject/0,
+    contracts_solana_validate_queue_group/0,
     cron_prompts_subject/0,
     cron_prompts_stream/0,
     des_results_subject/0,
     des_simulate_subject/0,
+    des_simulate_queue_group/0,
+    git_repos_changes_subject/0,
     lambdas_functions_subject/0,
     lambdas_results_subject/0,
     mdp_optimize_subject/0,
+    mdp_optimize_queue_group/0,
     mdp_results_subject/0,
     ml_dead_letter_subject/0,
     ml_features_subject/0,
@@ -25,12 +29,18 @@
     trading_decisions_subject/0,
     trading_order_intents_subject/0,
     trading_signals_subject/0,
+    trading_signals_queue_group/0,
     websocket_events_subject/0,
     cdc_row_change_pattern/0,
     cdc_row_change_wildcard/0,
     cdc_row_change_subject/4,
     parse_cdc_row_change_subject/1,
     cdc_row_change_stream/0,
+    cdc_table_filter_pattern/0,
+    cdc_table_filter_wildcard/0,
+    cdc_table_filter_subject/3,
+    parse_cdc_table_filter_subject/1,
+    cdc_table_filter_stream/0,
     container_pool_events_pattern/0,
     container_pool_events_wildcard/0,
     container_pool_events_subject/1,
@@ -121,6 +131,7 @@ contracts_solana_results_subject() -> <<"dd.remote.contracts.solana.results"/utf
 %% Validation requests for solana.contract.v1 instruction envelopes. Default for CONTRACT_VALIDATE_SUBJECT.
 %% Service: dd-contract-service
 contracts_solana_validate_subject() -> <<"dd.remote.contracts.solana.validate"/utf8>>.
+contracts_solana_validate_queue_group() -> <<"dd-contract-service"/utf8>>.
 
 %% Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.
 %% Service: dd-remote-rest-api
@@ -134,6 +145,11 @@ des_results_subject() -> <<"dd.remote.des.results"/utf8>>.
 %% Discrete-event simulation job requests. Default for DES_SIMULATE_SUBJECT.
 %% Service: dd-ai-ml-pipeline
 des_simulate_subject() -> <<"dd.remote.des.simulate"/utf8>>.
+des_simulate_queue_group() -> <<"dd-des-simulator"/utf8>>.
+
+%% Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
+%% Service: shared
+git_repos_changes_subject() -> <<"dd.remote.git-repos.changes"/utf8>>.
 
 %% Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
 %% Service: dd-gleam-lambda-runner
@@ -146,6 +162,7 @@ lambdas_results_subject() -> <<"dd.remote.lambdas.results"/utf8>>.
 %% MDP/POMDP optimization job requests. Default for MDP_OPTIMIZE_SUBJECT.
 %% Service: dd-ai-ml-pipeline
 mdp_optimize_subject() -> <<"dd.remote.mdp.optimize"/utf8>>.
+mdp_optimize_queue_group() -> <<"dd-mdp-optimizer"/utf8>>.
 
 %% MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
 %% Service: dd-ai-ml-pipeline
@@ -187,6 +204,7 @@ trading_order_intents_subject() -> <<"dd.remote.trading.order_intents"/utf8>>.
 %% Inbound market signals consumed by the trading server. Default for TRADING_SIGNAL_SUBJECT.
 %% Service: dd-trading-server
 trading_signals_subject() -> <<"dd.remote.trading.signals"/utf8>>.
+trading_signals_queue_group() -> <<"dd-trading-server"/utf8>>.
 
 %% WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
 %% Service: shared
@@ -218,6 +236,35 @@ parse_cdc_row_change_subject(Subject) ->
                 false -> error;
                 true ->
                     {ok, #{prefix => extract_param(Pairs, <<"{prefix}"/utf8>>), schema => extract_param(Pairs, <<"{schema}"/utf8>>), table => extract_param(Pairs, <<"{table}"/utf8>>), op => extract_param(Pairs, <<"{op}"/utf8>>)}}
+            end
+    end.
+
+%% Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.
+%% Service: dd-wal-gateway
+cdc_table_filter_pattern() -> <<"{prefix}.{schema}.{table}.>"/utf8>>.
+cdc_table_filter_wildcard() -> <<"{prefix}.>"/utf8>>.
+cdc_table_filter_stream() -> <<"CDC"/utf8>>.
+cdc_table_filter_subject(Prefix, Schema, Table) ->
+    iolist_to_binary([to_bin(Prefix), <<"."/utf8>>, to_bin(Schema), <<"."/utf8>>, to_bin(Table), <<".>"/utf8>>]).
+
+parse_cdc_table_filter_subject(Subject) ->
+    SubjectBin = to_bin(Subject),
+    Tokens = binary:split(SubjectBin, <<".">>, [global]),
+    PatternTokens = [<<"{prefix}"/utf8>>, <<"{schema}"/utf8>>, <<"{table}"/utf8>>, <<">"/utf8>>],
+    case length(Tokens) =:= length(PatternTokens) of
+        false -> error;
+        true ->
+            Pairs = lists:zip(PatternTokens, Tokens),
+            LiteralsOk = lists:all(fun({P, S}) ->
+                case is_placeholder(P) of
+                    true -> true;
+                    false -> P =:= S
+                end
+            end, Pairs),
+            case LiteralsOk of
+                false -> error;
+                true ->
+                    {ok, #{prefix => extract_param(Pairs, <<"{prefix}"/utf8>>), schema => extract_param(Pairs, <<"{schema}"/utf8>>), table => extract_param(Pairs, <<"{table}"/utf8>>)}}
             end
     end.
 

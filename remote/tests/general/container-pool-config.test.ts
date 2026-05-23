@@ -109,8 +109,24 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /CONTAINER_POOL_NOFILE_LIMIT/);
   assert.match(source, /CONTAINER_POOL_HEALTH_CHECK_SECONDS/);
   assert.match(source, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD/);
-  assert.match(source, /dd\.remote\.container_pool\.requests/);
-  assert.match(source, /dd\.remote\.container_pool\.results/);
+  // Source-of-truth NATS subject constants come from the generated
+  // @dd/nats-subject-defs crate.
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?cdc_table_filter_subject[\s\S]*?container_pool_events_subject[\s\S]*?container_pool_heartbeats_subject[\s\S]*?CONTAINER_POOL_REQUESTS_SUBJECT[\s\S]*?CONTAINER_POOL_RESULTS_SUBJECT[\s\S]*?\};/,
+  );
+  assert.match(source, /CONTAINER_POOL_REQUESTS_SUBJECT/);
+  assert.match(source, /CONTAINER_POOL_RESULTS_SUBJECT/);
+  assert.match(source, /container_pool_events_subject\(&pool\.slug\)/);
+  assert.match(source, /container_pool_heartbeats_subject\(&pool\.slug\)/);
+  assert.match(
+    source,
+    /cdc_table_filter_subject\("cdc", "public", "app_config"\)/,
+  );
+  assert.match(
+    source,
+    /cdc_table_filter_subject\("cdc", "public", "container_pool_configs"\)/,
+  );
   assert.match(source, /route\("\/pools\/:pool\/dispatch", post\(dispatch_pool\)\)/);
   assert.match(source, /route\("\/pools\/:pool\/warm", post\(warm_pool\)\)/);
   assert.match(source, /request_is_authorized/);

@@ -24,6 +24,11 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::{
+    cdc_table_filter_subject, thread_tasks_subject, DD_REMOTE_TASKS_STREAM_NAME,
+    GIT_REPOS_CHANGES_SUBJECT, LAMBDAS_FUNCTIONS_SUBJECT, ORCHESTRATOR_WAKEUP_SUBJECT,
+    RUNTIME_EVENTS_SUBJECT, THREAD_TASKS_WILDCARD,
+};
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use serde::{Deserialize, Serialize};
@@ -786,23 +791,23 @@ fn nats_url() -> String {
 }
 
 fn nats_task_subject(thread_id: &str) -> String {
-    format!("dd.remote.thread.{thread_id}.tasks")
+    thread_tasks_subject(thread_id)
 }
 
 fn nats_task_stream_subject() -> String {
-    first_env(&["NATS_TASK_SUBJECT"]).unwrap_or_else(|| "dd.remote.thread.*.tasks".to_string())
+    first_env(&["NATS_TASK_SUBJECT"]).unwrap_or_else(|| THREAD_TASKS_WILDCARD.to_string())
 }
 
 fn nats_task_stream_name() -> String {
-    first_env(&["NATS_TASK_STREAM"]).unwrap_or_else(|| "DD_REMOTE_TASKS".to_string())
+    first_env(&["NATS_TASK_STREAM"]).unwrap_or_else(|| DD_REMOTE_TASKS_STREAM_NAME.to_string())
 }
 
 fn nats_wakeup_subject() -> &'static str {
-    "dd.remote.orchestrator.wakeup"
+    ORCHESTRATOR_WAKEUP_SUBJECT
 }
 
 fn nats_event_subject() -> &'static str {
-    "dd.remote.events"
+    RUNTIME_EVENTS_SUBJECT
 }
 
 fn rest_status_gleam_broadcast_url() -> String {
@@ -983,11 +988,11 @@ async fn publish_task_event_to_websocket_fanout(
 }
 
 fn nats_lambda_functions_subject() -> &'static str {
-    "dd.remote.lambdas.functions"
+    LAMBDAS_FUNCTIONS_SUBJECT
 }
 
 fn nats_git_repos_changes_subject() -> &'static str {
-    "dd.remote.git-repos.changes"
+    GIT_REPOS_CHANGES_SUBJECT
 }
 
 fn cdc_stream_name() -> String {
@@ -1646,7 +1651,7 @@ fn render_thread_deployment(
         json!({ "name": "EVENT_INGEST_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events" }),
         json!({ "name": "EVENT_INGEST_SECRET", "valueFrom": { "secretKeyRef": { "name": "dd-agent-secrets", "key": "SERVER_AUTH_SECRET" } } }),
         json!({ "name": "NATS_URL", "value": "nats://dd-nats.messaging.svc.cluster.local:4222" }),
-        json!({ "name": "NATS_EVENT_SUBJECT", "value": "dd.remote.events" }),
+        json!({ "name": "NATS_EVENT_SUBJECT", "value": RUNTIME_EVENTS_SUBJECT }),
     ];
     if let Some(thread_title) = thread_title
         .map(str::trim)
@@ -5013,7 +5018,7 @@ async fn run_cdc_fanout_subscriptions() {
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.lambda_functions.>")
+            .filter_subject(cdc_table_filter_subject("cdc", "public", "lambda_functions"))
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let nats = nats_for_handler.clone();
                 async move {
@@ -5061,7 +5066,7 @@ async fn run_cdc_fanout_subscriptions() {
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.known_git_repos.>")
+            .filter_subject(cdc_table_filter_subject("cdc", "public", "known_git_repos"))
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let nats = nats_for_handler.clone();
                 async move {
@@ -5114,7 +5119,7 @@ async fn run_cdc_fanout_subscriptions() {
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.agent_remote_dev_events.>")
+            .filter_subject(cdc_table_filter_subject("cdc", "public", "agent_remote_dev_events"))
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let nats = nats_for_handler.clone();
                 async move {

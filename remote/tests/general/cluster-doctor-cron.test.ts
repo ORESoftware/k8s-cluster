@@ -143,13 +143,24 @@ test('argocd runtime exposes a native headlamp cron sentinel', async () => {
 
 test('reaper nats watchdog backstops worker prepare and websocket fanout', async () => {
   const reaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/idle-reaper-rs/Cargo.toml');
   const readme = await readRepoFile('remote/deployments/idle-reaper-rs/README.md');
 
   assert.match(reaper, /struct NatsWatchJob/);
   assert.match(reaper, /NATS_WATCH_ACTIVE_INTERVAL_SECONDS", 5/);
   assert.match(reaper, /NATS_WATCH_IDLE_INTERVAL_SECONDS", 15/);
-  assert.match(reaper, /dd\.remote\.thread\.\*\.tasks/);
-  assert.match(reaper, /dd\.remote\.events/);
+  // Subject defaults are pulled from the @dd/nats-subject-defs generated
+  // crate so a rename in remote/libs/nats/subject-defs/schema/ breaks the
+  // build here instead of silently watching the wrong subject.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    reaper,
+    /use dd_nats_subject_defs::\{[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_PREPARER_QUEUE_GROUP[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
+  );
+  assert.match(reaper, /THREAD_TASKS_WILDCARD\.to_string\(\)/);
+  assert.match(reaper, /RUNTIME_EVENTS_SUBJECT\.to_string\(\)/);
+  assert.match(reaper, /DD_REMOTE_TASKS_STREAM_NAME\.to_string\(\)/);
+  assert.match(reaper, /THREAD_PREPARER_QUEUE_GROUP\.to_string\(\)/);
   assert.match(reaper, /prepare_thread_from_nats/);
   assert.match(reaper, /broadcast_event_from_nats/);
   assert.match(reaper, /struct RuntimeFloorJob/);

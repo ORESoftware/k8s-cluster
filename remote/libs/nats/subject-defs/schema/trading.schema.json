@@ -13,6 +13,7 @@
         "description": "Inbound market signals consumed by the trading server. Default for TRADING_SIGNAL_SUBJECT.",
         "kind": "static",
         "subject": "dd.remote.trading.signals",
+        "queueGroup": "dd-trading-server",
         "direction": "both"
       },
       {

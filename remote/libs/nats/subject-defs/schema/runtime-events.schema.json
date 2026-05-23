@@ -21,6 +21,13 @@
         "kind": "static",
         "subject": "dd.remote.websocket.events",
         "direction": "both"
+      },
+      {
+        "name": "GitReposChanges",
+        "description": "Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.",
+        "kind": "static",
+        "subject": "dd.remote.git-repos.changes",
+        "direction": "both"
       }
     ]
   }

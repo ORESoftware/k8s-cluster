@@ -27,6 +27,7 @@ export const CONTRACTS_SOLANA_RESULTS_SUBJECT = "dd.remote.contracts.solana.resu
  * Service: dd-contract-service
  */
 export const CONTRACTS_SOLANA_VALIDATE_SUBJECT = "dd.remote.contracts.solana.validate";
+export const CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP = "dd-contract-service";
 
 /**
  * Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.
@@ -46,6 +47,13 @@ export const DES_RESULTS_SUBJECT = "dd.remote.des.results";
  * Service: dd-ai-ml-pipeline
  */
 export const DES_SIMULATE_SUBJECT = "dd.remote.des.simulate";
+export const DES_SIMULATE_QUEUE_GROUP = "dd-des-simulator";
+
+/**
+ * Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.
+ * Service: shared
+ */
+export const GIT_REPOS_CHANGES_SUBJECT = "dd.remote.git-repos.changes";
 
 /**
  * Functions metadata broadcast subject. Default for NATS_LAMBDA_FUNCTIONS_SUBJECT.
@@ -64,6 +72,7 @@ export const LAMBDAS_RESULTS_SUBJECT = "dd.remote.lambdas.results";
  * Service: dd-ai-ml-pipeline
  */
 export const MDP_OPTIMIZE_SUBJECT = "dd.remote.mdp.optimize";
+export const MDP_OPTIMIZE_QUEUE_GROUP = "dd-mdp-optimizer";
 
 /**
  * MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
@@ -125,6 +134,7 @@ export const TRADING_ORDER_INTENTS_SUBJECT = "dd.remote.trading.order_intents";
  * Service: dd-trading-server
  */
 export const TRADING_SIGNALS_SUBJECT = "dd.remote.trading.signals";
+export const TRADING_SIGNALS_QUEUE_GROUP = "dd-trading-server";
 
 /**
  * WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.
@@ -169,6 +179,42 @@ export function parseCdcRowChangeSubject(subject: string): CdcRowChangeSubjectPa
   }
   if (si !== subjectTokens.length) return null;
   return result as CdcRowChangeSubjectParts;
+}
+
+/**
+ * Per-table JetStream filter subject ('<prefix>.<schema>.<table>.>') used by CDC consumers (e.g. dd-remote-rest-api) to subscribe to every op for one Postgres table. Not a publish target; producers publish per-row via CdcRowChange.
+ * Service: dd-wal-gateway
+ */
+export const CDC_TABLE_FILTER_PATTERN = "{prefix}.{schema}.{table}.>";
+export const CDC_TABLE_FILTER_WILDCARD = "{prefix}.>";
+export const CDC_TABLE_FILTER_STREAM = "CDC";
+export function cdcTableFilterSubject(prefix: string, schema: string, table: string): string {
+  return `${prefix}.${schema}.${table}.>`;
+}
+export type CdcTableFilterSubjectParts = {
+  prefix: string;
+  schema: string;
+  table: string;
+};
+export function parseCdcTableFilterSubject(subject: string): CdcTableFilterSubjectParts | null {
+  const patternTokens = ["{prefix}","{schema}","{table}",">"];
+  const subjectTokens = subject.split(".");
+  const result: Record<string, string> = {};
+  let si = 0;
+  for (let pi = 0; pi < patternTokens.length; pi += 1) {
+    const tok = patternTokens[pi];
+    const phMatch = /^\{([a-zA-Z_][a-zA-Z0-9_]*)\}$/.exec(tok);
+    if (phMatch) {
+      if (si >= subjectTokens.length) return null;
+      result[phMatch[1]] = subjectTokens[si];
+      si += 1;
+      continue;
+    }
+    if (si >= subjectTokens.length || subjectTokens[si] !== tok) return null;
+    si += 1;
+  }
+  if (si !== subjectTokens.length) return null;
+  return result as CdcTableFilterSubjectParts;
 }
 
 /**

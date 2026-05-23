@@ -295,6 +295,7 @@ dependencies = [
  "axum",
  "base64",
  "bs58",
+ "dd-nats-subject-defs",
  "dd-runtime-config-client",
  "futures-util",
  "hex",
@@ -304,6 +305,10 @@ dependencies = [
  "sha2",
  "tokio",
 ]
+
+[[package]]
+name = "dd-nats-subject-defs"
+version = "0.1.0"
 
 [[package]]
 name = "dd-runtime-config-client"
