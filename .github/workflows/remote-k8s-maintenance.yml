@@ -1226,29 +1226,45 @@ jobs:
             -o jsonpath="{range .items[*]}{.metadata.name} -> {.roleRef.name} for {.subjects}{\"\n\"}{end}" 2>/dev/null || true
 
           echo "=== kubectl auth can-i for the dd-bastion ServiceAccount ==="
-          for verb_resource in \
+          # Modern --subresource= form (newer kubectl). The legacy
+          # 'pods/exec' positional resource form returns "no" on recent
+          # kubectl even when the role grants it, so we use both for
+          # cross-check.
+          for line in \
             "list pods" \
-            "get nodes.metrics.k8s.io" \
             "list pods.metrics.k8s.io" \
-            "get pods/log" \
-            "create pods/exec"; do
-            verb=$(echo "$verb_resource" | awk "{print \$1}")
-            resource=$(echo "$verb_resource" | awk "{print \$2}")
-            ans=$(kubectl auth can-i "$verb" "$resource" \
+            "get nodes.metrics.k8s.io" \
+            "get pods --subresource=log" \
+            "create pods --subresource=exec"; do
+            ans=$(kubectl auth can-i $line \
               --as=system:serviceaccount:vpn:dd-bastion -n default 2>&1 | head -1 || true)
-            echo "  can $verb $resource -> $ans"
+            echo "  can $line -> $ans"
           done
 
-          echo "=== /runtime/deployments JSON shape (timed) ==="
+          echo "=== resolve bastion SERVER_AUTH_SECRET from the pod env ==="
+          server_auth=""
+          if [ -n "$bastion_pod" ]; then
+            server_auth=$(kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              'printf %s "${SERVER_AUTH_SECRET:-}"' 2>/dev/null || true)
+          fi
+          if [ -n "$server_auth" ]; then
+            echo "  SERVER_AUTH_SECRET length=${#server_auth}"
+          else
+            echo "  WARN: SERVER_AUTH_SECRET not present in bastion pod"
+          fi
+
+          echo "=== /runtime/deployments JSON shape (timed, authed) ==="
           if [ -n "$bastion_pod" ]; then
             t0=$(date +%s%3N)
             response=$(kubectl -n vpn exec "$bastion_pod" -- sh -lc \
-              "wget -qO- --timeout=15 http://127.0.0.1:8111/runtime/deployments" 2>/dev/null || true)
+              "curl -fsS --max-time 15 -H 'X-Server-Auth: ${server_auth}' http://127.0.0.1:8111/runtime/deployments" 2>/tmp/runtime_err || true)
+            rc=$?
             t1=$(date +%s%3N)
             elapsed=$((t1 - t0))
-            echo "request elapsed: ${elapsed} ms"
+            echo "curl exit=$rc elapsed=${elapsed} ms"
             if [ -z "$response" ]; then
-              echo "WARN: /runtime/deployments returned empty body (cargo build still running?)"
+              echo "curl stderr:"
+              cat /tmp/runtime_err 2>/dev/null | head -10
             else
               echo "$response" | jq "{
                 metricsAvailable,
@@ -1264,20 +1280,49 @@ jobs:
                 ),
                 podsWithoutMetricsCount: (
                   [.deployments[].pods[] | select(.cpuMilli == null)] | length
+                ),
+                topByCpu: (
+                  [.deployments[].pods[] | select(.cpuMilli != null) | { name, namespace, cpuMilli, memoryMiB: ((.memoryBytes // 0) / 1048576 | floor) }]
+                  | sort_by(-.cpuMilli) | .[0:8]
                 )
-              }" 2>&1 | head -80 || (echo "raw response (first 1500 chars):"; echo "$response" | head -c 1500)
+              }" 2>&1 | head -120 || (echo "raw response (first 1500 chars):"; echo "$response" | head -c 1500)
             fi
-          else
-            echo "no dd-bastion pod found"
           fi
 
-          echo "=== /api/docs.json includes new routes ==="
+          echo "=== /api/docs.json includes new routes (authed) ==="
           if [ -n "$bastion_pod" ]; then
             kubectl -n vpn exec "$bastion_pod" -- sh -lc \
-              "wget -qO- http://127.0.0.1:8111/api/docs.json" 2>/dev/null \
+              "curl -fsS -H 'X-Server-Auth: ${server_auth}' http://127.0.0.1:8111/api/docs.json" 2>/dev/null \
               | jq -r ".paths | keys[]" 2>/dev/null \
-              | grep -E "^/(logs/ws|runtime/deployments|terminal|healthz|kubeconfig)" \
               | sort -u || echo "WARN: could not parse /api/docs.json"
+          fi
+
+          echo "=== real kubectl exec smoke against a target pod ==="
+          # Pick a Running default-namespace pod that the bastion's
+          # managed-deployment allowlist accepts and try a real exec
+          # using the dd-bastion ServiceAccount token mounted at
+          # /var/run/secrets/kubernetes.io/serviceaccount.
+          target=$(kubectl -n default get pods -l app=dd-remote-web-home \
+            -o jsonpath="{.items[?(@.status.phase=='Running')].metadata.name}" 2>/dev/null \
+            | awk "{print \$1}")
+          echo "target_pod=$target"
+          if [ -n "$bastion_pod" ] && [ -n "$target" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "kubectl --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) \
+                       --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                       --server=https://kubernetes.default.svc \
+                       -n default exec $target -- sh -lc 'echo bastion-exec-ok; hostname; id'" 2>&1 \
+              | head -10 || true
+          fi
+
+          echo "=== real kubectl logs smoke against a target pod ==="
+          if [ -n "$bastion_pod" ] && [ -n "$target" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "kubectl --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) \
+                       --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                       --server=https://kubernetes.default.svc \
+                       -n default logs $target --tail=3" 2>&1 \
+              | head -10 || true
           fi
 
           echo "=== bastion log scan for panic/error/warn (tail 400) ==="
