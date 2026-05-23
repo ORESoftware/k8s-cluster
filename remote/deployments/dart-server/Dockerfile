@@ -121,9 +121,14 @@ USER 10001:10001
 
 ENV HTTP_HOST=0.0.0.0 \
     HTTP_PORT=8089 \
+    HTTP_INTERNAL_PORT=8090 \
+    ADMIN_PORT=8088 \
     STATIC_DIR=/opt/dd-dart-server/public \
     MOBILE_STATIC_DIR=/opt/dd-dart-server/mobile-public
 
-EXPOSE 8089
+# 8088 — coordinator admin/probes/metrics.
+# 8089 — gateway-shard pool (shared:true SO_REUSEPORT inside the pod).
+# 8090 — HTTP isolate (Jaspr SSR + Flutter SPAs + assets).
+EXPOSE 8088 8089 8090
 
 ENTRYPOINT ["/opt/dd-dart-server/dd-dart-server"]
