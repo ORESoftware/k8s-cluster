@@ -9,7 +9,17 @@ spec:
   selector:
     app: dd-dart-server
   ports:
-    - name: http
+    # `ws` exposes the gateway isolate (probes, /metrics, /dart/wss,
+    # /dart/admin/*). Kept as port 8089 for backwards compatibility
+    # with the existing ingress configmap.
+    - name: ws
       port: 8089
       targetPort: 8089
+    # `http` exposes the dedicated HTTP isolate. The ingress should
+    # route every non-WS, non-admin /dart/* path here so HTML rendering
+    # and static file IO never compete with WS pumps for event-loop
+    # time on the gateway isolate.
+    - name: http
+      port: 8090
+      targetPort: 8090
   type: ClusterIP

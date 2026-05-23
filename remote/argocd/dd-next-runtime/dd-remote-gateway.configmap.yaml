@@ -601,12 +601,21 @@ data:
         proxy_pass http://dd-fsharp-ws-server.default.svc.cluster.local:8087/;
       }
 
-      # /dart — dd-dart-server (full-stack Dart, port 8089). Same access
-      # posture as /fsws/ and /gleam/: gateway-authenticated operator
-      # demo traffic only. The dart server's path layout is rooted at
-      # /dart already (`/dart/pages/*` for Jaspr SSR, `/dart/wss` for the
-      # HTMX-over-WebSocket session, `/dart/app/*` for the Flutter SPA),
-      # so we proxy through with the prefix preserved.
+      # /dart — dd-dart-server (full-stack Dart). Same access posture
+      # as /fsws/ and /gleam/: gateway-authenticated operator demo
+      # traffic only. dd-dart-server runs two isolates exposed on two
+      # ports:
+      #   * gateway isolate (svc port 8089, name `ws`) — owns the WS
+      #     upgrade path at /dart/wss plus the admin API under
+      #     /dart/admin/*. Slow under heavy WebSocket load is OK; the
+      #     HTML/SPA paths do not live here.
+      #   * HTTP isolate (svc port 8090, name `http`) — owns Jaspr SSR
+      #     under /dart/pages, the Flutter SPAs under /dart/app and
+      #     /dart/mobile, and the asset files. Independent event loop
+      #     so an over-saturated WS gateway never blocks HTML rendering.
+      # We split the two upstreams here so the public URL space stays
+      # the same (everything under /dart/...) but routes to the right
+      # isolate inside the pod.
       location = /dart {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -614,14 +623,14 @@ data:
         return 302 /dart/pages;
       }
 
-      location /dart/ {
+      # WebSocket upgrade → gateway isolate (port 8089). Long idle
+      # timeout matches /fsws/ and /gcs/ws/.
+      location = /dart/wss {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
         }
         proxy_http_version 1.1;
         proxy_buffering off;
-        # Long idle timeout for the WebSocket session at /dart/wss; matches
-        # /fsws/ and /gcs/ws/.
         proxy_read_timeout 3600;
         proxy_send_timeout 3600;
         proxy_set_header Upgrade $http_upgrade;
@@ -629,9 +638,40 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # No trailing slash on proxy_pass: keep the /dart/ prefix so the
-        # upstream Dart router sees /dart/pages/about, /dart/wss, etc.
         proxy_pass http://dd-dart-server.default.svc.cluster.local:8089;
+      }
+
+      # Admin endpoints (hot-reload status, /dart/admin/db, etc.) live
+      # on the gateway isolate because they read in-process state that
+      # the HTTP isolate cannot see.
+      location ^~ /dart/admin/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://dd-dart-server.default.svc.cluster.local:8089;
+      }
+
+      # Everything else under /dart/ → dedicated HTTP isolate (port
+      # 8090). Jaspr SSR, Flutter SPA static, Flutter mobile static,
+      # asset files. The HTTP isolate is intentionally isolated from
+      # the WS gateway so heavy WS load cannot stall HTML rendering.
+      location /dart/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://dd-dart-server.default.svc.cluster.local:8090;
       }
 
       location = /mcp {

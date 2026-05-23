@@ -23,7 +23,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-23-host-pool-architecture'
+        dd.dev/code-revision: '2026-05-23-http-isolate-split'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -69,9 +69,21 @@ spec:
             # one-isolate-per-session behaviour for A/B comparison.
             - name: SESSIONS_PER_HOST
               value: '100'
+            # Internal port for the dedicated HTTP isolate. Keep this
+            # in sync with the `http` port on dd-dart-server Service
+            # and with the ingress route for non-WS /dart/* paths.
+            - name: HTTP_INTERNAL_PORT
+              value: '8090'
           ports:
-            - name: http
+            - name: ws
               containerPort: 8089
+            - name: http
+              containerPort: 8090
+          # All three probes hit the dedicated HTTP isolate (port `http`,
+          # 8090). The gateway isolate (port `ws`, 8089) can be heavily
+          # loaded by WebSocket pumps under stress; the HTTP isolate is
+          # a separate event loop that should always respond promptly,
+          # which is exactly what we want from a probe authority.
           startupProbe:
             httpGet:
               path: /healthz
@@ -80,7 +92,7 @@ spec:
             failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /healthz
               port: http
             initialDelaySeconds: 2
             periodSeconds: 10

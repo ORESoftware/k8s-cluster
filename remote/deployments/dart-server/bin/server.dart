@@ -2,14 +2,22 @@
 ///
 /// Isolate topology
 /// ----------------
-///   * **Gateway (main isolate, 1)** — owns `HttpServer.bind`, every HTTP
-///     route handler (`/healthz`, `/readyz`, `/metrics`, `/dart/pages/*`,
-///     `/dart/app/*`, `/dart/mobile/*`, `/dart/assets/*`), the WSS
-///     upgrade path, the per-WS socket reader/writer pumps, and the
-///     supervisor state (`EventBus`, `Presence`, `ConversationRegistry`).
-///     **All HTTP requests share this single isolate** — there is no
-///     HTTP request fanout. HTTP work never runs on a session-host
-///     isolate.
+///   * **Gateway (main isolate, 1)** — port 8089. Owns the WS-side
+///     `HttpServer.bind`, the WSS upgrade path, per-WS socket
+///     reader/writer pumps, and the supervisor state (`EventBus`,
+///     `Presence`, `ConversationRegistry`). Locally serves `/healthz`,
+///     `/readyz`, `/metrics`, `/dart/wss`, `/dart/admin/*`. Other paths
+///     return 404 — the ingress is expected to route them to the HTTP
+///     isolate's port.
+///   * **HTTP isolate (1)** — port 8090 (configurable via
+///     `HTTP_INTERNAL_PORT`). Dedicated event loop for every non-WS,
+///     non-admin route: `/dart/pages/*` (Jaspr SSR), `/dart/app/*` and
+///     `/dart/mobile/*` (Flutter web bundles), `/dart/assets/*`, and
+///     the `/` root redirect. Folds its per-route counters into the
+///     gateway's `Metrics` via a `MetricEvent` SendPort. Separating
+///     HTTP from the WS gateway means a fully-saturated WS pump cannot
+///     stall HTML rendering or static file IO. **All HTTP requests
+///     share this single isolate.**
 ///   * **Session-host pool (M isolates)** — each owns up to
 ///     `SESSIONS_PER_HOST` (default 100, range 1..2000) WebSocket
 ///     session runtimes as plain Dart objects sharing one event loop.
@@ -19,46 +27,49 @@
 /// Setting `SESSIONS_PER_HOST=1` reproduces the legacy
 /// one-isolate-per-WebSocket model for direct A/B comparison.
 ///
-/// Routes:
+/// Routes (gateway, port 8089):
 ///   GET  /healthz            — liveness probe
 ///   GET  /readyz             — readiness probe
-///   GET  /metrics            — Prometheus exposition
-///   GET  /                   — 302 → /dart/pages
-///   GET  /dart/pages         — Jaspr SSR home
-///   GET  /dart/pages/*       — Jaspr SSR routed pages
+///   GET  /metrics            — Prometheus exposition (folds HTTP-isolate counters)
 ///   GET  /dart/wss           — WebSocket upgrade → routed onto a session-host isolate
-///   GET  /dart/app           — Flutter web SPA index.html
-///   GET  /dart/app/*         — Flutter web SPA (with index.html fallback)
-///   GET  /dart/mobile        — Mobile-optimized Flutter web bundle index.html
-///   GET  /dart/mobile/*      — Mobile-optimized Flutter web bundle (with index.html fallback)
-///   GET  /dart/assets/*      — Flutter web build assets (JS bundle, SW, icons)
+///   GET  /dart/admin/*       — hot-reload + pg-defs admin (gateway-local state)
+///
+/// Routes (HTTP isolate, port 8090):
+///   GET  /                   — 302 → /dart/pages
+///   GET  /dart, /dart/       — 302 → /dart/pages
+///   GET  /dart/pages, /dart/pages/*  — Jaspr SSR
+///   GET  /dart/app, /dart/app/*      — Flutter SPA static
+///   GET  /dart/mobile, /dart/mobile/* — Flutter mobile static
+///   GET  /dart/assets/*      — Flutter asset files
+///   GET  /healthz            — local mirror (probes on :8090 work too)
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:dd_dart_server/db/pg_contract.dart' as pg_contract;
 import 'package:dd_dart_server/db/presence_convs_repo.dart';
 import 'package:dd_dart_server/server/conversation_registry.dart';
 import 'package:dd_dart_server/server/event_bus.dart';
 import 'package:dd_dart_server/server/hot_reloader.dart';
+import 'package:dd_dart_server/server/http_isolate.dart';
 import 'package:dd_dart_server/server/metrics.dart';
 import 'package:dd_dart_server/server/postgres.dart';
 import 'package:dd_dart_server/server/presence.dart';
 import 'package:dd_dart_server/server/session_supervisor.dart';
-import 'package:dd_dart_server/server/static_files.dart';
-import 'package:dd_dart_server/jaspr/render.dart';
+import 'package:dd_dart_server/shared/wire_messages.dart';
 
 const _wssPath = '/dart/wss';
-const _pagesPrefix = '/dart/pages';
-const _appPrefix = '/dart/app';
-const _mobilePrefix = '/dart/mobile';
-const _assetsPrefix = '/dart/assets';
 
 Future<void> main(List<String> args) async {
   final host = Platform.environment['HTTP_HOST'] ?? '0.0.0.0';
   final port = int.tryParse(Platform.environment['HTTP_PORT'] ?? '') ?? 8089;
+  final httpInternalPort = int.tryParse(
+        Platform.environment['HTTP_INTERNAL_PORT'] ?? '',
+      ) ??
+      8090;
   final staticDirPath = Platform.environment['STATIC_DIR'] ?? './public';
   // Independent Flutter web bundle served at /dart/mobile/. Defaults
   // mirror STATIC_DIR's local-dev shape so a fresh checkout works even
@@ -112,11 +123,41 @@ Future<void> main(List<String> args) async {
     conversations: conversations,
     sessionsPerHost: sessionsPerHost,
   );
-  final staticFiles = StaticFileServer(Directory(staticDirPath));
-  final mobileStaticFiles = StaticFileServer(
-    Directory(mobileStaticDirPath),
-    serviceWorkerAllowedScope: '$_mobilePrefix/',
+
+  // HTTP isolate folds its per-route counters into the gateway's
+  // Metrics object via this inbox. Lives for the lifetime of the
+  // process; the only sender is `httpIsolateEntry`.
+  final httpMetricsInbox = ReceivePort('dd-dart-http-metrics-inbox');
+  httpMetricsInbox.listen((msg) {
+    if (msg is MetricEvent) {
+      metrics.inc(msg.name, msg.delta);
+    }
+  });
+
+  // Spawn the dedicated HTTP isolate before we start accepting WS
+  // traffic, so probe paths on either port respond from the moment the
+  // gateway is reachable.
+  final httpHandshake = ReceivePort('dd-dart-http-isolate-handshake');
+  await Isolate.spawn<HttpIsolateBoot>(
+    httpIsolateEntry,
+    HttpIsolateBoot(
+      handshake: httpHandshake.sendPort,
+      host: host,
+      port: httpInternalPort,
+      staticDirPath: staticDirPath,
+      mobileStaticDirPath: mobileStaticDirPath,
+      metricsBus: httpMetricsInbox.sendPort,
+    ),
+    debugName: 'dd-dart-http',
+    errorsAreFatal: false,
   );
+  final httpBoundPort = await httpHandshake.first as int;
+  httpHandshake.close();
+  print(jsonEncode({
+    'event': 'dart_http_isolate_ready',
+    'requested_port': httpInternalPort,
+    'bound_port': httpBoundPort,
+  }));
 
   metrics
     ..registerGauge('dart_sessions_live', () => supervisor.liveCount)
@@ -196,8 +237,6 @@ Future<void> main(List<String> args) async {
       req,
       metrics: metrics,
       supervisor: supervisor,
-      staticFiles: staticFiles,
-      mobileStaticFiles: mobileStaticFiles,
       ready: ready,
       hotReloader: hotReloader,
       pgPool: pgPool,
@@ -218,8 +257,6 @@ Future<void> _route(
   HttpRequest req, {
   required Metrics metrics,
   required SessionSupervisor supervisor,
-  required StaticFileServer staticFiles,
-  required StaticFileServer mobileStaticFiles,
   required bool ready,
   HotReloader? hotReloader,
   PgPool? pgPool,
@@ -284,84 +321,6 @@ Future<void> _route(
         'error': '$e',
         'stack': '$st',
       }));
-    }
-    return;
-  }
-
-  // ---- Jaspr SSR /dart/pages --------------------------------------------
-  if (method == 'GET' && (path == _pagesPrefix || path.startsWith('$_pagesPrefix/'))) {
-    final route = path.substring(_pagesPrefix.length).isEmpty
-        ? '/'
-        : path.substring(_pagesPrefix.length);
-    final query = req.uri.queryParameters;
-    try {
-      final html = await renderJasprPage(route, query: query);
-      metrics.inc('dart_pages_rendered_total');
-      req.response
-        ..statusCode = HttpStatus.ok
-        ..headers.contentType = ContentType.html
-        ..headers.set('cache-control', 'no-cache')
-        ..write(html);
-      await req.response.close();
-    } catch (e, st) {
-      metrics.inc('dart_pages_render_error_total');
-      // ignore: avoid_print
-      print(jsonEncode({
-        'event': 'jaspr_render_error',
-        'route': route,
-        'error': '$e',
-        'stack': '$st',
-      }));
-      await _plain(req, 'render_error\n', status: HttpStatus.internalServerError);
-    }
-    return;
-  }
-
-  // ---- Flutter SPA static files -----------------------------------------
-  if (method == 'GET' && (path == _appPrefix || path.startsWith('$_appPrefix/'))) {
-    final rel = path == _appPrefix ? '' : path.substring(_appPrefix.length + 1);
-    metrics.inc('dart_app_requests_total');
-    final served = await staticFiles.tryServe(
-      req,
-      requestPath: rel,
-      fallbackHtml: 'index.html',
-    );
-    if (!served) {
-      await _plain(req, 'flutter app not built\n', status: HttpStatus.notFound);
-    }
-    return;
-  }
-
-  // ---- Flutter mobile bundle static files -------------------------------
-  // Independent Flutter web bundle, base-href=/dart/mobile/, lives in its
-  // own MOBILE_STATIC_DIR. Jaspr SSR at /dart/pages is unaffected; this
-  // handler only owns /dart/mobile/* and never falls through to pickPage.
-  if (method == 'GET' &&
-      (path == _mobilePrefix || path.startsWith('$_mobilePrefix/'))) {
-    final rel =
-        path == _mobilePrefix ? '' : path.substring(_mobilePrefix.length + 1);
-    metrics.inc('dart_mobile_requests_total');
-    final served = await mobileStaticFiles.tryServe(
-      req,
-      requestPath: rel,
-      fallbackHtml: 'index.html',
-    );
-    if (!served) {
-      await _plain(
-        req,
-        'flutter mobile app not built\n',
-        status: HttpStatus.notFound,
-      );
-    }
-    return;
-  }
-
-  if (method == 'GET' && path.startsWith('$_assetsPrefix/')) {
-    final rel = path.substring(_assetsPrefix.length + 1);
-    metrics.inc('dart_assets_requests_total');
-    final served = await staticFiles.tryServe(req, requestPath: rel);
-    if (!served) {
-      await _plain(req, 'asset not found\n', status: HttpStatus.notFound);
     }
     return;
   }
@@ -493,16 +452,12 @@ Future<void> _route(
     return;
   }
 
-  // ---- Root → SSR home ---------------------------------------------------
-  if (method == 'GET' && (path == '/' || path == '/dart' || path == '/dart/')) {
-    req.response
-      ..statusCode = HttpStatus.movedPermanently
-      ..headers.set('location', '/dart/pages');
-    await req.response.close();
-    return;
-  }
-
   // ---- Fallback ----------------------------------------------------------
+  // The gateway intentionally does NOT serve /dart/pages, /dart/app,
+  // /dart/mobile, /dart/assets, or the / root redirect — those live on
+  // the dedicated HTTP isolate (port 8090). The ingress is expected to
+  // route them there. If they reach us anyway, return a clear 404 so
+  // misconfiguration is visible.
   metrics.inc('dart_http_404_total');
   await _plain(req, 'not_found\n', status: HttpStatus.notFound);
 }
