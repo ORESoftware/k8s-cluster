@@ -1271,21 +1271,37 @@ jobs:
                 deploymentsCount: (.deployments | length),
                 metricsErrorsCount: (.metricsErrors | length),
                 metricsErrors,
-                samplePod: (.deployments[0].pods[0] | { name, namespace, cpuMilli, memoryBytes, terminalUrl, logsUrl, containers: ([.containers[] | { name, ready, cpuMilli, memoryBytes, terminalUrl, logsUrl }]) }),
+                samplePod: (
+                  .deployments[0].pods[0] | {
+                    name,
+                    namespace,
+                    metrics,
+                    containers: [.containers[] | { name, ready, metrics, terminalUrl, logsUrl }]
+                  }
+                ),
                 managedNamespacesWithMetrics: (
-                  [.deployments[].pods[] | select(.cpuMilli != null) | .namespace] | unique
+                  [.deployments[].pods[] | select(.metrics != null) | .namespace] | unique
                 ),
                 podsWithMetricsCount: (
-                  [.deployments[].pods[] | select(.cpuMilli != null)] | length
+                  [.deployments[].pods[] | select(.metrics != null)] | length
                 ),
                 podsWithoutMetricsCount: (
-                  [.deployments[].pods[] | select(.cpuMilli == null)] | length
+                  [.deployments[].pods[] | select(.metrics == null)] | length
+                ),
+                containersWithMetricsCount: (
+                  [.deployments[].pods[].containers[] | select(.metrics != null)] | length
                 ),
                 topByCpu: (
-                  [.deployments[].pods[] | select(.cpuMilli != null) | { name, namespace, cpuMilli, memoryMiB: ((.memoryBytes // 0) / 1048576 | floor) }]
+                  [.deployments[].pods[] | select(.metrics != null) | {
+                    name, namespace,
+                    cpuMilli: .metrics.cpuMillicores,
+                    memoryMiB: ((.metrics.memoryBytes // 0) / 1048576 | floor)
+                  }]
                   | sort_by(-.cpuMilli) | .[0:8]
-                )
-              }" 2>&1 | head -120 || (echo "raw response (first 1500 chars):"; echo "$response" | head -c 1500)
+                ),
+                terminalUrlSample: (.deployments[].pods[].containers[].terminalUrl | select(. != null and . != \"\")) | [.] | first,
+                logsUrlSample: (.deployments[].pods[].containers[].logsUrl | select(. != null and . != \"\")) | [.] | first
+              }" 2>&1 | head -120 || (echo "raw response (first 2000 chars):"; echo "$response" | head -c 2000)
             fi
           fi
 
