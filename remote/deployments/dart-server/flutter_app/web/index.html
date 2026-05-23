@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    Served as /dart/app/index.html. The trailing slash matters: relative URLs
+    in the Flutter web bundle resolve relative to <base href>, and Flutter
+    expects the directory containing main.dart.js, manifest.json, etc.
+  -->
+  <base href="/dart/app/">
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="Flutter web SPA for dd-dart-server. RxDart-driven shell that speaks the HTMX/WS protocol against /dart/wss.">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="dd-dart-server">
+  <meta name="theme-color" content="#0d1117">
+
+  <title>dd-dart-server SPA</title>
+
+  <script>
+    // Empty placeholder kept for compatibility with older bootstrap
+    // generation paths. Flutter 3.44's flutter_bootstrap.js drives both
+    // the engine init and the service worker registration on its own.
+    var serviceWorkerVersion = null;
+  </script>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

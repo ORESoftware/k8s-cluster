@@ -1,0 +1,23 @@
+# Build artefacts that should never be sent to the docker daemon.
+.dart_tool/
+**/.dart_tool/
+build/
+**/build/
+.pub/
+**/.pub/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/pubspec.lock
+**/macos/
+**/ios/
+**/android/
+**/linux/
+**/windows/
+flutter_app/.dart_tool/
+flutter_app/build/
+
+# Editor / VCS junk
+.idea/
+.vscode/
+.git/
+*.iml

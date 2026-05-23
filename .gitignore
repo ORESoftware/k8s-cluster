@@ -27,6 +27,25 @@ obj/
 *.user
 *.nupkg
 .vs/
+# Dart projects use bin/ as a source directory, not a build output. Whitelist
+# every Dart project's bin/ explicitly so the .NET rule above doesn't hide it.
+!remote/deployments/dart-server/bin/
+!remote/deployments/dart-server/bin/**
+
+# ──────────────────────────────────────────────
+# Dart / Flutter
+# ──────────────────────────────────────────────
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+**/flutter_app/.metadata
+**/flutter_app/.flutter-plugins
+**/flutter_app/.flutter-plugins-dependencies
+# pubspec.lock lives next to a binary deployment (dart-server) — commit it to
+# keep production builds reproducible. Library packages (pg-defs adapters)
+# stay locked-out via the per-folder .gitignore.
 
 # ──────────────────────────────────────────────
 # OS / Editor
