@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/container-pool.schema.json",
+  "title": "ContainerPoolNats",
+  "description": "NATS subjects owned by dd-container-pool-rs: request/result fanout plus per-pool event and heartbeat subjects derived from pool slug. Per-language defaults are seeded in remote/databases/pg/seeds/container-pool-app-config.sql.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-container-pool",
+    "summary": "Container pool dispatch + observability subjects.",
+    "subjects": [
+      {
+        "name": "ContainerPoolRequests",
+        "description": "Generic container pool request subject (legacy default; specific pools usually use ContainerPoolLanguageRequests with their own runtime prefix).",
+        "kind": "static",
+        "subject": "dd.remote.container_pool.requests",
+        "direction": "both"
+      },
+      {
+        "name": "ContainerPoolResults",
+        "description": "Generic container pool result subject.",
+        "kind": "static",
+        "subject": "dd.remote.container_pool.results",
+        "direction": "both"
+      },
+      {
+        "name": "ContainerPoolLanguageRequests",
+        "description": "Per-runtime pool request subject (e.g. nodejs, rust, golang, dart, gleamlang, erlang). Seeded by container-pool-app-config.",
+        "kind": "parameterized",
+        "pattern": "dd.remote.container_pool.{language}.requests",
+        "wildcard": "dd.remote.container_pool.*.requests",
+        "params": [
+          { "name": "language", "type": "string", "description": "Runtime token: nodejs | rust | golang | dart | gleamlang | erlang." }
+        ],
+        "direction": "both"
+      },
+      {
+        "name": "ContainerPoolEvents",
+        "description": "Per-pool event subject (built from pool slug at runtime).",
+        "kind": "parameterized",
+        "pattern": "dd.remote.container_pool.{pool_slug}.events",
+        "wildcard": "dd.remote.container_pool.*.events",
+        "params": [
+          { "name": "pool_slug", "type": "string", "description": "Container pool slug, e.g. 'nodejs-default'." }
+        ],
+        "direction": "both"
+      },
+      {
+        "name": "ContainerPoolHeartbeats",
+        "description": "Per-pool heartbeat subject (built from pool slug at runtime).",
+        "kind": "parameterized",
+        "pattern": "dd.remote.container_pool.{pool_slug}.heartbeats",
+        "wildcard": "dd.remote.container_pool.*.heartbeats",
+        "params": [
+          { "name": "pool_slug", "type": "string", "description": "Container pool slug, e.g. 'nodejs-default'." }
+        ],
+        "direction": "both"
+      }
+    ]
+  }
+}

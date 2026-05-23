@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/presence.schema.json",
+  "title": "PresenceNats",
+  "description": "NATS subjects used by the presence/conversation fan-out plane (gleamlang-presence-server + gleamlang-ws-server). These subjects use the legacy 'presence.' prefix (not 'dd.remote.') because they predate the dd.remote.* convention; do not rename without coordinating with all language deployments.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-gleamlang-presence-server",
+    "summary": "Per-conv broadcast fanout subjects bridged onto NATS by the presence/ws servers.",
+    "subjects": [
+      {
+        "name": "PresenceBroadcastConv",
+        "description": "Broadcast a websocket frame to every connection in a conv. Consumers subscribe via the wildcard 'presence.broadcast.conv.>' so they receive all conv broadcasts and dispatch locally.",
+        "kind": "parameterized",
+        "pattern": "presence.broadcast.conv.{conv_id}",
+        "wildcard": "presence.broadcast.conv.>",
+        "params": [
+          { "name": "conv_id", "type": "string", "description": "Conversation id. Single NATS token (UUID is fine since UUIDs contain hyphens but no dots)." }
+        ],
+        "direction": "both"
+      },
+      {
+        "name": "PresenceMemberChangeConv",
+        "description": "Optional per-conv membership-change channel (reserved; today membership changes go through PG NOTIFY).",
+        "kind": "parameterized",
+        "pattern": "presence.member_change.conv.{conv_id}",
+        "wildcard": "presence.member_change.conv.>",
+        "params": [
+          { "name": "conv_id", "type": "string", "description": "Conversation id." }
+        ],
+        "direction": "both"
+      }
+    ]
+  }
+}
