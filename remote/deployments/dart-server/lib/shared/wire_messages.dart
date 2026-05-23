@@ -18,6 +18,7 @@
 ///                        aggregator; bus frames go to the EventBus.
 library;
 
+import 'dart:isolate';
 import 'dart:typed_data';
 
 /// Boot payload handed to a freshly-spawned session isolate. Contains the
@@ -31,7 +32,10 @@ final class SessionBootMessage {
     required this.headers,
     required this.outbound,
     required this.spawnedAtUs,
-    this.idleTimeoutSeconds = 300,
+    this.idleTimeoutSeconds = 1200,
+    this.maxAgeSeconds = 10800,
+    this.ageBasedIdleSeconds = 30,
+    this.clockIntervalSeconds = 1,
   });
 
   final String sessionId;
@@ -52,6 +56,27 @@ final class SessionBootMessage {
   /// bus deliveries, OOB swaps) do NOT count as activity — only frames
   /// from the client. Set to 0 to disable.
   final int idleTimeoutSeconds;
+
+  /// Hard upper bound on session age, in seconds. When `now - spawned`
+  /// exceeds this AND the session has been idle longer than
+  /// [ageBasedIdleSeconds], the supervisor force-closes with code 4003
+  /// (`session_aged`). Lets old session-host isolates drain naturally
+  /// over time without churning live, busy users mid-conversation. Set
+  /// to 0 to disable.
+  final int maxAgeSeconds;
+
+  /// Idle threshold paired with [maxAgeSeconds]. Once a session is
+  /// past `maxAgeSeconds`, this much inactivity is enough to evict it.
+  final int ageBasedIdleSeconds;
+
+  /// Interval, in seconds, between server-driven Clock fragments
+  /// emitted by each session. Setting this larger than 1 reduces the
+  /// jaspr render rate proportionally — at 20K connections, a 1 Hz
+  /// clock represents 20 cores' worth of render work; bump this to
+  /// 5–15 s for the load-test benchmark profile and let RECEIVE_TIMEOUT
+  /// on the loader rise to match. Set to 0 to disable the clock
+  /// entirely (idle check still runs every second).
+  final int clockIntervalSeconds;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,4 +316,95 @@ final class RouteToSession {
   const RouteToSession({required this.sessionId, required this.event});
   final String sessionId;
   final InboundEvent event;
+}
+
+// ---------------------------------------------------------------------------
+// Coordinator ↔ gateway shard messages
+// ---------------------------------------------------------------------------
+//
+// The main isolate (a pure coordinator) spawns a small fixed pool of
+// "gateway shards". Each shard is a self-contained WS gateway: it owns
+// its own EventBus / Presence / ConversationRegistry / SessionSupervisor
+// / host-pool, binds port 8089 with `shared: true`, and accepts the
+// fraction of incoming connections the kernel SO_REUSEPORT hash routes
+// to it.
+//
+// Shards report back to main:
+//   * MetricEvent — counter-style increments, folded into the canonical
+//     Metrics object.
+//   * GaugeReport — periodic snapshot of per-shard gauge values; main
+//     keeps a per-shard map and renders summed exposition on /metrics.
+//
+// Main controls each shard via a per-shard `controlPort`:
+//   * ShardShutdown — start drain (server.close + supervisor.requestDrain).
+
+/// Boot payload handed to a freshly-spawned gateway shard isolate.
+/// All fields are plain values + SendPorts so the payload is freely
+/// transferable across the isolate boundary.
+final class GatewayShardBoot {
+  const GatewayShardBoot({
+    required this.shardId,
+    required this.handshake,
+    required this.metricsBus,
+    required this.host,
+    required this.port,
+    required this.sessionsPerHost,
+    required this.idleTimeoutSeconds,
+    required this.maxAgeSeconds,
+    required this.ageBasedIdleSeconds,
+    required this.maxInboundBytes,
+    required this.maxOutboundRatePerSecond,
+    required this.slowClientWindows,
+    required this.clockIntervalSeconds,
+    required this.gaugeReportIntervalMs,
+  });
+
+  /// Distinct identity for the shard, used as a label in [GaugeReport]s.
+  final int shardId;
+
+  /// One-shot SendPort the coordinator listens on for the shard's
+  /// `(controlPort)` reply once it is bound and ready.
+  final SendPort handshake;
+
+  /// SendPort to which the shard posts [MetricEvent]s and
+  /// [GaugeReport]s. The coordinator folds them into the canonical
+  /// Metrics object.
+  final SendPort metricsBus;
+
+  /// Address + port for `HttpServer.bind(host, port, shared: true)`.
+  /// All shards must use the same port; the kernel's SO_REUSEPORT
+  /// distributes new connections across the listening sockets.
+  final String host;
+  final int port;
+
+  /// Forwarded into the per-shard `SessionSupervisor`.
+  final int sessionsPerHost;
+  final int idleTimeoutSeconds;
+  final int maxAgeSeconds;
+  final int ageBasedIdleSeconds;
+  final int maxInboundBytes;
+  final int maxOutboundRatePerSecond;
+  final int slowClientWindows;
+  final int clockIntervalSeconds;
+
+  /// How often the shard pushes a [GaugeReport] to [metricsBus].
+  final int gaugeReportIntervalMs;
+}
+
+/// Periodic per-shard gauge snapshot. Main keeps the latest report
+/// from every shard and exposes summed values on /metrics.
+final class GaugeReport {
+  const GaugeReport({required this.shardId, required this.values});
+  final int shardId;
+
+  /// Gauge name → current numeric value. Examples:
+  ///   `dart_sessions_live`, `dart_session_hosts_live`,
+  ///   `dart_eventbus_topics`, `dart_presence_users`.
+  final Map<String, num> values;
+}
+
+/// Sentinel sent by the coordinator over a shard's control port to ask
+/// it to drain (refuse new attaches, close all sessions, exit).
+final class ShardShutdown {
+  const ShardShutdown();
 }

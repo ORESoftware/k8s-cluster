@@ -289,38 +289,75 @@ class Session {
     // Bus inbound → state mutations.
     _subs.add(_busInbound.listen(_handleBusDelivery));
 
-    // Server-driven 1Hz tick. Drives the visible clock fragment AND
-    // the idle-disconnect check; both are cheap enough to share one
-    // timer.
+    // Server-driven 1Hz tick. The idle-disconnect check fires on
+    // every tick (it's cheap — just two int subtractions + a metric
+    // emit on the rare timeout path). The Clock OOB fragment fires
+    // every `clockIntervalSeconds` ticks so a benchmark profile can
+    // dial the per-session jaspr render rate way down without losing
+    // the lifecycle gates.
+    var tickCount = 0;
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      unawaited(_emitFragment(
-        Clock(DateTime.now().toUtc().toIso8601String()),
-      ));
+      tickCount++;
+      final clockInterval = _boot.clockIntervalSeconds;
+      if (clockInterval > 0 && tickCount % clockInterval == 0) {
+        unawaited(_emitFragment(
+          Clock(DateTime.now().toUtc().toIso8601String()),
+        ));
+      }
       _checkIdle();
     });
   }
 
-  /// If the peer hasn't sent any inbound WS frame for longer than
-  /// [SessionBootMessage.idleTimeoutSeconds], emit an [OutboundClose]
-  /// and ask the run-loop to drain. Idempotent: the `_idleClosing`
-  /// flag prevents repeat closes once a timeout fires.
+  /// Per-tick lifecycle gate. Two independent reasons can decide to
+  /// gracefully close the session:
+  ///
+  ///   1. **Idle timeout** (`idleTimeoutSeconds`) — peer has gone fully
+  ///      silent for too long. Fires `4001 idle_timeout_<N>s`.
+  ///
+  ///   2. **Age-based eviction** (`maxAgeSeconds` + `ageBasedIdleSeconds`) —
+  ///      session is older than `maxAgeSeconds` AND peer has been idle
+  ///      at least `ageBasedIdleSeconds`. Fires `4003 session_aged`.
+  ///      Lets a long-running session-host isolate retire its slots
+  ///      naturally instead of being kept alive forever by a single
+  ///      chatty client.
+  ///
+  /// Idempotent: the `_idleClosing` flag prevents repeat closes once
+  /// either trigger fires.
   void _checkIdle() {
     if (_idleClosing) return;
+    final nowUs = DateTime.now().microsecondsSinceEpoch;
+    final idleUs = nowUs - _lastInboundUs;
+
+    // (1) Hard idle timeout.
     final timeoutSec = _boot.idleTimeoutSeconds;
-    if (timeoutSec <= 0) return;
-    final idleUs = DateTime.now().microsecondsSinceEpoch - _lastInboundUs;
-    if (idleUs < timeoutSec * 1000000) return;
-    _idleClosing = true;
-    _send(const MetricEvent('dart_session_idle_timeout_total'));
-    _send(OutboundClose(
-      code: 4001,
-      reason: 'idle_timeout_${timeoutSec}s',
-    ));
-    // The OutboundClose will reach the supervisor and close the WS;
-    // that will fire `socket.done` → InboundClosed back into this
-    // session. Belt-and-braces: also poke our own shutdown sentinel so
-    // RxDart pipelines drain even if the gateway is slow.
-    requestShutdown();
+    if (timeoutSec > 0 && idleUs >= timeoutSec * 1000000) {
+      _idleClosing = true;
+      _send(const MetricEvent('dart_session_idle_timeout_total'));
+      _send(OutboundClose(
+        code: 4001,
+        reason: 'idle_timeout_${timeoutSec}s',
+      ));
+      requestShutdown();
+      return;
+    }
+
+    // (2) Age-based eviction.
+    final maxAgeSec = _boot.maxAgeSeconds;
+    final ageIdleSec = _boot.ageBasedIdleSeconds;
+    if (maxAgeSec > 0 && ageIdleSec >= 0) {
+      final ageUs = nowUs - _boot.spawnedAtUs;
+      if (ageUs >= maxAgeSec * 1000000 &&
+          idleUs >= ageIdleSec * 1000000) {
+        _idleClosing = true;
+        _send(const MetricEvent('dart_session_aged_out_total'));
+        _send(OutboundClose(
+          code: 4003,
+          reason: 'session_aged_${maxAgeSec}s',
+        ));
+        requestShutdown();
+        return;
+      }
+    }
   }
 
   void _joinTopics() {

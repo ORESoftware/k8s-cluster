@@ -61,9 +61,27 @@ const int kDefaultSessionsPerHost = 100;
 const int kMinSessionsPerHost = 1;
 const int kMaxSessionsPerHost = 2000;
 
-/// Default idle timeout for WebSocket sessions (5 minutes). Override
+/// Default idle timeout for WebSocket sessions (20 minutes). Override
 /// with `WS_IDLE_TIMEOUT_SECONDS`. Set to 0 to disable.
-const int kDefaultIdleTimeoutSeconds = 300;
+const int kDefaultIdleTimeoutSeconds = 1200;
+
+/// Default hard upper bound on session age (3 hours). Sessions older
+/// than this get evicted as soon as they've been idle for at least
+/// [kDefaultAgeBasedIdleSeconds]. Override with `WS_MAX_AGE_SECONDS`.
+/// Set to 0 to disable age-based eviction.
+const int kDefaultMaxAgeSeconds = 10800;
+
+/// Idle threshold paired with [kDefaultMaxAgeSeconds]. Override with
+/// `WS_AGE_BASED_IDLE_SECONDS`.
+const int kDefaultAgeBasedIdleSeconds = 30;
+
+/// Default interval between server-driven Clock fragments (1 Hz).
+/// Override with `WS_CLOCK_INTERVAL_SECONDS`. At 20K connections a
+/// 1 Hz jaspr render rate is ~20 cores; bump this to 5–15 s when
+/// running the connection-count benchmark and let the loader's
+/// `RECEIVE_TIMEOUT_SECONDS` rise above this value. Setting to 0
+/// disables the clock entirely (idle/age timers still fire).
+const int kDefaultClockIntervalSeconds = 1;
 
 /// Maximum size, in bytes, of an inbound WS text/binary frame the
 /// supervisor will accept from a peer. Anything larger triggers a
@@ -95,9 +113,12 @@ class SessionSupervisor {
     required this.conversations,
     int sessionsPerHost = kDefaultSessionsPerHost,
     this.idleTimeoutSeconds = kDefaultIdleTimeoutSeconds,
+    this.maxAgeSeconds = kDefaultMaxAgeSeconds,
+    this.ageBasedIdleSeconds = kDefaultAgeBasedIdleSeconds,
     this.maxInboundBytes = kDefaultMaxInboundBytes,
     this.maxOutboundRatePerSecond = kDefaultMaxOutboundRatePerSecond,
     this.slowClientWindows = kDefaultSlowClientWindows,
+    this.clockIntervalSeconds = kDefaultClockIntervalSeconds,
   }) : sessionsPerHost = sessionsPerHost
             .clamp(kMinSessionsPerHost, kMaxSessionsPerHost);
 
@@ -117,6 +138,16 @@ class SessionSupervisor {
   /// 0 disables the check.
   final int idleTimeoutSeconds;
 
+  /// Hard age limit on a session (seconds). Sessions older than this
+  /// AND idle for [ageBasedIdleSeconds] get evicted with a 4003
+  /// `session_aged` close. Lets old session-host isolates retire as
+  /// their slot occupants naturally lapse, capping per-host RAM growth
+  /// and giving the host pool a steady churn rate. 0 disables.
+  final int maxAgeSeconds;
+
+  /// Idle threshold that pairs with [maxAgeSeconds].
+  final int ageBasedIdleSeconds;
+
   /// Inbound text/binary frames larger than this trigger a 1009
   /// `message too big` close. Set to 0 to disable.
   final int maxInboundBytes;
@@ -128,6 +159,10 @@ class SessionSupervisor {
   /// Consecutive over-limit windows before we actually kill the slow
   /// session. Smooths over transient bursts.
   final int slowClientWindows;
+
+  /// Per-session interval between Clock OOB swap fragments. Threaded
+  /// into each [SessionBootMessage] so individual sessions enforce it.
+  final int clockIntervalSeconds;
 
   /// `true` once SIGTERM (or supervisor.requestDrain) has run. The
   /// supervisor refuses new attaches and forwards the drain sentinel
@@ -240,6 +275,9 @@ class SessionSupervisor {
       outbound: outbound.sendPort,
       spawnedAtUs: DateTime.now().microsecondsSinceEpoch,
       idleTimeoutSeconds: idleTimeoutSeconds,
+      maxAgeSeconds: maxAgeSeconds,
+      ageBasedIdleSeconds: ageBasedIdleSeconds,
+      clockIntervalSeconds: clockIntervalSeconds,
     );
 
     // Pre-register with the bus + presence index BEFORE handing the

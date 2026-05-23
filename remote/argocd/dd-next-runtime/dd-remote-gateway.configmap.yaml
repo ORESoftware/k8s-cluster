@@ -603,19 +603,23 @@ data:
 
       # /dart — dd-dart-server (full-stack Dart). Same access posture
       # as /fsws/ and /gleam/: gateway-authenticated operator demo
-      # traffic only. dd-dart-server runs two isolates exposed on two
-      # ports:
-      #   * gateway isolate (svc port 8089, name `ws`) — owns the WS
-      #     upgrade path at /dart/wss plus the admin API under
-      #     /dart/admin/*. Slow under heavy WebSocket load is OK; the
-      #     HTML/SPA paths do not live here.
-      #   * HTTP isolate (svc port 8090, name `http`) — owns Jaspr SSR
-      #     under /dart/pages, the Flutter SPAs under /dart/app and
-      #     /dart/mobile, and the asset files. Independent event loop
-      #     so an over-saturated WS gateway never blocks HTML rendering.
-      # We split the two upstreams here so the public URL space stays
-      # the same (everything under /dart/...) but routes to the right
-      # isolate inside the pod.
+      # traffic only. dd-dart-server runs three isolate roles exposed
+      # on three ports:
+      #   * Coordinator (svc port 8088, name `admin`) — main isolate.
+      #     Owns /dart/admin/* and the canonical /metrics for the pod;
+      #     does NOT do any WS work, so admin/Prometheus traffic stays
+      #     responsive even under a saturated WS load.
+      #   * Gateway shards (svc port 8089, name `ws`) — N isolates per
+      #     pod, each binding 8089 with `shared: true` (SO_REUSEPORT
+      #     distribution). Owns the WS upgrade path at /dart/wss and
+      #     the WS frame I/O lifecycle for its share of sockets.
+      #   * HTTP isolate (svc port 8090, name `http`) — single
+      #     dedicated event loop for Jaspr SSR (/dart/pages), Flutter
+      #     SPAs (/dart/app, /dart/mobile), and assets. Isolated from
+      #     the WS gateway so HTML rendering never blocks on WS pumps.
+      # We split the three upstreams here so the public URL space
+      # stays the same (everything under /dart/...) but routes to the
+      # right isolate role inside the pod.
       location = /dart {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -623,7 +627,7 @@ data:
         return 302 /dart/pages;
       }
 
-      # WebSocket upgrade → gateway isolate (port 8089). Long idle
+      # WebSocket upgrade → gateway-shard pool (port 8089). Long idle
       # timeout matches /fsws/ and /gcs/ws/.
       location = /dart/wss {
         if ($dd_gateway_auth_ok = 0) {
@@ -642,8 +646,9 @@ data:
       }
 
       # Admin endpoints (hot-reload status, /dart/admin/db, etc.) live
-      # on the gateway isolate because they read in-process state that
-      # the HTTP isolate cannot see.
+      # on the coordinator (port 8088). The coordinator is the only
+      # isolate that holds the canonical pgPool + hotReloader handles
+      # plus the cross-shard /metrics aggregator.
       location ^~ /dart/admin/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -654,7 +659,7 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://dd-dart-server.default.svc.cluster.local:8089;
+        proxy_pass http://dd-dart-server.default.svc.cluster.local:8088;
       }
 
       # Everything else under /dart/ → dedicated HTTP isolate (port

@@ -2,37 +2,48 @@
 ///
 /// Isolate topology
 /// ----------------
-///   * **Gateway (main isolate, 1)** — port 8089. Owns the WS-side
-///     `HttpServer.bind`, the WSS upgrade path, per-WS socket
-///     reader/writer pumps, and the supervisor state (`EventBus`,
-///     `Presence`, `ConversationRegistry`). Locally serves `/healthz`,
-///     `/readyz`, `/metrics`, `/dart/wss`, `/dart/admin/*`. Other paths
-///     return 404 — the ingress is expected to route them to the HTTP
-///     isolate's port.
-///   * **HTTP isolate (1)** — port 8090 (configurable via
-///     `HTTP_INTERNAL_PORT`). Dedicated event loop for every non-WS,
-///     non-admin route: `/dart/pages/*` (Jaspr SSR), `/dart/app/*` and
-///     `/dart/mobile/*` (Flutter web bundles), `/dart/assets/*`, and
-///     the `/` root redirect. Folds its per-route counters into the
-///     gateway's `Metrics` via a `MetricEvent` SendPort. Separating
-///     HTTP from the WS gateway means a fully-saturated WS pump cannot
-///     stall HTML rendering or static file IO. **All HTTP requests
-///     share this single isolate.**
-///   * **Session-host pool (M isolates)** — each owns up to
-///     `SESSIONS_PER_HOST` (default 100, range 1..2000) WebSocket
-///     session runtimes as plain Dart objects sharing one event loop.
-///     Hosts are spawned lazily by `SessionSupervisor` as load arrives;
-///     `M = ceil(connections / SESSIONS_PER_HOST)`.
+///   * **Coordinator (main isolate, 1)** — port `ADMIN_PORT` (8088).
+///     Owns pgPool, hotReloader, the canonical `Metrics` aggregator,
+///     and the inter-isolate metrics inbox. Serves probes + Prometheus
+///     exposition + `/dart/admin/*`. Does NOT bind the WS port and
+///     does NOT do any WS frame I/O.
+///   * **HTTP isolate (1)** — port `HTTP_INTERNAL_PORT` (8090). Single
+///     dedicated event loop for every non-WS HTTP route: Jaspr SSR
+///     (`/dart/pages/*`), Flutter SPAs (`/dart/app/*`,
+///     `/dart/mobile/*`), assets, root redirect. Forwards per-route
+///     counters to the coordinator via `MetricEvent` SendPort.
+///   * **Gateway shards (N isolates, default `WS_GATEWAY_SHARDS=8`)**
+///     — port `HTTP_PORT` (8089), bound `shared: true` on every shard.
+///     The kernel SO_REUSEPORT hash distributes incoming connections
+///     across shards. Each shard owns its sockets through the full WS
+///     lifecycle (accept → upgrade → frame I/O → close) and runs its
+///     own `EventBus` / `Presence` / `ConversationRegistry` /
+///     `SessionSupervisor` + child host pool. Shards forward counter
+///     increments and periodic gauge snapshots to the coordinator;
+///     gauges are summed across shards in the coordinator's
+///     `/metrics`.
+///   * **Session-host pool (M isolates, owned per-shard)** — each
+///     hosts up to `SESSIONS_PER_HOST` (default 100) WebSocket session
+///     runtimes as plain Dart objects sharing one event loop. Spawned
+///     lazily by each shard's `SessionSupervisor`.
 ///
-/// Setting `SESSIONS_PER_HOST=1` reproduces the legacy
-/// one-isolate-per-WebSocket model for direct A/B comparison.
+/// Single-pod headroom math (8 cores, 4 Gi RAM):
+///   * 8 shards × 1000 sockets/shard = 8 000 active WS conns
+///     comfortably; 20K is feasible with `WS_GATEWAY_SHARDS=16+` and a
+///     non-default `WS_CLOCK_INTERVAL_SECONDS` (5–15 s) so the per-tick
+///     jaspr fan-out cost stays under the pod CPU limit.
 ///
-/// Routes (gateway, port 8089):
+/// Routes (coordinator, port 8088):
 ///   GET  /healthz            — liveness probe
 ///   GET  /readyz             — readiness probe
-///   GET  /metrics            — Prometheus exposition (folds HTTP-isolate counters)
-///   GET  /dart/wss           — WebSocket upgrade → routed onto a session-host isolate
-///   GET  /dart/admin/*       — hot-reload + pg-defs admin (gateway-local state)
+///   GET  /metrics            — Prometheus exposition (counters from
+///                              every isolate + summed gauges)
+///   GET  /dart/admin/*       — hot-reload + pg-defs admin
+///
+/// Routes (gateway shards, port 8089):
+///   GET  /healthz            — cheap mirror so probes can hit :8089
+///   GET  /dart/wss           — WebSocket upgrade → adopted onto the
+///                              shard's session-host pool
 ///
 /// Routes (HTTP isolate, port 8090):
 ///   GET  /                   — 302 → /dart/pages
@@ -51,33 +62,47 @@ import 'dart:isolate';
 
 import 'package:dd_dart_server/db/pg_contract.dart' as pg_contract;
 import 'package:dd_dart_server/db/presence_convs_repo.dart';
-import 'package:dd_dart_server/server/conversation_registry.dart';
-import 'package:dd_dart_server/server/event_bus.dart';
+import 'package:dd_dart_server/server/gateway_isolate.dart';
 import 'package:dd_dart_server/server/hot_reloader.dart';
 import 'package:dd_dart_server/server/http_isolate.dart';
 import 'package:dd_dart_server/server/metrics.dart';
 import 'package:dd_dart_server/server/postgres.dart';
-import 'package:dd_dart_server/server/presence.dart';
 import 'package:dd_dart_server/server/session_supervisor.dart';
 import 'package:dd_dart_server/shared/wire_messages.dart';
 
-const _wssPath = '/dart/wss';
+/// How frequently each gateway shard pushes a [GaugeReport] to the
+/// coordinator. Short enough that `/metrics` is fresh; long enough that
+/// the inter-isolate traffic stays trivial. Override with
+/// `WS_GAUGE_REPORT_INTERVAL_MS`.
+const int _kDefaultGaugeReportIntervalMs = 1000;
+
+/// Default gateway shard count. Each shard owns its own
+/// `HttpServer.bind(..., shared: true)` listener; the kernel
+/// SO_REUSEPORT hash distributes incoming connections across them.
+/// 8 is comfortable on a 4-vCPU pod for ~10K concurrent WS peers; bump
+/// to 16–32 for 20K+ if pod CPU allows. Override with
+/// `WS_GATEWAY_SHARDS`.
+const int _kDefaultGatewayShards = 8;
 
 Future<void> main(List<String> args) async {
   final host = Platform.environment['HTTP_HOST'] ?? '0.0.0.0';
-  final port = int.tryParse(Platform.environment['HTTP_PORT'] ?? '') ?? 8089;
+  final wsPort = int.tryParse(Platform.environment['HTTP_PORT'] ?? '') ?? 8089;
   final httpInternalPort = int.tryParse(
         Platform.environment['HTTP_INTERNAL_PORT'] ?? '',
       ) ??
       8090;
+  final adminPort =
+      int.tryParse(Platform.environment['ADMIN_PORT'] ?? '') ?? 8088;
   final staticDirPath = Platform.environment['STATIC_DIR'] ?? './public';
-  // Independent Flutter web bundle served at /dart/mobile/. Defaults
-  // mirror STATIC_DIR's local-dev shape so a fresh checkout works even
-  // before scripts/build-and-run.sh has populated either tree.
   final mobileStaticDirPath =
       Platform.environment['MOBILE_STATIC_DIR'] ?? './mobile-public';
   final ready = Platform.environment['READY_AT_BOOT'] != 'false';
   final hotReloadEnabled = Platform.environment['HOT_RELOAD'] == 'true';
+  final gatewayShards = (int.tryParse(
+            Platform.environment['WS_GATEWAY_SHARDS'] ?? '',
+          ) ??
+          _kDefaultGatewayShards)
+      .clamp(1, 256);
   final sessionsPerHost = int.tryParse(
         Platform.environment['SESSIONS_PER_HOST'] ?? '',
       ) ??
@@ -86,6 +111,18 @@ Future<void> main(List<String> args) async {
         Platform.environment['WS_IDLE_TIMEOUT_SECONDS'] ?? '',
       ) ??
       kDefaultIdleTimeoutSeconds;
+  final wsMaxAgeSeconds = int.tryParse(
+        Platform.environment['WS_MAX_AGE_SECONDS'] ?? '',
+      ) ??
+      kDefaultMaxAgeSeconds;
+  final wsAgeBasedIdleSeconds = int.tryParse(
+        Platform.environment['WS_AGE_BASED_IDLE_SECONDS'] ?? '',
+      ) ??
+      kDefaultAgeBasedIdleSeconds;
+  final wsClockIntervalSeconds = int.tryParse(
+        Platform.environment['WS_CLOCK_INTERVAL_SECONDS'] ?? '',
+      ) ??
+      kDefaultClockIntervalSeconds;
   final wsMaxInboundBytes = int.tryParse(
         Platform.environment['WS_MAX_INBOUND_BYTES'] ?? '',
       ) ??
@@ -98,8 +135,10 @@ Future<void> main(List<String> args) async {
         Platform.environment['WS_SLOW_CLIENT_WINDOWS'] ?? '',
       ) ??
       kDefaultSlowClientWindows;
-  // SIGTERM gives us up to `terminationGracePeriodSeconds` to drain.
-  // Reserve 5s for the kernel to actually deliver SIGKILL.
+  final gaugeReportIntervalMs = int.tryParse(
+        Platform.environment['WS_GAUGE_REPORT_INTERVAL_MS'] ?? '',
+      ) ??
+      _kDefaultGaugeReportIntervalMs;
   final shutdownGraceSeconds = int.tryParse(
         Platform.environment['SHUTDOWN_GRACE_SECONDS'] ?? '',
       ) ??
@@ -112,16 +151,8 @@ Future<void> main(List<String> args) async {
 
   final metrics = Metrics();
 
-  // Validate the pg-defs contract before we touch the database. If
-  // schema.sql was regenerated and a referenced table no longer exists,
-  // we want a hard, descriptive boot failure here — not a SQL error in
-  // the middle of a request.
   pg_contract.assertPgContract();
 
-  // Postgres pool is opt-in. When DATABASE_URL is unset (the default in
-  // local dev / hot-reload demo), the rest of the server still boots,
-  // and `/dart/admin/db` reports `enabled: false` so operators can tell
-  // at a glance.
   final pgUrl = Platform.environment['DATABASE_URL'] ??
       Platform.environment['RDS_DATABASE_URL'] ??
       Platform.environment['AGENT_TASKS_RDS_DATABASE_URL'];
@@ -135,34 +166,23 @@ Future<void> main(List<String> args) async {
     'contract': pg_contract.pgContractSnapshot(),
   }));
 
-  final bus = EventBus(metrics: metrics);
-  final presence = Presence();
-  final conversations = ConversationRegistry();
-  final supervisor = SessionSupervisor(
-    metrics: metrics,
-    bus: bus,
-    presence: presence,
-    conversations: conversations,
-    sessionsPerHost: sessionsPerHost,
-    idleTimeoutSeconds: wsIdleTimeoutSeconds,
-    maxInboundBytes: wsMaxInboundBytes,
-    maxOutboundRatePerSecond: wsMaxOutboundRate,
-    slowClientWindows: wsSlowClientWindows,
-  );
-
-  // HTTP isolate folds its per-route counters into the gateway's
-  // Metrics object via this inbox. Lives for the lifetime of the
-  // process; the only sender is `httpIsolateEntry`.
-  final httpMetricsInbox = ReceivePort('dd-dart-http-metrics-inbox');
-  httpMetricsInbox.listen((msg) {
+  // Shared metrics inbox: HTTP isolate AND every gateway shard send
+  // [MetricEvent]s here, and shards additionally send periodic
+  // [GaugeReport]s. The coordinator folds counters into [metrics] and
+  // keeps a per-shard gauge map for summed exposition.
+  final metricsInbox = ReceivePort('dd-dart-coordinator-metrics-inbox');
+  final perShardGauges = <int, Map<String, num>>{};
+  final lastGaugeReportAtMs = <int, int>{};
+  metricsInbox.listen((msg) {
     if (msg is MetricEvent) {
       metrics.inc(msg.name, msg.delta);
+    } else if (msg is GaugeReport) {
+      perShardGauges[msg.shardId] = msg.values;
+      lastGaugeReportAtMs[msg.shardId] = DateTime.now().millisecondsSinceEpoch;
     }
   });
 
-  // Spawn the dedicated HTTP isolate before we start accepting WS
-  // traffic, so probe paths on either port respond from the moment the
-  // gateway is reachable.
+  // ---- HTTP isolate ------------------------------------------------------
   final httpHandshake = ReceivePort('dd-dart-http-isolate-handshake');
   await Isolate.spawn<HttpIsolateBoot>(
     httpIsolateEntry,
@@ -172,7 +192,7 @@ Future<void> main(List<String> args) async {
       port: httpInternalPort,
       staticDirPath: staticDirPath,
       mobileStaticDirPath: mobileStaticDirPath,
-      metricsBus: httpMetricsInbox.sendPort,
+      metricsBus: metricsInbox.sendPort,
     ),
     debugName: 'dd-dart-http',
     errorsAreFatal: false,
@@ -185,40 +205,156 @@ Future<void> main(List<String> args) async {
     'bound_port': httpBoundPort,
   }));
 
-  metrics
-    ..registerGauge('dart_sessions_live', () => supervisor.liveCount)
-    ..registerGauge('dart_sessions_spawned', () => supervisor.spawnedTotal)
-    ..registerGauge('dart_session_hosts_live', () => supervisor.hostCount)
-    ..registerGauge(
-        'dart_session_hosts_spawned', () => supervisor.hostsSpawnedTotal)
-    ..registerGauge('dart_session_hosts_terminated',
-        () => supervisor.hostsTerminatedTotal)
-    ..registerGauge(
-        'dart_sessions_per_host_cap', () => supervisor.sessionsPerHost)
-    ..registerGauge('dart_ws_idle_timeout_seconds',
-        () => supervisor.idleTimeoutSeconds)
-    ..registerGauge('dart_eventbus_topics', () => bus.topicCount)
-    ..registerGauge('dart_eventbus_sessions', () => bus.sessionCount)
-    ..registerGauge('dart_eventbus_total_joins', () => bus.totalJoinCount)
-    ..registerGauge('dart_presence_users', () => presence.userCount)
-    ..registerGauge('dart_presence_sessions', () => presence.sessionCount)
-    ..registerGauge('dart_conversations', () => conversations.conversationCount)
-    ..registerGauge('dart_conversation_memberships', () => conversations.totalMemberships)
-    ..registerGauge('dart_conversation_recent_cache_size',
-        () => conversations.recentCache.size)
-    ..registerGauge('dart_conversation_recent_cache_hits',
-        () => conversations.recentCache.hits)
-    ..registerGauge('dart_conversation_recent_cache_misses',
-        () => conversations.recentCache.misses)
-    ..registerGauge('dart_conversation_recent_cache_evicts',
-        () => conversations.recentCache.evicts)
-    ..registerGauge('dart_conversation_recent_cache_expires',
-        () => conversations.recentCache.expires);
+  // ---- Gateway shards ----------------------------------------------------
+  // Each shard binds the SAME WS port with `shared: true`; SO_REUSEPORT
+  // distributes incoming connections across the shard pool. We spawn
+  // shards eagerly at boot so the kernel hash is stable from the first
+  // accepted connection onward (lazy spawn would re-shuffle established
+  // accepts as the listening-socket count grows).
+  final shards = <_GatewayShardHandle>[];
+  for (var shardId = 0; shardId < gatewayShards; shardId++) {
+    final handshake = ReceivePort('dd-dart-shard-$shardId-handshake');
+    final exit = ReceivePort('dd-dart-shard-$shardId-exit');
+    final error = ReceivePort('dd-dart-shard-$shardId-error');
+    Isolate? isolate;
+    try {
+      isolate = await Isolate.spawn<GatewayShardBoot>(
+        gatewayShardEntry,
+        GatewayShardBoot(
+          shardId: shardId,
+          handshake: handshake.sendPort,
+          metricsBus: metricsInbox.sendPort,
+          host: host,
+          port: wsPort,
+          sessionsPerHost: sessionsPerHost,
+          idleTimeoutSeconds: wsIdleTimeoutSeconds,
+          maxAgeSeconds: wsMaxAgeSeconds,
+          ageBasedIdleSeconds: wsAgeBasedIdleSeconds,
+          maxInboundBytes: wsMaxInboundBytes,
+          maxOutboundRatePerSecond: wsMaxOutboundRate,
+          slowClientWindows: wsSlowClientWindows,
+          clockIntervalSeconds: wsClockIntervalSeconds,
+          gaugeReportIntervalMs: gaugeReportIntervalMs,
+        ),
+        debugName: 'dd-dart-gateway-shard-$shardId',
+        errorsAreFatal: false,
+        onExit: exit.sendPort,
+        onError: error.sendPort,
+      );
+    } catch (e, st) {
+      // ignore: avoid_print
+      print(jsonEncode({
+        'event': 'gateway_shard_spawn_failed',
+        'shard': shardId,
+        'error': '$e',
+        'stack': '$st',
+      }));
+      handshake.close();
+      exit.close();
+      error.close();
+      rethrow;
+    }
+    final controlPort = await handshake.first as SendPort;
+    handshake.close();
+    final handle = _GatewayShardHandle(
+      shardId: shardId,
+      isolate: isolate,
+      control: controlPort,
+      exit: exit,
+      error: error,
+    );
+    shards.add(handle);
+    metrics.inc('dart_gateway_shards_spawned_total');
+    handle.exitSub = exit.listen((_) {
+      handle.dead = true;
+      metrics.inc('dart_gateway_shards_terminated_total');
+      exit.close();
+    });
+    handle.errorSub = error.listen((err) {
+      metrics.inc('dart_gateway_shards_error_total');
+      // ignore: avoid_print
+      print(jsonEncode({
+        'event': 'gateway_shard_error',
+        'shard': shardId,
+        'error': '$err',
+      }));
+    });
+  }
+  print(jsonEncode({
+    'event': 'gateway_shards_ready',
+    'count': shards.length,
+    'port': wsPort,
+    'sessions_per_host': sessionsPerHost,
+    'ws_idle_timeout_seconds': wsIdleTimeoutSeconds,
+    'ws_max_age_seconds': wsMaxAgeSeconds,
+    'ws_age_based_idle_seconds': wsAgeBasedIdleSeconds,
+    'ws_clock_interval_seconds': wsClockIntervalSeconds,
+  }));
 
-  // Optional: hot reload via the VM service. Only meaningful when the
-  // process is running in JIT mode (`dart run --enable-vm-service`).
-  // AOT binaries (`dart compile exe`) ship without a JIT, so the
-  // `Service.getInfo()` URI is null and we just no-op.
+  // ---- Coordinator gauges ------------------------------------------------
+  // Coordinator-local gauges first; per-shard summed gauges below.
+  num _sumShardGauge(String name) {
+    var total = 0.0;
+    var hasInt = true;
+    for (final m in perShardGauges.values) {
+      final v = m[name];
+      if (v == null) continue;
+      total += v.toDouble();
+      if (v is! int) hasInt = false;
+    }
+    return hasInt ? total.toInt() : total;
+  }
+
+  num _maxShardGauge(String name) {
+    num? best;
+    for (final m in perShardGauges.values) {
+      final v = m[name];
+      if (v == null) continue;
+      if (best == null || v > best) best = v;
+    }
+    return best ?? 0;
+  }
+
+  metrics
+    ..registerGauge('dart_gateway_shards_configured', () => gatewayShards)
+    ..registerGauge('dart_gateway_shards_live',
+        () => shards.where((s) => !s.dead).length)
+    ..registerGauge('dart_sessions_live',
+        () => _sumShardGauge('dart_sessions_live'))
+    ..registerGauge('dart_sessions_spawned',
+        () => _sumShardGauge('dart_sessions_spawned'))
+    ..registerGauge('dart_session_hosts_live',
+        () => _sumShardGauge('dart_session_hosts_live'))
+    ..registerGauge('dart_session_hosts_spawned',
+        () => _sumShardGauge('dart_session_hosts_spawned'))
+    ..registerGauge('dart_session_hosts_terminated',
+        () => _sumShardGauge('dart_session_hosts_terminated'))
+    ..registerGauge('dart_sessions_per_host_cap',
+        () => _maxShardGauge('dart_sessions_per_host_cap'))
+    ..registerGauge('dart_ws_idle_timeout_seconds',
+        () => _maxShardGauge('dart_ws_idle_timeout_seconds'))
+    ..registerGauge('dart_ws_max_age_seconds',
+        () => _maxShardGauge('dart_ws_max_age_seconds'))
+    ..registerGauge('dart_ws_age_based_idle_seconds',
+        () => _maxShardGauge('dart_ws_age_based_idle_seconds'))
+    ..registerGauge('dart_ws_clock_interval_seconds',
+        () => _maxShardGauge('dart_ws_clock_interval_seconds'))
+    ..registerGauge('dart_eventbus_topics',
+        () => _sumShardGauge('dart_eventbus_topics'))
+    ..registerGauge('dart_eventbus_sessions',
+        () => _sumShardGauge('dart_eventbus_sessions'))
+    ..registerGauge('dart_eventbus_total_joins',
+        () => _sumShardGauge('dart_eventbus_total_joins'))
+    ..registerGauge('dart_presence_users',
+        () => _sumShardGauge('dart_presence_users'))
+    ..registerGauge('dart_presence_sessions',
+        () => _sumShardGauge('dart_presence_sessions'))
+    ..registerGauge('dart_conversations',
+        () => _sumShardGauge('dart_conversations'))
+    ..registerGauge('dart_conversation_memberships',
+        () => _sumShardGauge('dart_conversation_memberships'));
+
+  // ---- Hot reloader ------------------------------------------------------
   HotReloader? hotReloader;
   if (hotReloadEnabled) {
     hotReloader = HotReloader(metrics: metrics, watchPaths: watchPaths);
@@ -234,59 +370,74 @@ Future<void> main(List<String> args) async {
     });
   }
 
-  final server = await HttpServer.bind(host, port, shared: false);
-  // Don't let the entire process get torn down by a TLS-aware load balancer
-  // that probes us with malformed bytes.
-  server.autoCompress = true;
+  // ---- Admin server ------------------------------------------------------
+  final adminServer = await HttpServer.bind(host, adminPort, shared: false);
+  adminServer.autoCompress = true;
   // ignore: avoid_print
   print(jsonEncode({
-    'event': 'dart_server_listening',
+    'event': 'dart_admin_listening',
     'host': host,
-    'port': port,
+    'admin_port': adminServer.port,
+    'ws_port': wsPort,
+    'http_port': httpInternalPort,
+    'gateway_shards': gatewayShards,
     'static_dir': staticDirPath,
     'mobile_static_dir': mobileStaticDirPath,
     'ready': ready,
-    'sessions_per_host_requested': sessionsPerHost,
-    'sessions_per_host_effective': supervisor.sessionsPerHost,
-    'ws_idle_timeout_seconds': supervisor.idleTimeoutSeconds,
   }));
 
-  // Graceful shutdown:
-  //   1. Stop accepting new connections (server.close).
-  //   2. Tell every host to drain its sessions; each session emits a
-  //      4002 `server_shutdown` close so peers can reconnect cleanly
-  //      instead of seeing a TCP RST.
-  //   3. Wait up to SHUTDOWN_GRACE_SECONDS for liveCount → 0.
-  //   4. Hard-kill remaining hosts and exit.
-  //
-  // Idempotent: the second SIGTERM (kubelet escalates to SIGKILL after
-  // the gracePeriod anyway) just re-enters the same future.
+  // ---- SIGTERM handling --------------------------------------------------
+  // Coordinator drain order:
+  //   1. Stop accepting new admin requests.
+  //   2. Send ShardShutdown to every gateway shard (each shard closes
+  //      its listening socket + asks its supervisor to drain).
+  //   3. Wait up to SHUTDOWN_GRACE_SECONDS for `dart_sessions_live`
+  //      across all shards to hit zero.
+  //   4. Hard-kill any laggard shards and exit.
   Completer<void>? shuttingDown;
   Future<void> beginShutdown(String signal) async {
     if (shuttingDown != null) return shuttingDown!.future;
     final c = Completer<void>();
     shuttingDown = c;
+    final liveShards = shards.where((s) => !s.dead).length;
+    final liveSessions = _sumShardGauge('dart_sessions_live').toInt();
     // ignore: avoid_print
     print(jsonEncode({
       'event': 'shutdown_begin',
       'signal': signal,
-      'live_sessions': supervisor.liveCount,
-      'live_hosts': supervisor.hostCount,
+      'live_shards': liveShards,
+      'live_sessions': liveSessions,
       'grace_seconds': shutdownGraceSeconds,
     }));
     try {
-      await server.close(force: false);
+      await adminServer.close(force: false);
     } catch (_) {/* swallow */}
-    supervisor.requestDrain();
+    for (final shard in shards) {
+      if (shard.dead) continue;
+      try {
+        shard.control.send(const ShardShutdown());
+      } catch (_) {/* swallow */}
+    }
     final deadline = DateTime.now().add(Duration(seconds: shutdownGraceSeconds));
-    while (supervisor.liveCount > 0 && DateTime.now().isBefore(deadline)) {
+    while (DateTime.now().isBefore(deadline)) {
+      final stillLive = _sumShardGauge('dart_sessions_live').toInt();
+      final stillRunningShards = shards.where((s) => !s.dead).length;
+      if (stillLive == 0 && stillRunningShards == 0) break;
       await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    // Final reaping. Kills any shard isolates still alive past the
+    // grace deadline so the pod exits promptly.
+    for (final shard in shards) {
+      if (shard.dead) continue;
+      try {
+        shard.isolate.kill(priority: Isolate.beforeNextEvent);
+      } catch (_) {/* swallow */}
     }
     // ignore: avoid_print
     print(jsonEncode({
       'event': 'shutdown_drain_complete',
-      'live_sessions': supervisor.liveCount,
-      'live_hosts': supervisor.hostCount,
+      'final_live_sessions': _sumShardGauge('dart_sessions_live').toInt(),
+      'final_live_shards': shards.where((s) => !s.dead).length,
     }));
     c.complete();
   }
@@ -298,12 +449,12 @@ Future<void> main(List<String> args) async {
     unawaited(beginShutdown('SIGINT'));
   });
 
-  await for (final req in server) {
-    metrics.inc('dart_http_requests_total');
-    unawaited(_route(
+  // ---- Admin request loop ------------------------------------------------
+  await for (final req in adminServer) {
+    metrics.inc('dart_admin_requests_total');
+    unawaited(_routeAdmin(
       req,
       metrics: metrics,
-      supervisor: supervisor,
       ready: ready,
       hotReloader: hotReloader,
       pgPool: pgPool,
@@ -312,18 +463,36 @@ Future<void> main(List<String> args) async {
   }
 
   await hotReloader?.close();
-  await supervisor.close();
-  await conversations.close();
-  await presence.close();
-  await bus.close();
+  metricsInbox.close();
   await pgPool?.close();
   await metrics.close();
 }
 
-Future<void> _route(
+/// Per-shard handle the coordinator keeps so it can monitor and tear
+/// down each shard isolate.
+class _GatewayShardHandle {
+  _GatewayShardHandle({
+    required this.shardId,
+    required this.isolate,
+    required this.control,
+    required this.exit,
+    required this.error,
+  });
+
+  final int shardId;
+  final Isolate isolate;
+  final SendPort control;
+  final ReceivePort exit;
+  final ReceivePort error;
+
+  bool dead = false;
+  StreamSubscription<dynamic>? exitSub;
+  StreamSubscription<dynamic>? errorSub;
+}
+
+Future<void> _routeAdmin(
   HttpRequest req, {
   required Metrics metrics,
-  required SessionSupervisor supervisor,
   required bool ready,
   HotReloader? hotReloader,
   PgPool? pgPool,
@@ -350,86 +519,11 @@ Future<void> _route(
     return;
   }
 
-  // ---- WSS upgrade -------------------------------------------------------
-  if (path == _wssPath) {
-    if (!WebSocketTransformer.isUpgradeRequest(req)) {
-      await _plain(
-        req,
-        'expected websocket upgrade\n',
-        status: HttpStatus.upgradeRequired,
-      );
-      return;
-    }
-    if (supervisor.isDraining) {
-      metrics.inc('dart_wss_upgrade_refused_draining_total');
-      // Still upgrade, then send a clean close so the client gets a
-      // proper WebSocket handshake/close cycle instead of a 503 in the
-      // middle of an HTTP/1.1 upgrade.
-      try {
-        final s = await WebSocketTransformer.upgrade(req);
-        await s.close(1012, 'server_draining');
-      } catch (_) {/* swallow */}
-      return;
-    }
-    metrics.inc('dart_wss_upgrade_total');
-    final WebSocket socket;
-    try {
-      socket = await WebSocketTransformer.upgrade(req);
-    } catch (e) {
-      metrics.inc('dart_wss_upgrade_failed_total');
-      try {
-        await _plain(req, 'upgrade_failed\n',
-            status: HttpStatus.internalServerError);
-      } catch (_) {/* swallow */}
-      return;
-    }
-    final sessionId = _newSessionId();
-    final remote = req.connectionInfo?.remoteAddress.address ?? 'unknown';
-    final headers = <String, String>{};
-    req.headers.forEach((k, v) => headers[k] = v.join(','));
-    // ignore: avoid_print
-    print(jsonEncode({
-      'event': 'wss_session_open',
-      'session_id': sessionId,
-      'remote': remote,
-    }));
-    try {
-      await supervisor.adopt(
-        socket,
-        sessionId: sessionId,
-        remoteAddr: remote,
-        requestPath: path,
-        headers: headers,
-      );
-    } catch (e, st) {
-      metrics.inc('dart_sessions_adopt_failed_total');
-      // ignore: avoid_print
-      print(jsonEncode({
-        'event': 'wss_session_error',
-        'session_id': sessionId,
-        'error': '$e',
-        'stack': '$st',
-      }));
-      // adopt() failed BEFORE the inbound listener was wired up — most
-      // commonly a host-spawn OOM. Send a 1011 (server_error) close so
-      // the loader can reconnect with a clean state instead of seeing a
-      // half-open socket. We swallow secondary errors because by the
-      // time we get here the socket is in an undefined state.
-      try {
-        await socket.close(1011, 'server_overloaded');
-      } catch (_) {/* swallow */}
-    }
-    return;
-  }
-
   // ---- Hot reload admin --------------------------------------------------
-  // Both routes are guarded on the reloader being initialised. They're
-  // intentionally available without auth in this deployment because the
-  // service is only reachable through the cluster's authenticated
-  // gateway; production deployments should sit this behind dd-remote-auth.
   if (path == '/dart/admin/hot-reload-status' && method == 'GET') {
     if (hotReloader == null) {
-      await _plain(req, jsonEncode({'enabled': false}), contentType: 'application/json');
+      await _plain(req, jsonEncode({'enabled': false}),
+          contentType: 'application/json');
       return;
     }
     final body = jsonEncode({
@@ -475,10 +569,6 @@ Future<void> _route(
   }
 
   // ---- Postgres / pg-defs admin -----------------------------------------
-  // `/dart/admin/db` is intentionally read-only and dependency-free of
-  // the in-memory ConversationRegistry — it talks straight to RDS via
-  // the pg-defs contract, so a divergence between the in-memory mirror
-  // and the canonical schema is visible at a glance.
   if (path == '/dart/admin/db' && method == 'GET') {
     if (pgPool == null) {
       await _plain(
@@ -549,12 +639,6 @@ Future<void> _route(
     return;
   }
 
-  // ---- Fallback ----------------------------------------------------------
-  // The gateway intentionally does NOT serve /dart/pages, /dart/app,
-  // /dart/mobile, /dart/assets, or the / root redirect — those live on
-  // the dedicated HTTP isolate (port 8090). The ingress is expected to
-  // route them there. If they reach us anyway, return a clear 404 so
-  // misconfiguration is visible.
   metrics.inc('dart_http_404_total');
   await _plain(req, 'not_found\n', status: HttpStatus.notFound);
 }
@@ -570,12 +654,4 @@ Future<void> _plain(
     ..headers.set('content-type', contentType)
     ..write(body);
   await req.response.close();
-}
-
-/// Short, URL-safe session id. We don't need cryptographic strength here —
-/// the id is only used as a debug breadcrumb and as the EventBus key.
-String _newSessionId() {
-  final us = DateTime.now().microsecondsSinceEpoch;
-  final rnd = (us * 2654435761) & 0xffffffff;
-  return rnd.toRadixString(36).padLeft(7, '0');
 }

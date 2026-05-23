@@ -9,9 +9,16 @@ spec:
   selector:
     app: dd-dart-server
   ports:
-    # `ws` exposes the gateway isolate (probes, /metrics, /dart/wss,
-    # /dart/admin/*). Kept as port 8089 for backwards compatibility
-    # with the existing ingress configmap.
+    # `admin` exposes the coordinator (main isolate): probes,
+    # /metrics, /dart/admin/*. The coordinator does no WS work and is
+    # the canonical place for operator + Prometheus traffic.
+    - name: admin
+      port: 8088
+      targetPort: 8088
+    # `ws` exposes the gateway-shard pool. Each pod runs N shards
+    # bound `shared: true` on this port; kube-proxy sees a single
+    # service endpoint and the kernel SO_REUSEPORT hash distributes
+    # accepted connections across shards inside the pod.
     - name: ws
       port: 8089
       targetPort: 8089

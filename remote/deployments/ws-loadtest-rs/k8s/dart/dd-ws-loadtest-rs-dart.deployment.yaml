@@ -12,12 +12,13 @@ spec:
   # Each replica drives CLIENT_COUNT connections; total simultaneous
   # connections at peak == replicas × CLIENT_COUNT.
   #
-  # As of 2026-05-23 dd-dart-server runs replicas=4 with a single
-  # gateway isolate per pod. One Rust loader pod hit a 4-CPU ceiling
-  # at ~6.8K connections last run, so we shard the loader to match the
-  # server: 4 replicas × 5K clients = 20K total, with 60s ramp per pod
-  # (3 ms/client). Kube-proxy iptables NAT distributes the connections
-  # across the 4 server pods naturally.
+  # As of 2026-05-23 dd-dart-server runs ONE pod with N gateway-shard
+  # isolates bound `shared: true` on port 8089 (SO_REUSEPORT
+  # distribution inside the kernel). The single-pod target lets us
+  # measure how much WS load one Dart process can absorb. We still
+  # shard the loader (4 × 5K = 20K) so a single Rust process doesn't
+  # become the FD/CPU ceiling on its own (one pod hit ~6.8K conns at
+  # 4 CPU last run).
   #
   # Default replicas: 0 — the operator scales to 4 for the duration of
   # a load test and back to 0 afterwards. The Argo CD app no longer
@@ -68,12 +69,9 @@ spec:
             - name: CONNECT_TIMEOUT_SECONDS
               value: "30"
             # Receive timeout has to be loose enough to accommodate
-            # gateway burst-write delay during ramp. The dd-dart-server
-            # gateway emits a 1 Hz clock to every session; under heavy
-            # outbound fan-out it can take 1–10 s to drain the queue
-            # for any single session. 5 s was the previous value and
-            # caused 80% of clients to disconnect with a "no frame in
-            # 5 s" error during the 20K ramp; 30 s gives 30× slack.
+            # gateway burst-write delay during ramp AND larger than
+            # the server's WS_CLOCK_INTERVAL_SECONDS (default 5 s).
+            # 30 s gives 6× clock-tick slack plus drain budget.
             - name: RECEIVE_TIMEOUT_SECONDS
               value: "30"
             - name: RECONNECT_DELAY_MS
