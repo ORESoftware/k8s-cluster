@@ -1,0 +1,45 @@
+# dd-promtail RBAC.
+#
+# promtail's `kubernetes_sd_configs` discovery enriches each container
+# log stream with pod, namespace, container, and app labels, replacing
+# the previous filename-only static_configs setup (which only emitted
+# `filename` and forced every Loki query to use a regex on the path).
+#
+# Discovery role `pod` only needs read on pods, cluster-wide because
+# promtail tails container logs from every namespace via the hostPath
+# /var/log/containers mount. Read-only, no other resources.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-promtail
+  namespace: observability
+  labels:
+    app: dd-promtail
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-promtail
+  labels:
+    app: dd-promtail
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-promtail
+  labels:
+    app: dd-promtail
+subjects:
+  - kind: ServiceAccount
+    name: dd-promtail
+    namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-promtail

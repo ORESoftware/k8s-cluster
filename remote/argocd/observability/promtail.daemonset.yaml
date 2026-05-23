@@ -5,16 +5,23 @@ metadata:
   namespace: observability
   labels:
     app: dd-promtail
+  annotations:
+    # Reloader watches this annotation list and triggers a rolling
+    # restart whenever the named configmap's contents change.
+    configmap.reloader.stakater.com/reload: "dd-promtail-config"
 spec:
   selector:
     matchLabels:
       app: dd-promtail
   template:
     metadata:
+      annotations:
+        dd.dev/config-revision: "2026-05-22-kubernetes-sd"
       labels:
         app: dd-promtail
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: dd-promtail
+      automountServiceAccountToken: true
       containers:
         - name: promtail
           image: grafana/promtail:3.2.1

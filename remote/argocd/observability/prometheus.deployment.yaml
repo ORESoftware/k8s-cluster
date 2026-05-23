@@ -5,6 +5,9 @@ metadata:
   namespace: observability
   labels:
     app: dd-prometheus
+  annotations:
+    # Pick up scrape-config edits without a manual rollout.
+    configmap.reloader.stakater.com/reload: "dd-prometheus-config"
 spec:
   replicas: 1
   selector:

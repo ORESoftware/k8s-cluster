@@ -1,0 +1,136 @@
+# stakater/reloader
+#
+# Watches ConfigMaps and Secrets and triggers a rolling restart on
+# Deployments / StatefulSets / DaemonSets whose pod-template metadata
+# (or controller metadata, depending on the watched annotation) carries
+# either:
+#
+#   - configmap.reloader.stakater.com/reload: "<name>[,<name>...]"
+#   - secret.reloader.stakater.com/reload:    "<name>[,<name>...]"
+#
+# This addresses the previous failure mode where editing a configmap
+# in git had no runtime effect: the old pod kept running with whatever
+# config was loaded at startup, and a manual `kubectl rollout restart`
+# was required to pick up changes. Argo CD syncs the configmap
+# unconditionally but cannot infer "pod must restart" from data drift.
+#
+# Reloader is the lightweight (single Deployment) operator pattern
+# from https://github.com/stakater/Reloader — pinned image, read-only
+# access to configmaps + secrets cluster-wide, write access only to
+# the controllers it has to restart (PATCH on pod-template annotations).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reloader
+  namespace: observability
+  labels:
+    app: reloader
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reloader
+  labels:
+    app: reloader
+rules:
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - secrets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources:
+      - cronjobs
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - rollouts
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: [""]
+    resources:
+      - events
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reloader
+  labels:
+    app: reloader
+subjects:
+  - kind: ServiceAccount
+    name: reloader
+    namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: reloader
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reloader
+  namespace: observability
+  labels:
+    app: reloader
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: reloader
+  template:
+    metadata:
+      labels:
+        app: reloader
+    spec:
+      serviceAccountName: reloader
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: reloader
+          # Pin to a released tag. Bump deliberately when the upstream
+          # changelog calls out an RBAC or behavior change we care
+          # about; do not float on `latest`.
+          image: ghcr.io/stakater/reloader:v1.4.7
+          imagePullPolicy: IfNotPresent
+          args:
+            # Restrict the controller-side annotation we honor so
+            # someone can't accidentally trigger restarts by reusing
+            # any old annotation key.
+            - --reload-strategy=annotations
+            - --auto-reload-all=false
+          ports:
+            - name: http
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

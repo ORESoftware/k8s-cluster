@@ -15,13 +15,38 @@ data:
     clients:
       - url: http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/push
 
+    # Discover every pod via the Kubernetes API and tail its container
+    # logs from /var/log/pods. Labels are derived from pod metadata
+    # (pod, namespace, container, app, node), so Loki queries can pin
+    # by app/pod directly instead of regexing __path__ as the previous
+    # filename-only static_configs setup required.
     scrape_configs:
-      - job_name: kubernetes-containers
-        static_configs:
-          - targets:
-              - localhost
-            labels:
-              job: kubernetes-containers
-              __path__: /var/log/containers/*.log
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
         pipeline_stages:
           - cri: {}
+        relabel_configs:
+          - action: replace
+            replacement: kubernetes-pods
+            target_label: job
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+          # Canonical promtail pattern. The actual on-node directory is
+          # /var/log/pods/<ns>_<pod>_<uid>/<container>/<N>.log, so the
+          # leading `*` glob absorbs the <ns>_<pod>_ prefix while we
+          # match the pod uid+container suffix exactly.
+          - source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+            separator: /
+            replacement: /var/log/pods/*$1/*.log

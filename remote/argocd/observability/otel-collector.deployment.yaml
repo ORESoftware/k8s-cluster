@@ -5,6 +5,13 @@ metadata:
   namespace: observability
   labels:
     app: dd-otel-collector
+  annotations:
+    # Reloader watches this annotation list and triggers a rolling
+    # restart whenever the named configmap's contents change. This
+    # avoids the previous failure mode where editing the scrape config
+    # in git had no runtime effect until someone remembered to bump
+    # `dd.dev/config-revision` below.
+    configmap.reloader.stakater.com/reload: "dd-otel-collector-config"
 spec:
   replicas: 1
   selector:
@@ -13,11 +20,12 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/config-revision: "2026-05-15-nats"
+        dd.dev/config-revision: "2026-05-22-gcs-router-pod-sd"
       labels:
         app: dd-otel-collector
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: dd-otel-collector
+      automountServiceAccountToken: true
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:0.111.0
