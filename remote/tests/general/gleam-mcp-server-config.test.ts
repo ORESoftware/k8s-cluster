@@ -135,6 +135,9 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   const ec2Kustomization = await readRepoFile(
     'remote/deployments/gleam-mcp-server/k8s/ec2/kustomization.yaml',
   );
+  const ec2Pdb = await readRepoFile(
+    'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.pdb.yaml',
+  );
   const minikubeDeployment = await readRepoFile(
     'remote/deployments/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.deployment.yaml',
   );
@@ -155,14 +158,22 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
 
   assert.match(ec2Deployment, /name:\s*dd-gleam-mcp-server/);
   assert.match(ec2Deployment, /ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine/);
-  // The EC2 overlay runs the MCP server straight out of the mounted
-  // checkout (`hostPath: /home/ec2-user/codes/dd/dd-next-1` →
-  // `/opt/dd-next-1` inside the pod) and refuses to start without a
-  // committed `manifest.toml`, so no `cp -R`/`gleam deps download`
-  // step is needed at boot. See commit `073e451` for the rationale.
+  // The EC2 overlay mounts the host checkout read-modify-unsafe at
+  // /opt/dd-next-1 and drops ALL Linux capabilities, so it must copy the
+  // project plus its local-path deps into a writable scratch dir backed
+  // by an explicit, bounded emptyDir before invoking gleam (gleam needs
+  // to write build/dev/erlang/... and the host dir is owned by ec2-user
+  // with no CAP_DAC_OVERRIDE in the pod). Running `gleam run` straight
+  // out of /opt/dd-next-1 silently crash-loops the pod, which surfaces
+  // as a 502 at the public gateway — see commit 073e451 and its revert
+  // for the failure mode.
   assert.match(
     ec2Deployment,
-    /cd \/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*exec gleam run/,
+    /SRC_ROOT=\/opt\/dd-next-1[\s\S]*SCRATCH_ROOT=\/tmp\/dd-gleam-mcp-server[\s\S]*WORK_ROOT="\$SCRATCH_ROOT\/dd-next-1"[\s\S]*mountpoint -q "\$SCRATCH_ROOT"[\s\S]*cp -R "\$SRC_ROOT\/remote\/deployments\/gleam-mcp-server"\/\. "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"\/[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/pg-defs\/generated\/gleam" "\$WORK_ROOT\/remote\/libs\/pg-defs\/generated\/gleam"[\s\S]*cp -R "\$SRC_ROOT\/remote\/libs\/runtime-config-client-gleam"\/\. "\$WORK_ROOT\/remote\/libs\/runtime-config-client-gleam"\/[\s\S]*cd "\$WORK_ROOT\/remote\/deployments\/gleam-mcp-server"[\s\S]*if \[ ! -f manifest\.toml \][\s\S]*if \[ ! -d build\/packages \][\s\S]*exec gleam run/,
+  );
+  assert.doesNotMatch(
+    ec2Deployment,
+    /\n\s+cd \/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server\n\s+if \[ ! -f manifest\.toml \]/,
   );
   assert.match(
     ec2Deployment,
@@ -170,7 +181,6 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   );
   assert.doesNotMatch(ec2Deployment, /apk add/);
   assert.doesNotMatch(ec2Deployment, /^\s*gleam deps download\s*$/m);
-  assert.doesNotMatch(ec2Deployment, /\bcp -R\b/);
   assert.match(ec2Deployment, /exec gleam run/);
   assert.match(ec2Deployment, /containerPort:\s*8090/);
   assert.match(ec2Deployment, /serviceAccountName:\s*dd-gleam-mcp-server/);
@@ -180,9 +190,78 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Deployment, /startupProbe:[\s\S]*failureThreshold:\s*60/);
   assert.match(ec2Deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
   assert.match(ec2Deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*8090/);
-  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*1Gi/);
-  assert.match(ec2Deployment, /limits:[\s\S]*cpu:\s*"4"[\s\S]*memory:\s*8Gi/);
+  assert.match(ec2Deployment, /requests:[\s\S]*cpu:\s*250m[\s\S]*memory:\s*1Gi[\s\S]*ephemeral-storage:\s*256Mi/);
+  assert.match(ec2Deployment, /limits:[\s\S]*cpu:\s*"4"[\s\S]*memory:\s*8Gi[\s\S]*ephemeral-storage:\s*2Gi/);
   assert.match(ec2Deployment, /mountPath:\s*\/opt\/dd-next-1/);
+  // The hostPath mount must be readOnly so even an accidental write or a
+  // misconfigured boot script can't corrupt the source-of-truth host repo
+  // checkout under /home/ec2-user/codes/dd/dd-next-1.
+  assert.match(
+    ec2Deployment,
+    /- name: repo\s*\n\s+mountPath: \/opt\/dd-next-1\s*\n\s+readOnly: true/,
+  );
+  // The scratch space must be an explicit, bounded emptyDir mounted at
+  // the exact path the boot script uses (/tmp/dd-gleam-mcp-server) so
+  // the boot-time copy never consumes the writable layer unbounded.
+  assert.match(
+    ec2Deployment,
+    /- name: scratch\s*\n\s+mountPath: \/tmp\/dd-gleam-mcp-server/,
+  );
+  assert.match(
+    ec2Deployment,
+    /- name: scratch\s*\n\s+emptyDir:\s*\n\s+sizeLimit:\s*1Gi/,
+  );
+  // The main container runs with a read-only root filesystem. The only
+  // mutable surfaces are the two bounded emptyDirs (scratch + tmp), and
+  // gleam's implicit writes (cache/home/gleam-home) are env-redirected
+  // into the scratch mount. Verified end-to-end against
+  // ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine on the docker engine.
+  assert.match(
+    ec2Deployment,
+    /- name: gleam-mcp-server[\s\S]*securityContext:[\s\S]*readOnlyRootFilesystem:\s*true/,
+  );
+  assert.match(
+    ec2Deployment,
+    /- name: tmp\s*\n\s+mountPath: \/tmp/,
+  );
+  assert.match(
+    ec2Deployment,
+    /- name: tmp\s*\n\s+emptyDir:\s*\n\s+sizeLimit:\s*64Mi/,
+  );
+  assert.match(
+    ec2Deployment,
+    /- name: HOME\s*\n\s+value: \/tmp\/dd-gleam-mcp-server\/home/,
+  );
+  assert.match(
+    ec2Deployment,
+    /- name: XDG_CACHE_HOME\s*\n\s+value: \/tmp\/dd-gleam-mcp-server\/cache/,
+  );
+  assert.match(
+    ec2Deployment,
+    /- name: GLEAM_HOME\s*\n\s+value: \/tmp\/dd-gleam-mcp-server\/gleam-home/,
+  );
+  // Boot script must mkdir those env-pinned subdirs before exec'ing
+  // gleam (otherwise gleam will try to create them on the read-only
+  // rootfs if HOME/XDG/GLEAM_HOME isn't already there).
+  assert.match(
+    ec2Deployment,
+    /mkdir -p "\$SCRATCH_ROOT\/home" "\$SCRATCH_ROOT\/cache" "\$SCRATCH_ROOT\/gleam-home"/,
+  );
+  // Init container must run before the main container, fail fast on a
+  // bad host checkout, and produce operator-actionable log lines that
+  // point at the exact host-side fix (warm the checkout / run
+  // `gleam deps download` on the EC2 node). This is the line of defence
+  // that turns the "silent CrashLoop -> 502 at the gateway" failure mode
+  // into a visible `kubectl describe pod` error.
+  assert.match(
+    ec2Deployment,
+    /initContainers:[\s\S]*- name: preflight[\s\S]*image:\s*ghcr\.io\/gleam-lang\/gleam:v1\.16\.0-erlang-alpine[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*for path in[\s\S]*\/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/deployments\/gleam-mcp-server\/manifest\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/gleam\/gleam\.toml[\s\S]*\/opt\/dd-next-1\/remote\/libs\/runtime-config-client-gleam\/gleam\.toml[\s\S]*build\/packages is empty in the host checkout[\s\S]*gleam deps download[\s\S]*preflight: ok/,
+  );
+  // The init container reads the host repo but must never write to it.
+  assert.match(
+    ec2Deployment,
+    /initContainers:[\s\S]*- name: preflight[\s\S]*volumeMounts:[\s\S]*- name: repo\s*\n\s+mountPath: \/opt\/dd-next-1\s*\n\s+readOnly: true/,
+  );
   assert.match(ec2Deployment, /dd\.dev\/telemetry-revision/);
   assert.match(ec2Deployment, /name:\s*HOST[\s\S]*value:\s*0\.0\.0\.0/);
   assert.match(ec2Deployment, /name:\s*PORT[\s\S]*value:\s*'8090'/);
@@ -204,6 +283,17 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Service, /targetPort:\s*8090/);
   assert.match(ec2Kustomization, /dd-gleam-mcp-server\.networkpolicy\.yaml/);
   assert.match(ec2Kustomization, /dd-gleam-mcp-server-rbac\.yaml/);
+  assert.match(ec2Kustomization, /dd-gleam-mcp-server\.pdb\.yaml/);
+  // The single-replica MCP runs with Recreate strategy, so a voluntary
+  // node drain would normally take the only pod down with no warning.
+  // The PodDisruptionBudget keeps a manual `kubectl drain` honest by
+  // requiring an explicit --force / --disable-eviction.
+  assert.match(ec2Pdb, /apiVersion:\s*policy\/v1/);
+  assert.match(ec2Pdb, /kind:\s*PodDisruptionBudget/);
+  assert.match(ec2Pdb, /name:\s*dd-gleam-mcp-server\s*\n/);
+  assert.match(ec2Pdb, /namespace:\s*default/);
+  assert.match(ec2Pdb, /minAvailable:\s*1/);
+  assert.match(ec2Pdb, /selector:[\s\S]*matchLabels:[\s\S]*app:\s*dd-gleam-mcp-server/);
   assert.match(ec2Rbac, /kind:\s*ServiceAccount[\s\S]*name:\s*dd-gleam-mcp-server/);
   assert.match(ec2Rbac, /kind:\s*ClusterRole[\s\S]*name:\s*dd-gleam-mcp-server-read-inventory/);
   assert.match(ec2Rbac, /resources:[\s\S]*-\s*namespaces[\s\S]*-\s*nodes[\s\S]*-\s*pods[\s\S]*-\s*services/);
@@ -236,6 +326,13 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2NetworkPolicy, /port:\s*16686/);
   assert.match(ec2NetworkPolicy, /port:\s*443/);
   assert.match(ec2NetworkPolicy, /port:\s*5432/);
+  // The preflight init container, the boot script, and this whole pod
+  // design assume the NetworkPolicy egress block has no public-internet
+  // escape hatch (we cannot reach hex.pm at runtime). Lock that in: no
+  // `- ipBlock: cidr: 0.0.0.0/0`, no all-allow `to: []` or `to: {}`.
+  assert.doesNotMatch(ec2NetworkPolicy, /0\.0\.0\.0\/0/);
+  assert.doesNotMatch(ec2NetworkPolicy, /to:\s*\[\s*\]/);
+  assert.doesNotMatch(ec2NetworkPolicy, /to:\s*\{\s*\}/);
   // Warm worker containers spawned by `dd-container-pool` reach MCP from
   // the EC2 node host network, so the policy must allow RFC1918 ingress
   // on :8090 in addition to the labelled podSelector clauses above.
@@ -312,6 +409,13 @@ test('Gleam MCP server uses EC2 inventory RBAC and keeps minikube narrow', async
   assert.match(ec2Verifier, /kubernetes_inventory/);
   assert.match(ec2Verifier, /--data '\{"jsonrpc":"2\.0","id":42,"method":"tools\/list"\}'/);
   assert.match(ec2Verifier, /grep -q '"id":42'/);
+  // The verifier must also exercise the hardening we added on top of
+  // the 502 fix: confirm the preflight init container ran and produced
+  // its OK sentinel, and confirm the PDB is in place with minAvailable=1.
+  assert.match(ec2Verifier, /kubectl -n "\$\{namespace\}" logs "\$\{pod\}" -c preflight/);
+  assert.match(ec2Verifier, /grep -q '\^preflight: ok\$'/);
+  assert.match(ec2Verifier, /kubectl -n "\$\{namespace\}" get poddisruptionbudget/);
+  assert.match(ec2Verifier, /minAvailable=1/);
 });
 
 test('Gleam MCP server is exposed through gateway and observability', async () => {

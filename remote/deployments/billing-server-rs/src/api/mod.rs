@@ -169,7 +169,7 @@ pub fn build_router(state: AppState) -> Router {
         // wired `dd-remote-auth` in front yet. The admin router uses
         // `route("/", ...)` for its index so nesting at `/admin` registers
         // both `GET /admin` and `GET /admin/` through axum's normalization.
-        router = router.nest("/admin", crate::admin::build_router());
+        router = router.nest("/admin", crate::admin::build_router(state.clone()));
     }
 
     router.with_state(state)

@@ -4,11 +4,12 @@ use axum::extract::{Path, State};
 use maud::{Markup, html};
 use uuid::Uuid;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::providers::connection::ProviderConnection;
 use crate::state::AppState;
 
-use super::layout::{connection_status_badge, empty_row, flash_error, section_header, short_id};
+use super::errors;
+use super::layout::{connection_status_badge, empty_row, section_header, short_id};
 use super::time::rel_opt;
 
 /// Full table fragment (used for both initial tab paint and HTMX tab swap).
@@ -22,7 +23,7 @@ pub async fn table_fragment(
 pub(super) async fn render_table(state: &AppState, tenant_id: Uuid) -> Markup {
     let rows = match state.connections.list_for_tenant(tenant_id).await {
         Ok(r) => r,
-        Err(e) => return flash_error(e.to_string()),
+        Err(e) => return errors::sanitized("list connections", &e),
     };
 
     html! {
@@ -48,28 +49,30 @@ pub(super) async fn render_table(state: &AppState, tenant_id: Uuid) -> Markup {
                     @if rows.is_empty() {
                         (empty_row(7, "No connections yet. Use the JSON API or OAuth start route to register one."))
                     }
-                    @for c in &rows { (connection_row(c)) }
+                    @for c in &rows { (connection_row(tenant_id, c)) }
                 }
             }
         }
     }
 }
 
+/// `POST /admin/tenants/{tid}/connections/{conn_id}/sync`.
+///
+/// Tenant-scoped path so the URL itself carries the ownership claim and
+/// the audit log is unambiguous. We verify the connection actually
+/// belongs to the path tenant via `connections.get(tenant_id, conn_id)`
+/// (returns NotFound otherwise — same as a non-existent id, so this
+/// can't be used to enumerate connection ids across tenants).
 pub async fn sync_now(
     State(state): State<AppState>,
-    Path(conn_id): Path<Uuid>,
+    Path((tenant_id, conn_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<Markup> {
-    // The connection knows its own tenant, so we don't need a separate path
-    // segment for it here. Look it up to get tenant_id + region.
-    let row = sqlx::query_scalar::<_, Uuid>(
-        r#"SELECT tenant_id FROM provider_connections WHERE id = $1"#,
-    )
-    .bind(conn_id)
-    .fetch_one(&state.pool)
-    .await?;
-
-    let tenant = state.tenants.by_id(row).await?;
-    let region = tenant.region()?;
+    let tenant = state.tenants.by_id(tenant_id).await?;
+    let conn = state.connections.get(tenant.id, conn_id).await?;
+    let region = tenant.region().map_err(|e| match e {
+        AppError::BadRequest(m) => AppError::BadRequest(m),
+        other => other,
+    })?;
 
     let _ = state
         .scheduler
@@ -85,11 +88,19 @@ pub async fn sync_now(
         )
         .await?;
 
+    tracing::info!(
+        admin.action = "connection.sync_now",
+        admin.tenant_id = %tenant.id,
+        admin.connection_id = %conn_id,
+        admin.provider = %conn.provider.tag(),
+        "admin: on-demand connection sync enqueued"
+    );
+
     let conn = state.connections.get(tenant.id, conn_id).await?;
-    Ok(connection_row(&conn))
+    Ok(connection_row(tenant_id, &conn))
 }
 
-fn connection_row(c: &ProviderConnection) -> Markup {
+fn connection_row(tenant_id: Uuid, c: &ProviderConnection) -> Markup {
     html! {
         tr id=(format!("conn-{}", c.id)) {
             td {
@@ -117,9 +128,10 @@ fn connection_row(c: &ProviderConnection) -> Markup {
             td class="num row-actions" {
                 form
                     class="inline"
-                    hx-post=(format!("/admin/connections/{}/sync", c.id))
+                    hx-post=(format!("/admin/tenants/{}/connections/{}/sync", tenant_id, c.id))
                     hx-target=(format!("#conn-{}", c.id))
                     hx-swap="outerHTML"
+                    hx-confirm=(format!("Trigger a sync on {} now?", c.display_label))
                 {
                     button type="submit" class="btn" { "Sync now" }
                 }

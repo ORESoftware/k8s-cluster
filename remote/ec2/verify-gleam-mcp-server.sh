@@ -60,6 +60,41 @@ fi
 echo "Waiting for MCP deployment rollout."
 kubectl -n "${namespace}" rollout status "deployment/${deployment_name}" --timeout="${rollout_timeout}"
 
+echo "Asserting MCP preflight init container produced its OK sentinel."
+preflight_log_lines=""
+mapfile -t mcp_pod_names < <(kubectl -n "${namespace}" get pods -l "app=${deployment_name}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+if [[ ${#mcp_pod_names[@]} -eq 0 ]]; then
+  echo "No pods found for app=${deployment_name} in namespace ${namespace}." >&2
+  exit 1
+fi
+for pod in "${mcp_pod_names[@]}"; do
+  log="$(kubectl -n "${namespace}" logs "${pod}" -c preflight 2>/dev/null || true)"
+  if [[ -z "${log}" ]]; then
+    echo "preflight init container produced no logs for pod ${pod}." >&2
+    exit 1
+  fi
+  if ! grep -q '^preflight: ok$' <<<"${log}"; then
+    echo "preflight init container did not log 'preflight: ok' for pod ${pod}. Last 20 lines:" >&2
+    tail -n 20 <<<"${log}" >&2
+    exit 1
+  fi
+  preflight_log_lines+="${log}"$'\n'
+done
+echo "preflight init container logged OK for ${#mcp_pod_names[@]} pod(s)."
+
+echo "Asserting MCP PodDisruptionBudget is healthy."
+pdb_name="${MCP_PDB_NAME:-${deployment_name}}"
+if ! kubectl -n "${namespace}" get poddisruptionbudget "${pdb_name}" >/dev/null 2>&1; then
+  echo "Expected PodDisruptionBudget ${pdb_name} to exist in namespace ${namespace}." >&2
+  exit 1
+fi
+pdb_min_available="$(kubectl -n "${namespace}" get poddisruptionbudget "${pdb_name}" -o jsonpath='{.spec.minAvailable}')"
+if [[ "${pdb_min_available}" != "1" ]]; then
+  echo "Expected PodDisruptionBudget ${pdb_name} minAvailable=1, got '${pdb_min_available}'." >&2
+  exit 1
+fi
+echo "PodDisruptionBudget ${pdb_name} present with minAvailable=${pdb_min_available}."
+
 mcp_subject_namespace="${service_account#system:serviceaccount:}"
 mcp_subject_namespace="${mcp_subject_namespace%%:*}"
 mcp_subject_name="${service_account##*:}"

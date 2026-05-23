@@ -12,9 +12,10 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::tenants::{CreateTenant, Tenant};
 
-use super::{connections, jobs, locks, notifications};
 use super::layout::{self, NavSection, Tab, caption, empty_row, is_htmx, section_header, tabs};
 use super::time::rel;
+use super::validation;
+use super::{connections, jobs, locks, notifications};
 
 const PAGE_LIMIT: i64 = 200;
 
@@ -28,34 +29,76 @@ pub async fn list_page(State(state): State<AppState>) -> AppResult<Markup> {
         div class="split" style="margin-top: 16px;" {
             section class="card" {
                 h3 { "New tenant" }
+                // No `hx-on:*` handlers — those would require
+                // `'unsafe-eval'` in our CSP. The form stays populated
+                // after a successful submit so the operator can spot-
+                // check the new row and clear/edit manually if needed.
                 form
                     class="stacked"
                     hx-post="/admin/tenants"
                     hx-target="#tenants-table tbody"
                     hx-swap="afterbegin"
-                    hx-on--after-request="if(event.detail.successful) this.reset();"
                 {
                     label class="field" {
                         "Slug"
-                        input type="text" name="slug" required="" placeholder="dancingdragons";
+                        input
+                            type="text"
+                            name="slug"
+                            required=""
+                            placeholder="dancingdragons"
+                            pattern="[a-z][a-z0-9-]{2,39}"
+                            minlength="3"
+                            maxlength="40"
+                            autocomplete="off"
+                            spellcheck="false";
                     }
                     label class="field" {
                         "Display name"
-                        input type="text" name="display_name" required="" placeholder="Dancing Dragons";
+                        input
+                            type="text"
+                            name="display_name"
+                            required=""
+                            placeholder="Dancing Dragons"
+                            maxlength="120"
+                            autocomplete="off";
                     }
                     div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;" {
                         label class="field" {
                             "Country"
-                            input type="text" name="country_code" required="" placeholder="US" maxlength="2";
+                            input
+                                type="text"
+                                name="country_code"
+                                required=""
+                                placeholder="US"
+                                minlength="2"
+                                maxlength="2"
+                                pattern="[A-Za-z]{2}"
+                                autocomplete="off"
+                                spellcheck="false";
                         }
                         label class="field" {
                             "US state (optional)"
-                            input type="text" name="us_state" placeholder="CA" maxlength="2";
+                            input
+                                type="text"
+                                name="us_state"
+                                placeholder="CA"
+                                maxlength="2"
+                                pattern="[A-Za-z]{2}"
+                                autocomplete="off"
+                                spellcheck="false";
                         }
                     }
                     label class="field" {
                         "Base currency"
-                        input type="text" name="base_currency" value="USD" maxlength="3";
+                        input
+                            type="text"
+                            name="base_currency"
+                            value="USD"
+                            minlength="3"
+                            maxlength="3"
+                            pattern="[A-Za-z]{3}"
+                            autocomplete="off"
+                            spellcheck="false";
                     }
                     div class="btn-row" {
                         button type="submit" class="btn btn-primary" { "Create tenant" }
@@ -98,19 +141,41 @@ pub async fn create(
     headers: HeaderMap,
     Form(input): Form<CreateTenantForm>,
 ) -> AppResult<Response> {
-    let create = CreateTenant {
-        slug: input.slug.trim().to_string(),
-        display_name: input.display_name.trim().to_string(),
-        country_code: input.country_code.trim().to_string(),
-        us_state: input.us_state.and_then(non_empty),
-        base_currency: input.base_currency.and_then(non_empty),
-        kms_key_id: None,
-    };
-    if create.slug.is_empty() {
-        return Err(AppError::BadRequest("slug must not be empty".into()));
+    // Validate before we hit the service layer so the user gets a
+    // specific message and we don't write a noisy audit log entry for
+    // obvious junk.
+    let slug = input.slug.trim().to_lowercase();
+    let display_name = input.display_name.trim().to_string();
+    let country_code = input.country_code.trim().to_uppercase();
+    let us_state = input.us_state.and_then(non_empty).map(|s| s.to_uppercase());
+    let base_currency = input.base_currency.and_then(non_empty).map(|s| s.to_uppercase());
+
+    validation::slug(&slug).map_err(|m| AppError::BadRequest(m.into()))?;
+    validation::display_name(&display_name).map_err(|m| AppError::BadRequest(m.into()))?;
+    validation::country_code(&country_code).map_err(|m| AppError::BadRequest(m.into()))?;
+    if let Some(s) = us_state.as_deref() {
+        validation::us_state(s).map_err(|m| AppError::BadRequest(m.into()))?;
+    }
+    if let Some(c) = base_currency.as_deref() {
+        validation::currency_code(c).map_err(|m| AppError::BadRequest(m.into()))?;
     }
 
+    let create = CreateTenant {
+        slug: slug.clone(),
+        display_name,
+        country_code,
+        us_state,
+        base_currency,
+        kms_key_id: None,
+    };
     let tenant = state.tenants.create(create).await?;
+
+    tracing::info!(
+        admin.action = "tenant.create",
+        admin.tenant_id = %tenant.id,
+        admin.tenant_slug = %tenant.slug,
+        "admin: tenant created"
+    );
 
     // HTMX submit → return the new row to be prepended into <tbody>.
     if is_htmx(&headers) {
