@@ -90,6 +90,7 @@ const TelemetryMdpSubject = "dd.remote.telemetry.mdp"
 // Raw runtime telemetry samples ingested by the ai-ml-pipeline. Default for ML_RAW_TELEMETRY_SUBJECT.
 // Service: dd-ai-ml-pipeline
 const TelemetryRawSubject = "dd.remote.telemetry.raw"
+const TelemetryRawQueueGroup = "dd-ai-ml-pipeline"
 
 // Risk-gated buy/sell/hold decisions emitted by the trading server. Default for TRADING_DECISION_SUBJECT.
 // Service: dd-trading-server
