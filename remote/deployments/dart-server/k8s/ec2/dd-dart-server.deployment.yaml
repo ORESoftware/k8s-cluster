@@ -23,7 +23,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-22-jaspr-components'
+        dd.dev/code-revision: '2026-05-22-flutter-base-href-placeholder'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
