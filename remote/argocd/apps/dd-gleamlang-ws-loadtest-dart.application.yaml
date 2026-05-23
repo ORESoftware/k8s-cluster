@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: dd-ws-loadtest-rs-dart
+  name: dd-gleamlang-ws-loadtest-dart
   namespace: argocd
   labels:
     role: loadtest
@@ -11,14 +11,14 @@ spec:
   source:
     repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev
-    path: remote/deployments/ws-loadtest-rs/k8s/dart
+    path: remote/deployments/gleamlang-ws-loadtest/k8s/dart
   destination:
     server: https://kubernetes.default.svc
     namespace: default
   # NOTE: no automated.selfHeal — the deployment ships with replicas=0
-  # so the loader is off by default. Operators scale to 1 for the
-  # duration of a load test and back to 0 afterwards. selfHeal would
-  # revert manual scale operations and keep the loader running.
+  # so Argo CD will not start traffic on its own. Operators scale to 1
+  # for the duration of a load test and back to 0 afterwards. If we
+  # turned on selfHeal here, every manual scale would get reverted.
   syncPolicy:
     automated:
       prune: true

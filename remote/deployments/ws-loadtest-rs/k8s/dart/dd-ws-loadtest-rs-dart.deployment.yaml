@@ -8,13 +8,19 @@ metadata:
     role: loadtest
     target: dd-dart-server
 spec:
-  # 20K WebSocket clients from one loader pod against /dart/wss. The Dart
-  # server uses one isolate per session (Phoenix-style), so this lights up
-  # the full isolate-per-WS path that the Jaspr SSR demo at
-  # /dart/pages/wss uses, and produces a directly comparable mem/cpu
+  # 20K WebSocket clients from one loader pod against /dart/wss.
+  #
+  # As of 2026-05-23 the Dart server runs a session-host pool (multiple
+  # WS sessions per Dart isolate, sized via SESSIONS_PER_HOST) plus a
+  # dedicated HTTP isolate on a separate port. This loader still hits
+  # the WS gateway at :8089 and produces a directly comparable mem/cpu
   # number against `dd-ws-loadtest-rs` (Gleam/BEAM target) and
   # `dd-ws-loadtest-rs-akkaws-*` (JVM/Akka targets).
-  replicas: 1
+  #
+  # Default replicas: 0 — the operator scales to 1 for the duration of
+  # a load test and back to 0 afterwards. The Argo CD app no longer
+  # selfHeals so the manual scale sticks for the test window.
+  replicas: 0
   selector:
     matchLabels:
       app: dd-ws-loadtest-rs-dart
