@@ -404,6 +404,16 @@ class Session {
   }
 
   void _onInboundText(String text) {
+    // Benchmark fast-path: clients that follow the akka pipeline shape
+    // ({"id":"...","payload":"..."}) — what `ws-loadtest-rs LOAD_MODE=
+    // pipeline` and `dd-rust-wss-server` already speak — get an
+    // immediate `{ok:true,result:{id}}` reply without parsing JSON,
+    // routing through HTMX, or rendering Jaspr fragments. Lets the
+    // existing pipeline loader measure RTT against the Dart server in
+    // the same way it measures it against rust-wss-server, so the
+    // head-to-head Dart/Gleam/Rust comparison is apples-to-apples.
+    if (_handleBenchmarkPing(text)) return;
+
     final parsed = parseHtmxInboundJson(text);
     if (parsed == null) {
       unawaited(_emitFragment(const StatusPill('non-json frame ignored')));
@@ -411,6 +421,56 @@ class Session {
     }
     _inboundHtmx.add(parsed);
   }
+
+  /// Cheap substring scan: if [text] looks like a pipeline-mode frame
+  /// ({"id":"..."} and not HTMX), reply with the akka envelope and
+  /// return true. No `jsonDecode` on the hot path.
+  bool _handleBenchmarkPing(String text) {
+    if (text.contains('"HEADERS"')) return false;
+    final id = _extractStringField(text, 'id');
+    if (id == null) return false;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    _emitText(
+      '{"ok":true,"result":{"id":"${_jsonEscape(id)}"},"ts":$ts}',
+    );
+    return true;
+  }
+
+  static String? _extractStringField(String text, String key) {
+    final needle = '"$key"';
+    final keyPos = text.indexOf(needle);
+    if (keyPos < 0) return null;
+    var i = keyPos + needle.length;
+    while (i < text.length) {
+      final c = text.codeUnitAt(i);
+      if (c == 0x20 || c == 0x09) {
+        i++;
+        continue;
+      }
+      break;
+    }
+    if (i >= text.length || text.codeUnitAt(i) != 0x3a) return null;
+    i++;
+    while (i < text.length) {
+      final c = text.codeUnitAt(i);
+      if (c == 0x20 || c == 0x09) {
+        i++;
+        continue;
+      }
+      break;
+    }
+    if (i >= text.length || text.codeUnitAt(i) != 0x22) return null;
+    i++;
+    final start = i;
+    while (i < text.length && text.codeUnitAt(i) != 0x22) {
+      i++;
+    }
+    if (i >= text.length) return null;
+    return text.substring(start, i);
+  }
+
+  static String _jsonEscape(String s) =>
+      s.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 
   void _send(OutboundFrame frame) => _outbound.send(frame);
   void _emitText(String html) => _outbound.send(OutboundText(html));

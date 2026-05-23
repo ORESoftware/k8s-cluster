@@ -29,6 +29,7 @@
 import gleam/erlang/atom
 import gleam/erlang/process.{type Selector, type Subject}
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import mist.{
   type WebsocketConnection, type WebsocketMessage, Binary, Closed, Custom,
   Shutdown, Text,
@@ -198,15 +199,80 @@ pub fn handle(
 ) -> mist.Next(ConnState, ConnMsg) {
   case message {
     Text(text) -> {
-      let label = scope_label(state.scope)
-      let _ =
-        mist.send_text_frame(ws_conn, "echo[" <> label <> "]: " <> text)
-      mist.continue(state)
+      // Benchmark fast-path: if the inbound frame looks like the akka
+      // pipeline shape ({"id":"...","payload":"..."}) — what
+      // `ws-loadtest-rs LOAD_MODE=pipeline` and `dd-rust-wss-server`
+      // already speak — reply with the akka envelope directly. Lets
+      // the existing pipeline loader measure RTT against the Gleam
+      // server in the same way it measures it against Rust and Dart,
+      // so the head-to-head comparison is apples-to-apples.
+      case maybe_extract_id_field(text) {
+        Ok(id) -> {
+          let _ =
+            mist.send_text_frame(
+              ws_conn,
+              "{\"ok\":true,\"result\":{\"id\":\""
+                <> json_escape(id)
+                <> "\"}}",
+            )
+          mist.continue(state)
+        }
+        Error(_) -> {
+          let label = scope_label(state.scope)
+          let _ =
+            mist.send_text_frame(ws_conn, "echo[" <> label <> "]: " <> text)
+          mist.continue(state)
+        }
+      }
     }
     Binary(_) -> mist.continue(state)
     Closed | Shutdown -> mist.stop()
     Custom(msg) -> handle_custom(state, msg, ws_conn)
   }
+}
+
+/// Cheap substring scan: returns Ok(<id>) iff [text] contains an
+/// `"id":"<value>"` field and is NOT an HTMX-shaped frame (which the
+/// product code never sends to Gleam, but we exclude defensively so
+/// the bench fast-path never matches application traffic).
+fn maybe_extract_id_field(text: String) -> Result(String, Nil) {
+  case string.contains(text, "\"HEADERS\"") {
+    True -> Error(Nil)
+    False ->
+      case string.split_once(text, on: "\"id\"") {
+        Error(_) -> Error(Nil)
+        Ok(#(_, after_key)) -> {
+          // After the key, skip optional whitespace + colon + optional
+          // whitespace, then expect an opening `"`.
+          let trimmed = string.trim_start(after_key)
+          case string.starts_with(trimmed, ":") {
+            False -> Error(Nil)
+            True -> {
+              let after_colon =
+                trimmed
+                |> string.drop_start(1)
+                |> string.trim_start
+              case string.starts_with(after_colon, "\"") {
+                False -> Error(Nil)
+                True -> {
+                  let value_region = string.drop_start(after_colon, 1)
+                  case string.split_once(value_region, on: "\"") {
+                    Error(_) -> Error(Nil)
+                    Ok(#(id, _)) -> Ok(id)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+  }
+}
+
+fn json_escape(s: String) -> String {
+  s
+  |> string.replace(each: "\\", with: "\\\\")
+  |> string.replace(each: "\"", with: "\\\"")
 }
 
 fn handle_custom(
