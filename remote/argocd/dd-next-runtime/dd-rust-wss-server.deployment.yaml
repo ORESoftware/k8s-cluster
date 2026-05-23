@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-rust-wss-server
+  namespace: default
+  labels:
+    app: dd-rust-wss-server
+spec:
+  # Single-pod horizontal sharding via in-process acceptor tasks (see
+  # rust-wss-server-rs/src/main.rs). The pod runs:
+  #
+  #   * 1 tokio multi-thread runtime
+  #   * N acceptor tasks, each owning its own TcpListener bound on
+  #     0.0.0.0:8097 with SO_REUSEPORT — 1:1 mirror of dd-dart-server's
+  #     N gateway-shard isolates that bind 8089 with `shared: true`.
+  #   * 1 axum admin server on 8098 (/metrics, /healthz, /readyz)
+  #
+  # Sized via `WS_GATEWAY_SHARDS`. There is intentionally only one
+  # replica — this exists for the head-to-head Dart/Gleam/Rust WSS
+  # benchmark, where each pod is the unit of comparison.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-rust-wss-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/code-revision: '2026-05-23-initial'
+      labels:
+        app: dd-rust-wss-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 25
+      containers:
+        - name: rust-wss-server
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          # Build-on-pod-start, identical to dd-webrtc-signaling. The
+          # repo is mounted from the EC2 host so we don't need an ECR
+          # pipeline for a benchmark-only service. First boot does a
+          # full release build (~60–90s); restarts are warm.
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/rust-wss-server-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            # WS gateway port. Each acceptor task binds this port with
+            # SO_REUSEPORT; the kernel hashes incoming SYNs across the
+            # acceptor pool. Mirrors HTTP_PORT=8089 on dd-dart-server.
+            - name: WS_PORT
+              value: '8097'
+            # Admin (probes + Prometheus). Mirrors ADMIN_PORT=8088 on
+            # dd-dart-server.
+            - name: ADMIN_PORT
+              value: '8098'
+            # Acceptor task count. 8 is the dd-dart-server default and
+            # the right starting point for a 4-vCPU pod carrying ~10K
+            # connections; bump for higher offered load.
+            - name: WS_GATEWAY_SHARDS
+              value: '8'
+          ports:
+            - name: ws
+              containerPort: 8097
+            - name: admin
+              containerPort: 8098
+          # Probes target the admin port so heavy WS load on 8097 can
+          # never starve probe traffic — same separation as the Dart
+          # pod, where probes hit the dedicated HTTP isolate on 8090.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Resources match dd-dart-server so the comparison is fair —
+          # 1 vCPU / 2 Gi steady, burst to 6 cores / 8 Gi under load.
+          resources:
+            requests:
+              cpu: '1'
+              memory: 2Gi
+            limits:
+              cpu: '6'
+              memory: 8Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

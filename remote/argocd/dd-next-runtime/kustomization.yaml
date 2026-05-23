@@ -44,6 +44,8 @@ resources:
   - dd-remote-web-home.service.yaml
   - dd-webrtc-signaling.deployment.yaml
   - dd-webrtc-signaling.service.yaml
+  - dd-rust-wss-server.deployment.yaml
+  - dd-rust-wss-server.service.yaml
   - dd-remote-gateway.configmap.yaml
   - dd-remote-gateway.deployment.yaml
   - dd-runtime-config.deployment.yaml

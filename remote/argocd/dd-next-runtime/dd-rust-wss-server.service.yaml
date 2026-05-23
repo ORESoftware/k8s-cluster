@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-rust-wss-server
+  namespace: default
+  labels:
+    app: dd-rust-wss-server
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-rust-wss-server
+  ports:
+    # WS gateway. The pod runs N acceptor tasks bound on this port with
+    # SO_REUSEPORT; kube-proxy sees a single endpoint and the kernel
+    # hashes accepted SYNs across acceptors inside the pod.
+    - name: ws
+      port: 8097
+      targetPort: 8097
+    # Admin (probes, /metrics). Operator + Prometheus traffic only.
+    - name: admin
+      port: 8098
+      targetPort: 8098
