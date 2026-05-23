@@ -26,6 +26,8 @@
 //   bus.emit({ taskId, seq, event, userId, threadId });
 
 import type { Observable, Subscription } from "rxjs";
+
+import { contextFetch } from "./wrapped-fetch.js";
 import {
   Subject,
   ReplaySubject,
@@ -196,7 +198,7 @@ export class EventBus {
             mergeMap(
               (ev) =>
                 from(
-                  fetch(ingestUrl, {
+                  contextFetch(ingestUrl, {
                     method: "POST",
                     headers: {
                       "Content-Type": "application/json",

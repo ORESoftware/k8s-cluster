@@ -14,11 +14,14 @@
 //! in is the bulk of the actual engineering work; the surface around them
 //! (sealing, replay, breaks, anchoring) is already in place.
 
+pub mod amount;
 pub mod braintree;
 pub mod bridge;
+pub mod circle;
 pub mod coinbase;
 pub mod coinflow;
 pub mod connection;
+pub mod fireblocks;
 pub mod gocardless;
 pub mod mercury;
 pub mod oauth_common;
@@ -55,7 +58,14 @@ pub enum ProviderKind {
     Robinhood,
     Mercury,
     Bridge,
+    // The DB stores `gocardless` (one word) while heck snake_case would
+    // produce `go_cardless`. Pin the variant explicitly.
+    #[sqlx(rename = "gocardless")]
+    #[serde(rename = "gocardless")]
     GoCardless,
+    // Crypto houses (added 2026-05-22)
+    Fireblocks,
+    Circle,
 }
 
 impl ProviderKind {
@@ -78,6 +88,8 @@ impl ProviderKind {
             Self::Mercury => "mercury",
             Self::Bridge => "bridge",
             Self::GoCardless => "gocardless",
+            Self::Fireblocks => "fireblocks",
+            Self::Circle => "circle",
         }
     }
 
@@ -100,7 +112,9 @@ impl ProviderKind {
             | Self::Remitly
             | Self::Robinhood
             | Self::Mercury
-            | Self::Bridge => ProviderAuthKind::ApiKey,
+            | Self::Bridge
+            | Self::Fireblocks
+            | Self::Circle => ProviderAuthKind::ApiKey,
 
             Self::SwiftWire | Self::AchDirect => ProviderAuthKind::BankCoordinates,
             Self::SolanaWallet => ProviderAuthKind::WalletPubkey,
@@ -116,7 +130,8 @@ impl ProviderKind {
             Self::Stripe | Self::Coinflow | Self::Wise | Self::SolanaWallet => Full,
             Self::Revolut | Self::CoinbaseCommerce => Full,
             Self::Mercury | Self::Bridge | Self::GoCardless => Full,
-            Self::Paypal | Self::Braintree | Self::PlaidBank | Self::CoinbasePrime => Stub,
+            Self::Paypal | Self::Braintree | Self::PlaidBank | Self::CoinbasePrime => Full,
+            Self::Fireblocks | Self::Circle => Full,
             Self::SwiftWire | Self::AchDirect => Stub,
             Self::Remitly | Self::Robinhood => LimitedFit,
         }
@@ -144,6 +159,11 @@ pub enum ProviderMaturity {
 #[sqlx(type_name = "provider_auth_kind", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderAuthKind {
+    // The DB stores `oauth2` (no underscore), but heck's snake_case turns
+    // `OAuth2` into `o_auth2`. Pin the variant explicitly so sqlx decodes
+    // the existing column values correctly.
+    #[sqlx(rename = "oauth2")]
+    #[serde(rename = "oauth2")]
     OAuth2,
     ApiKey,
     BankCoordinates,

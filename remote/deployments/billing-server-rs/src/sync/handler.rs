@@ -18,7 +18,8 @@ use crate::solana::SolanaClient;
 use super::rate_limit::ProviderRateLimiter;
 
 use super::{
-    bridge_sync, coinbase_sync, coinflow_sync, gocardless_sync, mercury_sync, revolut_sync,
+    braintree_sync, bridge_sync, circle_sync, coinbase_prime_sync, coinbase_sync, coinflow_sync,
+    fireblocks_sync, gocardless_sync, mercury_sync, paypal_sync, plaid_sync, revolut_sync,
     stripe_sync, wise_sync,
 };
 
@@ -159,10 +160,14 @@ impl JobHandler for ConnectionSyncJob {
                     coinbase_sync::sync_coinbase_commerce(&sctx, &conn, cursor).await
                 }
                 ProviderKind::Revolut => revolut_sync::sync_revolut(&sctx, &conn, cursor).await,
-                ProviderKind::Paypal => not_implemented(&conn).await,
-                ProviderKind::Braintree => not_implemented(&conn).await,
-                ProviderKind::CoinbasePrime => not_implemented(&conn).await,
-                ProviderKind::PlaidBank => not_implemented(&conn).await,
+                ProviderKind::Paypal => paypal_sync::sync_paypal(&sctx, &conn, cursor).await,
+                ProviderKind::Braintree => {
+                    braintree_sync::sync_braintree(&sctx, &conn, cursor).await
+                }
+                ProviderKind::CoinbasePrime => {
+                    coinbase_prime_sync::sync_coinbase_prime(&sctx, &conn, cursor).await
+                }
+                ProviderKind::PlaidBank => plaid_sync::sync_plaid(&sctx, &conn, cursor).await,
                 ProviderKind::SwiftWire => not_implemented(&conn).await,
                 ProviderKind::AchDirect => not_implemented(&conn).await,
                 ProviderKind::Wise => wise_sync::sync_wise(&sctx, &conn, cursor).await,
@@ -172,6 +177,10 @@ impl JobHandler for ConnectionSyncJob {
                 ProviderKind::GoCardless => {
                     gocardless_sync::sync_gocardless(&sctx, &conn, cursor).await
                 }
+                ProviderKind::Fireblocks => {
+                    fireblocks_sync::sync_fireblocks(&sctx, &conn, cursor).await
+                }
+                ProviderKind::Circle => circle_sync::sync_circle(&sctx, &conn, cursor).await,
                 ProviderKind::Remitly | ProviderKind::Robinhood => limited_fit(&conn).await,
             }
         }

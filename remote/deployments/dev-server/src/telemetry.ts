@@ -1,5 +1,12 @@
 import { randomBytes } from "node:crypto";
 
+import {
+  annotateError,
+  snapshotRequestContext,
+  type SerializedRequestContext,
+} from "./request-context.js";
+import { contextFetch } from "./wrapped-fetch.js";
+
 type AttributeValue = string | number | boolean | undefined;
 type SpanStatus = { code: "ok" | "error"; message?: string };
 
@@ -61,13 +68,21 @@ export async function withSpan<T>(
   for (const [key, value] of Object.entries(attributes)) {
     span.setAttribute(key, value);
   }
+  // Seed span with whatever ALS request context is active at span
+  // creation time. Snapshots again on success/failure below so any
+  // late-bound fields (taskId/threadId set inside the handler after
+  // withSpan started) are still captured.
+  applyRequestContextAttributes(span, snapshotRequestContext());
 
   try {
     const result = await work(span);
+    applyRequestContextAttributes(span, snapshotRequestContext());
     span.setStatus({ code: "ok" });
     return result;
   } catch (err) {
+    applyRequestContextAttributes(span, snapshotRequestContext());
     const error = err instanceof Error ? err : new Error(String(err));
+    annotateError(error);
     span.recordException(error);
     span.setStatus({ code: "error", message: error.message });
     throw err;
@@ -76,6 +91,25 @@ export async function withSpan<T>(
     if (telemetryEnabled) {
       void exportSpan(span);
     }
+  }
+}
+
+// Exported for unit tests; also useful if you ever want to stamp
+// request-context attributes onto a span from a custom code path.
+export function applyRequestContextAttributes(
+  span: TelemetrySpan,
+  ctx: SerializedRequestContext | null,
+): void {
+  if (!ctx) return;
+  span.setAttribute("dd.request.id", ctx.requestId);
+  if (ctx.route) span.setAttribute("dd.request.route", ctx.route);
+  if (ctx.method) span.setAttribute("dd.request.method", ctx.method);
+  if (ctx.threadId) span.setAttribute("dd.request.thread_id", ctx.threadId);
+  if (ctx.taskId) span.setAttribute("dd.request.task_id", ctx.taskId);
+  if (ctx.userId) span.setAttribute("dd.request.user_id", ctx.userId);
+  if (ctx.provider) span.setAttribute("dd.request.provider", ctx.provider);
+  for (const [key, value] of Object.entries(ctx.extra)) {
+    span.setAttribute(`dd.request.extra.${key}`, value);
   }
 }
 
@@ -124,7 +158,7 @@ async function exportSpan(span: ExplicitSpan): Promise<void> {
   const timeout = setTimeout(() => controller.abort(), 1500);
 
   try {
-    await fetch(otlpTraceUrl, {
+    await contextFetch(otlpTraceUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

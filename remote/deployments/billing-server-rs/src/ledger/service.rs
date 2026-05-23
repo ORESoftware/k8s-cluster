@@ -37,8 +37,8 @@ impl LedgerService {
         // Try fetch first; create if missing.
         if let Some(acct) = sqlx::query(
             r#"
-            SELECT id, tenant_id, shard_key, user_id, kind AS "kind: AccountKind",
-                   normal_side AS "normal_side: NormalSide", code, currency,
+            SELECT id, tenant_id, shard_key, user_id, kind,
+                   normal_side, code, currency,
                    metadata, created_at
             FROM accounts
             WHERE tenant_id = $1 AND code = $2 AND currency = $3
@@ -222,7 +222,7 @@ impl LedgerService {
         let row = sqlx::query(
             r#"
             SELECT a.id,
-                   a.normal_side AS "normal_side: NormalSide",
+                   a.normal_side,
                    COALESCE(SUM(
                        CASE
                            WHEN a.normal_side = 'debit'  AND p.direction = 'debit'  THEN  p.amount_minor

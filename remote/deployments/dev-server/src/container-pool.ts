@@ -1,3 +1,5 @@
+import { contextFetch } from './wrapped-fetch.js';
+
 export type ContainerPoolClientConfig = {
   baseUrl: string | null;
   authSecret: string | null;
@@ -58,7 +60,7 @@ export async function dispatchContainerPool(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1_000, config.timeoutMs));
   try {
-    const response = await fetch(
+    const response = await contextFetch(
       `${config.baseUrl.replace(/\/+$/, '')}/pools/${encodeURIComponent(pool)}/dispatch`,
       {
         method: 'POST',

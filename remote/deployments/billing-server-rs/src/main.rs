@@ -5,6 +5,7 @@
 //! is the tamper-evidence notary; provider data flows in via OAuth /
 //! webhook ingestors (mostly stubbed in this scaffold).
 
+mod admin;
 mod api;
 mod cdc;
 mod config;
@@ -28,6 +29,8 @@ mod users;
 mod vendors;
 
 use std::sync::Arc;
+use tower::Layer;
+use tower_http::normalize_path::NormalizePathLayer;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
@@ -65,14 +68,22 @@ async fn main() -> anyhow::Result<()> {
     cdc::spawn();
 
     let app = api::build_router(state);
+    // Strip trailing slashes before routing so `/admin/` matches the same
+    // handler as `/admin` (which `Router::nest` does not provide on its own).
+    // Applied to the entire surface — JSON routes do not use trailing
+    // slashes so this is behavior-preserving for them.
+    let app = NormalizePathLayer::trim_trailing_slash().layer(app);
 
     let addr = format!("{}:{}", cfg.host, cfg.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(%addr, "listening");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        axum::ServiceExt::<axum::extract::Request>::into_make_service(app),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     Ok(())
 }

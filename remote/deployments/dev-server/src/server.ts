@@ -69,6 +69,16 @@ import { NatsPublisher } from './nats-publisher.js';
 import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
 import { registerRuntimeConfigRoutes, registerWithControlPlane } from './runtime-config.js';
+import {
+  annotateError,
+  getRequestContext,
+  readErrorRequestContext,
+  runWithRequestContext,
+  setContextField,
+  snapshotRequestContext,
+  type SerializedRequestContext,
+} from './request-context.js';
+import { contextFetch } from './wrapped-fetch.js';
 
 // ---------- Config ----------
 
@@ -1237,7 +1247,7 @@ async function postBreadcrumb(input: {
     headers.authorization = `Bearer ${config.serverAuthSecret}`;
   }
   try {
-    await fetch(
+    await contextFetch(
       `${base}/api/agents/threads/${encodeURIComponent(input.threadId)}/breadcrumbs`,
       {
         method: 'POST',
@@ -2220,7 +2230,7 @@ async function fetchSelectedContextBlobs(state: TaskState): Promise<SelectedCont
   const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
   if (!base) return [];
   try {
-    const response = await fetch(
+    const response = await contextFetch(
       `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context-candidates`,
       {
         method: 'POST',
@@ -2262,7 +2272,7 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     (!state.contextMode || state.contextMode === 'auto') && !hasSelectedThreadTasks;
   if (state.threadId && base && automaticThreadContext) {
     try {
-      const response = await fetch(
+      const response = await contextFetch(
         `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context?limit=${config.threadContextLimit}`,
         { signal: AbortSignal.timeout(10_000) },
       );
@@ -3186,7 +3196,68 @@ async function publishOutputs(state: TaskState, taskOutputsDir: string): Promise
 
 // ---------- HTTP server ----------
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({
+  logger: true,
+  // Reuse caller-supplied x-request-id when present so dev-server joins
+  // the upstream trace started by rest-api / Vercel / a sibling worker.
+  // Otherwise mint a fresh UUID (Fastify's default is a small counter,
+  // which collides across pods).
+  genReqId: (req) => {
+    const incoming = req.headers['x-request-id'];
+    if (typeof incoming === 'string' && incoming.length > 0 && incoming.length <= 200) {
+      return incoming;
+    }
+    if (Array.isArray(incoming) && incoming[0] && incoming[0].length <= 200) {
+      return incoming[0];
+    }
+    return randomUUID();
+  },
+});
+
+// Wrap every request in an AsyncLocalStorage context so handlers,
+// outbound fetches (./wrapped-fetch.ts), and crash handlers can pin
+// activity to the originating request without threading req everywhere.
+fastify.addHook('onRequest', (req, reply, done) => {
+  const path = req.url.split('?')[0] ?? req.url;
+  runWithRequestContext(
+    {
+      requestId: String(req.id),
+      method: req.method,
+      route: req.routeOptions?.url ?? path,
+      path,
+    },
+    () => {
+      reply.header('x-request-id', String(req.id));
+      done();
+    },
+  );
+});
+
+// Surface request-pinned context on every error response. The default
+// Fastify error handler logs the error but drops async context; this
+// one re-tags via annotateError so process-level crash handlers can
+// still recover the request id if the error escapes.
+fastify.setErrorHandler((err, req, reply) => {
+  const enriched = annotateError(err);
+  const snapshot = snapshotRequestContext();
+  req.log.error(
+    {
+      err: enriched,
+      requestContext: snapshot,
+    },
+    'request failed',
+  );
+  if (reply.sent) return;
+  const status =
+    (err as { statusCode?: number }).statusCode &&
+    Number.isInteger((err as { statusCode?: number }).statusCode)
+      ? (err as { statusCode: number }).statusCode
+      : 500;
+  reply.code(status).send({
+    error: enriched.message,
+    requestId: snapshot?.requestId,
+  });
+});
 
 type MetricLabels = Record<string, string | number | boolean | undefined>;
 
@@ -4229,6 +4300,13 @@ fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
       body: parsed.success ? undefined : parsed.error.format(),
     });
   }
+  if (parsed.data.requestId) {
+    // Container-pool dispatchers carry their own opaque request id (used
+    // for dedupe upstream). Surface it on the context.extra so log lines
+    // and downstream fetches can pivot by it.
+    const ctx = getRequestContext();
+    if (ctx) ctx.extra.containerPoolRequestId = parsed.data.requestId;
+  }
   try {
     return await dispatchContainerPool(config.containerPool, params.data.pool, {
       ...parsed.data,
@@ -4333,14 +4411,17 @@ fastify.post('/tasks', async (req, reply) => {
       const { prompt } = parsed.data;
       const taskId = parsed.data.taskId ?? randomUUID();
       span.setAttribute('dd.remote.task_id', taskId);
+      setContextField('taskId', taskId);
 
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       const userId = parsed.data.userId ?? config.userId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
       }
       if (userId) {
         span.setAttribute('dd.remote.user_id', userId);
+        setContextField('userId', userId);
       }
       if (config.threadId && threadId !== config.threadId) {
         return reply.code(409).send({
@@ -4449,6 +4530,7 @@ fastify.post('/tasks', async (req, reply) => {
       span.setAttribute('dd.remote.branch', state.branch);
       span.setAttribute('dd.remote.queue_position', queuePosition);
       span.setAttribute('dd.remote.queued_behind', queuedBehind);
+      setContextField('provider', state.provider);
       tasks.set(taskId, state);
       session.queuedTaskIds.push(taskId);
       emit(state, {
@@ -4549,6 +4631,10 @@ fastify.post('/thread/merge-upstream', async (req, reply) => {
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
+      }
+      if (parsed.data.taskId) {
+        setContextField('taskId', parsed.data.taskId);
       }
       try {
         const result = await mergeUpstreamForThread(parsed.data);
@@ -4580,6 +4666,10 @@ fastify.post('/thread/make-commit', async (req, reply) => {
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
+      }
+      if (parsed.data.taskId) {
+        setContextField('taskId', parsed.data.taskId);
       }
       try {
         const result = await makeCommitForThread(parsed.data);
@@ -4612,6 +4702,10 @@ fastify.post('/thread/open-pr', async (req, reply) => {
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
+      }
+      if (parsed.data.taskId) {
+        setContextField('taskId', parsed.data.taskId);
       }
       try {
         const result = await openPullRequestForThread(parsed.data);
@@ -4724,10 +4818,14 @@ fastify.get('/stream/:taskId', (req, reply) => {
 
 fastify.post('/tasks/:taskId/cancel', async (req, reply) => {
   const { taskId } = req.params as { taskId: string };
+  setContextField('taskId', taskId);
   const state = tasks.get(taskId);
   if (!state) {
     return reply.code(404).send({ error: 'not found' });
   }
+  if (state.threadId) setContextField('threadId', state.threadId);
+  if (state.userId) setContextField('userId', state.userId);
+  if (state.provider) setContextField('provider', state.provider);
   if (state.finished) {
     return reply.code(409).send({ error: 'already finished' });
   }
@@ -4828,7 +4926,7 @@ async function sendHeartbeat(): Promise<void> {
       }
     : undefined;
   try {
-    await fetch(config.heartbeatUrl, {
+    await contextFetch(config.heartbeatUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -4865,7 +4963,7 @@ async function discoverOwnIp(): Promise<string> {
   const ecsMetaUri = process.env.ECS_CONTAINER_METADATA_URI_V4;
   if (ecsMetaUri) {
     try {
-      const res = await fetch(`${ecsMetaUri}/task`);
+      const res = await contextFetch(`${ecsMetaUri}/task`);
       if (res.ok) {
         const meta = (await res.json()) as {
           Containers?: Array<{
@@ -4991,8 +5089,34 @@ function shutdown(signal: string): void {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
+// Pin runtime crashes to the request that caused them. wrapped-fetch
+// already tags network errors via annotateError(); other throw sites
+// fall back to whatever request context is still active on the async
+// stack at crash time. Outside any request (e.g. setInterval heartbeat)
+// requestContext is null and the log still captures the bare error.
+function logCrash(kind: 'uncaughtException' | 'unhandledRejection', err: unknown): void {
+  const e = err instanceof Error ? err : new Error(String(err));
+  const tagged: SerializedRequestContext | null =
+    readErrorRequestContext(e) ?? snapshotRequestContext();
+  fastify.log.error(
+    {
+      err: e,
+      crashKind: kind,
+      requestContext: tagged,
+    },
+    `${kind} pinned to request ${tagged?.requestId ?? '<none>'}`,
+  );
+}
+
+process.on('uncaughtException', (err) => {
+  logCrash('uncaughtException', err);
+});
+process.on('unhandledRejection', (reason) => {
+  logCrash('unhandledRejection', reason);
+});
+
 main().catch((err) => {
-  fastify.log.error(err);
+  logCrash('uncaughtException', err);
   workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();

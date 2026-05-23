@@ -35,6 +35,14 @@ pub struct ProviderConnection {
     pub created_at: DateTime<Utc>,
 }
 
+/// `(total, active, failing)` connection counts for a tenant or globally.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct ConnectionCounts {
+    pub total: i64,
+    pub active: i64,
+    pub failing: i64,
+}
+
 /// Newly-issued / freshly-refreshed credential material to seal and persist.
 #[derive(Clone, Debug)]
 pub struct UpsertCredential {
@@ -80,10 +88,10 @@ impl ConnectionService {
                  display_label, status, metadata)
             VALUES ($1, $2, $3::provider_kind, $4::provider_auth_kind, $5, $6,
                     'pending'::connection_status, $7)
-            RETURNING id, tenant_id, provider AS "provider: ProviderKind",
-                      auth_kind AS "auth_kind: ProviderAuthKind",
+            RETURNING id, tenant_id, provider,
+                      auth_kind,
                       external_account_id, display_label,
-                      status AS "status: ConnectionStatus", scopes,
+                      status, scopes,
                       expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                       metadata, created_at
             "#,
@@ -110,7 +118,7 @@ impl ConnectionService {
         cred: UpsertCredential,
     ) -> AppResult<ProviderConnection> {
         let provider: ProviderKind = sqlx::query_scalar::<_, ProviderKind>(
-            r#"SELECT provider AS "provider: ProviderKind"
+            r#"SELECT provider
                FROM provider_connections
                WHERE id = $1 AND tenant_id = $2"#,
         )
@@ -137,10 +145,10 @@ impl ConnectionService {
                 last_error        = NULL,
                 updated_at        = now()
             WHERE id = $1 AND tenant_id = $2
-            RETURNING id, tenant_id, provider AS "provider: ProviderKind",
-                      auth_kind AS "auth_kind: ProviderAuthKind",
+            RETURNING id, tenant_id, provider,
+                      auth_kind,
                       external_account_id, display_label,
-                      status AS "status: ConnectionStatus", scopes,
+                      status, scopes,
                       expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                       metadata, created_at
             "#,
@@ -165,7 +173,7 @@ impl ConnectionService {
     ) -> AppResult<Vec<u8>> {
         let row = sqlx::query(
             r#"
-            SELECT provider AS "provider: ProviderKind", sealed_credential
+            SELECT provider, sealed_credential
             FROM provider_connections
             WHERE id = $1 AND tenant_id = $2
               AND status = 'active'::connection_status
@@ -187,13 +195,52 @@ impl ConnectionService {
         self.sealer.unseal(tenant_id, provider.tag(), &envelope)
     }
 
+    /// `(total, active, failing)` for the admin dashboard.
+    pub async fn counts(&self, tenant_id: Option<Uuid>) -> AppResult<ConnectionCounts> {
+        let row = match tenant_id {
+            Some(tid) => {
+                sqlx::query(
+                    r#"
+                    SELECT COUNT(*)                                              AS total,
+                           COUNT(*) FILTER (WHERE status = 'active')             AS active,
+                           COUNT(*) FILTER (WHERE status = 'token_refresh_failed'
+                                                  OR last_error IS NOT NULL)    AS failing
+                    FROM provider_connections
+                    WHERE tenant_id = $1
+                    "#,
+                )
+                .bind(tid)
+                .fetch_one(&self.pool)
+                .await?
+            }
+            None => {
+                sqlx::query(
+                    r#"
+                    SELECT COUNT(*)                                              AS total,
+                           COUNT(*) FILTER (WHERE status = 'active')             AS active,
+                           COUNT(*) FILTER (WHERE status = 'token_refresh_failed'
+                                                  OR last_error IS NOT NULL)    AS failing
+                    FROM provider_connections
+                    "#,
+                )
+                .fetch_one(&self.pool)
+                .await?
+            }
+        };
+        Ok(ConnectionCounts {
+            total: row.try_get("total")?,
+            active: row.try_get("active")?,
+            failing: row.try_get("failing")?,
+        })
+    }
+
     pub async fn list_for_tenant(&self, tenant_id: Uuid) -> AppResult<Vec<ProviderConnection>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, tenant_id, provider AS "provider: ProviderKind",
-                   auth_kind AS "auth_kind: ProviderAuthKind",
+            SELECT id, tenant_id, provider,
+                   auth_kind,
                    external_account_id, display_label,
-                   status AS "status: ConnectionStatus", scopes,
+                   status, scopes,
                    expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections
@@ -298,10 +345,10 @@ impl ConnectionService {
     ) -> AppResult<Option<ProviderConnection>> {
         let row = sqlx::query(
             r#"
-            SELECT id, tenant_id, provider AS "provider: ProviderKind",
-                   auth_kind AS "auth_kind: ProviderAuthKind",
+            SELECT id, tenant_id, provider,
+                   auth_kind,
                    external_account_id, display_label,
-                   status AS "status: ConnectionStatus", scopes,
+                   status, scopes,
                    expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections
@@ -325,10 +372,10 @@ impl ConnectionService {
     ) -> AppResult<Option<ProviderConnection>> {
         let row = sqlx::query(
             r#"
-            SELECT id, tenant_id, provider AS "provider: ProviderKind",
-                   auth_kind AS "auth_kind: ProviderAuthKind",
+            SELECT id, tenant_id, provider,
+                   auth_kind,
                    external_account_id, display_label,
-                   status AS "status: ConnectionStatus", scopes,
+                   status, scopes,
                    expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections
@@ -371,10 +418,10 @@ impl ConnectionService {
     pub async fn get(&self, tenant_id: Uuid, connection_id: Uuid) -> AppResult<ProviderConnection> {
         let row = sqlx::query(
             r#"
-            SELECT id, tenant_id, provider AS "provider: ProviderKind",
-                   auth_kind AS "auth_kind: ProviderAuthKind",
+            SELECT id, tenant_id, provider,
+                   auth_kind,
                    external_account_id, display_label,
-                   status AS "status: ConnectionStatus", scopes,
+                   status, scopes,
                    expires_at, refreshed_at, last_sync_at, last_sync_cursor, last_error,
                    metadata, created_at
             FROM provider_connections

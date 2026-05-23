@@ -19,6 +19,8 @@
 import type { FastifyInstance } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
 
+import { contextFetch } from './wrapped-fetch.js';
+
 type RuntimeConfigEnv = 'stage' | 'prod';
 
 type RuntimeConfigEntry = {
@@ -250,7 +252,7 @@ export async function registerWithControlPlane(): Promise<void> {
   let delay = REGISTER_BACKOFF_MS;
   while (true) {
     try {
-      const response = await fetch(registerUrl, {
+      const response = await contextFetch(registerUrl, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

@@ -192,6 +192,31 @@ Plaid webhook JWT verification is not enabled yet; Plaid events are recorded
 as unverified, and strict mode rejects them. Backstop/on-demand
 `/transactions/sync` remains the safe path until the ES256/JWK verifier lands.
 
+## Admin UI
+
+The server ships with a read-mostly HTMX admin surface at `/admin` (the
+JSON API is untouched). It uses [Maud](https://maud.lambda.xyz/) for
+compile-time HTML templates plus [HTMX](https://htmx.org/) 2.0 loaded
+from jsdelivr with SRI integrity — no client toolchain, no bundler, no
+extra container.
+
+What you get:
+
+- `/admin/` — dashboard with tenant / connection / job counts, a 5-second
+  auto-refreshed status pill, and the most recent job runs across all
+  tenants.
+- `/admin/tenants` — list table with an inline HTMX create form that
+  prepends new rows without a full reload.
+- `/admin/tenants/{id}` — tenant detail with HTMX-swapped tabs for
+  Connections, Scheduled jobs, Leases, and Notifications. URLs are
+  pushed (`hx-push-url`) so the active tab survives reloads and shares.
+- Inline HTMX actions: `Run now` and `Enable/Disable` on scheduled jobs,
+  `Sync now` on provider connections. Each returns just the updated row.
+
+Disable in production environments that have not yet wired
+`dd-remote-auth` in front by setting `BILLING_ADMIN_UI_ENABLED=false`.
+Per `AGENTS.md`, public gateway paths must stay authenticated.
+
 ## What is intentionally stubbed in this scaffold
 
 - Provider OAuth code-exchange bodies (Stripe / PayPal / Braintree / Plaid)

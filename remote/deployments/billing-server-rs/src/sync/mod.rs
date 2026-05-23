@@ -25,12 +25,18 @@
 //! providers keep the same contract and should land incrementally without
 //! changing the API + scheduling layer.
 
+pub mod braintree_sync;
 pub mod bridge_sync;
+pub mod circle_sync;
+pub mod coinbase_prime_sync;
 pub mod coinbase_sync;
 pub mod coinflow_sync;
+pub mod fireblocks_sync;
 pub mod gocardless_sync;
 pub mod handler;
 pub mod mercury_sync;
+pub mod paypal_sync;
+pub mod plaid_sync;
 pub mod rate_limit;
 pub mod revolut_sync;
 pub mod stripe_sync;
