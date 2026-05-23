@@ -554,7 +554,7 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     authDeployment,
     /name:\s*DD_AUTH_COOKIE_VALUE[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_COOKIE_VALUE/,
   );
-  assert.match(authDeployment, /name:\s*DD_AUTH_COOKIE_MAX_AGE_SECONDS[\s\S]*value:\s*'3600'/);
+  assert.match(authDeployment, /name:\s*DD_AUTH_COOKIE_MAX_AGE_SECONDS[\s\S]*value:\s*'259200'/);
   assert.match(
     authDeployment,
     /name:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*optional:\s*true/,

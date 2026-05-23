@@ -56,7 +56,9 @@ spec:
                   name: dd-remote-auth-secrets
                   key: DD_AUTH_COOKIE_VALUE
             - name: DD_AUTH_COOKIE_MAX_AGE_SECONDS
-              value: '3600'
+              # 3 days (3 * 24 * 60 * 60 = 259200s). Capped server-side at
+              # the same value in remote/deployments/auth-server-rs/src/main.rs.
+              value: '259200'
             - name: DD_AUTH_TOTP_SECRET_BASE32
               valueFrom:
                 secretKeyRef:

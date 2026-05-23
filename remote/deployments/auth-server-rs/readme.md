@@ -13,7 +13,7 @@ GET  /auth/status                   -> JSON { authenticated, totpRequired, cooki
 Submitting the configured operator passphrase sets:
 
 ```text
-Set-Cookie: dd_auth=<configured-cookie-value>; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax; Secure
+Set-Cookie: dd_auth=<configured-cookie-value>; Path=/; Max-Age=259200; HttpOnly; SameSite=Lax; Secure
 ```
 
 The NGINX gateway accepts either the legacy `Auth` request header or this `dd_auth` cookie when the
@@ -73,7 +73,7 @@ requests.
 | `DD_AUTH_PIN`                    | `dd-remote-auth-secrets` | Operator passphrase.                 |
 | `DD_AUTH_COOKIE_NAME`            | Deployment literal       | Cookie name trusted by the gateway.  |
 | `DD_AUTH_COOKIE_VALUE`           | `dd-remote-auth-secrets` | Cookie value trusted by the gateway. |
-| `DD_AUTH_COOKIE_MAX_AGE_SECONDS` | Deployment literal       | Browser auth session TTL. Defaults to `3600`; capped at one day. |
+| `DD_AUTH_COOKIE_MAX_AGE_SECONDS` | Deployment literal       | Browser auth session TTL in seconds. Defaults to `259200` (3 days); capped at 3 days. |
 | `DD_AUTH_TOTP_SECRET_BASE32`     | `dd-remote-auth-secrets` | Optional base32 TOTP seed. When set, login requires passphrase plus a current six-digit code. |
 | `DD_AUTH_TOTP_WINDOW_STEPS`      | Deployment literal       | Optional TOTP clock-skew window. Defaults to `1`; capped at `2`. |
 

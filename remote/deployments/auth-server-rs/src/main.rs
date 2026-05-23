@@ -70,11 +70,15 @@ fn cookie_value() -> String {
 }
 
 fn cookie_max_age_seconds() -> u64 {
+    // Cap and default to 3 days. The operator passphrase + optional TOTP gate
+    // is still the primary trust boundary; 3 days is the longest "I logged in
+    // earlier this week" window we want to honor without forcing a re-auth.
+    const THREE_DAYS_SECONDS: u64 = 3 * 24 * 60 * 60;
     env::var("DD_AUTH_COOKIE_MAX_AGE_SECONDS")
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|value| *value > 0 && *value <= 86_400)
-        .unwrap_or(3600)
+        .filter(|value| *value > 0 && *value <= THREE_DAYS_SECONDS)
+        .unwrap_or(THREE_DAYS_SECONDS)
 }
 
 fn totp_secret_base32() -> Option<String> {
