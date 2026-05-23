@@ -1342,13 +1342,23 @@ jobs:
           fi
 
           echo "=== /bastion/logs/ws WebSocket smoke (one connect, read N lines) ==="
-          if [ -n "$bastion_pod" ] && [ -n "$target" ] && [ -n "$server_auth" ]; then
+          # Resolve the container name from the inventory response so we
+          # do not hard-code a name that differs from the deployment
+          # template (the bastion validates target.container before the
+          # WS upgrade).
+          target_container=$(echo "$response" | jq -r "
+            (.deployments[]
+              | select(.namespace == \"default\" and .name == \"dd-remote-web-home\")
+              | .pods[] | select(.name == \"$target\") | .containers[0].name) // empty
+          " 2>/dev/null || true)
+          echo "target_container=$target_container"
+          if [ -n "$bastion_pod" ] && [ -n "$target" ] && [ -n "$target_container" ] && [ -n "$server_auth" ]; then
             kubectl -n vpn exec "$bastion_pod" -- sh -lc "
               python3 - <<'PYEOF'
           import json, ssl, socket, base64, hashlib, secrets, urllib.parse, threading, time
           host = '127.0.0.1'
           port = 8111
-          path = '/logs/ws?namespace=default&deployment=dd-remote-web-home&pod=$target&container=web-home'
+          path = '/logs/ws?namespace=default&deployment=dd-remote-web-home&pod=$target&container=$target_container'
           key = base64.b64encode(secrets.token_bytes(16)).decode()
           headers = (
               f'GET {path} HTTP/1.1\r\n'
