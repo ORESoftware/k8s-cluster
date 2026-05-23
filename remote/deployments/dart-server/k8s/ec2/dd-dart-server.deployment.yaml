@@ -23,45 +23,53 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-22-prebuilt-image'
+        dd.dev/code-revision: '2026-05-22-revert-to-runtime-build'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
         - name: dart-server
-          # Pre-built multi-stage image (see ../../Dockerfile). Built on the
-          # EC2 host with:
-          #   docker build \
-          #     -f remote/deployments/dart-server/Dockerfile \
-          #     -t dd-dart-server:dev \
-          #     .
-          # All Flutter and Dart compilation happens at image-build time, so
-          # the pod only runs the AOT-compiled `dd-dart-server` binary and
-          # serves the pre-built Flutter SPA + mobile bundles. This matches
-          # the dd-formal-methods-server / dd-remote-web-home pattern.
-          image: docker.io/library/dd-dart-server:dev
+          # Runtime build pattern: the cirruslabs Flutter image holds Dart
+          # + Flutter, mounts the repo via hostPath, and compiles the AOT
+          # server at start. Flutter web build is gated behind
+          # SKIP_FLUTTER_BUILD so the Jaspr SSR pages and /dart/wss come
+          # up even when the Flutter SPA isn't ready.
+          #
+          # We will switch to a pre-built `dd-dart-server:dev` containerd
+          # image once `nerdctl build` on the host has produced one; until
+          # then this is the safe shape that keeps the deploy alive.
+          image: ghcr.io/cirruslabs/flutter:3.44.0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            runAsNonRoot: true
-            runAsUser: 10001
-            runAsGroup: 10001
             seccompProfile:
               type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/dart-server
+              echo "[dd-dart-server] starting build-and-run.sh"
+              exec scripts/build-and-run.sh
           env:
             - name: HTTP_HOST
               value: 0.0.0.0
             - name: HTTP_PORT
               value: '8089'
             - name: STATIC_DIR
-              value: /opt/dd-dart-server/public
+              value: /opt/dd-next-1/remote/deployments/dart-server/public
             - name: MOBILE_STATIC_DIR
-              value: /opt/dd-dart-server/mobile-public
+              value: /opt/dd-next-1/remote/deployments/dart-server/mobile-public
             - name: READY_AT_BOOT
               value: 'true'
+            - name: DEV_MODE
+              value: 'false'
+            - name: SKIP_FLUTTER_BUILD
+              value: 'true'
+            - name: PUB_CACHE
+              value: /home/cirrus/.pub-cache
           ports:
             - name: http
               containerPort: 8089
@@ -69,13 +77,13 @@ spec:
             httpGet:
               path: /healthz
               port: http
-            periodSeconds: 2
-            failureThreshold: 30
+            periodSeconds: 5
+            failureThreshold: 120
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
-            initialDelaySeconds: 2
+            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
@@ -83,14 +91,34 @@ spec:
             httpGet:
               path: /healthz
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
           resources:
             requests:
-              cpu: 25m
-              memory: 96Mi
-            limits:
-              cpu: '1'
+              cpu: 50m
               memory: 384Mi
+            limits:
+              cpu: '2'
+              memory: 1500Mi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+            - name: pub-cache
+              mountPath: /home/cirrus/.pub-cache
+            - name: flutter-cache
+              mountPath: /opt/flutter/bin/cache
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: pub-cache
+          hostPath:
+            path: /home/ec2-user/.cache/pub-cache-dart-server
+            type: DirectoryOrCreate
+        - name: flutter-cache
+          hostPath:
+            path: /home/ec2-user/.cache/flutter-cache-dart-server
+            type: DirectoryOrCreate
