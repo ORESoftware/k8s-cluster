@@ -208,7 +208,13 @@ mod tests {
 
     #[tokio::test]
     async fn static_asset_serves_vendored_htmx() {
-        let path = assets::htmx_asset_path();
+        // assets::htmx_asset_path() returns the URL under the production
+        // `/admin` nest. The test router isn't nested, so strip the
+        // `/admin` prefix to hit the local `/static/{file}` route.
+        let path = assets::htmx_asset_path()
+            .strip_prefix("/admin")
+            .unwrap()
+            .to_string();
         let r = router(open())
             .oneshot(req("GET", &path))
             .await

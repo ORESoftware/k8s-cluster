@@ -235,11 +235,14 @@ fn origin_is_allowed(origin: &str, host: &str, allow: &[String]) -> bool {
     if allow.iter().any(|o| o == origin) {
         return true;
     }
-    // Strip scheme to get just the host[:port]; compare case-insensitively.
-    let origin_host = origin
+    // Strip scheme to get just the host[:port]; do the prefix match
+    // case-insensitively (browsers normally lowercase the scheme, but a
+    // non-browser client could send `HTTPS://...`).
+    let lowered = origin.to_ascii_lowercase();
+    let origin_host = lowered
         .strip_prefix("https://")
-        .or_else(|| origin.strip_prefix("http://"))
-        .unwrap_or(origin);
+        .or_else(|| lowered.strip_prefix("http://"))
+        .unwrap_or(&lowered);
     origin_host.eq_ignore_ascii_case(host)
 }
 
