@@ -90,15 +90,15 @@ class _HomeShellState extends State<HomeShell> {
               );
             },
           ),
-          StreamBuilder<ConnectionState>(
+          StreamBuilder<WssConnectionState>(
             stream: _client.connection,
-            initialData: ConnectionState.disconnected,
+            initialData: WssConnectionState.disconnected,
             builder: (context, snap) {
-              final s = snap.data ?? ConnectionState.disconnected;
+              final s = snap.data ?? WssConnectionState.disconnected;
               final color = switch (s) {
-                ConnectionState.connected => Colors.greenAccent,
-                ConnectionState.connecting => Colors.amberAccent,
-                ConnectionState.disconnected => Colors.redAccent,
+                WssConnectionState.connected => Colors.greenAccent,
+                WssConnectionState.connecting => Colors.amberAccent,
+                WssConnectionState.disconnected => Colors.redAccent,
               };
               return Padding(
                 padding: const EdgeInsets.only(right: 16),

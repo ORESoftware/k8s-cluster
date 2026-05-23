@@ -23,7 +23,7 @@ spec:
       labels:
         app: dd-dart-server
       annotations:
-        dd.dev/code-revision: '2026-05-22-flutter-base-href-placeholder'
+        dd.dev/code-revision: '2026-05-22-fix-connection-state-collision'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -58,6 +58,13 @@ spec:
               value: '8089'
             - name: STATIC_DIR
               value: /opt/dd-next-1/remote/deployments/dart-server/public
+            # Independent Flutter web bundle served at /dart/mobile/.
+            # scripts/build-and-run.sh atomically swaps the
+            # `flutter_mobile_app/build/web` output into this stable
+            # path, mirroring the STATIC_DIR pattern above so the
+            # running server never sees a half-written tree.
+            - name: MOBILE_STATIC_DIR
+              value: /opt/dd-next-1/remote/deployments/dart-server/mobile-public
             - name: READY_AT_BOOT
               value: 'true'
             # Hot reload toggle. When DEV_MODE=true, the in-pod runner

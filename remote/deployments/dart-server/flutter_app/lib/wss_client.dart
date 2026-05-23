@@ -41,8 +41,8 @@ class WssClient {
 
   // ---- Reactive state surface ---------------------------------------------
 
-  final connection = BehaviorSubject<ConnectionState>.seeded(
-    ConnectionState.disconnected,
+  final connection = BehaviorSubject<WssConnectionState>.seeded(
+    WssConnectionState.disconnected,
   );
 
   final clock = BehaviorSubject<String>.seeded('');
@@ -74,11 +74,11 @@ class WssClient {
   // ---- Connect / send / close ---------------------------------------------
 
   Future<void> connect() async {
-    if (connection.value == ConnectionState.connected ||
-        connection.value == ConnectionState.connecting) {
+    if (connection.value == WssConnectionState.connected ||
+        connection.value == WssConnectionState.connecting) {
       return;
     }
-    connection.add(ConnectionState.connecting);
+    connection.add(WssConnectionState.connecting);
     try {
       final ch = WebSocketChannel.connect(url);
       _channel = ch;
@@ -86,18 +86,18 @@ class WssClient {
         _onFrame,
         onError: (Object err, StackTrace st) {
           status.add('error: $err');
-          connection.add(ConnectionState.disconnected);
+          connection.add(WssConnectionState.disconnected);
         },
         onDone: () {
-          connection.add(ConnectionState.disconnected);
+          connection.add(WssConnectionState.disconnected);
           status.add('disconnected');
         },
       );
-      connection.add(ConnectionState.connected);
+      connection.add(WssConnectionState.connected);
       status.add('connected');
     } catch (e) {
       status.add('connect failed: $e');
-      connection.add(ConnectionState.disconnected);
+      connection.add(WssConnectionState.disconnected);
     }
   }
 
@@ -186,7 +186,7 @@ class WssClient {
     await _sub?.cancel();
     await _channel?.sink.close();
     _channel = null;
-    connection.add(ConnectionState.disconnected);
+    connection.add(WssConnectionState.disconnected);
   }
 
   Future<void> dispose() async {
@@ -366,7 +366,7 @@ class WssClient {
       .replaceAll('&#39;', "'");
 }
 
-enum ConnectionState { disconnected, connecting, connected }
+enum WssConnectionState { disconnected, connecting, connected }
 
 class LobbyEntry {
   const LobbyEntry({required this.from, required this.text, required this.self});
