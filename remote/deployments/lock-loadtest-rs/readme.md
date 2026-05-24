@@ -62,9 +62,9 @@ Field semantics:
   to negative-test broker validation (broker rejects with a clear
   error; the run will count those as `failedAcquires`).
 - `useAcquireMany` — every 16th iteration each worker sends an
-  `acquire-many` over a 3-key window. **Note:** there is a known
-  queuing bug under contention; leave this `false` unless you're
-  intentionally exercising that path.
+  `acquire-many` over a 3-key window, validating fencing tokens for
+  every member key. Useful for stressing the broker's progressive
+  queue-and-grant machinery for multi-key requests.
 
 ### Run summary (`GET /runs/last`)
 
@@ -125,10 +125,6 @@ p99=200µs (loopback). Cross-cluster numbers will be lower; see
 
 - Single in-flight run at a time. If you `POST /runs` while one is
   active you get HTTP 409.
-- `acquire-many` queuing under contention: the underlying client
-  library has a known issue here (see TODO at the top of
-  `remote/submodules/live-mutex/clients/rust/src/lib.rs`). For now,
-  keep `useAcquireMany: false` (the default).
 - No per-broker concurrent runs. To benchmark all three brokers in
   the same wall-clock window you need three separate replicas of
   this Deployment.
