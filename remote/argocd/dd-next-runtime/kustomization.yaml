@@ -33,6 +33,8 @@ resources:
   - dd-trading-server.service.yaml
   - dd-live-mutex.deployment.yaml
   - dd-live-mutex.service.yaml
+  - dd-rust-network-mutex.deployment.yaml
+  - dd-rust-network-mutex.service.yaml
   - dd-redis-cache.configmap.yaml
   - dd-redis-cache.deployment.yaml
   - dd-redis-cache.networkpolicy.yaml

@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-rust-network-mutex
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-23-rust-network-mutex'
+      labels:
+        app: dd-rust-network-mutex
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: rust-network-mutex
+          # Built in-place from the workspace at /opt/dd-next-1, mirroring the
+          # other Rust deployments (`dd-agent-worker-broker`, `dd-build-server`,
+          # etc). The release binary ends up under target/release inside the
+          # mounted repo and is exec'd directly so cargo doesn't stay in the
+          # supervision tree.
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/rust-network-mutex-rs
+              /usr/local/cargo/bin/cargo build --release
+              exec /opt/dd-next-1/remote/deployments/rust-network-mutex-rs/target/release/dd-rust-network-mutex
+          env:
+            - name: LMX_BIND_HOST
+              value: 0.0.0.0
+            - name: LMX_TCP_PORT
+              value: '6970'
+            - name: LMX_HTTP_PORT
+              value: '6971'
+            # Default-on so the broker GC keeps the per-key fencing-token
+            # counter monotonic across reincarnations of a key.
+            - name: LMX_DEFAULT_TTL_MS
+              value: '4000'
+            - name: LMX_MAX_LOCK_HOLDERS
+              value: '1'
+            - name: LMX_LOG_FORMAT
+              value: text
+            - name: RUST_LOG
+              value: info,lmx=info
+            # Optional: set LMX_AUTH_TOKEN via the dd-agent-secrets bundle when
+            # the broker is exposed beyond cluster-internal ServiceIPs. Inside
+            # `default` namespace traffic is already gated by NetworkPolicy
+            # in the larger cluster, so an empty token is acceptable for the
+            # current bootstrap.
+            - name: LMX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: LMX_AUTH_TOKEN
+                  optional: true
+          ports:
+            - name: lmx-tcp
+              containerPort: 6970
+            - name: http
+              containerPort: 6971
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

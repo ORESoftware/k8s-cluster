@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-rust-network-mutex
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-rust-network-mutex
+  ports:
+    # TCP port for persistent newline-delimited JSON connections from the
+    # built-in Rust Client / RwClient and any cross-runtime port of the
+    # protocol.
+    - name: lmx-tcp
+      port: 6970
+      targetPort: lmx-tcp
+    # HTTP port for serverless / Lambda callers that can't hold a long-lived
+    # TCP connection. Long-poll supported via `?waitMs=` body field.
+    - name: http
+      port: 6971
+      targetPort: http

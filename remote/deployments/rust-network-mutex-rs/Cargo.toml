@@ -1,0 +1,52 @@
+[package]
+name = "dd-rust-network-mutex"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Networked mutex broker + client (Rust port of live-mutex). Synchronizes access to lock state via TCP, Unix domain sockets, and HTTP, with reader-writer locks, fencing tokens, composite (multi-key) locks, and optional TLS."
+authors = ["ORE Software"]
+license = "UNLICENSED"
+
+[[bin]]
+name = "dd-rust-network-mutex"
+path = "src/main.rs"
+
+# Library used both by the binary and by external Rust callers that want
+# an in-process Client / RwClient against a live broker.
+[lib]
+name = "dd_rust_network_mutex"
+path = "src/lib.rs"
+
+[features]
+default = ["tls"]
+tls = ["dep:rustls", "dep:rustls-pemfile", "dep:tokio-rustls"]
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+futures-util = "0.3"
+# `libc` is only used on Linux to call setsockopt(TCP_QUICKACK), but it's
+# small enough on other platforms (the cfg-gated code is just compiled
+# out) that pulling it in unconditionally keeps the Cargo features simple.
+libc = "0.2"
+parking_lot = "0.12"
+prometheus = "0.13"
+rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"], optional = true }
+rustls-pemfile = { version = "=2.2.0", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "io-util", "net", "sync", "fs"] }
+tokio-rustls = { version = "=0.26.0", default-features = false, features = ["ring"], optional = true }
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util", "process", "sync"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
