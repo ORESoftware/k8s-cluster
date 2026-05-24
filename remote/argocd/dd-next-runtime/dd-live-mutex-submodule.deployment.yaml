@@ -23,7 +23,7 @@ spec:
         # Bumping this annotation triggers a rolling restart even when the
         # repo's `dev` HEAD hasn't drifted, which is useful when only the
         # submodule pointer or its working-tree contents changed.
-        dd.dev/telemetry-revision: '2026-05-23-live-mutex-submodule'
+        dd.dev/telemetry-revision: '2026-05-24-live-mutex-submodule-admin-controls'
       labels:
         app: dd-live-mutex-submodule
         role: live-mutex-broker
