@@ -1045,6 +1045,91 @@ data:
         proxy_pass http://dd-build-server.default.svc.cluster.local:8100;
       }
 
+      # /lmx-rs/ — operator HTML status page for the Rust live-mutex
+      # broker (dd-rust-network-mutex). The broker's own HTTP front-end
+      # listens on `:6971` inside the cluster and serves the page at
+      # `/` and `/status`, with siblings `/healthz`, `/metrics`,
+      # `/v1/stats`. The broker enforces no auth itself, so the gateway
+      # operator-cookie gate is the only thing standing between the
+      # public Internet and the read-only operator view. We therefore
+      # require `$dd_gateway_auth_ok = 1` (set by the dd_auth cookie or
+      # the matching Auth header) before proxying.
+      #
+      # The broker's HTML emits absolute hrefs ("/healthz", "/metrics",
+      # "/v1/stats") that, served from the gateway prefix, would
+      # otherwise escape to the gateway root and hit unrelated services.
+      # `sub_filter` rewrites those hrefs back into the prefix so the
+      # footer links work end-to-end. `proxy_set_header Accept-Encoding
+      # ""` ensures upstream returns plaintext HTML so sub_filter can
+      # see the bytes.
+      location = /lmx-rs {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /lmx-rs/;
+      }
+
+      location /lmx-rs/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Accept-Encoding "";
+        sub_filter_types text/html;
+        sub_filter_once off;
+        sub_filter 'href="/healthz"' 'href="/lmx-rs/healthz"';
+        sub_filter 'href="/metrics"' 'href="/lmx-rs/metrics"';
+        sub_filter 'href="/v1/stats"' 'href="/lmx-rs/v1/stats"';
+        sub_filter 'href="/status"' 'href="/lmx-rs/status"';
+        rewrite ^/lmx-rs/?(.*)$ /$1 break;
+        proxy_pass http://dd-rust-network-mutex.default.svc.cluster.local:6971;
+      }
+
+      # /lmx-node/ — operator HTML status page for the patched Node.js
+      # live-mutex broker (dd-live-mutex-submodule). Same model as
+      # /lmx-rs/: the broker's own HTTP front-end on `:6971` exposes
+      # `/`, `/status`, `/healthz`, `/metrics`, `/v1/stats`, and the
+      # gateway operator-cookie gate is the auth boundary.
+      #
+      # NB: this is the *patched submodule* broker, not the upstream
+      # npm baseline (`dd-live-mutex`), which has no HTTP listener at
+      # all. Pointing the proxy at the submodule broker is the whole
+      # reason this route exists.
+      location = /lmx-node {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /lmx-node/;
+      }
+
+      location /lmx-node/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Accept-Encoding "";
+        sub_filter_types text/html;
+        sub_filter_once off;
+        sub_filter 'href="/healthz"' 'href="/lmx-node/healthz"';
+        sub_filter 'href="/metrics"' 'href="/lmx-node/metrics"';
+        sub_filter 'href="/v1/stats"' 'href="/lmx-node/v1/stats"';
+        sub_filter 'href="/status"' 'href="/lmx-node/status"';
+        rewrite ^/lmx-node/?(.*)$ /$1 break;
+        proxy_pass http://dd-live-mutex-submodule.default.svc.cluster.local:6971;
+      }
+
       location = /reaper {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
