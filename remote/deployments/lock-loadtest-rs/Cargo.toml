@@ -1,0 +1,38 @@
+[package]
+name = "dd-lock-loadtest-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Mutex-broker load tester written in Rust. Targets either dd-rust-network-mutex or dd-live-mutex(-submodule) over the live-mutex NDJSON wire protocol; exposes an HTTP trigger API and Prometheus metrics so an operator can drive head-to-head benchmarks from inside the cluster."
+license = "MIT"
+
+[[bin]]
+name = "dd-lock-loadtest-rs"
+path = "src/main.rs"
+
+[dependencies]
+# We pull the in-tree submodule client by relative path so this load
+# tester always builds against the exact wire-protocol our improved
+# branch ships, not whatever drifted on crates.io (the upstream
+# `live-mutex-client` is unpublished anyway).
+live-mutex-client = { path = "../../submodules/live-mutex/clients/rust" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "io-util"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hdrhistogram = "7"
+parking_lot = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+prometheus-client = "0.22"
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+thiserror = "1"
+rand = "0.8"
+
+[profile.release]
+# Default-on LTO is too slow at pod-startup for our build-from-hostPath
+# pattern; thin LTO is the sweet spot for a CLI like this.
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

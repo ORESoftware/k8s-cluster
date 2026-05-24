@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-live-mutex-submodule
+  namespace: default
+  labels:
+    app: dd-live-mutex-submodule
+    # Tag this as the experimental fork so dashboards/Prometheus relabels can
+    # split it out from the upstream npm broker (`dd-live-mutex`) without
+    # string-matching on names.
+    role: live-mutex-broker
+    variant: submodule
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-live-mutex-submodule
+  template:
+    metadata:
+      annotations:
+        # Bumping this annotation triggers a rolling restart even when the
+        # repo's `dev` HEAD hasn't drifted, which is useful when only the
+        # submodule pointer or its working-tree contents changed.
+        dd.dev/telemetry-revision: '2026-05-23-live-mutex-submodule'
+      labels:
+        app: dd-live-mutex-submodule
+        role: live-mutex-broker
+        variant: submodule
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: live-mutex-submodule
+          # Mirrors `dd-live-mutex.deployment.yaml` (npm baseline) so the
+          # only material difference between the two brokers is *which*
+          # source tree gets compiled. We deliberately use `node:22` (not
+          # the `node:12.3.1-alpine` baked into the submodule's bundled
+          # Dockerfile, which is several majors behind and has no longer
+          # been maintained upstream — our workspace runs on Node 22).
+          image: docker.io/library/node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            # NOTE: build-at-pod-start is the established pattern for
+            # this cluster (see dd-rust-network-mutex.deployment.yaml).
+            # Building the submodule in-place avoids needing an ECR push
+            # pipeline just for benchmarking. Trade-off: longer cold
+            # starts (~10-30s npm ci + tsc); acceptable for an internal
+            # benchmark target.
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/submodules/live-mutex
+              # `npm ci` reproduces an exact build from package-lock.json;
+              # `--ignore-scripts` keeps untrusted pre/post-install hooks
+              # from running inside the cluster.
+              npm ci --ignore-scripts
+              npm run build
+              # Surface the running version so a kubectl logs/grep tells
+              # us *which* commit landed on this pod.
+              echo "[live-mutex-submodule] built; HEAD=$(git rev-parse HEAD 2>/dev/null || echo 'unknown') branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+              # The submodule's TS sources expose `dist/lm-start-server.js`
+              # as the entrypoint (see remote/submodules/live-mutex/src/lm-start-server.ts).
+              # `live_mutex_host`/`live_mutex_port` are env-conventions the
+              # broker honors; `LMX_HTTP_PORT` enables the new HTTP front-end
+              # with status page + Prometheus + in-memory bridge that we
+              # added on this branch.
+              exec env \
+                live_mutex_host=0.0.0.0 \
+                live_mutex_port=6970 \
+                LMX_HTTP_PORT=6971 \
+                LMX_HTTP_HOST=0.0.0.0 \
+                node dist/lm-start-server.js
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: lmx-tcp
+              containerPort: 6970
+            - name: http
+              containerPort: 6971
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          # During the build phase the HTTP listener isn't up yet, so we
+          # use TCP probes initially and let the HTTP front-end come up
+          # whenever it can. `failureThreshold: 60` * 5s = 5 minutes,
+          # which is comfortably more than the worst-case `npm ci` we've
+          # seen on the EC2 host.
+          startupProbe:
+            tcpSocket:
+              port: lmx-tcp
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          # Mirrors dd-rust-network-mutex's hostPath. Requires the EC2
+          # node operator to have run:
+          #   git submodule update --init --recursive remote/submodules/live-mutex
+          # at least once on this host.
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
