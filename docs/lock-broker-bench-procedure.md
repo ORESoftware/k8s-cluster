@@ -5,7 +5,7 @@ brokers in this cluster:
 
 | Service                       | Source                                                                 | Variant   |
 |-------------------------------|------------------------------------------------------------------------|-----------|
-| `dd-rust-network-mutex`       | `remote/deployments/rust-network-mutex-rs`                             | Rust port |
+| `dd-rust-network-mutex`       | `remote/submodules/rust-network-mutex-rs`                              | Rust port |
 | `dd-live-mutex-submodule`     | `remote/submodules/live-mutex` branch `feat/sweeper-fencing-acquire-many-http` | Node fork |
 | `dd-live-mutex`               | `npm install live-mutex@0.2.25`                                        | upstream baseline |
 

@@ -11,7 +11,7 @@ The same wire protocol is spoken by three brokers in this cluster:
 
 | Service                       | Source                                   | Improvement set |
 |-------------------------------|------------------------------------------|-----------------|
-| `dd-rust-network-mutex`       | `remote/deployments/rust-network-mutex-rs` | All (Rust port) |
+| `dd-rust-network-mutex`       | `remote/submodules/rust-network-mutex-rs` | All (Rust port) |
 | `dd-live-mutex-submodule`     | `remote/submodules/live-mutex` (branch `feat/sweeper-fencing-acquire-many-http`) | All (Node port of the same set) |
 | `dd-live-mutex`               | upstream `live-mutex@0.2.25` from npm    | None — baseline |
 
@@ -100,7 +100,7 @@ metric `lock_loadtest_last_fencing_violations`.
 
 ```bash
 # Terminal 1: broker
-cd remote/deployments/rust-network-mutex-rs
+cd remote/submodules/rust-network-mutex-rs
 LMX_BIND_HOST=127.0.0.1 LMX_TCP_PORT=16970 LMX_HTTP_PORT=16971 \
   cargo run --release
 
