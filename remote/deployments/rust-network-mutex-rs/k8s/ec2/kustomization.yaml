@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Thin overlay so an operator can run `kubectl apply -k …` against
+# this directory without needing to remember the argocd path. The
+# canonical manifests live under remote/argocd/dd-next-runtime/ and
+# are owned by the `dd-next-runtime` ArgoCD application; this
+# kustomization just re-exports them.
+resources:
+  - ../../../../argocd/dd-next-runtime/dd-rust-network-mutex.deployment.yaml
+  - ../../../../argocd/dd-next-runtime/dd-rust-network-mutex.service.yaml

@@ -23,27 +23,28 @@ spec:
       terminationGracePeriodSeconds: 20
       containers:
         - name: rust-network-mutex
-          # Built in-place from the workspace at /opt/dd-next-1, mirroring the
-          # other Rust deployments (`dd-agent-worker-broker`, `dd-build-server`,
-          # etc). The release binary ends up under target/release inside the
-          # mounted repo and is exec'd directly so cargo doesn't stay in the
-          # supervision tree.
-          image: docker.io/library/rust:1.90-bookworm
+          # Published image from Docker Hub. The Dockerfile in the
+          # submodule (remote/submodules/rust-network-mutex-rs/Dockerfile)
+          # is the source of truth; tags follow the submodule's
+          # Cargo.toml version. To roll out a new build, push a new
+          # tag and bump this `image:` field — ArgoCD will reconcile.
+          #
+          # (Earlier revisions of this manifest source-built at pod
+          # start from a hostPath mount of the workspace at
+          # /opt/dd-next-1; that pattern is preserved in
+          # `dd-live-mutex-submodule.deployment.yaml` for the Node.js
+          # broker but isn't needed here once the Rust binary ships
+          # in a published image.)
+          image: docker.io/oresoftware/live-mutex-rs:0.1.123
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              cd /opt/dd-next-1/remote/deployments/rust-network-mutex-rs
-              /usr/local/cargo/bin/cargo build --release
-              exec /opt/dd-next-1/remote/deployments/rust-network-mutex-rs/target/release/dd-rust-network-mutex
+            capabilities:
+              drop:
+                - ALL
           env:
             - name: LMX_BIND_HOST
               value: 0.0.0.0
@@ -104,11 +105,3 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
-          volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-      volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory

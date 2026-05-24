@@ -19,7 +19,7 @@
 	path = remote/submodules/live-mutex
 	url = git@github.com:ORESoftware/live-mutex.git
 	branch = dev
-[submodule "remote/deployments/rust-network-mutex-rs"]
-	path = remote/deployments/rust-network-mutex-rs
+[submodule "remote/submodules/rust-network-mutex-rs"]
+	path = remote/submodules/rust-network-mutex-rs
 	url = git@github.com:ORESoftware/live-mutex-rs.git
 	branch = dev
