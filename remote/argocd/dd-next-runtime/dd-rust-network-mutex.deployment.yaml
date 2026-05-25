@@ -35,7 +35,7 @@ spec:
           # `dd-live-mutex-submodule.deployment.yaml` for the Node.js
           # broker but isn't needed here once the Rust binary ships
           # in a published image.)
-          image: docker.io/oresoftware/live-mutex-rs:0.1.123
+          image: docker.io/oresoftware/live-mutex-rs:0.1.125
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
