@@ -12,3 +12,11 @@ spec:
     - name: lmx
       port: 6970
       targetPort: lmx
+    # Optional HTTP admin/status listener; opted into by the deployment
+    # via `LMX_HTTP_PORT=6971`. Anything that does not need the persistent
+    # TCP lock protocol — `/admin/otel`, `/healthz`, `/metrics`, the
+    # status HTML page — comes through here. The gateway routes
+    # `/lmx-node/*` proxy to this port.
+    - name: http
+      port: 6971
+      targetPort: http
