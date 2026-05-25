@@ -23,7 +23,7 @@ spec:
         # Bumping this annotation triggers a rolling restart even when the
         # repo's `dev` HEAD hasn't drifted, which is useful when only the
         # submodule pointer or its working-tree contents changed.
-        dd.dev/telemetry-revision: '2026-05-24-live-mutex-submodule-numeric-uid'
+        dd.dev/telemetry-revision: '2026-05-24-live-mutex-submodule-vsock-harden'
       labels:
         app: dd-live-mutex-submodule
         role: live-mutex-broker
@@ -48,7 +48,7 @@ spec:
           # which left the broker pinned to whatever was checked out the
           # first time and made `dd-live-mutex-submodule` 502 whenever
           # the host drifted.
-          image: docker.io/oresoftware/live-mutex-submodule:0.2.25-dd.2
+          image: docker.io/oresoftware/live-mutex-submodule:0.2.25-dd.3
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
