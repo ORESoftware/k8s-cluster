@@ -23,7 +23,7 @@ spec:
         # Bumping this annotation triggers a rolling restart even when the
         # repo's `dev` HEAD hasn't drifted, which is useful when only the
         # submodule pointer or its working-tree contents changed.
-        dd.dev/telemetry-revision: '2026-05-24-live-mutex-submodule-published-image'
+        dd.dev/telemetry-revision: '2026-05-24-live-mutex-submodule-numeric-uid'
       labels:
         app: dd-live-mutex-submodule
         role: live-mutex-broker
@@ -48,11 +48,22 @@ spec:
           # which left the broker pinned to whatever was checked out the
           # first time and made `dd-live-mutex-submodule` 502 whenever
           # the host drifted.
-          image: docker.io/oresoftware/live-mutex-submodule:0.2.25-dd.1
+          image: docker.io/oresoftware/live-mutex-submodule:0.2.25-dd.2
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
+            # Pin the UID/GID explicitly. The image's OCI config already
+            # records `User: 1000:1000` (`node` user in
+            # node:22-bookworm-slim), but setting these here guards
+            # against a future image rebuild that accidentally drops the
+            # numeric USER directive — without an explicit `runAsUser`
+            # and a non-numeric image USER, the kubelet's `runAsNonRoot`
+            # check refuses to start the container ("cannot verify user
+            # is non-root"), the Service has zero endpoints, and the
+            # gateway returns 502 on /lmx-node/.
+            runAsUser: 1000
+            runAsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
             capabilities:
