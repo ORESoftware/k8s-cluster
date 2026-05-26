@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-23-rust-network-mutex'
+        dd.dev/telemetry-revision: '2026-05-24-rust-network-mutex-0.1.125-real-binary'
       labels:
         app: dd-rust-network-mutex
     spec:
