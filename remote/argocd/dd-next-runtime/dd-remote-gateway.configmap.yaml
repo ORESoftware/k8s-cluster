@@ -760,38 +760,6 @@ data:
         proxy_pass http://dd-rust-network-mutex.default.svc.cluster.local:6971/;
       }
 
-      # /lmx-node — Node live-mutex broker admin/status surface
-      # (`dd-live-mutex` Service, port 6971; opted in via
-      # `LMX_HTTP_PORT=6971` on the deployment). Same two-layer auth as
-      # `/lmx-rs`. The Node broker does not yet support runtime TCP
-      # toggles or log-level reload; only `/admin/otel` is wired today.
-      # `TCP_QUICKACK` is a Linux-kernel option that Node's `net` API
-      # cannot set — when the admin panel is added the QUICKACK control
-      # is rendered disabled with a "not supported on this runtime"
-      # label.
-      location = /lmx-node {
-        if ($dd_gateway_auth_ok = 0) {
-          return 401;
-        }
-        return 302 /lmx-node/;
-      }
-
-      location /lmx-node/ {
-        if ($dd_gateway_auth_ok = 0) {
-          return 401;
-        }
-        proxy_http_version 1.1;
-        proxy_buffering off;
-        proxy_read_timeout 60;
-        proxy_send_timeout 60;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Auth $dd_gateway_auth_header;
-        proxy_set_header X-Forwarded-Prefix /lmx-node;
-        proxy_pass http://dd-live-mutex.default.svc.cluster.local:6971/;
-      }
-
       location = /gcs {
         if ($dd_gateway_auth_ok = 0) {
           return 401;

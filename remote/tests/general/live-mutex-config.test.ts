@@ -110,7 +110,7 @@ test('gateway exposes /lmx-rs and /lmx-node admin paths behind dd_auth', async (
   assert.match(gateway, /location = \/lmx-node[\s\S]*return 302 \/lmx-node\//);
   assert.match(
     gateway,
-    /location\s+\/lmx-node\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-live-mutex\.default\.svc\.cluster\.local:6971\//,
+    /location\s+\/lmx-node\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-live-mutex-submodule\.default\.svc\.cluster\.local:6971/,
   );
 });
 
