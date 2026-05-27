@@ -30,6 +30,7 @@ COPY remote/deployments/fsharp-ws-server/Program.fs          ./Program.fs
 # SQL schema is read at boot by PgSchema.fs; CopyToOutputDirectory in the
 # fsproj puts it next to the publish output.
 COPY remote/deployments/fsharp-ws-server/sql/                ./sql/
+COPY remote/deployments/fsharp-ws-server/generated/          ./generated/
 RUN dotnet publish DdFsharpWsServer.fsproj \
         -c Release \
         -o /out \

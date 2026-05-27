@@ -54,6 +54,20 @@ const index = JSON.parse(
   readFileSync(resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json'), 'utf8'),
 );
 assert.ok(index.services.length >= 15, 'expected generated API docs for HTTP API deployments');
+assert.deepEqual(index.centralDocsRoutes, ['/api-docs', '/api-docs.json']);
+assert.deepEqual(index.standardDocsRoutes, ['/docs/api', '/api/docs', '/api/docs.json']);
+for (const serviceName of ['dart-server', 'fsharp-ws-server']) {
+  assert.ok(
+    index.services.some((service) => service.service === serviceName),
+    `${serviceName} must stay inside generated API docs coverage`,
+  );
+}
+assert.ok(
+  readFileSync(resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'), 'utf8').includes(
+    'dd runtime API docs',
+  ),
+  'central generated API docs HTML index must be committed and servable by web-home-rs.',
+);
 for (const service of index.services) {
   const docsPath = service.generated.find((path) => path.endsWith('.json'));
   assert.ok(docsPath, `${service.service} must include generated JSON API docs`);

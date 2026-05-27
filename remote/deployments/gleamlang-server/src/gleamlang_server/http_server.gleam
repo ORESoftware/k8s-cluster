@@ -2,6 +2,7 @@ import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/process
+import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/http/response
 import gleam/int
@@ -42,23 +43,24 @@ fn route(
   let broker_subject = process.named_subject(broker_name)
   process.send(broker_subject, broadcaster.RecordHttpRequest)
 
-  case request.path_segments(req) {
-    [] -> redirect("/home")
-    ["home"] -> home_page()
-    ["docs", "api"] -> api_docs.html()
-    ["api", "docs"] -> api_docs.html()
-    ["api", "docs.json"] -> api_docs.json()
-    ["healthz"] -> healthz()
-    ["metrics"] -> metrics(broker_name)
-    ["broadcast"] -> broadcast(req, broker_name)
-    ["worker-ws", secret] -> worker_websocket(req, broker_name, secret)
-    ["ws"] -> websocket(req, broker_name, False)
-    ["internal", "runtime-config"] -> dd_runtime_config_client.handle_snapshot(req)
-    ["internal", "update-runtime-config"] ->
+  case req.method, request.path_segments(req) {
+    Get, [] -> redirect("/home")
+    Get, ["home"] -> home_page()
+    Get, ["docs", "api"] -> api_docs.html()
+    Get, ["api", "docs"] -> api_docs.html()
+    Get, ["api", "docs.json"] -> api_docs.json()
+    Get, ["healthz"] -> healthz()
+    Get, ["metrics"] -> metrics(broker_name)
+    Post, ["broadcast"] -> broadcast(req, broker_name)
+    Get, ["worker-ws", secret] -> worker_websocket(req, broker_name, secret)
+    Get, ["ws"] -> websocket(req, broker_name, False)
+    Get, ["internal", "runtime-config"] ->
+      dd_runtime_config_client.handle_snapshot(req)
+    Post, ["internal", "update-runtime-config"] ->
       dd_runtime_config_client.handle_apply(req)
-    ["internal", "runtime-config", "reset"] ->
+    Post, ["internal", "runtime-config", "reset"] ->
       dd_runtime_config_client.handle_reset(req)
-    _ -> not_found()
+    _, _ -> not_found()
   }
 }
 

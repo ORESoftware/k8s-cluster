@@ -13,16 +13,28 @@ pub mod vendors;
 pub mod verify;
 pub mod webhooks;
 
-use axum::Router;
 use axum::http::StatusCode;
 use axum::middleware;
+use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
+use axum::Router;
 use std::time::Duration;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::state::AppState;
+
+async fn api_docs_html() -> Html<&'static str> {
+    Html(include_str!("../../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl IntoResponse {
+    (
+        [("content-type", "application/json; charset=utf-8")],
+        include_str!("../../generated/api-docs.json"),
+    )
+}
 
 pub fn build_router(state: AppState) -> Router {
     let admin_enabled = state.cfg.admin_ui_enabled;
@@ -43,6 +55,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
         .route("/metrics", get(health::metrics))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         // Tenants
         .route("/v1/tenants", post(tenants::create))
         .route("/v1/tenants/{id}", get(tenants::get_by_id))

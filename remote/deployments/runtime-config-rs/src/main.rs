@@ -1301,11 +1301,25 @@ async fn admin_push_now(
     Ok(axum::response::Redirect::to(&format!("/admin?env={env_label}")).into_response())
 }
 
+async fn api_docs_html() -> Html<&'static str> {
+    Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
 // ---------- Router ----------
 
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
         .route("/metrics", get(metrics))
         // JSON API: entries
         .route(

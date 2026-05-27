@@ -86,6 +86,32 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
     home_document(&state)
 }
 
+async fn api_docs_html() -> Html<&'static str> {
+    record_request("GET", "/docs/api", StatusCode::OK);
+    Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl IntoResponse {
+    record_request("GET", "/api/docs.json", StatusCode::OK);
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
+async fn api_docs_index_html() -> Html<&'static str> {
+    record_request("GET", "/api-docs", StatusCode::OK);
+    Html(include_str!("../../generated-api-docs-index.html"))
+}
+
+async fn api_docs_index_json() -> impl IntoResponse {
+    record_request("GET", "/api-docs.json", StatusCode::OK);
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        include_str!("../../generated-api-docs-index.json"),
+    )
+}
+
 #[derive(Clone, Copy)]
 struct AccessPill {
     label: &'static str,
@@ -207,6 +233,7 @@ fn shared_header(active_page: &'static str) -> Markup {
                         option value="/auth?return=/home" { "Auth" }
                         option value="/bastion/runtime/deployments" { "Bastion inventory" }
                         option value="/headlamp/" { "Headlamp" }
+                        option value="/api-docs" { "API docs" }
                         option value="/telemetry/" { "Grafana" }
                         option value="/prometheus/" { "Prometheus" }
                     }
@@ -245,7 +272,7 @@ fn home_summary() -> Markup {
             code { "/" } ", " code { "/home" } ", " code { "/auth" } ", "
             code { "/agents/tasks" } ", " code { "/agents/threads" } ", "
             code { "/presence-test" } ", "
-            code { "/wss-test" } ". Server-auth paths: "
+            code { "/wss-test" } ", " code { "/api-docs" } ". Server-auth paths: "
             code { "/api/agents/" } ", " code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
             code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
@@ -481,6 +508,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
 
 static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/", href: Some("/") }, PathEntry { label: "/home", href: Some("/home") }, PathEntry { label: "/agents/tasks", href: Some("/agents/tasks") }, PathEntry { label: "/agents/threads", href: Some("/agents/threads") }], target: "Rust web homepage deployment", access: PUBLIC, notes: "Service directory plus cluster-served task/thread/PR UI. Browser UIs call JSON APIs for stored state while runtime invocation paths stay separate." },
+    PathRow { paths: &[PathEntry { label: "/api-docs", href: Some("/api-docs") }, PathEntry { label: "/api-docs.json", href: Some("/api-docs.json") }, PathEntry { label: "/docs/api", href: Some("/docs/api") }, PathEntry { label: "/api/docs", href: Some("/api/docs") }], target: "Generated API documentation", access: PUBLIC, notes: "Central generated index plus this deployment's standard generated docs endpoints. Each HTTP API deployment also serves /docs/api, /api/docs, and /api/docs.json on its own service port." },
     PathRow { paths: &[PathEntry { label: "/tasks", href: Some("/tasks") }, PathEntry { label: "/status", href: Some("/status") }, PathEntry { label: "/stream/<uuid>", href: Some("/stream/example-task-id") }], target: "Node.js Coding Agent Task Manager", access: SERVER_AUTH, notes: "Runs inside the already-selected worker container. It executes prompts, tracks taskIds, streams events, and rejects requests for the wrong pinned thread." },
     PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: SERVER_AUTH, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks and uses the dd_auth cookie for same-origin API reads." },
     PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
@@ -9897,6 +9925,12 @@ async fn main() {
         .route("/wss-test", get(wss_test_page))
         .route("/wss-test/", get(wss_test_page))
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
+        .route("/api-docs", get(api_docs_index_html))
+        .route("/api-docs/", get(api_docs_index_html))
+        .route("/api-docs.json", get(api_docs_index_json))
         .route("/metrics", get(metrics))
         .route("/favicon.ico", get(favicon))
         .with_state(state)
