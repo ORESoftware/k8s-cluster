@@ -21,6 +21,8 @@
 ///   ├── /dart/app/*         — Flutter SPA static
 ///   ├── /dart/mobile/*      — Flutter mobile static
 ///   ├── /dart/assets/*      — Flutter asset files
+///   ├── /docs/api, /api/docs — generated API docs
+///   ├── /api/docs.json      — generated API docs metadata
 ///   ├── /healthz            — local liveness mirror (so probes can hit
 ///                             either port without depending on the
 ///                             gateway being responsive under WS load)
@@ -52,6 +54,7 @@ final class HttpIsolateBoot {
     required this.port,
     required this.staticDirPath,
     required this.mobileStaticDirPath,
+    required this.apiDocsDirPath,
     required this.metricsBus,
   });
 
@@ -64,6 +67,7 @@ final class HttpIsolateBoot {
   final int port;
   final String staticDirPath;
   final String mobileStaticDirPath;
+  final String apiDocsDirPath;
 
   /// SendPort to which the HTTP isolate posts [MetricEvent]s. The
   /// gateway folds them into the global Metrics object so the unified
@@ -101,6 +105,7 @@ Future<void> httpIsolateEntry(HttpIsolateBoot boot) async {
     'port': server.port,
     'static_dir': boot.staticDirPath,
     'mobile_static_dir': boot.mobileStaticDirPath,
+    'api_docs_dir': boot.apiDocsDirPath,
   }));
   boot.handshake.send(server.port);
 
@@ -115,6 +120,7 @@ Future<void> httpIsolateEntry(HttpIsolateBoot boot) async {
       req,
       staticFiles: staticFiles,
       mobileStaticFiles: mobileStaticFiles,
+      apiDocsDirPath: boot.apiDocsDirPath,
       inc: inc,
     ));
   }
@@ -124,6 +130,7 @@ Future<void> _route(
   HttpRequest req, {
   required StaticFileServer staticFiles,
   required StaticFileServer mobileStaticFiles,
+  required String apiDocsDirPath,
   required void Function(String name, [int delta]) inc,
 }) async {
   final path = req.uri.path;
@@ -134,6 +141,27 @@ Future<void> _route(
   // the gateway isolate.
   if (method == 'GET' && path == '/healthz') {
     await _plain(req, 'ok\n');
+    return;
+  }
+
+  // ---- Generated API docs --------------------------------------------------
+  if (method == 'GET' && (path == '/docs/api' || path == '/api/docs')) {
+    await _generatedFile(
+      req,
+      apiDocsDirPath,
+      'api-docs.html',
+      contentType: 'text/html; charset=utf-8',
+    );
+    return;
+  }
+
+  if (method == 'GET' && path == '/api/docs.json') {
+    await _generatedFile(
+      req,
+      apiDocsDirPath,
+      'api-docs.json',
+      contentType: 'application/json; charset=utf-8',
+    );
     return;
   }
 
@@ -239,6 +267,25 @@ Future<void> _route(
   // ---- Fallback ---------------------------------------------------------
   inc('dart_http_404_total');
   await _plain(req, 'not_found\n', status: HttpStatus.notFound);
+}
+
+String _joinPath(String dir, String fileName) {
+  if (dir.endsWith(Platform.pathSeparator)) return '$dir$fileName';
+  return '$dir${Platform.pathSeparator}$fileName';
+}
+
+Future<void> _generatedFile(
+  HttpRequest req,
+  String apiDocsDirPath,
+  String fileName, {
+  required String contentType,
+}) async {
+  final file = File(_joinPath(apiDocsDirPath, fileName));
+  if (!await file.exists()) {
+    await _plain(req, 'generated API docs not found\n', status: HttpStatus.notFound);
+    return;
+  }
+  await _plain(req, await file.readAsString(), contentType: contentType);
 }
 
 Future<void> _plain(

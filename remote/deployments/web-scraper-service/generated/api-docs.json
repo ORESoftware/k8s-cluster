@@ -1,13 +1,12 @@
 {
   "ok": true,
   "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "gleamlang-server",
-  "language": "gleam",
+  "service": "web-scraper-service",
+  "language": "node",
   "routeCount": 13,
   "routeTypeCounts": {
-    "service": 6,
-    "user-generated": 4,
-    "runtime-config": 3
+    "service": 8,
+    "user-generated": 5
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -26,7 +25,7 @@
       "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     },
@@ -41,7 +40,7 @@
       "purpose": "Human-readable generated API documentation.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     },
@@ -56,22 +55,7 @@
       "purpose": "Machine-readable generated API route metadata.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/broadcast",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     },
@@ -86,7 +70,7 @@
       "purpose": "Human-readable generated API documentation.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     },
@@ -101,73 +85,7 @@
       "purpose": "Health check.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/home",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/internal/runtime-config",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-      "handlers": [
-        "dd_runtime_config_client::handle_get"
-      ],
-      "sourceFiles": [
-        "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/internal/runtime-config/reset",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-      "handlers": [
-        "dd_runtime_config_client::handle_reset"
-      ],
-      "sourceFiles": [
-        "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/internal/update-runtime-config",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-      "handlers": [
-        "dd_runtime_config_client::handle_apply"
-      ],
-      "sourceFiles": [
-        "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     },
@@ -182,12 +100,58 @@
       "purpose": "Prometheus metrics.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     },
     {
-      "path": "/worker-ws/:secret",
+      "path": "/scrape",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "service-defined",
+      "purpose": "Health check.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "service-defined",
+      "purpose": "Prometheus metrics.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape/status",
       "methods": [
         "GET"
       ],
@@ -197,12 +161,12 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     },
     {
-      "path": "/ws",
+      "path": "/scrape/strategies",
       "methods": [
         "GET"
       ],
@@ -212,7 +176,37 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [],
       "sourceFiles": [
-        "remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam"
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/strategies",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
       ],
       "notes": ""
     }

@@ -19,18 +19,26 @@ const METHOD_CALLS = new Map([
 const SERVICE_ROUTE_PATHS = new Set([
   '/',
   '/healthz',
+  '/livez',
   '/readyz',
   '/metrics',
   '/docs/api',
   '/api/docs',
   '/api/docs.json',
+  '/api-docs',
+  '/api-docs/',
+  '/api-docs.json',
   '/favicon.ico',
 ]);
+
+const STANDARD_DOCS_ROUTES = ['/docs/api', '/api/docs', '/api/docs.json'];
+const CENTRAL_DOCS_ROUTES = ['/api-docs', '/api-docs.json'];
 
 const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'agent-worker-broker-rs',
   'auth-server-rs',
   'bastion-rs',
+  'billing-server-rs',
   'build-server-rs',
   'container-pool-rs',
   'contract-service-rs',
@@ -47,6 +55,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
 ]);
 
 const RUST_ROUTE_SOURCE_OVERRIDES = new Map([
+  ['billing-server-rs', 'src/api/mod.rs'],
   ['formal-methods-service-rs', 'src/routes/mod.rs'],
 ]);
 
@@ -213,11 +222,44 @@ function gleamSegmentsToPath(rawSegments) {
   return `/${parts.join('/')}`;
 }
 
+function gleamAnnotationPath(path) {
+  return path.replace(/<([a-zA-Z0-9_]+)>/g, ':$1');
+}
+
+function routePathWithoutQuery(path) {
+  return path.split('?')[0];
+}
+
+function assertGleamAnnotationsMatchTypedRoutes(annotations, typedRoutes, sourceFile) {
+  if (annotations.length === 0) {
+    return;
+  }
+  if (typedRoutes.length === 0) {
+    throw new Error(
+      `Gleam API doc annotations in ${relative(repoRoot, sourceFile)} must sit beside typed \`case req.method, path\` route arms so methods stay checked against source.`,
+    );
+  }
+  for (const annotation of annotations) {
+    const method = annotation.methods[0];
+    const pathBase = routePathWithoutQuery(annotation.path);
+    const matchesTypedRoute = typedRoutes.some((route) => {
+      return route.methods.includes(method) && routePathWithoutQuery(route.path) === pathBase;
+    });
+    if (!matchesTypedRoute) {
+      throw new Error(
+        `Gleam API doc annotation ${method} ${annotation.path} in ${relative(repoRoot, sourceFile)} does not match a typed route arm.`,
+      );
+    }
+  }
+}
+
 function extractGleamRoutes(source, sourceFile) {
-  const routes = [];
+  const annotations = [];
+  const typedRoutes = [];
+  const inferredRoutes = [];
   for (const match of source.matchAll(/\/\/\/\/\s*(GET|POST|PATCH|DELETE|PUT|OPTIONS)\s+([^\s]+)(?:\s+(.*))?/g)) {
-    routes.push({
-      path: match[2].replace(/<([a-zA-Z0-9_]+)>/g, ':$1'),
+    annotations.push({
+      path: gleamAnnotationPath(match[2]),
       methods: [match[1]],
       handlers: [],
       sourceFile,
@@ -225,26 +267,29 @@ function extractGleamRoutes(source, sourceFile) {
     });
   }
   for (const match of source.matchAll(/\b(Get|Post|Patch|Delete|Put|Options),\s*\[([^\]]*)\]/g)) {
-    routes.push({
+    typedRoutes.push({
       path: gleamSegmentsToPath(match[2]),
       methods: [match[1].toUpperCase()],
       handlers: [],
       sourceFile,
     });
   }
-  for (const match of source.matchAll(/^\s*\[([^\]]*)\]\s*->/gm)) {
-    const path = gleamSegmentsToPath(match[1]);
-    if (path !== '/') {
-      routes.push({
-        path,
-        methods: ['GET', 'POST'],
-        handlers: [],
-        sourceFile,
-        notes: 'Method is inferred from route body; inspect source for exact method guard.',
-      });
+  assertGleamAnnotationsMatchTypedRoutes(annotations, typedRoutes, sourceFile);
+  if (typedRoutes.length === 0) {
+    for (const match of source.matchAll(/^\s*\[([^\]]*)\]\s*->/gm)) {
+      const path = gleamSegmentsToPath(match[1]);
+      if (path !== '/') {
+        inferredRoutes.push({
+          path,
+          methods: ['GET', 'POST'],
+          handlers: [],
+          sourceFile,
+          notes: 'Method is inferred from route body; inspect source for exact method guard.',
+        });
+      }
     }
   }
-  return mergeRoutes(routes);
+  return mergeRoutes([...annotations, ...typedRoutes, ...inferredRoutes]);
 }
 
 function extractNodeRoutes(source, sourceFile) {
@@ -267,6 +312,97 @@ function extractNodeRoutes(source, sourceFile) {
   }
   for (const match of source.matchAll(/request\.method !== '([A-Z]+)' \|\| url\.pathname !== '([^']+)'/g)) {
     routes.push({ path: match[2], methods: [match[1]], handlers: [], sourceFile });
+  }
+  return mergeRoutes(routes);
+}
+
+function extractFsharpRoutes(source, sourceFile) {
+  const routes = [];
+  const methodNames = new Map([
+    ['Get', 'GET'],
+    ['Post', 'POST'],
+    ['Put', 'PUT'],
+    ['Delete', 'DELETE'],
+    ['Patch', 'PATCH'],
+  ]);
+  for (const match of source.matchAll(/\bapp\.Map(Get|Post|Put|Delete|Patch)\(\s*"([^"]+)"\s*,\s*toReqDelegate\s+([a-zA-Z_][a-zA-Z0-9_]*)/g)) {
+    routes.push({
+      path: match[2],
+      methods: [methodNames.get(match[1])],
+      handlers: [match[3]],
+      sourceFile,
+    });
+  }
+  return mergeRoutes(routes);
+}
+
+function extractDartStringConstants(source) {
+  const constants = new Map();
+  for (const match of source.matchAll(/\bconst\s+String\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*'([^']+)'/g)) {
+    constants.set(match[1], match[2]);
+  }
+  return constants;
+}
+
+function resolveDartPathExpression(rawExpression, constants) {
+  const expression = rawExpression.trim();
+  const quoted = /^'([^']+)'$/.exec(expression);
+  if (quoted) {
+    return quoted[1];
+  }
+  return constants.get(expression) ?? null;
+}
+
+function resolveDartStartsWithPath(rawExpression, constants) {
+  const expression = rawExpression.trim();
+  const quoted = /^'([^']+)'$/.exec(expression);
+  if (!quoted) {
+    return null;
+  }
+  const literal = quoted[1];
+  const interpolated = /^\$([a-zA-Z_][a-zA-Z0-9_]*)(.*)$/.exec(literal);
+  if (interpolated) {
+    const prefix = constants.get(interpolated[1]);
+    return prefix ? `${prefix}${interpolated[2]}` : null;
+  }
+  const braced = /^\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}(.*)$/.exec(literal);
+  if (braced) {
+    const prefix = constants.get(braced[1]);
+    return prefix ? `${prefix}${braced[2]}` : null;
+  }
+  return literal;
+}
+
+function extractDartRoutes(source, sourceFile) {
+  const constants = extractDartStringConstants(source);
+  const routes = [];
+  for (const match of source.matchAll(/\bif\s*\(([\s\S]*?)\)\s*\{/g)) {
+    const condition = match[1];
+    const methods = [...condition.matchAll(/method\s*==\s*'([A-Z]+)'/g)].map((item) => item[1]);
+    if (methods.length === 0) {
+      continue;
+    }
+    const paths = [];
+    for (const pathMatch of condition.matchAll(/\bpath\s*==\s*('[^']+'|[a-zA-Z_][a-zA-Z0-9_]*)/g)) {
+      const path = resolveDartPathExpression(pathMatch[1], constants);
+      if (path) {
+        paths.push(path);
+      }
+    }
+    for (const prefixMatch of condition.matchAll(/\bpath\.startsWith\(\s*('[^']+')\s*\)/g)) {
+      const prefix = resolveDartStartsWithPath(prefixMatch[1], constants);
+      if (prefix) {
+        paths.push(prefix.endsWith('/') ? `${prefix}*` : `${prefix}/*`);
+      }
+    }
+    for (const path of [...new Set(paths)]) {
+      routes.push({
+        path,
+        methods,
+        handlers: [],
+        sourceFile,
+      });
+    }
   }
   return mergeRoutes(routes);
 }
@@ -298,8 +434,17 @@ function routePurpose(routeType, route) {
   if (route.path === '/api/docs.json') {
     return 'Machine-readable generated API route metadata.';
   }
+  if (route.path === '/api-docs' || route.path === '/api-docs/') {
+    return 'Central generated API documentation index.';
+  }
+  if (route.path === '/api-docs.json') {
+    return 'Machine-readable central generated API documentation index.';
+  }
   if (route.path === '/healthz' || route.path.endsWith('/healthz')) {
     return 'Health check.';
+  }
+  if (route.path === '/livez') {
+    return 'Liveness check.';
   }
   if (route.path === '/readyz') {
     return 'Readiness check.';
@@ -329,10 +474,23 @@ function routeAuth(routeType, route) {
   if (route.path.includes('/webhooks/')) {
     return 'webhook signature';
   }
-  if (route.path === '/healthz' || route.path === '/readyz' || route.path === '/metrics' || route.path === '/') {
+  if (
+    route.path === '/healthz' ||
+    route.path === '/livez' ||
+    route.path === '/readyz' ||
+    route.path === '/metrics' ||
+    route.path === '/'
+  ) {
     return 'public';
   }
-  if (route.path === '/docs/api' || route.path === '/api/docs' || route.path === '/api/docs.json') {
+  if (
+    route.path === '/docs/api' ||
+    route.path === '/api/docs' ||
+    route.path === '/api/docs.json' ||
+    route.path === '/api-docs' ||
+    route.path === '/api-docs/' ||
+    route.path === '/api-docs.json'
+  ) {
     return 'public';
   }
   return 'service-defined';
@@ -497,11 +655,36 @@ async function discoverExtraServices() {
       parser: extractPythonRoutes,
     },
     {
+      service: 'browser-test-server',
+      language: 'node',
+      file: 'remote/deployments/browser-test-server/src/server.ts',
+      parser: extractNodeRoutes,
+      deploymentDir: 'remote/deployments/browser-test-server',
+    },
+    {
+      service: 'dart-server',
+      language: 'dart',
+      files: [
+        'remote/deployments/dart-server/bin/server.dart',
+        'remote/deployments/dart-server/lib/server/http_isolate.dart',
+        'remote/deployments/dart-server/lib/server/gateway_isolate.dart',
+      ],
+      parser: extractDartRoutes,
+      deploymentDir: 'remote/deployments/dart-server',
+    },
+    {
       service: 'dev-server',
       language: 'node',
       file: 'remote/deployments/dev-server/src/server.ts',
       parser: extractNodeRoutes,
       deploymentDir: 'remote/deployments/dev-server',
+    },
+    {
+      service: 'fsharp-ws-server',
+      language: 'fsharp',
+      file: 'remote/deployments/fsharp-ws-server/Program.fs',
+      parser: extractFsharpRoutes,
+      deploymentDir: 'remote/deployments/fsharp-ws-server',
     },
     {
       service: 'gleam-lambda-runner',
@@ -546,21 +729,33 @@ async function discoverExtraServices() {
       deploymentDir: 'remote/deployments/gleamlang-server',
       outputName: 'api-docs.nats-bridge',
     },
+    {
+      service: 'web-scraper-service',
+      language: 'node',
+      file: 'remote/deployments/web-scraper-service/src/server.ts',
+      parser: extractNodeRoutes,
+      deploymentDir: 'remote/deployments/web-scraper-service',
+    },
   ];
   const services = [];
   for (const spec of specs) {
-    const file = resolve(repoRoot, spec.file);
-    if (!(await pathExists(file))) {
+    const files = (spec.files ?? [spec.file]).map((file) => resolve(repoRoot, file));
+    if (!(await pathExists(files[0]))) {
       continue;
     }
-    const rawRoutes = spec.parser(await readUtf8(file), file);
-    const deploymentDir = resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(file)));
+    const rawRoutes = [];
+    for (const file of files) {
+      if (await pathExists(file)) {
+        rawRoutes.push(...spec.parser(await readUtf8(file), file));
+      }
+    }
+    const deploymentDir = resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(files[0])));
     // Python services: the helper is inline so we look for the marker class
     // directly. Gleam services: detect the path dep in gleam.toml. Either
     // way we inject the same three routes the Rust client emits.
-    if (spec.language === 'python' && (await pythonContainsRuntimeConfigHandler(file))) {
-      injectRuntimeConfigRoutes(rawRoutes, file);
-    } else if (spec.language === 'node' && (await nodeRegistersRuntimeConfigRoutes(file))) {
+    if (spec.language === 'python' && (await pythonContainsRuntimeConfigHandler(files[0]))) {
+      injectRuntimeConfigRoutes(rawRoutes, files[0]);
+    } else if (spec.language === 'node' && (await nodeRegistersRuntimeConfigRoutes(files[0]))) {
       injectRuntimeConfigRoutes(
         rawRoutes,
         join(repoRoot, 'remote/deployments/dev-server/src/runtime-config.ts'),
@@ -578,7 +773,7 @@ async function discoverExtraServices() {
       service: spec.service,
       language: spec.language,
       deploymentDir,
-      moduleDir: dirname(file),
+      moduleDir: dirname(files[0]),
       outputName: spec.outputName ?? 'api-docs',
       routes: normalizeRoutes(spec.service, rawRoutes),
     });
@@ -599,9 +794,22 @@ function buildDocs(service) {
     language: service.language,
     routeCount: routes.length,
     routeTypeCounts,
-    standardDocsRoutes: ['/docs/api', '/api/docs', '/api/docs.json'],
+    standardDocsRoutes: STANDARD_DOCS_ROUTES,
     routes,
   };
+}
+
+function assertStandardDocsRoutes(service) {
+  for (const path of STANDARD_DOCS_ROUTES) {
+    const route = service.routes.find((candidate) => {
+      return candidate.path === path && candidate.methods.includes('GET');
+    });
+    if (!route) {
+      throw new Error(
+        `${service.service} must mount GET ${path} before generating API docs. Generated docs are committed artifacts, not a substitute for the service endpoint.`,
+      );
+    }
+  }
 }
 
 function escapeHtml(value) {
@@ -695,6 +903,104 @@ ${rows}
 `;
 }
 
+function renderDocsIndexHtml(items) {
+  const totalRoutes = items.reduce((sum, item) => sum + item.docs.routeCount, 0);
+  const serviceRows = items
+    .map((item) => {
+      const docs = item.docs;
+      const routeRows = docs.routes
+        .map((route) => {
+          const methods = route.methods
+            .map((method) => `<span class="method">${escapeHtml(method)}</span>`)
+            .join('');
+          return `<tr>
+  <td data-label="Service"><code>${escapeHtml(docs.service)}</code></td>
+  <td data-label="Type"><span class="badge ${escapeHtml(route.routeType)}">${escapeHtml(route.routeType)}</span></td>
+  <td data-label="Methods"><div class="methods">${methods}</div></td>
+  <td data-label="Path"><code>${escapeHtml(route.path)}</code></td>
+  <td data-label="Purpose">${escapeHtml(route.purpose)}${route.notes ? `<div class="muted">${escapeHtml(route.notes)}</div>` : ''}</td>
+</tr>`;
+        })
+        .join('\n');
+      return `<details>
+  <summary>
+    <span><strong>${escapeHtml(docs.service)}</strong> <span class="muted">${escapeHtml(docs.language)}</span></span>
+    <span>${docs.routeCount} routes</span>
+  </summary>
+  <div class="generated">
+    <span>Generated JSON: <code>${escapeHtml(item.generated[0])}</code></span>
+    <span>Generated HTML: <code>${escapeHtml(item.generated[1])}</code></span>
+  </div>
+  <table>
+    <thead><tr><th>Service</th><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+${routeRows}
+    </tbody>
+  </table>
+</details>`;
+    })
+    .join('\n');
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dd runtime API docs</title>
+  <style>
+    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; --runtime:#3a4d8a; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    header, main { width:min(1180px, calc(100% - 32px)); margin:0 auto; }
+    header { padding:28px 0 18px; }
+    h1 { margin:0 0 6px; font-size:30px; line-height:1.15; letter-spacing:0; }
+    p { margin:0; color:var(--muted); }
+    .summary { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+    .summary span, .badge { display:inline-flex; align-items:center; min-height:26px; border:1px solid var(--line); border-radius:6px; padding:3px 9px; background:var(--panel); white-space:nowrap; }
+    .badge { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0; }
+    .service { color:var(--service); }
+    .user-generated { color:var(--custom); }
+    .internal-db { color:var(--internal); }
+    .runtime-config { color:var(--runtime); }
+    details { margin:0 0 12px; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    summary { display:flex; justify-content:space-between; gap:12px; padding:13px 14px; cursor:pointer; }
+    .generated { display:flex; flex-wrap:wrap; gap:10px; padding:0 14px 12px; color:var(--muted); font-size:12px; }
+    table { width:100%; border-collapse:collapse; border-top:1px solid var(--line); }
+    th, td { padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
+    th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0; background:#fbfcfd; }
+    tr:last-child td { border-bottom:0; }
+    code { display:inline-block; max-width:100%; padding:2px 5px; border-radius:5px; background:var(--code); overflow-wrap:anywhere; font-family:ui-monospace, "SFMono-Regular", Consolas, monospace; font-size:12px; }
+    .methods { display:flex; flex-wrap:wrap; gap:5px; }
+    .method { background:#17202a; color:#fff; border-radius:5px; padding:2px 6px; font-size:12px; font-weight:700; }
+    .muted { color:var(--muted); font-size:12px; }
+    @media (max-width:760px) {
+      header, main { width:min(100% - 20px, 1180px); }
+      summary { align-items:flex-start; flex-direction:column; }
+      table, tbody, tr, td { display:block; width:100%; }
+      thead { display:none; }
+      tr { border-bottom:1px solid var(--line); }
+      td { border-bottom:0; padding:8px 10px; }
+      td::before { display:block; margin-bottom:3px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; content:attr(data-label); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>dd runtime API docs</h1>
+    <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
+    <div class="summary">
+      <span>${items.length} services</span>
+      <span>${totalRoutes} routes</span>
+      <span>central JSON <code>/api-docs.json</code></span>
+    </div>
+  </header>
+  <main>
+${serviceRows}
+  </main>
+</body>
+</html>
+`;
+}
+
 function gleamString(value) {
   return JSON.stringify(value);
 }
@@ -745,12 +1051,18 @@ async function main() {
     .filter((service) => service.routes.length > 0)
     .sort((left, right) => left.service.localeCompare(right.service));
   const index = [];
+  const indexItems = [];
   for (const service of services) {
+    assertStandardDocsRoutes(service);
     const docs = buildDocs(service);
     const outputBase = service.outputName ?? 'api-docs';
     const generatedDir = join(service.deploymentDir, 'generated');
     const json = `${JSON.stringify(docs, null, 2)}\n`;
     const html = renderDocsHtml(docs);
+    const generated = [
+      relative(repoRoot, join(generatedDir, `${outputBase}.json`)).split(sep).join('/'),
+      relative(repoRoot, join(generatedDir, `${outputBase}.html`)).split(sep).join('/'),
+    ];
     await writeOrCheck(join(generatedDir, `${outputBase}.json`), json);
     await writeOrCheck(join(generatedDir, `${outputBase}.html`), html);
     if (service.language === 'gleam' && outputBase === 'api-docs' && service.moduleDir) {
@@ -761,15 +1073,24 @@ async function main() {
       language: service.language,
       routeCount: docs.routeCount,
       routeTypeCounts: docs.routeTypeCounts,
-      generated: [
-        relative(repoRoot, join(generatedDir, `${outputBase}.json`)).split(sep).join('/'),
-        relative(repoRoot, join(generatedDir, `${outputBase}.html`)).split(sep).join('/'),
-      ],
+      generated,
     });
+    indexItems.push({ docs, generated });
   }
+  const indexPayload = {
+    ok: true,
+    generatedBy: 'remote/tools/generate-api-docs.mjs',
+    centralDocsRoutes: CENTRAL_DOCS_ROUTES,
+    standardDocsRoutes: STANDARD_DOCS_ROUTES,
+    services: index,
+  };
   await writeOrCheck(
     resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json'),
-    `${JSON.stringify({ ok: true, generatedBy: 'remote/tools/generate-api-docs.mjs', services: index }, null, 2)}\n`,
+    `${JSON.stringify(indexPayload, null, 2)}\n`,
+  );
+  await writeOrCheck(
+    resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'),
+    renderDocsIndexHtml(indexItems),
   );
   console.log(`${checkOnly ? 'checked' : 'generated'} API docs for ${services.length} service(s)`);
 }
