@@ -103,11 +103,15 @@ test('gateway exposes /lmx-rs and /lmx-node admin paths behind dd_auth', async (
   // is forwarded unchanged because nginx does not strip arbitrary
   // inbound headers; the broker itself enforces the second auth layer.
   assert.match(gateway, /location = \/lmx-rs[\s\S]*return 302 \/lmx-rs\//);
+  assert.equal(gateway.match(/location = \/lmx-rs/g)?.length, 1);
+  assert.equal(gateway.match(/location \/lmx-rs\//g)?.length, 1);
   assert.match(
     gateway,
-    /location\s+\/lmx-rs\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-rust-network-mutex\.default\.svc\.cluster\.local:6971\//,
+    /location\s+\/lmx-rs\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-rust-network-mutex\.default\.svc\.cluster\.local:6971/,
   );
   assert.match(gateway, /location = \/lmx-node[\s\S]*return 302 \/lmx-node\//);
+  assert.equal(gateway.match(/location = \/lmx-node/g)?.length, 1);
+  assert.equal(gateway.match(/location \/lmx-node\//g)?.length, 1);
   assert.match(
     gateway,
     /location\s+\/lmx-node\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-live-mutex-submodule\.default\.svc\.cluster\.local:6971/,
