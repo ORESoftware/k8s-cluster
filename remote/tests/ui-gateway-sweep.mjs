@@ -7,8 +7,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
 const defaultBaseUrl = "https://54.91.17.58";
 const baseUrl = (process.env.REMOTE_DEV_BASE_URL ?? defaultBaseUrl).replace(/\/+$/, "");
-const authSecret = process.env.REMOTE_DEV_SERVER_SECRET ?? process.env.SERVER_AUTH_SECRET ?? "";
-const authCookie = process.env.REMOTE_DEV_AUTH_COOKIE ?? process.env.DD_AUTH_COOKIE_VALUE ?? "";
+const serverAuthSecret = process.env.REMOTE_DEV_SERVER_SECRET ?? process.env.SERVER_AUTH_SECRET ?? "";
+const gatewayAuth = process.env.REMOTE_DEV_AUTH_COOKIE ?? process.env.DD_AUTH_COOKIE_VALUE ?? "";
 const outputDir = path.resolve(
   repoRoot,
   process.env.REMOTE_DEV_UI_REPORT_DIR ?? "tmp/ui-gateway-sweep",
@@ -22,8 +22,8 @@ const protectedStatus = "protected-status";
 const targets = [
   { name: "root redirect", path: "/", kind: publicUi, expect: /remote|service directory/i },
   { name: "service directory", path: "/home", kind: publicUi, expect: /service directory|managed runtime/i },
-  { name: "agent tasks", path: "/agents/tasks", kind: publicUi, expect: /agent tasks|thread chat|recent tasks/i },
-  { name: "agent threads", path: "/agents/threads", kind: publicUi, expect: /agent threads|thread control|response stream/i },
+  { name: "agent tasks", path: "/agents/tasks", kind: protectedUi, expect: /agent tasks|thread chat|recent tasks/i },
+  { name: "agent threads", path: "/agents/threads", kind: protectedUi, expect: /agent threads|thread control|response stream/i },
   { name: "lambda functions", path: "/lambdas/functions", kind: protectedUi, expect: /lambda functions|function body/i },
   {
     name: "presence lab",
@@ -63,10 +63,10 @@ const targets = [
     expect: /passphrase|auth|sign in/i,
     allowAuthPage: true,
   },
-  { name: "webrtc signaling", path: "/webrtc/", kind: publicUi, expect: /webrtc|signal/i },
-  { name: "mdp optimizer", path: "/mdp/", kind: publicUi, expect: /mdp|optimizer|healthz/i },
-  { name: "des simulator", path: "/des/", kind: publicUi, expect: /des|simulation|model/i },
-  { name: "fsharp websocket", path: "/fsws/", kind: publicUi, expect: /f#|websocket|rx|async/i },
+  { name: "webrtc signaling", path: "/webrtc/", kind: protectedUi, expect: /webrtc|signal/i },
+  { name: "mdp optimizer", path: "/mdp/", kind: protectedUi, expect: /mdp|optimizer|healthz/i },
+  { name: "des simulator", path: "/des/", kind: protectedUi, expect: /des|simulation|model/i },
+  { name: "fsharp websocket", path: "/fsws/", kind: protectedUi, expect: /f#|websocket|rx|async/i },
   { name: "dev server agents", path: "/agents", kind: protectedUi, expect: /agents|providers|remote/i },
   { name: "dev server status", path: "/status", kind: protectedStatus, expect: /status|ok|health/i },
   { name: "container pools", path: "/container-pools", kind: protectedUi, expect: /container|pool|warm/i },
@@ -117,8 +117,11 @@ async function main() {
   await fs.mkdir(outputDir, { recursive: true });
 
   const extraHTTPHeaders = {};
-  if (authSecret) {
-    extraHTTPHeaders.Auth = authSecret;
+  if (serverAuthSecret) {
+    extraHTTPHeaders["X-Server-Auth"] = serverAuthSecret;
+  }
+  if (gatewayAuth) {
+    extraHTTPHeaders.Auth = gatewayAuth;
   }
 
   const browser = await chromium.launch({ headless: true });
@@ -129,12 +132,12 @@ async function main() {
     extraHTTPHeaders,
   });
 
-  if (authCookie) {
+  if (gatewayAuth) {
     const parsed = new URL(baseUrl);
     await context.addCookies([
       {
         name: "dd_auth",
-        value: authCookie,
+        value: gatewayAuth,
         domain: parsed.hostname,
         path: "/",
         httpOnly: true,
@@ -144,7 +147,8 @@ async function main() {
     ]);
   }
 
-  const hasAuth = Boolean(authSecret || authCookie);
+  const hasGatewayAuth = Boolean(gatewayAuth);
+  const hasServerAuth = Boolean(serverAuthSecret);
   const results = [];
 
   for (const target of targets) {
@@ -192,13 +196,14 @@ async function main() {
       const matchedText = target.expect.test(`${title}\n${text}`);
       const serverError = status >= 500 || badResponses.length > 0;
       const expectedAuthGate =
-        isProtected(target.kind) && !hasAuth && (authGated || status === 401 || status === 403);
-      const unexpectedAuthGate = authGated && !target.allowAuthPage && (!isProtected(target.kind) || hasAuth);
+        isProtected(target.kind) && !hasGatewayAuth && (authGated || status === 401 || status === 403);
+      const unexpectedAuthGate =
+        authGated && !target.allowAuthPage && (!isProtected(target.kind) || hasGatewayAuth);
 
       if (serverError) {
         reason = `server error: main=${status}, subresources=${badResponses.join("; ")}`;
       } else if (unexpectedAuthGate) {
-        reason = hasAuth
+        reason = hasGatewayAuth
           ? "auth credentials were supplied, but navigation still reached auth/unauthorized page"
           : "public target unexpectedly reached auth/unauthorized page";
       } else if (expectedAuthGate) {
@@ -257,7 +262,10 @@ async function main() {
   await browser.close();
 
   const reportPath = path.join(outputDir, "report.json");
-  await fs.writeFile(reportPath, `${JSON.stringify({ baseUrl, hasAuth, results }, null, 2)}\n`);
+  await fs.writeFile(
+    reportPath,
+    `${JSON.stringify({ baseUrl, hasGatewayAuth, hasServerAuth, results }, null, 2)}\n`,
+  );
 
   const failed = results.filter((result) => result.outcome === "fail");
   const warned = results.filter((result) => result.outcome === "warn");
