@@ -139,8 +139,11 @@ that hashes upgrades across pods.
 | Var                              | Default                 | Notes                                                    |
 |----------------------------------|-------------------------|----------------------------------------------------------|
 | `PORT`                           | `8081`                  | HTTP/WS listen port.                                     |
-| `PG_DATABASE_URL`                | (in-memory)             | If set, opens a pog pool and enables sharded LISTEN/NOTIFY; otherwise in-memory fallback. |
+| `PG_DATABASE_URL`                | (in-memory)             | If set, opens a pog pool and enables the SQL outbox plus sharded LISTEN/NOTIFY; otherwise in-memory fallback. |
 | `PRESENCE_NOTIFY_SHARDS`         | `256`                   | Must match Postgres `presence.notify_shards`; the schema default is 256. |
+| `PRESENCE_WAL_ENABLED`           | `false`                 | Explicit opt-in for the per-pod wal2json logical slot. Leave off unless debugging that path; the SQL outbox is the normal durable replay path. |
+| `PRESENCE_WAL_TICK_MS`           | `1000`                  | Poll interval for the opt-in per-pod WAL consumer. Ignored unless `PRESENCE_WAL_ENABLED=true`. |
+| `PRESENCE_OUTBOX_TICK_MS`        | `5000`                  | Safety-net poll interval for `presence_events` replay. LISTEN/NOTIFY wakes it immediately on healthy fast-path events. |
 | `CLUSTER_PEERS`                  | (empty)                 | Comma-separated full node names. Wins over k8s mode.     |
 | `CLUSTER_NAMESPACE`              | `default`               | k8s namespace for pod discovery.                         |
 | `CLUSTER_LABEL_SELECTOR`         | `app=presence`          | k8s label selector.                                      |

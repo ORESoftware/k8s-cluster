@@ -113,6 +113,7 @@ pub async fn sync_stripe(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({ "stripe_balance_cursor": c }),
                             )
@@ -138,7 +139,11 @@ pub async fn sync_stripe(
 
     if let Some(ref c) = last_newest_id {
         ctx.connections
-            .merge_metadata(conn.id, serde_json::json!({ "stripe_balance_cursor": c }))
+            .merge_metadata(
+                conn.tenant_id,
+                conn.id,
+                serde_json::json!({ "stripe_balance_cursor": c }),
+            )
             .await?;
     }
 
@@ -254,6 +259,7 @@ async fn open_recon_break(
              expected_minor, actual_minor, currency, external_ref, metadata)
         VALUES ($1, $2, $3::provider_kind, $4, 'unrecognized_provider_event',
                 ($5)::NUMERIC(38,0), 0::NUMERIC(38,0), $6, $7, $8)
+        ON CONFLICT DO NOTHING
         "#,
     )
     .bind(ctx.tenant_id)

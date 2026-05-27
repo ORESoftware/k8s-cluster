@@ -14,7 +14,8 @@ Rust public web layer for remote-dev.
 - serves `GET /wss-test` as a same-origin gateway WebSocket harness with presets
   for `dd-gleamlang-server`, `dd-webrtc-signaling-rs`, `gms/gcs/chat.vibe`,
   and the F# Rx burst endpoint; the page includes health checks, burst send,
-  interval send, and separate sent/received counters for browser-side smoke tests
+  interval send, and separate sent/received counters for browser-side smoke tests.
+  The page is public, but its service presets call gateway-authenticated upstream paths.
 - keeps HTML/public pages out of the Node.js worker runtime
 - keeps database credentials out of the public HTML server
 - exposes `GET /healthz` for web liveness
@@ -32,8 +33,9 @@ to exactly one thread and should only accept tasks for that thread.
 
 `/agents/tasks` and `/agents/threads` are SSR shells rendered by the Rust web layer with Maud. Each
 page has same-origin CSS, JavaScript, and HTML-fragment bundle endpoints under `/assets/web-home/`.
-Their browser JavaScript calls the public gateway routes `GET /api/agents/tasks?limit=...` and
-`GET /api/agents/tasks/:taskId/events?limit=...` directly.
+Their browser JavaScript calls the same-origin gateway routes `GET /api/agents/tasks?limit=...` and
+`GET /api/agents/tasks/:taskId/events?limit=...` directly. The gateway requires the operator
+`dd_auth` cookie or legacy `Auth` header before forwarding those JSON routes to the REST API.
 
 The REST API owns RDS/Postgres, Supabase fallback, and later NATS/Postgres event write paths. This
 keeps page rendering separate from data access without making the webserver a proxy.
@@ -91,9 +93,40 @@ cold-start a UUID-bound worker, `/agents/threads` shows visible waking/still-wai
 instead of leaving the response pane stuck on a generic dispatch message. While the dispatch
 request is still pending, the page also polls `GET /api/agents/threads/:threadId/runtime` so the
 operator can see the Kubernetes Deployment, Pod phase, container readiness, and waiting reason.
-Thread Control expands while creating a new worker, while selecting Previous tasks or Response
-stream gives those lower panels the larger share. Existing-thread-only controls stay hidden until
-the selected UUID is backed by a stored thread.
+
+A `container: <state>` pill in the workspace top bar (next to the `Diagnostics table` and
+`Service directory` links) polls `GET /api/agents/threads/:threadId/runtime` every 10 seconds
+whenever a thread is selected. It normalises the Kubernetes view into a short lifecycle label:
+`never-lived` / `non-existent` (no Deployment), `cold-start` / `warming` (Deployment exists but
+Pod is still pulling or initializing), `starting`, `running` (Deployment ready with available
+replicas), `suspended` (`desiredReplicas == 0` after sleep/archive), `dead (<reason>)` for
+`CrashLoopBackOff` / `ImagePullBackOff` / non-zero exits, and `pending (<reason>)` when the
+scheduler has not placed the Pod yet. The tooltip includes the underlying Pod/container detail.
+The pill is also a button (`role="button"`, focusable, click / Enter / Space) so the operator can
+force a runtime probe immediately without waiting for the next poll tick; the pill flips to
+`container: probing` with a progress cursor while the manual probe is in flight.
+
+The pill is hardened against the obvious foot-guns: each fetch runs through an `AbortController`
+with a 15s timeout, so a slow or hung REST API does not pin the browser tab; a monotonically
+incremented request token guards against stale responses overwriting fresh data after the user
+switches threads; rapid clicks are coalesced through a 500ms debounce, and a manual click cancels
+the next scheduled auto-poll up front so the two cannot race and abort each other; network errors,
+non-2xx responses, and non-JSON bodies each flip the pill to a `container: probe error` / `probe
+failed (<status>)` / `invalid response` red state with a `Click to retry.` tooltip (capped to 200
+characters, whitespace collapsed, with a `(N consecutive failures)` suffix once N > 1); consecutive
+failures back off the poll cadence (5s, 10s, 20s, 40s, capped at 60s); the poll cadence also slows
+to 60s while the tab is hidden via `document.visibilityState`, then immediately re-probes when the
+tab becomes visible again. Auto-polls keep the previous resolved label visible while their fetch is
+in flight, so the pill only flashes `container: probing` for manual probes and the very first probe
+after thread selection — that keeps `aria-live="polite"` quiet for screen readers and avoids a
+visual flicker every 10s. `aria-busy` toggles to `true` while a probe is in flight, `aria-disabled`
+tracks whether a thread is currently selected, and the classifier filters out `null` / non-object
+entries from `pods`, `pod.conditions`, `pod.initContainers`, and `pod.containers` before walking
+them so a malformed upstream payload cannot crash the page.
+Thread Control expands while creating a new worker, then docks into a collapsed sticky bottom sheet
+once the response stream takes over the middle column. The middle column owns response scrolling,
+while the left thread list and right task list keep their independent sidebar scrolls.
+Existing-thread-only controls stay hidden until the selected UUID is backed by a stored thread.
 
 Both UI pages target the per-thread Ingress shape:
 

@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-lock-loadtest-gleam
+  namespace: default
+  labels:
+    app: dd-lock-loadtest-gleam
+    role: lock-loadtester
+    runtime: gleam-erlang
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-lock-loadtest-gleam
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-23-lock-loadtest-gleam'
+      labels:
+        app: dd-lock-loadtest-gleam
+        role: lock-loadtester
+        runtime: gleam-erlang
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: lock-loadtest-gleam
+          # We deliberately use the Erlang-flavoured Gleam image, not
+          # the Node one used by `dd-gleamlang-ws-loadtest`. Our load
+          # tester compiles to BEAM (target = "erlang" in gleam.toml)
+          # so we can use `gen_tcp` in `{packet, line}` mode for
+          # zero-copy NDJSON receives — the same FFI the in-tree Gleam
+          # client (`dd_rust_network_mutex_client`) already uses.
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/lock-loadtest-gleam
+              # `gleam run` compiles + runs in one step. We let `gleam`
+              # manage the build cache under `build/` inside the
+              # mounted hostPath. First start may take ~30s while it
+              # fetches deps from Hex.
+              exec gleam run --target erlang
+          env:
+            # Default broker — this binary loops bench-sleep-bench
+            # against ONE target. To compare brokers, scale up another
+            # variant of this Deployment (or apply a kustomize overlay)
+            # that overrides BROKER_HOST.
+            - name: BROKER_HOST
+              value: dd-rust-network-mutex.default.svc.cluster.local
+            - name: BROKER_PORT
+              value: '6970'
+            # Bench profile: 16 worker BEAM processes, 32 keys, 10s
+            # window, 30s rest between windows. Chosen to stay well
+            # below CPU saturation while still producing meaningful
+            # latency percentiles per window.
+            - name: BENCH_WORKERS
+              value: '16'
+            - name: BENCH_KEYS
+              value: '32'
+            - name: BENCH_DURATION_MS
+              value: '10000'
+            - name: BENCH_INTERVAL_MS
+              value: '30000'
+            - name: BENCH_TTL_MS
+              value: '4000'
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          # No HTTP probes — this binary is a stdout-only producer.
+          # Use a TCP probe on the BEAM EPMD port to catch the case
+          # where the VM crashed; that's the cheapest and most
+          # accurate liveness signal we can give k8s for a binary
+          # that does not bind any other ports.
+          startupProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                # Wait for the BEAM process tree to come up. `gleam run`
+                # exits quickly only on a build failure, so a 60s window
+                # is overkill but cheap.
+                - 'pgrep -x beam.smp > /dev/null'
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - 'pgrep -x beam.smp > /dev/null'
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

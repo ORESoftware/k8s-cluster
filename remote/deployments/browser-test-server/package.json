@@ -1,0 +1,32 @@
+{
+  "name": "dd-browser-test-server",
+  "version": "0.1.0",
+  "description": "On-demand Playwright + Puppeteer + Selenium runner for end-to-end UI tests against the remote cluster.",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "start:src": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "playwright": "1.56.0",
+    "puppeteer": "^24.22.3",
+    "selenium-webdriver": "^4.27.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/selenium-webdriver": "^4.1.27",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

@@ -433,6 +433,7 @@ diesel::table! {
     agent_remote_dev_events (id) {
         id -> Int8,
         task_id -> Uuid,
+        thread_id -> Nullable<Uuid>,
         seq -> Int4,
         event_kind -> Varchar,
         payload -> Jsonb,
@@ -445,6 +446,7 @@ diesel::table! {
 pub struct AgentRemoteDevEventDieselRow {
     pub id: i64,
     pub task_id: Uuid,
+    pub thread_id: Option<Uuid>,
     pub seq: i32,
     pub event_kind: String,
     pub payload: Value,
@@ -455,10 +457,53 @@ pub struct AgentRemoteDevEventDieselRow {
 #[diesel(table_name = agent_remote_dev_events)]
 pub struct AgentRemoteDevEventDieselInsert {
     pub task_id: Option<Uuid>,
+    pub thread_id: Option<Uuid>,
     pub seq: Option<i32>,
     pub event_kind: Option<String>,
     pub payload: Option<Value>,
     pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    agent_remote_dev_breadcrumbs (id) {
+        id -> Int8,
+        thread_id -> Uuid,
+        task_id -> Nullable<Uuid>,
+        kind -> Varchar,
+        payload -> Jsonb,
+        emitted_at -> Timestamptz,
+        pod_name -> Nullable<Varchar>,
+        branch -> Nullable<Varchar>,
+        provider -> Nullable<Varchar>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = agent_remote_dev_breadcrumbs)]
+pub struct AgentRemoteDevBreadcrumbDieselRow {
+    pub id: i64,
+    pub thread_id: Uuid,
+    pub task_id: Option<Uuid>,
+    pub kind: String,
+    pub payload: Value,
+    pub emitted_at: DateTime<Utc>,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = agent_remote_dev_breadcrumbs)]
+pub struct AgentRemoteDevBreadcrumbDieselInsert {
+    pub thread_id: Option<Uuid>,
+    pub task_id: Option<Uuid>,
+    pub kind: Option<String>,
+    pub payload: Option<Value>,
+    pub emitted_at: Option<DateTime<Utc>>,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
 }
 
 diesel::table! {
@@ -645,6 +690,149 @@ pub struct LambdaFunctionDieselInsert {
     pub updated_at: Option<DateTime<Utc>>,
     pub created_by: Option<Uuid>,
     pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    container_pool_image_revisions (id) {
+        id -> Uuid,
+        image_slug -> Varchar,
+        image_ref -> Text,
+        dockerfile_path -> Text,
+        build_context -> Text,
+        dockerfile_text -> Text,
+        dockerfile_sha256 -> Varchar,
+        source -> Varchar,
+        notes -> Text,
+        status -> Varchar,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_image_revisions)]
+pub struct ContainerPoolImageRevisionsDieselRow {
+    pub id: Uuid,
+    pub image_slug: String,
+    pub image_ref: String,
+    pub dockerfile_path: String,
+    pub build_context: String,
+    pub dockerfile_text: String,
+    pub dockerfile_sha256: String,
+    pub source: String,
+    pub notes: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_image_revisions)]
+pub struct ContainerPoolImageRevisionsDieselInsert {
+    pub id: Option<Uuid>,
+    pub image_slug: Option<String>,
+    pub image_ref: Option<String>,
+    pub dockerfile_path: Option<String>,
+    pub build_context: Option<String>,
+    pub dockerfile_text: Option<String>,
+    pub dockerfile_sha256: Option<String>,
+    pub source: Option<String>,
+    pub notes: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    container_pool_build_runs (id) {
+        id -> Uuid,
+        image_slug -> Varchar,
+        revision_id -> Uuid,
+        image_ref -> Text,
+        candidate_tag -> Text,
+        build_status -> Varchar,
+        test_status -> Varchar,
+        overall_status -> Varchar,
+        test_command -> Text,
+        build_started_at -> Nullable<Timestamptz>,
+        build_finished_at -> Nullable<Timestamptz>,
+        test_started_at -> Nullable<Timestamptz>,
+        test_finished_at -> Nullable<Timestamptz>,
+        build_log_excerpt -> Text,
+        test_log_excerpt -> Text,
+        error_message -> Nullable<Text>,
+        triggered_by -> Nullable<Uuid>,
+        meta_data -> Jsonb,
+        is_soft_deleted -> Bool,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_build_runs)]
+pub struct ContainerPoolBuildRunsDieselRow {
+    pub id: Uuid,
+    pub image_slug: String,
+    pub revision_id: Uuid,
+    pub image_ref: String,
+    pub candidate_tag: String,
+    pub build_status: String,
+    pub test_status: String,
+    pub overall_status: String,
+    pub test_command: String,
+    pub build_started_at: Option<DateTime<Utc>>,
+    pub build_finished_at: Option<DateTime<Utc>>,
+    pub test_started_at: Option<DateTime<Utc>>,
+    pub test_finished_at: Option<DateTime<Utc>>,
+    pub build_log_excerpt: String,
+    pub test_log_excerpt: String,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<Uuid>,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = container_pool_build_runs)]
+pub struct ContainerPoolBuildRunsDieselInsert {
+    pub id: Option<Uuid>,
+    pub image_slug: Option<String>,
+    pub revision_id: Option<Uuid>,
+    pub image_ref: Option<String>,
+    pub candidate_tag: Option<String>,
+    pub build_status: Option<String>,
+    pub test_status: Option<String>,
+    pub overall_status: Option<String>,
+    pub test_command: Option<String>,
+    pub build_started_at: Option<DateTime<Utc>>,
+    pub build_finished_at: Option<DateTime<Utc>>,
+    pub test_started_at: Option<DateTime<Utc>>,
+    pub test_finished_at: Option<DateTime<Utc>>,
+    pub build_log_excerpt: Option<String>,
+    pub test_log_excerpt: Option<String>,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<Uuid>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 diesel::table! {

@@ -56,6 +56,12 @@ const IGNORED_DIRS = new Set([
   '.terraform',
   '.pnpm-store',
   'agent-transcripts',
+  // `tmp` and `temp` are ignored at the repo root .gitignore level. Tooling
+  // such as scripts/pg/diff/rds-vs-pg-defs.mjs writes scratch *.sql diffs into
+  // remote/libs/pg-defs/tmp/migrations/, and those should NOT trip this guard
+  // because they are not part of the source contract.
+  'tmp',
+  'temp',
 ]);
 
 async function walk(currentRoot: string, repoRootDir: string, sink: string[]): Promise<void> {
@@ -141,6 +147,7 @@ test('schema.sql still defines every table referenced by the generated bindings'
     'agent_remote_dev_threads',
     'agent_remote_dev_tasks',
     'agent_remote_dev_events',
+    'agent_remote_dev_breadcrumbs',
     'agent_remote_dev_artifacts',
     'agent_remote_dev_runtime_locks',
     'lambda_functions',

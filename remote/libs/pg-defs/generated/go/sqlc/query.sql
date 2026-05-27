@@ -107,19 +107,34 @@ update agent_remote_dev_tasks set thread_id = $2, user_id = $3, docker_task_id =
 delete from agent_remote_dev_tasks where id = $1;
 
 -- name: ListAgentRemoteDevEvents :many
-select id, task_id, seq, event_kind, payload, created_at from agent_remote_dev_events;
+select id, task_id, thread_id, seq, event_kind, payload, created_at from agent_remote_dev_events;
 
 -- name: GetAgentRemoteDevEvents :one
-select id, task_id, seq, event_kind, payload, created_at from agent_remote_dev_events where id = $1 limit 1;
+select id, task_id, thread_id, seq, event_kind, payload, created_at from agent_remote_dev_events where id = $1 limit 1;
 
 -- name: CreateAgentRemoteDevEvents :one
-insert into agent_remote_dev_events (id, task_id, seq, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6) returning id, task_id, seq, event_kind, payload, created_at;
+insert into agent_remote_dev_events (id, task_id, thread_id, seq, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, task_id, thread_id, seq, event_kind, payload, created_at;
 
 -- name: UpdateAgentRemoteDevEvents :one
-update agent_remote_dev_events set task_id = $2, seq = $3, event_kind = $4, payload = $5 where id = $1 returning id, task_id, seq, event_kind, payload, created_at;
+update agent_remote_dev_events set task_id = $2, thread_id = $3, seq = $4, event_kind = $5, payload = $6 where id = $1 returning id, task_id, thread_id, seq, event_kind, payload, created_at;
 
 -- name: DeleteAgentRemoteDevEvents :exec
 delete from agent_remote_dev_events where id = $1;
+
+-- name: ListAgentRemoteDevBreadcrumbs :many
+select id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider from agent_remote_dev_breadcrumbs;
+
+-- name: GetAgentRemoteDevBreadcrumbs :one
+select id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider from agent_remote_dev_breadcrumbs where id = $1 limit 1;
+
+-- name: CreateAgentRemoteDevBreadcrumbs :one
+insert into agent_remote_dev_breadcrumbs (id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider;
+
+-- name: UpdateAgentRemoteDevBreadcrumbs :one
+update agent_remote_dev_breadcrumbs set thread_id = $2, task_id = $3, kind = $4, payload = $5, emitted_at = $6, pod_name = $7, branch = $8, provider = $9 where id = $1 returning id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider;
+
+-- name: DeleteAgentRemoteDevBreadcrumbs :exec
+delete from agent_remote_dev_breadcrumbs where id = $1;
 
 -- name: ListAgentRemoteDevArtifacts :many
 select id, task_id, thread_id, filename, content_type, size_bytes, storage_provider, storage_bucket, storage_key, url, signed_url_expires_at, sha256, meta, created_at from agent_remote_dev_artifacts;
@@ -165,6 +180,36 @@ update lambda_functions set slug = $2, display_name = $3, description = $4, runt
 
 -- name: DeleteLambdaFunctions :exec
 delete from lambda_functions where id = $1;
+
+-- name: ListContainerPoolImageRevisions :many
+select id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_image_revisions;
+
+-- name: GetContainerPoolImageRevisions :one
+select id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_image_revisions where id = $1 limit 1;
+
+-- name: CreateContainerPoolImageRevisions :one
+insert into container_pool_image_revisions (id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateContainerPoolImageRevisions :one
+update container_pool_image_revisions set image_slug = $2, image_ref = $3, dockerfile_path = $4, build_context = $5, dockerfile_text = $6, dockerfile_sha256 = $7, source = $8, notes = $9, status = $10, meta_data = $11, is_soft_deleted = $12, updated_at = $13, created_by = $14, updated_by = $15 where id = $1 returning id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteContainerPoolImageRevisions :exec
+delete from container_pool_image_revisions where id = $1;
+
+-- name: ListContainerPoolBuildRuns :many
+select id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at from container_pool_build_runs;
+
+-- name: GetContainerPoolBuildRuns :one
+select id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at from container_pool_build_runs where id = $1 limit 1;
+
+-- name: CreateContainerPoolBuildRuns :one
+insert into container_pool_build_runs (id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) returning id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at;
+
+-- name: UpdateContainerPoolBuildRuns :one
+update container_pool_build_runs set image_slug = $2, revision_id = $3, image_ref = $4, candidate_tag = $5, build_status = $6, test_status = $7, overall_status = $8, test_command = $9, build_started_at = $10, build_finished_at = $11, test_started_at = $12, test_finished_at = $13, build_log_excerpt = $14, test_log_excerpt = $15, error_message = $16, triggered_by = $17, meta_data = $18, is_soft_deleted = $19, updated_at = $20 where id = $1 returning id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at;
+
+-- name: DeleteContainerPoolBuildRuns :exec
+delete from container_pool_build_runs where id = $1;
 
 -- name: ListPresenceConvs :many
 select id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from presence_convs;

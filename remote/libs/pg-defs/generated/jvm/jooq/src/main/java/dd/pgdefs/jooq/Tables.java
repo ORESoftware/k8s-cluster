@@ -152,10 +152,23 @@ public final class Tables {
     public static final Table<org.jooq.Record> AGENT_REMOTE_DEV_EVENTS = DSL.table(AGENT_REMOTE_DEV_EVENTS_NAME);
     public static final Field<Long> AGENT_REMOTE_DEV_EVENTS_ID = DSL.field(DSL.name("agent_remote_dev_events", "id"), SQLDataType.BIGINT);
     public static final Field<UUID> AGENT_REMOTE_DEV_EVENTS_TASK_ID = DSL.field(DSL.name("agent_remote_dev_events", "task_id"), SQLDataType.UUID);
+    public static final Field<UUID> AGENT_REMOTE_DEV_EVENTS_THREAD_ID = DSL.field(DSL.name("agent_remote_dev_events", "thread_id"), SQLDataType.UUID);
     public static final Field<Integer> AGENT_REMOTE_DEV_EVENTS_SEQ = DSL.field(DSL.name("agent_remote_dev_events", "seq"), SQLDataType.INTEGER);
     public static final Field<String> AGENT_REMOTE_DEV_EVENTS_EVENT_KIND = DSL.field(DSL.name("agent_remote_dev_events", "event_kind"), SQLDataType.VARCHAR(80));
     public static final Field<JSONB> AGENT_REMOTE_DEV_EVENTS_PAYLOAD = DSL.field(DSL.name("agent_remote_dev_events", "payload"), SQLDataType.JSONB);
     public static final Field<OffsetDateTime> AGENT_REMOTE_DEV_EVENTS_CREATED_AT = DSL.field(DSL.name("agent_remote_dev_events", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name AGENT_REMOTE_DEV_BREADCRUMBS_NAME = DSL.name("agent_remote_dev_breadcrumbs");
+    public static final Table<org.jooq.Record> AGENT_REMOTE_DEV_BREADCRUMBS = DSL.table(AGENT_REMOTE_DEV_BREADCRUMBS_NAME);
+    public static final Field<Long> AGENT_REMOTE_DEV_BREADCRUMBS_ID = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "id"), SQLDataType.BIGINT);
+    public static final Field<UUID> AGENT_REMOTE_DEV_BREADCRUMBS_THREAD_ID = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "thread_id"), SQLDataType.UUID);
+    public static final Field<UUID> AGENT_REMOTE_DEV_BREADCRUMBS_TASK_ID = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "task_id"), SQLDataType.UUID);
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_KIND = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "kind"), SQLDataType.VARCHAR(80));
+    public static final Field<JSONB> AGENT_REMOTE_DEV_BREADCRUMBS_PAYLOAD = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> AGENT_REMOTE_DEV_BREADCRUMBS_EMITTED_AT = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "emitted_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_POD_NAME = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "pod_name"), SQLDataType.VARCHAR(253));
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_BRANCH = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "branch"), SQLDataType.VARCHAR(120));
+    public static final Field<String> AGENT_REMOTE_DEV_BREADCRUMBS_PROVIDER = DSL.field(DSL.name("agent_remote_dev_breadcrumbs", "provider"), SQLDataType.VARCHAR(60));
 
     public static final Name AGENT_REMOTE_DEV_ARTIFACTS_NAME = DSL.name("agent_remote_dev_artifacts");
     public static final Table<org.jooq.Record> AGENT_REMOTE_DEV_ARTIFACTS = DSL.table(AGENT_REMOTE_DEV_ARTIFACTS_NAME);
@@ -212,6 +225,49 @@ public final class Tables {
     public static final Field<OffsetDateTime> LAMBDA_FUNCTIONS_UPDATED_AT = DSL.field(DSL.name("lambda_functions", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<UUID> LAMBDA_FUNCTIONS_CREATED_BY = DSL.field(DSL.name("lambda_functions", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> LAMBDA_FUNCTIONS_UPDATED_BY = DSL.field(DSL.name("lambda_functions", "updated_by"), SQLDataType.UUID);
+
+    public static final Name CONTAINER_POOL_IMAGE_REVISIONS_NAME = DSL.name("container_pool_image_revisions");
+    public static final Table<org.jooq.Record> CONTAINER_POOL_IMAGE_REVISIONS = DSL.table(CONTAINER_POOL_IMAGE_REVISIONS_NAME);
+    public static final Field<UUID> CONTAINER_POOL_IMAGE_REVISIONS_ID = DSL.field(DSL.name("container_pool_image_revisions", "id"), SQLDataType.UUID);
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_IMAGE_SLUG = DSL.field(DSL.name("container_pool_image_revisions", "image_slug"), SQLDataType.VARCHAR(120));
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_IMAGE_REF = DSL.field(DSL.name("container_pool_image_revisions", "image_ref"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_DOCKERFILE_PATH = DSL.field(DSL.name("container_pool_image_revisions", "dockerfile_path"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_BUILD_CONTEXT = DSL.field(DSL.name("container_pool_image_revisions", "build_context"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_DOCKERFILE_TEXT = DSL.field(DSL.name("container_pool_image_revisions", "dockerfile_text"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_DOCKERFILE_SHA256 = DSL.field(DSL.name("container_pool_image_revisions", "dockerfile_sha256"), SQLDataType.VARCHAR(64));
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_SOURCE = DSL.field(DSL.name("container_pool_image_revisions", "source"), SQLDataType.VARCHAR(32));
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_NOTES = DSL.field(DSL.name("container_pool_image_revisions", "notes"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_IMAGE_REVISIONS_STATUS = DSL.field(DSL.name("container_pool_image_revisions", "status"), SQLDataType.VARCHAR(32));
+    public static final Field<JSONB> CONTAINER_POOL_IMAGE_REVISIONS_META_DATA = DSL.field(DSL.name("container_pool_image_revisions", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> CONTAINER_POOL_IMAGE_REVISIONS_IS_SOFT_DELETED = DSL.field(DSL.name("container_pool_image_revisions", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_IMAGE_REVISIONS_CREATED_AT = DSL.field(DSL.name("container_pool_image_revisions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_IMAGE_REVISIONS_UPDATED_AT = DSL.field(DSL.name("container_pool_image_revisions", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> CONTAINER_POOL_IMAGE_REVISIONS_CREATED_BY = DSL.field(DSL.name("container_pool_image_revisions", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> CONTAINER_POOL_IMAGE_REVISIONS_UPDATED_BY = DSL.field(DSL.name("container_pool_image_revisions", "updated_by"), SQLDataType.UUID);
+
+    public static final Name CONTAINER_POOL_BUILD_RUNS_NAME = DSL.name("container_pool_build_runs");
+    public static final Table<org.jooq.Record> CONTAINER_POOL_BUILD_RUNS = DSL.table(CONTAINER_POOL_BUILD_RUNS_NAME);
+    public static final Field<UUID> CONTAINER_POOL_BUILD_RUNS_ID = DSL.field(DSL.name("container_pool_build_runs", "id"), SQLDataType.UUID);
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_IMAGE_SLUG = DSL.field(DSL.name("container_pool_build_runs", "image_slug"), SQLDataType.VARCHAR(120));
+    public static final Field<UUID> CONTAINER_POOL_BUILD_RUNS_REVISION_ID = DSL.field(DSL.name("container_pool_build_runs", "revision_id"), SQLDataType.UUID);
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_IMAGE_REF = DSL.field(DSL.name("container_pool_build_runs", "image_ref"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_CANDIDATE_TAG = DSL.field(DSL.name("container_pool_build_runs", "candidate_tag"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_BUILD_STATUS = DSL.field(DSL.name("container_pool_build_runs", "build_status"), SQLDataType.VARCHAR(32));
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_TEST_STATUS = DSL.field(DSL.name("container_pool_build_runs", "test_status"), SQLDataType.VARCHAR(32));
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_OVERALL_STATUS = DSL.field(DSL.name("container_pool_build_runs", "overall_status"), SQLDataType.VARCHAR(32));
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_TEST_COMMAND = DSL.field(DSL.name("container_pool_build_runs", "test_command"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_BUILD_RUNS_BUILD_STARTED_AT = DSL.field(DSL.name("container_pool_build_runs", "build_started_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_BUILD_RUNS_BUILD_FINISHED_AT = DSL.field(DSL.name("container_pool_build_runs", "build_finished_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_BUILD_RUNS_TEST_STARTED_AT = DSL.field(DSL.name("container_pool_build_runs", "test_started_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_BUILD_RUNS_TEST_FINISHED_AT = DSL.field(DSL.name("container_pool_build_runs", "test_finished_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_BUILD_LOG_EXCERPT = DSL.field(DSL.name("container_pool_build_runs", "build_log_excerpt"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_TEST_LOG_EXCERPT = DSL.field(DSL.name("container_pool_build_runs", "test_log_excerpt"), SQLDataType.CLOB);
+    public static final Field<String> CONTAINER_POOL_BUILD_RUNS_ERROR_MESSAGE = DSL.field(DSL.name("container_pool_build_runs", "error_message"), SQLDataType.CLOB);
+    public static final Field<UUID> CONTAINER_POOL_BUILD_RUNS_TRIGGERED_BY = DSL.field(DSL.name("container_pool_build_runs", "triggered_by"), SQLDataType.UUID);
+    public static final Field<JSONB> CONTAINER_POOL_BUILD_RUNS_META_DATA = DSL.field(DSL.name("container_pool_build_runs", "meta_data"), SQLDataType.JSONB);
+    public static final Field<Boolean> CONTAINER_POOL_BUILD_RUNS_IS_SOFT_DELETED = DSL.field(DSL.name("container_pool_build_runs", "is_soft_deleted"), SQLDataType.BOOLEAN);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_BUILD_RUNS_CREATED_AT = DSL.field(DSL.name("container_pool_build_runs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> CONTAINER_POOL_BUILD_RUNS_UPDATED_AT = DSL.field(DSL.name("container_pool_build_runs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
     public static final Name PRESENCE_CONVS_NAME = DSL.name("presence_convs");
     public static final Table<org.jooq.Record> PRESENCE_CONVS = DSL.table(PRESENCE_CONVS_NAME);

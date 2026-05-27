@@ -1,3 +1,4 @@
+import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/process
@@ -70,6 +71,12 @@ fn route(
     Get, ["mcp"] -> mcp_get(req)
     Post, ["mcp"] -> rpc(req, metrics_name)
     Post, [] -> rpc(req, metrics_name)
+    Get, ["internal", "runtime-config"] ->
+      dd_runtime_config_client.handle_snapshot(req)
+    Post, ["internal", "update-runtime-config"] ->
+      dd_runtime_config_client.handle_apply(req)
+    Post, ["internal", "runtime-config", "reset"] ->
+      dd_runtime_config_client.handle_reset(req)
     _, _ -> not_found()
   }
 }

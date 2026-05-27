@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ws-loadtest-rs-rust-wss
+  namespace: default
+  labels:
+    app: dd-ws-loadtest-rs-rust-wss
+    role: loadtest
+    target: dd-rust-wss-server
+spec:
+  # WebSocket clients from a fan of loader pods against
+  # dd-rust-wss-server. Each replica drives CLIENT_COUNT connections;
+  # total simultaneous connections at peak == replicas × CLIENT_COUNT.
+  #
+  # As of the dart vs gleam vs rust head-to-head: the rust pod runs N
+  # acceptor tasks bound on 0.0.0.0:8097 with SO_REUSEPORT (1:1 mirror
+  # of dd-dart-server's `shared: true` gateway shards). The single-pod
+  # target lets us measure how much WS load one Rust process can
+  # absorb. We still shard the loader so a single Rust process doesn't
+  # become the FD/CPU ceiling on its own.
+  #
+  # Default replicas: 0 — the operator scales to N for the duration of
+  # a load test and back to 0 afterwards.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dd-ws-loadtest-rs-rust-wss
+  template:
+    metadata:
+      labels:
+        app: dd-ws-loadtest-rs-rust-wss
+        role: loadtest
+        target: dd-rust-wss-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              ulimit -n 131072 || true
+              export PATH="/usr/local/cargo/bin:${PATH}"
+              cd /opt/dd-next-1/remote/deployments/ws-loadtest-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-rust-wss-server.default.svc.cluster.local:8097/
+            # LOAD_MODE=pipeline is the per-message latency mode. Each
+            # client sends `{id, payload}` at MESSAGES_PER_SECOND_PER_CLIENT
+            # and times each `{ok:true, result:{id}}` reply with a
+            # client-side hdrhistogram (p50/p95/p99/max).
+            - name: LOAD_MODE
+              value: "pipeline"
+            # 7500/pod * 4 replicas = 30K conns. Matches the dart 30K
+            # baseline so the comparison stays apples-to-apples.
+            - name: CLIENT_COUNT
+              value: "7500"
+            # 1 message/sec/client * 30K clients = 30K msgs/sec offered
+            # load. Cheap and dominated by RTT, not throughput. Bump to
+            # 10.0 for the throughput run.
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "1.0"
+            - name: MESSAGE_PAYLOAD
+              value: "rust-wss-bench-payload"
+            - name: HOLD_SECONDS
+              value: "600"
+            - name: CONNECT_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECEIVE_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECONNECT_DELAY_MS
+              value: "2000"
+            # 7500 * 3 ms = 22.5 s ramp per pod (4 pods ramp in parallel
+            # so peak is ~25 s after scale-up).
+            - name: RAMP_DELAY_MS
+              value: "3"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+            - name: CORRELATION_TIMEOUT_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "4"
+              memory: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

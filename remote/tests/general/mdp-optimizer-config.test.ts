@@ -39,6 +39,13 @@ test('rust mdp optimizer is deployed, scraped, and connected to nats', async () 
 
   assert.match(cargo, /name\s*=\s*"dd-mdp-optimizer"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
+  // Source-of-truth NATS subject + queue group constants come from the
+  // generated @dd/nats-subject-defs crate.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?MDP_OPTIMIZE_QUEUE_GROUP[\s\S]*?MDP_OPTIMIZE_SUBJECT[\s\S]*?MDP_RESULTS_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?TELEMETRY_MDP_SUBJECT[\s\S]*?\};/,
+  );
   assert.match(source, /fn optimize\(request: OptimizationRequest\)/);
   assert.match(source, /spawn_blocking\(move \|\| optimize\(request\)\)/);
   assert.match(source, /tokio::spawn\(async move/);
@@ -53,10 +60,11 @@ test('rust mdp optimizer is deployed, scraped, and connected to nats', async () 
   assert.match(source, /DefaultBodyLimit::max\(MAX_HTTP_BODY_BYTES\)/);
   assert.match(source, /payload\.len\(\) > MAX_NATS_PAYLOAD_BYTES/);
   assert.match(source, /bounded_impact_delta/);
-  assert.match(source, /dd\.remote\.mdp\.optimize/);
-  assert.match(source, /dd\.remote\.telemetry\.mdp/);
-  assert.match(source, /dd\.remote\.mdp\.results/);
-  assert.match(source, /dd\.remote\.events/);
+  assert.match(source, /MDP_OPTIMIZE_SUBJECT/);
+  assert.match(source, /TELEMETRY_MDP_SUBJECT/);
+  assert.match(source, /MDP_RESULTS_SUBJECT/);
+  assert.match(source, /RUNTIME_EVENTS_SUBJECT/);
+  assert.match(source, /MDP_OPTIMIZE_QUEUE_GROUP/);
   assert.match(source, /dd_mdp_optimizer_optimizations_total/);
   assert.match(source, /dd_mdp_optimizer_telemetry_requests_total/);
   assert.match(source, /dd_mdp_optimizer_nats_telemetry_messages_total/);

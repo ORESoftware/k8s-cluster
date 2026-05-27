@@ -19,9 +19,11 @@
 //! 4. Connect to NATS, ensure the JetStream `CDC` stream covers `cdc.>`.
 //! 5. Compete for the leader advisory lock (`pg_try_advisory_lock`). Only
 //!    the lock holder runs the pump loop; followers idle until promoted.
-//! 6. Pump loop: poll `pg_logical_slot_get_changes(slot, …, 'wal2json',
+//! 6. Pump loop: peek `pg_logical_slot_peek_changes(slot, …, 'wal2json',
 //!    'format-version', '2', 'include-lsn', 'true')`. For each change row,
-//!    publish to `cdc.<schema>.<table>.<op>` with a normalized envelope.
+//!    publish to `cdc.<schema>.<table>.<op>` with a normalized envelope. Only
+//!    after the whole peeked batch is published and acked do we advance the
+//!    slot with `pg_logical_slot_get_changes`.
 //!
 //! ## Envelope schema (`cdc.row.v1`)
 //!
@@ -49,10 +51,10 @@
 //!   the corresponding messages to JetStream. If JetStream is unreachable
 //!   the slot will accumulate. Operators must alert on
 //!   `cdc_slot_lag_bytes('cdc_gateway')`.
-//! * At-least-once delivery: the gateway commits the slot position AFTER
-//!   the JetStream publish ack returns. A crash after publish but before
-//!   slot advance will redeliver. Consumers must be idempotent (key off
-//!   primary key + lsn).
+//! * At-least-once delivery: the gateway advances the slot position AFTER
+//!   every JetStream publish ack in a peeked batch returns. A crash after
+//!   publish but before slot advance will redeliver. Consumers must be
+//!   idempotent (key off primary key + lsn).
 //! * Single-writer to the slot: the advisory lock ensures only one process
 //!   reads from the slot at a time. Other replicas idle.
 //!
@@ -81,7 +83,13 @@ use tokio::time::sleep;
 
 const SERVICE_NAME: &str = "dd-wal-gateway";
 const SCHEMA_VERSION: &str = "cdc.row.v1";
-const DEFAULT_STREAM_NAME: &str = "CDC";
+// Stream name comes from the source-of-truth schema (CDC stream), so a
+// rename in remote/libs/nats/subject-defs/schema/wal-cdc.schema.json
+// surfaces here as a compile-time symbol break. The subject prefix is
+// still operator-tunable via WAL_GATEWAY_SUBJECT_PREFIX but defaults to
+// the cluster-wide "cdc" convention (every other consumer hardcodes
+// "cdc" as the first token).
+const DEFAULT_STREAM_NAME: &str = CDC_STREAM_NAME;
 const DEFAULT_SUBJECT_PREFIX: &str = "cdc";
 const DEFAULT_PORT: u16 = 8104;
 
@@ -92,6 +100,8 @@ const DEFAULT_PORT: u16 = 8104;
 /// in the same database. Computed as the BE bytes of the ASCII string
 /// "WALGATEW" so it's recognisable in `pg_locks` for ops.
 const LEADER_LOCK_KEY: i64 = i64::from_be_bytes(*b"WALGATEW");
+
+use dd_nats_subject_defs::{cdc_row_change_subject, CDC_STREAM_NAME};
 
 #[derive(Clone)]
 struct Config {
@@ -124,7 +134,7 @@ impl Config {
         let subject_prefix = env_value("WAL_GATEWAY_SUBJECT_PREFIX", DEFAULT_SUBJECT_PREFIX);
         let poll_interval = Duration::from_millis(env_u64("WAL_GATEWAY_POLL_MS", 250));
         let publish_timeout = Duration::from_secs(env_u64("WAL_GATEWAY_PUBLISH_TIMEOUT_S", 5));
-        let max_batch = env_u64("WAL_GATEWAY_MAX_BATCH", 2000) as i32;
+        let max_batch = env_u64("WAL_GATEWAY_MAX_BATCH", 2000).clamp(1, 10_000) as i32;
         let pod_name = env_value(
             "WAL_GATEWAY_POD_NAME",
             &env_value("HOSTNAME", "wal-gateway-local"),
@@ -157,6 +167,8 @@ struct Metrics {
     rows_seen_total: AtomicU64,
     rows_published_total: AtomicU64,
     publish_failures_total: AtomicU64,
+    slot_advances_total: AtomicU64,
+    slot_advance_failures_total: AtomicU64,
     skipped_messages_total: AtomicU64,
     last_lsn: parking_mutex::Mutex<Option<String>>,
 }
@@ -257,7 +269,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/api/docs.json", get(api_docs_json))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics_handler))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("0.0.0.0:{}", config.http_port).parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -435,11 +450,11 @@ async fn pump_loop(
     loop {
         interval.tick().await;
         metrics.polls_total.fetch_add(1, Ordering::Relaxed);
-        let batch = match fetch_slot_changes(pg, &config.slot_name, config.max_batch).await {
+        let batch = match peek_slot_changes(pg, &config.slot_name, config.max_batch).await {
             Ok(batch) => batch,
             Err(error) => {
                 metrics.poll_failures_total.fetch_add(1, Ordering::Relaxed);
-                eprintln!("{SERVICE_NAME} slot poll failed: {error}");
+                eprintln!("{SERVICE_NAME} slot peek failed: {error}");
                 // Bubble up — the outer loop will reconnect everything.
                 return Err(error);
             }
@@ -447,7 +462,7 @@ async fn pump_loop(
         if batch.is_empty() {
             continue;
         }
-        for raw in batch {
+        for raw in &batch {
             metrics.rows_seen_total.fetch_add(1, Ordering::Relaxed);
             match parse_wal2json_row(&raw.json) {
                 Some(parsed) => {
@@ -506,6 +521,26 @@ async fn pump_loop(
             }
             metrics.last_lsn.store(Some(raw.lsn.clone()));
         }
+        match advance_slot_changes(pg, &config.slot_name, batch.len() as i32).await {
+            Ok(advanced) => {
+                metrics.slot_advances_total.fetch_add(1, Ordering::Relaxed);
+                if advanced != batch.len() {
+                    return Err(format!(
+                        "slot advance consumed {advanced} messages after peeking {}; \
+                         refusing to continue because the slot cursor may be misaligned",
+                        batch.len()
+                    )
+                    .into());
+                }
+            }
+            Err(error) => {
+                metrics
+                    .slot_advance_failures_total
+                    .fetch_add(1, Ordering::Relaxed);
+                eprintln!("{SERVICE_NAME} slot advance failed: {error}");
+                return Err(error);
+            }
+        }
     }
 }
 
@@ -516,28 +551,20 @@ struct SlotRow {
     json: String,
 }
 
-async fn fetch_slot_changes(
+async fn peek_slot_changes(
     pg: &tokio_postgres::Client,
     slot_name: &str,
     upto_nchanges: i32,
 ) -> Result<Vec<SlotRow>, Box<dyn Error + Send + Sync>> {
-    // Using `_get_changes` (not `_peek_changes`) so the slot
-    // `confirmed_flush_lsn` advances automatically. We rely on at-least-
-    // once delivery: each row read here is guaranteed to be published
-    // (or we error out and the row reappears on the next poll because
-    // pg only advances inside the function call ON SUCCESSFUL RETURN —
-    // it does NOT advance if the calling transaction rolls back).
-    //
-    // To keep that property, we run the slot read in implicit-txn mode
-    // (single query, no explicit BEGIN). If we crash mid-iteration the
-    // server side rolls back and the same rows come back. The cost: we
-    // accept duplicate JetStream publishes on crash. JetStream itself
-    // deduplicates by Nats-Msg-Id if we set the header (we don't, yet —
-    // consumers must be idempotent).
+    // Never read with `_get_changes` before publishing. `_get_changes`
+    // advances the logical slot when the SQL statement commits, which can
+    // happen before our application has durably published the messages to
+    // JetStream. Peeking first keeps Postgres' slot cursor parked until the
+    // whole batch is published and acked.
     let rows = pg
         .query(
             "select lsn::text, xid::text, data
-             from pg_logical_slot_get_changes(
+             from pg_logical_slot_peek_changes(
                $1::text, null, $2::int,
                'format-version', '2',
                'include-lsn', 'true',
@@ -562,6 +589,35 @@ async fn fetch_slot_changes(
             SlotRow { lsn, xid, json }
         })
         .collect())
+}
+
+async fn advance_slot_changes(
+    pg: &tokio_postgres::Client,
+    slot_name: &str,
+    nchanges: i32,
+) -> Result<usize, Box<dyn Error + Send + Sync>> {
+    if nchanges <= 0 {
+        return Ok(0);
+    }
+    // Consume exactly the number of plugin messages we just peeked. If the
+    // process crashes or this query fails after JetStream accepted the
+    // messages, the batch will be redelivered on restart; that is the intended
+    // at-least-once duplicate, and consumers key off `(table, primary_key, lsn)`.
+    let rows = pg
+        .query(
+            "select 1
+             from pg_logical_slot_get_changes(
+               $1::text, null, $2::int,
+               'format-version', '2',
+               'include-lsn', 'true',
+               'include-xids', 'true',
+               'include-timestamp', 'true',
+               'include-types', 'false'
+             )",
+            &[&slot_name, &nchanges],
+        )
+        .await?;
+    Ok(rows.len())
 }
 
 #[derive(Debug)]
@@ -603,11 +659,11 @@ impl ChangeOp {
 
 impl ParsedChange {
     fn subject(&self, prefix: &str) -> String {
-        format!(
-            "{prefix}.{}.{}.{}",
-            self.schema,
-            self.table,
-            self.op.as_str()
+        cdc_row_change_subject(
+            prefix,
+            &self.schema,
+            &self.table,
+            self.op.as_str(),
         )
     }
 }
@@ -822,6 +878,19 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
         "dd_wal_gateway_publish_failures_total",
         "Row publishes that failed or timed out.",
         state.metrics.publish_failures_total.load(Ordering::Relaxed)
+    );
+    counter!(
+        "dd_wal_gateway_slot_advances_total",
+        "Successful logical slot advance calls.",
+        state.metrics.slot_advances_total.load(Ordering::Relaxed)
+    );
+    counter!(
+        "dd_wal_gateway_slot_advance_failures_total",
+        "Logical slot advance calls that failed after a peeked batch.",
+        state
+            .metrics
+            .slot_advance_failures_total
+            .load(Ordering::Relaxed)
     );
     counter!(
         "dd_wal_gateway_skipped_messages_total",

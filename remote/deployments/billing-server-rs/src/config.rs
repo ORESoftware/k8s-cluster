@@ -32,11 +32,54 @@ pub struct Config {
     pub plaid_env: PlaidEnvironment,
     pub coinbase_webhook_secret: Option<String>,
     pub coinflow_webhook_validation_key: Option<String>,
+    pub revolut_webhook_secret: Option<String>,
+    pub gocardless_webhook_secret: Option<String>,
+    pub mercury_webhook_secret: Option<String>,
 
     pub oauth_redirect_base: String,
     pub oauth_return_to_allowed_prefixes: Vec<String>,
     pub require_webhook_signatures: bool,
     pub webhook_signature_tolerance_seconds: i64,
+
+    /// Mount the read-mostly HTMX admin UI at `/admin`. Defaults to ON for
+    /// dev convenience; production deployments behind public gateways should
+    /// either disable this (`BILLING_ADMIN_UI_ENABLED=false`) or front it
+    /// with `dd-remote-auth` per the access-posture rule in `AGENTS.md`.
+    pub admin_ui_enabled: bool,
+
+    /// When set, every `/admin/*` request must present
+    /// `Authorization: Bearer <this value>`. Constant-time compared. Leave
+    /// unset (default) for unauthenticated local dev. In production this
+    /// should be a high-entropy random string injected via SealedSecrets /
+    /// the External Secrets stack, mirroring how other webhook secrets
+    /// land in `BILLING_*` env vars.
+    pub admin_auth_bearer: Option<String>,
+
+    /// Cross-origin `Origin` values explicitly allowed to perform admin
+    /// writes. Same-origin (Origin host matches request Host) is always
+    /// allowed and does not need an entry here. Wire via the comma-
+    /// separated `BILLING_ADMIN_ALLOWED_ORIGINS` env var when an
+    /// operator dashboard hosted elsewhere needs to embed admin actions.
+    pub admin_allowed_origins: Vec<String>,
+
+    /// Bearer token for the JSON API (`/v1/...`). When set, every
+    /// tenant-scoped route requires `Authorization: Bearer <token>`
+    /// (constant-time compared). Leave unset for unauthenticated local
+    /// dev, but **always** set this in production — without it the
+    /// entire API is open to anyone who can reach the listener.
+    ///
+    /// Production deployments should additionally front the listener
+    /// with `dd-remote-auth` or another gateway that enforces tenant
+    /// ownership; this token is the "fail-closed" floor.
+    pub api_auth_bearer: Option<String>,
+
+    /// Refuse outbound HTTP to private / loopback / link-local IPs.
+    /// Protects `tenant.webhook` jobs and notification channels from
+    /// being weaponized into an SSRF probe of the cluster's internal
+    /// services. Defaults to `true`; set
+    /// `BILLING_ALLOW_PRIVATE_OUTBOUND=true` to opt out (for dev /
+    /// integration tests against a local mock server).
+    pub block_private_outbound: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,7 +116,7 @@ impl Config {
                 .or_else(|_| env::var("DATABASE_URL"))
                 .map_err(|_| anyhow::anyhow!("BILLING_DATABASE_URL or DATABASE_URL must be set"))?,
             run_migrations: env::var("BILLING_RUN_MIGRATIONS")
-                .map(|s| s != "0" && s.to_ascii_lowercase() != "false")
+                .map(|s| s != "0" && !s.eq_ignore_ascii_case("false"))
                 .unwrap_or(true),
 
             master_seal_key_b64: env::var("BILLING_MASTER_SEAL_KEY").map_err(|_| {
@@ -113,6 +156,9 @@ impl Config {
             plaid_env: PlaidEnvironment::from_env("PLAID_ENV"),
             coinbase_webhook_secret: env::var("COINBASE_WEBHOOK_SECRET").ok(),
             coinflow_webhook_validation_key: env::var("COINFLOW_WEBHOOK_VALIDATION_KEY").ok(),
+            revolut_webhook_secret: env::var("REVOLUT_WEBHOOK_SECRET").ok(),
+            gocardless_webhook_secret: env::var("GOCARDLESS_WEBHOOK_SECRET").ok(),
+            mercury_webhook_secret: env::var("MERCURY_WEBHOOK_SECRET").ok(),
 
             oauth_redirect_base: env::var("BILLING_OAUTH_REDIRECT_BASE")
                 .unwrap_or_else(|_| "http://localhost:8087".into()),
@@ -126,6 +172,25 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(300),
+
+            admin_ui_enabled: env_bool("BILLING_ADMIN_UI_ENABLED", true),
+            admin_auth_bearer: env::var("BILLING_ADMIN_AUTH_BEARER")
+                .ok()
+                .and_then(|s| {
+                    let t = s.trim();
+                    if t.is_empty() { None } else { Some(t.to_string()) }
+                }),
+            admin_allowed_origins: parse_csv_env("BILLING_ADMIN_ALLOWED_ORIGINS"),
+            api_auth_bearer: env::var("BILLING_API_AUTH_BEARER")
+                .ok()
+                .and_then(|s| {
+                    let t = s.trim();
+                    if t.is_empty() { None } else { Some(t.to_string()) }
+                }),
+            // Default fail-closed: the only legitimate use for outbound
+            // private-IP traffic is dev/integration. Production callers
+            // should hit the public webhook URL of their tenant.
+            block_private_outbound: env_bool("BILLING_BLOCK_PRIVATE_OUTBOUND", true),
         })
     }
 
@@ -161,6 +226,53 @@ impl Config {
             PlaidEnvironment::Production => "https://production.plaid.com",
             PlaidEnvironment::Development => "https://development.plaid.com",
             PlaidEnvironment::Sandbox => "https://sandbox.plaid.com",
+        }
+    }
+
+    /// Build a minimally-populated Config suitable for unit tests that
+    /// need to pass `&Config` somewhere but don't care about most
+    /// fields. Optional provider creds are left empty.
+    #[cfg(test)]
+    pub fn for_tests() -> Self {
+        Self {
+            host: "127.0.0.1".into(),
+            port: 0,
+            database_url: "postgres://test".into(),
+            run_migrations: false,
+            master_seal_key_b64: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
+            solana_rpc_url: "http://localhost".into(),
+            solana_anchor_keypair_b58: None,
+            solana_cluster: SolanaCluster::Devnet,
+            stripe_client_id: None,
+            stripe_client_secret: None,
+            stripe_api_key: None,
+            stripe_api_version: DEFAULT_STRIPE_API_VERSION.into(),
+            stripe_webhook_secret: None,
+            paypal_client_id: None,
+            paypal_client_secret: None,
+            paypal_env: ProviderEnvironment::Sandbox,
+            paypal_webhook_id: None,
+            braintree_client_id: None,
+            braintree_client_secret: None,
+            braintree_env: ProviderEnvironment::Sandbox,
+            plaid_client_id: None,
+            plaid_secret: None,
+            plaid_env: PlaidEnvironment::Sandbox,
+            coinbase_webhook_secret: None,
+            coinflow_webhook_validation_key: None,
+            revolut_webhook_secret: None,
+            gocardless_webhook_secret: None,
+            mercury_webhook_secret: None,
+            oauth_redirect_base: "http://localhost".into(),
+            oauth_return_to_allowed_prefixes: Vec::new(),
+            require_webhook_signatures: false,
+            webhook_signature_tolerance_seconds: 300,
+            admin_ui_enabled: false,
+            admin_auth_bearer: None,
+            admin_allowed_origins: Vec::new(),
+            api_auth_bearer: None,
+            // Tests sometimes hit localhost; default-allow keeps them simple.
+            block_private_outbound: false,
         }
     }
 }

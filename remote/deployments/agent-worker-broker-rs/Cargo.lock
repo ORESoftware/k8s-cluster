@@ -284,11 +284,28 @@ version = "0.1.0"
 dependencies = [
  "async-nats",
  "axum",
+ "dd-nats-subject-defs",
+ "dd-runtime-config-client",
  "reqwest",
  "rustls",
  "serde",
  "serde_json",
  "time",
+ "tokio",
+]
+
+[[package]]
+name = "dd-nats-subject-defs"
+version = "0.1.0"
+
+[[package]]
+name = "dd-runtime-config-client"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "reqwest",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

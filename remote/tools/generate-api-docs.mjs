@@ -39,14 +39,44 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'formal-methods-server-rs',
   'mdp-optimizer-rs',
   'rest-api-rs',
+  'runtime-config-rs',
   'trading-server-rs',
   'wal-gateway-rs',
+  'web-home-rs',
   'webrtc-signaling-rs',
 ]);
 
 const RUST_ROUTE_SOURCE_OVERRIDES = new Map([
   ['formal-methods-service-rs', 'src/routes/mod.rs'],
 ]);
+
+// Subscriber receive surface auto-mounted by `dd_runtime_config_client::router()`
+// (Rust) and `registerRuntimeConfigRoutes()` (Node). The doc scanner does not
+// see these via `.route("...")` literals because they live inside the shared
+// helper crate, so we inject them whenever a service depends on the client.
+const RUNTIME_CONFIG_SUBSCRIBER_ROUTES = [
+  {
+    path: '/internal/runtime-config',
+    methods: ['GET'],
+    handlers: ['dd_runtime_config_client::handle_get'],
+    purposeHint:
+      'Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.',
+  },
+  {
+    path: '/internal/update-runtime-config',
+    methods: ['POST'],
+    handlers: ['dd_runtime_config_client::handle_apply'],
+    purposeHint:
+      'Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.',
+  },
+  {
+    path: '/internal/runtime-config/reset',
+    methods: ['POST'],
+    handlers: ['dd_runtime_config_client::handle_reset'],
+    purposeHint:
+      'Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.',
+  },
+];
 
 function findRepoRoot() {
   for (const candidate of [process.cwd(), resolve(__dirname, '..', '..')]) {
@@ -219,6 +249,14 @@ function extractGleamRoutes(source, sourceFile) {
 
 function extractNodeRoutes(source, sourceFile) {
   const routes = [];
+  for (const match of source.matchAll(/\bfastify\.(get|post|patch|delete|put|options)\(\s*['"]([^'"]+)['"]/g)) {
+    routes.push({
+      path: match[2],
+      methods: [METHOD_CALLS.get(match[1])],
+      handlers: [],
+      sourceFile,
+    });
+  }
   for (const match of source.matchAll(/request\.method === '([A-Z]+)' && url\.pathname === '([^']+)'/g)) {
     routes.push({ path: match[2], methods: [match[1]], handlers: [], sourceFile });
   }
@@ -236,6 +274,13 @@ function extractNodeRoutes(source, sourceFile) {
 function classifyRoute(serviceName, route) {
   if (serviceName === 'rest-api-rs' && route.path.startsWith('/internal/db')) {
     return 'internal-db';
+  }
+  if (
+    route.path === '/internal/runtime-config' ||
+    route.path === '/internal/update-runtime-config' ||
+    route.path === '/internal/runtime-config/reset'
+  ) {
+    return 'runtime-config';
   }
   if (SERVICE_ROUTE_PATHS.has(route.path) || route.path.endsWith('/healthz') || route.path.endsWith('/metrics')) {
     return 'service';
@@ -268,12 +313,18 @@ function routePurpose(routeType, route) {
   if (routeType === 'internal-db') {
     return 'Internal operator database inspection route. Not part of the public REST contract.';
   }
+  if (routeType === 'runtime-config') {
+    return 'dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).';
+  }
   return 'Custom code-first route derived from the service router.';
 }
 
 function routeAuth(routeType, route) {
   if (routeType === 'internal-db') {
     return 'operator secret';
+  }
+  if (routeType === 'runtime-config') {
+    return route.methods.includes('POST') ? 'X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)' : 'service-defined';
   }
   if (route.path.includes('/webhooks/')) {
     return 'webhook signature';
@@ -336,6 +387,65 @@ function normalizeRoutes(serviceName, rawRoutes) {
   });
 }
 
+async function rustDependsOnRuntimeConfigClient(deploymentDir) {
+  const cargo = join(deploymentDir, 'Cargo.toml');
+  if (!(await pathExists(cargo))) {
+    return false;
+  }
+  const source = await readUtf8(cargo);
+  return /dd-runtime-config-client\s*=/.test(source);
+}
+
+async function gleamDependsOnRuntimeConfigClient(deploymentDir) {
+  const gleamToml = join(deploymentDir, 'gleam.toml');
+  if (!(await pathExists(gleamToml))) {
+    return false;
+  }
+  const source = await readUtf8(gleamToml);
+  return /dd_runtime_config_client\s*=/.test(source);
+}
+
+async function pythonContainsRuntimeConfigHandler(file) {
+  // The Python helper lives inline in the service file. Detect by class
+  // name so we don't drift if the route constants are renamed.
+  if (!(await pathExists(file))) {
+    return false;
+  }
+  const source = await readUtf8(file);
+  return source.includes('class RuntimeConfigClient');
+}
+
+async function nodeRegistersRuntimeConfigRoutes(file) {
+  if (!(await pathExists(file))) {
+    return false;
+  }
+  const source = await readUtf8(file);
+  return source.includes('registerRuntimeConfigRoutes(');
+}
+
+function injectRuntimeConfigRoutes(rawRoutes, sourceFile) {
+  // Drop any locally-parsed copies first so the injected entries are
+  // authoritative on methods/auth/etc. Path-only Gleam routers (e.g.
+  // gleamlang-server, gleam-lambda-runner) infer both GET and POST for
+  // every arm; we want the docs to reflect the actual canonical methods
+  // exposed by the shared client.
+  const canonicalPaths = new Set(RUNTIME_CONFIG_SUBSCRIBER_ROUTES.map((route) => route.path));
+  for (let index = rawRoutes.length - 1; index >= 0; index -= 1) {
+    if (canonicalPaths.has(rawRoutes[index].path)) {
+      rawRoutes.splice(index, 1);
+    }
+  }
+  for (const route of RUNTIME_CONFIG_SUBSCRIBER_ROUTES) {
+    rawRoutes.push({
+      path: route.path,
+      methods: route.methods.slice(),
+      handlers: route.handlers.slice(),
+      purposeHint: route.purposeHint,
+      sourceFile,
+    });
+  }
+}
+
 async function discoverRustServices() {
   const deploymentsDir = resolve(repoRoot, 'remote/deployments');
   const entries = await readdir(deploymentsDir, { withFileTypes: true });
@@ -344,9 +454,9 @@ async function discoverRustServices() {
     if (!entry.isDirectory() || !RUST_DEPLOYMENT_ALLOWLIST.has(entry.name)) {
       continue;
     }
+    const deploymentDir = join(deploymentsDir, entry.name);
     const main = join(
-      deploymentsDir,
-      entry.name,
+      deploymentDir,
       RUST_ROUTE_SOURCE_OVERRIDES.get(entry.name) ?? 'src/main.rs',
     );
     if (!(await pathExists(main))) {
@@ -358,17 +468,20 @@ async function discoverRustServices() {
     }
     const rawRoutes = extractAxumRoutesFromSource(source, main);
     if (entry.name === 'rest-api-rs') {
-      const dbRoutes = join(deploymentsDir, entry.name, 'src/db_routes.rs');
+      const dbRoutes = join(deploymentDir, 'src/db_routes.rs');
       if ((await pathExists(dbRoutes)) && source.includes('/internal/db')) {
         // Internal DB tooling is intentionally not part of the public REST
         // docs unless the main router exposes its private mount point.
         rawRoutes.push(...extractAxumRoutesFromSource(await readUtf8(dbRoutes), dbRoutes, '/internal/db'));
       }
     }
+    if (await rustDependsOnRuntimeConfigClient(deploymentDir)) {
+      injectRuntimeConfigRoutes(rawRoutes, join(repoRoot, 'remote/libs/runtime-config-client-rs/src/lib.rs'));
+    }
     services.push({
       service: entry.name,
       language: 'rust',
-      deploymentDir: join(deploymentsDir, entry.name),
+      deploymentDir,
       routes: normalizeRoutes(entry.name, rawRoutes),
     });
   }
@@ -382,6 +495,13 @@ async function discoverExtraServices() {
       language: 'python',
       file: 'remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py',
       parser: extractPythonRoutes,
+    },
+    {
+      service: 'dev-server',
+      language: 'node',
+      file: 'remote/deployments/dev-server/src/server.ts',
+      parser: extractNodeRoutes,
+      deploymentDir: 'remote/deployments/dev-server',
     },
     {
       service: 'gleam-lambda-runner',
@@ -434,10 +554,30 @@ async function discoverExtraServices() {
       continue;
     }
     const rawRoutes = spec.parser(await readUtf8(file), file);
+    const deploymentDir = resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(file)));
+    // Python services: the helper is inline so we look for the marker class
+    // directly. Gleam services: detect the path dep in gleam.toml. Either
+    // way we inject the same three routes the Rust client emits.
+    if (spec.language === 'python' && (await pythonContainsRuntimeConfigHandler(file))) {
+      injectRuntimeConfigRoutes(rawRoutes, file);
+    } else if (spec.language === 'node' && (await nodeRegistersRuntimeConfigRoutes(file))) {
+      injectRuntimeConfigRoutes(
+        rawRoutes,
+        join(repoRoot, 'remote/deployments/dev-server/src/runtime-config.ts'),
+      );
+    } else if (
+      spec.language === 'gleam' &&
+      (await gleamDependsOnRuntimeConfigClient(deploymentDir))
+    ) {
+      injectRuntimeConfigRoutes(
+        rawRoutes,
+        join(repoRoot, 'remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam'),
+      );
+    }
     services.push({
       service: spec.service,
       language: spec.language,
-      deploymentDir: resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(file))),
+      deploymentDir,
       moduleDir: dirname(file),
       outputName: spec.outputName ?? 'api-docs',
       routes: normalizeRoutes(spec.service, rawRoutes),
@@ -497,7 +637,7 @@ function renderDocsHtml(docs) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(docs.service)} API docs</title>
   <style>
-    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; }
+    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; --runtime:#3a4d8a; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     header, main { width:min(1180px, calc(100% - 32px)); margin:0 auto; }
@@ -510,6 +650,7 @@ function renderDocsHtml(docs) {
     .service { color:var(--service); }
     .user-generated { color:var(--custom); }
     .internal-db { color:var(--internal); }
+    .runtime-config { color:var(--runtime); }
     table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
     th, td { padding:12px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
     th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0; background:#fbfcfd; }
@@ -538,6 +679,7 @@ function renderDocsHtml(docs) {
       <span>${docs.routeTypeCounts.service ?? 0} service</span>
       <span>${docs.routeTypeCounts['user-generated'] ?? 0} user-generated</span>
       ${docs.routeTypeCounts['internal-db'] ? `<span>${docs.routeTypeCounts['internal-db']} internal-db</span>` : ''}
+      ${docs.routeTypeCounts['runtime-config'] ? `<span>${docs.routeTypeCounts['runtime-config']} runtime-config</span>` : ''}
     </div>
   </header>
   <main>

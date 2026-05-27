@@ -2,11 +2,18 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 
 import { getNatsClient } from './nats-client.mjs';
+// Source-of-truth NATS subject constants. The repo is mounted at
+// /opt/dd-next-1 inside the pod so this relative path resolves identically
+// in dev, CI, and prod containers.
+import {
+  RUNTIME_EVENTS_SUBJECT,
+  WEBSOCKET_EVENTS_SUBJECT,
+} from '../../libs/nats/subject-defs/generated/javascript/index.mjs';
 
 const natsUrl = process.env.NATS_URL ?? 'nats://dd-nats.messaging.svc.cluster.local:4222';
 const readSubject =
-  process.env.NATS_READ_SUBJECT ?? process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events';
-const publishSubject = process.env.NATS_PUBLISH_SUBJECT ?? 'dd.remote.websocket.events';
+  process.env.NATS_READ_SUBJECT ?? process.env.NATS_EVENT_SUBJECT ?? RUNTIME_EVENTS_SUBJECT;
+const publishSubject = process.env.NATS_PUBLISH_SUBJECT ?? WEBSOCKET_EVENTS_SUBJECT;
 const broadcastUrl = process.env.GLEAM_BROADCAST_URL ?? 'http://127.0.0.1:8081/broadcast';
 const broadcastSecret = requiredEnv('GLEAM_BROADCAST_SECRET');
 const bridgePort = numberEnv('NATS_BRIDGE_HTTP_PORT', 8083);

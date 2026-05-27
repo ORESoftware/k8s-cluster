@@ -1,0 +1,21 @@
+# Metrics-only Service for the operator. The operator does NOT
+# expose an HTTP API surface; the only thing scrape-friendly is
+# /metrics on :9101.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-thread-operator
+  namespace: default
+  labels:
+    app: dd-thread-operator
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-thread-operator
+  ports:
+    - name: metrics
+      port: 9101
+      targetPort: metrics
+    - name: probe
+      port: 9102
+      targetPort: probe

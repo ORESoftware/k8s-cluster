@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # Upstream chart published by the metrics-server SIG. Pin the chart
+    # version so cluster bootstraps stay reproducible.
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: 3.12.2
+    helm:
+      values: |
+        # The single-node EC2 kubeadm cluster uses a self-signed kubelet
+        # serving certificate, so metrics-server must skip TLS verification
+        # against the kubelet target. This is the documented installation
+        # path in the upstream readme for kubeadm clusters.
+        args:
+          - --kubelet-insecure-tls
+          - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+          - --metric-resolution=15s
+          - --kubelet-use-node-status-port
+        # Headlamp / kubectl top / dd-bastion all consume metrics-server
+        # through the metrics.k8s.io APIService, so a single replica is
+        # enough for the EC2 single-node cluster. Bump replicas + PDB if
+        # we ever go multi-node.
+        replicas: 1
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        priorityClassName: system-cluster-critical
+        # The chart already creates the APIService for v1beta1.metrics.k8s.io
+        # plus the system:metrics-server ClusterRole. dd-bastion-readonly is
+        # bound separately (see remote/argocd/vpn/dd-bastion-rbac.yaml).
+        apiService:
+          create: true
+        serviceMonitor:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

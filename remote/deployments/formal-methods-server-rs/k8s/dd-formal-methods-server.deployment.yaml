@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: formal-methods-server
-          image: docker.io/library/rust:1.90-bookworm
+          image: docker.io/library/dd-formal-methods-server:dev
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -32,31 +32,9 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              if ! command -v z3 >/dev/null 2>&1; then
-                echo "installing z3..."
-                apt-get update
-                apt-get install -y --no-install-recommends z3
-                rm -rf /var/lib/apt/lists/*
-              fi
-              export CARGO_HOME=/tmp/cargo
-              export CARGO_TARGET_DIR=/tmp/dd-formal-methods-server-target
-              export HOME=/tmp
-              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
-              cd /opt/dd-next-1/remote/deployments/formal-methods-server-rs
-              exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOME
               value: /tmp
-            - name: CARGO_HOME
-              value: /tmp/cargo
-            - name: CARGO_TARGET_DIR
-              value: /tmp/dd-formal-methods-server-target
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -107,6 +85,25 @@ spec:
               value: '200'
             - name: FORMAL_METHODS_PR_COMMENT_MAX_ROWS
               value: '25'
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-formal-methods-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-formal-methods-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-formal-methods-server.default.svc.cluster.local:8110/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: http
               containerPort: 8110
@@ -138,18 +135,11 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
             - name: work
               mountPath: /var/lib/dd-formal-methods-server
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
         - name: work
           hostPath:
             path: /var/lib/dd-formal-methods-server

@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-rust-network-mutex
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-24-rust-network-mutex-0.1.125-real-binary'
+      labels:
+        app: dd-rust-network-mutex
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: rust-network-mutex
+          # Published image from Docker Hub. The Dockerfile in the
+          # submodule (remote/submodules/rust-network-mutex-rs/Dockerfile)
+          # is the source of truth; tags follow the submodule's
+          # Cargo.toml version. To roll out a new build, push a new
+          # tag and bump this `image:` field — ArgoCD will reconcile.
+          #
+          # (Earlier revisions of this manifest source-built at pod
+          # start from a hostPath mount of the workspace at
+          # /opt/dd-next-1; that pattern is preserved in
+          # `dd-live-mutex-submodule.deployment.yaml` for the Node.js
+          # broker but isn't needed here once the Rust binary ships
+          # in a published image.)
+          image: docker.io/oresoftware/live-mutex-rs:0.1.125
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: LMX_BIND_HOST
+              value: 0.0.0.0
+            - name: LMX_TCP_PORT
+              value: '6970'
+            - name: LMX_HTTP_PORT
+              value: '6971'
+            # Default-on so the broker GC keeps the per-key fencing-token
+            # counter monotonic across reincarnations of a key.
+            - name: LMX_DEFAULT_TTL_MS
+              value: '4000'
+            - name: LMX_MAX_LOCK_HOLDERS
+              value: '1'
+            - name: LMX_LOG_FORMAT
+              value: text
+            - name: RUST_LOG
+              value: info,lmx=info
+            # Optional: set LMX_AUTH_TOKEN via the dd-agent-secrets bundle when
+            # the broker is exposed beyond cluster-internal ServiceIPs. Inside
+            # `default` namespace traffic is already gated by NetworkPolicy
+            # in the larger cluster, so an empty token is acceptable for the
+            # current bootstrap.
+            - name: LMX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: LMX_AUTH_TOKEN
+                  optional: true
+            # `LMX_ADMIN_TOKEN` gates `/admin/otel` (and future `/admin/log`,
+            # `/admin/tcp`) on the broker's HTTP listener. Without this set
+            # the broker falls back to the literal default
+            # `all-dogs-go-to-heaven` baked in at
+            # `remote/submodules/rust-network-mutex-rs/src/server.rs:562`,
+            # which is acceptable for the in-cluster ServiceIP traffic but
+            # not for anything reachable through the public gateway. Sourced
+            # from its own `dd-lmx-admin-token` secret so the admin-control
+            # blast radius stays separate from `dd-agent-secrets`.
+            - name: LMX_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-lmx-admin-token
+                  key: LMX_ADMIN_TOKEN
+                  optional: true
+          ports:
+            - name: lmx-tcp
+              containerPort: 6970
+            - name: http
+              containerPort: 6971
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

@@ -1,5 +1,11 @@
 use std::{env, net::SocketAddr, time::Instant};
 
+use dd_nats_subject_defs::{
+    CONTRACTS_SOLANA_VALIDATE_SUBJECT, DES_SIMULATE_SUBJECT, MDP_OPTIMIZE_SUBJECT,
+    ML_FEATURES_SUBJECT, TELEMETRY_MDP_SUBJECT, TELEMETRY_RAW_SUBJECT, THREAD_TASKS_WILDCARD,
+    TRADING_ORDER_INTENTS_SUBJECT, TRADING_SIGNALS_SUBJECT,
+};
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -183,6 +189,7 @@ fn shared_header(active_page: &'static str) -> Markup {
                         (nav_option(active_page, "threads", "/agents/threads", "Agent threads"))
                         (nav_option(active_page, "tasks", "/agents/tasks", "Agent tasks"))
                         (nav_option(active_page, "lambdas", "/lambdas/functions", "Lambda functions"))
+                        (nav_option(active_page, "container-pool-config", "/container-pool/config", "Container pool config"))
                     }
                 }
                 label class="dd-site-select" {
@@ -237,15 +244,15 @@ fn home_summary() -> Markup {
             "Public entrypoint for the EC2 Kubernetes runtime. Open paths: "
             code { "/" } ", " code { "/home" } ", " code { "/auth" } ", "
             code { "/agents/tasks" } ", " code { "/agents/threads" } ", "
-            code { "/api/agents/tasks" } ", " code { "/presence-test" } ", "
-            code { "/wss-test" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
-            code { "/mdp/" } ", and " code { "/des/" } ". Server-auth paths: "
-            code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
+            code { "/presence-test" } ", "
+            code { "/wss-test" } ". Server-auth paths: "
+            code { "/api/agents/" } ", " code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
             code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
             code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
             code { "/builds" } ", " code { "/gleam/" } ", " code { "/mcp" } ", and "
-            code { "/gcs/" } ". Internal-access ops: " code { "/headlamp/" } ", "
+            code { "/gcs/" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
+            code { "/mdp/" } ", and " code { "/des/" } ". Internal-access ops: " code { "/headlamp/" } ", "
             code { "/telemetry/" } ", "
             code { "/prometheus/" } ", " code { "/nats/" } ", " code { "/nats-metrics/" } ", "
             code { "/reaper/" } ", " code { "/cron/" } ", plus the new "
@@ -324,16 +331,21 @@ fn live_containers_section() -> Markup {
                 }
                 button id="live-containers-refresh" type="button" { "Refresh" }
             }
-            table {
+            table class="live-containers-table" {
                 thead {
                     tr {
-                        th style="width: 20%" { "Deployment" }
-                        th style="width: 14%" { "Namespace" }
-                        th style="width: 23%" { "Pod" }
+                        th style="width: 18%" { "Deployment" }
+                        th style="width: 12%" { "Namespace" }
+                        th style="width: 22%" { "Pod" }
                         th { "Containers" }
-                        th style="width: 13%" { "Terminal" }
+                        th style="width: 17%" { "Actions" }
                     }
                 }
+                // Each pod row gets a sibling expansion row that the JS
+                // populates on demand with an inline terminal/logs panel.
+                // The expansion row is rendered in-place beneath its pod
+                // row, so opening a session pushes the rest of the table
+                // down rather than docking it elsewhere on the page.
                 tbody id="live-containers-body" {
                     tr {
                         td colspan="5" class="muted" {
@@ -341,16 +353,6 @@ fn live_containers_section() -> Markup {
                         }
                     }
                 }
-            }
-            div id="home-terminal" class="terminal-dock" hidden="hidden" {
-                div class="terminal-head" {
-                    div {
-                        h2 { "Container terminal" }
-                        p id="home-terminal-caption" { "bastion exec session" }
-                    }
-                    button id="home-terminal-close" type="button" { "Close" }
-                }
-                iframe id="home-terminal-frame" class="terminal-frame" title="Bastion container terminal" {}
             }
         }
     }
@@ -439,7 +441,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-web-scraper"], service: &["dd-web-scraper:8097"], service_note: None, access: SERVER_AUTH, notes: "Long-running Fastify scraper deployment with scraper parser workers, browser strategies, DOM strategies, native fetch, Cheerio, and Browserless support." },
     DeploymentRow { deployments: &["dd-build-server"], service: &["dd-build-server:8100"], service_note: None, access: SERVER_AUTH, notes: "Rust CI/CD server that clones allowlisted repos, builds allowlisted ECR images, pushes through ECR login, and applies constrained manifests with kubectl." },
     DeploymentRow { deployments: &["dd-ai-ml-pipeline"], service: &["dd-ai-ml-pipeline.ai-ml:8099"], service_note: None, access: SERVER_AUTH, notes: "Python3 online feature pipeline for telemetry risk scoring, anomaly detection, transition hints, and MDP-ready events on dd.remote.telemetry.mdp." },
-    DeploymentRow { deployments: &["dd-des-simulator"], service: &["dd-des-simulator:8099"], service_note: None, access: PUBLIC, notes: "Rust DES simulator with declared des.v1 schema, validation endpoint, async job status, and NATS result publishing." },
+    DeploymentRow { deployments: &["dd-des-simulator"], service: &["dd-des-simulator:8099"], service_note: None, access: SERVER_AUTH, notes: "Rust DES simulator with declared des.v1 schema, validation endpoint, async job status, and NATS result publishing." },
     DeploymentRow { deployments: &["dd-contract-service"], service: &["dd-contract-service:8101"], service_note: None, access: SERVER_AUTH, notes: "Rust Solana contract gateway for solana.contract.v1 validation, signed transaction simulation, metrics, and NATS validation results." },
     DeploymentRow { deployments: &["dd-vpn"], service: &["dd-vpn-ui.vpn:51821"], service_note: None, access: VPN_PRIVATE, notes: "WireGuard wg-easy VPN server and private admin UI for split-tunnel access to the cluster service and pod CIDRs." },
     DeploymentRow { deployments: &["dd-live-mutex"], service: &["dd-live-mutex:6970"], service_note: None, access: CLUSTER_LOCAL, notes: "Singleton live-mutex broker deployment for TCP lock coordination." },
@@ -453,7 +455,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-remote-gateway"], service: &["dd-remote-gateway:80/443"], service_note: None, access: PUBLIC, notes: "nginx Ingress for the EC2 single-node cluster. Owns hostPort 80/443 and proxies every documented public/auth path into its in-cluster service." },
     DeploymentRow { deployments: &["dd-remote-web-home"], service: &["dd-remote-web-home:8080"], service_note: None, access: PUBLIC, notes: "This Rust service. Renders /, /home, /agents/tasks, /agents/threads, /lambdas/functions, /presence-test, and /wss-test; also exposes /healthz and /metrics." },
     DeploymentRow { deployments: &["dd-remote-auth"], service: &["dd-remote-auth:8083"], service_note: None, access: PUBLIC, notes: "Rust PIN auth service. Issues the short-lived dd_auth cookie that the gateway accepts in place of the legacy Auth header for browser sessions." },
-    DeploymentRow { deployments: &["dd-remote-rest-api"], service: &["dd-remote-rest-api:8082"], service_note: None, access: PUBLIC, notes: "Rust REST API boundary for RDS/Postgres-backed agent task data. Serves /api/agents/* and /api/lambdas/* JSON." },
+    DeploymentRow { deployments: &["dd-remote-rest-api"], service: &["dd-remote-rest-api:8082"], service_note: None, access: SERVER_AUTH, notes: "Rust REST API boundary for RDS/Postgres-backed agent task data. Serves /api/agents/* and /api/lambdas/* JSON behind gateway auth." },
     DeploymentRow { deployments: &["dd-agent-worker-broker"], service: &["dd-agent-worker-broker:8098"], service_note: None, access: SERVER_AUTH, notes: "Rust NATS-first worker dispatch broker behind /api/agent-worker/. Handles wakeup and direct-if-awake handoff to the UUID-pinned worker." },
     DeploymentRow { deployments: &["dd-dev-server-api"], service: &["dd-dev-server-api:8080"], service_note: None, access: SERVER_AUTH, notes: "Bootstrap Node.js coding-agent task manager. Backs /tasks, /status, /agents, /healthz, and /stream/<taskId> until per-thread Ingress is the only path." },
     DeploymentRow { deployments: &["dd-remote-queue-consumer"], service: &["dd-remote-queue-consumer"], service_note: None, access: INTERNAL, notes: "Rust NATS shadow consumer. Reads dd.remote.thread.*.tasks, pins thread affinity, and prepares the matching UUID-bound worker; it does not execute prompts." },
@@ -463,10 +465,10 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-gleamlang-server"], service: &["dd-gleamlang-server:8081"], service_note: None, access: SERVER_AUTH, notes: "Gleam/OTP WebSocket fan-out behind /gleam/*. Exposes /gleam/home, /gleam/healthz, /gleam/metrics, and wss://<host>/gleam/ws." },
     DeploymentRow { deployments: &["presence"], service: &["presence-svc.presence:8080"], service_note: Some("(StatefulSet)"), access: CLUSTER_LOCAL, notes: "Gleam gleamlang-presence-server. Distributed-Erlang StatefulSet that powers user-scoped and conv-scoped websockets driving the /presence-test browser harness." },
     DeploymentRow { deployments: &["dd-gleam-mcp-server"], service: &["dd-gleam-mcp-server:8090"], service_note: None, access: SERVER_AUTH, notes: "Gleam JSON-RPC MCP service behind /mcp and /mcp/*. Ships read-only runtime tools, Prometheus metrics, and Loki-collected stdout." },
-    DeploymentRow { deployments: &["dd-webrtc-signaling"], service: &["dd-webrtc-signaling:8095"], service_note: None, access: PUBLIC, notes: "Rust WebRTC signaling service behind /webrtc/. Room WebSocket signaling for browser/mobile peer handshakes; media and data channels stay peer-to-peer." },
-    DeploymentRow { deployments: &["dd-mdp-optimizer"], service: &["dd-mdp-optimizer:8096"], service_note: None, access: PUBLIC, notes: "Rust MDP/POMDP/RL optimizer behind /mdp/. Consumes dd.remote.mdp.optimize and dd.remote.telemetry.mdp." },
+    DeploymentRow { deployments: &["dd-webrtc-signaling"], service: &["dd-webrtc-signaling:8095"], service_note: None, access: SERVER_AUTH, notes: "Rust WebRTC signaling service behind /webrtc/. Room WebSocket signaling for browser/mobile peer handshakes; media and data channels stay peer-to-peer." },
+    DeploymentRow { deployments: &["dd-mdp-optimizer"], service: &["dd-mdp-optimizer:8096"], service_note: None, access: SERVER_AUTH, notes: "Rust MDP/POMDP/RL optimizer behind /mdp/. Consumes dd.remote.mdp.optimize and dd.remote.telemetry.mdp." },
     DeploymentRow { deployments: &["dd-akka-ws-server"], service: &["dd-akka-ws-server:8086"], service_note: None, access: INTERNAL, notes: "Scala/Akka WebSocket reference server backing the akka-streams and async-java load-test targets." },
-    DeploymentRow { deployments: &["dd-fsharp-ws-server"], service: &["dd-fsharp-ws-server:8087"], service_note: None, access: PUBLIC, notes: "F# + ASP.NET Core WebSocket server behind /fsws/. Exposes /fsws/healthz, /fsws/livez, /fsws/ws/rx, and /fsws/ws/async." },
+    DeploymentRow { deployments: &["dd-fsharp-ws-server"], service: &["dd-fsharp-ws-server:8087"], service_note: None, access: SERVER_AUTH, notes: "F# + ASP.NET Core WebSocket server behind /fsws/. Exposes /fsws/healthz, /fsws/livez, /fsws/ws/rx, and /fsws/ws/async." },
     DeploymentRow { deployments: &["dd-formal-methods-server"], service: &["dd-formal-methods-server:8110"], service_note: None, access: INTERNAL, notes: "Rust formal-methods server. Runs annotation-driven proofs and exposes verification status." },
     DeploymentRow { deployments: &["dd-formal-methods-service"], service: &["dd-formal-methods-service:8111"], service_note: None, access: INTERNAL, notes: "Rust formal-methods orchestration service. Templates and dispatches verification jobs against dd-formal-methods-server." },
     DeploymentRow { deployments: &["dd-spark-pipeline-server"], service: &["dd-spark-pipeline-server:8085"], service_note: None, access: INTERNAL, notes: "Java/Spark pipeline server. Coordinates analytical batch/stream jobs against the cluster Spark workers." },
@@ -480,30 +482,30 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
 static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/", href: Some("/") }, PathEntry { label: "/home", href: Some("/home") }, PathEntry { label: "/agents/tasks", href: Some("/agents/tasks") }, PathEntry { label: "/agents/threads", href: Some("/agents/threads") }], target: "Rust web homepage deployment", access: PUBLIC, notes: "Service directory plus cluster-served task/thread/PR UI. Browser UIs call JSON APIs for stored state while runtime invocation paths stay separate." },
     PathRow { paths: &[PathEntry { label: "/tasks", href: Some("/tasks") }, PathEntry { label: "/status", href: Some("/status") }, PathEntry { label: "/stream/<uuid>", href: Some("/stream/example-task-id") }], target: "Node.js Coding Agent Task Manager", access: SERVER_AUTH, notes: "Runs inside the already-selected worker container. It executes prompts, tracks taskIds, streams events, and rejects requests for the wrong pinned thread." },
-    PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: PUBLIC, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks." },
+    PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: SERVER_AUTH, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks and uses the dd_auth cookie for same-origin API reads." },
     PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
     PathRow { paths: &[PathEntry { label: "/presence-test", href: Some("/presence-test?user=alice&device=d1&autoconnect=1") }], target: "gleamlang-presence-server browser harness", access: PUBLIC, notes: "Self-contained page that opens one user-scoped ws plus N conv-scoped ws connections against the presence server." },
-    PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness for the Gleam fan-out socket, Rust WebRTC signaling socket, gcs/chat.vibe router, and F# Rx burst endpoint." },
+    PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness. Preset health checks and sockets use gateway-authenticated upstream routes when they leave the public page." },
     PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/login", href: Some("/auth/login") }, PathEntry { label: "/auth/logout", href: Some("/auth/logout") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
     PathRow { paths: &[PathEntry { label: "/bastion/runtime/deployments", href: Some("/bastion/runtime/deployments") }, PathEntry { label: "/bastion/profile", href: Some("/bastion/profile") }, PathEntry { label: "/bastion/terminal", href: None }], target: "Rust bastion/jumphost access broker", access: SERVER_AUTH, notes: "Same-origin gateway access to bastion inventory and allowlisted browser exec terminals." },
     PathRow { paths: &[PathEntry { label: "/headlamp/", href: Some("/headlamp/") }], target: "Headlamp Kubernetes UI", access: SERVER_AUTH, notes: "Read-only cluster browser for workload, pod, container, logs, node, Argo CD, KEDA, and External Secrets state. Paste a token from `kubectl -n headlamp create token headlamp-viewer`." },
-    PathRow { paths: &[PathEntry { label: "dd.remote.thread.*.tasks", href: None }, PathEntry { label: "POST /api/agents/threads/<uuid>/prepare", href: Some("/api/agents/threads/example-thread-id/prepare") }], target: "Rust NATS Queue Consumer", access: INTERNAL_ACCESS, notes: "Shadow consumer reads task messages, keeps thread affinity, and prepares the matching UUID-bound worker. It does not execute prompts." },
+    PathRow { paths: &[PathEntry { label: THREAD_TASKS_WILDCARD, href: None }, PathEntry { label: "POST /api/agents/threads/<uuid>/prepare", href: Some("/api/agents/threads/example-thread-id/prepare") }], target: "Rust NATS Queue Consumer", access: INTERNAL_ACCESS, notes: "Queued consumer reads task.dispatch messages, routes repo-matched work into warm container pools, and falls back to the UUID-bound worker when needed. Legacy shadow messages only prepare workers." },
     PathRow { paths: &[PathEntry { label: "/dd-thread/<short>", href: Some("/dd-thread/example") }, PathEntry { label: "/dd-thread/<short>/tasks", href: Some("/dd-thread/example/tasks") }, PathEntry { label: "/dd-thread/<short>/stream/<taskId>", href: Some("/dd-thread/example/stream/example-task-id") }, PathEntry { label: "/dd-thread/<short>/ws", href: Some("/dd-thread/example/ws") }], target: "Kubernetes per-thread Ingress", access: SERVER_AUTH, notes: "Ingress selects the UUID-bound worker Service; Node.js handles only the task inside that selected container." },
     PathRow { paths: &[PathEntry { label: "/gleam/home", href: Some("/gleam/home") }, PathEntry { label: "/gleam/healthz", href: Some("/gleam/healthz") }, PathEntry { label: "/gleam/metrics", href: Some("/gleam/metrics") }, PathEntry { label: "/gleam/ws", href: None }], target: "Gleam WebSocket service", access: INTERNAL_ACCESS, notes: "Gleam/OTP fan-out socket behind the gateway; WebSocket endpoint is wss://<host>/gleam/ws." },
     PathRow { paths: &[PathEntry { label: "/mcp", href: Some("/mcp") }, PathEntry { label: "/mcp/home", href: Some("/mcp/home") }, PathEntry { label: "/mcp/healthz", href: Some("/mcp/healthz") }, PathEntry { label: "/mcp/metrics", href: Some("/mcp/metrics") }], target: "Gleam MCP service", access: INTERNAL_ACCESS, notes: "Dedicated MCP deployment with read-only runtime tools, Prometheus metrics, and Loki-collected stdout logs." },
-    PathRow { paths: &[PathEntry { label: "/webrtc/", href: Some("/webrtc/") }, PathEntry { label: "/webrtc/healthz", href: Some("/webrtc/healthz") }, PathEntry { label: "/webrtc/metrics", href: Some("/webrtc/metrics") }, PathEntry { label: "/webrtc/signal test", href: Some("/wss-test?preset=webrtc") }], target: "Rust WebRTC signaling service", access: PUBLIC, notes: "Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer." },
-    PathRow { paths: &[PathEntry { label: "/mdp/", href: Some("/mdp/") }, PathEntry { label: "/mdp/healthz", href: Some("/mdp/healthz") }, PathEntry { label: "/mdp/metrics", href: Some("/mdp/metrics") }, PathEntry { label: "POST /mdp/optimize", href: Some("/mdp/optimize") }, PathEntry { label: "POST /mdp/telemetry/learn", href: Some("/mdp/telemetry/learn") }, PathEntry { label: "dd.remote.mdp.optimize", href: None }, PathEntry { label: "dd.remote.telemetry.mdp", href: None }], target: "Rust MDP/POMDP optimizer", access: PUBLIC, notes: "Async optimizer that subscribes to NATS optimization and telemetry jobs, then publishes results/events back to the runtime queue." },
-    PathRow { paths: &[PathEntry { label: "/des/", href: Some("/des/") }, PathEntry { label: "/des/healthz", href: Some("/des/healthz") }, PathEntry { label: "/des/metrics", href: Some("/des/metrics") }, PathEntry { label: "/des/model/schema", href: Some("/des/model/schema") }, PathEntry { label: "/des/model/example", href: Some("/des/model/example") }, PathEntry { label: "POST /des/validate", href: Some("/des/validate") }, PathEntry { label: "POST /des/simulate", href: Some("/des/simulate") }, PathEntry { label: "dd.remote.des.simulate", href: None }], target: "Rust discrete event simulator", access: PUBLIC, notes: "Async DES job runner with declared des.v1 model schema, strict validation, in-memory job status, metrics, and NATS result publishing." },
-    PathRow { paths: &[PathEntry { label: "/contracts/", href: Some("/contracts/") }, PathEntry { label: "/contracts/healthz", href: Some("/contracts/healthz") }, PathEntry { label: "/contracts/metrics", href: Some("/contracts/metrics") }, PathEntry { label: "/contracts/schema", href: Some("/contracts/schema") }, PathEntry { label: "/contracts/example", href: Some("/contracts/example") }, PathEntry { label: "POST /contracts/validate", href: Some("/contracts/validate") }, PathEntry { label: "POST /contracts/simulate", href: Some("/contracts/simulate") }, PathEntry { label: "dd.remote.contracts.solana.validate", href: None }], target: "Rust Solana contract service", access: SERVER_AUTH, notes: "Validates solana.contract.v1 instruction envelopes, proxies signed simulation through Solana JSON-RPC, and publishes NATS validation results." },
-    PathRow { paths: &[PathEntry { label: "/ml/", href: Some("/ml/") }, PathEntry { label: "/ml/healthz", href: Some("/ml/healthz") }, PathEntry { label: "/ml/metrics", href: Some("/ml/metrics") }, PathEntry { label: "/ml/status", href: Some("/ml/status") }, PathEntry { label: "POST /ml/analyze", href: Some("/ml/analyze") }, PathEntry { label: "POST /ml/ingest", href: Some("/ml/ingest") }, PathEntry { label: "dd.remote.telemetry.raw", href: None }, PathEntry { label: "dd.remote.ml.features", href: None }], target: "Python AI/ML feature pipeline", access: SERVER_AUTH, notes: "Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests." },
-    PathRow { paths: &[PathEntry { label: "/trading/", href: Some("/trading/") }, PathEntry { label: "/trading/healthz", href: Some("/trading/healthz") }, PathEntry { label: "/trading/metrics", href: Some("/trading/metrics") }, PathEntry { label: "/trading/schema", href: Some("/trading/schema") }, PathEntry { label: "/trading/example", href: Some("/trading/example") }, PathEntry { label: "POST /trading/decide", href: Some("/trading/decide") }, PathEntry { label: "dd.remote.trading.signals", href: None }, PathEntry { label: "dd.remote.trading.order_intents", href: None }], target: "Rust trading decision service", access: SERVER_AUTH, notes: "Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions." },
+    PathRow { paths: &[PathEntry { label: "/webrtc/", href: Some("/webrtc/") }, PathEntry { label: "/webrtc/healthz", href: Some("/webrtc/healthz") }, PathEntry { label: "/webrtc/metrics", href: Some("/webrtc/metrics") }, PathEntry { label: "/webrtc/signal test", href: Some("/wss-test?preset=webrtc") }], target: "Rust WebRTC signaling service", access: SERVER_AUTH, notes: "Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer. The gateway requires the operator Auth header or dd_auth cookie before forwarding." },
+    PathRow { paths: &[PathEntry { label: "/mdp/", href: Some("/mdp/") }, PathEntry { label: "/mdp/healthz", href: Some("/mdp/healthz") }, PathEntry { label: "/mdp/metrics", href: Some("/mdp/metrics") }, PathEntry { label: "POST /mdp/optimize", href: Some("/mdp/optimize") }, PathEntry { label: "POST /mdp/telemetry/learn", href: Some("/mdp/telemetry/learn") }, PathEntry { label: MDP_OPTIMIZE_SUBJECT, href: None }, PathEntry { label: TELEMETRY_MDP_SUBJECT, href: None }], target: "Rust MDP/POMDP optimizer", access: SERVER_AUTH, notes: "Async optimizer behind the authenticated gateway; it subscribes to NATS optimization and telemetry jobs, then publishes runtime events." },
+    PathRow { paths: &[PathEntry { label: "/des/", href: Some("/des/") }, PathEntry { label: "/des/healthz", href: Some("/des/healthz") }, PathEntry { label: "/des/metrics", href: Some("/des/metrics") }, PathEntry { label: "/des/model/schema", href: Some("/des/model/schema") }, PathEntry { label: "/des/model/example", href: Some("/des/model/example") }, PathEntry { label: "POST /des/validate", href: Some("/des/validate") }, PathEntry { label: "POST /des/simulate", href: Some("/des/simulate") }, PathEntry { label: DES_SIMULATE_SUBJECT, href: None }], target: "Rust discrete event simulator", access: SERVER_AUTH, notes: "Async DES job runner behind the authenticated gateway, with declared des.v1 schema, strict validation, in-memory job status, metrics, and NATS result publishing." },
+    PathRow { paths: &[PathEntry { label: "/contracts/", href: Some("/contracts/") }, PathEntry { label: "/contracts/healthz", href: Some("/contracts/healthz") }, PathEntry { label: "/contracts/metrics", href: Some("/contracts/metrics") }, PathEntry { label: "/contracts/schema", href: Some("/contracts/schema") }, PathEntry { label: "/contracts/example", href: Some("/contracts/example") }, PathEntry { label: "POST /contracts/validate", href: Some("/contracts/validate") }, PathEntry { label: "POST /contracts/simulate", href: Some("/contracts/simulate") }, PathEntry { label: CONTRACTS_SOLANA_VALIDATE_SUBJECT, href: None }], target: "Rust Solana contract service", access: SERVER_AUTH, notes: "Validates solana.contract.v1 instruction envelopes, proxies signed simulation through Solana JSON-RPC, and publishes NATS validation results." },
+    PathRow { paths: &[PathEntry { label: "/ml/", href: Some("/ml/") }, PathEntry { label: "/ml/healthz", href: Some("/ml/healthz") }, PathEntry { label: "/ml/metrics", href: Some("/ml/metrics") }, PathEntry { label: "/ml/status", href: Some("/ml/status") }, PathEntry { label: "POST /ml/analyze", href: Some("/ml/analyze") }, PathEntry { label: "POST /ml/ingest", href: Some("/ml/ingest") }, PathEntry { label: TELEMETRY_RAW_SUBJECT, href: None }, PathEntry { label: ML_FEATURES_SUBJECT, href: None }], target: "Python AI/ML feature pipeline", access: SERVER_AUTH, notes: "Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests." },
+    PathRow { paths: &[PathEntry { label: "/trading/", href: Some("/trading/") }, PathEntry { label: "/trading/healthz", href: Some("/trading/healthz") }, PathEntry { label: "/trading/metrics", href: Some("/trading/metrics") }, PathEntry { label: "/trading/schema", href: Some("/trading/schema") }, PathEntry { label: "/trading/example", href: Some("/trading/example") }, PathEntry { label: "POST /trading/decide", href: Some("/trading/decide") }, PathEntry { label: TRADING_SIGNALS_SUBJECT, href: None }, PathEntry { label: TRADING_ORDER_INTENTS_SUBJECT, href: None }], target: "Rust trading decision service", access: SERVER_AUTH, notes: "Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions." },
     PathRow { paths: &[PathEntry { label: "POST /scrape", href: Some("/scrape") }, PathEntry { label: "/scrape/strategies", href: Some("/scrape/strategies") }, PathEntry { label: "/scrape/healthz", href: Some("/scrape/healthz") }, PathEntry { label: "/scrape/metrics", href: Some("/scrape/metrics") }], target: "dd-web-scraper Fastify deployment", access: SERVER_AUTH, notes: "Long-running strategy router for native fetch, Cheerio, JSDOM, LinkeDOM, Playwright, Puppeteer, and Browserless scraping." },
     PathRow { paths: &[PathEntry { label: "POST /builds", href: Some("/builds") }, PathEntry { label: "/builds/<jobId>", href: Some("/builds/example-job") }, PathEntry { label: "/builds/<jobId>/logs", href: Some("/builds/example-job/logs") }], target: "dd-build-server Rust CI/CD deployment", access: SERVER_AUTH, notes: "Authenticated repo build queue. Jobs are build-server.v1 JSON, push only to allowlisted ECR prefixes, and deploy only allowlisted manifests/namespaces." },
     PathRow { paths: &[PathEntry { label: "/telemetry/", href: Some("/telemetry/") }], target: "Grafana", access: INTERNAL_ACCESS, notes: "Primary HTML dashboard for Prometheus metrics, Loki logs, Tempo traces, and NATS metrics." },
     PathRow { paths: &[PathEntry { label: "/prometheus/", href: Some("/prometheus/") }], target: "Prometheus", access: INTERNAL_ACCESS, notes: "Low-level metrics UI and query surface." },
     PathRow { paths: &[PathEntry { label: "/nats/", href: Some("/nats/") }, PathEntry { label: "/nats-metrics/metrics", href: Some("/nats-metrics/metrics") }], target: "NATS monitor and exporter", access: INTERNAL_ACCESS, notes: "NATS should usually be inspected through Grafana; these paths expose raw health and metrics." },
     PathRow { paths: &[PathEntry { label: "/reaper/", href: Some("/reaper/") }, PathEntry { label: "/cron/", href: Some("/cron/") }], target: "Runtime service status", access: INTERNAL_ACCESS, notes: "Gateway status surfaces for idle reaper and cron scheduler deployments." },
-    PathRow { paths: &[PathEntry { label: "/fsws/", href: Some("/fsws/") }, PathEntry { label: "/fsws/healthz", href: Some("/fsws/healthz") }, PathEntry { label: "/fsws/livez", href: Some("/fsws/livez") }, PathEntry { label: "/fsws/ws/rx", href: None }, PathEntry { label: "/fsws/ws/async", href: None }, PathEntry { label: "/wss-test?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "dd-fsharp-ws-server", access: PUBLIC, notes: "F# + ASP.NET Core burst WebSocket server. The gateway strips the /fsws/ prefix before proxying to the upstream." },
+    PathRow { paths: &[PathEntry { label: "/fsws/", href: Some("/fsws/") }, PathEntry { label: "/fsws/healthz", href: Some("/fsws/healthz") }, PathEntry { label: "/fsws/livez", href: Some("/fsws/livez") }, PathEntry { label: "/fsws/ws/rx", href: None }, PathEntry { label: "/fsws/ws/async", href: None }, PathEntry { label: "/wss-test?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "dd-fsharp-ws-server", access: SERVER_AUTH, notes: "F# + ASP.NET Core burst WebSocket server. The authenticated gateway strips the /fsws/ prefix before proxying to the upstream." },
     PathRow { paths: &[PathEntry { label: "/gcs/health", href: Some("/gcs/health") }, PathEntry { label: "/gcs/ws-health", href: Some("/gcs/ws-health") }, PathEntry { label: "/gcs/api/<...>", href: None }, PathEntry { label: "/gcs/ws/conv/<convId>", href: None }, PathEntry { label: "/gcs/ws/user/<userId>", href: None }, PathEntry { label: "/gcs/ws/device/<deviceId>", href: None }, PathEntry { label: "/wss-test?preset=gcs", href: Some("/wss-test?preset=gcs") }], target: "gcs / chat.vibe websocket router", access: SERVER_AUTH, notes: "HTTP API rewrites to /chat/* on gcs; websocket traffic is routed through gcs-router for conv/user/device pinning." },
     PathRow { paths: &[PathEntry { label: "/v1/tenants", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/customers/by-email/<email>/billing-state", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/vendors/by-email/<email>/payable-state", href: None }, PathEntry { label: "/v1/tenants/<tenant_id>/connections", href: None }, PathEntry { label: "POST /v1/oauth/<provider>/start", href: None }, PathEntry { label: "GET /v1/oauth/<provider>/callback", href: None }, PathEntry { label: "POST /v1/webhooks/<provider>", href: None }, PathEntry { label: "GET /v1/verify/tenants/<tenant_id>/postings/<id>", href: None }], target: "dd-billing-server Rust ledger service", access: CLUSTER_LOCAL, notes: "Multi-tenant AR/AP ledger. Public verification needs no auth; provider webhooks update ledger state in seconds." },
     PathRow { paths: &[PathEntry { label: "cdc.<schema>.<table>.<op>", href: None }, PathEntry { label: "JetStream stream CDC", href: None }, PathEntry { label: "/healthz", href: None }, PathEntry { label: "/readyz", href: None }, PathEntry { label: "/metrics", href: None }], target: "dd-wal-gateway (postgres-to-NATS CDC)", access: INTERNAL_ACCESS, notes: "One advisory-locked logical replication slot pumps wal2json rows into JetStream as cdc.row.v1 envelopes." },
@@ -1019,24 +1021,112 @@ button:disabled {
   display: grid;
   gap: 5px;
 }
-.terminal-dock {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
+.metrics-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
 }
-.terminal-dock[hidden] { display: none; }
-.terminal-head {
+.metric-chip {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(94, 234, 212, 0.06);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.metric-chip span.label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.metric-chip.metric-warn {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: var(--warn);
+}
+.container-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.container-actions .row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.container-actions .row > .name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+button.action-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+button.action-btn.active {
+  border-color: rgba(94, 234, 212, 0.72);
+  background: rgba(94, 234, 212, 0.18);
+  color: var(--accent);
+}
+tr.inline-panel-row > td {
+  padding: 0;
+  background: var(--panel-2, #0f1720);
+  border-top: 1px dashed var(--line);
+}
+.inline-panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.inline-panel-head {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: center;
 }
-.terminal-frame {
+.inline-panel-head h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.inline-panel-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.inline-panel iframe {
   width: 100%;
   height: 460px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #05080d;
+}
+.inline-panel pre.logs {
+  margin: 0;
+  width: 100%;
+  height: 460px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #05080d;
+  color: #d5f5e3;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 ol {
   margin: 8px 0 0;
@@ -1059,10 +1149,6 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   const body = document.getElementById("live-containers-body");
   const status = document.getElementById("live-containers-status");
   const refresh = document.getElementById("live-containers-refresh");
-  const dock = document.getElementById("home-terminal");
-  const frame = document.getElementById("home-terminal-frame");
-  const caption = document.getElementById("home-terminal-caption");
-  const close = document.getElementById("home-terminal-close");
   const runtimeReloadIntervalMs = 30000;
   let inventoryStatus = "loading managed deployment pods from bastion";
   let lastUpdatedAt = "";
@@ -1070,10 +1156,15 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   let reloadTimer = 0;
   let liveInventoryEnabled = false;
   let runtimeSocketsStarted = false;
+  let metricsAvailable = false;
+  // Active inline panels keyed by `${podKey}::${kind}::${container}` so the
+  // open panels survive table re-renders triggered by the 30s reload.
+  const inlinePanels = new Map();
   const wsStatus = { gleam: "idle", rust: "idle" };
   const renderStatus = () => {
     const updated = lastUpdatedAt ? ` · updated ${lastUpdatedAt}` : "";
-    status.textContent = `${inventoryStatus}${updated} · gleam ws ${wsStatus.gleam} · rust ws ${wsStatus.rust}`;
+    const metrics = metricsAvailable ? "metrics ok" : "metrics unavailable";
+    status.textContent = `${inventoryStatus}${updated} · ${metrics} · gleam ws ${wsStatus.gleam} · rust ws ${wsStatus.rust}`;
   };
   const setStatus = (message) => {
     inventoryStatus = message;
@@ -1109,10 +1200,45 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     if (state.terminated) return "terminated " + (state.terminated.reason || "unknown");
     return "unknown";
   };
-  const safeBastionTerminalUrl = (value) => {
+  const formatCpu = (millicores) => {
+    if (millicores == null) return "";
+    if (millicores < 1) return "0m";
+    if (millicores < 1000) return `${millicores}m`;
+    return `${(millicores / 1000).toFixed(2)} cores`;
+  };
+  const formatMemory = (bytes) => {
+    if (bytes == null) return "";
+    const kib = bytes / 1024;
+    if (kib < 1024) return `${kib.toFixed(0)} KiB`;
+    const mib = kib / 1024;
+    if (mib < 1024) return `${mib.toFixed(1)} MiB`;
+    const gib = mib / 1024;
+    return `${gib.toFixed(2)} GiB`;
+  };
+  const metricChip = (label, value, warn) => {
+    if (value === "") return null;
+    const el = document.createElement("span");
+    el.className = warn ? "metric-chip metric-warn" : "metric-chip";
+    const labelEl = document.createElement("span");
+    labelEl.className = "label";
+    labelEl.textContent = label;
+    el.append(labelEl, document.createTextNode(value));
+    return el;
+  };
+  const metricsLine = (metrics) => {
+    if (!metrics) return null;
+    const wrap = document.createElement("span");
+    wrap.className = "metrics-line";
+    const cpu = metricChip("cpu", formatCpu(metrics.cpuMillicores ?? 0));
+    const mem = metricChip("mem", formatMemory(metrics.memoryBytes ?? 0));
+    if (cpu) wrap.appendChild(cpu);
+    if (mem) wrap.appendChild(mem);
+    return wrap.children.length ? wrap : null;
+  };
+  const safeBastionUrl = (value, expectedPath) => {
     try {
       const url = new URL(String(value || ""), window.location.origin);
-      if (url.origin !== window.location.origin || url.pathname !== "/bastion/terminal") return "";
+      if (url.origin !== window.location.origin || url.pathname !== expectedPath) return "";
       for (const key of ["namespace", "deployment", "pod", "container"]) {
         if (!url.searchParams.get(key)) return "";
       }
@@ -1121,17 +1247,9 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
       return "";
     }
   };
-  const openTerminal = (url, label) => {
-    const targetUrl = safeBastionTerminalUrl(url);
-    if (!targetUrl) {
-      setStatus("ignored unsafe bastion terminal URL");
-      return;
-    }
-    caption.textContent = label;
-    frame.src = targetUrl;
-    dock.hidden = false;
-    dock.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const safeBastionTerminalUrl = (value) => safeBastionUrl(value, "/bastion/terminal");
+  const safeBastionLogsUrl = (value) => safeBastionUrl(value, "/bastion/logs/ws");
+  const podKey = (deployment, pod) => `${deployment.namespace}/${deployment.deployment}/${pod.name}`;
   const renderEmpty = (message) => {
     body.textContent = "";
     const tr = document.createElement("tr");
@@ -1142,7 +1260,118 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
     tr.appendChild(td);
     body.appendChild(tr);
   };
+  const closeInlinePanel = (panelKey) => {
+    const tracked = inlinePanels.get(panelKey);
+    if (!tracked) return;
+    const { row, button, cleanup } = tracked;
+    if (cleanup) {
+      try { cleanup(); } catch (_error) {}
+    }
+    if (row && row.parentNode) row.parentNode.removeChild(row);
+    if (button) button.classList.remove("active");
+    inlinePanels.delete(panelKey);
+  };
+  const closeAllInlinePanels = () => {
+    for (const key of Array.from(inlinePanels.keys())) closeInlinePanel(key);
+  };
+  const openTerminalPanel = (anchorRow, deployment, pod, container, url, button) => {
+    const panelKey = `${podKey(deployment, pod)}::terminal::${container.name}`;
+    if (inlinePanels.has(panelKey)) {
+      closeInlinePanel(panelKey);
+      return;
+    }
+    const tr = document.createElement("tr");
+    tr.className = "inline-panel-row";
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    const wrap = document.createElement("div");
+    wrap.className = "inline-panel";
+    const head = document.createElement("div");
+    head.className = "inline-panel-head";
+    const title = document.createElement("div");
+    const h3 = document.createElement("h3");
+    h3.textContent = `${deployment.namespace}/${pod.name}/${container.name} terminal`;
+    const sub = document.createElement("p");
+    sub.textContent = "Bastion exec session · runs as the in-cluster service account.";
+    title.append(h3, sub);
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Close";
+    closeBtn.addEventListener("click", () => closeInlinePanel(panelKey));
+    head.append(title, closeBtn);
+    const iframe = document.createElement("iframe");
+    iframe.title = "Bastion container terminal";
+    iframe.src = url;
+    wrap.append(head, iframe);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    anchorRow.parentNode.insertBefore(tr, anchorRow.nextSibling);
+    button.classList.add("active");
+    inlinePanels.set(panelKey, {
+      row: tr,
+      button,
+      cleanup: () => { iframe.src = "about:blank"; },
+    });
+  };
+  const openLogsPanel = (anchorRow, deployment, pod, container, url, button) => {
+    const panelKey = `${podKey(deployment, pod)}::logs::${container.name}`;
+    if (inlinePanels.has(panelKey)) {
+      closeInlinePanel(panelKey);
+      return;
+    }
+    const tr = document.createElement("tr");
+    tr.className = "inline-panel-row";
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    const wrap = document.createElement("div");
+    wrap.className = "inline-panel";
+    const head = document.createElement("div");
+    head.className = "inline-panel-head";
+    const title = document.createElement("div");
+    const h3 = document.createElement("h3");
+    h3.textContent = `${deployment.namespace}/${pod.name}/${container.name} logs`;
+    const sub = document.createElement("p");
+    sub.textContent = "kubectl logs -f --tail=500 (live stream)";
+    title.append(h3, sub);
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Close";
+    closeBtn.addEventListener("click", () => closeInlinePanel(panelKey));
+    head.append(title, closeBtn);
+    const pre = document.createElement("pre");
+    pre.className = "logs";
+    wrap.append(head, pre);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    anchorRow.parentNode.insertBefore(tr, anchorRow.nextSibling);
+    button.classList.add("active");
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${protocol}://${window.location.host}${url}`);
+    const append = (line) => {
+      const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+      pre.appendChild(document.createTextNode(line));
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+    };
+    ws.onopen = () => append("[connected]\n");
+    ws.onmessage = (event) => {
+      let parsed;
+      try { parsed = JSON.parse(event.data); } catch { append(String(event.data)); return; }
+      if (parsed.type === "logs-output") append(String(parsed.data || ""));
+      else if (parsed.type === "logs-status") append(`[${parsed.status || "status"}]\n`);
+      else if (parsed.type === "logs-error") append(`[error] ${parsed.message || "logs error"}\n`);
+      else if (parsed.type === "logs-exit") append(`[exit code=${parsed.code} signal=${parsed.signal || "none"}]\n`);
+    };
+    ws.onerror = () => append("[connection error]\n");
+    ws.onclose = () => append("[disconnected]\n");
+    inlinePanels.set(panelKey, {
+      row: tr,
+      button,
+      cleanup: () => { try { ws.close(1000, "panel closed"); } catch (_error) {} },
+    });
+  };
   const render = (data) => {
+    metricsAvailable = !!data.metricsAvailable;
+    closeAllInlinePanels();
     body.textContent = "";
     let rowCount = 0;
     let containerCount = 0;
@@ -1166,8 +1395,8 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
         containerCount += containers.length;
         const containerCell = document.createElement("div");
         containerCell.className = "container-cell";
-        const actions = document.createElement("div");
-        actions.className = "service-actions";
+        const actionsCell = document.createElement("div");
+        actionsCell.className = "container-actions";
         for (const container of containers) {
           const item = document.createElement("div");
           item.className = "container-item";
@@ -1185,29 +1414,71 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
             idLine.append(code(shortContainerId(container.containerId)));
             item.appendChild(idLine);
           }
+          const containerMetrics = metricsLine(container.metrics);
+          if (containerMetrics) item.appendChild(containerMetrics);
           containerCell.appendChild(item);
+
+          const actionRow = document.createElement("div");
+          actionRow.className = "row";
+          const actionLabel = document.createElement("span");
+          actionLabel.className = "name";
+          actionLabel.textContent = container.name;
+          actionRow.appendChild(actionLabel);
+
           const safeTerminalUrl = safeBastionTerminalUrl(container.terminalUrl);
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = "Terminal";
-          button.disabled = !safeTerminalUrl || !data.terminalEnabled;
-          button.title = button.disabled ? "terminal unavailable" : "Open bastion exec terminal";
-          button.addEventListener("click", () => openTerminal(safeTerminalUrl, deployment.namespace + "/" + pod.name + "/" + container.name));
-          actions.appendChild(button);
+          const termBtn = document.createElement("button");
+          termBtn.type = "button";
+          termBtn.className = "action-btn";
+          termBtn.textContent = "Terminal";
+          termBtn.disabled = !safeTerminalUrl || !data.terminalEnabled;
+          termBtn.title = termBtn.disabled
+            ? "terminal unavailable (set BASTION_TERMINAL_ENABLED=true and the dd-bastion-exec ClusterRoleBinding)"
+            : "Open inline bastion exec terminal";
+          actionRow.appendChild(termBtn);
+
+          const safeLogsUrl = safeBastionLogsUrl(container.logsUrl);
+          const logsBtn = document.createElement("button");
+          logsBtn.type = "button";
+          logsBtn.className = "action-btn";
+          logsBtn.textContent = "Logs";
+          logsBtn.disabled = !safeLogsUrl;
+          logsBtn.title = logsBtn.disabled
+            ? "logs unavailable"
+            : "Open inline kubectl logs -f stream";
+          actionRow.appendChild(logsBtn);
+
+          actionsCell.appendChild(actionRow);
+
+          // Wire the click handlers after the pod row is appended so we can
+          // pass the actual <tr> as the insertion anchor.
+          termBtn.addEventListener("click", () => {
+            if (!safeTerminalUrl || !data.terminalEnabled) return;
+            openTerminalPanel(podRow, deployment, pod, container, safeTerminalUrl, termBtn);
+          });
+          logsBtn.addEventListener("click", () => {
+            if (!safeLogsUrl) return;
+            openLogsPanel(podRow, deployment, pod, container, safeLogsUrl, logsBtn);
+          });
         }
         const podCell = document.createElement("div");
         podCell.className = "container-cell";
-        podCell.append(code(pod.name));
-        podCell.append(pill(pod.phase || "unknown", pod.phase !== "Running"));
-        const tr = document.createElement("tr");
-        tr.append(
+        const podLine = document.createElement("span");
+        podLine.append(code(pod.name));
+        podLine.append(" ");
+        podLine.append(pill(pod.phase || "unknown", pod.phase !== "Running"));
+        podCell.appendChild(podLine);
+        const podMetrics = metricsLine(pod.metrics);
+        if (podMetrics) podCell.appendChild(podMetrics);
+
+        const podRow = document.createElement("tr");
+        podRow.append(
           cell(deployment.deployment),
           cell(deployment.namespace),
           cell(podCell),
           cell(containerCell),
-          cell(actions)
+          cell(actionsCell)
         );
-        body.appendChild(tr);
+        body.appendChild(podRow);
         rowCount += 1;
       }
     }
@@ -1291,10 +1562,6 @@ const HOME_LIVE_CONTAINERS_JS: &str = r##"
   refresh.addEventListener("click", () => {
     liveInventoryEnabled = true;
     load();
-  });
-  close.addEventListener("click", () => {
-    frame.src = "about:blank";
-    dock.hidden = true;
   });
   renderEmpty("Sign in through /auth?return=/home, then refresh to load live containers and bastion terminals.");
   setStatus("auth required for live container inventory");
@@ -1531,6 +1798,7 @@ fn agents_threads_body() -> Markup {
                         p id="selected-subtitle" { "Pick a thread from the sidebar or start a new one." }
                     }
                     div class="row" {
+                        span id="container-state" class="pill warn clickable" role="button" tabindex="0" aria-busy="false" aria-live="polite" title="Container lifecycle state for the selected thread. Polls /api/agents/threads/:id/runtime every 10s. Click to probe now." { "container: no thread" }
                         a href="/agents/tasks" { "Diagnostics table" }
                         a href="/home" { "Service directory" }
                     }
@@ -1558,10 +1826,13 @@ fn agents_threads_body() -> Markup {
                     section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel" {
                         div class="topbar thread-control-heading" {
                             div {
-                                h2 { "Thread Control" }
+                                h2 id="thread-control-title" { "Thread Control" }
                                 p id="thread-control-subtitle" { "Select an existing worker thread or prepare a new one." }
                             }
-                            span id="thread-mode" class="pill warn" { "select thread" }
+                            div class="thread-control-tools" {
+                                span id="thread-mode" class="pill warn" { "select thread" }
+                                button id="thread-control-toggle" class="icon" type="button" title="Expand Thread Control" aria-expanded="false" { "^" }
+                            }
                         }
                         div class="form-grid" {
                             label {
@@ -1607,13 +1878,14 @@ fn agents_threads_body() -> Markup {
                                 textarea id="prompt" placeholder="Ask this thread worker to do something" {}
                             }
                             div id="context-picker" class="context-picker field-wide" {
-                                div class="context-picker-head" {
-                                    label class="checkbox-row" {
-                                        input id="zero-context" type="checkbox";
-                                        span { "Start with zero context" }
-                                    }
-                                    span id="context-summary" class="muted" { "Context review will run before first dispatch." }
-                                }
+                                  div class="context-picker-head" {
+                                      label class="checkbox-row" {
+                                          input id="zero-context" type="checkbox";
+                                          span { "Start with zero context" }
+                                      }
+                                      input id="context-filter" class="context-filter" autocomplete="off" spellcheck="false" placeholder="Filter context";
+                                      span id="context-summary" class="muted" { "Context review will run before first dispatch." }
+                                  }
                                 div id="context-candidates" class="context-candidates" aria-live="polite" {
                                     p class="muted" { "No context loaded yet." }
                                 }
@@ -1932,6 +2204,7 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         gap: 16px;
         overflow: hidden auto;
         overscroll-behavior: contain;
+        scroll-padding-bottom: 96px;
       }
       .main.mode-empty #sleep-thread,
       .main.mode-empty #archive-thread,
@@ -1980,6 +2253,31 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       }
       .pill.warn { border-color: rgba(250, 204, 21, 0.4); color: var(--warn); }
       .pill.bad { border-color: rgba(251, 113, 133, 0.4); color: var(--danger); }
+      .pill.clickable {
+        cursor: pointer;
+        user-select: none;
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+      .pill.clickable:hover {
+        background: rgba(110, 231, 183, 0.12);
+        border-color: rgba(110, 231, 183, 0.55);
+      }
+      .pill.clickable.warn:hover {
+        background: rgba(250, 204, 21, 0.12);
+        border-color: rgba(250, 204, 21, 0.55);
+      }
+      .pill.clickable.bad:hover {
+        background: rgba(251, 113, 133, 0.12);
+        border-color: rgba(251, 113, 133, 0.55);
+      }
+      .pill.clickable:focus-visible {
+        outline: 2px solid rgba(110, 231, 183, 0.7);
+        outline-offset: 2px;
+      }
+      .pill.clickable.probing {
+        opacity: 0.7;
+        cursor: progress;
+      }
       .thread-list {
         display: grid;
         align-content: start;
@@ -2066,19 +2364,20 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         min-height: 0;
       }
       .workspace-flow {
-        flex: 0 0 auto;
-        min-height: auto;
+        flex: 1 0 auto;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 14px;
         overflow: visible;
       }
       .stream-panel {
-        flex: 0 0 auto;
+        flex: 1 0 auto;
         min-height: 260px;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow: visible;
+        scroll-margin-bottom: 96px;
       }
       .main.mode-empty #response-stream-panel,
       .main.mode-new:not(.stream-active) #response-stream-panel,
@@ -2098,20 +2397,33 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         order: 2;
       }
       .main.control-sliding-down #thread-control-panel {
-        animation: control-slide-down 260ms ease;
+        animation: control-dock-travel 1500ms cubic-bezier(0.2, 0.82, 0.18, 1);
       }
-      .main.control-bottom .stream-panel {
-        height: clamp(360px, 66dvh, 760px);
-        flex-basis: clamp(360px, 66dvh, 760px);
+      .main.control-sliding-down #thread-control-panel > * {
+        animation: control-dock-morph 500ms ease;
       }
-      @keyframes control-slide-down {
+      @keyframes control-dock-travel {
         from {
-          opacity: 0.82;
-          transform: translateY(-20px);
+          transform: translateY(var(--control-shift-y, -160px));
+        }
+        33% {
+          filter: grayscale(0.7);
+          opacity: 0.72;
         }
         to {
-          opacity: 1;
           transform: translateY(0);
+          filter: grayscale(0);
+          opacity: 1;
+        }
+      }
+      @keyframes control-dock-morph {
+        from {
+          filter: grayscale(1);
+          opacity: 0.5;
+        }
+        to {
+          filter: grayscale(0);
+          opacity: 1;
         }
       }
       .prompt-panel {
@@ -2127,7 +2439,31 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         max-height: none;
       }
       .main.control-bottom .prompt-panel {
-        max-height: none;
+        position: sticky;
+        bottom: 0;
+        z-index: 6;
+        max-height: min(76dvh, 720px);
+        overflow: auto;
+        overscroll-behavior: contain;
+        box-shadow: 0 -18px 36px rgba(0, 0, 0, 0.28);
+      }
+      .main.control-bottom.control-collapsed .prompt-panel {
+        min-height: 58px;
+        max-height: 66px;
+        overflow: hidden;
+        padding-block: 12px;
+      }
+      .main.control-bottom.control-collapsed #thread-control-subtitle,
+      .main.control-bottom.control-collapsed .form-grid,
+      .main.control-bottom.control-collapsed .prompt-actions,
+      .main.control-bottom.control-collapsed .status-line {
+        display: none;
+      }
+      .main.control-bottom.control-collapsed .thread-control-heading {
+        margin-bottom: 0;
+      }
+      .main.control-bottom.control-expanded {
+        scroll-padding-bottom: min(76dvh, 720px);
       }
       .main.mode-existing.control-bottom textarea {
         min-height: 78px;
@@ -2135,6 +2471,18 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       }
       .thread-control-heading {
         margin-bottom: 12px;
+      }
+      .thread-control-heading h2 {
+        margin-bottom: 0;
+      }
+      .thread-control-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .main.control-top #thread-control-toggle {
+        display: none;
       }
       .prompt-panel label,
       .form-grid > label,
@@ -2211,22 +2559,27 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         gap: 8px;
         min-width: 0;
       }
-      .context-picker-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        min-width: 0;
-      }
+        .context-picker-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          flex-wrap: wrap;
+          min-width: 0;
+        }
       .checkbox-row {
         display: inline-flex;
         align-items: center;
         gap: 8px;
         min-width: 0;
       }
-      .checkbox-row span {
-        margin: 0;
-      }
+        .checkbox-row span {
+          margin: 0;
+        }
+        .context-filter {
+          flex: 1 1 160px;
+          min-width: 120px;
+        }
       .context-candidates {
         display: grid;
         gap: 7px;
@@ -2255,6 +2608,36 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
       .context-row small {
         color: var(--muted);
         margin-top: 3px;
+      }
+      .context-row-breadcrumb {
+        border-style: dashed;
+      }
+      .context-row-task {
+        border-color: rgba(120, 190, 255, 0.45);
+      }
+      .context-badge {
+        display: inline-block;
+        font-size: 10px;
+        line-height: 1;
+        padding: 2px 6px;
+        border-radius: 999px;
+        margin-right: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        background: var(--panel-3);
+        color: var(--muted);
+        border: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      .context-badge-breadcrumb {
+        background: rgba(255, 168, 79, 0.18);
+        color: #f3a55b;
+        border-color: rgba(255, 168, 79, 0.45);
+      }
+      .context-badge-task {
+        background: rgba(120, 190, 255, 0.16);
+        color: #8fc8ff;
+        border-color: rgba(120, 190, 255, 0.42);
       }
       label span {
         display: block;
@@ -2288,9 +2671,8 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         gap: 10px;
         min-height: 0;
         max-height: none;
-        overflow: auto;
-        overscroll-behavior: contain;
-        padding-right: 3px;
+        overflow: visible;
+        padding-right: 0;
       }
       .terminal-inline {
         flex: 1 1 auto;
@@ -2401,6 +2783,15 @@ const AGENTS_THREADS_CSS: &str = r#"      :root {
         .workspace-flow {
           min-height: min(540px, 100%);
         }
+        .main.control-bottom.control-expanded .prompt-panel {
+          position: fixed;
+          left: 14px;
+          right: 14px;
+          bottom: 14px;
+          z-index: 1200;
+          width: auto;
+          max-height: calc(100dvh - 28px);
+        }
         .app.tasks-collapsed .tasks-sidebar {
           padding-block: 9px;
         }
@@ -2442,7 +2833,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         selectedTaskId: null,
         liveSource: null,
         liveWs: null,
+        liveRustWs: null,
         renderedEvents: new Set(),
+        renderedEventKeys: [],
         streamTaskId: null,
         runtimePoll: null,
         lastRuntimeSummary: "",
@@ -2452,21 +2845,35 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         snapshotRetryTimer: null,
         agentTextBuffer: null,
         agentTextFlushTimer: null,
-        contextPromptKey: "",
-        contextCandidates: [],
-        contextReady: false,
-        contextLoading: false,
-        contextErrors: [],
+          contextPromptKey: "",
+          contextCandidates: [],
+          contextSelection: new Set(),
+          contextReady: false,
+          contextLoading: false,
+          contextErrors: [],
         optimisticThreads: new Map(),
         optimisticTasks: new Map(),
         threadSidebarCollapsed: false,
         tasksSidebarCollapsed: false,
         taskSearch: "",
+        threadControlCollapsed: true,
         controlAnimationTimer: null,
+        lastRuntimeErrorMessage: "",
+        containerStatePoll: null,
+        containerStatePolledThread: null,
+        containerStateLastKey: "",
+        containerStateRequestToken: 0,
+        containerStateAbortController: null,
+        containerStateFailureCount: 0,
+        containerStateLastFetchAt: 0,
+        containerStateLastManualAt: 0,
+        containerStateVisibilityBound: false,
       };
 
       const AGENT_TEXT_JOIN_DELAY_MS = 1200;
       const AGENT_TEXT_MAX_BUFFER_MS = 3000;
+      const STREAM_EVENT_DOM_LIMIT = 500;
+      const STREAM_EVENT_DEDUPE_LIMIT = 1500;
 
       function makeUuid() {
         if (crypto.randomUUID) return crypto.randomUUID();
@@ -2547,28 +2954,69 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         }
       }
 
+      function syncThreadControlTitle() {
+        const workspace = $("thread-workspace");
+        const newThreadAtTop = state.threadUiMode === "new" && workspace.classList.contains("control-top");
+        $("thread-control-title").textContent = newThreadAtTop ? "New thread" : "Thread Control";
+      }
+
+      function threadControlCanCollapse() {
+        const workspace = $("thread-workspace");
+        return workspace.classList.contains("control-bottom") && state.threadUiMode !== "empty";
+      }
+
+      function setThreadControlCollapsed(collapsed, options = {}) {
+        const workspace = $("thread-workspace");
+        const panel = $("thread-control-panel");
+        const toggle = $("thread-control-toggle");
+        const canCollapse = threadControlCanCollapse();
+        const next = canCollapse ? Boolean(collapsed) : false;
+        state.threadControlCollapsed = next;
+        workspace.classList.toggle("control-collapsed", canCollapse && next);
+        workspace.classList.toggle("control-expanded", canCollapse && !next);
+        panel.setAttribute("aria-expanded", String(!next));
+        toggle.setAttribute("aria-expanded", String(!next));
+        toggle.textContent = next ? "^" : "v";
+        toggle.title = next ? "Expand Thread Control" : "Collapse Thread Control";
+        if (!next && options.scrollIntoView) {
+          requestAnimationFrame(() => {
+            panel.scrollIntoView({ block: "end", behavior: options.smooth ? "smooth" : "auto" });
+          });
+        }
+      }
+
       function setControlPosition(position, options = {}) {
         const workspace = $("thread-workspace");
+        const panel = $("thread-control-panel");
         const next = position === "bottom" ? "bottom" : "top";
         const wasBottom = workspace.classList.contains("control-bottom");
+        const animateDock = next === "bottom" && (!wasBottom || options.forceAnimation);
+        const fromRect = animateDock ? panel.getBoundingClientRect() : null;
         workspace.classList.remove("control-top", "control-bottom", "control-sliding-down");
         workspace.classList.add(`control-${next}`);
+        syncThreadControlTitle();
         if (state.controlAnimationTimer !== null) {
           window.clearTimeout(state.controlAnimationTimer);
           state.controlAnimationTimer = null;
         }
         if (next !== "bottom") {
           workspace.classList.remove("stream-deferred");
+          setThreadControlCollapsed(false);
           return;
         }
-        if (!wasBottom || options.forceAnimation) {
-          workspace.classList.add("stream-deferred");
+        const preserveExpanded = wasBottom && state.threadControlCollapsed === false && options.collapseControl !== true;
+        setThreadControlCollapsed(preserveExpanded ? false : true);
+        if (animateDock) {
           requestAnimationFrame(() => {
+            const toRect = panel.getBoundingClientRect();
+            const shift = fromRect ? Math.round(fromRect.top - toRect.top) : -160;
+            panel.style.setProperty("--control-shift-y", `${shift}px`);
             workspace.classList.add("control-sliding-down");
             state.controlAnimationTimer = window.setTimeout(() => {
-              workspace.classList.remove("control-sliding-down", "stream-deferred");
+              workspace.classList.remove("control-sliding-down");
+              panel.style.removeProperty("--control-shift-y");
               state.controlAnimationTimer = null;
-            }, 280);
+            }, 1500);
           });
         } else {
           workspace.classList.remove("stream-deferred");
@@ -2594,6 +3042,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         workspace.classList.add(`mode-${modeName}`);
         setStreamActive(modeName === "existing");
         setControlPosition(modeName === "existing" ? "bottom" : "top");
+        syncThreadControlTitle();
         updateTasksSidebarVisibility();
         $("new-task").disabled = modeName === "empty";
         $("send").textContent = modeName === "new" ? "Create thread & send" : modeName === "existing" ? "Send task" : "Send";
@@ -2605,6 +3054,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function setTaskStreamLayout(mode) {
         if (mode === "tasks") setTasksSidebarCollapsed(false);
         setWorkspaceLayout("lower");
+        if (mode === "stream") setThreadControlCollapsed(true);
       }
 
       function setThreadsSidebarCollapsed(collapsed) {
@@ -2646,6 +3096,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
 
       function handleControlPanelClick(event) {
         if (shouldIgnorePanelShortcut(event.target)) return;
+        if (threadControlCanCollapse()) {
+          if (state.threadControlCollapsed) setThreadControlCollapsed(false, { scrollIntoView: true, smooth: true });
+          return;
+        }
         setWorkspaceLayout(state.threadUiMode === "existing" ? "lower" : "control");
       }
 
@@ -2658,6 +3112,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (shouldIgnorePanelShortcut(event.target)) return;
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
+        if (threadControlCanCollapse()) {
+          setThreadControlCollapsed(!state.threadControlCollapsed, { scrollIntoView: state.threadControlCollapsed, smooth: true });
+          return;
+        }
         setWorkspaceLayout(state.threadUiMode === "existing" ? "lower" : "control");
       }
 
@@ -2840,27 +3298,46 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return JSON.stringify([threadId, prompt, repo, baseBranch]);
       }
 
-      function resetContextReview(message = "Context review will run before first dispatch.") {
-        state.contextPromptKey = "";
-        state.contextCandidates = [];
-        state.contextReady = false;
-        state.contextLoading = false;
-        state.contextErrors = [];
-        $("context-summary").textContent = message;
-        $("context-candidates").innerHTML = '<p class="muted">No context loaded yet.</p>';
-      }
+        function resetContextReview(message = "Context review will run before first dispatch.") {
+          state.contextPromptKey = "";
+          state.contextCandidates = [];
+          state.contextSelection = new Set();
+          state.contextReady = false;
+          state.contextLoading = false;
+          state.contextErrors = [];
+          $("context-filter").value = "";
+          $("context-summary").textContent = message;
+          $("context-candidates").innerHTML = '<p class="muted">No context loaded yet.</p>';
+        }
+
+        function contextCandidateSearchText(item) {
+          return [
+            item.contextId,
+            item.contextTitle,
+            item.matchSource,
+            item.kind,
+            item.updatedAt,
+            item.contextBlob,
+          ].filter(Boolean).join(" ").toLowerCase();
+        }
+
+        function visibleContextCandidates() {
+          const filter = $("context-filter").value.trim().toLowerCase();
+          if (!filter) return state.contextCandidates;
+          return state.contextCandidates.filter((item) => contextCandidateSearchText(item).includes(filter));
+        }
 
       function renderContextCandidates() {
         const container = $("context-candidates");
         container.textContent = "";
-        if ($("zero-context").checked) {
-          $("context-summary").textContent = "Zero context selected.";
-          const empty = document.createElement("p");
-          empty.className = "muted";
-          empty.textContent = "The worker will receive only the current prompt and thread log.";
-          container.appendChild(empty);
-          return;
-        }
+          if ($("zero-context").checked) {
+            $("context-summary").textContent = "Zero context selected.";
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No previous tasks, breadcrumbs, or selected blobs will be sent.";
+            container.appendChild(empty);
+            return;
+          }
         if (state.contextLoading) {
           $("context-summary").textContent = "Finding relevant context...";
           const loading = document.createElement("p");
@@ -2876,29 +3353,56 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           empty.textContent = "No context loaded yet.";
           container.appendChild(empty);
           return;
-        }
-        const errors = state.contextErrors?.length ? ` · ${state.contextErrors.length} fallback note(s)` : "";
-        $("context-summary").textContent = `${state.contextCandidates.length} suggested context blob(s)${errors}`;
-        if (!state.contextCandidates.length) {
-          const empty = document.createElement("p");
-          empty.className = "muted";
-          empty.textContent = "No matching context blobs were found. Final submit will start without selected blobs.";
-          container.appendChild(empty);
-          return;
-        }
-        for (const item of state.contextCandidates) {
-          const row = document.createElement("label");
-          row.className = "context-row";
+          }
+          const errors = state.contextErrors?.length ? ` · ${state.contextErrors.length} fallback note(s)` : "";
+          const visible = visibleContextCandidates();
+          $("context-summary").textContent = `${state.contextSelection.size}/${state.contextCandidates.length} context item(s) selected${errors}`;
+          if (!state.contextCandidates.length) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No matching context blobs were found. Final submit will start without selected blobs.";
+            container.appendChild(empty);
+            return;
+          }
+          if (!visible.length) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No context matches the filter.";
+            container.appendChild(empty);
+            return;
+          }
+          for (const item of visible) {
+            const isBreadcrumb = item.kind === "breadcrumb";
+            const isTask = item.kind === "thread-task";
+            const row = document.createElement("label");
+            row.className = "context-row"
+              + (isBreadcrumb ? " context-row-breadcrumb" : "")
+              + (isTask ? " context-row-task" : "");
           const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.className = "context-checkbox";
-          checkbox.value = item.contextId || "";
-          checkbox.checked = true;
+            checkbox.type = "checkbox";
+            checkbox.className = "context-checkbox";
+            checkbox.value = item.contextId || "";
+            checkbox.checked = state.contextSelection.has(item.contextId || "");
+            if (item.kind) checkbox.dataset.kind = item.kind;
+            checkbox.addEventListener("change", () => {
+              if (!item.contextId) return;
+              if (checkbox.checked) state.contextSelection.add(item.contextId);
+              else state.contextSelection.delete(item.contextId);
+              renderContextCandidates();
+            });
           const text = document.createElement("div");
           const title = document.createElement("strong");
-          title.textContent = item.contextTitle || item.contextId || "context blob";
+          const titleText = item.contextTitle || item.contextId || (isBreadcrumb ? "breadcrumb" : isTask ? "previous task" : "context blob");
+          if (isBreadcrumb || isTask) {
+            const badge = document.createElement("span");
+            badge.className = "context-badge " + (isBreadcrumb ? "context-badge-breadcrumb" : "context-badge-task");
+            badge.textContent = isBreadcrumb ? "breadcrumb" : "task";
+            title.append(badge, document.createTextNode(" " + titleText));
+          } else {
+            title.textContent = titleText;
+          }
           const detail = document.createElement("small");
-          const source = item.matchSource || "context";
+          const source = item.matchSource || (isBreadcrumb ? "breadcrumb" : isTask ? "thread-task" : "context");
           const score = Number.isFinite(item.score) ? ` · score ${Number(item.score).toFixed(3)}` : "";
           detail.textContent = `${item.contextId || "context"} · ${source}${score}`;
           text.append(title, detail);
@@ -2919,11 +3423,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         });
         const body = await response.text();
         if (!response.ok) throw new Error(`context candidates failed ${response.status}: ${body}`);
-        const data = JSON.parse(body);
-        state.contextPromptKey = promptKey;
-        state.contextCandidates = data.candidates || [];
-        state.contextErrors = data.errors || [];
-        state.contextReady = true;
+          const data = JSON.parse(body);
+          state.contextPromptKey = promptKey;
+          state.contextCandidates = data.candidates || [];
+          state.contextSelection = new Set(state.contextCandidates.map((item) => item.contextId).filter(Boolean));
+          state.contextErrors = data.errors || [];
+          state.contextReady = true;
         state.contextLoading = false;
         renderContextCandidates();
       }
@@ -2935,10 +3440,9 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (!state.contextReady || state.contextPromptKey !== promptKey) {
           return null;
         }
-        const ids = Array.from(document.querySelectorAll(".context-checkbox:checked"))
-          .map((item) => item.value)
-          .filter(Boolean)
-          .slice(0, 10);
+          const ids = Array.from(state.contextSelection)
+            .filter(Boolean)
+            .slice(0, 50);
         return { contextMode: ids.length ? "selected" : "none", contextIds: ids };
       }
 
@@ -3280,6 +3784,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (thread?.baseBranch) $("base-branch").value = thread.baseBranch;
         if (!state.selectedTaskId) $("task-id").value = makeUuid();
         updateThreadMode();
+        syncContainerStatePolling();
       }
 
       function selectThread(threadId) {
@@ -3335,6 +3840,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function clearStream(message, taskId = state.selectedTaskId) {
         resetAgentTextBuffer();
         state.renderedEvents.clear();
+        state.renderedEventKeys = [];
         state.streamTaskId = taskId || null;
         $("stream").textContent = "";
         setStreamState(message || "waiting", "warn");
@@ -3662,7 +4168,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       }
 
       function queueAgentTextRow(row, key, seq, text) {
-        state.renderedEvents.add(key);
+        markRenderedEvent(key);
         const taskId = state.selectedTaskId || row.taskId || "task";
         if (!state.agentTextBuffer || state.agentTextBuffer.taskId !== taskId) {
           flushAgentTextBuffer();
@@ -3679,6 +4185,37 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         state.agentTextBuffer.lastSeq = seq;
         state.agentTextBuffer.parts.push(text);
         scheduleAgentTextFlush();
+      }
+
+      function markRenderedEvent(key) {
+        if (!state.renderedEvents.has(key)) {
+          state.renderedEventKeys.push(key);
+        }
+        state.renderedEvents.add(key);
+        while (state.renderedEventKeys.length > STREAM_EVENT_DEDUPE_LIMIT) {
+          const oldest = state.renderedEventKeys.shift();
+          if (oldest) state.renderedEvents.delete(oldest);
+        }
+      }
+
+      function trimStreamDom() {
+        const stream = $("stream");
+        const events = stream.querySelectorAll(".event");
+        const overflow = events.length - STREAM_EVENT_DOM_LIMIT;
+        if (overflow <= 0) return;
+        for (const item of Array.from(events).slice(0, overflow)) {
+          item.remove();
+        }
+      }
+
+      function scrollResponseToLatest() {
+        const workspace = $("thread-workspace");
+        const responsePanel = $("response-stream-panel");
+        const controlPanel = $("thread-control-panel");
+        if (!workspace || !responsePanel || responsePanel.offsetParent === null) return;
+        const controlOffset = workspace.classList.contains("control-bottom") ? controlPanel.offsetHeight + 24 : 24;
+        const targetTop = responsePanel.offsetTop + responsePanel.offsetHeight - workspace.clientHeight + controlOffset;
+        workspace.scrollTo({ top: Math.max(0, targetTop), behavior: "auto" });
       }
 
       function appendEventElement({ row, kind, seq, seqLabel, text, feedbackSeq }) {
@@ -3723,7 +4260,8 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           item.appendChild(votes);
         }
         $("stream").appendChild(item);
-        $("stream").scrollTop = $("stream").scrollHeight;
+        trimStreamDom();
+        scrollResponseToLatest();
         setStreamState("showing events", "ok");
       }
 
@@ -3735,7 +4273,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         if (state.renderedEvents.has(key)) return;
         const text = eventText(row, { preserveWhitespace: kind === "claude" });
         if (shouldHideEventRow(row, text)) {
-          state.renderedEvents.add(key);
+          markRenderedEvent(key);
           return;
         }
         if (shouldCoalesceAgentText(row, text)) {
@@ -3743,7 +4281,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           return;
         }
         flushAgentTextBuffer();
-        state.renderedEvents.add(key);
+        markRenderedEvent(key);
         appendEventElement({ row, kind, seq, text, feedbackSeq: seq });
       }
 
@@ -3820,6 +4358,425 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return lines.join("\n");
       }
 
+      const CONTAINER_FAIL_REASONS = new Set([
+        "CrashLoopBackOff",
+        "ImagePullBackOff",
+        "ErrImagePull",
+        "InvalidImageName",
+        "CreateContainerConfigError",
+        "CreateContainerError",
+        "RunContainerError",
+      ]);
+      const CONTAINER_WARM_REASONS = new Set([
+        "ContainerCreating",
+        "PodInitializing",
+      ]);
+
+      function classifyContainerState(data, opts = {}) {
+        if (!data) {
+          return { label: "container: idle", kind: "warn", title: "Awaiting first runtime poll." };
+        }
+        const errors = Array.isArray(data.errors) ? data.errors : [];
+        if (errors.length) {
+          return {
+            label: "container: runtime error",
+            kind: "bad",
+            title: errors.join("\n"),
+          };
+        }
+        const summary = data.summary || {};
+        const deployment = data.deployment || {};
+        const pods = (Array.isArray(data.pods) ? data.pods : []).filter(
+          (pod) => pod && typeof pod === "object"
+        );
+        if (!deployment.name) {
+          const threadExists = Boolean(opts.threadExists);
+          return {
+            label: threadExists ? "container: non-existent" : "container: never-lived",
+            kind: "warn",
+            title: threadExists
+              ? "No Kubernetes Deployment found for this thread UUID. It may have been deleted or never created."
+              : "No Kubernetes Deployment exists for this thread UUID yet. Sending a task will create one.",
+          };
+        }
+        const containers = pods.flatMap((pod) => {
+          const podName = pod.name || "pod";
+          const init = (Array.isArray(pod.initContainers) ? pod.initContainers : []).filter(
+            (container) => container && typeof container === "object"
+          );
+          const main = (Array.isArray(pod.containers) ? pod.containers : []).filter(
+            (container) => container && typeof container === "object"
+          );
+          return [...init, ...main].map((container) => ({
+            podName,
+            podPhase: pod.phase || "Unknown",
+            name: container.name || "container",
+            ready: container.ready === true,
+            restartCount: container.restartCount || 0,
+            waiting: container.state?.waiting || null,
+            running: container.state?.running || null,
+            terminated: container.state?.terminated || null,
+          }));
+        });
+        const unscheduled = pods
+          .map((pod) => {
+            const conditions = Array.isArray(pod.conditions) ? pod.conditions : [];
+            return {
+              podName: pod.name || "pod",
+              condition: conditions.find((condition) =>
+                condition && condition.type === "PodScheduled" && condition.status === "False"
+              ),
+            };
+          })
+          .find((item) => item.condition);
+        if (unscheduled) {
+          const reason = unscheduled.condition.reason || "Unschedulable";
+          return {
+            label: `container: pending (${reason})`,
+            kind: "warn",
+            title: `${unscheduled.podName}: ${reason}${unscheduled.condition.message ? `: ${unscheduled.condition.message}` : ""}`,
+          };
+        }
+        const failed = containers.find((container) =>
+          (container.waiting && CONTAINER_FAIL_REASONS.has(container.waiting.reason || "")) ||
+          (container.terminated && container.terminated.exitCode && container.terminated.exitCode !== 0)
+        );
+        if (failed) {
+          const reason = failed.waiting?.reason || failed.terminated?.reason || `exit ${failed.terminated?.exitCode || "?"}`;
+          const detail = failed.waiting?.message || failed.terminated?.message || "";
+          return {
+            label: `container: dead (${reason})`,
+            kind: "bad",
+            title: `${failed.podName}/${failed.name}: ${detail || reason}`,
+          };
+        }
+        if (summary.desiredReplicas === 0) {
+          return {
+            label: "container: suspended",
+            kind: "warn",
+            title: "Deployment scaled to zero replicas (sleep/archive). Sending a task or merge action will wake it.",
+          };
+        }
+        if (summary.phase === "ready") {
+          const running = containers.find((container) => container.running?.startedAt)?.running?.startedAt;
+          return {
+            label: "container: running",
+            kind: "ok",
+            title: [
+              `${summary.readyPodCount || 0}/${summary.podCount || pods.length} pods ready`,
+              `${summary.availableReplicas || 0}/${summary.desiredReplicas || 0} replicas available`,
+              running ? `oldest running since ${running}` : null,
+            ].filter(Boolean).join("\n"),
+          };
+        }
+        const warming = containers.find((container) =>
+          container.waiting && CONTAINER_WARM_REASONS.has(container.waiting.reason || "")
+        );
+        if (warming) {
+          return {
+            label: `container: warming (${warming.waiting.reason})`,
+            kind: "warn",
+            title: `${warming.podName}/${warming.name}: ${warming.waiting.message || warming.waiting.reason}`,
+          };
+        }
+        if (summary.phase === "creating") {
+          return {
+            label: "container: cold-start",
+            kind: "warn",
+            title: "Deployment exists, pod not yet scheduled. First-time cold start is typically 30-90 seconds.",
+          };
+        }
+        if (summary.phase === "starting") {
+          return {
+            label: "container: starting",
+            kind: "warn",
+            title: `Pods scheduled, ${summary.readyPodCount || 0}/${summary.podCount || pods.length} ready.`,
+          };
+        }
+        return {
+          label: `container: ${summary.phase || "unknown"}`,
+          kind: "warn",
+          title: "",
+        };
+      }
+
+      function pillClassFromKind(kind) {
+        if (kind === "ok") return "pill";
+        if (kind === "bad") return "pill bad";
+        return "pill warn";
+      }
+
+      function containerStatePillClass(kind, probing) {
+        const classes = [pillClassFromKind(kind), "clickable"];
+        if (probing) classes.push("probing");
+        return classes.join(" ");
+      }
+
+      function setContainerStatePill(info) {
+        const node = $("container-state");
+        if (!node) return;
+        const next = info || { label: "container: no thread", kind: "warn", title: "Select a thread to see its container state. Click to probe now." };
+        const probing = Boolean(next.probing);
+        const disabled = !state.selectedThreadId;
+        const key = `${next.kind || "warn"}|${next.label || ""}|${next.title || ""}|${probing ? 1 : 0}|${disabled ? 1 : 0}`;
+        if (state.containerStateLastKey === key) return;
+        state.containerStateLastKey = key;
+        node.textContent = next.label || "container: unknown";
+        node.className = containerStatePillClass(next.kind, probing);
+        node.title = next.title || "";
+        node.setAttribute("aria-busy", probing ? "true" : "false");
+        node.setAttribute("aria-disabled", disabled ? "true" : "false");
+      }
+
+      function refreshContainerStatePill(data) {
+        const threadId = state.selectedThreadId;
+        if (!threadId) {
+          setContainerStatePill(null);
+          return;
+        }
+        setContainerStatePill(classifyContainerState(data, { threadExists: Boolean(existingThread(threadId)) }));
+      }
+
+      const CONTAINER_STATE_POLL_MS = 10000;
+      const CONTAINER_STATE_POLL_HIDDEN_MS = 60000;
+      const CONTAINER_STATE_FETCH_TIMEOUT_MS = 15000;
+      const CONTAINER_STATE_MANUAL_DEBOUNCE_MS = 500;
+      const CONTAINER_STATE_BACKOFF_BASE_MS = 5000;
+      const CONTAINER_STATE_BACKOFF_MAX_MS = 60000;
+      const CONTAINER_STATE_BACKOFF_CAP_EXP = 4;
+
+      function documentHidden() {
+        return typeof document !== "undefined" && document.visibilityState === "hidden";
+      }
+
+      function containerStatePollInterval() {
+        if (documentHidden()) return CONTAINER_STATE_POLL_HIDDEN_MS;
+        const failures = state.containerStateFailureCount || 0;
+        if (failures <= 0) return CONTAINER_STATE_POLL_MS;
+        const exp = Math.min(CONTAINER_STATE_BACKOFF_CAP_EXP, failures - 1);
+        return Math.min(CONTAINER_STATE_BACKOFF_MAX_MS, CONTAINER_STATE_BACKOFF_BASE_MS * Math.pow(2, exp));
+      }
+
+      function abortInflightContainerStateFetch() {
+        if (state.containerStateAbortController) {
+          try {
+            state.containerStateAbortController.abort();
+          } catch (_error) {}
+          state.containerStateAbortController = null;
+        }
+      }
+
+      const CONTAINER_STATE_TOOLTIP_MAX = 200;
+
+      function capContainerStateText(value) {
+        const text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+        if (text.length <= CONTAINER_STATE_TOOLTIP_MAX) return text;
+        return `${text.slice(0, CONTAINER_STATE_TOOLTIP_MAX - 1)}…`;
+      }
+
+      function applyContainerStateError(threadId, label, title) {
+        if (state.selectedThreadId !== threadId) return;
+        const suffix = state.containerStateFailureCount > 1
+          ? ` (${state.containerStateFailureCount} consecutive failures)`
+          : "";
+        setContainerStatePill({
+          label,
+          kind: "bad",
+          title: `${capContainerStateText(title)}${suffix}. Click to retry.`,
+        });
+      }
+
+      async function loadContainerState(threadId, opts = {}) {
+        if (!threadId) return null;
+        const manual = Boolean(opts.manual);
+        if (manual) {
+          const now = Date.now();
+          if (now - state.containerStateLastManualAt < CONTAINER_STATE_MANUAL_DEBOUNCE_MS) {
+            return null;
+          }
+          state.containerStateLastManualAt = now;
+        }
+        abortInflightContainerStateFetch();
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        state.containerStateAbortController = controller;
+        const token = ++state.containerStateRequestToken;
+        // Auto-polls keep the previous resolved label visible so screen readers (and the
+        // operator) are not nudged every 10s with "probing" -> "running" cycles. The probing
+        // pill is reserved for manual probes and the very first probe after thread selection.
+        const showProbingVisual = manual || !state.containerStateLastKey;
+        if (state.selectedThreadId === threadId && showProbingVisual) {
+          setContainerStatePill({
+            label: "container: probing",
+            kind: "warn",
+            title: `Probing runtime state for ${threadId}`,
+            probing: true,
+          });
+        }
+        const timeoutId = controller
+          ? window.setTimeout(() => {
+              try { controller.abort(); } catch (_error) {}
+            }, CONTAINER_STATE_FETCH_TIMEOUT_MS)
+          : null;
+        const isStale = () => token !== state.containerStateRequestToken;
+        const clearControllerIfCurrent = () => {
+          if (state.containerStateAbortController === controller) {
+            state.containerStateAbortController = null;
+          }
+        };
+        let response;
+        try {
+          response = await fetch(
+            `/api/agents/threads/${encodeURIComponent(threadId)}/runtime`,
+            controller
+              ? { cache: "no-store", credentials: "same-origin", signal: controller.signal }
+              : { cache: "no-store", credentials: "same-origin" },
+          );
+        } catch (error) {
+          if (timeoutId !== null) window.clearTimeout(timeoutId);
+          clearControllerIfCurrent();
+          if (isStale()) return null;
+          const aborted = controller && controller.signal && controller.signal.aborted;
+          state.containerStateFailureCount += 1;
+          applyContainerStateError(
+            threadId,
+            aborted ? "container: probe timed out" : "container: probe error",
+            aborted
+              ? `Runtime probe aborted after ${CONTAINER_STATE_FETCH_TIMEOUT_MS}ms`
+              : `Runtime probe network error: ${error?.message ? error.message : error}`,
+          );
+          throw error;
+        }
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        clearControllerIfCurrent();
+        if (isStale()) return null;
+        if (!response.ok) {
+          state.containerStateFailureCount += 1;
+          applyContainerStateError(
+            threadId,
+            `container: probe failed (${response.status})`,
+            `Runtime probe HTTP ${response.status}`,
+          );
+          throw new Error(`runtime request failed ${response.status}`);
+        }
+        let data;
+        try {
+          data = await response.json();
+        } catch (error) {
+          if (isStale()) return null;
+          state.containerStateFailureCount += 1;
+          applyContainerStateError(
+            threadId,
+            "container: invalid response",
+            "Runtime probe returned non-JSON body",
+          );
+          throw error;
+        }
+        if (isStale()) return null;
+        state.containerStateFailureCount = 0;
+        state.containerStateLastFetchAt = Date.now();
+        if (state.selectedThreadId === threadId) {
+          state.lastRuntimeData = data;
+          refreshContainerStatePill(data);
+        }
+        return data;
+      }
+
+      function refreshContainerStateNow() {
+        const threadId = state.selectedThreadId;
+        if (!threadId) {
+          setContainerStatePill(null);
+          return;
+        }
+        // Cancel any scheduled auto-poll up front so it cannot race the manual probe and
+        // abort it through the shared AbortController; the .finally() schedules a fresh
+        // poll cadence from this manual probe instead.
+        if (state.containerStatePoll) {
+          window.clearTimeout(state.containerStatePoll);
+          state.containerStatePoll = null;
+        }
+        loadContainerState(threadId, { manual: true })
+          .catch((error) => warnAdminDetail("container state manual probe failed", error))
+          .finally(() => scheduleNextContainerStatePoll(threadId));
+      }
+
+      function scheduleNextContainerStatePoll(threadId) {
+        if (state.containerStatePolledThread !== threadId) return;
+        if (state.selectedThreadId !== threadId) {
+          stopContainerStatePolling();
+          return;
+        }
+        if (state.containerStatePoll) {
+          window.clearTimeout(state.containerStatePoll);
+          state.containerStatePoll = null;
+        }
+        state.containerStatePoll = window.setTimeout(() => {
+          state.containerStatePoll = null;
+          if (state.selectedThreadId !== threadId) {
+            stopContainerStatePolling();
+            return;
+          }
+          loadContainerState(threadId)
+            .catch((error) => warnAdminDetail("container state probe failed", error))
+            .finally(() => scheduleNextContainerStatePoll(threadId));
+        }, containerStatePollInterval());
+      }
+
+      function stopContainerStatePolling() {
+        if (state.containerStatePoll) {
+          window.clearTimeout(state.containerStatePoll);
+          state.containerStatePoll = null;
+        }
+        state.containerStateRequestToken += 1;
+        abortInflightContainerStateFetch();
+        state.containerStatePolledThread = null;
+        state.containerStateFailureCount = 0;
+      }
+
+      function bindContainerStateVisibility() {
+        if (state.containerStateVisibilityBound) return;
+        if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+        state.containerStateVisibilityBound = true;
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState !== "visible") return;
+          const threadId = state.containerStatePolledThread;
+          if (!threadId || threadId !== state.selectedThreadId) return;
+          loadContainerState(threadId)
+            .catch((error) => warnAdminDetail("container state visibility probe failed", error))
+            .finally(() => scheduleNextContainerStatePoll(threadId));
+        });
+      }
+
+      function startContainerStatePolling(threadId) {
+        if (!threadId) {
+          stopContainerStatePolling();
+          setContainerStatePill(null);
+          return;
+        }
+        if (state.containerStatePolledThread === threadId && state.containerStatePoll) return;
+        stopContainerStatePolling();
+        bindContainerStateVisibility();
+        state.containerStatePolledThread = threadId;
+        setContainerStatePill({
+          label: "container: probing",
+          kind: "warn",
+          title: `Probing runtime state for ${threadId}`,
+          probing: true,
+        });
+        loadContainerState(threadId)
+          .catch((error) => warnAdminDetail("container state probe failed", error))
+          .finally(() => scheduleNextContainerStatePoll(threadId));
+      }
+
+      function syncContainerStatePolling() {
+        const threadId = state.selectedThreadId;
+        if (!threadId) {
+          stopContainerStatePolling();
+          setContainerStatePill(null);
+          return;
+        }
+        startContainerStatePolling(threadId);
+      }
+
       async function loadRuntimeState(threadId, render = true) {
         if (!threadId) return null;
         const response = await fetch(`/api/agents/threads/${encodeURIComponent(threadId)}/runtime`, { cache: "no-store" });
@@ -3827,6 +4784,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const data = await response.json();
         const summary = workerRuntimeSummary(data);
         state.lastRuntimeData = data;
+        if (state.selectedThreadId === threadId) refreshContainerStatePill(data);
         if (render && summary !== state.lastRuntimeSummary) {
           state.lastRuntimeSummary = summary;
           renderEventRow({
@@ -3839,6 +4797,16 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         return data;
       }
 
+      function renderRuntimeError(error) {
+        const message = adminPreview("runtime state error", error, 240);
+        if (message === state.lastRuntimeErrorMessage) {
+          setStreamState("runtime still unavailable", "warn");
+          return;
+        }
+        state.lastRuntimeErrorMessage = message;
+        renderError(`runtime state error: ${message}`, error, "runtime state error");
+      }
+
       function stopRuntimePolling() {
         if (state.runtimePoll) clearInterval(state.runtimePoll);
         state.runtimePoll = null;
@@ -3847,13 +4815,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       function startRuntimePolling(threadId) {
         stopRuntimePolling();
         state.lastRuntimeSummary = "";
-        loadRuntimeState(threadId).catch((error) => {
-          renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
-        });
+        state.lastRuntimeErrorMessage = "";
+        loadRuntimeState(threadId).catch(renderRuntimeError);
         state.runtimePoll = setInterval(() => {
-          loadRuntimeState(threadId).catch((error) => {
-            renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
-          });
+          loadRuntimeState(threadId).catch(renderRuntimeError);
         }, 5000);
       }
 
@@ -3957,6 +4922,23 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         };
       }
 
+      function openRustRuntimeSocket(threadId, taskId) {
+        if (state.liveRustWs) state.liveRustWs.close();
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const wsUrl = `${proto}://${location.host}/admin/webrtc/runtime/ws?threadId=${encodeURIComponent(threadId)}&taskId=${encodeURIComponent(taskId)}`;
+        const ws = new WebSocket(wsUrl);
+        state.liveRustWs = ws;
+        ws.onopen = () => {
+          setStreamState("rust websocket connected", "ok");
+          ws.send(JSON.stringify({ type: "subscribe", threadId, taskId }));
+        };
+        ws.onmessage = (event) => renderRealtimePayload(event.data, "rust-ws");
+        ws.onerror = () => setStreamState("rust websocket error", "warn");
+        ws.onclose = () => {
+          if (state.liveRustWs === ws) state.liveRustWs = null;
+        };
+      }
+
       async function loadSnapshot(options = {}) {
         const response = await fetch("/api/agents/tasks?limit=200", { cache: "no-store" });
         if (!response.ok) {
@@ -4012,6 +4994,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         const provider = $("provider").value;
         const dispatchMode = $("dispatch-mode").value;
         const usesContainerPool = dispatchMode === "queued-pool";
+        const usesQueuedDispatch = dispatchMode === "queued" || dispatchMode === "queued-pool";
         const repoValidation = validateCurrentRepoUrl();
         const repo = repoValidation.repo;
         const baseBranch = currentBaseBranch();
@@ -4056,25 +5039,28 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
         setControlPosition("bottom", { forceAnimation: true });
         $("thread-workspace").scrollTo({ top: 0, behavior: "smooth" });
         replaceSelectionUrl(threadId, taskId);
-        clearStream(usesContainerPool ? "waiting for queue" : "waking worker");
+        const dispatchStatus = usesQueuedDispatch ? "queued via NATS" : "waking worker";
+        clearStream(dispatchStatus);
+        openRustRuntimeSocket(threadId, taskId);
         openGleamLiveSocket(threadId, taskId);
-        if (!usesContainerPool) startRuntimePolling(threadId);
+        if (!usesQueuedDispatch) startRuntimePolling(threadId);
         renderEventRow({
           seq: `dispatch-start-${Date.now()}`,
           eventKind: "status",
           payload: {
             kind: "status",
-            status: usesContainerPool ? "queueing container-pool task" : "waking worker",
+            status: dispatchStatus,
             message: usesContainerPool
               ? "Publishing the task to NATS for the queue consumer to dispatch through container-pool using this thread UUID as the affinity key."
+              : usesQueuedDispatch
+              ? "Publishing the task to NATS for the queue consumer to dispatch using this thread UUID as the affinity key."
               : "Creating or waking the UUID-bound worker. Cold starts can take 30-90 seconds while the container installs dependencies, refreshes git, and starts Node.",
           },
           createdAt: new Date().toISOString(),
         });
         setStatus(`POST /api/agents/threads/${threadId}/tasks`);
         const startedAt = Date.now();
-        const keepRuntimePolling = dispatchMode === "queued";
-        const waitTicker = usesContainerPool ? null : setInterval(() => {
+        const waitTicker = usesQueuedDispatch ? null : setInterval(() => {
             const elapsed = Math.round((Date.now() - startedAt) / 1000);
             const runtimeSummary = state.lastRuntimeSummary || "runtime snapshot pending";
             const runtimeDetails = workerRuntimeWaitDetails(state.lastRuntimeData);
@@ -4114,7 +5100,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           });
         } finally {
           if (waitTicker !== null) clearInterval(waitTicker);
-          if (!keepRuntimePolling) stopRuntimePolling();
+          stopRuntimePolling();
         }
         const body = await response.text();
         if (!response.ok) {
@@ -4140,7 +5126,7 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           provider,
           repo,
           baseBranch,
-          status: usesContainerPool ? "queued" : "running",
+          status: usesQueuedDispatch ? "queued" : "running",
           eventCount: 1,
         });
         renderThreads();
@@ -4159,12 +5145,10 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
           },
           createdAt: new Date().toISOString(),
         });
-        if (!usesContainerPool) {
-          await loadRuntimeState(threadId).catch((error) => {
-            renderError(`runtime state error: ${adminPreview("runtime state error", error, 240)}`, error, "runtime state error");
-          });
+        if (!usesQueuedDispatch) {
+          await loadRuntimeState(threadId).catch(renderRuntimeError);
         }
-        openLiveStream(threadId, taskId);
+        if (!usesQueuedDispatch) openLiveStream(threadId, taskId);
         resetContextReview("Context review will run before the next dispatch.");
         await loadSnapshot({ preserveStreamForTask: taskId }).catch((error) => handleSnapshotError(error, { preserveStreamForTask: taskId }));
       }
@@ -4345,11 +5329,17 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("repo-url-new").addEventListener("input", () => $("repo-url-new").setCustomValidity(""));
       $("repo-url").addEventListener("change", contextInputsChanged);
       $("repo-url-new").addEventListener("input", contextInputsChanged);
-      $("base-branch").addEventListener("input", contextInputsChanged);
-      $("prompt").addEventListener("input", contextInputsChanged);
-      $("zero-context").addEventListener("change", renderContextCandidates);
+        $("base-branch").addEventListener("input", contextInputsChanged);
+        $("prompt").addEventListener("input", contextInputsChanged);
+        $("zero-context").addEventListener("change", renderContextCandidates);
+        $("context-filter").addEventListener("input", renderContextCandidates);
       $("thread-control-panel").addEventListener("click", handleControlPanelClick);
       $("thread-control-panel").addEventListener("keydown", handleControlPanelKey);
+      $("thread-control-toggle").addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!threadControlCanCollapse()) return;
+        setThreadControlCollapsed(!state.threadControlCollapsed, { scrollIntoView: state.threadControlCollapsed, smooth: true });
+      });
       $("previous-tasks-panel").addEventListener("click", (event) => handleLowerPanelClick(event, "tasks"));
       $("previous-tasks-panel").addEventListener("keydown", (event) => handlePanelKey(event, "tasks"));
       $("response-stream-panel").addEventListener("click", (event) => handleLowerPanelClick(event, "stream"));
@@ -4357,6 +5347,12 @@ const AGENTS_THREADS_JS: &str = r#"      const $ = (id) => document.getElementBy
       $("terminal-close").addEventListener("click", (event) => {
         event.stopPropagation();
         closeInlineTerminal();
+      });
+      $("container-state").addEventListener("click", refreshContainerStateNow);
+      $("container-state").addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        refreshContainerStateNow();
       });
       $("new-thread").addEventListener("click", () => {
         state.selectedThreadId = makeUuid();
@@ -8331,6 +9327,520 @@ async fn metrics() -> impl IntoResponse {
     )
 }
 
+async fn container_pool_config_page() -> impl IntoResponse {
+    record_request("GET", "/container-pool/config", StatusCode::OK);
+    inline_ui_document(
+        "dd container pool config",
+        "container-pool-config",
+        CONTAINER_POOL_CONFIG_CSS,
+        CONTAINER_POOL_CONFIG_BODY,
+        CONTAINER_POOL_CONFIG_JS,
+    )
+}
+
+const CONTAINER_POOL_CONFIG_CSS: &str = r###":root {
+  color-scheme: dark;
+  --bg: #0c1116;
+  --panel: #141a21;
+  --panel-2: #1a222b;
+  --line: #1f2a36;
+  --line-2: #2a3848;
+  --text: #e6edf3;
+  --muted: #8a9aae;
+  --accent: #4ea1ff;
+  --accent-2: #67d391;
+  --warn: #ffb454;
+  --bad: #ff7a7a;
+  --good: #67d391;
+  --code: #e6edf3;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.cpool-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) 1fr;
+  gap: 0;
+  min-height: calc(100vh - 60px);
+}
+@media (max-width: 900px) {
+  .cpool-shell { grid-template-columns: 1fr; }
+}
+.cpool-sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 18px 14px;
+  overflow-y: auto;
+  max-height: calc(100vh - 60px);
+}
+.cpool-sidebar h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+.cpool-img-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.cpool-img {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+  transition: border-color 0.12s, background 0.12s;
+}
+.cpool-img:hover { border-color: var(--line-2); }
+.cpool-img.active { border-color: var(--accent); background: #16202c; }
+.cpool-img .title { font-weight: 600; color: var(--text); font-size: 13px; }
+.cpool-img .slug { color: var(--muted); font-size: 12px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; }
+.cpool-img .badge {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cpool-img .badge.ok { color: var(--good); border-color: rgba(103,211,145,0.4); background: rgba(103,211,145,0.07); }
+.cpool-img .badge.fail { color: var(--bad); border-color: rgba(255,122,122,0.4); background: rgba(255,122,122,0.07); }
+.cpool-img .badge.run { color: var(--accent); border-color: rgba(78,161,255,0.4); background: rgba(78,161,255,0.07); }
+.cpool-img .meta { grid-column: 1 / -1; color: var(--muted); font-size: 11px; font-family: ui-monospace, SFMono-Regular, monospace; }
+
+.cpool-main { padding: 22px 28px; max-width: 1100px; }
+.cpool-empty { color: var(--muted); padding: 60px 0; text-align: center; }
+.cpool-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.cpool-head h1 { font-size: 22px; margin: 0; }
+.cpool-head .image-ref { font-family: ui-monospace, monospace; color: var(--accent); font-size: 13px; }
+.cpool-sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+.cpool-sub code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; color: var(--code); }
+
+.cpool-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0 12px; }
+.cpool-actions button, .cpool-actions select, .cpool-actions input {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cpool-actions button:hover { border-color: var(--line-2); }
+.cpool-actions button.primary { background: var(--accent); color: #0c1116; border-color: var(--accent); font-weight: 600; }
+.cpool-actions button.primary:hover { background: #6ab1ff; border-color: #6ab1ff; }
+.cpool-actions button.warn { color: var(--warn); border-color: rgba(255,180,84,0.4); }
+.cpool-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.cpool-status { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+.cpool-editor textarea {
+  width: 100%;
+  min-height: 320px;
+  background: #0a0f15;
+  color: var(--code);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+.cpool-editor .editor-meta { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 4px 0 10px; flex-wrap: wrap; }
+.cpool-editor .editor-meta code { font-family: ui-monospace, monospace; color: var(--code); }
+
+.cpool-section { margin-top: 26px; }
+.cpool-section h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 10px; }
+.cpool-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cpool-table th, .cpool-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+.cpool-table th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.cpool-table td.mono { font-family: ui-monospace, monospace; color: var(--muted); font-size: 12px; }
+.cpool-table tr:hover { background: var(--panel-2); }
+.cpool-table .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line-2); font-size: 11px; color: var(--muted); }
+.cpool-table .status-pill.passed, .cpool-table .status-pill.built { color: var(--good); border-color: rgba(103,211,145,0.4); }
+.cpool-table .status-pill.failed, .cpool-table .status-pill.errored { color: var(--bad); border-color: rgba(255,122,122,0.4); }
+.cpool-table .status-pill.running, .cpool-table .status-pill.building, .cpool-table .status-pill.testing { color: var(--accent); border-color: rgba(78,161,255,0.4); }
+.cpool-row-action { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 12px; padding: 0; }
+
+.cpool-modal { position: fixed; inset: 0; background: rgba(6, 10, 14, 0.7); z-index: 90; display: none; align-items: center; justify-content: center; padding: 24px; }
+.cpool-modal.open { display: flex; }
+.cpool-modal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; max-width: 900px; width: 100%; max-height: 80vh; display: flex; flex-direction: column; }
+.cpool-modal-head { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+.cpool-modal-head h3 { margin: 0; font-size: 15px; }
+.cpool-modal-body { padding: 14px 18px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: var(--code); }
+.cpool-modal-close { margin-left: auto; background: transparent; border: 1px solid var(--line-2); color: var(--text); padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.cpool-toast { position: fixed; bottom: 24px; right: 24px; background: var(--panel); border: 1px solid var(--line-2); padding: 10px 14px; border-radius: 8px; font-size: 13px; color: var(--text); box-shadow: 0 12px 32px rgba(0,0,0,0.4); display: none; z-index: 100; }
+.cpool-toast.show { display: block; }
+.cpool-toast.bad { border-color: rgba(255,122,122,0.6); color: var(--bad); }
+.cpool-toast.good { border-color: rgba(103,211,145,0.6); color: var(--good); }
+"###;
+
+const CONTAINER_POOL_CONFIG_BODY: &str = r###"<div class="cpool-shell">
+  <aside class="cpool-sidebar">
+    <h2>Pool images</h2>
+    <ul id="cpool-image-list" class="cpool-img-list" aria-label="Container pool images"></ul>
+  </aside>
+  <main class="cpool-main">
+    <div id="cpool-empty" class="cpool-empty">Select a pool image on the left to view and edit its Dockerfile.</div>
+    <div id="cpool-detail" hidden>
+      <div class="cpool-head">
+        <h1 id="cpool-title">…</h1>
+        <span id="cpool-image-ref" class="image-ref"></span>
+      </div>
+      <div class="cpool-sub">
+        Dockerfile <code id="cpool-dockerfile-path">…</code> &middot; build context <code id="cpool-build-context">…</code> &middot; namespace <code id="cpool-namespace">dd-pool</code>
+      </div>
+      <p id="cpool-notes" class="cpool-sub"></p>
+      <div class="cpool-actions">
+        <button id="cpool-load-disk" type="button" title="Replace the editor contents with the on-disk Dockerfile from git">Load disk default</button>
+        <button id="cpool-save" class="primary" type="button">Save as new revision</button>
+        <button id="cpool-build-test" class="primary" type="button">Build &amp; test</button>
+        <span id="cpool-status" class="cpool-status">idle</span>
+      </div>
+      <div class="cpool-editor">
+        <div class="editor-meta">
+          <span>SHA-256 <code id="cpool-sha">—</code></span>
+          <span>Source <code id="cpool-source">—</code></span>
+          <span>Bytes <code id="cpool-bytes">0</code></span>
+        </div>
+        <textarea id="cpool-textarea" spellcheck="false" placeholder="# Dockerfile contents will appear here"></textarea>
+      </div>
+      <section class="cpool-section">
+        <h3>Build &amp; test history</h3>
+        <table class="cpool-table" id="cpool-builds-table">
+          <thead>
+            <tr><th>When</th><th>Overall</th><th>Build</th><th>Test</th><th>Revision</th><th>Tag</th><th></th></tr>
+          </thead>
+          <tbody><tr><td colspan="7" style="color:var(--muted)">No build runs yet.</td></tr></tbody>
+        </table>
+      </section>
+      <section class="cpool-section">
+        <h3>Dockerfile revisions</h3>
+        <table class="cpool-table" id="cpool-revisions-table">
+          <thead>
+            <tr><th>When</th><th>SHA-256</th><th>Source</th><th>Notes</th><th></th></tr>
+          </thead>
+          <tbody><tr><td colspan="5" style="color:var(--muted)">No saved revisions yet.</td></tr></tbody>
+        </table>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div id="cpool-modal" class="cpool-modal" role="dialog" aria-modal="true">
+  <div class="cpool-modal-card">
+    <div class="cpool-modal-head">
+      <h3 id="cpool-modal-title">Build logs</h3>
+      <button id="cpool-modal-close" class="cpool-modal-close" type="button">Close</button>
+    </div>
+    <div id="cpool-modal-body" class="cpool-modal-body"></div>
+  </div>
+</div>
+
+<div id="cpool-toast" class="cpool-toast" role="status" aria-live="polite"></div>
+"###;
+
+const CONTAINER_POOL_CONFIG_JS: &str = r###"const $ = (id) => document.getElementById(id);
+const state = {
+  images: [],
+  currentSlug: null,
+  current: null,
+  pollHandle: null,
+  buildsEnabled: false,
+};
+
+function showToast(message, level = 'info') {
+  const el = $('cpool-toast');
+  el.textContent = message;
+  el.classList.remove('good', 'bad');
+  if (level === 'good') el.classList.add('good');
+  if (level === 'bad') el.classList.add('bad');
+  el.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.classList.remove('show'), 4500);
+}
+
+function statusBadge(overall) {
+  if (!overall) return '';
+  const c = String(overall).toLowerCase();
+  let cls = '';
+  if (c === 'passed') cls = 'ok';
+  else if (c === 'failed' || c === 'errored') cls = 'fail';
+  else if (c === 'running' || c === 'building' || c === 'testing' || c === 'queued') cls = 'run';
+  return `<span class="badge ${cls}">${c}</span>`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString();
+  } catch (_) { return iso; }
+}
+
+async function loadImages() {
+  const r = await fetch('/api/container-pool/images', { cache: 'no-store' });
+  if (!r.ok) { showToast('Failed to list images', 'bad'); return; }
+  const body = await r.json();
+  state.images = body.images || [];
+  state.buildsEnabled = !!body.buildsEnabled;
+  renderImageList();
+}
+
+function renderImageList() {
+  const list = $('cpool-image-list');
+  list.innerHTML = '';
+  for (const img of state.images) {
+    const li = document.createElement('li');
+    li.className = 'cpool-img' + (img.slug === state.currentSlug ? ' active' : '');
+    li.dataset.slug = img.slug;
+    const lastOverall = img.latest_build && img.latest_build.overall_status;
+    const badge = lastOverall ? statusBadge(lastOverall) : '';
+    li.innerHTML = `
+      <div>
+        <div class="title">${img.display_name}</div>
+        <div class="slug">${img.slug}</div>
+      </div>
+      <div>${badge}</div>
+      <div class="meta">${img.image_ref}</div>
+    `;
+    li.addEventListener('click', () => selectImage(img.slug));
+    list.appendChild(li);
+  }
+}
+
+async function selectImage(slug) {
+  state.currentSlug = slug;
+  renderImageList();
+  $('cpool-empty').hidden = true;
+  $('cpool-detail').hidden = false;
+  $('cpool-status').textContent = 'loading';
+  await Promise.all([loadDetail(slug), loadRevisions(slug), loadBuilds(slug)]);
+  $('cpool-status').textContent = 'idle';
+}
+
+async function loadDetail(slug) {
+  const r = await fetch(`/api/container-pool/images/${encodeURIComponent(slug)}`);
+  if (!r.ok) { showToast('Failed to load image detail', 'bad'); return; }
+  const body = await r.json();
+  state.current = body;
+  $('cpool-title').textContent = body.image.displayName;
+  $('cpool-image-ref').textContent = body.image.imageRef;
+  $('cpool-dockerfile-path').textContent = body.image.dockerfilePath;
+  $('cpool-build-context').textContent = body.image.buildContext;
+  $('cpool-namespace').textContent = body.namespace || 'dd-pool';
+  $('cpool-notes').textContent = body.image.notes || '';
+  const rev = body.currentRevision || {};
+  const text = rev.dockerfile_text || '';
+  $('cpool-textarea').value = text;
+  $('cpool-sha').textContent = rev.dockerfile_sha256 ? rev.dockerfile_sha256.slice(0, 12) : '—';
+  $('cpool-source').textContent = rev.source || '—';
+  $('cpool-bytes').textContent = text.length;
+  $('cpool-build-test').disabled = !state.buildsEnabled;
+  if (!state.buildsEnabled) {
+    $('cpool-build-test').title = 'Builds disabled — set CONTAINER_POOL_IMAGE_BUILDS_ENABLED=true on dd-remote-rest-api';
+  } else {
+    $('cpool-build-test').title = 'Build the candidate image and run a smoke test';
+  }
+}
+
+async function loadRevisions(slug) {
+  const r = await fetch(`/api/container-pool/images/${encodeURIComponent(slug)}/revisions`);
+  if (!r.ok) return;
+  const body = await r.json();
+  const rows = body.revisions || [];
+  const tbody = $('cpool-revisions-table').querySelector('tbody');
+  tbody.innerHTML = '';
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">No saved revisions yet.</td></tr>';
+    return;
+  }
+  for (const rev of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${fmtDate(rev.created_at)}</td>
+      <td class="mono">${(rev.dockerfile_sha256 || '').slice(0, 12)}</td>
+      <td>${rev.source}</td>
+      <td>${escapeHtml(rev.notes || '')}</td>
+      <td><button class="cpool-row-action" data-rev="${rev.id}">Load</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('.cpool-row-action').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.rev;
+      const r2 = await fetch(`/api/container-pool/images/${encodeURIComponent(slug)}/dockerfile?revisionId=${encodeURIComponent(id)}`);
+      if (!r2.ok) { showToast('Failed to load revision', 'bad'); return; }
+      const body2 = await r2.json();
+      const rev2 = body2.revision || {};
+      $('cpool-textarea').value = rev2.dockerfile_text || '';
+      $('cpool-sha').textContent = (rev2.dockerfile_sha256 || '').slice(0, 12);
+      $('cpool-source').textContent = rev2.source || '—';
+      $('cpool-bytes').textContent = ($('cpool-textarea').value || '').length;
+      showToast('Loaded revision into editor', 'good');
+    });
+  });
+}
+
+async function loadBuilds(slug) {
+  const r = await fetch(`/api/container-pool/images/${encodeURIComponent(slug)}/builds`);
+  if (!r.ok) return;
+  const body = await r.json();
+  const rows = body.builds || [];
+  const tbody = $('cpool-builds-table').querySelector('tbody');
+  tbody.innerHTML = '';
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted)">No build runs yet.</td></tr>';
+    return;
+  }
+  for (const b of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${fmtDate(b.created_at)}</td>
+      <td><span class="status-pill ${b.overall_status}">${b.overall_status}</span></td>
+      <td><span class="status-pill ${b.build_status}">${b.build_status}</span></td>
+      <td><span class="status-pill ${b.test_status}">${b.test_status}</span></td>
+      <td class="mono">${(b.revision_id || '').slice(0, 8)}</td>
+      <td class="mono">${b.candidate_tag}</td>
+      <td><button class="cpool-row-action" data-build="${b.id}">Logs</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('.cpool-row-action').forEach((btn) => {
+    btn.addEventListener('click', () => openBuildLogs(btn.dataset.build));
+  });
+}
+
+async function openBuildLogs(buildId) {
+  const r = await fetch(`/api/container-pool/builds/${encodeURIComponent(buildId)}`);
+  if (!r.ok) { showToast('Failed to load build', 'bad'); return; }
+  const body = await r.json();
+  const b = body.build || {};
+  $('cpool-modal-title').textContent = `${b.image_slug} → ${b.candidate_tag}`;
+  const parts = [];
+  parts.push(`overall:  ${b.overall_status}`);
+  parts.push(`build:    ${b.build_status}    started ${fmtDate(b.build_started_at)} → ${fmtDate(b.build_finished_at)}`);
+  parts.push(`test:     ${b.test_status}    started ${fmtDate(b.test_started_at)} → ${fmtDate(b.test_finished_at)}`);
+  if (b.error_message) parts.push(`error:    ${b.error_message}`);
+  parts.push('');
+  parts.push('========= BUILD LOG =========');
+  parts.push(b.build_log_excerpt || '(no build log)');
+  parts.push('');
+  parts.push('========= TEST LOG ==========');
+  parts.push(b.test_log_excerpt || '(no test log)');
+  $('cpool-modal-body').textContent = parts.join('\n');
+  $('cpool-modal').classList.add('open');
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+async function saveRevision() {
+  if (!state.currentSlug) return;
+  const text = $('cpool-textarea').value;
+  const notes = window.prompt('Optional notes for this revision:', '') || '';
+  $('cpool-status').textContent = 'saving';
+  const r = await fetch(`/api/container-pool/images/${encodeURIComponent(state.currentSlug)}/dockerfile`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ dockerfileText: text, notes }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    showToast(`Save failed: ${body.error || r.status}`, 'bad');
+    $('cpool-status').textContent = 'idle';
+    return;
+  }
+  showToast('Saved revision', 'good');
+  await loadRevisions(state.currentSlug);
+  await loadDetail(state.currentSlug);
+  $('cpool-status').textContent = 'idle';
+}
+
+async function loadDiskDefault() {
+  if (!state.currentSlug) return;
+  $('cpool-status').textContent = 'loading disk default';
+  const r = await fetch(`/api/container-pool/images/${encodeURIComponent(state.currentSlug)}/dockerfile?source=disk-default`, { cache: 'no-store' });
+  if (!r.ok) { showToast('Failed to load disk default', 'bad'); $('cpool-status').textContent = 'idle'; return; }
+  const body = await r.json();
+  $('cpool-textarea').value = body.dockerfileText || '';
+  $('cpool-sha').textContent = (body.dockerfileSha256 || '').slice(0, 12);
+  $('cpool-source').textContent = 'disk-default';
+  $('cpool-bytes').textContent = ($('cpool-textarea').value || '').length;
+  showToast('Loaded on-disk Dockerfile', 'good');
+  $('cpool-status').textContent = 'idle';
+}
+
+async function triggerBuildTest() {
+  if (!state.currentSlug) return;
+  if (!state.buildsEnabled) { showToast('Builds disabled', 'bad'); return; }
+  const useCurrent = window.confirm('Save the current editor contents as a new revision and build+test it?\n\nCancel to use the latest saved revision instead.');
+  $('cpool-status').textContent = 'kicking off build';
+  $('cpool-build-test').disabled = true;
+  let bodyJson = {};
+  if (useCurrent) {
+    bodyJson = { dockerfileText: $('cpool-textarea').value, notes: 'Submitted from /container-pool/config build+test action' };
+  }
+  const r = await fetch(`/api/container-pool/images/${encodeURIComponent(state.currentSlug)}/build-test`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(bodyJson),
+  });
+  $('cpool-build-test').disabled = false;
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    showToast(`Build-test failed: ${body.error || r.status}`, 'bad');
+    $('cpool-status').textContent = 'idle';
+    return;
+  }
+  const body = await r.json();
+  showToast(`Build queued: ${body.build.id.slice(0, 8)}`, 'good');
+  $('cpool-status').textContent = 'building (polling…)';
+  startPolling(body.build.id);
+  await loadBuilds(state.currentSlug);
+}
+
+function startPolling(buildId) {
+  if (state.pollHandle) clearInterval(state.pollHandle);
+  state.pollHandle = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/container-pool/builds/${encodeURIComponent(buildId)}`);
+      if (!r.ok) return;
+      const body = await r.json();
+      const overall = body.build && body.build.overall_status;
+      $('cpool-status').textContent = `build ${buildId.slice(0,8)}: ${overall}`;
+      await loadBuilds(state.currentSlug);
+      if (overall === 'passed' || overall === 'failed' || overall === 'errored' || overall === 'cancelled') {
+        clearInterval(state.pollHandle); state.pollHandle = null;
+        const lvl = overall === 'passed' ? 'good' : 'bad';
+        showToast(`Build ${buildId.slice(0,8)}: ${overall}`, lvl);
+        $('cpool-status').textContent = 'idle';
+        await loadImages();
+      }
+    } catch (_) { /* ignore transient errors */ }
+  }, 4000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('cpool-save').addEventListener('click', saveRevision);
+  $('cpool-load-disk').addEventListener('click', loadDiskDefault);
+  $('cpool-build-test').addEventListener('click', triggerBuildTest);
+  $('cpool-modal-close').addEventListener('click', () => $('cpool-modal').classList.remove('open'));
+  $('cpool-modal').addEventListener('click', (e) => { if (e.target === $('cpool-modal')) $('cpool-modal').classList.remove('open'); });
+  loadImages();
+});
+"###;
+
 #[tokio::main]
 async fn main() {
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
@@ -8347,6 +9857,11 @@ async fn main() {
         workers_label: "Node.js containers pinned to one chat/thread".to_string(),
         queue_consumer_label: "Rust NATS shadow preparer (dd-remote-queue-consumer)".to_string(),
     };
+
+    // Mount the receive helper at /internal/update-runtime-config (+ snapshot
+    // + reset). The control plane pushes a payload here every 5 min.
+    let runtime_config_router = dd_runtime_config_client::router();
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let app = Router::new()
         .route("/", get(root))
@@ -8375,6 +9890,8 @@ async fn main() {
         )
         .route("/lambdas/functions", get(lambda_functions_page))
         .route("/lambdas/functions/", get(lambda_functions_page))
+        .route("/container-pool/config", get(container_pool_config_page))
+        .route("/container-pool/config/", get(container_pool_config_page))
         .route("/presence-test", get(presence_test_page))
         .route("/presence-test/", get(presence_test_page))
         .route("/wss-test", get(wss_test_page))
@@ -8382,7 +9899,8 @@ async fn main() {
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/favicon.ico", get(favicon))
-        .with_state(state);
+        .with_state(state)
+        .merge(runtime_config_router);
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

@@ -30,16 +30,29 @@ test('python ai/ml pipeline turns telemetry into MDP-ready feature events', asyn
   assert.match(source, /EWMA|ewma/);
   assert.match(source, /zScore/);
   assert.match(source, /transitionModel/);
-  assert.match(source, /dd\.remote\.telemetry\.raw/);
-  assert.match(source, /dd\.remote\.ml\.features/);
-  assert.match(source, /dd\.remote\.telemetry\.mdp/);
-  assert.match(source, /dd\.remote\.events/);
+  // ai-ml-pipeline now defaults every NATS subject + queue group through
+  // the generated `dd_nats_subject_defs` Python module (see
+  // remote/libs/nats/subject-defs/schema/ai-ml-platform.schema.json and
+  // runtime-events.schema.json). The literal magic strings are gone from
+  // the Python source; instead we assert that the source pulls in the
+  // generated constants and applies them to the right env-var default.
+  assert.match(source, /from dd_nats_subject_defs import \([^)]*ML_DEAD_LETTER_SUBJECT[^)]*\)/);
+  assert.match(source, /from dd_nats_subject_defs import \([^)]*ML_FEATURES_SUBJECT[^)]*\)/);
+  assert.match(source, /from dd_nats_subject_defs import \([^)]*RUNTIME_EVENTS_SUBJECT[^)]*\)/);
+  assert.match(source, /from dd_nats_subject_defs import \([^)]*TELEMETRY_MDP_SUBJECT[^)]*\)/);
+  assert.match(source, /from dd_nats_subject_defs import \([^)]*TELEMETRY_RAW_QUEUE_GROUP[^)]*\)/);
+  assert.match(source, /from dd_nats_subject_defs import \([^)]*TELEMETRY_RAW_SUBJECT[^)]*\)/);
+  assert.match(source, /env_value\("ML_RAW_TELEMETRY_SUBJECT", TELEMETRY_RAW_SUBJECT\)/);
+  assert.match(source, /env_value\("ML_QUEUE_GROUP", TELEMETRY_RAW_QUEUE_GROUP\)/);
+  assert.match(source, /env_value\("ML_FEATURE_SUBJECT", ML_FEATURES_SUBJECT\)/);
+  assert.match(source, /env_value\("ML_MDP_TELEMETRY_SUBJECT", TELEMETRY_MDP_SUBJECT\)/);
+  assert.match(source, /env_value\("ML_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT\)/);
+  assert.match(source, /env_value\("ML_DEAD_LETTER_SUBJECT", ML_DEAD_LETTER_SUBJECT\)/);
   assert.match(source, /POST \/ingest/);
   assert.match(source, /POST \/analyze/);
   assert.match(source, /POST \/mdp\/features/);
   assert.match(source, /GET \/readyz/);
   assert.match(source, /ML_DEAD_LETTER_SUBJECT/);
-  assert.match(source, /dd\.remote\.ml\.deadletter/);
   assert.match(source, /wait_for_nats_pong/);
   assert.match(source, /publish_dead_letter/);
   assert.match(source, /SERVER_AUTH_SECRET is required unless ML_ALLOW_UNAUTHENTICATED=true/);
@@ -218,7 +231,11 @@ test('gateway, observability, and homepage expose the ai/ml pipeline', async () 
   assert.match(home, /dd-ai-ml-pipeline/);
   assert.match(home, /Python3 online feature pipeline/);
   assert.match(home, /PathEntry \{ label: "\/ml\/", href: Some\("\/ml\/"\) \}/);
-  assert.match(home, /dd\.remote\.ml\.features/);
+  // web-home-rs now sources the displayed NATS subjects from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: ML_FEATURES_SUBJECT/);
+  assert.match(home, /label: TELEMETRY_RAW_SUBJECT/);
   assert.match(runtimeReadme, /AI\/ML feature pipeline/);
   assert.match(
     runtimeReadme,

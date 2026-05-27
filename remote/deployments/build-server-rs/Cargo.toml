@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 axum = { version = "0.7", features = ["macros"] }
 base64 = "0.22"
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 hex = "0.4"
 hmac = "0.12"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }

@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-ws-loadtest-rs-fsharp-rx
+  namespace: argocd
+  labels:
+    role: loadtest
+    target: dd-fsharp-ws-server
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/deployments/ws-loadtest-rs/k8s/fsharp-rx
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+    syncOptions:
+      - CreateNamespace=true

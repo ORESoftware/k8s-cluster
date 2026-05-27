@@ -184,10 +184,12 @@ It does not expose write-capable telemetry, Kubernetes, AWS, or secret-managemen
 operations. The deployment includes a NetworkPolicy that permits ingress from the
 gateway, the dev-server supervisor (`app: dd-dev-server-api`), per-thread agent
 worker pods (`app.kubernetes.io/part-of: dd-remote-dev` +
-`app.kubernetes.io/component: thread-pod`), and metrics scrapers in the
-`observability` namespace. Egress is restricted to DNS, observability and NATS
-telemetry ports, Kubernetes API on TCP 443, and database TCP 5432 for future
-read-only PG-backed MCP tools.
+`app.kubernetes.io/component: thread-pod`), metrics scrapers in the
+`observability` namespace, and warm worker containers managed by
+`dd-container-pool` (RFC1918 `ipBlock` on :8090 for sources arriving on
+the node host network — see below); DNS egress, bounded egress to
+observability and NATS telemetry ports, Kubernetes API egress on TCP 443,
+and database egress for future read-only PG-backed MCP tools.
 
 If you add a new in-cluster MCP caller, give its pod template one of those
 labels (or extend the NetworkPolicy ingress in
@@ -196,6 +198,53 @@ The most common symptom of a missing entry is the OpenAI Agents SDK runner
 emitting `openai-sdk: MCP server dd_cluster unavailable at
 http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp` because the TCP
 SYN is dropped at the CNI before reaching the MCP pod.
+
+`dd-container-pool` itself runs with `hostNetwork: true` and spawns warm worker
+containers (Node.js chat/Claude workers, Rust runtimes, etc.) via
+`nerdctl run --network host`, so those workers share the EC2 node's network
+namespace and reach the cluster from the host IP rather than a pod identity. To
+keep them reachable, the `dd-gleam-mcp-server` NetworkPolicy includes a
+secondary ingress rule that whitelists RFC1918 (`10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`) on TCP 8090. Auth posture is preserved
+because the `/mcp` JSON-RPC surface is intentionally read-only and the
+ops/runtime-config paths still require `X-Server-Auth
+(RUNTIME_CONFIG_SERVER_SECRET)`.
+
+## Warming `build/packages` on the EC2 host
+
+The pod boots from the `/home/ec2-user/codes/dd/dd-next-1` checkout on the EC2 node, and the
+NetworkPolicy intentionally blocks `repo.hex.pm`. That means `gleam run` inside the pod has to be
+able to compile fully offline: every package listed in `manifest.toml` must already exist under
+`remote/deployments/gleam-mcp-server/build/packages/` on the host, either as a directory (hex deps)
+or as a `<name>.config_fingerprint` file (local-path deps such as `dd_pg_defs` and
+`dd_runtime_config_client`).
+
+If `build/packages/` is stale (typical symptom: a new local-path dep was added but the host was
+never re-warmed) the `preflight` init container now fails fast and prints the missing names. The
+pod-side `boot:` block re-checks the same invariant after the copy-to-`/tmp` step, so the failure
+mode that previously surfaced as a public-gateway 502 (`Resolving versions` → `error sending
+request for url (https://repo.hex.pm/...)`) is now visible directly in `kubectl describe pod`.
+
+To warm the host checkout from any shell with AWS access (SSM Session Manager works; no VPN
+required):
+
+```sh
+sudo nerdctl pull ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+sudo nerdctl run --rm --net=host --memory=2g \
+  -v /home/ec2-user/codes/dd/dd-next-1:/opt/dd-next-1 \
+  --workdir /opt/dd-next-1/remote/deployments/gleam-mcp-server \
+  ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine \
+  /bin/sh -lc 'gleam deps download'
+sudo chown -R ec2-user:ec2-user \
+  /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server/build
+kubectl -n default rollout restart deploy/dd-gleam-mcp-server
+```
+
+`--net=host` is required so the warm-up has the same outbound path the EC2 node already uses
+(NetworkPolicy only applies to pod traffic, not host traffic). `--memory=2g` keeps the gleam
+compiler away from the unbounded-cgroup OOM kill we observed running it inside the `k8s.io`
+nerdctl namespace. The final `chown` puts the new `build/packages/` entries back under
+`ec2-user` so the read-only hostPath mount in the pod can still read them.
 
 ## Kubernetes
 

@@ -56,7 +56,9 @@ spec:
                   name: dd-remote-auth-secrets
                   key: DD_AUTH_COOKIE_VALUE
             - name: DD_AUTH_COOKIE_MAX_AGE_SECONDS
-              value: '3600'
+              # 3 days (3 * 24 * 60 * 60 = 259200s). Capped server-side at
+              # the same value in remote/deployments/auth-server-rs/src/main.rs.
+              value: '259200'
             - name: DD_AUTH_TOTP_SECRET_BASE32
               valueFrom:
                 secretKeyRef:
@@ -65,6 +67,25 @@ spec:
                   optional: true
             - name: DD_AUTH_TOTP_WINDOW_STEPS
               value: '1'
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-remote-auth
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-remote-auth
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-remote-auth.default.svc.cluster.local:8083/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: http
               containerPort: 8083

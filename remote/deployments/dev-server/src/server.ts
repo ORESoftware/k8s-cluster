@@ -16,7 +16,9 @@
 // Per thread, the server prepares/reuses a stable branch
 // agent/k8s/openai-5.5/<threadId>/<slugified-title>.
 // Per task, it runs the selected provider, streams sequenced events,
-// appends tmp/convos/thread.log, and pushes the branch. PR creation is an
+// posts breadcrumbs to rest-api (persisted in Postgres
+// `agent_remote_dev_breadcrumbs`; see @dd/redis-interfaces for the
+// optional cache shape), and pushes the branch. PR creation is an
 // explicit UI/API action.
 //
 // Worktrees + finished tasks are GC'd one hour after completion.
@@ -64,8 +66,20 @@ import {
 import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
+import { RUNTIME_EVENTS_SUBJECT } from './nats-subject-defs.js';
 import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
+import { registerRuntimeConfigRoutes, registerWithControlPlane } from './runtime-config.js';
+import {
+  annotateError,
+  getRequestContext,
+  readErrorRequestContext,
+  runWithRequestContext,
+  setContextField,
+  snapshotRequestContext,
+  type SerializedRequestContext,
+} from './request-context.js';
+import { contextFetch } from './wrapped-fetch.js';
 
 // ---------- Config ----------
 
@@ -81,11 +95,67 @@ const CONFIG_AGENT_PROVIDERS = new Set<AgentProvider>([
   'openai-codex-cli',
   'openai-sdk',
 ]);
-const GENERATED_GIT_EXCLUDE_PATHS = ['.pnpm-store', 'node_modules', '.next', '.turbo'];
+// Paths the dev-server owns by contract and must never treat as user
+// repo content (commits, dirty-state guards, install-artifact cleans):
+// dependency caches that should not pollute commits or dirty checks. The
+// per-thread breadcrumb log is no longer written into the workspace; it
+// is sent to rest-api and persisted in Postgres via
+// agent_remote_dev_breadcrumbs (see @dd/redis-interfaces +
+// remote/libs/pg-defs).
+const GENERATED_GIT_EXCLUDE_PATHS = [
+  '.pnpm-store',
+  'node_modules',
+  '.next',
+  '.turbo',
+];
 const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS.map((path) => `:(exclude)${path}`);
+const GENERATED_GIT_CLEAN_EXCLUDE_FLAGS = GENERATED_GIT_EXCLUDE_PATHS.flatMap((path) => [
+  '--exclude',
+  path,
+]);
 
 function configAgentProvider(value: string | undefined, fallback: AgentProvider): AgentProvider {
   return value && CONFIG_AGENT_PROVIDERS.has(value as AgentProvider) ? (value as AgentProvider) : fallback;
+}
+
+// Normalize a git remote so that equivalent forms compare equal:
+//   git@github.com:Owner/Repo.git  <->  https://github.com/Owner/Repo
+//   git+https://github.com/Owner/Repo.git  <->  https://github.com/owner/repo.git
+// Returns null for an empty/unparseable input. Host and owner-or-org/path are
+// lowercased; trailing `.git` and trailing `/` are stripped. Userinfo is
+// dropped so credentials embedded in the URL never affect equality.
+function canonicalRepoKey(input: string | null | undefined): string | null {
+  if (!input) return null;
+  let value = String(input).trim();
+  if (!value) return null;
+  value = value.replace(/^git\+/i, '');
+  const scpMatch = value.match(/^([^@\s]+)@([^:\s]+):(.+)$/);
+  if (scpMatch && scpMatch[2] && scpMatch[3]) {
+    const host = scpMatch[2].toLowerCase();
+    const pathPart = scpMatch[3].replace(/^\/+/, '');
+    value = `https://${host}/${pathPart}`;
+  }
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    let pathPart = url.pathname.replace(/^\/+/, '').replace(/\/+$/, '');
+    if (pathPart.toLowerCase().endsWith('.git')) {
+      pathPart = pathPart.slice(0, -4);
+    }
+    return `${host}/${pathPart.toLowerCase()}`;
+  } catch {
+    let stripped = value.replace(/\/+$/, '');
+    if (stripped.toLowerCase().endsWith('.git')) {
+      stripped = stripped.slice(0, -4);
+    }
+    return stripped.toLowerCase();
+  }
+}
+
+function repoUrlsMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ka = canonicalRepoKey(a);
+  const kb = canonicalRepoKey(b);
+  return ka !== null && kb !== null && ka === kb;
 }
 
 function configAgentProviderList(value: string | undefined, fallback: AgentProvider[]): AgentProvider[] {
@@ -123,6 +193,7 @@ const config = {
   // Per-thread pods set REMOTE_DEV_THREAD_ID. Repo-scoped warm pool workers
   // leave it unset and accept tasks for any thread in the configured repo.
   threadId: process.env.REMOTE_DEV_THREAD_ID ?? process.env.THREAD_ID ?? null,
+  threadTitle: process.env.REMOTE_DEV_THREAD_TITLE ?? process.env.THREAD_TITLE ?? null,
   workerBindMode:
     process.env.WORKER_BIND_MODE ?? (process.env.REMOTE_DEV_THREAD_ID || process.env.THREAD_ID ? 'thread' : 'repo'),
   userId: process.env.USER_ID ?? null,
@@ -147,7 +218,7 @@ const config = {
   eventIngestUrl: process.env.EVENT_INGEST_URL ?? null,
   eventIngestSecret: process.env.EVENT_INGEST_SECRET ?? null,
   natsUrl: process.env.NATS_URL ?? null,
-  natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events',
+  natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? RUNTIME_EVENTS_SUBJECT,
   workerFanoutWsUrl: workerFanoutWsUrlFromEnv(process.env),
   workerFanoutWsMaxQueueDepth: Number(process.env.WORKER_FANOUT_WS_MAX_QUEUE_DEPTH ?? 500),
   workerFanoutWsReconnectMs: Number(process.env.WORKER_FANOUT_WS_RECONNECT_MS ?? 1000),
@@ -158,6 +229,13 @@ const config = {
   threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
   threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
   repoContextMaxChars: Number(process.env.REPO_CONTEXT_MAX_CHARS ?? 24_000),
+  // Path to the baked-in system agent rules (PR draft-only policy, no
+  // auto-merge, secret hygiene). Defaults to the location written by
+  // `remote/deployments/dev-server/Dockerfile`. Operators can point this
+  // at a different file in dev/test, but it must be readable by the
+  // container's `node` user.
+  systemAgentsMdPath: process.env.SYSTEM_AGENTS_MD_PATH ?? '/etc/agent/AGENTS.md',
+  systemAgentsMdMaxChars: Number(process.env.SYSTEM_AGENTS_MD_MAX_CHARS ?? 16_000),
   agentOptimisticMode: process.env.AGENT_OPTIMISTIC_MODE !== 'false',
   agentMcpUrl: process.env.AGENT_MCP_ENABLED === 'false' ? null : process.env.AGENT_MCP_URL ?? null,
   agentFallbackProvider: configuredAgentFallbackProvider,
@@ -174,7 +252,10 @@ const config = {
   ),
   agentBranchPrefix: process.env.AGENT_BRANCH_PREFIX ?? 'agent/k8s/openai-5.5',
   baseBranch: process.env.BASE_BRANCH ?? 'dev',
-  threadLogRelativePath: process.env.THREAD_LOG_RELATIVE_PATH ?? 'tmp/convos/thread.log',
+  // Breadcrumb writes still go to rest-api-rs in the background. Tail reads
+  // are no longer pulled from this server: prompt context for breadcrumbs is
+  // selected via the /agents/threads picker and arrives in `contextBlobs`.
+  breadcrumbWriteTimeoutMs: Number(process.env.THREAD_BREADCRUMB_WRITE_TIMEOUT_MS ?? 5_000),
   skipBootGitSync: process.env.SKIP_BOOT_GIT_SYNC === 'true',
   sessionIdleGcAfterMs: Number(process.env.SESSION_IDLE_GC_AFTER_MS ?? 6 * 60 * 60 * 1000),
   prAuthor: {
@@ -244,7 +325,6 @@ type ThreadSession = {
   userId?: string;
   workspacePath: string;
   branch: string;
-  logPath: string;
   ready: Promise<void>;
   queue: Promise<void>;
   taskIds: Set<string>;
@@ -317,7 +397,6 @@ type TaskState = {
   finishedAt?: number;
   worktreePath: string;
   branch: string;
-  logPath: string;
 };
 
 type TaskReceipt = {
@@ -351,6 +430,13 @@ type SelectedContextBlob = {
   matchSource?: string;
   embeddingModel?: string | null;
   updatedAt?: string | null;
+  /**
+   * 'context-blob' (default) for long-lived agent_context_blobs rows;
+   * 'thread-task' for previous agent_remote_dev_tasks rows; 'breadcrumb' for
+   * agent_remote_dev_breadcrumbs rows that the operator checked in the picker.
+   * Drives which prompt section the row lands in.
+   */
+  kind?: 'context-blob' | 'thread-task' | 'breadcrumb';
 };
 
 const tasks = new Map<string, TaskState>();
@@ -790,12 +876,10 @@ async function applyDeterministicWorkspaceEdit(
     relativePath,
     appendedChars: appendEdit.text.length,
   };
-  await appendThreadLog(state, {
-    kind: 'deterministic-edit',
+  void postTaskBreadcrumb(state, 'deterministic-edit', {
     action: result.action,
     relativePath: result.relativePath,
     appendedChars: result.appendedChars,
-    branch: state.branch,
   });
   emit(state, {
     kind: 'status',
@@ -971,7 +1055,7 @@ async function resetDependencyInstallArtifacts(workspacePath: string): Promise<v
   });
   await shCapture(
     'git',
-    ['clean', '-fdx', '--exclude=node_modules', '--exclude=.pnpm-store', '--exclude=.next', '--exclude=.turbo'],
+    ['clean', '-fdx', ...GENERATED_GIT_CLEAN_EXCLUDE_FLAGS],
     workspacePath,
     { timeoutMs: TIMEOUT_GIT_QUICK },
   );
@@ -996,10 +1080,6 @@ function getSessionBranch(
 
 function isPlaceholderSessionBranch(sessionId: string, branch: string): boolean {
   return branch === getSessionBranch(sessionId);
-}
-
-function getSessionLogPath(workspacePath: string): string {
-  return join(workspacePath, config.threadLogRelativePath);
 }
 
 async function remoteBranchExists(branch: string): Promise<boolean> {
@@ -1051,20 +1131,12 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
 
   if (config.skipBootGitSync) {
     await configureGitIdentity(session.workspacePath);
-    await mkdir(dirname(session.logPath), { recursive: true });
-    await appendFile(
-      session.logPath,
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        kind: 'session-ready',
-        sessionId: session.sessionId,
-        branch: session.branch,
-        workspacePath: session.workspacePath,
-        repo: config.repoUrl,
-        baseBranch: config.baseBranch,
-        skippedBootGitSync: true,
-      }) + '\n',
-    );
+    void postSessionBreadcrumb(session, 'session-ready', {
+      workspacePath: session.workspacePath,
+      repo: config.repoUrl,
+      baseBranch: config.baseBranch,
+      skippedBootGitSync: true,
+    });
     return;
   }
 
@@ -1110,21 +1182,13 @@ async function prepareSessionWorkspace(session: ThreadSession): Promise<void> {
   await resetDependencyInstallArtifacts(session.workspacePath);
 
   await configureGitIdentity(session.workspacePath);
-  await mkdir(dirname(session.logPath), { recursive: true });
-  await appendFile(
-    session.logPath,
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      kind: 'session-ready',
-      sessionId: session.sessionId,
-      branch: session.branch,
-      workspacePath: session.workspacePath,
-      repo: config.repoUrl,
-      baseBranch: config.baseBranch,
-      dependencyInstallOk: installResult.ok,
-      dependencyInstallError: installResult.error,
-    }) + '\n',
-  );
+  void postSessionBreadcrumb(session, 'session-ready', {
+    workspacePath: session.workspacePath,
+    repo: config.repoUrl,
+    baseBranch: config.baseBranch,
+    dependencyInstallOk: installResult.ok,
+    dependencyInstallError: installResult.error,
+  });
 }
 
 function getOrCreateSession(input: {
@@ -1161,7 +1225,6 @@ function getOrCreateSession(input: {
     userId: input.userId,
     workspacePath,
     branch: desiredBranch,
-    logPath: getSessionLogPath(workspacePath),
     ready: Promise.resolve(),
     queue: Promise.resolve(),
     taskIds: new Set(),
@@ -1174,30 +1237,89 @@ function getOrCreateSession(input: {
   return session;
 }
 
-async function appendThreadLog(state: TaskState, payload: Record<string, unknown>): Promise<void> {
+async function postBreadcrumb(input: {
+  threadId: string | undefined;
+  taskId: string | undefined;
+  kind: string;
+  payload: Record<string, unknown>;
+  branch?: string;
+  provider?: AgentProvider;
+}): Promise<void> {
+  if (!input.threadId) return;
+  const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
+  if (!base) return;
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (config.eventIngestSecret) {
+    headers.authorization = `Bearer ${config.eventIngestSecret}`;
+  } else if (config.serverAuthSecret) {
+    headers.authorization = `Bearer ${config.serverAuthSecret}`;
+  }
   try {
-    await access(state.worktreePath);
-    await mkdir(dirname(state.logPath), { recursive: true });
-    await appendFile(
-      state.logPath,
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        taskId: state.taskId,
-        threadId: state.threadId,
-        provider: state.provider,
-        ...payload,
-      }) + '\n',
+    await contextFetch(
+      `${base}/api/agents/threads/${encodeURIComponent(input.threadId)}/breadcrumbs`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          threadId: input.threadId,
+          taskId: input.taskId ?? null,
+          kind: input.kind,
+          payload: sanitizeBreadcrumbPayload(input.payload),
+          podName: process.env.HOSTNAME ?? null,
+          branch: input.branch ?? null,
+          provider: input.provider ?? null,
+        }),
+        signal: AbortSignal.timeout(config.breadcrumbWriteTimeoutMs),
+      },
     );
   } catch (err) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
-      return;
-    }
     process.stderr.write(
-      `[remote-dev thread-log] append failed: ${
+      `[remote-dev breadcrumb] post failed (kind=${input.kind}, thread=${input.threadId}): ${
         err instanceof Error ? err.message : String(err)
       }\n`,
     );
   }
+}
+
+function sanitizeBreadcrumbPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const text = JSON.stringify(payload);
+  const scrubbed = sanitizeEventText(text);
+  if (scrubbed === text) return payload;
+  try {
+    return JSON.parse(scrubbed) as Record<string, unknown>;
+  } catch {
+    return { redacted: 'breadcrumb payload contained sensitive content; replaced with placeholder' };
+  }
+}
+
+async function postSessionBreadcrumb(
+  session: ThreadSession,
+  kind: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const threadId = config.threadId ?? session.sessionId;
+  return postBreadcrumb({
+    threadId,
+    taskId: undefined,
+    kind,
+    payload: { sessionId: session.sessionId, branch: session.branch, ...payload },
+    branch: session.branch,
+  });
+}
+
+async function postTaskBreadcrumb(
+  state: TaskState,
+  kind: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  return postBreadcrumb({
+    threadId: state.threadId,
+    taskId: state.taskId,
+    kind,
+    payload,
+    branch: state.branch,
+    provider: state.provider,
+  });
 }
 
 function taskReceiptPath(taskId: string): string {
@@ -1264,6 +1386,14 @@ function sanitizeEventText(value: string): string {
     'SERVER_AUTH_SECRET',
     'EVENT_INGEST_SECRET',
     'SUPABASE_SERVICE_ROLE_KEY',
+    // AWS credential env names. dd-build-server is the only deployment
+    // that consumes static AWS keys today, but ECR/SSM/STS workflows on
+    // the operator path may also export them, and a misconfigured agent
+    // could echo `env` or read `~/.aws/credentials`. Keep these here so
+    // the WS fan-out, breadcrumb log, and CLI streams never carry them.
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+    'AWS_SESSION_TOKEN',
   ]) {
     const secret = process.env[key];
     if (secret && secret.length >= 8) {
@@ -1276,7 +1406,17 @@ function sanitizeEventText(value: string): string {
     .replace(/\bAIza[A-Za-z0-9_*\-]{12,}\b/g, '[redacted-google-key]')
     .replace(/\bsk-oc-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-opencode-key]')
     .replace(/\bxai-[A-Za-z0-9_*.-]{24,}\b/g, '[redacted-xai-key]')
-    .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]');
+    .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]')
+    // AWS access-key id shapes: AKIA… (long-lived IAM user) and ASIA…
+    // (STS short-lived). 16-char base32 body matches the documented
+    // format. Catches keys that arrive from places we don't control
+    // (shell stdout, error messages, leaked aws config files).
+    .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[redacted-aws-access-key]')
+    // STS session tokens are long base64-ish blobs that conventionally
+    // start with `IQoJ` (the base64 encoding of the protobuf header
+    // AWS uses for v2 session tokens). Anchoring on that prefix avoids
+    // the false-positive risk of redacting unrelated long base64 data.
+    .replace(/\bIQoJ[A-Za-z0-9+/=_\-]{180,}\b/g, '[redacted-aws-session-token]');
 }
 
 function compactAgentErrorMessage(provider: AgentProvider, err: unknown): string {
@@ -1511,7 +1651,7 @@ function emit(state: TaskState, event: WrappedEvent): void {
     kind: event.kind,
     provider: state.provider,
   });
-  void appendThreadLog(state, { kind: 'event', seq: stored.seq, event });
+  void postTaskBreadcrumb(state, 'event', { seq: stored.seq, event });
   if (event.kind === 'done') {
     incCounter('dd_runtime_tasks_total', {
       service: 'dd-dev-server-api',
@@ -1648,16 +1788,9 @@ async function mergeUpstreamForThread(input: {
     .catch(() => undefined)
     .then(async () => {
       session.lastActiveAt = Date.now();
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'merge-upstream-start',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'merge-upstream-start', {
+        baseBranch: config.baseBranch,
+      });
       const before = (
         await shCapture('git', ['rev-parse', 'HEAD'], session.workspacePath, {
           timeoutMs: TIMEOUT_GIT_QUICK,
@@ -1696,18 +1829,11 @@ async function mergeUpstreamForThread(input: {
         })
       ).trim();
       await pushSessionBranch(session);
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'merge-upstream-done',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-          before,
-          after,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'merge-upstream-done', {
+        baseBranch: config.baseBranch,
+        before,
+        after,
+      });
       return {
         ok: true as const,
         threadId,
@@ -1783,16 +1909,7 @@ async function makeCommitForThread(input: {
           timeoutMs: TIMEOUT_GIT_QUICK,
         })
       ).trim();
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'make-commit-start',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          taskId,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'make-commit-start', { taskId });
       const status = await gitWorkspaceStatus(session.workspacePath);
       const hasChanges = status.trim().length > 0;
       if (hasChanges) {
@@ -1811,19 +1928,12 @@ async function makeCommitForThread(input: {
       ).trim();
       await assertSessionOnFeatureBranch(session);
       await pushSessionBranch(session);
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'make-commit-done',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          taskId,
-          before,
-          after,
-          committed: hasChanges,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'make-commit-done', {
+        taskId,
+        before,
+        after,
+        committed: hasChanges,
+      });
       if (taskState) {
         emit(taskState, {
           kind: 'status',
@@ -1896,36 +2006,22 @@ async function openPullRequestForThread(input: {
     .catch(() => undefined)
     .then(async () => {
       session.lastActiveAt = Date.now();
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'open-pr-start',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-          taskId,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'open-pr-start', {
+        baseBranch: config.baseBranch,
+        taskId,
+      });
       const result = await ensurePullRequestForSession({
         session,
         taskId,
         threadTitle: input.threadTitle ?? input.reason,
       });
-      await appendFile(
-        session.logPath,
-        JSON.stringify({
-          ts: new Date().toISOString(),
-          kind: 'open-pr-done',
-          sessionId: session.sessionId,
-          branch: session.branch,
-          baseBranch: config.baseBranch,
-          taskId,
-          prUrl: result.prUrl,
-          draft: result.draft,
-          reused: result.reused,
-        }) + '\n',
-      );
+      void postSessionBreadcrumb(session, 'open-pr-done', {
+        baseBranch: config.baseBranch,
+        taskId,
+        prUrl: result.prUrl,
+        draft: result.draft,
+        reused: result.reused,
+      });
       if (taskState) {
         emit(taskState, {
           kind: 'pr_open',
@@ -2002,6 +2098,27 @@ async function existingContextFiles(workspacePath: string, relativePaths: string
   return out;
 }
 
+// Reads the baked-in system rules at /etc/agent/AGENTS.md. These rules are
+// authored in this repo (remote/deployments/dev-server/system-agents.md) and
+// COPYed into the worker image so they apply unconditionally — the workspace
+// AGENTS.md cannot silently weaken policies like "PRs are drafts only" or
+// "never auto-merge". Returns '' if the file is missing so dev/local runs
+// without the bake-in still work.
+async function readSystemAgentsMd(): Promise<string> {
+  const path = config.systemAgentsMdPath;
+  if (!path) return '';
+  try {
+    const fileStat = await stat(path);
+    if (!fileStat.isFile()) return '';
+    const text = await readFile(path, 'utf8');
+    const trimmed = text.trim();
+    if (!trimmed) return '';
+    return truncateRepoContextFile(trimmed, config.systemAgentsMdMaxChars);
+  } catch {
+    return '';
+  }
+}
+
 async function readRepoContextEntrypoint(workspacePath: string): Promise<string> {
   const rootAgents = await existingContextFiles(workspacePath, ['AGENTS.md']);
   const agentDocs = await listMarkdownChildren(workspacePath, 'agents');
@@ -2074,6 +2191,14 @@ function formatThreadContextTasks(
     .join('\n\n');
 }
 
+function isBreadcrumbContextItem(item: SelectedContextBlob): boolean {
+  return item.kind === 'breadcrumb';
+}
+
+function isThreadTaskContextItem(item: SelectedContextBlob): boolean {
+  return item.kind === 'thread-task';
+}
+
 function formatSelectedContextBlobs(state: TaskState): string {
   if (state.contextMode === 'none' || !state.contextBlobs?.length) {
     return '';
@@ -2083,11 +2208,14 @@ function formatSelectedContextBlobs(state: TaskState): string {
   const maxBlobChars = 6_000;
   let usedChars = 0;
   const sections: string[] = [];
-  for (const [index, item] of state.contextBlobs.entries()) {
+  let index = 0;
+  for (const item of state.contextBlobs) {
+    if (isBreadcrumbContextItem(item) || isThreadTaskContextItem(item)) continue;
+    index += 1;
     const title = item.contextTitle.trim() || item.contextId;
     const blob = truncateContextBlob(item.contextBlob.trim(), maxBlobChars);
     const section = [
-      `Context ${index + 1}: ${title}`,
+      `Context ${index}: ${title}`,
       `contextId: ${item.contextId}`,
       item.projectId ? `projectId: ${item.projectId}` : '',
       item.matchSource ? `matchSource: ${item.matchSource}` : '',
@@ -2106,33 +2234,92 @@ function formatSelectedContextBlobs(state: TaskState): string {
   return sections.join('\n\n---\n\n');
 }
 
-async function readLocalThreadContext(state: TaskState): Promise<string> {
-  try {
-    const text = await readFile(state.logPath, 'utf8');
-    const previousTaskLines = text
-      .split('\n')
-      .filter((line) => {
-        const trimmed = line.trim();
-        return (
-          trimmed &&
-          !trimmed.includes(`"taskId":"${state.taskId}"`) &&
-          !trimmed.includes(`"taskId": "${state.taskId}"`)
-        );
-      })
-      .join('\n');
-    return truncateContext(previousTaskLines, Math.min(config.threadContextMaxChars, 24_000));
-  } catch {
+/**
+ * The picker can hand us breadcrumb rows alongside long-lived context blobs by
+ * sending `kind: 'breadcrumb'` with a JSON-serialized AgentBreadcrumbRow in
+ * `contextBlob`. We render those into <thread_breadcrumb_tail> rather than
+ * <selected_context_blobs> so prompt structure matches operator intent.
+ */
+function formatSelectedBreadcrumbs(state: TaskState): string {
+  if (state.contextMode === 'none' || !state.contextBlobs?.length) {
     return '';
   }
+  const lines: string[] = [];
+  for (const item of state.contextBlobs) {
+    if (!isBreadcrumbContextItem(item)) continue;
+    let payload: unknown = item.contextBlob;
+    try {
+      payload = JSON.parse(item.contextBlob);
+    } catch {
+      // fall back to raw blob string
+    }
+    lines.push(JSON.stringify(payload));
+  }
+  if (lines.length === 0) return '';
+  return truncateContext(lines.join('\n'), Math.min(config.threadContextMaxChars, 24_000));
 }
+
+function formatSelectedThreadTasks(state: TaskState): string {
+  if (state.contextMode === 'none' || !state.contextBlobs?.length) {
+    return '';
+  }
+  const sections = state.contextBlobs
+    .filter(isThreadTaskContextItem)
+    .map((item) => item.contextBlob.trim())
+    .filter(Boolean);
+  if (sections.length === 0) return '';
+  return truncateContext(sections.join('\n\n---\n\n'), config.threadContextMaxChars);
+}
+
+async function fetchSelectedContextBlobs(state: TaskState): Promise<SelectedContextBlob[]> {
+  if (state.contextBlobs?.length) return state.contextBlobs;
+  if (state.contextMode !== 'selected' || !state.contextIds?.length || !state.threadId) return [];
+  const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
+  if (!base) return [];
+  try {
+    const response = await contextFetch(
+      `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context-candidates`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: state.prompt,
+          repo: config.repoUrl,
+          baseBranch: config.baseBranch,
+          contextIds: state.contextIds,
+          limit: Math.max(1, Math.min(50, state.contextIds.length)),
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!response.ok) return [];
+    const body = (await response.json()) as { candidates?: SelectedContextBlob[] };
+    return body.candidates ?? [];
+  } catch (err) {
+    emit(state, {
+      kind: 'stderr',
+      text: `selected context lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return [];
+  }
+}
+
+// Breadcrumb prompt context is now driven by explicit picker selection. Workers
+// no longer fetch the full thread tail unconditionally; instead, the dispatch
+// payload carries a `contextBlobs` array containing the breadcrumb rows the
+// operator kept checked in the /agents/threads picker. Unchecked rows simply
+// never reach the worker, which is how "remove from context" is implemented.
 
 async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
   const base = config.threadContextBaseUrl?.replace(/\/+$/, '');
   let restContextText = '';
   let restContextSource = 'none';
-  if (state.threadId && base) {
+  const hasSelectedThreadTasks = Boolean(state.contextBlobs?.some(isThreadTaskContextItem));
+  const automaticThreadContext =
+    (!state.contextMode || state.contextMode === 'auto') && !hasSelectedThreadTasks;
+  if (state.threadId && base && automaticThreadContext) {
     try {
-      const response = await fetch(
+      const response = await contextFetch(
         `${base}/api/agents/threads/${encodeURIComponent(state.threadId)}/context?limit=${config.threadContextLimit}`,
         { signal: AbortSignal.timeout(10_000) },
       );
@@ -2149,10 +2336,16 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     }
   }
 
-  const localContextText = state.threadId ? await readLocalThreadContext(state) : '';
+  const systemAgentsMd = await readSystemAgentsMd();
   const repoContext = await readRepoContextEntrypoint(state.worktreePath);
 
+  const fetchedContextBlobs = await fetchSelectedContextBlobs(state);
+  if (fetchedContextBlobs.length && !state.contextBlobs?.length) {
+    state.contextBlobs = fetchedContextBlobs;
+  }
   const selectedContext = formatSelectedContextBlobs(state);
+  const selectedThreadTasks = formatSelectedThreadTasks(state);
+  const selectedBreadcrumbs = formatSelectedBreadcrumbs(state);
   const runtimeContext = clusterMcpPromptSection(config.agentMcpUrl);
   const promptSections = [
     state.threadId ? `You are continuing remote development thread ${state.threadId}.` : 'You are starting a remote development task.',
@@ -2176,6 +2369,23 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     );
   }
 
+  if (systemAgentsMd) {
+    // Surfacing this as its own status row makes it easy to confirm in the
+    // diagnostics UI that the baked-in PR / git / secret-hygiene rules
+    // actually reached the agent.
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:system-agents-md',
+      message: `Baked system agent rules (${config.systemAgentsMdPath}) injected into the task prompt.`,
+    });
+    promptSections.push(
+      '',
+      '<system_agent_rules source="' + config.systemAgentsMdPath + '">',
+      systemAgentsMd,
+      '</system_agent_rules>',
+    );
+  }
+
   if (repoContext) {
     emit(state, {
       kind: 'status',
@@ -2186,12 +2396,26 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
   }
 
   if (selectedContext) {
+    const blobCount =
+      state.contextBlobs?.filter(
+        (item) => !isBreadcrumbContextItem(item) && !isThreadTaskContextItem(item),
+      ).length ?? 0;
     emit(state, {
       kind: 'status',
       status: 'thread-context:selected-blobs',
-      message: `${state.contextBlobs?.length ?? 0} selected context blob(s) injected into the task prompt.`,
+      message: `${blobCount} selected context blob(s) injected into the task prompt.`,
     });
     promptSections.push('', '<selected_context_blobs>', selectedContext, '</selected_context_blobs>');
+  }
+
+  if (selectedThreadTasks) {
+    const taskCount = state.contextBlobs?.filter(isThreadTaskContextItem).length ?? 0;
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:selected-tasks',
+      message: `${taskCount} selected previous task context item(s) injected into the task prompt.`,
+    });
+    promptSections.push('', '<previous_thread_context>', selectedThreadTasks, '</previous_thread_context>');
   }
 
   if (restContextText) {
@@ -2200,10 +2424,15 @@ async function buildPromptWithThreadContext(state: TaskState): Promise<string> {
     promptSections.push('', '<previous_thread_context>', cappedContext, '</previous_thread_context>');
   }
 
-  if (localContextText) {
-    const cappedContext = truncateContext(localContextText, Math.min(config.threadContextMaxChars, 24_000));
-    emit(state, { kind: 'status', status: 'thread-context:local-thread-log' });
-    promptSections.push('', '<local_thread_log_tail>', cappedContext, '</local_thread_log_tail>');
+  if (selectedBreadcrumbs) {
+    const breadcrumbCount =
+      state.contextBlobs?.filter(isBreadcrumbContextItem).length ?? 0;
+    emit(state, {
+      kind: 'status',
+      status: 'thread-context:selected-breadcrumbs',
+      message: `${breadcrumbCount} selected breadcrumb row(s) injected into the task prompt.`,
+    });
+    promptSections.push('', '<thread_breadcrumb_tail>', selectedBreadcrumbs, '</thread_breadcrumb_tail>');
   }
 
   if (runtimeContext) {
@@ -2397,9 +2626,7 @@ async function mergeBaseBranchBeforeTask(state: TaskState): Promise<void> {
     );
   }
 
-  await appendThreadLog(state, {
-    kind: 'merge-base-before-task-start',
-    branch: session.branch,
+  void postTaskBreadcrumb(state, 'merge-base-before-task-start', {
     baseBranch: config.baseBranch,
   });
   emit(state, {
@@ -2428,9 +2655,7 @@ async function mergeBaseBranchBeforeTask(state: TaskState): Promise<void> {
       status: 'merge-conflict:resolving-before-task',
       message: `Resolving ${conflicts.length} conflicted file(s) before starting the user task.`,
     });
-    await appendThreadLog(state, {
-      kind: 'merge-base-conflicts-before-task',
-      branch: session.branch,
+    void postTaskBreadcrumb(state, 'merge-base-conflicts-before-task', {
       baseBranch: config.baseBranch,
       conflicts,
     });
@@ -2457,9 +2682,7 @@ async function mergeBaseBranchBeforeTask(state: TaskState): Promise<void> {
   if (before !== after) {
     await pushSessionBranch(session);
   }
-  await appendThreadLog(state, {
-    kind: 'merge-base-before-task-done',
-    branch: session.branch,
+  void postTaskBreadcrumb(state, 'merge-base-before-task-done', {
     baseBranch: config.baseBranch,
     before,
     after,
@@ -2512,11 +2735,9 @@ async function runTask(state: TaskState): Promise<void> {
       // adapter, emitting an `artifact` event per file.
       const taskOutputsDir = join(config.outputsDir, state.taskId);
       await mkdir(taskOutputsDir, { recursive: true });
-      await appendThreadLog(state, {
-        kind: 'prompt',
+      void postTaskBreadcrumb(state, 'prompt', {
         prompt: state.prompt,
         workspacePath: state.worktreePath,
-        branch: state.branch,
         contextMode: state.contextMode,
         contextIds: state.contextIds,
         contextTitles: state.contextBlobs?.map((item) => ({
@@ -2541,8 +2762,7 @@ async function runTask(state: TaskState): Promise<void> {
             poolSlug: state.containerPool.request.poolSlug ?? state.containerPool.pool,
           },
         );
-        await appendThreadLog(state, {
-          kind: 'container-pool-result',
+        void postTaskBreadcrumb(state, 'container-pool-result', {
           pool: state.containerPool.pool,
           response,
         });
@@ -2904,19 +3124,12 @@ async function ensurePullRequestForSession(input: {
       })
     ).trim();
     await pushSessionBranch(input.session);
-    await appendFile(
-      input.session.logPath,
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        kind: 'open-pr-marker-commit',
-        sessionId: input.session.sessionId,
-        branch: input.session.branch,
-        baseBranch: config.baseBranch,
-        before,
-        after,
-        fastForwardedBase: behindCount > 0,
-      }) + '\n',
-    );
+    void postSessionBreadcrumb(input.session, 'open-pr-marker-commit', {
+      baseBranch: config.baseBranch,
+      before,
+      after,
+      fastForwardedBase: behindCount > 0,
+    });
   }
 
   const commitTitle = (
@@ -3048,7 +3261,68 @@ async function publishOutputs(state: TaskState, taskOutputsDir: string): Promise
 
 // ---------- HTTP server ----------
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify({
+  logger: true,
+  // Reuse caller-supplied x-request-id when present so dev-server joins
+  // the upstream trace started by rest-api / Vercel / a sibling worker.
+  // Otherwise mint a fresh UUID (Fastify's default is a small counter,
+  // which collides across pods).
+  genReqId: (req) => {
+    const incoming = req.headers['x-request-id'];
+    if (typeof incoming === 'string' && incoming.length > 0 && incoming.length <= 200) {
+      return incoming;
+    }
+    if (Array.isArray(incoming) && incoming[0] && incoming[0].length <= 200) {
+      return incoming[0];
+    }
+    return randomUUID();
+  },
+});
+
+// Wrap every request in an AsyncLocalStorage context so handlers,
+// outbound fetches (./wrapped-fetch.ts), and crash handlers can pin
+// activity to the originating request without threading req everywhere.
+fastify.addHook('onRequest', (req, reply, done) => {
+  const path = req.url.split('?')[0] ?? req.url;
+  runWithRequestContext(
+    {
+      requestId: String(req.id),
+      method: req.method,
+      route: req.routeOptions?.url ?? path,
+      path,
+    },
+    () => {
+      reply.header('x-request-id', String(req.id));
+      done();
+    },
+  );
+});
+
+// Surface request-pinned context on every error response. The default
+// Fastify error handler logs the error but drops async context; this
+// one re-tags via annotateError so process-level crash handlers can
+// still recover the request id if the error escapes.
+fastify.setErrorHandler((err, req, reply) => {
+  const enriched = annotateError(err);
+  const snapshot = snapshotRequestContext();
+  req.log.error(
+    {
+      err: enriched,
+      requestContext: snapshot,
+    },
+    'request failed',
+  );
+  if (reply.sent) return;
+  const status =
+    (err as { statusCode?: number }).statusCode &&
+    Number.isInteger((err as { statusCode?: number }).statusCode)
+      ? (err as { statusCode: number }).statusCode
+      : 500;
+  reply.code(status).send({
+    error: enriched.message,
+    requestId: snapshot?.requestId,
+  });
+});
 
 type MetricLabels = Record<string, string | number | boolean | undefined>;
 
@@ -3896,13 +4170,29 @@ function registerWorkerWebSocketUpgrade(): void {
 
 fastify.addHook('preHandler', async (req, reply) => {
   const requestPath = req.url.split('?')[0] ?? req.url;
-  if (requestPath === '/healthz' || requestPath === '/metrics' || requestPath === '/favicon.ico') {
+  if (
+    requestPath === '/healthz' ||
+    requestPath === '/metrics' ||
+    requestPath === '/favicon.ico' ||
+    requestPath === '/docs/api' ||
+    requestPath === '/api/docs' ||
+    requestPath === '/api/docs.json'
+  ) {
     return;
   }
   // GET /stream/:taskId may auth via short-lived HMAC token (?token=)
   // for direct browser → docker SSE connections that bypass Vercel's
   // 800s function cap. Defer that check to the route handler.
   if (req.method === 'GET' && requestPath.startsWith('/stream/')) {
+    return;
+  }
+  // The runtime-config receive helper does its own X-Server-Auth check
+  // against RUNTIME_CONFIG_SERVER_SECRET; defer to it so operators can use a
+  // different secret for the config control plane if they want to.
+  if (
+    requestPath.startsWith('/internal/runtime-config') ||
+    requestPath === '/internal/update-runtime-config'
+  ) {
     return;
   }
 
@@ -3942,6 +4232,24 @@ fastify.get('/metrics', async (_req, reply) => {
   reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return renderMetrics();
 });
+
+fastify.get('/docs/api', async (_req, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+
+fastify.get('/api/docs', async (_req, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+
+fastify.get('/api/docs.json', async (_req, reply) => {
+  reply.header('content-type', 'application/json; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.json', import.meta.url), 'utf8');
+});
+
+registerRuntimeConfigRoutes(fastify);
+void registerWithControlPlane();
 
 fastify.get('/status', async () => ({
   ok: true,
@@ -4032,7 +4340,7 @@ const ContainerPoolTaskSchema = ContainerPoolRequestSchema.extend({
 
 const SelectedContextBlobSchema = z.object({
   contextId: z.string().min(1).max(200),
-  projectId: z.string().min(1).max(120).optional(),
+  projectId: z.string().max(120).optional(),
   repoId: z.string().uuid().nullish(),
   contextTitle: z.string().min(1).max(300),
   contextBlob: z.string().min(1).max(200_000),
@@ -4040,6 +4348,11 @@ const SelectedContextBlobSchema = z.object({
   matchSource: z.string().min(1).max(80).optional(),
   embeddingModel: z.string().min(1).max(120).nullish(),
   updatedAt: z.string().min(1).max(80).nullish(),
+  // 'context-blob' (long-lived agent_context_blobs row), 'thread-task'
+  // (previous agent_remote_dev_tasks row), or 'breadcrumb'
+  // (agent_remote_dev_breadcrumbs row). Older dispatchers don't set this;
+  // treat omitted as 'context-blob'.
+  kind: z.enum(['context-blob', 'thread-task', 'breadcrumb']).optional(),
 });
 
 fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
@@ -4051,6 +4364,13 @@ fastify.post('/container-pools/:pool/dispatch', async (req, reply) => {
       params: params.success ? undefined : params.error.format(),
       body: parsed.success ? undefined : parsed.error.format(),
     });
+  }
+  if (parsed.data.requestId) {
+    // Container-pool dispatchers carry their own opaque request id (used
+    // for dedupe upstream). Surface it on the context.extra so log lines
+    // and downstream fetches can pivot by it.
+    const ctx = getRequestContext();
+    if (ctx) ctx.extra.containerPoolRequestId = parsed.data.requestId;
   }
   try {
     return await dispatchContainerPool(config.containerPool, params.data.pool, {
@@ -4095,8 +4415,8 @@ const DispatchSchema = z.object({
     ])
     .nullish(),
   contextMode: z.enum(['none', 'selected', 'auto']).nullish(),
-  contextIds: z.array(z.string().min(1).max(200)).max(10).nullish(),
-  contextBlobs: z.array(SelectedContextBlobSchema).max(10).nullish(),
+  contextIds: z.array(z.string().min(1).max(200)).max(50).nullish(),
+  contextBlobs: z.array(SelectedContextBlobSchema).max(50).nullish(),
   containerPool: ContainerPoolTaskSchema.nullish(),
 });
 
@@ -4156,14 +4476,17 @@ fastify.post('/tasks', async (req, reply) => {
       const { prompt } = parsed.data;
       const taskId = parsed.data.taskId ?? randomUUID();
       span.setAttribute('dd.remote.task_id', taskId);
+      setContextField('taskId', taskId);
 
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       const userId = parsed.data.userId ?? config.userId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
       }
       if (userId) {
         span.setAttribute('dd.remote.user_id', userId);
+        setContextField('userId', userId);
       }
       if (config.threadId && threadId !== config.threadId) {
         return reply.code(409).send({
@@ -4183,10 +4506,11 @@ fastify.post('/tasks', async (req, reply) => {
         });
       }
       const requestedRepo = parsed.data.repo?.trim();
-      if (requestedRepo && requestedRepo !== config.repoUrl) {
+      if (requestedRepo && !repoUrlsMatch(requestedRepo, config.repoUrl)) {
         return reply.code(409).send({
           error: 'container is bound to a different repo',
           boundRepo: config.repoUrl,
+          requestedRepo,
         });
       }
       const requestedBaseBranch = parsed.data.baseBranch?.trim();
@@ -4266,12 +4590,12 @@ fastify.post('/tasks', async (req, reply) => {
         cancelled: false,
         worktreePath: session.workspacePath,
         branch: session.branch,
-        logPath: session.logPath,
       };
       span.setAttribute('dd.remote.provider', state.provider);
       span.setAttribute('dd.remote.branch', state.branch);
       span.setAttribute('dd.remote.queue_position', queuePosition);
       span.setAttribute('dd.remote.queued_behind', queuedBehind);
+      setContextField('provider', state.provider);
       tasks.set(taskId, state);
       session.queuedTaskIds.push(taskId);
       emit(state, {
@@ -4372,6 +4696,10 @@ fastify.post('/thread/merge-upstream', async (req, reply) => {
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
+      }
+      if (parsed.data.taskId) {
+        setContextField('taskId', parsed.data.taskId);
       }
       try {
         const result = await mergeUpstreamForThread(parsed.data);
@@ -4403,6 +4731,10 @@ fastify.post('/thread/make-commit', async (req, reply) => {
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
+      }
+      if (parsed.data.taskId) {
+        setContextField('taskId', parsed.data.taskId);
       }
       try {
         const result = await makeCommitForThread(parsed.data);
@@ -4435,6 +4767,10 @@ fastify.post('/thread/open-pr', async (req, reply) => {
       const threadId = parsed.data.threadId ?? config.threadId ?? undefined;
       if (threadId) {
         span.setAttribute('dd.remote.thread_id', threadId);
+        setContextField('threadId', threadId);
+      }
+      if (parsed.data.taskId) {
+        setContextField('taskId', parsed.data.taskId);
       }
       try {
         const result = await openPullRequestForThread(parsed.data);
@@ -4547,10 +4883,14 @@ fastify.get('/stream/:taskId', (req, reply) => {
 
 fastify.post('/tasks/:taskId/cancel', async (req, reply) => {
   const { taskId } = req.params as { taskId: string };
+  setContextField('taskId', taskId);
   const state = tasks.get(taskId);
   if (!state) {
     return reply.code(404).send({ error: 'not found' });
   }
+  if (state.threadId) setContextField('threadId', state.threadId);
+  if (state.userId) setContextField('userId', state.userId);
+  if (state.provider) setContextField('provider', state.provider);
   if (state.finished) {
     return reply.code(409).send({ error: 'already finished' });
   }
@@ -4651,7 +4991,7 @@ async function sendHeartbeat(): Promise<void> {
       }
     : undefined;
   try {
-    await fetch(config.heartbeatUrl, {
+    await contextFetch(config.heartbeatUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -4688,7 +5028,7 @@ async function discoverOwnIp(): Promise<string> {
   const ecsMetaUri = process.env.ECS_CONTAINER_METADATA_URI_V4;
   if (ecsMetaUri) {
     try {
-      const res = await fetch(`${ecsMetaUri}/task`);
+      const res = await contextFetch(`${ecsMetaUri}/task`);
       if (res.ok) {
         const meta = (await res.json()) as {
           Containers?: Array<{
@@ -4789,6 +5129,7 @@ async function main(): Promise<void> {
     const bootSession = getOrCreateSession({
       taskId: config.threadId,
       threadId: config.threadId,
+      threadTitle: config.threadTitle ?? undefined,
     });
     await bootSession.ready;
   }
@@ -4813,8 +5154,34 @@ function shutdown(signal: string): void {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
+// Pin runtime crashes to the request that caused them. wrapped-fetch
+// already tags network errors via annotateError(); other throw sites
+// fall back to whatever request context is still active on the async
+// stack at crash time. Outside any request (e.g. setInterval heartbeat)
+// requestContext is null and the log still captures the bare error.
+function logCrash(kind: 'uncaughtException' | 'unhandledRejection', err: unknown): void {
+  const e = err instanceof Error ? err : new Error(String(err));
+  const tagged: SerializedRequestContext | null =
+    readErrorRequestContext(e) ?? snapshotRequestContext();
+  fastify.log.error(
+    {
+      err: e,
+      crashKind: kind,
+      requestContext: tagged,
+    },
+    `${kind} pinned to request ${tagged?.requestId ?? '<none>'}`,
+  );
+}
+
+process.on('uncaughtException', (err) => {
+  logCrash('uncaughtException', err);
+});
+process.on('unhandledRejection', (reason) => {
+  logCrash('unhandledRejection', reason);
+});
+
 main().catch((err) => {
-  fastify.log.error(err);
+  logCrash('uncaughtException', err);
   workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();

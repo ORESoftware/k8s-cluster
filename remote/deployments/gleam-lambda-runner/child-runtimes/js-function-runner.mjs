@@ -3,13 +3,22 @@ import { Buffer } from 'node:buffer';
 import { connect as connectTcp } from 'node:net';
 import { env, stdin, stderr, stdout } from 'node:process';
 
+// Source-of-truth NATS subject constants. The repo is mounted at
+// /opt/dd-next-1 inside the pod so this relative path resolves identically
+// in dev, CI, and prod containers.
+import {
+  containerPoolLanguageRequestsSubject,
+} from '../../../libs/nats/subject-defs/generated/javascript/index.mjs';
+
 const maxCompiledFunctions = positiveInt(env.LAMBDA_FUNCTION_CACHE_MAX, 128);
 const maxFunctionBodyBytes = positiveInt(env.LAMBDA_FUNCTION_BODY_MAX_BYTES, 262_144);
 const maxInputLineBytes = positiveInt(env.LAMBDA_CHILD_INPUT_MAX_BYTES, 6_291_456);
 const maxResultBytes = positiveInt(env.LAMBDA_RESULT_MAX_BYTES, 1_048_576);
 const containerPoolNatsUrl = env.CONTAINER_POOL_NATS_URL || env.NATS_URL || '';
-const containerPoolSubjectPrefix =
-  env.CONTAINER_POOL_NATS_SUBJECT_PREFIX || 'dd.remote.container_pool';
+// Optional override; when unset, every per-pool subject is built from the
+// generated containerPoolLanguageRequestsSubject() formatter so the dot
+// layout always tracks the source-of-truth schema.
+const containerPoolSubjectPrefix = env.CONTAINER_POOL_NATS_SUBJECT_PREFIX || '';
 const containerPoolNatsTimeoutMs = positiveInt(env.CONTAINER_POOL_NATS_TIMEOUT_MS, 30_000);
 
 const compiledFunctions = new Map();
@@ -216,7 +225,11 @@ function natsRequest(subject, payload, timeoutMs = containerPoolNatsTimeoutMs) {
 
 async function dispatchContainerPool(pool, payload = {}, options = {}) {
   const poolSlug = assertSlug(pool);
-  const subject = options.subject || `${containerPoolSubjectPrefix}.${poolSlug}.requests`;
+  const subject =
+    options.subject ||
+    (containerPoolSubjectPrefix
+      ? `${containerPoolSubjectPrefix}.${poolSlug}.requests`
+      : containerPoolLanguageRequestsSubject(poolSlug));
   const request = {
     requestId: options.requestId || randomUUID(),
     poolSlug,

@@ -24,6 +24,7 @@
 //   bus.startLogSink("/tmp/convos");
 //   // ... later:
 //   bus.emit({ taskId, seq, event, userId, threadId });
+import { contextFetch } from "./wrapped-fetch.js";
 import { Subject, ReplaySubject, EMPTY, from, timer, interval, BehaviorSubject, } from "rxjs";
 import { filter, map, tap, retry, bufferTime, concatMap, mergeMap, catchError, takeUntil, timeout, share, } from "rxjs/operators";
 import { appendFile, mkdir } from "node:fs/promises";
@@ -130,7 +131,7 @@ export class EventBus {
             // mergeMap with concurrency 3 — events within a batch can
             // proceed in parallel, but batches are sequential (concatMap
             // on the outer operator) to preserve ordering guarantees.
-            return from(batch).pipe(mergeMap((ev) => from(fetch(ingestUrl, {
+            return from(batch).pipe(mergeMap((ev) => from(contextFetch(ingestUrl, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

@@ -167,14 +167,18 @@ pub async fn attach_api_key(
     if let Some(ext) = external_account_id.as_deref() {
         let _ = state
             .connections
-            .set_external_account(connection_id, ext)
+            .set_external_account(tenant_id, connection_id, ext)
             .await;
     }
 
     if let Some(env) = req.environment.as_deref() {
         let _ = state
             .connections
-            .merge_metadata(connection_id, serde_json::json!({ "environment": env }))
+            .merge_metadata(
+                tenant_id,
+                connection_id,
+                serde_json::json!({ "environment": env }),
+            )
             .await;
     }
 
@@ -226,12 +230,25 @@ fn validate_api_key_credential(
             validate_environment("coinflow.environment", &cred.environment)?;
             Ok(Some(cred.merchant_id))
         }
-        ProviderKind::CoinbaseCommerce | ProviderKind::CoinbasePrime => {
+        ProviderKind::CoinbaseCommerce => {
             let cred: CoinbaseCredential = serde_json::from_value(credential.clone())
                 .map_err(|e| AppError::BadRequest(format!("invalid coinbase credential: {e}")))?;
             require_non_empty("coinbase.api_key", &cred.api_key)?;
             require_non_empty("coinbase.webhook_secret", &cred.webhook_secret)?;
             Ok(None)
+        }
+        ProviderKind::CoinbasePrime => {
+            let cred: CoinbaseCredential = serde_json::from_value(credential.clone())
+                .map_err(|e| AppError::BadRequest(format!("invalid coinbase credential: {e}")))?;
+            require_non_empty("coinbase.api_key", &cred.api_key)?;
+            require_non_empty("coinbase.webhook_secret", &cred.webhook_secret)?;
+            // Prime additionally requires the HMAC secret + passphrase
+            // + portfolio_id to issue signed REST requests against
+            // /v1/portfolios/{id}/transactions.
+            require_non_empty_opt("coinbase.api_secret", cred.api_secret.as_deref())?;
+            require_non_empty_opt("coinbase.passphrase", cred.passphrase.as_deref())?;
+            require_non_empty_opt("coinbase.portfolio_id", cred.portfolio_id.as_deref())?;
+            Ok(cred.portfolio_id.clone())
         }
         ProviderKind::Wise => {
             let cred: WiseCredential = serde_json::from_value(credential.clone())
@@ -240,6 +257,90 @@ fn validate_api_key_credential(
             require_non_empty("wise.profile_id", &cred.profile_id)?;
             validate_environment("wise.environment", &cred.environment)?;
             Ok(Some(cred.profile_id))
+        }
+        ProviderKind::Revolut => {
+            let cred: crate::providers::revolut::RevolutCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid revolut credential: {e}"))
+                })?;
+            require_non_empty("revolut.access_token", &cred.access_token)?;
+            validate_environment("revolut.environment", &cred.environment)?;
+            Ok(None)
+        }
+        ProviderKind::Mercury => {
+            let cred: crate::providers::mercury::MercuryCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid mercury credential: {e}"))
+                })?;
+            require_non_empty("mercury.api_key", &cred.api_key)?;
+            Ok(None)
+        }
+        ProviderKind::Bridge => {
+            let cred: crate::providers::bridge::BridgeCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid bridge credential: {e}"))
+                })?;
+            require_non_empty("bridge.api_key", &cred.api_key)?;
+            validate_environment("bridge.environment", &cred.environment)?;
+            Ok(None)
+        }
+        ProviderKind::GoCardless => {
+            let cred: crate::providers::gocardless::GoCardlessCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid gocardless credential: {e}"))
+                })?;
+            require_non_empty("gocardless.access_token", &cred.access_token)?;
+            // gocardless uses "live"/"sandbox", not "production"/"sandbox" —
+            // accept whatever the tenant sends and validate against its own list
+            let env = cred.environment.trim().to_lowercase();
+            if !matches!(env.as_str(), "live" | "sandbox") {
+                return Err(AppError::BadRequest(format!(
+                    "gocardless.environment must be 'live' or 'sandbox' (got {env})"
+                )));
+            }
+            Ok(None)
+        }
+        ProviderKind::Remitly => {
+            let _cred: crate::providers::remitly::RemitlyCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid remitly credential: {e}"))
+                })?;
+            // No required fields — Remitly is limited_fit; we accept the
+            // attach so tenants can register intent, but sync is a no-op.
+            Ok(None)
+        }
+        ProviderKind::Robinhood => {
+            let _cred: crate::providers::robinhood::RobinhoodCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid robinhood credential: {e}"))
+                })?;
+            Ok(None)
+        }
+        ProviderKind::Fireblocks => {
+            let cred: crate::providers::fireblocks::FireblocksCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid fireblocks credential: {e}"))
+                })?;
+            require_non_empty("fireblocks.api_key", &cred.api_key)?;
+            require_non_empty("fireblocks.api_secret_pem", &cred.api_secret_pem)?;
+            // Sanity-check that the PEM is a real RSA private key
+            // before we seal it — catches paste errors at attach time
+            // rather than at first signed-request time.
+            jsonwebtoken::EncodingKey::from_rsa_pem(cred.api_secret_pem.as_bytes())
+                .map_err(|e| AppError::BadRequest(
+                    format!("fireblocks.api_secret_pem is not a valid RSA PEM: {e}"),
+                ))?;
+            validate_environment("fireblocks.environment", &cred.environment)?;
+            Ok(Some(cred.api_key))
+        }
+        ProviderKind::Circle => {
+            let cred: crate::providers::circle::CircleCredential =
+                serde_json::from_value(credential.clone()).map_err(|e| {
+                    AppError::BadRequest(format!("invalid circle credential: {e}"))
+                })?;
+            require_non_empty("circle.api_key", &cred.api_key)?;
+            validate_environment("circle.environment", &cred.environment)?;
+            Ok(None)
         }
         ProviderKind::Stripe
         | ProviderKind::Paypal
@@ -258,11 +359,77 @@ fn require_non_empty(field: &str, value: &str) -> AppResult<()> {
     Ok(())
 }
 
+fn require_non_empty_opt(field: &str, value: Option<&str>) -> AppResult<()> {
+    match value {
+        Some(v) if !v.trim().is_empty() => Ok(()),
+        _ => Err(AppError::BadRequest(format!("{field} is required"))),
+    }
+}
+
 fn validate_environment(field: &str, value: &str) -> AppResult<()> {
     match value.to_ascii_lowercase().as_str() {
         "production" | "sandbox" => Ok(()),
         other => Err(AppError::BadRequest(format!(
             "{field} must be production or sandbox, got {other}"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_coinflow_and_derives_merchant_id() {
+        let credential = serde_json::json!({
+            "api_key": "cf_test",
+            "merchant_id": "merchant_123",
+            "environment": "sandbox",
+            "webhook_validation_key": "hook_secret"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::Coinflow, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("merchant_123"));
+    }
+
+    #[test]
+    fn validates_wise_and_derives_profile_id() {
+        let credential = serde_json::json!({
+            "api_token": "wise_test",
+            "profile_id": "profile_456",
+            "environment": "production"
+        });
+
+        let derived = validate_api_key_credential(ProviderKind::Wise, &credential).unwrap();
+
+        assert_eq!(derived.as_deref(), Some("profile_456"));
+    }
+
+    #[test]
+    fn rejects_empty_coinbase_webhook_secret() {
+        let credential = serde_json::json!({
+            "api_key": "coinbase_test",
+            "webhook_secret": "",
+            "variant": "commerce"
+        });
+
+        let err =
+            validate_api_key_credential(ProviderKind::CoinbaseCommerce, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_unknown_environment() {
+        let credential = serde_json::json!({
+            "api_token": "wise_test",
+            "profile_id": "profile_456",
+            "environment": "staging"
+        });
+
+        let err = validate_api_key_credential(ProviderKind::Wise, &credential).unwrap_err();
+
+        assert!(matches!(err, AppError::BadRequest(_)));
     }
 }

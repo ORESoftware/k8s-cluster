@@ -91,6 +91,32 @@ impl TenantService {
         row_to_tenant(&row)
     }
 
+    /// Lightweight pagination for the admin UI (most recent first).
+    pub async fn list(&self, limit: i64) -> AppResult<Vec<Tenant>> {
+        let limit = limit.clamp(1, 500);
+        let rows = sqlx::query(
+            r#"
+            SELECT id, slug::TEXT AS slug, display_name, country_code,
+                   us_state, base_currency, kms_key_id, status, created_at
+            FROM tenants
+            ORDER BY created_at DESC
+            LIMIT $1
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.iter().map(row_to_tenant).collect()
+    }
+
+    pub async fn count(&self) -> AppResult<i64> {
+        let count: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM tenants"#)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count)
+    }
+
     pub async fn by_slug(&self, slug: &str) -> AppResult<Tenant> {
         let row = sqlx::query(
             r#"

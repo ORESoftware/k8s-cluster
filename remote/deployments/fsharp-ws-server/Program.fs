@@ -73,6 +73,7 @@ let private bootPresence
         let outboxPollMs = parseMsEnv "FSWS_OUTBOX_POLL_MS" 1000
         let outboxBatch  = parseMsEnv "FSWS_OUTBOX_BATCH" 256
         let outboxBackfill = parseBoolEnv "FSWS_OUTBOX_BACKFILL" false
+        let walEnabled = parseBoolEnv "FSWS_WAL_ENABLED" false
 
         // --- Postgres ---------------------------------------------------------
         let mutable connString : string option = None
@@ -92,15 +93,19 @@ let private bootPresence
             if migrated then
                 connString <- Some cs
                 pgListenH <- Some (PgListen.start logger cs)
-                let! slotName = ensureWalSlot logger cs
-                match slotName with
-                | Some s ->
-                    pgWalH <-
-                        Some (
-                            PgWal.start
-                                logger cs s
-                                (TimeSpan.FromMilliseconds(float walPollMs)))
-                | None -> ()
+                if walEnabled then
+                    let! slotName = ensureWalSlot logger cs
+                    match slotName with
+                    | Some s ->
+                        pgWalH <-
+                            Some (
+                                PgWal.start
+                                    logger cs s
+                                    (TimeSpan.FromMilliseconds(float walPollMs)))
+                    | None -> ()
+                else
+                    logger.LogInformation(
+                        "boot: FSWS_WAL_ENABLED=false, skipping PG WAL slot")
                 pgOutboxH <-
                     Some (
                         PgOutbox.start

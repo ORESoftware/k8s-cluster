@@ -9,9 +9,10 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-container-pool` (Rust Postgres-configured warm container pool over HTTP or NATS)
 - `dd-build-server` (Rust CI/CD build server for repo image builds and controlled k8s deploys)
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
-- `dd-remote-queue-consumer` (Rust NATS queue consumer for repo-scoped warm workers)
+- `dd-remote-queue-consumer` (Rust NATS queue consumer for UUID-bound workers and explicit pool dispatch)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
+- `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
@@ -61,7 +62,7 @@ Gateway path map:
 - `/`, `/home` -> `dd-remote-web-home:8080`
 - `/auth` -> `dd-remote-auth:8083`
 - `/agents/tasks` -> `dd-remote-web-home:8080`
-- `/api/agents/tasks` -> `dd-remote-rest-api:8082`
+- `/api/agents/*` -> `dd-remote-rest-api:8082` (gateway auth required)
 - `/api/agents/threads/<uuid>/prepare` -> `dd-remote-rest-api:8082` (internal auth required)
 - `POST /api/agent-worker/threads/<uuid>/tasks` -> `dd-agent-worker-broker:8098`
 - `/container-pools`, `/container-pools/<pool>`,
@@ -73,9 +74,17 @@ Gateway path map:
 - `/api/lambdas/functions` -> `dd-remote-rest-api:8082`
 - `/api/db/*` -> `dd-remote-rest-api:8082` (server auth required; generic RDS table access)
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
-- `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` -> `dd-webrtc-signaling:8095`
+- `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` ->
+  `dd-webrtc-signaling:8095` (gateway auth required)
+- `/fsws/`, `/fsws/healthz`, `/fsws/livez`, `/fsws/ws/*` -> `dd-fsharp-ws-server:8087`
+  (gateway auth required)
+- `/gcs/health`, `/gcs/ws-health`, `/gcs/api/*`, `/gcs/ws/*` -> `gcs` / `gcs-router`
+  (gateway auth required)
 - `/des/`, `/des/model/schema`, `/des/model/example`, `POST /des/validate`,
   `POST /des/simulate`, `/des/simulations/<jobId>` -> `dd-des-simulator:8099`
+  (gateway auth required)
+- `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
+  `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
@@ -85,10 +94,14 @@ Gateway path map:
   `dd-trading-server:8103` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
+- `/browser-test`, `/browser-test/healthz`, `/browser-test/metrics`, `/browser-test/status`,
+  `/browser-test/tools` -> `dd-browser-test-server:8104` (internal auth required;
+  `POST /run` accepts a bounded scenario DSL across Playwright, Puppeteer, and Selenium)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
 - `/dd-thread/<short>/...` -> target per-thread Kubernetes Ingress shape; the selected Node.js
   worker is pinned to one thread and does not route UUIDs itself. `/dd-thread/<short>/ws` is the
-  direct worker WebSocket for replay/live task events.
+  direct worker WebSocket for replay/live task events; both routes require gateway auth before the
+  gateway injects the worker `X-Server-Auth` header.
 
 Availability guardrail for `/agents/tasks`: the HTML route is owned by
 `dd-remote-web-home`, so it should keep `replicas: 2`, rolling updates with
@@ -99,10 +112,13 @@ browser. Do not scale `dd-remote-gateway` above one pod on the current single-no
 deployment; gateway HA needs either multiple nodes with a DaemonSet/load balancer shape or an
 external load balancer in front of multiple gateway instances.
 
-The Node.js worker image is pre-baked as `docker.io/library/dd-dev-server:dev` on the EC2
-containerd node. It already contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
-`remote/deployments/dev-server` server, and a warm `dd-next-1` checkout template. The container runs as the
-built-in `node` user; mounted workspaces live under `/home/node/workspace`.
+The Node.js worker image is built as `docker.io/library/dd-dev-server:dev` on the EC2 containerd
+node. It contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
+`remote/deployments/dev-server` server, and Node transport dependencies for NATS and outbound
+WebSocket fanout. Repo-scoped pool workers receive `DD_REPO_URL`, `BASE_BRANCH`, provider config,
+NATS config, WebSocket fanout config, and Git credentials at runtime; the image may carry a cache
+seed, but a live worker must not depend on a baked repo checkout as its source of truth. The
+container runs as the built-in `node` user; mounted workspaces live under `/home/node/workspace`.
 
 Protected ops paths accept either the legacy `Auth` request header or the browser `dd_auth` cookie.
 Browser document requests redirect to `/auth?return=<original path>`; API/curl callers still
@@ -228,7 +244,7 @@ Use `dd-gleam-lambda-runner-secrets` for independent lambda runtime values:
 - runtime-specific provider keys that user lambdas are allowed to consume
 
 The web deployment serves HTML only and does not mount database secrets. Browser JavaScript calls
-`/api/agents/tasks` and `/api/lambdas/functions` through the gateway directly. Lambda invocation
+`/api/agents/tasks` and `/api/lambdas/functions` through the authenticated gateway directly. Lambda invocation
 traffic uses `/lambdas/invoke/<function-id>` and goes from the gateway to the Gleam runner without
 passing through the REST API. The runner reads `LAMBDA_DATABASE_URL` from
 `dd-gleam-lambda-runner-secrets` and uses Postgres to resolve that immutable UUID to a lambda
@@ -305,9 +321,11 @@ The runtime now uses a NATS queued execution path by default:
    `DD_REMOTE_TASKS` stream.
 4. KEDA watches that JetStream consumer lag and scales `dd-remote-queue-consumer` from 1 to 8 pods
    when pending messages build up, then returns to 1 after the stream drains.
-5. The consumer dispatches real `task.dispatch` messages to the repo-scoped container pool with
-   `affinityKey=<threadId>`; legacy shadow messages are the only messages that prepare the
-   deterministic `dd-thread-<short>` Deployment.
+5. The consumer dispatches plain queued `task.dispatch` messages to the UUID-bound deterministic
+   worker. Explicit pool modes (`queued-pool`, `nats-pool`, `container-pool`, or `pool`) go to the
+   repo-scoped container pool with `affinityKey=<threadId>` and can fall back to the deterministic
+   worker only if the matching repo pool is unavailable or rejects the task. Legacy shadow messages
+   are prepare-only.
 6. The queue consumer stores taskId receipts under `/tmp/dd-remote-queue-consumer/tasks`; the
    Node.js worker also stores taskId receipts under its log directory. Repeated messages are
    accepted idempotently and do not start duplicate agent runs.
@@ -319,9 +337,9 @@ fanout still works as the normal telemetry bus, but web-home can receive the ini
 failure statuses over Gleam or Rust websocket fanout even when `dd.remote.events` is degraded.
 
 This proves the queue handoff and warmup behavior without allowing arbitrary generic workers to
-steal coding-agent execution. Real queued `task.dispatch` messages are routed to repo-scoped
-Node chat/Claude warm pools with `threadId` affinity; the queue consumer does not use direct REST
-fallback for real queued messages, preserving one execution owner.
+steal coding-agent execution. Plain queued `task.dispatch` messages stay on UUID-bound thread
+workers; explicit pool messages are routed to repo-scoped Node chat/Claude warm pools with
+`threadId` affinity.
 
 `dd-agent-worker-broker` is the additive long-run replacement for REST-owned worker dispatch. Its
 first route, `POST /api/agent-worker/threads/<threadId>/tasks`, direct-posts to the deterministic
@@ -395,8 +413,9 @@ function definition by UUID, maps the UUID to a reusable worker actor/child proc
 request payload to that process, and exposes child process counters through `/metrics` for
 Prometheus/Grafana.
 
-The runtime also includes `dd-mdp-optimizer`, a Rust MDP/POMDP/RL optimization service. It serves
-`/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`, and `POST /mdp/telemetry/learn`. It
+The runtime also includes `dd-mdp-optimizer`, a Rust MDP/POMDP/RL optimization service. The gateway
+requires operator auth for `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`, and
+`POST /mdp/telemetry/learn`. It
 queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.telemetry.mdp` for app/infra telemetry snapshots, then publishes results to
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.

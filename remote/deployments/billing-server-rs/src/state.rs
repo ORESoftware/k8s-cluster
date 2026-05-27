@@ -7,6 +7,7 @@ use crate::customers::CustomerService;
 use crate::ledger::LedgerService;
 use crate::locks::LockService;
 use crate::providers::connection::ConnectionService;
+use crate::providers::plaid::PlaidWebhookVerifier;
 use crate::solana::verify::Verifier;
 use crate::solana::{AnchorService, SolanaClient};
 use crate::tenants::TenantService;
@@ -29,6 +30,7 @@ pub struct AppState {
     pub verifier: Arc<Verifier>,
     pub scheduler: Arc<crate::scheduler::SchedulerService>,
     pub notifications: Arc<crate::notifications::NotificationService>,
+    pub plaid_webhook_verifier: PlaidWebhookVerifier,
 }
 
 impl AppState {
@@ -62,6 +64,7 @@ impl AppState {
             verifier,
             scheduler,
             notifications,
+            plaid_webhook_verifier: PlaidWebhookVerifier::new(),
         }
     }
 }

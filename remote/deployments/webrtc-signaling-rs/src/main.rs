@@ -19,6 +19,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::RUNTIME_EVENTS_SUBJECT;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, TextEncoder};
@@ -179,7 +180,7 @@ fn nats_url() -> String {
 }
 
 fn runtime_admin_subject() -> String {
-    env_string("RUNTIME_ADMIN_EVENT_SUBJECT").unwrap_or_else(|| "dd.remote.events".to_string())
+    env_string("RUNTIME_ADMIN_EVENT_SUBJECT").unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string())
 }
 
 fn runtime_broadcast_secret() -> Option<String> {
@@ -940,7 +941,10 @@ async fn main() {
         .route("/webrtc/runtime/broadcast", post(admin_runtime_broadcast))
         .route("/signal", get(signal_ws))
         .route("/webrtc/signal", get(signal_ws))
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await

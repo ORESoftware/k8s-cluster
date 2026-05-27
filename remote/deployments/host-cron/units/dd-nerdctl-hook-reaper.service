@@ -1,0 +1,13 @@
+[Unit]
+Description=Reap leaked nerdctl oci-hook postStop procs and stuck dd-pool tasks
+Documentation=https://github.com/ORESoftware/k8s-cluster/blob/dev/remote/deployments/host-cron/readme.md
+After=containerd.service
+Wants=containerd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dd-nerdctl-hook-reaper.sh
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal

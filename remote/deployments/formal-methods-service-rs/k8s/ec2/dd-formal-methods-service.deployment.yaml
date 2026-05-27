@@ -143,6 +143,25 @@ spec:
                   name: dd-agent-secrets
                   key: FORMAL_METHODS_GITHUB_TOKEN
                   optional: true
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-formal-methods-service
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-formal-methods-service
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-formal-methods-service.default.svc.cluster.local:8111/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: http
               containerPort: 8111

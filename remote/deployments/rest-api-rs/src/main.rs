@@ -12,6 +12,7 @@ use std::{
 };
 
 mod api_docs;
+mod container_pool_routes;
 mod db_routes;
 mod pg_contract;
 
@@ -22,6 +23,11 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
+};
+use dd_nats_subject_defs::{
+    cdc_table_filter_subject, thread_tasks_subject, DD_REMOTE_TASKS_STREAM_NAME,
+    GIT_REPOS_CHANGES_SUBJECT, LAMBDAS_FUNCTIONS_SUBJECT, ORCHESTRATOR_WAKEUP_SUBJECT,
+    RUNTIME_EVENTS_SUBJECT, THREAD_TASKS_WILDCARD,
 };
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
@@ -122,7 +128,17 @@ struct AgentContextCandidate {
     match_source: String,
     embedding_model: Option<String>,
     updated_at: Option<String>,
+    /// Discriminator for the picker so breadcrumbs and context blobs can ride
+    /// the same `contextIds` / `contextBlobs` rails without the worker having
+    /// to guess. `"context-blob"` is the legacy default; `"breadcrumb"` rows
+    /// carry a serialized AgentBreadcrumbRow JSON in `context_blob`.
+    kind: String,
 }
+
+const CONTEXT_KIND_BLOB: &str = "context-blob";
+const CONTEXT_KIND_BREADCRUMB: &str = "breadcrumb";
+const CONTEXT_KIND_TASK: &str = "thread-task";
+const BREADCRUMB_CANDIDATE_PREFIX: &str = "breadcrumb:";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -356,6 +372,12 @@ struct AgentContextCandidatesRequest {
     base_branch: Option<String>,
     project_id: Option<String>,
     limit: Option<i64>,
+    /// When set, the candidates endpoint returns only the matching items
+    /// resolved against blob/task/breadcrumb tables. Used by dev-server's
+    /// `fetchSelectedContextBlobs` to refetch full payloads it received only
+    /// as IDs.
+    #[serde(default)]
+    context_ids: Option<Vec<String>>,
 }
 
 struct ExistingTaskDispatch {
@@ -379,6 +401,42 @@ struct AgentEventIngestRequest {
     thread_id: Option<String>,
     seq: i32,
     event: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentBreadcrumbIngestRequest {
+    thread_id: String,
+    task_id: Option<String>,
+    kind: String,
+    payload: Option<Value>,
+    pod_name: Option<String>,
+    branch: Option<String>,
+    provider: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentBreadcrumbRow {
+    id: i64,
+    thread_id: String,
+    task_id: Option<String>,
+    kind: String,
+    payload: Value,
+    emitted_at: String,
+    pod_name: Option<String>,
+    branch: Option<String>,
+    provider: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentBreadcrumbTailResponse {
+    thread_id: String,
+    items: Vec<AgentBreadcrumbRow>,
+    source: &'static str,
+    excluded_task_id: Option<String>,
+    limit: i64,
 }
 
 #[derive(Deserialize)]
@@ -408,6 +466,8 @@ struct NatsTaskMessage {
     task_kind: &'static str,
     shadow: bool,
     direct_dispatch: bool,
+    dispatch_mode: String,
+    container_pool_dispatch: bool,
     thread_id: String,
     task_id: String,
     provider: Option<String>,
@@ -415,6 +475,7 @@ struct NatsTaskMessage {
     base_branch: String,
     feature_branch: Option<String>,
     prompt: String,
+    thread_title: Option<String>,
     context_mode: Option<String>,
     context_ids: Option<Vec<String>>,
     created_at_ms: u128,
@@ -424,6 +485,7 @@ struct NatsTaskMessage {
 struct ThreadRepoConfig {
     repo: String,
     base_branch: String,
+    thread_title: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -667,6 +729,10 @@ fn normalized_repo_config(request: &DispatchTaskRequest) -> Result<ThreadRepoCon
     Ok(ThreadRepoConfig {
         repo: normalize_repo_url(&request.repo)?,
         base_branch: normalize_base_branch(request.base_branch.as_deref())?,
+        thread_title: request
+            .thread_title
+            .clone()
+            .or_else(|| Some(request.prompt.chars().take(80).collect::<String>())),
     })
 }
 
@@ -725,23 +791,23 @@ fn nats_url() -> String {
 }
 
 fn nats_task_subject(thread_id: &str) -> String {
-    format!("dd.remote.thread.{thread_id}.tasks")
+    thread_tasks_subject(thread_id)
 }
 
 fn nats_task_stream_subject() -> String {
-    first_env(&["NATS_TASK_SUBJECT"]).unwrap_or_else(|| "dd.remote.thread.*.tasks".to_string())
+    first_env(&["NATS_TASK_SUBJECT"]).unwrap_or_else(|| THREAD_TASKS_WILDCARD.to_string())
 }
 
 fn nats_task_stream_name() -> String {
-    first_env(&["NATS_TASK_STREAM"]).unwrap_or_else(|| "DD_REMOTE_TASKS".to_string())
+    first_env(&["NATS_TASK_STREAM"]).unwrap_or_else(|| DD_REMOTE_TASKS_STREAM_NAME.to_string())
 }
 
 fn nats_wakeup_subject() -> &'static str {
-    "dd.remote.orchestrator.wakeup"
+    ORCHESTRATOR_WAKEUP_SUBJECT
 }
 
 fn nats_event_subject() -> &'static str {
-    "dd.remote.events"
+    RUNTIME_EVENTS_SUBJECT
 }
 
 fn rest_status_gleam_broadcast_url() -> String {
@@ -792,12 +858,57 @@ fn task_event_payload(
 }
 
 fn task_event_message_id(task_id: &str, seq: i32, event: &Value) -> String {
+    task_event_message_id_i64(task_id, seq as i64, event)
+}
+
+fn task_event_message_id_i64(task_id: &str, seq: i64, event: &Value) -> String {
     event
         .get("stage")
         .and_then(Value::as_str)
         .filter(|stage| !stage.trim().is_empty())
         .map(|stage| format!("{task_id}:{stage}"))
         .unwrap_or_else(|| format!("{task_id}:event:{seq}"))
+}
+
+fn cdc_column_string(change: &dd_wal_consumer::RowChange, name: &str) -> Option<String> {
+    change
+        .column(name)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn cdc_column_i64(change: &dd_wal_consumer::RowChange, name: &str) -> Option<i64> {
+    change.column(name).and_then(Value::as_i64)
+}
+
+fn task_event_payload_from_agent_event_change(
+    change: &dd_wal_consumer::RowChange,
+) -> Option<Value> {
+    if matches!(change.op, dd_wal_consumer::ChangeOp::Delete) {
+        return None;
+    }
+    let task_id = cdc_column_string(change, "task_id")?;
+    let event = change
+        .column("payload")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({ "kind": "cdc", "source": "wal-gateway" }));
+    let thread_id = cdc_column_string(change, "thread_id").or_else(|| {
+        event
+            .get("threadId")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    })?;
+    let seq = cdc_column_i64(change, "seq").unwrap_or_default();
+    let message_id = task_event_message_id_i64(&task_id, seq, &event);
+    Some(task_event_payload(
+        &thread_id,
+        &task_id,
+        seq,
+        &message_id,
+        &event,
+    ))
 }
 
 async fn post_task_event_to_websocket_fanout(
@@ -877,11 +988,11 @@ async fn publish_task_event_to_websocket_fanout(
 }
 
 fn nats_lambda_functions_subject() -> &'static str {
-    "dd.remote.lambdas.functions"
+    LAMBDAS_FUNCTIONS_SUBJECT
 }
 
 fn nats_git_repos_changes_subject() -> &'static str {
-    "dd.remote.git-repos.changes"
+    GIT_REPOS_CHANGES_SUBJECT
 }
 
 fn cdc_stream_name() -> String {
@@ -931,6 +1042,7 @@ async fn publish_thread_runtime_event_to_nats(
 }
 
 async fn persist_task_status_event(
+    thread_id: Option<&str>,
     task_id: &str,
     seq: i32,
     status: &str,
@@ -946,7 +1058,7 @@ async fn persist_task_status_event(
     event_object.insert("atMs".to_string(), json!(now_ms()));
     let request = AgentEventIngestRequest {
         task_id: task_id.to_string(),
-        thread_id: None,
+        thread_id: thread_id.map(str::to_string),
         seq,
         event,
     };
@@ -1523,8 +1635,30 @@ fn render_thread_deployment(
     thread_id: &str,
     repo_url: &str,
     base_branch: &str,
+    thread_title: Option<&str>,
 ) -> Value {
     let image = thread_runtime_image();
+    let mut env = vec![
+        json!({ "name": "REMOTE_DEV_THREAD_ID", "value": thread_id }),
+        json!({ "name": "DD_REPO_URL", "value": repo_url }),
+        json!({ "name": "BASE_BRANCH", "value": base_branch }),
+        json!({ "name": "IDLE_TIMEOUT_MS", "value": "0" }),
+        json!({ "name": "OTEL_SERVICE_NAME", "value": name }),
+        json!({ "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://dd-otel-collector.observability.svc.cluster.local:4318" }),
+        json!({ "name": "THREAD_CONTEXT_BASE_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082" }),
+        json!({ "name": "AGENT_MCP_URL", "value": "http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp" }),
+        json!({ "name": "AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000" }),
+        json!({ "name": "EVENT_INGEST_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events" }),
+        json!({ "name": "EVENT_INGEST_SECRET", "valueFrom": { "secretKeyRef": { "name": "dd-agent-secrets", "key": "SERVER_AUTH_SECRET" } } }),
+        json!({ "name": "NATS_URL", "value": "nats://dd-nats.messaging.svc.cluster.local:4222" }),
+        json!({ "name": "NATS_EVENT_SUBJECT", "value": RUNTIME_EVENTS_SUBJECT }),
+    ];
+    if let Some(thread_title) = thread_title
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        env.push(json!({ "name": "REMOTE_DEV_THREAD_TITLE", "value": thread_title }));
+    }
     json!({
         "apiVersion": "apps/v1",
         "kind": "Deployment",
@@ -1572,21 +1706,7 @@ fn render_thread_deployment(
                             "runAsGroup": 1000
                         },
                         "ports": [{ "containerPort": 8080, "name": "http" }],
-                        "env": [
-                            { "name": "REMOTE_DEV_THREAD_ID", "value": thread_id },
-                            { "name": "DD_REPO_URL", "value": repo_url },
-                            { "name": "BASE_BRANCH", "value": base_branch },
-                            { "name": "IDLE_TIMEOUT_MS", "value": "0" },
-                            { "name": "OTEL_SERVICE_NAME", "value": name },
-                            { "name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": "http://dd-otel-collector.observability.svc.cluster.local:4318" },
-                            { "name": "THREAD_CONTEXT_BASE_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082" },
-                            { "name": "AGENT_MCP_URL", "value": "http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp" },
-                            { "name": "AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000" },
-                            { "name": "EVENT_INGEST_URL", "value": "http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events" },
-                            { "name": "EVENT_INGEST_SECRET", "valueFrom": { "secretKeyRef": { "name": "dd-agent-secrets", "key": "SERVER_AUTH_SECRET" } } },
-                            { "name": "NATS_URL", "value": "nats://dd-nats.messaging.svc.cluster.local:4222" },
-                            { "name": "NATS_EVENT_SUBJECT", "value": "dd.remote.events" }
-                        ],
+                        "env": env,
                         "envFrom": [
                             { "secretRef": { "name": "dd-agent-secrets", "optional": true } }
                         ],
@@ -1639,6 +1759,7 @@ async fn ensure_thread_worker(
     thread_id: &str,
     repo_url: &str,
     base_branch: &str,
+    thread_title: Option<&str>,
 ) -> Result<(String, String, Vec<ThreadActionResult>), String> {
     let namespace = thread_runtime_namespace();
     let name = thread_resource_name(thread_id);
@@ -1646,7 +1767,14 @@ async fn ensure_thread_worker(
     if let Err(error) = prune_awake_thread_workers_for_capacity(&namespace, &name).await {
         eprintln!("thread capacity prune skipped before waking {name}: {error}");
     }
-    let deployment = render_thread_deployment(&namespace, &name, thread_id, repo_url, base_branch);
+    let deployment = render_thread_deployment(
+        &namespace,
+        &name,
+        thread_id,
+        repo_url,
+        base_branch,
+        thread_title,
+    );
 
     results.push(
         k8s_create_request(
@@ -1688,8 +1816,13 @@ async fn prepare_thread_worker(thread_id: &str) -> Result<ThreadActionResponse, 
     let repo_config = fetch_thread_repo_config_from_postgres(thread_id)
         .await?
         .ok_or_else(|| "thread repo config is not configured".to_string())?;
-    let (namespace, name, results) =
-        ensure_thread_worker(thread_id, &repo_config.repo, &repo_config.base_branch).await?;
+    let (namespace, name, results) = ensure_thread_worker(
+        thread_id,
+        &repo_config.repo,
+        &repo_config.base_branch,
+        repo_config.thread_title.as_deref(),
+    )
+    .await?;
     let Some(secret) = worker_auth_secret() else {
         return Err(missing_worker_auth_secret_message().to_string());
     };
@@ -1897,21 +2030,27 @@ async fn ensure_thread_worker_for_control(
         }
     };
 
-    let (namespace, name, _results) =
-        match ensure_thread_worker(thread_id, &repo_config.repo, &repo_config.base_branch).await {
-            Ok(result) => result,
-            Err(error) => {
-                return Err(ThreadActionResponse {
-                    ok: false,
-                    action: action.to_string(),
-                    thread_id: thread_id.to_string(),
-                    k8s_name: name,
-                    namespace,
-                    results: Vec::new(),
-                    errors: vec![error],
-                });
-            }
-        };
+    let (namespace, name, _results) = match ensure_thread_worker(
+        thread_id,
+        &repo_config.repo,
+        &repo_config.base_branch,
+        repo_config.thread_title.as_deref(),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            return Err(ThreadActionResponse {
+                ok: false,
+                action: action.to_string(),
+                thread_id: thread_id.to_string(),
+                k8s_name: name,
+                namespace,
+                results: Vec::new(),
+                errors: vec![error],
+            });
+        }
+    };
 
     if let Err(error) = wait_thread_worker_ready(&namespace, &name, &secret).await {
         return Err(ThreadActionResponse {
@@ -2745,6 +2884,291 @@ async fn ensure_agent_context_schema(client: &tokio_postgres::Client) -> Result<
         .map_err(|error| error.to_string())
 }
 
+fn task_context_id(task_id: &str) -> String {
+    format!("task:{task_id}")
+}
+
+fn task_id_from_context_id(context_id: &str) -> Option<&str> {
+    context_id
+        .strip_prefix("task:")
+        .filter(|value| !value.is_empty())
+}
+
+fn truncate_for_context_blob(value: &str, limit: usize) -> String {
+    let trimmed = value.trim();
+    let mut chars = trimmed.chars();
+    let truncated = chars.by_ref().take(limit).collect::<String>();
+    if chars.next().is_none() {
+        trimmed.to_string()
+    } else {
+        format!("{truncated}...")
+    }
+}
+
+fn format_task_context_blob(task: &AgentTaskRow) -> String {
+    let mut lines = vec![
+        format!("taskId: {}", task.id),
+        format!("threadId: {}", task.thread_id),
+        format!("status: {}", task.status),
+    ];
+    if let Some(branch) = task.branch.as_deref().filter(|value| !value.is_empty()) {
+        lines.push(format!("branch: {branch}"));
+    }
+    if let Some(exit_reason) = task
+        .exit_reason
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!("exit: {exit_reason}"));
+    }
+    if let Some(error_message) = task
+        .error_message
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(format!(
+            "error: {}",
+            truncate_for_context_blob(error_message, 1200)
+        ));
+    }
+    lines.push(String::new());
+    lines.push(format!(
+        "prompt: {}",
+        truncate_for_context_blob(&task.prompt, 4000)
+    ));
+    if let Some(latest) = task
+        .latest_payload
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        lines.push(String::new());
+        lines.push(format!(
+            "latestEvent: {}",
+            truncate_for_context_blob(latest, 4000)
+        ));
+    }
+    lines.join("\n")
+}
+
+fn task_context_candidate(task: &AgentTaskRow, prompt: &str) -> AgentContextCandidate {
+    let title = format!(
+        "Previous task {}",
+        task.id.chars().take(8).collect::<String>()
+    );
+    let blob = format_task_context_blob(task);
+    AgentContextCandidate {
+        context_id: task_context_id(&task.id),
+        project_id: "thread".to_string(),
+        repo_id: None,
+        context_title: title,
+        context_blob: blob.clone(),
+        score: lexical_context_score(prompt, &task.prompt, &blob),
+        match_source: CONTEXT_KIND_TASK.to_string(),
+        embedding_model: None,
+        updated_at: task.updated_at.clone().or_else(|| task.created_at.clone()),
+        kind: CONTEXT_KIND_TASK.to_string(),
+    }
+}
+
+async fn fetch_thread_task_context_candidates_from_postgres(
+    thread_id: &str,
+    prompt: &str,
+    limit: i64,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    Ok(fetch_thread_context_from_postgres(thread_id, limit)
+        .await?
+        .iter()
+        .map(|task| task_context_candidate(task, prompt))
+        .collect())
+}
+
+async fn fetch_blob_context_candidates_from_postgres(
+    selected_ids: &[String],
+    project_id: &str,
+    repo_id: &str,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    if selected_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = connect_postgres().await?;
+    ensure_agent_context_schema(&client).await?;
+    let rows = client
+        .query(
+            r#"
+            select
+              c.context_id,
+              c.project_id,
+              c.repo_id::text as repo_id,
+              c.context_title,
+              left(c.context_blob, 20000) as context_blob,
+              to_char(c.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+              e.embedding_model
+            from agent_context_blobs c
+            left join lateral (
+              select embedding_model
+              from agent_context_embeddings
+              where context_blob_id = c.id
+              order by created_at desc
+              limit 1
+            ) e on true
+            where c.is_soft_deleted = false
+              and c.status = 'active'
+              and c.project_id = $1
+              and c.repo_id = $2::text::uuid
+              and c.context_id = any($3)
+            "#,
+            &[&project_id, &repo_id, &selected_ids],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| AgentContextCandidate {
+            context_id: row_string(row, "context_id"),
+            project_id: row_string(row, "project_id"),
+            repo_id: row_opt_string(row, "repo_id"),
+            context_title: row_string(row, "context_title"),
+            context_blob: row_string(row, "context_blob"),
+            score: 1.0,
+            match_source: "selected".to_string(),
+            embedding_model: row_opt_string(row, "embedding_model"),
+            updated_at: row_opt_string(row, "updated_at"),
+            kind: CONTEXT_KIND_BLOB.to_string(),
+        })
+        .collect())
+}
+
+async fn fetch_breadcrumb_context_candidates_by_ids_from_postgres(
+    thread_id: &str,
+    selected_ids: &[String],
+    repo_id: String,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    let numeric_ids = selected_ids
+        .iter()
+        .filter_map(|id| {
+            id.strip_prefix(BREADCRUMB_CANDIDATE_PREFIX)
+                .and_then(|tail| tail.parse::<i64>().ok())
+        })
+        .collect::<Vec<_>>();
+    if numeric_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = connect_postgres().await?;
+    let rows = client
+        .query(
+            r#"
+            select
+              id,
+              thread_id::text as thread_id,
+              task_id::text as task_id,
+              kind,
+              payload,
+              to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+              pod_name,
+              branch,
+              provider
+            from agent_remote_dev_breadcrumbs
+            where thread_id = $1::text::uuid
+              and id = any($2)
+            "#,
+            &[&thread_id, &numeric_ids],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| {
+            let breadcrumb = AgentBreadcrumbRow {
+                id: row.try_get::<_, i64>("id").unwrap_or(0),
+                thread_id: row_string(row, "thread_id"),
+                task_id: row_opt_string(row, "task_id"),
+                kind: row_string(row, "kind"),
+                payload: row
+                    .try_get::<_, Value>("payload")
+                    .unwrap_or(Value::Object(Default::default())),
+                emitted_at: row_string(row, "emitted_at"),
+                pod_name: row_opt_string(row, "pod_name"),
+                branch: row_opt_string(row, "branch"),
+                provider: row_opt_string(row, "provider"),
+            };
+            breadcrumb_row_to_candidate(breadcrumb, repo_id.clone())
+        })
+        .collect())
+}
+
+async fn fetch_selected_context_candidates_from_postgres(
+    thread_id: &str,
+    prompt: &str,
+    selected_ids: &[String],
+    repo_config: &ThreadRepoConfig,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    let project_id = normalize_context_project_id(None)?;
+    let mut breadcrumb_ids = Vec::new();
+    let mut blob_ids = Vec::new();
+    let mut task_ids = HashSet::new();
+    for id in selected_ids {
+        if id.starts_with(BREADCRUMB_CANDIDATE_PREFIX) {
+            breadcrumb_ids.push(id.clone());
+        } else if let Some(task_id) = task_id_from_context_id(id) {
+            task_ids.insert(task_id.to_string());
+        } else {
+            blob_ids.push(id.clone());
+        }
+    }
+    let repo = if blob_ids.is_empty() && breadcrumb_ids.is_empty() {
+        None
+    } else {
+        Some(
+            upsert_known_git_repo_to_postgres(
+                &repo_config.repo,
+                None,
+                None,
+                Some(&repo_config.base_branch),
+            )
+            .await?,
+        )
+    };
+    let blob_candidates = if let Some(repo) = repo.as_ref() {
+        fetch_blob_context_candidates_from_postgres(&blob_ids, &project_id, &repo.id).await?
+    } else {
+        Vec::new()
+    };
+    let breadcrumb_candidates = if let Some(repo) = repo.as_ref() {
+        fetch_breadcrumb_context_candidates_by_ids_from_postgres(
+            thread_id,
+            &breadcrumb_ids,
+            repo.id.clone(),
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    let task_candidates = if task_ids.is_empty() {
+        Vec::new()
+    } else {
+        fetch_thread_task_context_candidates_from_postgres(thread_id, prompt, 100)
+            .await?
+            .into_iter()
+            .filter(|candidate| {
+                task_id_from_context_id(&candidate.context_id)
+                    .is_some_and(|task_id| task_ids.contains(task_id))
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut by_id = blob_candidates
+        .into_iter()
+        .chain(breadcrumb_candidates)
+        .chain(task_candidates)
+        .map(|candidate| (candidate.context_id.clone(), candidate))
+        .collect::<HashMap<_, _>>();
+    Ok(selected_ids
+        .iter()
+        .filter_map(|id| by_id.remove(id))
+        .collect::<Vec<_>>())
+}
+
 async fn fetch_agent_context_candidates_from_postgres(
     thread_id: &str,
     request: &AgentContextCandidatesRequest,
@@ -2753,6 +3177,33 @@ async fn fetch_agent_context_candidates_from_postgres(
     let base_branch = normalize_base_branch(request.base_branch.as_deref())?;
     let project_id = normalize_context_project_id(request.project_id.as_deref())?;
     let limit = context_candidate_limit(request.limit);
+    let selected_ids = request.context_ids.clone().unwrap_or_default();
+    if !selected_ids.is_empty() {
+        let repo_config = ThreadRepoConfig {
+            repo: repo_url,
+            base_branch,
+            thread_title: None,
+        };
+        // Use the helper-based path here (not the dispatch path) to avoid an
+        // async recursion cycle through fetch_selected_agent_context_*.
+        let candidates = fetch_selected_context_candidates_from_postgres(
+            thread_id,
+            &request.prompt,
+            &selected_ids,
+            &repo_config,
+        )
+        .await?;
+        return Ok(AgentContextCandidatesResponse {
+            ok: true,
+            source: "postgres".to_string(),
+            thread_id: thread_id.to_string(),
+            generated_at_ms: now_ms(),
+            project_id,
+            repo_id: None,
+            candidates,
+            errors: Vec::new(),
+        });
+    }
     let repo = upsert_known_git_repo_to_postgres(&repo_url, None, None, Some(&base_branch)).await?;
     let client = connect_postgres().await?;
     ensure_agent_context_schema(&client).await?;
@@ -2834,9 +3285,23 @@ async fn fetch_agent_context_candidates_from_postgres(
                 },
                 embedding_model,
                 updated_at: row_opt_string(row, "updated_at"),
+                kind: CONTEXT_KIND_BLOB.to_string(),
             }
         })
         .collect::<Vec<_>>();
+    let task_candidates =
+        match fetch_thread_task_context_candidates_from_postgres(thread_id, &request.prompt, 20)
+            .await
+        {
+            Ok(items) => items,
+            Err(error) => {
+                errors.push(format!(
+                    "thread task context unavailable; continuing without it: {error}"
+                ));
+                Vec::new()
+            }
+        };
+    candidates.extend(task_candidates);
     candidates.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
@@ -2844,6 +3309,22 @@ async fn fetch_agent_context_candidates_from_postgres(
             .then_with(|| a.context_title.cmp(&b.context_title))
     });
     candidates.truncate(limit as usize);
+
+    // Surface recent breadcrumbs alongside long-lived context blobs so the same
+    // picker can include / exclude them with checkboxes. Breadcrumb candidates
+    // ride the same `contextIds` rail using the `breadcrumb:<numeric-id>`
+    // prefix, and the same `contextBlobs` payload using `kind: "breadcrumb"`.
+    let breadcrumb_candidates =
+        match fetch_breadcrumb_candidates_for_thread(thread_id, repo.id.clone()).await {
+            Ok(items) => items,
+            Err(error) => {
+                errors.push(format!(
+                    "breadcrumb candidates unavailable; continuing without them: {error}"
+                ));
+                Vec::new()
+            }
+        };
+    candidates.extend(breadcrumb_candidates);
 
     Ok(AgentContextCandidatesResponse {
         ok: true,
@@ -2855,6 +3336,87 @@ async fn fetch_agent_context_candidates_from_postgres(
         candidates,
         errors,
     })
+}
+
+/// How many recent breadcrumbs to surface in the context picker. The picker UI
+/// is checkbox-based so this is a soft cap on visible rows, not a prompt
+/// budget; the actual prompt cost is governed by which boxes the user keeps
+/// checked.
+const BREADCRUMB_CANDIDATE_LIMIT: i64 = 25;
+
+async fn fetch_breadcrumb_candidates_for_thread(
+    thread_id: &str,
+    repo_id: String,
+) -> Result<Vec<AgentContextCandidate>, String> {
+    let rows =
+        fetch_agent_breadcrumb_tail_from_postgres(thread_id, BREADCRUMB_CANDIDATE_LIMIT, None)
+            .await?;
+    let candidates = rows
+        .into_iter()
+        .map(|row| breadcrumb_row_to_candidate(row, repo_id.clone()))
+        .collect();
+    Ok(candidates)
+}
+
+fn breadcrumb_row_to_candidate(row: AgentBreadcrumbRow, repo_id: String) -> AgentContextCandidate {
+    let summary = breadcrumb_payload_summary(&row.payload);
+    let title = if summary.is_empty() {
+        format!("breadcrumb · {} · {}", row.kind, row.emitted_at)
+    } else {
+        format!("breadcrumb · {} · {} · {summary}", row.kind, row.emitted_at)
+    };
+    let blob_payload = json!({
+        "id": row.id,
+        "kind": row.kind,
+        "emittedAt": row.emitted_at,
+        "taskId": row.task_id,
+        "podName": row.pod_name,
+        "branch": row.branch,
+        "provider": row.provider,
+        "payload": row.payload,
+    });
+    let blob = serde_json::to_string(&blob_payload)
+        .unwrap_or_else(|_| format!("{{\"kind\":\"{}\"}}", row.kind));
+    AgentContextCandidate {
+        context_id: format!("{BREADCRUMB_CANDIDATE_PREFIX}{}", row.id),
+        project_id: String::new(),
+        repo_id: Some(repo_id),
+        context_title: title,
+        context_blob: blob,
+        // Breadcrumbs sort below high-confidence semantic context but above
+        // unrelated lexical noise. Operators decide via checkboxes; the score
+        // only seeds default ordering.
+        score: 0.55,
+        match_source: CONTEXT_KIND_BREADCRUMB.to_string(),
+        embedding_model: None,
+        updated_at: Some(row.emitted_at),
+        kind: CONTEXT_KIND_BREADCRUMB.to_string(),
+    }
+}
+
+fn breadcrumb_payload_summary(payload: &Value) -> String {
+    if let Some(object) = payload.as_object() {
+        for key in [
+            "summary",
+            "message",
+            "status",
+            "branch",
+            "kind",
+            "exitReason",
+        ] {
+            if let Some(value) = object.get(key).and_then(Value::as_str) {
+                let trimmed = value.trim();
+                if !trimmed.is_empty() {
+                    let mut snippet: String = trimmed.chars().take(80).collect();
+                    if trimmed.chars().count() > 80 {
+                        snippet.push('\u{2026}');
+                    }
+                    return snippet;
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 async fn fetch_selected_agent_context_from_postgres(
@@ -2875,6 +3437,7 @@ async fn fetch_selected_agent_context_from_postgres(
                 base_branch: Some(repo_config.base_branch.clone()),
                 project_id: None,
                 limit: Some(10),
+                context_ids: None,
             },
         )
         .await?
@@ -2884,68 +3447,13 @@ async fn fetch_selected_agent_context_from_postgres(
         return Ok(Vec::new());
     }
 
-    let project_id = normalize_context_project_id(None)?;
-    let repo = upsert_known_git_repo_to_postgres(
-        &repo_config.repo,
-        None,
-        None,
-        Some(&repo_config.base_branch),
+    fetch_selected_context_candidates_from_postgres(
+        &request.thread_id,
+        &request.prompt,
+        &selected_ids,
+        repo_config,
     )
-    .await?;
-    let client = connect_postgres().await?;
-    ensure_agent_context_schema(&client).await?;
-    let rows = client
-        .query(
-            r#"
-            select
-              c.context_id,
-              c.project_id,
-              c.repo_id::text as repo_id,
-              c.context_title,
-              left(c.context_blob, 20000) as context_blob,
-              to_char(c.updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
-              e.embedding_model
-            from agent_context_blobs c
-            left join lateral (
-              select embedding_model
-              from agent_context_embeddings
-              where context_blob_id = c.id
-              order by created_at desc
-              limit 1
-            ) e on true
-            where c.is_soft_deleted = false
-              and c.status = 'active'
-              and c.project_id = $1
-              and c.repo_id = $2::text::uuid
-              and c.context_id = any($3)
-            "#,
-            &[&project_id, &repo.id, &selected_ids],
-        )
-        .await
-        .map_err(|error| error.to_string())?;
-
-    let mut by_id = rows
-        .iter()
-        .map(|row| {
-            let candidate = AgentContextCandidate {
-                context_id: row_string(row, "context_id"),
-                project_id: row_string(row, "project_id"),
-                repo_id: row_opt_string(row, "repo_id"),
-                context_title: row_string(row, "context_title"),
-                context_blob: row_string(row, "context_blob"),
-                score: 1.0,
-                match_source: "selected".to_string(),
-                embedding_model: row_opt_string(row, "embedding_model"),
-                updated_at: row_opt_string(row, "updated_at"),
-            };
-            (candidate.context_id.clone(), candidate)
-        })
-        .collect::<HashMap<_, _>>();
-
-    Ok(selected_ids
-        .iter()
-        .filter_map(|id| by_id.remove(id))
-        .collect::<Vec<_>>())
+    .await
 }
 
 async fn fetch_agents_from_postgres(
@@ -3192,7 +3700,7 @@ async fn fetch_thread_repo_config_from_postgres(
     let row = client
         .query_opt(
             r#"
-            select repo, base_branch
+            select repo, base_branch, title as thread_title
             from agent_remote_dev_threads
             where id = $1::text::uuid
               and is_soft_deleted = false
@@ -3206,6 +3714,7 @@ async fn fetch_thread_repo_config_from_postgres(
     Ok(row.map(|row| ThreadRepoConfig {
         repo: row_string(&row, "repo"),
         base_branch: row_string(&row, "base_branch"),
+        thread_title: row_opt_string(&row, "thread_title"),
     }))
 }
 
@@ -4004,14 +4513,21 @@ async fn persist_agent_event_to_postgres(
         .execute(
             r#"
             insert into agent_remote_dev_events
-              (task_id, seq, event_kind, payload, created_at)
+              (task_id, thread_id, seq, event_kind, payload, created_at)
             values
-              ($1::text::uuid, $2, $3, $4, now())
+              ($1::text::uuid, $2::text::uuid, $3, $4, $5, now())
             on conflict (task_id, seq) do update set
+              thread_id = coalesce(excluded.thread_id, agent_remote_dev_events.thread_id),
               event_kind = excluded.event_kind,
               payload = excluded.payload
             "#,
-            &[&request.task_id, &request.seq, &event_kind, &request.event],
+            &[
+                &request.task_id,
+                &request.thread_id,
+                &request.seq,
+                &event_kind,
+                &request.event,
+            ],
         )
         .await
         .map_err(|error| error.to_string())?;
@@ -4087,6 +4603,135 @@ async fn persist_agent_event_to_postgres(
     }
 
     Ok(())
+}
+
+async fn persist_agent_breadcrumb_to_postgres(
+    request: &AgentBreadcrumbIngestRequest,
+) -> Result<AgentBreadcrumbRow, String> {
+    let payload = request
+        .payload
+        .clone()
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    if !payload.is_object() {
+        return Err("payload must be a JSON object".to_string());
+    }
+    let client = connect_postgres().await?;
+    let row = client
+        .query_one(
+            r#"
+            insert into agent_remote_dev_breadcrumbs
+              (thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider)
+            values
+              ($1::text::uuid, $2::text::uuid, $3, $4, now(), $5, $6, $7)
+            returning
+              id,
+              thread_id::text as thread_id,
+              task_id::text as task_id,
+              kind,
+              payload,
+              to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+              pod_name,
+              branch,
+              provider
+            "#,
+            &[
+                &request.thread_id,
+                &request.task_id,
+                &request.kind,
+                &payload,
+                &request.pod_name,
+                &request.branch,
+                &request.provider,
+            ],
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(AgentBreadcrumbRow {
+        id: row
+            .try_get::<_, i64>("id")
+            .map_err(|error| error.to_string())?,
+        thread_id: row_string(&row, "thread_id"),
+        task_id: row_opt_string(&row, "task_id"),
+        kind: row_string(&row, "kind"),
+        payload: row
+            .try_get::<_, Value>("payload")
+            .unwrap_or(Value::Object(Default::default())),
+        emitted_at: row_string(&row, "emitted_at"),
+        pod_name: row_opt_string(&row, "pod_name"),
+        branch: row_opt_string(&row, "branch"),
+        provider: row_opt_string(&row, "provider"),
+    })
+}
+
+async fn fetch_agent_breadcrumb_tail_from_postgres(
+    thread_id: &str,
+    limit: i64,
+    exclude_task_id: Option<&str>,
+) -> Result<Vec<AgentBreadcrumbRow>, String> {
+    let client = connect_postgres().await?;
+    let rows = match exclude_task_id {
+        Some(task_id) => client
+            .query(
+                r#"
+                select
+                  id,
+                  thread_id::text as thread_id,
+                  task_id::text as task_id,
+                  kind,
+                  payload,
+                  to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+                  pod_name,
+                  branch,
+                  provider
+                from agent_remote_dev_breadcrumbs
+                where thread_id = $1::text::uuid
+                  and (task_id is null or task_id <> $2::text::uuid)
+                order by emitted_at desc, id desc
+                limit $3
+                "#,
+                &[&thread_id, &task_id, &limit],
+            )
+            .await,
+        None => client
+            .query(
+                r#"
+                select
+                  id,
+                  thread_id::text as thread_id,
+                  task_id::text as task_id,
+                  kind,
+                  payload,
+                  to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+                  pod_name,
+                  branch,
+                  provider
+                from agent_remote_dev_breadcrumbs
+                where thread_id = $1::text::uuid
+                order by emitted_at desc, id desc
+                limit $2
+                "#,
+                &[&thread_id, &limit],
+            )
+            .await,
+    }
+    .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .iter()
+        .map(|row| AgentBreadcrumbRow {
+            id: row.try_get::<_, i64>("id").unwrap_or(0),
+            thread_id: row_string(row, "thread_id"),
+            task_id: row_opt_string(row, "task_id"),
+            kind: row_string(row, "kind"),
+            payload: row
+                .try_get::<_, Value>("payload")
+                .unwrap_or(Value::Object(Default::default())),
+            emitted_at: row_string(row, "emitted_at"),
+            pod_name: row_opt_string(row, "pod_name"),
+            branch: row_opt_string(row, "branch"),
+            provider: row_opt_string(row, "provider"),
+        })
+        .collect())
 }
 
 async fn fetch_agent_events_from_postgres(
@@ -4237,6 +4882,22 @@ fn is_container_pool_dispatch_mode(mode: &str) -> bool {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DispatchPath {
+    NatsQueue { container_pool: bool },
+    DirectWorker,
+}
+
+fn dispatch_path_for_mode(mode: &str) -> DispatchPath {
+    if is_queued_dispatch_mode(mode) {
+        DispatchPath::NatsQueue {
+            container_pool: is_container_pool_dispatch_mode(mode),
+        }
+    } else {
+        DispatchPath::DirectWorker
+    }
+}
+
 async fn publish_task_to_nats(
     request: &DispatchTaskRequest,
     branch: Option<&str>,
@@ -4244,12 +4905,16 @@ async fn publish_task_to_nats(
     shadow: bool,
 ) -> Result<(), String> {
     let repo_config = normalized_repo_config(request)?;
+    let dispatch_mode = dispatch_mode_value(request);
+    let container_pool_dispatch = is_container_pool_dispatch_mode(&dispatch_mode);
     let message = NatsTaskMessage {
         version: 1,
         message_kind,
         task_kind: "agent.prompt",
         shadow,
         direct_dispatch: false,
+        dispatch_mode,
+        container_pool_dispatch,
         thread_id: request.thread_id.clone(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
@@ -4257,6 +4922,7 @@ async fn publish_task_to_nats(
         base_branch: repo_config.base_branch,
         feature_branch: branch.map(str::to_string),
         prompt: request.prompt.clone(),
+        thread_title: repo_config.thread_title.clone(),
         context_mode: Some(normalize_context_mode(
             request.context_mode.as_deref(),
             request.context_ids.as_ref().map_or(0, Vec::len),
@@ -4276,6 +4942,7 @@ async fn publish_task_to_nats(
         .await
         .map_err(|error| error.to_string())?;
     let status_event = persist_task_status_event(
+        Some(&request.thread_id),
         &request.task_id,
         -950,
         "nats queued",
@@ -4286,6 +4953,8 @@ async fn publish_task_to_nats(
             "messageKind": message_kind,
             "shadow": shadow,
             "directDispatch": false,
+            "dispatchMode": &message.dispatch_mode,
+            "containerPoolDispatch": message.container_pool_dispatch,
             "subject": nats_task_subject(&request.thread_id),
             "wakeupSubject": nats_wakeup_subject(),
         }),
@@ -4349,7 +5018,7 @@ async fn run_cdc_fanout_subscriptions() {
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.lambda_functions.>")
+            .filter_subject(cdc_table_filter_subject("cdc", "public", "lambda_functions"))
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let nats = nats_for_handler.clone();
                 async move {
@@ -4397,7 +5066,7 @@ async fn run_cdc_fanout_subscriptions() {
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.known_git_repos.>")
+            .filter_subject(cdc_table_filter_subject("cdc", "public", "known_git_repos"))
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let nats = nats_for_handler.clone();
                 async move {
@@ -4435,6 +5104,56 @@ async fn run_cdc_fanout_subscriptions() {
                 nats_git_repos_changes_subject()
             ),
             Err(error) => eprintln!("rest-api cdc git-repo subscription failed to start: {error}"),
+        }
+    }
+
+    // agent_remote_dev_events → dd.remote.events
+    //
+    // This is the WAL-derived catch-net for runtime task status. The normal
+    // ingest path still direct-fans out to the websocket services for latency,
+    // but any event committed to Postgres is also replayed through the same
+    // NATS subject consumed by the Gleam and Rust websocket fanout paths.
+    {
+        let nats_for_handler = nats.clone();
+        let durable = "dd-remote-rest-api-agent-events".to_string();
+        let result = dd_wal_consumer::Subscription::builder()
+            .stream(stream.clone())
+            .durable_name(durable.clone())
+            .filter_subject(cdc_table_filter_subject("cdc", "public", "agent_remote_dev_events"))
+            .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
+                let nats = nats_for_handler.clone();
+                async move {
+                    let Some(payload) = task_event_payload_from_agent_event_change(&change) else {
+                        if !matches!(change.op, dd_wal_consumer::ChangeOp::Delete) {
+                            eprintln!(
+                                "cdc agent-event fanout skipped malformed row: lsn={}",
+                                change.lsn
+                            );
+                        }
+                        return;
+                    };
+                    let bytes = match serde_json::to_vec(&payload) {
+                        Ok(b) => b,
+                        Err(error) => {
+                            eprintln!("cdc agent-event fanout encode failed: {error}");
+                            return;
+                        }
+                    };
+                    if let Err(error) = nats.publish(nats_event_subject(), bytes.into()).await {
+                        eprintln!("cdc agent-event fanout publish failed: {error}");
+                    }
+                }
+            })
+            .await;
+        match result {
+            Ok(_) => println!(
+                "rest-api cdc subscription started: durable={durable} \
+                 subject=cdc.public.agent_remote_dev_events.> -> {}",
+                nats_event_subject()
+            ),
+            Err(error) => {
+                eprintln!("rest-api cdc agent-event subscription failed to start: {error}")
+            }
         }
     }
 }
@@ -5100,8 +5819,11 @@ async fn dispatch_thread_task(
     }
 
     let dispatch_mode = dispatch_mode_value(&request);
-    let queued_dispatch = is_queued_dispatch_mode(&dispatch_mode);
-    let container_pool_dispatch = is_container_pool_dispatch_mode(&dispatch_mode);
+    let dispatch_path = dispatch_path_for_mode(&dispatch_mode);
+    let (queued_dispatch, container_pool_dispatch) = match dispatch_path {
+        DispatchPath::NatsQueue { container_pool } => (true, container_pool),
+        DispatchPath::DirectWorker => (false, false),
+    };
     remember_runtime_task(&request, None);
     if let Err(error) = persist_runtime_task_to_postgres(
         &request,
@@ -5114,6 +5836,7 @@ async fn dispatch_thread_task(
     }
     if queued_dispatch {
         match persist_task_status_event(
+            Some(&thread_id),
             &request.task_id,
             -980,
             "queued dispatch accepted",
@@ -5145,6 +5868,7 @@ async fn dispatch_thread_task(
             Err(error) => {
                 eprintln!("failed to publish queued remote task to nats: {error}");
                 match persist_task_status_event(
+                    Some(&thread_id),
                     &request.task_id,
                     -940,
                     "nats publish failed",
@@ -5201,8 +5925,13 @@ async fn dispatch_thread_task(
             .into_response();
     }
 
-    let Ok((namespace, name, _results)) =
-        ensure_thread_worker(&thread_id, &repo_config.repo, &repo_config.base_branch).await
+    let Ok((namespace, name, _results)) = ensure_thread_worker(
+        &thread_id,
+        &repo_config.repo,
+        &repo_config.base_branch,
+        repo_config.thread_title.as_deref(),
+    )
+    .await
     else {
         return (
             StatusCode::BAD_GATEWAY,
@@ -5328,6 +6057,105 @@ async fn ingest_agent_event(
             (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({ "error": public_data_source_error("postgres event ingest") })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn ingest_agent_breadcrumb(
+    headers: HeaderMap,
+    Path(thread_id): Path<String>,
+    Json(mut request): Json<AgentBreadcrumbIngestRequest>,
+) -> Response {
+    record_request(
+        "POST",
+        "/api/agents/threads/:threadId/breadcrumbs",
+        StatusCode::OK,
+    );
+    if !authorized_internal_request(&headers) {
+        return unauthorized_response();
+    }
+    if request.thread_id.is_empty() {
+        request.thread_id = thread_id.clone();
+    } else if request.thread_id != thread_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "thread_id in body does not match :threadId path" })),
+        )
+            .into_response();
+    }
+    if request.kind.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "kind is required" })),
+        )
+            .into_response();
+    }
+    match persist_agent_breadcrumb_to_postgres(&request).await {
+        Ok(row) => Json(json!({ "ok": true, "breadcrumb": row })).into_response(),
+        Err(error) => {
+            eprintln!("agent breadcrumb ingest failed: {error}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "error": public_data_source_error("postgres breadcrumb ingest"),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn agent_thread_breadcrumb_tail(
+    Path(thread_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    record_request(
+        "GET",
+        "/api/agents/threads/:threadId/breadcrumbs/tail",
+        StatusCode::OK,
+    );
+    let limit = query
+        .get("limit")
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .map(|value| value.min(500))
+        .unwrap_or(100);
+    let exclude_task_id = query
+        .get("excludeTaskId")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    if postgres_database_url().is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "ok": false,
+                "error": "postgres database URL is not configured",
+            })),
+        )
+            .into_response();
+    }
+    match fetch_agent_breadcrumb_tail_from_postgres(&thread_id, limit, exclude_task_id.as_deref())
+        .await
+    {
+        Ok(items) => Json(AgentBreadcrumbTailResponse {
+            thread_id,
+            items,
+            source: "postgres",
+            excluded_task_id: exclude_task_id,
+            limit,
+        })
+        .into_response(),
+        Err(error) => {
+            eprintln!("agent breadcrumb tail fetch failed: {error}");
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "ok": false,
+                    "error": public_data_source_error("postgres breadcrumb tail"),
+                })),
             )
                 .into_response()
         }
@@ -5558,8 +6386,103 @@ async fn metrics() -> impl IntoResponse {
     )
 }
 
+// ---------- Runtime-config proxy ----------
+//
+// Short-lived consumers (gleam-lambda-runner child runtimes, container-pool
+// images, ad-hoc cron jobs) pull their snapshot at boot from
+// /api/runtime-config/snapshot/{env}?scope=...
+// The rest-api forwards to the in-cluster dd-runtime-config service. We keep
+// the snapshot endpoint unauthenticated through the gateway (same posture as
+// the agents tasks UI fetch); secrets must not be put in runtime-config
+// entries.
+async fn runtime_config_snapshot(
+    axum::extract::Path(env_label): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if env_label != "stage" && env_label != "prod" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": "env must be 'stage' or 'prod'" })),
+        )
+            .into_response();
+    }
+    let base = first_env(&["RUNTIME_CONFIG_BASE_URL"])
+        .unwrap_or_else(|| "http://dd-runtime-config.default.svc.cluster.local:8110".to_string());
+    let mut url = format!("{base}/snapshot/{env_label}");
+    if let Some(scope) = query.get("scope") {
+        url.push_str(&format!("?scope={}", urlencoding_minimal(scope)));
+    }
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("http client init failed: {error}"),
+                })),
+            )
+                .into_response();
+        }
+    };
+    let response = match client.get(&url).send().await {
+        Ok(response) => response,
+        Err(error) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("upstream runtime-config unreachable: {error}"),
+                })),
+            )
+                .into_response();
+        }
+    };
+    let status = response.status();
+    let bytes = match response.bytes().await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("upstream body read failed: {error}"),
+                })),
+            )
+                .into_response();
+        }
+    };
+    (
+        axum::http::StatusCode::from_u16(status.as_u16()).unwrap_or(axum::http::StatusCode::OK),
+        [(header::CONTENT_TYPE, "application/json".to_string())],
+        bytes,
+    )
+        .into_response()
+}
+
+fn urlencoding_minimal(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '~' | '*' | ':' | '/') {
+            out.push(ch);
+        } else {
+            for byte in ch.to_string().as_bytes() {
+                out.push_str(&format!("%{byte:02X}"));
+            }
+        }
+    }
+    out
+}
+
 fn code_first_router() -> Router {
     Router::new()
+        .route(
+            "/api/runtime-config/snapshot/:env",
+            get(runtime_config_snapshot),
+        )
         .route("/api/agents/tasks", get(agents_tasks))
         .route(
             "/api/agents/git-repos",
@@ -5579,6 +6502,14 @@ fn code_first_router() -> Router {
             post(agent_task_feedback),
         )
         .route("/api/agents/events", post(ingest_agent_event))
+        .route(
+            "/api/agents/threads/:thread_id/breadcrumbs",
+            post(ingest_agent_breadcrumb),
+        )
+        .route(
+            "/api/agents/threads/:thread_id/breadcrumbs/tail",
+            get(agent_thread_breadcrumb_tail),
+        )
         .route(
             "/api/agents/threads/:thread_id/context",
             get(thread_context),
@@ -5628,6 +6559,7 @@ fn code_first_router() -> Router {
             "/api/agents/threads/:thread_id/terminal",
             post(terminal_thread),
         )
+        .merge(container_pool_routes::router())
 }
 
 fn internal_db_routes_enabled() -> bool {
@@ -5642,6 +6574,7 @@ fn app_router() -> Router {
         .route("/api/docs", get(api_docs::html))
         .route("/api/docs.json", get(api_docs::json))
         .merge(code_first_router())
+        .merge(dd_runtime_config_client::router())
         .route("/metrics", get(metrics));
 
     if internal_db_routes_enabled() {
@@ -5662,6 +6595,7 @@ async fn main() {
     pg_contract::assert_canonical_schema_matches_local_reads();
 
     tokio::spawn(run_cdc_fanout_subscriptions());
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT")
@@ -5704,5 +6638,144 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod cdc_tests {
+    use super::*;
+
+    #[test]
+    fn agent_event_cdc_row_builds_websocket_task_event() {
+        let thread_id = "11111111-1111-1111-1111-111111111111";
+        let task_id = "22222222-2222-2222-2222-222222222222";
+        let change = dd_wal_consumer::RowChange {
+            schema_version: dd_wal_consumer::SCHEMA_VERSION.to_string(),
+            schema: "public".to_string(),
+            table: "agent_remote_dev_events".to_string(),
+            op: dd_wal_consumer::ChangeOp::Insert,
+            lsn: "0/1A3B5C0".to_string(),
+            xid: Some(123),
+            ts_ms: 1_736_000_000_000,
+            source_timestamp: None,
+            primary_key: vec!["id".to_string()],
+            row: json!({
+                "id": 42,
+                "task_id": task_id,
+                "thread_id": thread_id,
+                "seq": 7,
+                "event_kind": "status",
+                "payload": {
+                    "kind": "status",
+                    "stage": "worker-ready",
+                    "message": "ready"
+                }
+            }),
+            previous_row: None,
+        };
+
+        let payload =
+            task_event_payload_from_agent_event_change(&change).expect("payload from cdc row");
+
+        assert_eq!(
+            payload.get("type").and_then(Value::as_str),
+            Some("task-event")
+        );
+        assert_eq!(
+            payload.get("threadId").and_then(Value::as_str),
+            Some(thread_id)
+        );
+        assert_eq!(payload.get("taskId").and_then(Value::as_str), Some(task_id));
+        assert_eq!(payload.get("seq").and_then(Value::as_i64), Some(7));
+        assert_eq!(
+            payload.get("messageId").and_then(Value::as_str),
+            Some("22222222-2222-2222-2222-222222222222:worker-ready")
+        );
+        assert_eq!(
+            payload
+                .get("event")
+                .and_then(|event| event.get("stage"))
+                .and_then(Value::as_str),
+            Some("worker-ready")
+        );
+    }
+
+    #[test]
+    fn agent_event_cdc_delete_is_not_fanned_out() {
+        let change = dd_wal_consumer::RowChange {
+            schema_version: dd_wal_consumer::SCHEMA_VERSION.to_string(),
+            schema: "public".to_string(),
+            table: "agent_remote_dev_events".to_string(),
+            op: dd_wal_consumer::ChangeOp::Delete,
+            lsn: "0/1A3B5C1".to_string(),
+            xid: Some(124),
+            ts_ms: 1_736_000_000_001,
+            source_timestamp: None,
+            primary_key: vec!["id".to_string()],
+            row: json!({
+                "id": 42,
+                "task_id": "22222222-2222-2222-2222-222222222222",
+                "thread_id": "11111111-1111-1111-1111-111111111111",
+                "seq": 7,
+                "payload": { "kind": "status" }
+            }),
+            previous_row: None,
+        };
+
+        assert!(task_event_payload_from_agent_event_change(&change).is_none());
+    }
+}
+
+#[cfg(test)]
+mod dispatch_path_tests {
+    use super::*;
+
+    #[test]
+    fn queued_modes_resolve_to_nats_queue_only() {
+        for mode in [
+            "queued",
+            "nats",
+            "async",
+            "queued-pool",
+            "nats-pool",
+            "container-pool",
+            "pool",
+        ] {
+            assert!(matches!(
+                dispatch_path_for_mode(mode),
+                DispatchPath::NatsQueue { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn container_pool_modes_are_still_nats_queue_modes() {
+        for mode in ["queued-pool", "nats-pool", "container-pool", "pool"] {
+            assert_eq!(
+                dispatch_path_for_mode(mode),
+                DispatchPath::NatsQueue {
+                    container_pool: true
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn plain_queued_modes_use_uuid_bound_worker_queue() {
+        for mode in ["queued", "nats", "async"] {
+            assert_eq!(
+                dispatch_path_for_mode(mode),
+                DispatchPath::NatsQueue {
+                    container_pool: false
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn direct_modes_skip_the_nats_queue_path() {
+        for mode in ["direct", "worker", "sync"] {
+            assert_eq!(dispatch_path_for_mode(mode), DispatchPath::DirectWorker);
+        }
     }
 }

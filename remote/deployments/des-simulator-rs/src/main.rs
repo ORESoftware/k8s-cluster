@@ -18,6 +18,9 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::{
+    DES_RESULTS_SUBJECT, DES_SIMULATE_QUEUE_GROUP, DES_SIMULATE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1706,8 +1709,8 @@ async fn root() -> impl IntoResponse {
             "jobStatus": "GET /simulations/:jobId"
         },
         "nats": {
-            "simulateSubject": "dd.remote.des.simulate",
-            "resultSubject": "dd.remote.des.results"
+            "simulateSubject": DES_SIMULATE_SUBJECT,
+            "resultSubject": DES_RESULTS_SUBJECT
         },
         "atMs": now_ms()
     }))
@@ -1943,14 +1946,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
     let state = AppState {
         nats,
-        result_subject: env_value("DES_RESULT_SUBJECT", "dd.remote.des.results"),
-        event_subject: env_value("DES_EVENT_SUBJECT", "dd.remote.events"),
+        result_subject: env_value("DES_RESULT_SUBJECT", DES_RESULTS_SUBJECT),
+        event_subject: env_value("DES_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT),
         jobs: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Metrics::default()),
         job_sequence: Arc::new(AtomicU64::new(0)),
     };
-    let nats_subject = env_value("DES_SIMULATE_SUBJECT", "dd.remote.des.simulate");
-    let queue_group = env_value("DES_QUEUE_GROUP", "dd-des-simulator");
+    let nats_subject = env_value("DES_SIMULATE_SUBJECT", DES_SIMULATE_SUBJECT);
+    let queue_group = env_value("DES_QUEUE_GROUP", DES_SIMULATE_QUEUE_GROUP);
     tokio::spawn(run_nats_loop(state.clone(), nats_subject, queue_group));
 
     let app = Router::new()
@@ -1968,7 +1971,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/simulate", post(simulate_http))
         .route("/simulations/:job_id", get(job_status))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     println!("dd-des-simulator listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;

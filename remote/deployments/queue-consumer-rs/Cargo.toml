@@ -5,6 +5,11 @@ edition = "2021"
 
 [dependencies]
 async-nats = "=0.38.0"
+# Source-of-truth NATS subject names, wildcards, queue groups, and stream
+# names. The constants below replace the legacy "dd.remote.*" magic strings
+# so a subject rename in remote/libs/nats/subject-defs/schema/ immediately
+# surfaces here at compile time instead of silently drifting.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 futures-util = "0.3"
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }

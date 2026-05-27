@@ -71,6 +71,7 @@ migrations/
   20260518000001_init.sql            # tenants, users, accounts, transactions, postings
   20260518000002_connections.sql     # provider connections, OAuth state, webhook events
   20260518000003_reconciliation.sql  # breaks, anchors
+  20260523000012_security_hardening.sql  # unique-active external account, slug lookup index
 k8s/ec2/
   dd-billing-server.deployment.yaml
   dd-billing-server.service.yaml
@@ -181,16 +182,168 @@ account id when it can be inferred. Set
 `BILLING_REQUIRE_WEBHOOK_SIGNATURES=true` outside local development; unsigned
 or unverifiable deliveries are recorded and then rejected with `401`.
 
+**Strict mode also rejects** any signed delivery that cannot be bound to a
+tenant connection. That stops a valid platform-secret signature (Stripe
+Connect, Plaid, etc.) from being accepted with `tenant_id = NULL` and
+silently routed nowhere.
+
+The public ack returns `{"received": true}` only — `tenant_id`,
+`connection_id`, and the synthesized event id are deliberately NOT echoed
+so that probing senders can't enumerate valid identifiers.
+
 Implemented verification:
 
 - Stripe `Stripe-Signature` HMAC with timestamp replay tolerance.
 - PayPal `verify-webhook-signature` API using `PAYPAL_WEBHOOK_ID`.
 - Coinbase Commerce HMAC via `x-cc-webhook-signature`.
 - Coinflow HMAC via `x-coinflow-signature`.
+- Plaid `plaid-verification` ES256 JWT with `request_body_sha256` claim,
+  via cached JWKS lookups.
+- Bridge.xyz RSA-SHA256 PKCS1v15 with timestamp freshness, key sourced
+  from the per-connection sealed credential.
+- Fireblocks RSA-SHA512 PKCS1v15, key sourced from the per-connection
+  sealed credential.
+- Revolut, GoCardless, Mercury, Circle: HMAC-SHA256 with per-connection
+  secret (falls back to env secret only in non-strict mode).
 
-Plaid webhook JWT verification is not enabled yet; Plaid events are recorded
-as unverified, and strict mode rejects them. Backstop/on-demand
-`/transactions/sync` remains the safe path until the ES256/JWK verifier lands.
+## Auth posture (2026-05-23 hardening)
+
+The JSON API is gated by a single in-process bearer token —
+`BILLING_API_AUTH_BEARER` — in addition to whatever upstream gateway
+(`dd-remote-auth`, ALB OIDC, …) is in front of the listener. The bearer
+is a fail-closed floor for any reachable-from-network deployment.
+
+```
+Authorization: Bearer <BILLING_API_AUTH_BEARER>
+```
+
+Exempted paths (no bearer required):
+
+- `/healthz`, `/readyz`, `/metrics` — orchestrator probes
+- `/v1/webhooks/*` — provider signatures are the auth model
+- `/v1/verify/*` — public anchor verification by design
+- `/v1/oauth/*/callback` — the single-use `state` token is the CSRF guard
+- `/admin/*` — `BILLING_ADMIN_AUTH_BEARER` governs this nest separately
+
+The OAuth `/start` and Plaid `/link-token`/`/exchange` endpoints **do**
+require the bearer — they mint per-tenant CSRF state and seal
+credentials, so they have to prove the caller's identity.
+
+If the bearer is unset, the API runs in open mode (dev convenience) and
+logs a single WARN line at boot. Production manifests inject the bearer
+via SealedSecrets / ExternalSecrets.
+
+### Other 2026-05-23 hardening fixes
+
+- **Scheduler routes are tenant-scoped.** `get_one`, `list_runs`,
+  `run_now`, `enable`, `disable` all UPDATE/SELECT with both `id` AND
+  `tenant_id`. Cross-tenant access returns `404 Not Found` so a leaked
+  UUID can't be probed.
+- **Connection UPDATEs always carry `AND tenant_id = $X`** (defense in
+  depth; helps when a future caller learns a connection UUID through a
+  side channel).
+- **Webhook routing is unique-active per `(provider, external_account_id)`**
+  via a partial unique index. Misconfigurations now fail at INSERT time
+  rather than producing ambiguous "most-recently-updated wins" routing.
+- **Ledger `POST /transactions` rejects** when `body.tenant_id` is set
+  and disagrees with the path `tenant_id`. Nil bodies are still accepted
+  (the handler fills in the path value).
+- **Idempotency races are closed** via
+  `pg_advisory_xact_lock(tenant_part, hash(idempotency_key))` so two
+  concurrent calls with the same key always see the same (committed)
+  result.
+- **OAuth `return_to` requires an explicit allowlist.** The previous
+  "any path starting with `/`" auto-permit is gone; protocol-relative
+  values (`//evil.example/...`) are also rejected.
+- **Outbound HTTP is SSRF-guarded.** Notification webhooks and the
+  `tenant.webhook` scheduled job refuse literal private / loopback /
+  link-local / CGNAT / metadata IPs and any non-http(s) scheme. DNS
+  rebinding is left to the network policy; this is the literal-IP
+  defense at the application layer. Toggle via
+  `BILLING_BLOCK_PRIVATE_OUTBOUND` (default `true`).
+- **Notification rule `credential_plaintext_b64` is now rejected** with
+  400 (was silently dropped). Will be re-opened once the per-rule
+  sealing path lands.
+
+### Known follow-ups (not fixed in this pass)
+
+- Per-tenant envelope encryption (currently a single
+  `BILLING_MASTER_SEAL_KEY`).
+- Solana memo encode/decode for round-tripping anchored Merkle roots
+  (currently `onchain_root_matches` returns true when a transaction
+  exists at the slot without comparing roots).
+- Scheduler exactly-once via `(job_id, scheduled_for)` dedup index; the
+  runner is at-least-once today.
+- Webhook payloads stored unencrypted at rest in
+  `webhook_events.payload`.
+
+## Admin UI
+
+The server ships with a read-mostly HTMX admin surface at `/admin` (the
+JSON API is untouched). It uses [Maud](https://maud.lambda.xyz/) for
+compile-time HTML templates plus [HTMX](https://htmx.org/) 2.0
+**vendored into the binary** and served from `/admin/static/htmx-<hash>.js`
+with SRI integrity — no client toolchain, no bundler, no extra
+container, no CDN fetched at runtime.
+
+What you get:
+
+- `/admin/` — dashboard with tenant / connection / job counts, a 5-second
+  auto-refreshed status pill, and the most recent job runs across all
+  tenants. All four counts are fetched in parallel so dashboard latency
+  is bounded by the slowest query, not their sum.
+- `/admin/tenants` — list table with an inline HTMX create form that
+  prepends new rows without a full reload. The form's inputs carry
+  `pattern` / `minlength` / `maxlength` attributes that mirror the
+  server-side validators in `admin/validation.rs`.
+- `/admin/tenants/{id}` — tenant detail with HTMX-swapped tabs for
+  Connections, Scheduled jobs, Leases, and Notifications. URLs are
+  pushed (`hx-push-url`) so the active tab survives reloads and shares.
+- Inline HTMX actions: `Run now` and `Enable/Disable` on scheduled jobs,
+  `Sync now` on provider connections. Each returns just the updated row,
+  is gated by an `hx-confirm` prompt, is tenant-scoped at the URL level
+  (`/admin/tenants/{tid}/jobs/{id}/run-now`), and is verified for
+  ownership before any side effect. Every write emits a structured
+  `admin.action=…` audit log line.
+
+### Security posture
+
+Layered defenses, designed to fail safely (see `src/admin/security.rs`
+and the wire-level tests in `src/admin/mod.rs`):
+
+- **Bearer auth (optional)** — set `BILLING_ADMIN_AUTH_BEARER=<token>`
+  to require `Authorization: Bearer <token>` on every `/admin/*`
+  request. Constant-time compared. When unset, the UI is unauthenticated
+  (intended for trusted networks / local dev).
+- **CSRF guard** — every POST/PUT/PATCH/DELETE must carry
+  `HX-Request: true` (HTMX always sends it; cross-origin browsers
+  cannot set it without a CORS preflight we do not grant) **and**, when
+  `Origin` is present, must come from the request `Host` or an entry in
+  `BILLING_ADMIN_ALLOWED_ORIGINS`.
+- **Strict CSP** — `default-src 'self'`, `script-src 'self'`,
+  `frame-ancestors 'none'`, `object-src 'none'`. No `'unsafe-eval'`, no
+  inline scripts, no third-party origins.
+- **Security headers on every response** — `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
+  `Cross-Origin-{Opener,Resource}-Policy: same-origin`, a restrictive
+  `Permissions-Policy`, and `X-Robots-Tag: noindex, nofollow, noarchive`.
+- **Sanitized errors** — handler failures are logged in full via
+  `tracing::warn!` but rendered to the user as `<action>: <kind> — check
+  server logs for details`. PG error text, schema names, and stack
+  fragments do not leak into HTML.
+- **Asset integrity verified at startup** — `assets::verify_integrity()`
+  recomputes the SHA-384 of the embedded htmx bytes and panics if they
+  drift from the pinned constant, so a sloppy vendor bump cannot ship
+  unverified JS to browsers.
+
+### Disabling / fronting
+
+Disable in production environments that have not yet wired
+`dd-remote-auth` in front by setting `BILLING_ADMIN_UI_ENABLED=false`.
+Per `AGENTS.md`, public gateway paths must stay authenticated. With
+`BILLING_ADMIN_AUTH_BEARER` set, the admin UI is safe to leave
+mounted behind a TLS-terminating gateway even when `dd-remote-auth` is
+the SSO layer in front.
 
 ## What is intentionally stubbed in this scaffold
 

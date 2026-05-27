@@ -677,6 +677,8 @@ class AgentRemoteDevEventObjectBox {
 
   String taskId;
 
+  String? threadId;
+
   int seq;
 
   String eventKind;
@@ -690,6 +692,7 @@ class AgentRemoteDevEventObjectBox {
   AgentRemoteDevEventObjectBox({
     required this.id,
     required this.taskId,
+    this.threadId,
     required this.seq,
     required this.eventKind,
     required this.payload,
@@ -699,6 +702,7 @@ class AgentRemoteDevEventObjectBox {
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
     "taskId": taskId,
+    "threadId": threadId,
     "seq": seq,
     "eventKind": eventKind,
     "payload": jsonDecode(payload),
@@ -709,10 +713,76 @@ class AgentRemoteDevEventObjectBox {
     return AgentRemoteDevEventObjectBox(
       id: (json["id"] as num).toInt(),
       taskId: json["taskId"] as String,
+      threadId: json["threadId"] as String?,
       seq: (json["seq"] as num).toInt(),
       eventKind: json["eventKind"] as String,
       payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
       createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class AgentRemoteDevBreadcrumbObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int id;
+
+  String threadId;
+
+  String? taskId;
+
+  String kind;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String emittedAt;
+
+  String? podName;
+
+  String? branch;
+
+  String? provider;
+
+
+  AgentRemoteDevBreadcrumbObjectBox({
+    required this.id,
+    required this.threadId,
+    this.taskId,
+    required this.kind,
+    required this.payload,
+    required this.emittedAt,
+    this.podName,
+    this.branch,
+    this.provider,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "threadId": threadId,
+    "taskId": taskId,
+    "kind": kind,
+    "payload": jsonDecode(payload),
+    "emittedAt": emittedAt,
+    "podName": podName,
+    "branch": branch,
+    "provider": provider,
+  };
+
+  static AgentRemoteDevBreadcrumbObjectBox fromJson(Map<String, Object?> json) {
+    return AgentRemoteDevBreadcrumbObjectBox(
+      id: (json["id"] as num).toInt(),
+      threadId: json["threadId"] as String,
+      taskId: json["taskId"] as String?,
+      kind: json["kind"] as String,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      emittedAt: json["emittedAt"] as String,
+      podName: json["podName"] as String?,
+      branch: json["branch"] as String?,
+      provider: json["provider"] as String?,
     );
   }
 }
@@ -1009,6 +1079,231 @@ class LambdaFunctionObjectBox {
       updatedAt: json["updatedAt"] as String,
       createdBy: json["createdBy"] as String?,
       updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class ContainerPoolImageRevisionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String imageSlug;
+
+  String imageRef;
+
+  String dockerfilePath;
+
+  String buildContext;
+
+  String dockerfileText;
+
+  String dockerfileSha256;
+
+  String source;
+
+  String notes;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  ContainerPoolImageRevisionsObjectBox({
+    required this.id,
+    required this.imageSlug,
+    required this.imageRef,
+    required this.dockerfilePath,
+    required this.buildContext,
+    required this.dockerfileText,
+    required this.dockerfileSha256,
+    required this.source,
+    required this.notes,
+    required this.status,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "imageSlug": imageSlug,
+    "imageRef": imageRef,
+    "dockerfilePath": dockerfilePath,
+    "buildContext": buildContext,
+    "dockerfileText": dockerfileText,
+    "dockerfileSha256": dockerfileSha256,
+    "source": source,
+    "notes": notes,
+    "status": status,
+    "metaData": jsonDecode(metaData),
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static ContainerPoolImageRevisionsObjectBox fromJson(Map<String, Object?> json) {
+    return ContainerPoolImageRevisionsObjectBox(
+      id: json["id"] as String,
+      imageSlug: json["imageSlug"] as String,
+      imageRef: json["imageRef"] as String,
+      dockerfilePath: json["dockerfilePath"] as String,
+      buildContext: json["buildContext"] as String,
+      dockerfileText: json["dockerfileText"] as String,
+      dockerfileSha256: json["dockerfileSha256"] as String,
+      source: json["source"] as String,
+      notes: json["notes"] as String,
+      status: json["status"] as String,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class ContainerPoolBuildRunsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String imageSlug;
+
+  String revisionId;
+
+  String imageRef;
+
+  String candidateTag;
+
+  String buildStatus;
+
+  String testStatus;
+
+  String overallStatus;
+
+  String testCommand;
+
+  String? buildStartedAt;
+
+  String? buildFinishedAt;
+
+  String? testStartedAt;
+
+  String? testFinishedAt;
+
+  String buildLogExcerpt;
+
+  String testLogExcerpt;
+
+  String? errorMessage;
+
+  String? triggeredBy;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  bool isSoftDeleted;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  ContainerPoolBuildRunsObjectBox({
+    required this.id,
+    required this.imageSlug,
+    required this.revisionId,
+    required this.imageRef,
+    required this.candidateTag,
+    required this.buildStatus,
+    required this.testStatus,
+    required this.overallStatus,
+    required this.testCommand,
+    this.buildStartedAt,
+    this.buildFinishedAt,
+    this.testStartedAt,
+    this.testFinishedAt,
+    required this.buildLogExcerpt,
+    required this.testLogExcerpt,
+    this.errorMessage,
+    this.triggeredBy,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "imageSlug": imageSlug,
+    "revisionId": revisionId,
+    "imageRef": imageRef,
+    "candidateTag": candidateTag,
+    "buildStatus": buildStatus,
+    "testStatus": testStatus,
+    "overallStatus": overallStatus,
+    "testCommand": testCommand,
+    "buildStartedAt": buildStartedAt,
+    "buildFinishedAt": buildFinishedAt,
+    "testStartedAt": testStartedAt,
+    "testFinishedAt": testFinishedAt,
+    "buildLogExcerpt": buildLogExcerpt,
+    "testLogExcerpt": testLogExcerpt,
+    "errorMessage": errorMessage,
+    "triggeredBy": triggeredBy,
+    "metaData": jsonDecode(metaData),
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static ContainerPoolBuildRunsObjectBox fromJson(Map<String, Object?> json) {
+    return ContainerPoolBuildRunsObjectBox(
+      id: json["id"] as String,
+      imageSlug: json["imageSlug"] as String,
+      revisionId: json["revisionId"] as String,
+      imageRef: json["imageRef"] as String,
+      candidateTag: json["candidateTag"] as String,
+      buildStatus: json["buildStatus"] as String,
+      testStatus: json["testStatus"] as String,
+      overallStatus: json["overallStatus"] as String,
+      testCommand: json["testCommand"] as String,
+      buildStartedAt: json["buildStartedAt"] as String?,
+      buildFinishedAt: json["buildFinishedAt"] as String?,
+      testStartedAt: json["testStartedAt"] as String?,
+      testFinishedAt: json["testFinishedAt"] as String?,
+      buildLogExcerpt: json["buildLogExcerpt"] as String,
+      testLogExcerpt: json["testLogExcerpt"] as String,
+      errorMessage: json["errorMessage"] as String?,
+      triggeredBy: json["triggeredBy"] as String?,
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      isSoftDeleted: json["isSoftDeleted"] as bool,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
     );
   }
 }

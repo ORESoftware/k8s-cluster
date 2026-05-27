@@ -94,6 +94,7 @@ pub async fn sync_coinflow(
                         let _ = ctx
                             .connections
                             .merge_metadata(
+                                conn.tenant_id,
                                 conn.id,
                                 serde_json::json!({
                                     "coinflow_last_seen_at": ts.to_rfc3339()
@@ -117,6 +118,7 @@ pub async fn sync_coinflow(
     if let Some(ts) = newest_seen {
         ctx.connections
             .merge_metadata(
+                conn.tenant_id,
                 conn.id,
                 serde_json::json!({
                     "coinflow_last_seen_at": ts.to_rfc3339()
@@ -220,6 +222,7 @@ async fn open_recon_break(
              expected_minor, actual_minor, currency, external_ref, metadata)
         VALUES ($1, $2, $3::provider_kind, $4, 'unrecognized_provider_event',
                 ($5)::NUMERIC(38,0), 0::NUMERIC(38,0), $6, $7, $8)
+        ON CONFLICT DO NOTHING
         "#,
     )
     .bind(ctx.tenant_id)

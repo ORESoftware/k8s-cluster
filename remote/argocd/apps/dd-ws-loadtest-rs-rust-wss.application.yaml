@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-ws-loadtest-rs-rust-wss
+  namespace: argocd
+  labels:
+    role: loadtest
+    target: dd-rust-wss-server
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/deployments/ws-loadtest-rs/k8s/rust-wss
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  # NOTE: no automated.selfHeal — the deployment ships with replicas=0
+  # so the loader is off by default. Operators scale to N for the
+  # duration of a load test and back to 0 afterwards.
+  syncPolicy:
+    automated:
+      prune: true
+    syncOptions:
+      - CreateNamespace=true

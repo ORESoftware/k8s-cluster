@@ -24,6 +24,7 @@
 ////   GET    /worker-ws/<secret>                          Secret-gated worker ws on the broadcaster
 ////                                                       tick stream; can also publish frames.
 
+import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/atom
@@ -227,6 +228,13 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
         "logout queued for user=" <> user_id <> " device=" <> device_id,
       )
     }
+
+    Get, ["internal", "runtime-config"] ->
+      dd_runtime_config_client.handle_snapshot(req)
+    Post, ["internal", "update-runtime-config"] ->
+      dd_runtime_config_client.handle_apply(req)
+    Post, ["internal", "runtime-config", "reset"] ->
+      dd_runtime_config_client.handle_reset(req)
 
     _, _ -> not_found()
   }

@@ -570,6 +570,7 @@ export const agentRemoteDevEvents = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     taskId: uuid("task_id").notNull(),
+    threadId: uuid("thread_id"),
     seq: integer("seq").notNull(),
     eventKind: varchar("event_kind", { length: 80 }).notNull(),
     payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
@@ -580,6 +581,7 @@ export const agentRemoteDevEvents = pgTable(
     agentRemoteDevEventsPayloadObjectChk: check("agent_remote_dev_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
     agentRemoteDevEventsTaskSeqUq: uniqueIndex("agent_remote_dev_events_task_seq_uq").on(table.taskId, table.seq),
     agentRemoteDevEventsTaskIdCreatedAtIdx: index("agent_remote_dev_events_task_id_created_at_idx").on(table.taskId, table.createdAt.desc()),
+    agentRemoteDevEventsThreadIdCreatedAtIdx: index("agent_remote_dev_events_thread_id_created_at_idx").on(table.threadId, table.createdAt.desc()).where(sql.raw("thread_id is not null")),
     agentRemoteDevEventsCreatedAtIdx: index("agent_remote_dev_events_created_at_idx").on(table.createdAt.desc()),
   }),
 );
@@ -587,6 +589,7 @@ export const agentRemoteDevEvents = pgTable(
 export const agentRemoteDevEventRowSchema = z.object({
   id: z.number().int(),
   taskId: z.string().uuid(),
+  threadId: z.string().uuid().nullable(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
   payload: jsonObjectSchema,
@@ -596,6 +599,7 @@ export const agentRemoteDevEventRowSchema = z.object({
 export const agentRemoteDevEventInsertSchema = z.object({
   id: z.number().int().optional(),
   taskId: z.string().uuid(),
+  threadId: z.string().uuid().nullable().optional(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
   payload: jsonObjectSchema.optional().default({}),
@@ -606,6 +610,60 @@ export const agentRemoteDevEventUpdateSchema = agentRemoteDevEventInsertSchema.p
 export type AgentRemoteDevEventRow = z.infer<typeof agentRemoteDevEventRowSchema>;
 export type AgentRemoteDevEventInsert = z.infer<typeof agentRemoteDevEventInsertSchema>;
 export type AgentRemoteDevEventUpdate = z.infer<typeof agentRemoteDevEventUpdateSchema>;
+
+export const agentRemoteDevBreadcrumbs = pgTable(
+  "agent_remote_dev_breadcrumbs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    threadId: uuid("thread_id").notNull(),
+    taskId: uuid("task_id"),
+    kind: varchar("kind", { length: 80 }).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    emittedAt: timestamp("emitted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    podName: varchar("pod_name", { length: 253 }),
+    branch: varchar("branch", { length: 120 }),
+    provider: varchar("provider", { length: 60 }),
+  },
+  (table) => ({
+    agentRemoteDevBreadcrumbsKindFormatChk: check("agent_remote_dev_breadcrumbs_kind_format_chk", sql.raw("kind ~ '^[A-Za-z0-9._:-]{1,80}$'")),
+    agentRemoteDevBreadcrumbsPayloadObjectChk: check("agent_remote_dev_breadcrumbs_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    agentRemoteDevBreadcrumbsPodNameSizeChk: check("agent_remote_dev_breadcrumbs_pod_name_size_chk", sql.raw("pod_name is null or octet_length(pod_name) <= 253")),
+    agentRemoteDevBreadcrumbsBranchSizeChk: check("agent_remote_dev_breadcrumbs_branch_size_chk", sql.raw("branch is null or octet_length(branch) <= 120")),
+    agentRemoteDevBreadcrumbsProviderSizeChk: check("agent_remote_dev_breadcrumbs_provider_size_chk", sql.raw("provider is null or octet_length(provider) <= 60")),
+    agentRemoteDevBreadcrumbsThreadIdEmittedAtIdx: index("agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx").on(table.threadId, table.emittedAt.desc()),
+    agentRemoteDevBreadcrumbsTaskIdEmittedAtIdx: index("agent_remote_dev_breadcrumbs_task_id_emitted_at_idx").on(table.taskId, table.emittedAt.desc()).where(sql.raw("task_id is not null")),
+    agentRemoteDevBreadcrumbsEmittedAtIdx: index("agent_remote_dev_breadcrumbs_emitted_at_idx").on(table.emittedAt.desc()),
+  }),
+);
+
+export const agentRemoteDevBreadcrumbRowSchema = z.object({
+  id: z.number().int(),
+  threadId: z.string().uuid(),
+  taskId: z.string().uuid().nullable(),
+  kind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema,
+  emittedAt: z.string().datetime(),
+  podName: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes").nullable(),
+  branch: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  provider: z.string().max(60).refine((value) => byteLength(value) <= 60, "Must be at most 60 bytes").nullable(),
+});
+
+export const agentRemoteDevBreadcrumbInsertSchema = z.object({
+  id: z.number().int().optional(),
+  threadId: z.string().uuid(),
+  taskId: z.string().uuid().nullable().optional(),
+  kind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema.optional().default({}),
+  emittedAt: z.string().datetime().optional(),
+  podName: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes").nullable().optional(),
+  branch: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  provider: z.string().max(60).refine((value) => byteLength(value) <= 60, "Must be at most 60 bytes").nullable().optional(),
+});
+
+export const agentRemoteDevBreadcrumbUpdateSchema = agentRemoteDevBreadcrumbInsertSchema.partial();
+export type AgentRemoteDevBreadcrumbRow = z.infer<typeof agentRemoteDevBreadcrumbRowSchema>;
+export type AgentRemoteDevBreadcrumbInsert = z.infer<typeof agentRemoteDevBreadcrumbInsertSchema>;
+export type AgentRemoteDevBreadcrumbUpdate = z.infer<typeof agentRemoteDevBreadcrumbUpdateSchema>;
 
 export const agentRemoteDevArtifactStorageProviderValues = ["s3","r2","gcs","drive","local"] as const;
 export const agentRemoteDevArtifactStorageProviderSchema = z.enum(agentRemoteDevArtifactStorageProviderValues);
@@ -850,6 +908,199 @@ export const lambdaFunctionUpdateSchema = lambdaFunctionInsertSchema.partial();
 export type LambdaFunctionRow = z.infer<typeof lambdaFunctionRowSchema>;
 export type LambdaFunctionInsert = z.infer<typeof lambdaFunctionInsertSchema>;
 export type LambdaFunctionUpdate = z.infer<typeof lambdaFunctionUpdateSchema>;
+
+export const containerPoolImageRevisionsSourceValues = ["disk-default","user","system"] as const;
+export const containerPoolImageRevisionsSourceSchema = z.enum(containerPoolImageRevisionsSourceValues);
+export type ContainerPoolImageRevisionsSource = z.infer<typeof containerPoolImageRevisionsSourceSchema>;
+
+export const containerPoolImageRevisionsStatusValues = ["candidate","active","archived"] as const;
+export const containerPoolImageRevisionsStatusSchema = z.enum(containerPoolImageRevisionsStatusValues);
+export type ContainerPoolImageRevisionsStatus = z.infer<typeof containerPoolImageRevisionsStatusSchema>;
+
+export const containerPoolImageRevisions = pgTable(
+  "container_pool_image_revisions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    imageSlug: varchar("image_slug", { length: 120 }).notNull(),
+    imageRef: text("image_ref").notNull(),
+    dockerfilePath: text("dockerfile_path").notNull(),
+    buildContext: text("build_context").notNull(),
+    dockerfileText: text("dockerfile_text").notNull(),
+    dockerfileSha256: varchar("dockerfile_sha256", { length: 64 }).notNull(),
+    source: varchar("source", { length: 32 }).default(sql`'user'`).notNull(),
+    notes: text("notes").default(sql`''`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'candidate'`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    containerPoolImageRevisionsSlugFormatChk: check("container_pool_image_revisions_slug_format_chk", sql.raw("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'")),
+    containerPoolImageRevisionsDockerfileSizeChk: check("container_pool_image_revisions_dockerfile_size_chk", sql.raw("octet_length(dockerfile_text) between 1 and 65536")),
+    containerPoolImageRevisionsImageRefSizeChk: check("container_pool_image_revisions_image_ref_size_chk", sql.raw("octet_length(image_ref) between 1 and 512")),
+    containerPoolImageRevisionsPathSizeChk: check("container_pool_image_revisions_path_size_chk", sql.raw("octet_length(dockerfile_path) between 1 and 512")),
+    containerPoolImageRevisionsContextSizeChk: check("container_pool_image_revisions_context_size_chk", sql.raw("octet_length(build_context) between 1 and 512")),
+    containerPoolImageRevisionsNotesSizeChk: check("container_pool_image_revisions_notes_size_chk", sql.raw("octet_length(notes) <= 8192")),
+    containerPoolImageRevisionsShaFormatChk: check("container_pool_image_revisions_sha_format_chk", sql.raw("dockerfile_sha256 ~ '^[0-9a-f]{64}$'")),
+    containerPoolImageRevisionsStatusChk: check("container_pool_image_revisions_status_chk", sql.raw("status in ('candidate', 'active', 'archived')")),
+    containerPoolImageRevisionsSourceChk: check("container_pool_image_revisions_source_chk", sql.raw("source in ('disk-default', 'user', 'system')")),
+    containerPoolImageRevisionsMetaObjectChk: check("container_pool_image_revisions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    containerPoolImageRevisionsSlugIdx: index("container_pool_image_revisions_slug_idx").on(table.imageSlug, table.createdAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    containerPoolImageRevisionsSlugShaUq: uniqueIndex("container_pool_image_revisions_slug_sha_uq").on(table.imageSlug, table.dockerfileSha256).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const containerPoolImageRevisionsRowSchema = z.object({
+  id: z.string().uuid(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfilePath: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildContext: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfileText: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  dockerfileSha256: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  source: containerPoolImageRevisionsSourceSchema,
+  notes: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes"),
+  status: containerPoolImageRevisionsStatusSchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const containerPoolImageRevisionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfilePath: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildContext: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfileText: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  dockerfileSha256: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  source: containerPoolImageRevisionsSourceSchema.optional().default("user"),
+  notes: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").optional().default(""),
+  status: containerPoolImageRevisionsStatusSchema.optional().default("candidate"),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const containerPoolImageRevisionsUpdateSchema = containerPoolImageRevisionsInsertSchema.partial();
+export type ContainerPoolImageRevisionsRow = z.infer<typeof containerPoolImageRevisionsRowSchema>;
+export type ContainerPoolImageRevisionsInsert = z.infer<typeof containerPoolImageRevisionsInsertSchema>;
+export type ContainerPoolImageRevisionsUpdate = z.infer<typeof containerPoolImageRevisionsUpdateSchema>;
+
+export const containerPoolBuildRunsBuildStatusValues = ["queued","building","built","failed","skipped","cancelled"] as const;
+export const containerPoolBuildRunsBuildStatusSchema = z.enum(containerPoolBuildRunsBuildStatusValues);
+export type ContainerPoolBuildRunsBuildStatus = z.infer<typeof containerPoolBuildRunsBuildStatusSchema>;
+
+export const containerPoolBuildRunsTestStatusValues = ["not_started","pending","testing","passed","failed","skipped","cancelled"] as const;
+export const containerPoolBuildRunsTestStatusSchema = z.enum(containerPoolBuildRunsTestStatusValues);
+export type ContainerPoolBuildRunsTestStatus = z.infer<typeof containerPoolBuildRunsTestStatusSchema>;
+
+export const containerPoolBuildRunsOverallStatusValues = ["queued","running","passed","failed","cancelled","errored"] as const;
+export const containerPoolBuildRunsOverallStatusSchema = z.enum(containerPoolBuildRunsOverallStatusValues);
+export type ContainerPoolBuildRunsOverallStatus = z.infer<typeof containerPoolBuildRunsOverallStatusSchema>;
+
+export const containerPoolBuildRuns = pgTable(
+  "container_pool_build_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    imageSlug: varchar("image_slug", { length: 120 }).notNull(),
+    revisionId: uuid("revision_id").notNull(),
+    imageRef: text("image_ref").notNull(),
+    candidateTag: text("candidate_tag").notNull(),
+    buildStatus: varchar("build_status", { length: 32 }).default(sql`'queued'`).notNull(),
+    testStatus: varchar("test_status", { length: 32 }).default(sql`'not_started'`).notNull(),
+    overallStatus: varchar("overall_status", { length: 32 }).default(sql`'queued'`).notNull(),
+    testCommand: text("test_command").default(sql`''`).notNull(),
+    buildStartedAt: timestamp("build_started_at", { withTimezone: true, mode: "string" }),
+    buildFinishedAt: timestamp("build_finished_at", { withTimezone: true, mode: "string" }),
+    testStartedAt: timestamp("test_started_at", { withTimezone: true, mode: "string" }),
+    testFinishedAt: timestamp("test_finished_at", { withTimezone: true, mode: "string" }),
+    buildLogExcerpt: text("build_log_excerpt").default(sql`''`).notNull(),
+    testLogExcerpt: text("test_log_excerpt").default(sql`''`).notNull(),
+    errorMessage: text("error_message"),
+    triggeredBy: uuid("triggered_by"),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    containerPoolBuildRunsSlugFormatChk: check("container_pool_build_runs_slug_format_chk", sql.raw("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'")),
+    containerPoolBuildRunsImageRefSizeChk: check("container_pool_build_runs_image_ref_size_chk", sql.raw("octet_length(image_ref) between 1 and 512")),
+    containerPoolBuildRunsCandidateTagSizeChk: check("container_pool_build_runs_candidate_tag_size_chk", sql.raw("octet_length(candidate_tag) between 1 and 512")),
+    containerPoolBuildRunsTestCommandSizeChk: check("container_pool_build_runs_test_command_size_chk", sql.raw("octet_length(test_command) <= 4096")),
+    containerPoolBuildRunsLogSizeChk: check("container_pool_build_runs_log_size_chk", sql.raw("octet_length(build_log_excerpt) <= 65536\n       and octet_length(test_log_excerpt) <= 65536")),
+    containerPoolBuildRunsErrorSizeChk: check("container_pool_build_runs_error_size_chk", sql.raw("error_message is null or octet_length(error_message) <= 8192")),
+    containerPoolBuildRunsBuildStatusChk: check("container_pool_build_runs_build_status_chk", sql.raw("build_status in ('queued', 'building', 'built', 'failed', 'skipped', 'cancelled')")),
+    containerPoolBuildRunsTestStatusChk: check("container_pool_build_runs_test_status_chk", sql.raw("test_status in ('not_started', 'pending', 'testing', 'passed', 'failed', 'skipped', 'cancelled')")),
+    containerPoolBuildRunsOverallStatusChk: check("container_pool_build_runs_overall_status_chk", sql.raw("overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'errored')")),
+    containerPoolBuildRunsMetaObjectChk: check("container_pool_build_runs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    containerPoolBuildRunsSlugIdx: index("container_pool_build_runs_slug_idx").on(table.imageSlug, table.createdAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    containerPoolBuildRunsOverallIdx: index("container_pool_build_runs_overall_idx").on(table.overallStatus).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const containerPoolBuildRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  revisionId: z.string().uuid(),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  candidateTag: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildStatus: containerPoolBuildRunsBuildStatusSchema,
+  testStatus: containerPoolBuildRunsTestStatusSchema,
+  overallStatus: containerPoolBuildRunsOverallStatusSchema,
+  testCommand: z.string().refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  buildStartedAt: z.string().datetime().nullable(),
+  buildFinishedAt: z.string().datetime().nullable(),
+  testStartedAt: z.string().datetime().nullable(),
+  testFinishedAt: z.string().datetime().nullable(),
+  buildLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  testLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  errorMessage: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  triggeredBy: z.string().uuid().nullable(),
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const containerPoolBuildRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  revisionId: z.string().uuid(),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  candidateTag: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildStatus: containerPoolBuildRunsBuildStatusSchema.optional().default("queued"),
+  testStatus: containerPoolBuildRunsTestStatusSchema.optional().default("not_started"),
+  overallStatus: containerPoolBuildRunsOverallStatusSchema.optional().default("queued"),
+  testCommand: z.string().refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").optional().default(""),
+  buildStartedAt: z.string().datetime().nullable().optional(),
+  buildFinishedAt: z.string().datetime().nullable().optional(),
+  testStartedAt: z.string().datetime().nullable().optional(),
+  testFinishedAt: z.string().datetime().nullable().optional(),
+  buildLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes").optional().default(""),
+  testLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes").optional().default(""),
+  errorMessage: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  triggeredBy: z.string().uuid().nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const containerPoolBuildRunsUpdateSchema = containerPoolBuildRunsInsertSchema.partial();
+export type ContainerPoolBuildRunsRow = z.infer<typeof containerPoolBuildRunsRowSchema>;
+export type ContainerPoolBuildRunsInsert = z.infer<typeof containerPoolBuildRunsInsertSchema>;
+export type ContainerPoolBuildRunsUpdate = z.infer<typeof containerPoolBuildRunsUpdateSchema>;
 
 export const presenceConvsStatusValues = ["active","paused","archived"] as const;
 export const presenceConvsStatusSchema = z.enum(presenceConvsStatusValues);

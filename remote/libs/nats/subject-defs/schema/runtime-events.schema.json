@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/runtime-events.schema.json",
+  "title": "RuntimeEventsNats",
+  "description": "Global runtime event subjects shared by many deployments (idle-reaper, queue-consumer, mdp-optimizer, des-simulator, contracts-service, trading, webrtc-signaling, ai-ml-pipeline). Each publisher emits to dd.remote.events; the websocket bridge re-publishes to dd.remote.websocket.events.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "shared",
+    "summary": "Cross-service runtime events bus.",
+    "subjects": [
+      {
+        "name": "RuntimeEvents",
+        "description": "Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.",
+        "kind": "static",
+        "subject": "dd.remote.events",
+        "direction": "both"
+      },
+      {
+        "name": "WebsocketEvents",
+        "description": "WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.",
+        "kind": "static",
+        "subject": "dd.remote.websocket.events",
+        "direction": "both"
+      },
+      {
+        "name": "GitReposChanges",
+        "description": "Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.",
+        "kind": "static",
+        "subject": "dd.remote.git-repos.changes",
+        "direction": "both"
+      }
+    ]
+  }
+}

@@ -33,6 +33,22 @@ spec:
       ports:
         - protocol: TCP
           port: 8090
+    # Warm worker containers spawned by `dd-container-pool` use
+    # `nerdctl run --network host` and inherit the node network
+    # namespace, so their MCP requests arrive with the host IP rather
+    # than a pod identity. Allow RFC1918 ingress on :8090 to keep
+    # parity with the EC2 overlay; auth on the read-only `/mcp` and
+    # X-Server-Auth on ops paths remain the security boundary.
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 8090
   egress:
     - to:
         - namespaceSelector:

@@ -3,11 +3,12 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "rest-api-rs",
   "language": "rust",
-  "routeCount": 35,
+  "routeCount": 41,
   "routeTypeCounts": {
-    "user-generated": 20,
+    "user-generated": 23,
     "service": 5,
-    "internal-db": 10
+    "internal-db": 10,
+    "runtime-config": 3
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -113,6 +114,40 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "archive_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/breadcrumbs",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ingest_agent_breadcrumb"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/breadcrumbs/tail",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agent_thread_breadcrumb_tail"
       ],
       "sourceFiles": [
         "remote/deployments/rest-api-rs/src/main.rs"
@@ -396,6 +431,23 @@
       "notes": ""
     },
     {
+      "path": "/api/runtime-config/snapshot/:env",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "runtime_config_snapshot"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/docs/api",
       "methods": [
         "GET"
@@ -608,6 +660,57 @@
       ],
       "sourceFiles": [
         "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "handlers": [
+        "dd_runtime_config_client::handle_get"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "handlers": [
+        "dd_runtime_config_client::handle_reset"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "handlers": [
+        "dd_runtime_config_client::handle_apply"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
       ],
       "notes": ""
     },

@@ -1,0 +1,20 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-gleam-mcp-server
+  namespace: default
+  labels:
+    app: dd-gleam-mcp-server
+spec:
+  # The MCP service runs as a single replica with Recreate rollout
+  # strategy, so any voluntary disruption (node drain, kubectl evict,
+  # cluster-autoscaler scale-down) will take the only pod down. This
+  # PDB blocks voluntary disruptions while no replacement pod is
+  # available, which gives drains a chance to either wait or be
+  # explicitly forced. The deployment will still tolerate involuntary
+  # disruptions (node crash) and rolling redeploys driven by Argo CD
+  # (which uses Recreate strategy and doesn't go through the PDB).
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-gleam-mcp-server

@@ -16,9 +16,13 @@ consumer. Legacy shadow messages still call the REST API's internal prepare endp
 POST /api/agents/threads/:threadId/prepare
 ```
 
-Real `task.dispatch` messages are handed to a repo-scoped warm Node chat/Claude
-container pool. There is no direct REST fallback for real queued messages, so a
-queued task has one owner: the queue consumer and container pool.
+Real `task.dispatch` messages are routed by the `dispatchMode` fields in the NATS
+payload. Plain `queued`/`nats`/`async` messages are handed to the UUID-bound
+deterministic worker path. Only explicit `queued-pool`/`nats-pool`/
+`container-pool` aliases are handed to a repo-scoped warm Node chat/Claude
+container pool first. If that repo pool is missing, unhealthy, or rejects an
+explicit pool request, the consumer can fall back to the deterministic worker
+path. The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_DISPATCH`.
 
 ## Environment
 
@@ -36,6 +40,7 @@ queued task has one owner: the queue consumer and container pool.
 | `NATS_TASK_NAK_DELAY_SECONDS` | `15` | Delay before redelivery when the REST prepare call fails. |
 | `REMOTE_REST_API_URL` | `http://dd-remote-rest-api.default.svc.cluster.local:8082` | Internal REST API URL. |
 | `CONTAINER_POOL_BASE_URL` | `http://dd-container-pool.default.svc.cluster.local:8102` | Internal warm worker pool URL used for real queued dispatches. |
+| `QUEUE_CONSUMER_FALLBACK_REST_DISPATCH` | `true` | When true, failed pool handoff falls back to `/prepare` plus direct REST dispatch. |
 | `REMOTE_DEV_SERVER_SECRET` / `SERVER_AUTH_SECRET` | `dd-k8s-home` | Shared internal auth header for prepare calls. |
 | `QUEUE_CONSUMER_RECEIPTS_DIR` | `/tmp/dd-remote-queue-consumer/tasks` | JSON task receipts used to skip duplicate NATS deliveries. |
 
@@ -51,9 +56,12 @@ and acknowledged only after the queued handoff succeeds.
 ## Thread Affinity
 
 The consumer does not assign coding-agent work to an arbitrary generic worker.
-For queued execution it derives a repo-scoped pool slug from the task repo and
-base branch, for example `nodejs-chat-openai-live-mutex-dev`, then sends the
-task to that pool with `threadId` as the affinity key.
+For explicit pool execution it derives a repo-scoped pool slug from the task repo
+and base branch, for example `nodejs-chat-claude-live-mutex-dev`, then sends the
+task to that pool with `threadId` as the affinity key and `freshAffinity: true`.
+That lets follow-up tasks reuse the same affinity-bound container while preventing
+a brand-new thread from being assigned to an unbound worker that has already
+handled another request.
 
 The consumer also keeps an in-memory taskId set and writes JSON receipts under
 `QUEUE_CONSUMER_RECEIPTS_DIR`. A duplicate NATS delivery for the same taskId is

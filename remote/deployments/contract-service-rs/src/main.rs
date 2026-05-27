@@ -17,6 +17,10 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose, Engine as _};
+use dd_nats_subject_defs::{
+    CONTRACTS_SOLANA_RESULTS_SUBJECT, CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP,
+    CONTRACTS_SOLANA_VALIDATE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -1515,14 +1519,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let rpc_timeout_seconds = env_u64("SOLANA_RPC_TIMEOUT_SECONDS", 20);
     let result_subject = env_value(
         "CONTRACT_RESULT_SUBJECT",
-        "dd.remote.contracts.solana.results",
+        CONTRACTS_SOLANA_RESULTS_SUBJECT,
     );
-    let event_subject = env_value("CONTRACT_EVENT_SUBJECT", "dd.remote.events");
+    let event_subject = env_value("CONTRACT_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT);
     let validate_subject = env_value(
         "CONTRACT_VALIDATE_SUBJECT",
-        "dd.remote.contracts.solana.validate",
+        CONTRACTS_SOLANA_VALIDATE_SUBJECT,
     );
-    let queue_group = env_value("CONTRACT_QUEUE_GROUP", "dd-contract-service");
+    let queue_group = env_value("CONTRACT_QUEUE_GROUP", CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP);
 
     let rpc_client = reqwest::Client::builder()
         .timeout(Duration::from_secs(rpc_timeout_seconds))
@@ -1574,7 +1578,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/simulate", post(simulate_http))
         .route("/send", post(send_http))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;

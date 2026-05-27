@@ -39,7 +39,7 @@ impl NotificationService {
                     enabled          = EXCLUDED.enabled,
                     updated_at       = now()
             RETURNING id, tenant_id, kind, name, params,
-                      channel AS "channel: NotificationChannel",
+                      channel,
                       target, template_id, throttle_per_day, enabled, created_at
             "#,
         )
@@ -63,7 +63,7 @@ impl NotificationService {
         let rows = sqlx::query(
             r#"
             SELECT id, tenant_id, kind, name, params,
-                   channel AS "channel: NotificationChannel",
+                   channel,
                    target, template_id, throttle_per_day, enabled, created_at
             FROM notification_rules
             WHERE tenant_id = $1
@@ -85,9 +85,9 @@ impl NotificationService {
         let rows = sqlx::query(
             r#"
             SELECT id, rule_id, tenant_id, target_resource,
-                   channel AS "channel: NotificationChannel",
+                   channel,
                    target, payload,
-                   status AS "status: DispatchStatus",
+                   status,
                    provider_message_id, error, sent_at, created_at
             FROM notification_dispatches
             WHERE tenant_id = $1
@@ -189,7 +189,8 @@ impl NotificationService {
             SELECT COUNT(*)::BIGINT FROM notification_dispatches
             WHERE rule_id = $1
               AND ($2::TEXT IS NULL OR target_resource = $2)
-              AND created_at::date = (now() AT TIME ZONE 'UTC')::date
+              AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+              AND created_at <  (date_trunc('day', now() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'
               AND status IN ('sent', 'pending', 'sending')
             "#,
         )

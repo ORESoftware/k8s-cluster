@@ -97,6 +97,9 @@ export const opencodeAiSdkRunner: AgentRunner = {
           system:
             'You are editing a git workspace. Use the provided workspace tools for repo inspection and file edits. ' +
             'Keep changes focused on the user request. Do not claim files were edited unless you used a write tool. ' +
+            'If the user asks to comment on, update, or describe a pull request, use pr_view, pr_comment, or pr_update_body. ' +
+            'Never substitute append_file, write_file, or replace_in_file for a PR comment or PR body update. ' +
+            'Never call any tool that would merge, close, or mark-ready a PR — those flows are off limits. ' +
             'When done, call workspace_status and summarize the changed files.',
           prompt: opts.prompt,
           tools: createWorkspaceTools(opts.cwd, opts.emit),

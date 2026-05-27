@@ -20,6 +20,14 @@ Required AWS secret names:
 - `dd/remote-dev/idle-reaper-secret` -> creates `dd-idle-reaper-secret`
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
 - `dd/remote-dev/gleamlang-server-secrets` -> creates `dd-gleamlang-server-secrets`
+- `dd/remote-dev/lmx-admin-token` -> creates `dd-lmx-admin-token`
+
+`dd/remote-dev/lmx-admin-token` must include `LMX_ADMIN_TOKEN`. Both broker
+deployments (`dd-rust-network-mutex` and `dd-live-mutex`) consume it through
+explicit `secretKeyRef`s so `/admin/*` endpoints stop falling back to the
+literal default `all-dogs-go-to-heaven` baked into the broker source. Rotate
+this value separately from `dd-agent-secrets` so admin-token changes do not
+force the wider Node coding-agent fleet to restart.
 
 `dd/remote-dev/agent-secrets` is also the home for Git credentials used by remote-dev workers.
 Expected Git keys are:

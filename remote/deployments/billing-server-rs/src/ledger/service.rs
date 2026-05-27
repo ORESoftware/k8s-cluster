@@ -37,8 +37,8 @@ impl LedgerService {
         // Try fetch first; create if missing.
         if let Some(acct) = sqlx::query(
             r#"
-            SELECT id, tenant_id, shard_key, user_id, kind AS "kind: AccountKind",
-                   normal_side AS "normal_side: NormalSide", code, currency,
+            SELECT id, tenant_id, shard_key, user_id, kind,
+                   normal_side, code, currency,
                    metadata, created_at
             FROM accounts
             WHERE tenant_id = $1 AND code = $2 AND currency = $3
@@ -114,7 +114,33 @@ impl LedgerService {
 
         let mut tx = self.pool.begin().await?;
 
-        // Idempotency short-circuit
+        // Serialize concurrent calls with the same (tenant_id,
+        // idempotency_key). Two callers racing this code path used to
+        // be able to both see "no existing row", both insert (one wins
+        // via ON CONFLICT), but the loser could return the winning
+        // tx_id *before* the winner had finished inserting postings —
+        // so a subsequent read would see a transaction with no
+        // postings. Holding a transaction-scoped advisory lock keyed
+        // on (tenant_id, idempotency_key) means the second caller
+        // waits until the first commits, at which point either it
+        // also commits or returns the existing id.
+        //
+        // Use the two-int form `pg_advisory_xact_lock(tenant_lo,
+        // tenant_hi XOR key_hash)` so the lock space is partitioned
+        // by tenant — keeps the global lock count linear in tenants
+        // and prevents one noisy tenant from starving others.
+        let key_hash = idempotency_lock_hash(&draft.idempotency_key);
+        let tenant_lo = (draft.tenant_id.as_u128() & 0xFFFF_FFFF) as i32;
+        let tenant_hi = ((draft.tenant_id.as_u128() >> 32) & 0xFFFF_FFFF) as i32;
+        sqlx::query("SELECT pg_advisory_xact_lock($1, $2)")
+            .bind(tenant_lo ^ tenant_hi)
+            .bind(key_hash)
+            .execute(&mut *tx)
+            .await?;
+
+        // Idempotency short-circuit. With the advisory lock above, the
+        // winner has fully committed (or rolled back) before we read,
+        // so the `EXISTS` check is now race-free.
         if let Some(existing) = sqlx::query_scalar::<_, Uuid>(
             r#"SELECT id FROM transactions
                WHERE tenant_id = $1 AND idempotency_key = $2"#,
@@ -222,7 +248,7 @@ impl LedgerService {
         let row = sqlx::query(
             r#"
             SELECT a.id,
-                   a.normal_side AS "normal_side: NormalSide",
+                   a.normal_side,
                    COALESCE(SUM(
                        CASE
                            WHEN a.normal_side = 'debit'  AND p.direction = 'debit'  THEN  p.amount_minor
@@ -350,3 +376,58 @@ fn map_pg_constraint_err(e: sqlx::Error) -> AppError {
 
 #[allow(dead_code)]
 fn _silence_unused_jsonvalue(_: JsonValue) {}
+
+/// Stable 32-bit hash of the idempotency key, used as the second
+/// argument to `pg_advisory_xact_lock(tenant_part, key_part)`.
+///
+/// We use the FNV-1a variant because:
+///   * it's allocation-free and tiny (no extra dep)
+///   * Postgres advisory locks take `int4`, so we explicitly want a
+///     32-bit output rather than a SipHash 64-bit value we'd have to
+///     truncate
+///   * collisions on this hash just mean two unrelated idempotency
+///     keys for the same tenant block each other — annoying but not
+///     correctness-breaking
+fn idempotency_lock_hash(key: &str) -> i32 {
+    const FNV_OFFSET: u32 = 0x811c_9dc5;
+    const FNV_PRIME: u32 = 0x0100_0193;
+    let mut h: u32 = FNV_OFFSET;
+    for b in key.as_bytes() {
+        h ^= u32::from(*b);
+        h = h.wrapping_mul(FNV_PRIME);
+    }
+    h as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idempotency_lock_hash_is_deterministic() {
+        assert_eq!(
+            idempotency_lock_hash("stripe:bt_123"),
+            idempotency_lock_hash("stripe:bt_123")
+        );
+        assert_ne!(
+            idempotency_lock_hash("stripe:bt_123"),
+            idempotency_lock_hash("stripe:bt_124")
+        );
+    }
+
+    #[test]
+    fn idempotency_lock_hash_diverges_quickly() {
+        // Two keys that share a long prefix should still hash to
+        // different buckets — defends against trivial collision
+        // crafting from predictable provider IDs.
+        let a = idempotency_lock_hash("stripe:tx:bt_AAAAAAAA0001");
+        let b = idempotency_lock_hash("stripe:tx:bt_AAAAAAAA0002");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn idempotency_lock_hash_empty_key() {
+        // FNV offset basis (cast through i32) for empty input.
+        assert_eq!(idempotency_lock_hash(""), 0x811c_9dc5_u32 as i32);
+    }
+}

@@ -371,6 +371,7 @@ export class AgentRemoteDevTaskEntity {
 
 @Index("agent_remote_dev_events_task_seq_uq", ["taskId", "seq"], { unique: true })
 // agent_remote_dev_events_task_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_events_thread_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // agent_remote_dev_events_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "agent_remote_dev_events" })
 export class AgentRemoteDevEventEntity {
@@ -379,6 +380,9 @@ export class AgentRemoteDevEventEntity {
 
   @Column({ name: "task_id", type: "uuid" })
   taskId!: string;
+
+  @Column({ name: "thread_id", type: "uuid", nullable: true })
+  threadId!: string | null;
 
   @Column({ name: "seq", type: "integer" })
   seq!: number;
@@ -391,6 +395,40 @@ export class AgentRemoteDevEventEntity {
 
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;
+
+}
+
+// agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_breadcrumbs_task_id_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_breadcrumbs_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "agent_remote_dev_breadcrumbs" })
+export class AgentRemoteDevBreadcrumbEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "thread_id", type: "uuid" })
+  threadId!: string;
+
+  @Column({ name: "task_id", type: "uuid", nullable: true })
+  taskId!: string | null;
+
+  @Column({ name: "kind", type: "varchar", length: 80 })
+  kind!: string;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "emitted_at", type: "timestamptz", default: () => "now()" })
+  emittedAt!: Date;
+
+  @Column({ name: "pod_name", type: "varchar", length: 253, nullable: true })
+  podName!: string | null;
+
+  @Column({ name: "branch", type: "varchar", length: 120, nullable: true })
+  branch!: string | null;
+
+  @Column({ name: "provider", type: "varchar", length: 60, nullable: true })
+  provider!: string | null;
 
 }
 
@@ -553,6 +591,129 @@ export class LambdaFunctionEntity {
 
   @Column({ name: "updated_by", type: "uuid", nullable: true })
   updatedBy!: string | null;
+
+}
+
+// container_pool_image_revisions_slug_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("container_pool_image_revisions_slug_sha_uq", ["imageSlug", "dockerfileSha256"], { unique: true, where: "is_soft_deleted = false" })
+@Entity({ name: "container_pool_image_revisions" })
+export class ContainerPoolImageRevisionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "image_slug", type: "varchar", length: 120 })
+  imageSlug!: string;
+
+  @Column({ name: "image_ref", type: "text" })
+  imageRef!: string;
+
+  @Column({ name: "dockerfile_path", type: "text" })
+  dockerfilePath!: string;
+
+  @Column({ name: "build_context", type: "text" })
+  buildContext!: string;
+
+  @Column({ name: "dockerfile_text", type: "text" })
+  dockerfileText!: string;
+
+  @Column({ name: "dockerfile_sha256", type: "varchar", length: 64 })
+  dockerfileSha256!: string;
+
+  @Column({ name: "source", type: "varchar", length: 32, default: () => "'user'" })
+  source!: string;
+
+  @Column({ name: "notes", type: "text", default: () => "''" })
+  notes!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'candidate'" })
+  status!: string;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+// container_pool_build_runs_slug_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("container_pool_build_runs_overall_idx", ["overallStatus"], { where: "is_soft_deleted = false" })
+@Entity({ name: "container_pool_build_runs" })
+export class ContainerPoolBuildRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "image_slug", type: "varchar", length: 120 })
+  imageSlug!: string;
+
+  @Column({ name: "revision_id", type: "uuid" })
+  revisionId!: string;
+
+  @Column({ name: "image_ref", type: "text" })
+  imageRef!: string;
+
+  @Column({ name: "candidate_tag", type: "text" })
+  candidateTag!: string;
+
+  @Column({ name: "build_status", type: "varchar", length: 32, default: () => "'queued'" })
+  buildStatus!: string;
+
+  @Column({ name: "test_status", type: "varchar", length: 32, default: () => "'not_started'" })
+  testStatus!: string;
+
+  @Column({ name: "overall_status", type: "varchar", length: 32, default: () => "'queued'" })
+  overallStatus!: string;
+
+  @Column({ name: "test_command", type: "text", default: () => "''" })
+  testCommand!: string;
+
+  @Column({ name: "build_started_at", type: "timestamptz", nullable: true })
+  buildStartedAt!: Date | null;
+
+  @Column({ name: "build_finished_at", type: "timestamptz", nullable: true })
+  buildFinishedAt!: Date | null;
+
+  @Column({ name: "test_started_at", type: "timestamptz", nullable: true })
+  testStartedAt!: Date | null;
+
+  @Column({ name: "test_finished_at", type: "timestamptz", nullable: true })
+  testFinishedAt!: Date | null;
+
+  @Column({ name: "build_log_excerpt", type: "text", default: () => "''" })
+  buildLogExcerpt!: string;
+
+  @Column({ name: "test_log_excerpt", type: "text", default: () => "''" })
+  testLogExcerpt!: string;
+
+  @Column({ name: "error_message", type: "text", nullable: true })
+  errorMessage!: string | null;
+
+  @Column({ name: "triggered_by", type: "uuid", nullable: true })
+  triggeredBy!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
 
 }
 

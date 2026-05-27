@@ -1,5 +1,11 @@
 # `remote/deployments/gleamlang-server`
 
+This directory owns the Kubernetes service name `dd-gleamlang-server`, which is the live gateway
+target for `/gleam/*`. The EC2 and Minikube manifests now run the unified
+[`../gleamlang-ws-server`](../gleamlang-ws-server) implementation under that stable service name so
+the live `/gleam/ws` path gets the Postgres-backed presence store, sharded LISTEN/NOTIFY, and
+explicit WAL opt-in while preserving the existing gateway, secret, and service wiring.
+
 Small Gleam + OTP websocket service with a supervised runtime:
 
 - child 1: `broadcaster` actor (ticks every 2s and emits JSON payloads)
@@ -61,14 +67,15 @@ Then open `http://localhost:8081/home`.
 
 Two k8s variants are included:
 
-- `k8s/ec2`: uses the EC2 host checkout at `/home/ec2-user/codes/dd/dd-next-1` and runs `gleam run`
-  from source inside the pod.
-- `k8s/minikube`: uses a local image (`dd-gleamlang-server:dev`) for Minikube.
+- `k8s/ec2`: uses the EC2 host checkout at `/home/ec2-user/codes/dd/dd-next-1` and runs
+  `remote/deployments/gleamlang-ws-server` from source inside the `dd-gleamlang-server` pod.
+- `k8s/minikube`: uses the local `dd-gleamlang-ws-server:dev` image for Minikube, while keeping the
+  Service and Deployment name `dd-gleamlang-server`.
 
 Build the Minikube image:
 
 ```bash
-minikube image build -t dd-gleamlang-server:dev remote/deployments/gleamlang-server
+minikube image build -t dd-gleamlang-ws-server:dev -f remote/deployments/gleamlang-ws-server/Dockerfile .
 ```
 
 Then apply with:

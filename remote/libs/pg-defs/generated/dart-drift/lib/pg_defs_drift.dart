@@ -205,10 +205,31 @@ class AgentRemoteDevEventTable extends Table {
 
   Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
   TextColumn get taskId => text().named("task_id").customConstraint("UUID REFERENCES agent_remote_dev_tasks (id)")();
+  TextColumn get threadId => text().named("thread_id").nullable().customConstraint("UUID REFERENCES agent_remote_dev_threads (id)")();
   IntColumn get seq => integer().named("seq")();
   TextColumn get eventKind => text().named("event_kind").withLength(max: 80)();
   TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("AgentRemoteDevBreadcrumbData")
+class AgentRemoteDevBreadcrumbTable extends Table {
+  @override String get tableName => "agent_remote_dev_breadcrumbs";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  TextColumn get threadId => text().named("thread_id").customConstraint("UUID")();
+  TextColumn get taskId => text().named("task_id").nullable().customConstraint("UUID")();
+  TextColumn get kind => text().named("kind").withLength(max: 80)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get emittedAt => dateTime().named("emitted_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get podName => text().named("pod_name").withLength(max: 253).nullable()();
+  TextColumn get branch => text().named("branch").withLength(max: 120).nullable()();
+  TextColumn get provider => text().named("provider").withLength(max: 60).nullable()();
 
   @override
   Set<Column> get primaryKey => {
@@ -295,6 +316,69 @@ class LambdaFunctionTable extends Table {
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
   TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
   TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ContainerPoolImageRevisionsData")
+class ContainerPoolImageRevisionsTable extends Table {
+  @override String get tableName => "container_pool_image_revisions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get imageSlug => text().named("image_slug").withLength(max: 120)();
+  TextColumn get imageRef => text().named("image_ref")();
+  TextColumn get dockerfilePath => text().named("dockerfile_path")();
+  TextColumn get buildContext => text().named("build_context")();
+  TextColumn get dockerfileText => text().named("dockerfile_text")();
+  TextColumn get dockerfileSha256 => text().named("dockerfile_sha256").withLength(max: 64)();
+  TextColumn get source => text().named("source").clientDefault(() => 'user')();
+  TextColumn get notes => text().named("notes").clientDefault(() => '')();
+  TextColumn get status => text().named("status").clientDefault(() => 'candidate')();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ContainerPoolBuildRunsData")
+class ContainerPoolBuildRunsTable extends Table {
+  @override String get tableName => "container_pool_build_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get imageSlug => text().named("image_slug").withLength(max: 120)();
+  TextColumn get revisionId => text().named("revision_id").customConstraint("UUID")();
+  TextColumn get imageRef => text().named("image_ref")();
+  TextColumn get candidateTag => text().named("candidate_tag")();
+  TextColumn get buildStatus => text().named("build_status").clientDefault(() => 'queued')();
+  TextColumn get testStatus => text().named("test_status").clientDefault(() => 'not_started')();
+  TextColumn get overallStatus => text().named("overall_status").clientDefault(() => 'queued')();
+  TextColumn get testCommand => text().named("test_command").clientDefault(() => '')();
+  DateTimeColumn get buildStartedAt => dateTime().named("build_started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get buildFinishedAt => dateTime().named("build_finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get testStartedAt => dateTime().named("test_started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get testFinishedAt => dateTime().named("test_finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get buildLogExcerpt => text().named("build_log_excerpt").clientDefault(() => '')();
+  TextColumn get testLogExcerpt => text().named("test_log_excerpt").clientDefault(() => '')();
+  TextColumn get errorMessage => text().named("error_message").nullable()();
+  TextColumn get triggeredBy => text().named("triggered_by").nullable().customConstraint("UUID")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
 
   @override
   Set<Column> get primaryKey => {
@@ -415,9 +499,12 @@ const List<Type> registeredDriftTables = <Type>[
   AgentRemoteDevThreadTable,
   AgentRemoteDevTaskTable,
   AgentRemoteDevEventTable,
+  AgentRemoteDevBreadcrumbTable,
   AgentRemoteDevArtifactTable,
   AgentRemoteDevRuntimeLockTable,
   LambdaFunctionTable,
+  ContainerPoolImageRevisionsTable,
+  ContainerPoolBuildRunsTable,
   PresenceConvsTable,
   PresenceConvMembersTable,
   PresenceUsersTable,

@@ -48,7 +48,13 @@ function assertPathEntry(source: string, label: string, href?: string): void {
   );
 }
 
-test('rust homepage lists public task paths and protected ops paths', async () => {
+function assertGatewayLocationRequiresAuth(source: string, locationPattern: RegExp): void {
+  const match = source.match(locationPattern);
+  assert.ok(match?.[0], `expected gateway location ${locationPattern} to exist`);
+  assert.match(match[0], /if \(\$dd_gateway_auth_ok = 0\) \{\s*return 401;\s*\}/);
+}
+
+test('rust homepage lists public pages and protected ops/data paths', async () => {
   const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(home, /dd remote service directory/);
@@ -59,13 +65,8 @@ test('rust homepage lists public task paths and protected ops paths', async () =
     '/auth',
     '/agents/tasks',
     '/agents/threads',
-    '/api/agents/tasks',
     '/presence-test',
     '/wss-test',
-    '/webrtc/',
-    '/fsws/',
-    '/mdp/',
-    '/des/',
   ]) {
     assertHomeCode(home, path);
   }
@@ -73,6 +74,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   for (const path of [
     '/lambdas/functions',
     '/lambdas/invoke/<function-id>',
+    '/api/agents/',
     '/api/lambdas/',
     '/api/agent-worker/',
     '/container-pools',
@@ -85,6 +87,10 @@ test('rust homepage lists public task paths and protected ops paths', async () =
     '/gleam/',
     '/mcp',
     '/gcs/',
+    '/webrtc/',
+    '/fsws/',
+    '/mdp/',
+    '/des/',
   ]) {
     assertHomeCode(home, path);
   }
@@ -118,12 +124,24 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assert.match(home, /openRuntimeSocket\("gleam", `\/admin\/gleam\/ws\?channel=k8s-runtime-admin&client=home-\$\{clientId\}`\)/);
   assert.match(home, /openRuntimeSocket\("rust", `\/admin\/webrtc\/runtime\/ws\?client=home-\$\{clientId\}`\)/);
   assert.match(home, /startTimedReload\(\)/);
-  assert.match(home, /home-terminal-frame/);
-  assert.match(home, /Open bastion exec terminal/);
+  // The terminal pane is now an inline expanding row underneath the pod
+  // it targets rather than a fixed dock at the bottom of the section. The
+  // logs button uses the same panel mechanism but talks to the new
+  // /bastion/logs/ws endpoint that streams kubectl logs -f.
+  assert.match(home, /openTerminalPanel\(/);
+  assert.match(home, /openLogsPanel\(/);
+  assert.match(home, /Open inline bastion exec terminal/);
+  assert.match(home, /Open inline kubectl logs -f stream/);
   assert.match(home, /const safeBastionTerminalUrl = \(value\) =>/);
-  assert.match(home, /url\.pathname !== "\/bastion\/terminal"/);
-  assert.match(home, /ignored unsafe bastion terminal URL/);
+  assert.match(home, /const safeBastionLogsUrl = \(value\) =>/);
+  assert.match(home, /expectedPath/);
+  assert.match(home, /safeBastionUrl\(value, "\/bastion\/terminal"\)/);
+  assert.match(home, /safeBastionUrl\(value, "\/bastion\/logs\/ws"\)/);
   assert.match(home, /const safeTerminalUrl = safeBastionTerminalUrl\(container\.terminalUrl\)/);
+  assert.match(home, /const safeLogsUrl = safeBastionLogsUrl\(container\.logsUrl\)/);
+  // CPU/memory chips are rendered when metrics-server returns a snapshot.
+  assert.match(home, /metricChip\("cpu"/);
+  assert.match(home, /metricChip\("mem"/);
   assertPathEntry(home, 'POST /builds', '/builds');
   assertPathEntry(home, '/builds/<jobId>/logs', '/builds/example-job/logs');
   assertDeploymentRow(home, 'dd-gleam-lambda-runner', 'dd-gleam-lambda-runner:8083');
@@ -186,7 +204,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
     '/api/agents/threads/example-thread-id/prepare',
   );
   assertDeploymentRow(home, 'dd-remote-queue-consumer');
-  assert.match(home, /It does not execute prompts/);
+  assert.match(home, /routes repo-matched work into warm container pools/);
   assertPathEntry(home, '/gleam/home', '/gleam/home');
   assertPathEntry(home, '/gleam/healthz', '/gleam/healthz');
   assertPathEntry(home, '/gleam/metrics', '/gleam/metrics');
@@ -210,8 +228,12 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   assertPathEntry(home, '/webrtc/metrics', '/webrtc/metrics');
   assertPathEntry(home, '/webrtc/signal test', '/wss-test?preset=webrtc');
   assert.match(home, /\/webrtc\/signal/);
+  assert.match(home, /target: "Rust WebRTC signaling service", access: SERVER_AUTH/);
   assert.match(home, /Rust WebRTC signaling service/);
   assert.match(home, /Media and data channels stay peer-to-peer/);
+  assert.match(home, /target: "Rust MDP\/POMDP optimizer", access: SERVER_AUTH/);
+  assert.match(home, /target: "Rust discrete event simulator", access: SERVER_AUTH/);
+  assert.match(home, /target: "dd-fsharp-ws-server", access: SERVER_AUTH/);
   assertPathEntry(home, 'POST /scrape', '/scrape');
   assertPathEntry(home, '/scrape/healthz', '/scrape/healthz');
   assert.match(home, /Playwright, Puppeteer, and Browserless scraping/);
@@ -228,7 +250,7 @@ test('rust homepage lists public task paths and protected ops paths', async () =
   );
 });
 
-test('gateway exposes public task paths and protects ops paths behind temporary Auth header', async () => {
+test('gateway exposes public task pages and protects ops/data paths behind temporary Auth header', async () => {
   const gateway = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
   );
@@ -304,7 +326,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   assert.match(
     gateway,
-    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\/ws\$"[\s\S]*proxy_pass http:\/\/\$dd_thread_service:8080\/ws\$is_args\$args/,
+    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\/ws\$"[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*proxy_set_header Auth \$dd_gateway_auth_header[\s\S]*proxy_pass http:\/\/\$dd_thread_service:8080\/ws\$is_args\$args/,
   );
   assert.match(
     gateway,
@@ -315,10 +337,10 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /if \(\$dd_thread_proxy_path = ""\) {\s*set \$dd_thread_proxy_path \/;\s*}/,
   );
-  assert.match(gateway, /proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"/);
+  assert.match(gateway, /proxy_set_header X-Server-Auth \$dd_dev_server_auth_header/);
   assert.match(
     gateway,
-    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\(\?<thread_path>\/\.\*\)\?\$"[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade/,
+    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\(\?<thread_path>\/\.\*\)\?\$"[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header/,
   );
   assert.match(gateway, /proxy_pass http:\/\/\$dd_thread_service:8080\$dd_thread_proxy_path/);
   assert.doesNotMatch(gateway, /location ~ "\^\/dd-thread\/\(\[a-z0-9\]\{12\}\)\(\/\.\*\)\$"/);
@@ -343,7 +365,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   assert.match(
     gateway,
-    /location\s+\/api\/agents\/[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+    /location\s+\/api\/agents\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*proxy_set_header X-Agent-Auth \$dd_dev_server_auth_header[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
   );
   assert.match(gateway, /location = \/bastion[\s\S]*return 302 \/bastion\/profile/);
   assert.match(
@@ -411,6 +433,23 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /location\s+\/mcp\/[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\//,
   );
+  for (const blockPattern of [
+    /location = \/fsws[\s\S]*?\n      \}/,
+    /location \/fsws\/[\s\S]*?\n      \}/,
+    /location = \/gcs[\s\S]*?\n      \}/,
+    /location = \/gcs\/health[\s\S]*?\n      \}/,
+    /location = \/gcs\/ws-health[\s\S]*?\n      \}/,
+    /location \/gcs\/api\/[\s\S]*?\n      \}/,
+    /location \/gcs\/ws\/[\s\S]*?\n      \}/,
+    /location = \/webrtc[\s\S]*?\n      \}/,
+    /location \/webrtc\/[\s\S]*?\n      \}/,
+    /location = \/mdp[\s\S]*?\n      \}/,
+    /location \/mdp\/[\s\S]*?\n      \}/,
+    /location = \/des[\s\S]*?\n      \}/,
+    /location \/des\/[\s\S]*?\n      \}/,
+  ]) {
+    assertGatewayLocationRequiresAuth(gateway, blockPattern);
+  }
   assert.match(gateway, /location = \/webrtc[\s\S]*return 302 \/webrtc\//);
   assert.match(
     gateway,
@@ -515,7 +554,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     authDeployment,
     /name:\s*DD_AUTH_COOKIE_VALUE[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_COOKIE_VALUE/,
   );
-  assert.match(authDeployment, /name:\s*DD_AUTH_COOKIE_MAX_AGE_SECONDS[\s\S]*value:\s*'3600'/);
+  assert.match(authDeployment, /name:\s*DD_AUTH_COOKIE_MAX_AGE_SECONDS[\s\S]*value:\s*'259200'/);
   assert.match(
     authDeployment,
     /name:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*optional:\s*true/,
@@ -706,7 +745,10 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
-  assert.match(dockerfile, /COPY --from=build \/app\/target\/release\/dd-remote-web-home/);
+  assert.match(
+    dockerfile,
+    /COPY --from=build \/app\/deployments\/web-home-rs\/target\/release\/dd-remote-web-home/,
+  );
   assert.match(dockerfile, /USER 10001:10001/);
   assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/dd-remote-web-home"\]/);
   assert.match(refreshWorkflow, /name: Refresh remote web-home local image/);
@@ -722,11 +764,11 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(refreshWorkflow, /aws-region: \$\{\{ vars\.AWS_REGION \|\| secrets\.AWS_REGION \|\| 'us-east-1' \}\}/);
   assert.match(
     refreshWorkflow,
-    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/deployments\/web-home-rs/,
+    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-f remote\/deployments\/web-home-rs\/Dockerfile -t docker\.io\/library\/dd-remote-web-home:dev remote/,
   );
   assert.match(
     refreshWorkflow,
-    /sudo -u ec2-user -H bash -lc '\\''cd \/home\/ec2-user\/codes\/dd\/dd-next-1 && kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
+    /sudo -u ec2-user -H bash -lc '\\''refresh_root=\$\(cat \/tmp\/dd-web-home-refresh-root\); cd \\"\$refresh_root\\" && kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
   );
   assert.match(
     refreshWorkflow,
@@ -925,18 +967,19 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
   );
-  assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
+  assert.match(server, /\.stream \{[\s\S]*overflow: visible;[\s\S]*padding-right: 0;/);
   assert.match(server, /\.thread-meta > span \{[\s\S]*text-overflow: ellipsis;/);
   assert.match(
     server,
     /section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel"/,
   );
-  assert.match(server, /h2 \{ "Thread Control" \}/);
+  assert.match(server, /h2 id="thread-control-title" \{ "Thread Control" \}/);
   assert.match(server, /span id="thread-mode" class="pill warn" \{ "select thread" \}/);
+  assert.match(server, /button id="thread-control-toggle" class="icon" type="button" title="Expand Thread Control" aria-expanded="false" \{ "\^" \}/);
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(
     server,
-    /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/,
+    /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: visible;/,
   );
   assert.match(
     server,
@@ -944,7 +987,10 @@ test('rust agent threads page renders stored response events and feedback contro
   );
   assert.match(server, /\.main\.control-top #thread-control-panel \{[\s\S]*order: 1;/);
   assert.match(server, /\.main\.control-bottom #thread-control-panel \{[\s\S]*order: 2;/);
-  assert.match(server, /\.main\.control-sliding-down #thread-control-panel \{[\s\S]*animation: control-slide-down 260ms ease;/);
+  assert.match(server, /\.main\.control-sliding-down #thread-control-panel \{[\s\S]*animation: control-dock-travel 1500ms/);
+  assert.match(server, /@keyframes control-dock-morph \{[\s\S]*opacity: 0\.5;/);
+  assert.match(server, /\.main\.control-bottom \.prompt-panel \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
+  assert.match(server, /\.main\.control-bottom\.control-collapsed \.prompt-panel \{[\s\S]*max-height: 66px;[\s\S]*overflow: hidden;/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
   assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
@@ -953,6 +999,9 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/);
   assert.match(server, /function setWorkspaceLayout\(mode\) \{/);
   assert.match(server, /function setControlPosition\(position, options = \{\}\) \{/);
+  assert.match(server, /function setThreadControlCollapsed\(collapsed, options = \{\}\) \{/);
+  assert.match(server, /function syncThreadControlTitle\(\) \{/);
+  assert.match(server, /function scrollResponseToLatest\(\) \{/);
   assert.match(server, /function setThreadUiMode\(modeName\) \{/);
   assert.match(server, /const UUID_PATTERN = \/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/i;/);
   assert.match(server, /function readUuidInput\(id, label, options = \{\}\) \{/);
@@ -962,6 +1011,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /\.main\.mode-new #terminal-thread[\s\S]*display: none;/);
   assert.match(server, /\$\("send"\)\.textContent = modeName === "new" \? "Create thread & send"/);
   assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", handleControlPanelClick\)/);
+  assert.match(server, /\$\("thread-control-toggle"\)\.addEventListener\("click", \(event\) => \{/);
   assert.match(server, /function setTaskStreamLayout\(mode\) \{/);
   assert.match(server, /function handleLowerPanelClick\(event, mode\) \{/);
   assert.match(server, /\$\("previous-tasks-panel"\)\.addEventListener\("click", \(event\) => handleLowerPanelClick\(event, "tasks"\)\)/);
@@ -1072,9 +1122,15 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /function flushAgentTextBuffer\(\) \{/);
   assert.match(server, /seqLabel: pending\.firstSeq === pending\.lastSeq \? `seq \$\{pending\.firstSeq\}` : `seq \$\{pending\.firstSeq\}-\$\{pending\.lastSeq\}`/);
   assert.match(server, /for \(const event of data\.events\) renderEventRow\(event\);[\s\S]*flushAgentTextBuffer\(\);/);
+  assert.match(server, /function prettyModelLabel\(provider, model\) \{/);
+  assert.match(server, /return rawModel\.replace\(\/\^gpt-\/i, "chatgpt-"\)/);
+  assert.match(server, /function eventModelLabel\(row\) \{/);
+  assert.match(server, /leftGroup\.className = "event-head-left"/);
+  assert.match(server, /modelChip\.className = "pill model"/);
+  assert.match(server, /leftGroup\.appendChild\(modelChip\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
   assert.match(server, /NATS container pool/);
-  assert.match(server, /queueing container-pool task/);
+  assert.match(server, /queued via NATS/);
   assert.match(server, /thread UUID as the affinity key/);
   assert.match(server, /lastRuntimeData: null/);
   assert.match(server, /async function readableFetchFailure\(response, label\) \{/);
@@ -1086,7 +1142,8 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /function workerRuntimeWaitDetails\(data\) \{/);
   assert.match(server, /runtime phase=\$\{summary\.phase \|\| "unknown"\}/);
   assert.match(server, /node pod-slot limit full/);
-  assert.match(server, /dispatch waiting \$\{elapsed\}s · \$\{runtimeSummary\}/);
+  assert.match(server, /setStatus\(`dispatch waiting \$\{elapsed\}s`\)/);
+  assert.match(server, /message: \[[\s\S]*runtimeSummary,[\s\S]*runtimeDetails,[\s\S]*\]\.filter\(Boolean\)\.join\("\\n"\)/);
   assert.match(server, /workerRuntimeWaitDetails\(state\.lastRuntimeData\)/);
   assert.match(server, /dispatch accepted/);
   assert.match(server, /streamTaskId: null/);
@@ -1123,7 +1180,7 @@ test('rust agent threads page renders stored response events and feedback contro
     /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
   );
   assert.match(server, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/);
-  assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
+  assert.match(server, /\.stream \{[\s\S]*overflow: visible;[\s\S]*padding-right: 0;/);
   assert.match(server, /\.thread-meta span \{[\s\S]*text-overflow: ellipsis;/);
   assert.match(
     server,
@@ -1137,11 +1194,13 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*min-height: 154px;[\s\S]*max-height: none;[\s\S]*overflow: visible;[\s\S]*z-index: 1;/,
   );
+  assert.match(server, /\.main\.control-bottom \.prompt-panel \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
+  assert.match(server, /\.main\.control-bottom\.control-collapsed #thread-control-subtitle,[\s\S]*\.main\.control-bottom\.control-collapsed \.form-grid,/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
   assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
   assert.match(server, /aside id="previous-tasks-panel" class="tasks-sidebar" tabindex="0" aria-label="Thread tasks sidebar"/);
-  assert.match(server, /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/);
+  assert.match(server, /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: visible;/);
   assert.match(
     server,
     /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/,
@@ -1150,6 +1209,7 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /@media \(max-width: 980px\) \{[\s\S]*\.app \{[\s\S]*grid-template-rows: minmax\(132px, 24dvh\) minmax\(0, 1fr\) minmax\(132px, 28dvh\);/,
   );
+  assert.match(server, /@media \(max-width: 980px\) \{[\s\S]*\.main\.control-bottom\.control-expanded \.prompt-panel \{[\s\S]*z-index: 1200;/);
   assert.match(
     server,
     /@media \(max-width: 980px\) \{[\s\S]*\.main \{[\s\S]*overflow: hidden auto;[\s\S]*overscroll-behavior: contain;/,
@@ -1186,10 +1246,12 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
     restServer,
     /prune_awake_thread_workers_for_capacity\(&namespace, &name\)\.await/,
   );
+  assert.match(restServer, /REMOTE_DEV_THREAD_TITLE/);
+  assert.match(restServer, /title as thread_title/);
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,
-    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
+    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(\s*&thread_id,\s*&repo_config\.repo,\s*&repo_config\.base_branch,\s*repo_config\.thread_title\.as_deref\(\),\s*\)/,
   );
   assert.match(restServer, /fn default_dispatch_mode/);
   assert.match(restServer, /REST_API_DEFAULT_DISPATCH_MODE/);
@@ -1432,7 +1494,7 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
   assert.match(dockerfile, /ENV HOME=\/home\/node/);
   assert.match(dockerfile, /WORKSPACE_REPO=\/home\/node\/workspace\/repo/);
   assert.match(dockerfile, /GH_DEPLOY_KEY_PATH=\/home\/node\/\.ssh\/id_ed25519/);
-  assert.match(dockerfile, /git clone --depth 50 --branch "\$DD_REPO_REF"/);
+  assert.match(dockerfile, /git clone --depth 1 --branch "\$DD_REPO_REF"/);
   assert.match(bootstrapDeployment, /image: docker\.io\/library\/dd-dev-server:dev/);
   assert.match(bootstrapDeployment, /EVENT_INGEST_URL[\s\S]*\/api\/agents\/events/);
   assert.match(bootstrapDeployment, /EVENT_INGEST_SECRET[\s\S]*SERVER_AUTH_SECRET/);
@@ -1475,7 +1537,7 @@ test('node worker opens draft PRs only through explicit control action', async (
   assert.match(server, /'--draft'/);
   assert.match(server, /\['rev-list', '--left-right', '--count', `origin\/\$\{config\.baseBranch\}\.\.\.HEAD`\]/);
   assert.match(server, /'--allow-empty'/);
-  assert.match(server, /kind: 'open-pr-marker-commit'/);
+  assert.match(server, /postSessionBreadcrumb\(input\.session, 'open-pr-marker-commit'/);
   assert.match(
     server,
     /const title = rawTitle\.startsWith\('WIP - '\) \? rawTitle : `WIP - \$\{rawTitle\}`/,

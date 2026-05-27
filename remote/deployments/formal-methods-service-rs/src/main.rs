@@ -66,7 +66,10 @@ async fn main() -> anyhow::Result<()> {
         delivery_dedupe,
     };
 
-    let router = routes::router(state);
+    let router = routes::router(state).merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+
     let listener = TcpListener::bind(bind)
         .await
         .with_context(|| format!("failed to bind {bind}"))?;

@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ws-loadtest-rs-dart
+  namespace: default
+  labels:
+    app: dd-ws-loadtest-rs-dart
+    role: loadtest
+    target: dd-dart-server
+spec:
+  # WebSocket clients from a fan of loader pods against /dart/wss.
+  # Each replica drives CLIENT_COUNT connections; total simultaneous
+  # connections at peak == replicas × CLIENT_COUNT.
+  #
+  # As of 2026-05-23 dd-dart-server runs ONE pod with N gateway-shard
+  # isolates bound `shared: true` on port 8089 (SO_REUSEPORT
+  # distribution inside the kernel). The single-pod target lets us
+  # measure how much WS load one Dart process can absorb. We still
+  # shard the loader (4 × 5K = 20K) so a single Rust process doesn't
+  # become the FD/CPU ceiling on its own (one pod hit ~6.8K conns at
+  # 4 CPU last run).
+  #
+  # Default replicas: 0 — the operator scales to 4 for the duration of
+  # a load test and back to 0 afterwards. The Argo CD app no longer
+  # selfHeals so the manual scale sticks for the test window.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dd-ws-loadtest-rs-dart
+  template:
+    metadata:
+      labels:
+        app: dd-ws-loadtest-rs-dart
+        role: loadtest
+        target: dd-dart-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              # Raise the per-process FD ceiling so 20K open WS sockets fit.
+              ulimit -n 131072 || true
+              export PATH="/usr/local/cargo/bin:${PATH}"
+              cd /opt/dd-next-1/remote/deployments/ws-loadtest-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-dart-server.default.svc.cluster.local:8089/dart/wss
+            - name: LOAD_MODE
+              value: "pipeline"
+            # 7500/pod * 4 replicas = 30K conns. Matches the cross-language
+            # WSS benchmark baseline (rust-wss, fsharp-rx, akkaws-akkastreams,
+            # gleamlang loaders). Bump to 12500 for 50K runs.
+            - name: CLIENT_COUNT
+              value: "7500"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "1.0"
+            - name: MESSAGE_PAYLOAD
+              value: "dart-bench-payload"
+            # 300s sustained hold so a 4-minute snapshot window can sit
+            # entirely inside the steady-state phase without per-client
+            # reconnect cycles muddying the numbers.
+            - name: HOLD_SECONDS
+              value: "600"
+            - name: CONNECT_TIMEOUT_SECONDS
+              value: "30"
+            # Receive timeout has to be loose enough to accommodate
+            # gateway burst-write delay during ramp AND larger than
+            # the server's WS_CLOCK_INTERVAL_SECONDS (default 5 s).
+            # 30 s gives 6× clock-tick slack plus drain budget.
+            - name: RECEIVE_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECONNECT_DELAY_MS
+              value: "2000"
+            # 7500 clients * 3 ms = 22.5 s ramp per pod (4 pods ramp
+            # in parallel so peak is ~25 s after scale-up). Slow enough
+            # we don't overwhelm the listen backlog of 8 shards.
+            - name: RAMP_DELAY_MS
+              value: "3"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+            - name: CORRELATION_TIMEOUT_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "4"
+              memory: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

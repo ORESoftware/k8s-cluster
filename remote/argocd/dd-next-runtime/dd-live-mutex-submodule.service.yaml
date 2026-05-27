@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-live-mutex-submodule
+  namespace: default
+  labels:
+    app: dd-live-mutex-submodule
+    role: live-mutex-broker
+    variant: submodule
+  annotations:
+    # Hint for the Prometheus scrape config — see
+    # `remote/argocd/observability/prometheus.configmap.yaml`. The
+    # broker exposes `/metrics` on the HTTP port; the npm baseline
+    # broker (`dd-live-mutex`) does NOT expose metrics, so this is a
+    # net-new observability surface.
+    prometheus.io/scrape: 'true'
+    prometheus.io/port: '6971'
+    prometheus.io/path: /metrics
+spec:
+  selector:
+    app: dd-live-mutex-submodule
+  ports:
+    - name: lmx-tcp
+      port: 6970
+      targetPort: lmx-tcp
+    - name: http
+      port: 6971
+      targetPort: http

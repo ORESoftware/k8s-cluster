@@ -1,0 +1,27 @@
+[package]
+name = "dd-rust-wss-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "dd-rust-wss-server"
+path = "src/main.rs"
+
+[dependencies]
+# Multi-thread tokio runtime for the worker pool. The acceptor tasks
+# (one per gateway shard) plus the admin axum server all share this
+# runtime, mirroring how the Dart pod runs N gateway-shard isolates
+# under one Dart VM.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "net"] }
+# Server-side WS handshake on raw TCP; we want full control over the
+# accept path (SO_REUSEPORT, multi-acceptor) so axum's WebSocketUpgrade
+# (which wraps a single hyper::Server) is intentionally avoided on the
+# WS port. We still use axum for the admin port below.
+tokio-tungstenite = "0.23"
+futures-util = "0.3"
+# Admin HTTP surface (/metrics, /healthz, /readyz). Kept on a separate
+# port from the WS listener so heavy WS load can never starve probe or
+# Prometheus traffic — same split as the Dart pod's port 8088.
+axum = "0.7"
+prometheus = "0.13"
+once_cell = "1"

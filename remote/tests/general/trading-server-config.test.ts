@@ -32,6 +32,13 @@ test('rust trading server scores signals and emits gated order intents', async (
 
   assert.match(cargo, /name\s*=\s*"dd-trading-server"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
+  // Source-of-truth NATS subject + queue group constants come from the
+  // generated @dd/nats-subject-defs crate.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?TRADING_DECISIONS_SUBJECT[\s\S]*?TRADING_ORDER_INTENTS_SUBJECT[\s\S]*?TRADING_SIGNALS_QUEUE_GROUP[\s\S]*?TRADING_SIGNALS_SUBJECT[\s\S]*?\};/,
+  );
   assert.match(cargo, /tokio-postgres/);
   assert.match(cargo, /tokio-postgres-rustls/);
   assert.match(cargo, /rustls-pemfile/);
@@ -71,9 +78,10 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /"TRADING_DATABASE_URL",[\s\S]*"RDS_DATABASE_URL",[\s\S]*"AGENT_TASKS_RDS_DATABASE_URL"/);
   assert.match(source, /constant_time_equals/);
   assert.match(source, /queue_subscribe/);
-  assert.match(source, /dd\.remote\.trading\.signals/);
-  assert.match(source, /dd\.remote\.trading\.decisions/);
-  assert.match(source, /dd\.remote\.trading\.order_intents/);
+  assert.match(source, /TRADING_SIGNALS_SUBJECT/);
+  assert.match(source, /TRADING_DECISIONS_SUBJECT/);
+  assert.match(source, /TRADING_ORDER_INTENTS_SUBJECT/);
+  assert.match(source, /TRADING_SIGNALS_QUEUE_GROUP/);
   assert.match(source, /dd_trading_server_order_intents_total/);
   assert.match(source, /\.route\("\/schema", get\(schema\)\)/);
   assert.match(source, /\.route\("\/example", get\(example\)\)/);
@@ -170,7 +178,11 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   );
   assert.match(home, /dd-trading-server/);
   assert.match(home, /POST \/trading\/decide/);
-  assert.match(home, /dd\.remote\.trading\.order_intents/);
+  // web-home-rs now sources the displayed NATS subjects from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: TRADING_ORDER_INTENTS_SUBJECT/);
+  assert.match(home, /label: TRADING_SIGNALS_SUBJECT/);
   assert.match(runtimeReadme, /dd-trading-server/);
   assert.match(runtimeReadme, /`POST \/trading\/decide`/);
   assert.match(remoteReadme, /trading-server-rs/);

@@ -1,3 +1,4 @@
+import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/http
@@ -66,6 +67,11 @@ fn route(
     ["check"] -> require_authenticated_post(req, fn() { check(req) })
     ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
+    ["internal", "runtime-config"] -> dd_runtime_config_client.handle_snapshot(req)
+    ["internal", "update-runtime-config"] ->
+      dd_runtime_config_client.handle_apply(req)
+    ["internal", "runtime-config", "reset"] ->
+      dd_runtime_config_client.handle_reset(req)
     _ -> not_found()
   }
 }

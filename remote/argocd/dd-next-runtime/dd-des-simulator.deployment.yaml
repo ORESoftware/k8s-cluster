@@ -66,6 +66,25 @@ spec:
               value: /tmp/cargo
             - name: CARGO_TARGET_DIR
               value: /tmp/des-target
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-des-simulator
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-des-simulator
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-des-simulator.default.svc.cluster.local:8099/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: http
               containerPort: 8099

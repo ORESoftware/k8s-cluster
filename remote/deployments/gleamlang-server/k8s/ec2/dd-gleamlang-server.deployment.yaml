@@ -13,7 +13,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-15-nats-ws-fanout'
+        dd.dev/telemetry-revision: '2026-05-20-pg-ws-shards'
       labels:
         app: dd-gleamlang-server
     spec:
@@ -37,7 +37,7 @@ spec:
                 cat /tmp/dd-gleamlang-apk.log
                 exit 1
               fi
-              cd /opt/dd-next-1/remote/deployments/gleamlang-server
+              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-server
               gleam clean || true
               gleam deps download
               exec gleam run
@@ -60,11 +60,39 @@ spec:
                   name: dd-gleamlang-server-secrets
                   key: RDS_DATABASE_URL
                   optional: true
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
             - name: AGENT_TASKS_RDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: dd-gleamlang-server-secrets
                   key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
+            - name: PRESENCE_WAL_ENABLED
+              value: "true"
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-gleamlang-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleamlang-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-gleamlang-server.default.svc.cluster.local:8081/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
                   optional: true
           envFrom:
             - secretRef:
@@ -87,11 +115,20 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
+            # Bumped from 1/1Gi/4/8Gi for the cross-language WSS
+            # benchmark (5-way Dart/Rust/Gleam/Akka/Go comparison at
+            # 30K connections). Matches dd-rust-wss-server,
+            # dd-dart-server, dd-akka-ws-server, dd-go-wss-server so
+            # any CPU/mem differences are framework/runtime-attributable
+            # rather than artefacts of the cgroup cap. The earlier 4-core
+            # cap was visible in the May 23 HIGH (10 msg/s) run where
+            # gleamlang-server pinned at 3995-4000m and the loader saw
+            # cascading 71K connect failures.
             requests:
               cpu: '1'
-              memory: 1Gi
+              memory: 2Gi
             limits:
-              cpu: '4'
+              cpu: '6'
               memory: 8Gi
           volumeMounts:
             - name: repo
@@ -109,7 +146,7 @@ spec:
           args:
             - |
               set -eu
-              exec node /opt/dd-next-1/remote/deployments/gleamlang-server/nats-bridge.mjs
+              exec node /opt/dd-next-1/remote/deployments/gleamlang-ws-server/nats-bridge.mjs
           env:
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222

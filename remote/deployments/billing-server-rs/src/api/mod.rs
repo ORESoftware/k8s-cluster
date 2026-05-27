@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod connections;
 pub mod customers;
 pub mod health;
@@ -14,6 +15,7 @@ pub mod webhooks;
 
 use axum::Router;
 use axum::http::StatusCode;
+use axum::middleware;
 use axum::routing::{get, post};
 use std::time::Duration;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -23,7 +25,21 @@ use tower_http::trace::TraceLayer;
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
-    Router::new()
+    let admin_enabled = state.cfg.admin_ui_enabled;
+    let api_auth = auth::ApiAuth::from_config(&state.cfg);
+    if api_auth.bearer.is_none() {
+        // Single boot-time warning so operators know they're in
+        // open-API mode. Production manifests inject the bearer via
+        // SealedSecrets; this catches the misconfig.
+        tracing::warn!(
+            "BILLING_API_AUTH_BEARER is unset — JSON API is unauthenticated. \
+             Set it for any reachable-from-network deployment."
+        );
+    } else {
+        tracing::info!("JSON API bearer auth enabled");
+    }
+
+    let mut router = Router::new()
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
         .route("/metrics", get(health::metrics))
@@ -90,6 +106,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/webhooks/coinbase", post(webhooks::coinbase))
         .route("/v1/webhooks/plaid", post(webhooks::plaid))
         .route("/v1/webhooks/coinflow", post(webhooks::coinflow))
+        .route("/v1/webhooks/revolut", post(webhooks::revolut))
+        .route("/v1/webhooks/gocardless", post(webhooks::gocardless))
+        .route("/v1/webhooks/mercury", post(webhooks::mercury))
+        .route("/v1/webhooks/bridge", post(webhooks::bridge))
+        .route("/v1/webhooks/fireblocks", post(webhooks::fireblocks))
+        .route("/v1/webhooks/circle", post(webhooks::circle))
         // Public verification (no auth required — that's the point)
         .route(
             "/v1/verify/tenants/{tenant_id}/postings/{id}",
@@ -148,11 +170,25 @@ pub fn build_router(state: AppState) -> Router {
             "/v1/tenants/{tenant_id}/notification-dispatches",
             get(notifications::list_dispatches),
         )
+        .layer(middleware::from_fn_with_state(
+            api_auth.clone(),
+            auth::require_api_auth,
+        ))
         .layer(TraceLayer::new_for_http())
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),
         ))
-        .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
-        .with_state(state)
+        .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024));
+
+    if admin_enabled {
+        // Mount the HTMX admin UI under /admin. Disable via
+        // `BILLING_ADMIN_UI_ENABLED=false` for prod gateways that have not
+        // wired `dd-remote-auth` in front yet. The admin router uses
+        // `route("/", ...)` for its index so nesting at `/admin` registers
+        // both `GET /admin` and `GET /admin/` through axum's normalization.
+        router = router.nest("/admin", crate::admin::build_router(state.clone()));
+    }
+
+    router.with_state(state)
 }

@@ -7,6 +7,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use dd_nats_subject_defs::{
+    DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
+    THREAD_TASKS_WILDCARD,
+};
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -26,6 +30,8 @@ struct QueueTaskMessage {
     context_ids: Option<Vec<String>>,
     shadow: Option<bool>,
     direct_dispatch: Option<bool>,
+    dispatch_mode: Option<String>,
+    container_pool_dispatch: Option<bool>,
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -49,6 +55,18 @@ fn env_u64(key: &str, fallback: u64) -> u64 {
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
         .filter(|value| *value > 0)
+        .unwrap_or(fallback)
+}
+
+fn env_bool(key: &str, fallback: bool) -> bool {
+    env::var(key)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(fallback)
 }
 
@@ -106,6 +124,23 @@ fn is_shadow_task(task: &QueueTaskMessage) -> bool {
             .is_some_and(|kind| kind == "task.shadow")
 }
 
+fn is_container_pool_dispatch_mode(mode: &str) -> bool {
+    matches!(
+        mode,
+        "queued-pool" | "nats-pool" | "container-pool" | "pool"
+    )
+}
+
+fn should_dispatch_to_container_pool(task: &QueueTaskMessage) -> bool {
+    task.container_pool_dispatch.unwrap_or_else(|| {
+        task.dispatch_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|mode| !mode.is_empty())
+            .is_some_and(is_container_pool_dispatch_mode)
+    })
+}
+
 fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -114,7 +149,7 @@ fn now_ms() -> u128 {
 }
 
 fn nats_event_subject() -> String {
-    env_value("NATS_EVENT_SUBJECT", "dd.remote.events")
+    env_value("NATS_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT)
 }
 
 fn task_message_id(task: &QueueTaskMessage, stage: &str) -> String {
@@ -253,7 +288,7 @@ fn repo_pool_slug(repo: &str, base_branch: &str) -> String {
         .unwrap_or("repo");
     let repo_part = sanitize_slug_part(repo_name);
     let branch_part = sanitize_slug_part(base_branch);
-    format!("nodejs-chat-openai-{repo_part}-{branch_part}")
+    format!("nodejs-chat-claude-{repo_part}-{branch_part}")
 }
 
 async fn dispatch_to_container_pool(
@@ -290,6 +325,7 @@ async fn dispatch_to_container_pool(
             "requestId": &task.task_id,
             "poolSlug": pool,
             "affinityKey": &task.thread_id,
+            "freshAffinity": true,
             "path": "/tasks",
             "payload": {
                 "taskId": &task.task_id,
@@ -339,6 +375,59 @@ async fn prepare_thread(
     .into())
 }
 
+async fn dispatch_to_rest_api(
+    http: &reqwest::Client,
+    rest_api_url: &str,
+    secret: &str,
+    task: &QueueTaskMessage,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let prompt = task
+        .prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or("queued task missing prompt")?;
+    let base = rest_api_url.trim_end_matches('/');
+    let url = format!("{base}/api/agents/threads/{}/tasks", task.thread_id);
+    let response = http
+        .post(url)
+        .header("X-Agent-Auth", secret)
+        .json(&serde_json::json!({
+            "threadId": &task.thread_id,
+            "taskId": &task.task_id,
+            "prompt": prompt,
+            "provider": &task.provider,
+            "repo": &task.repo,
+            "baseBranch": &task.base_branch,
+            "threadTitle": &task.thread_title,
+            "contextMode": &task.context_mode,
+            "contextIds": &task.context_ids,
+            "dispatchMode": "direct",
+        }))
+        .send()
+        .await?;
+    let status = response.status();
+    if status.is_success() {
+        return Ok(());
+    }
+    let body = response.text().await.unwrap_or_default();
+    Err(format!(
+        "rest fallback dispatch failed with {status}: {}",
+        body.chars().take(500).collect::<String>()
+    )
+    .into())
+}
+
+async fn dispatch_to_deterministic_worker(
+    http: &reqwest::Client,
+    rest_api_url: &str,
+    secret: &str,
+    task: &QueueTaskMessage,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    prepare_thread(http, rest_api_url, secret, &task.thread_id).await?;
+    dispatch_to_rest_api(http, rest_api_url, secret, task).await
+}
+
 async fn build_jetstream_consumer(
     client: async_nats::Client,
     stream_name: &str,
@@ -383,9 +472,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "NATS_URL",
         "nats://dd-nats.messaging.svc.cluster.local:4222",
     );
-    let subject = env_value("NATS_TASK_SUBJECT", "dd.remote.thread.*.tasks");
-    let queue_group = env_value("NATS_QUEUE_GROUP", "dd-remote-thread-preparer");
-    let stream_name = env_value("NATS_TASK_STREAM", "DD_REMOTE_TASKS");
+    let subject = env_value("NATS_TASK_SUBJECT", THREAD_TASKS_WILDCARD);
+    let queue_group = env_value("NATS_QUEUE_GROUP", THREAD_PREPARER_QUEUE_GROUP);
+    let stream_name = env_value("NATS_TASK_STREAM", DD_REMOTE_TASKS_STREAM_NAME);
     let consumer_name = env_value("NATS_TASK_CONSUMER", &queue_group);
     let ack_wait_seconds = env_u64("NATS_TASK_ACK_WAIT_SECONDS", 120);
     let max_ack_pending = env_i64("NATS_TASK_MAX_ACK_PENDING", 256);
@@ -401,6 +490,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "http://dd-container-pool.default.svc.cluster.local:8102",
     );
     let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);
+    let fallback_rest_dispatch = env_bool("QUEUE_CONSUMER_FALLBACK_REST_DISPATCH", true);
     let receipts_dir = env_value(
         "QUEUE_CONSUMER_RECEIPTS_DIR",
         "/tmp/dd-remote-queue-consumer/tasks",
@@ -411,7 +501,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .build()?;
 
     println!(
-        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} event_subject={event_subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} http_timeout_seconds={http_timeout_seconds} receipts_dir={receipts_dir}"
+        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} event_subject={event_subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} http_timeout_seconds={http_timeout_seconds} fallback_rest_dispatch={fallback_rest_dispatch} receipts_dir={receipts_dir}"
     );
     let nats_client = async_nats::connect(nats_url).await?;
     let consumer = build_jetstream_consumer(
@@ -478,6 +568,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .await;
         let direct_dispatch = task.direct_dispatch.unwrap_or(false);
+        let container_pool_dispatch = should_dispatch_to_container_pool(&task);
         let result = if direct_dispatch {
             emit_queue_status_event(
                 &http,
@@ -508,6 +599,54 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             )
             .await;
             prepare_thread(&http, &rest_api_url, &secret, &task.thread_id).await
+        } else if !container_pool_dispatch {
+            emit_queue_status_event(
+                &http,
+                &nats_client,
+                &rest_api_url,
+                &secret,
+                &task,
+                -930,
+                "deterministic-worker-dispatch",
+                "dispatching to deterministic worker",
+                "Queued NATS mode is preparing the UUID-bound thread worker and dispatching through REST, without container-pool.",
+                json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false }),
+            )
+            .await;
+            match dispatch_to_deterministic_worker(&http, &rest_api_url, &secret, &task).await {
+                Ok(()) => {
+                    emit_queue_status_event(
+                        &http,
+                        &nats_client,
+                        &rest_api_url,
+                        &secret,
+                        &task,
+                        -920,
+                        "deterministic-worker-accepted",
+                        "deterministic worker accepted",
+                        "UUID-bound thread worker accepted the queued NATS task dispatch.",
+                        json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false }),
+                    )
+                    .await;
+                    Ok(())
+                }
+                Err(error) => {
+                    emit_queue_status_event(
+                        &http,
+                        &nats_client,
+                        &rest_api_url,
+                        &secret,
+                        &task,
+                        -920,
+                        "deterministic-worker-failed",
+                        "deterministic worker failed",
+                        "Queued NATS mode could not prepare or dispatch to the UUID-bound thread worker.",
+                        json!({ "dispatchMode": &task.dispatch_mode, "containerPoolDispatch": false, "error": error.to_string() }),
+                    )
+                    .await;
+                    Err(error)
+                }
+            }
         } else {
             let pool = task
                 .repo
@@ -567,7 +706,67 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         json!({ "poolSlug": &pool, "affinityKey": &task.thread_id, "error": pool_error.to_string() }),
                     )
                     .await;
-                    Err(pool_error)
+                    if !fallback_rest_dispatch {
+                        Err(pool_error)
+                    } else {
+                        emit_queue_status_event(
+                            &http,
+                            &nats_client,
+                            &rest_api_url,
+                            &secret,
+                            &task,
+                            -915,
+                            "rest-fallback-dispatch",
+                            "falling back to direct worker",
+                            "Container-pool did not accept the task; queue consumer is preparing the deterministic worker and dispatching through REST.",
+                            json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
+                        )
+                        .await;
+                        match dispatch_to_deterministic_worker(&http, &rest_api_url, &secret, &task)
+                            .await
+                        {
+                            Ok(()) => {
+                                emit_queue_status_event(
+                                    &http,
+                                    &nats_client,
+                                    &rest_api_url,
+                                    &secret,
+                                    &task,
+                                    -914,
+                                    "rest-fallback-accepted",
+                                    "direct worker accepted",
+                                    "Deterministic worker accepted the fallback task dispatch.",
+                                    json!({ "poolSlug": &pool, "affinityKey": &task.thread_id }),
+                                )
+                                .await;
+                                Ok(())
+                            }
+                            Err(rest_error) => {
+                                let message = format!(
+                                    "REST fallback dispatch failed after pool error: {rest_error}"
+                                );
+                                emit_queue_status_event(
+                                    &http,
+                                    &nats_client,
+                                    &rest_api_url,
+                                    &secret,
+                                    &task,
+                                    -914,
+                                    "rest-fallback-failed",
+                                    "direct worker fallback failed",
+                                    &message,
+                                    json!({
+                                        "poolSlug": &pool,
+                                        "affinityKey": &task.thread_id,
+                                        "poolError": pool_error.to_string(),
+                                        "restError": rest_error.to_string(),
+                                    }),
+                                )
+                                .await;
+                                Err(rest_error)
+                            }
+                        }
+                    }
                 }
             }
         };

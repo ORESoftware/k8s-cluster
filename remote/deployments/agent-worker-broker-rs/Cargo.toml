@@ -6,6 +6,12 @@ edition = "2021"
 [dependencies]
 async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
+# Source-of-truth NATS subject/stream/queue-group constants and formatters
+# (e.g. thread_tasks_subject(thread_id)). The broker is a producer for
+# both the per-thread tasks subject and the wakeup signal, so the
+# strongly-typed helpers keep it in lock-step with the queue consumer.
+dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }

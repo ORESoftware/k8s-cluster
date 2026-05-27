@@ -3505,7 +3505,10 @@ async fn main() {
         .route("/validate", post(validate_inline))
         .route("/webhooks/github", post(github_webhook))
         .route("/pulls/:owner/:repo/:number", get(get_pull_request_status))
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-go-wss-server
+  namespace: default
+  labels:
+    app: dd-go-wss-server
+spec:
+  # Single-pod horizontal sharding via in-process acceptor goroutines
+  # (see go-wss-server-go/main.go). The pod runs:
+  #
+  #   * 1 Go process, GOMAXPROCS auto-detected from cgroup
+  #   * N acceptor goroutines, each owning its own net.Listener bound on
+  #     0.0.0.0:8107 with SO_REUSEPORT — 1:1 mirror of dd-rust-wss-server
+  #     (port 8097) and dd-dart-server's gateway shards (port 8089).
+  #   * 1 net/http admin server on 8108 (/metrics, /healthz, /readyz)
+  #
+  # Sized via WS_GATEWAY_SHARDS. Single replica — this exists for the
+  # cross-language WSS benchmark, where each pod is the unit of
+  # comparison.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-go-wss-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/code-revision: '2026-05-23-initial'
+      labels:
+        app: dd-go-wss-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 25
+      containers:
+        - name: go-wss-server
+          image: docker.io/library/golang:1.24-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          # Build-on-pod-start, identical pattern to dd-rust-wss-server.
+          # The repo is mounted from the EC2 host so we don't need an
+          # ECR pipeline for a benchmark-only service. First boot does
+          # a full `go build` (~30-60s, smaller than the rust release
+          # build); restarts are warm.
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export HOME=/tmp
+              export GOPROXY=https://proxy.golang.org,direct
+              export GOSUMDB=off
+              export GOCACHE=/tmp/go-build
+              export GOMODCACHE=/tmp/go-mod
+              mkdir -p "$GOCACHE" "$GOMODCACHE"
+
+              SRC=/opt/dd-next-1/remote/deployments/go-wss-server-go
+              WORK=/tmp/go-wss-build
+              BIN=/tmp/dd-go-wss-server
+
+              if [ ! -x "$BIN" ]; then
+                rm -rf "$WORK"
+                mkdir -p "$WORK"
+                cp -R --no-preserve=mode,ownership,timestamps "$SRC"/. "$WORK"/
+                cd "$WORK"
+                /usr/local/go/bin/go mod tidy
+                /usr/local/go/bin/go build -p "$(nproc)" -o "$BIN" .
+              fi
+
+              exec "$BIN"
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: WS_PORT
+              value: '8107'
+            - name: ADMIN_PORT
+              value: '8108'
+            # Acceptor goroutine count. 8 matches dd-rust-wss-server and
+            # dd-dart-server defaults.
+            - name: WS_GATEWAY_SHARDS
+              value: '8'
+          ports:
+            - name: ws
+              containerPort: 8107
+            - name: admin
+              containerPort: 8108
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Resources match dd-rust-wss-server / dd-dart-server so the
+          # comparison is fair — 1 vCPU / 2 Gi steady, burst to 6 cores
+          # / 8 Gi under load.
+          resources:
+            requests:
+              cpu: '1'
+              memory: 2Gi
+            limits:
+              cpu: '6'
+              memory: 8Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 4Gi

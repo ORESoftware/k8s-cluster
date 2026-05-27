@@ -1,3 +1,4 @@
+import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/process
@@ -52,6 +53,11 @@ fn route(
     ["broadcast"] -> broadcast(req, broker_name)
     ["worker-ws", secret] -> worker_websocket(req, broker_name, secret)
     ["ws"] -> websocket(req, broker_name, False)
+    ["internal", "runtime-config"] -> dd_runtime_config_client.handle_snapshot(req)
+    ["internal", "update-runtime-config"] ->
+      dd_runtime_config_client.handle_apply(req)
+    ["internal", "runtime-config", "reset"] ->
+      dd_runtime_config_client.handle_reset(req)
     _ -> not_found()
   }
 }

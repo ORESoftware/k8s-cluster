@@ -20,17 +20,27 @@ task instead of relying only on prompt history.
 
 ## Runtime Context
 
-Agents launched by `remote/deployments/dev-server` may receive selected Postgres context blobs in
+Agents launched by `remote/deployments/dev-server` may receive selected Postgres context rows in
 the prompt. Treat those as task-specific memory, and treat this file plus the docs above
-as persistent repo memory.
-They also receive the previous local `tmp/convos/thread.log` tail when it exists; use that as the
-per-thread breadcrumb trail for earlier prompts, events, failures, and summaries.
+as persistent repo memory. The thread UI can seed a task with durable context blobs,
+previous thread tasks, and individual breadcrumb rows from `agent_remote_dev_breadcrumbs`.
+Rows unchecked during context review are omitted from the worker payload; "Start with zero context"
+sets `contextMode: none` so previous tasks, breadcrumbs, and selected blobs are not injected. See
+`remote/libs/interfaces/redis` for the optional Redis cache shape and
+`remote/libs/pg-defs/schema/schema.sql` for the table contract.
 
 When the cluster MCP server is configured as `dd_cluster`, use it before guessing live EC2
 Kubernetes deployment state, service wiring, inventory, or observability status. The MCP surface is
 read-only by default; do not add write-capable AWS or Kubernetes tools without a separate
 short-lived human grant, auth, and audit design. Treat minikube overlays as local mirrors only, not
 as the live runtime source of truth.
+
+## Command Safety
+
+The following commands are blacklisted for agents in this repo: `git checkout`, `git reset`,
+`git stash`, `rm`, and `sed`. Do not run them in local operator work or add them to automation
+scripts. If a checkout has tracked dirty files, stop and surface the dirty state explicitly instead
+of hiding it. Leave untracked runtime files alone unless a human asks for a specific cleanup.
 
 ## Postgres Contract
 

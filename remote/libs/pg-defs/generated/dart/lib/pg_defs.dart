@@ -729,12 +729,13 @@ class AgentRemoteDevTaskRow {
 }
 
 const agentRemoteDevEventTable = "agent_remote_dev_events";
-const agentRemoteDevEventSelectSql = "select\n      id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
+const agentRemoteDevEventSelectSql = "select\n      id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
 
 class AgentRemoteDevEventRow {
   const AgentRemoteDevEventRow({
     required this.id,
     required this.taskId,
+    this.threadId,
     required this.seq,
     required this.eventKind,
     required this.payload,
@@ -743,6 +744,7 @@ class AgentRemoteDevEventRow {
 
   final int id;
   final String taskId;
+  final String? threadId;
   final int seq;
   final String eventKind;
   final Map<String, Object?> payload;
@@ -752,6 +754,7 @@ class AgentRemoteDevEventRow {
     return AgentRemoteDevEventRow(
       id: _readRequiredInt(json, "id"),
       taskId: _readRequiredString(json, "taskId"),
+      threadId: _readOptionalString(json, "threadId"),
       seq: _readRequiredInt(json, "seq"),
       eventKind: _readRequiredString(json, "eventKind"),
       payload: _readRequiredObject(json, "payload"),
@@ -762,6 +765,7 @@ class AgentRemoteDevEventRow {
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
     "taskId": taskId,
+    "threadId": threadId,
     "seq": seq,
     "eventKind": eventKind,
     "payload": payload,
@@ -772,6 +776,76 @@ class AgentRemoteDevEventRow {
     final errors = <String>[];
     if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(eventKind)) {
       errors.add("agent_remote_dev_events.event_kind does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const agentRemoteDevBreadcrumbTable = "agent_remote_dev_breadcrumbs";
+const agentRemoteDevBreadcrumbSelectSql = "select\n      id,\n      thread_id::text as thread_id,\n      task_id::text as task_id,\n      kind,\n      payload::text as payload_json,\n      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as emitted_at,\n      pod_name,\n      branch,\n      provider\n    from agent_remote_dev_breadcrumbs";
+
+class AgentRemoteDevBreadcrumbRow {
+  const AgentRemoteDevBreadcrumbRow({
+    required this.id,
+    required this.threadId,
+    this.taskId,
+    required this.kind,
+    required this.payload,
+    required this.emittedAt,
+    this.podName,
+    this.branch,
+    this.provider,
+  });
+
+  final int id;
+  final String threadId;
+  final String? taskId;
+  final String kind;
+  final Map<String, Object?> payload;
+  final String emittedAt;
+  final String? podName;
+  final String? branch;
+  final String? provider;
+
+  factory AgentRemoteDevBreadcrumbRow.fromJson(Map<String, Object?> json) {
+    return AgentRemoteDevBreadcrumbRow(
+      id: _readRequiredInt(json, "id"),
+      threadId: _readRequiredString(json, "threadId"),
+      taskId: _readOptionalString(json, "taskId"),
+      kind: _readRequiredString(json, "kind"),
+      payload: _readRequiredObject(json, "payload"),
+      emittedAt: _readRequiredString(json, "emittedAt"),
+      podName: _readOptionalString(json, "podName"),
+      branch: _readOptionalString(json, "branch"),
+      provider: _readOptionalString(json, "provider"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "threadId": threadId,
+    "taskId": taskId,
+    "kind": kind,
+    "payload": payload,
+    "emittedAt": emittedAt,
+    "podName": podName,
+    "branch": branch,
+    "provider": provider,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(kind)) {
+      errors.add("agent_remote_dev_breadcrumbs.kind does not match the required pattern");
+    }
+    if (podName != null && utf8.encode(podName!).length > 253) {
+      errors.add("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes");
+    }
+    if (branch != null && utf8.encode(branch!).length > 120) {
+      errors.add("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes");
+    }
+    if (provider != null && utf8.encode(provider!).length > 60) {
+      errors.add("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes");
     }
     return errors;
   }
@@ -1088,6 +1162,280 @@ class LambdaFunctionRow {
     }
     if (!lambdaFunctionStatusValues.contains(status)) {
       errors.add("unsupported lambda_functions.status");
+    }
+    return errors;
+  }
+}
+
+const containerPoolImageRevisionsTable = "container_pool_image_revisions";
+const containerPoolImageRevisionsSelectSql = "select\n      id::text as id,\n      image_slug,\n      image_ref,\n      dockerfile_path,\n      build_context,\n      dockerfile_text,\n      dockerfile_sha256,\n      source,\n      notes,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_image_revisions";
+
+const containerPoolImageRevisionsSourceValues = <String>["disk-default", "user", "system"];
+const containerPoolImageRevisionsStatusValues = <String>["candidate", "active", "archived"];
+
+class ContainerPoolImageRevisionsRow {
+  const ContainerPoolImageRevisionsRow({
+    required this.id,
+    required this.imageSlug,
+    required this.imageRef,
+    required this.dockerfilePath,
+    required this.buildContext,
+    required this.dockerfileText,
+    required this.dockerfileSha256,
+    required this.source,
+    required this.notes,
+    required this.status,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String imageSlug;
+  final String imageRef;
+  final String dockerfilePath;
+  final String buildContext;
+  final String dockerfileText;
+  final String dockerfileSha256;
+  final String source;
+  final String notes;
+  final String status;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory ContainerPoolImageRevisionsRow.fromJson(Map<String, Object?> json) {
+    return ContainerPoolImageRevisionsRow(
+      id: _readRequiredString(json, "id"),
+      imageSlug: _readRequiredString(json, "imageSlug"),
+      imageRef: _readRequiredString(json, "imageRef"),
+      dockerfilePath: _readRequiredString(json, "dockerfilePath"),
+      buildContext: _readRequiredString(json, "buildContext"),
+      dockerfileText: _readRequiredString(json, "dockerfileText"),
+      dockerfileSha256: _readRequiredString(json, "dockerfileSha256"),
+      source: _readRequiredString(json, "source"),
+      notes: _readRequiredString(json, "notes"),
+      status: _readRequiredString(json, "status"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "imageSlug": imageSlug,
+    "imageRef": imageRef,
+    "dockerfilePath": dockerfilePath,
+    "buildContext": buildContext,
+    "dockerfileText": dockerfileText,
+    "dockerfileSha256": dockerfileSha256,
+    "source": source,
+    "notes": notes,
+    "status": status,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$').hasMatch(imageSlug)) {
+      errors.add("container_pool_image_revisions.image_slug must be a lowercase slug");
+    }
+    if (utf8.encode(imageRef).length > 512) {
+      errors.add("container_pool_image_revisions.image_ref exceeds 512 bytes");
+    }
+    if (utf8.encode(imageRef).length < 1) {
+      errors.add("container_pool_image_revisions.image_ref is below 1 bytes");
+    }
+    if (utf8.encode(dockerfilePath).length > 512) {
+      errors.add("container_pool_image_revisions.dockerfile_path exceeds 512 bytes");
+    }
+    if (utf8.encode(dockerfilePath).length < 1) {
+      errors.add("container_pool_image_revisions.dockerfile_path is below 1 bytes");
+    }
+    if (utf8.encode(buildContext).length > 512) {
+      errors.add("container_pool_image_revisions.build_context exceeds 512 bytes");
+    }
+    if (utf8.encode(buildContext).length < 1) {
+      errors.add("container_pool_image_revisions.build_context is below 1 bytes");
+    }
+    if (utf8.encode(dockerfileText).length > 65536) {
+      errors.add("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes");
+    }
+    if (utf8.encode(dockerfileText).length < 1) {
+      errors.add("container_pool_image_revisions.dockerfile_text is below 1 bytes");
+    }
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(dockerfileSha256)) {
+      errors.add("container_pool_image_revisions.dockerfile_sha256 does not match the required pattern");
+    }
+    if (!containerPoolImageRevisionsSourceValues.contains(source)) {
+      errors.add("unsupported container_pool_image_revisions.source");
+    }
+    if (utf8.encode(notes).length > 8192) {
+      errors.add("container_pool_image_revisions.notes exceeds 8192 bytes");
+    }
+    if (!containerPoolImageRevisionsStatusValues.contains(status)) {
+      errors.add("unsupported container_pool_image_revisions.status");
+    }
+    return errors;
+  }
+}
+
+const containerPoolBuildRunsTable = "container_pool_build_runs";
+const containerPoolBuildRunsSelectSql = "select\n      id::text as id,\n      image_slug,\n      revision_id::text as revision_id,\n      image_ref,\n      candidate_tag,\n      build_status,\n      test_status,\n      overall_status,\n      test_command,\n      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_started_at,\n      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_finished_at,\n      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_started_at,\n      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_finished_at,\n      build_log_excerpt,\n      test_log_excerpt,\n      error_message,\n      triggered_by::text as triggered_by,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from container_pool_build_runs";
+
+const containerPoolBuildRunsBuildStatusValues = <String>["queued", "building", "built", "failed", "skipped", "cancelled"];
+const containerPoolBuildRunsTestStatusValues = <String>["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"];
+const containerPoolBuildRunsOverallStatusValues = <String>["queued", "running", "passed", "failed", "cancelled", "errored"];
+
+class ContainerPoolBuildRunsRow {
+  const ContainerPoolBuildRunsRow({
+    required this.id,
+    required this.imageSlug,
+    required this.revisionId,
+    required this.imageRef,
+    required this.candidateTag,
+    required this.buildStatus,
+    required this.testStatus,
+    required this.overallStatus,
+    required this.testCommand,
+    this.buildStartedAt,
+    this.buildFinishedAt,
+    this.testStartedAt,
+    this.testFinishedAt,
+    required this.buildLogExcerpt,
+    required this.testLogExcerpt,
+    this.errorMessage,
+    this.triggeredBy,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String imageSlug;
+  final String revisionId;
+  final String imageRef;
+  final String candidateTag;
+  final String buildStatus;
+  final String testStatus;
+  final String overallStatus;
+  final String testCommand;
+  final String? buildStartedAt;
+  final String? buildFinishedAt;
+  final String? testStartedAt;
+  final String? testFinishedAt;
+  final String buildLogExcerpt;
+  final String testLogExcerpt;
+  final String? errorMessage;
+  final String? triggeredBy;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+
+  factory ContainerPoolBuildRunsRow.fromJson(Map<String, Object?> json) {
+    return ContainerPoolBuildRunsRow(
+      id: _readRequiredString(json, "id"),
+      imageSlug: _readRequiredString(json, "imageSlug"),
+      revisionId: _readRequiredString(json, "revisionId"),
+      imageRef: _readRequiredString(json, "imageRef"),
+      candidateTag: _readRequiredString(json, "candidateTag"),
+      buildStatus: _readRequiredString(json, "buildStatus"),
+      testStatus: _readRequiredString(json, "testStatus"),
+      overallStatus: _readRequiredString(json, "overallStatus"),
+      testCommand: _readRequiredString(json, "testCommand"),
+      buildStartedAt: _readOptionalString(json, "buildStartedAt"),
+      buildFinishedAt: _readOptionalString(json, "buildFinishedAt"),
+      testStartedAt: _readOptionalString(json, "testStartedAt"),
+      testFinishedAt: _readOptionalString(json, "testFinishedAt"),
+      buildLogExcerpt: _readRequiredString(json, "buildLogExcerpt"),
+      testLogExcerpt: _readRequiredString(json, "testLogExcerpt"),
+      errorMessage: _readOptionalString(json, "errorMessage"),
+      triggeredBy: _readOptionalString(json, "triggeredBy"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "imageSlug": imageSlug,
+    "revisionId": revisionId,
+    "imageRef": imageRef,
+    "candidateTag": candidateTag,
+    "buildStatus": buildStatus,
+    "testStatus": testStatus,
+    "overallStatus": overallStatus,
+    "testCommand": testCommand,
+    "buildStartedAt": buildStartedAt,
+    "buildFinishedAt": buildFinishedAt,
+    "testStartedAt": testStartedAt,
+    "testFinishedAt": testFinishedAt,
+    "buildLogExcerpt": buildLogExcerpt,
+    "testLogExcerpt": testLogExcerpt,
+    "errorMessage": errorMessage,
+    "triggeredBy": triggeredBy,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$').hasMatch(imageSlug)) {
+      errors.add("container_pool_build_runs.image_slug must be a lowercase slug");
+    }
+    if (utf8.encode(imageRef).length > 512) {
+      errors.add("container_pool_build_runs.image_ref exceeds 512 bytes");
+    }
+    if (utf8.encode(imageRef).length < 1) {
+      errors.add("container_pool_build_runs.image_ref is below 1 bytes");
+    }
+    if (utf8.encode(candidateTag).length > 512) {
+      errors.add("container_pool_build_runs.candidate_tag exceeds 512 bytes");
+    }
+    if (utf8.encode(candidateTag).length < 1) {
+      errors.add("container_pool_build_runs.candidate_tag is below 1 bytes");
+    }
+    if (!containerPoolBuildRunsBuildStatusValues.contains(buildStatus)) {
+      errors.add("unsupported container_pool_build_runs.build_status");
+    }
+    if (!containerPoolBuildRunsTestStatusValues.contains(testStatus)) {
+      errors.add("unsupported container_pool_build_runs.test_status");
+    }
+    if (!containerPoolBuildRunsOverallStatusValues.contains(overallStatus)) {
+      errors.add("unsupported container_pool_build_runs.overall_status");
+    }
+    if (utf8.encode(testCommand).length > 4096) {
+      errors.add("container_pool_build_runs.test_command exceeds 4096 bytes");
+    }
+    if (utf8.encode(buildLogExcerpt).length > 65536) {
+      errors.add("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes");
+    }
+    if (utf8.encode(testLogExcerpt).length > 65536) {
+      errors.add("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes");
+    }
+    if (errorMessage != null && utf8.encode(errorMessage!).length > 8192) {
+      errors.add("container_pool_build_runs.error_message exceeds 8192 bytes");
     }
     return errors;
   }

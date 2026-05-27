@@ -198,9 +198,10 @@ so the same loadtest correlator works against this service and `dd-akka-ws-serve
 | `BENCHMARK_PAYLOAD`       | sample JSON | Payload to drive the benchmark.                              |
 | `MAX_WS_TEXT_FRAME_BYTES` | `65536`     | Maximum assembled inbound WebSocket text frame size.         |
 | `RX_STREAM_OUTBOUND_QUEUE_CAPACITY` | `1024` | Per-connection bounded outbound queue for long-running Rx streams. If the client cannot drain replies, the socket is closed instead of letting memory grow without bound. |
-| `PG_DATABASE_URL`         | _(unset)_   | `postgres://…` URI. When set, the boot-time migration runs, then `PgListen` / `PgWal` / `PgOutbox` come online. When unset, all PG paths are silently skipped and the F# server runs in "NATS-only + injection" mode. |
+| `PG_DATABASE_URL`         | _(unset)_   | `postgres://…` URI. When set, the boot-time migration runs, then `PgListen` and `PgOutbox` come online. `PgWal` remains opt-in through `FSWS_WAL_ENABLED`. When unset, all PG paths are skipped and the F# server runs in "NATS-only + injection" mode. |
 | `NATS_URL`                | _(unset)_   | `nats://host:port`. When set, the server connects on boot, subscribes to `fsws.events.published`, and publishes every `/ws/rx-publish` event there. When unset, NATS path is skipped. |
-| `FSWS_WAL_POLL_MS`        | `250`       | How often `PgWal` calls `pg_logical_slot_get_changes`.       |
+| `FSWS_WAL_ENABLED`        | `false`     | Explicit opt-in for the per-pod wal2json logical slot. Leave off unless testing that path. |
+| `FSWS_WAL_POLL_MS`        | `250`       | How often `PgWal` calls `pg_logical_slot_get_changes`; ignored unless `FSWS_WAL_ENABLED=true`. |
 | `FSWS_OUTBOX_POLL_MS`     | `1000`      | How often `PgOutbox` SELECTs new rows from `fsws_events`.    |
 | `FSWS_OUTBOX_BATCH`       | `256`       | LIMIT applied to each outbox poll.                            |
 | `FSWS_OUTBOX_BACKFILL`    | `false`     | If `true`, `PgOutbox` starts at seq 0 instead of MAX(seq) — useful for replaying historical events on first boot. |

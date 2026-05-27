@@ -3,6 +3,8 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - reloader.deployment.yaml
+  - otel-collector.rbac.yaml
   - otel-collector.configmap.yaml
   - otel-collector.deployment.yaml
   - otel-collector.service.yaml
@@ -16,6 +18,7 @@ resources:
   - loki.configmap.yaml
   - loki.deployment.yaml
   - loki.service.yaml
+  - promtail.rbac.yaml
   - promtail.configmap.yaml
   - promtail.daemonset.yaml
   - tempo.configmap.yaml

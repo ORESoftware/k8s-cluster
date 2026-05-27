@@ -43,12 +43,17 @@ ensure_started() ->
     end.
 
 init() ->
+    %% NATS subject defaults below come from dd_nats_subject_consts which
+    %% is auto-generated from remote/libs/nats/subject-defs/schema/
+    %% lambdas.schema.json. A subject rename in the schema surfaces here
+    %% as a build error (missing function) instead of silently drifting
+    %% out of sync with the Rust/Gleam/Python/etc consumers.
     State = #{
         nats_url => env_binary("NATS_URL", <<>>),
-        invoke_subject => env_binary("NATS_LAMBDA_INVOKE_SUBJECT", <<"dd.remote.lambdas.invoke.*">>),
-        queue_group => env_binary("NATS_LAMBDA_QUEUE_GROUP", <<"dd-gleam-lambda-runner">>),
-        result_subject => env_binary("NATS_LAMBDA_RESULT_SUBJECT", <<"dd.remote.lambdas.results">>),
-        functions_subject => env_binary("NATS_LAMBDA_FUNCTIONS_SUBJECT", <<"dd.remote.lambdas.functions">>),
+        invoke_subject => env_binary("NATS_LAMBDA_INVOKE_SUBJECT", dd_nats_subject_consts:lambdas_invoke_wildcard()),
+        queue_group => env_binary("NATS_LAMBDA_QUEUE_GROUP", dd_nats_subject_consts:lambda_runner_queue_group()),
+        result_subject => env_binary("NATS_LAMBDA_RESULT_SUBJECT", dd_nats_subject_consts:lambdas_results_subject()),
+        functions_subject => env_binary("NATS_LAMBDA_FUNCTIONS_SUBJECT", dd_nats_subject_consts:lambdas_functions_subject()),
         nats_username => env_binary("NATS_USERNAME", <<>>),
         nats_password => env_binary("NATS_PASSWORD", <<>>),
         nats_token => env_binary("NATS_TOKEN", <<>>),

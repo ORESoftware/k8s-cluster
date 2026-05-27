@@ -60,11 +60,39 @@ spec:
                   name: dd-gleamlang-ws-server-secrets
                   key: RDS_DATABASE_URL
                   optional: true
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-ws-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
             - name: AGENT_TASKS_RDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: dd-gleamlang-ws-server-secrets
                   key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
+            - name: PRESENCE_WAL_ENABLED
+              value: "true"
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-gleamlang-ws-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleamlang-ws-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-gleamlang-ws-server.default.svc.cluster.local:8081/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
                   optional: true
           envFrom:
             - secretRef:

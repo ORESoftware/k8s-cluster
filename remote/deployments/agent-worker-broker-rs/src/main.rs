@@ -15,6 +15,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::{
+    thread_tasks_subject, DD_REMOTE_TASKS_STREAM_NAME, ORCHESTRATOR_WAKEUP_SUBJECT,
+    THREAD_TASKS_WILDCARD,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -214,9 +218,9 @@ fn config_from_env() -> Config {
             "NATS_URL",
             "nats://dd-nats.messaging.svc.cluster.local:4222",
         ),
-        nats_task_stream: env_value("NATS_TASK_STREAM", "DD_REMOTE_TASKS"),
-        nats_task_subject: env_value("NATS_TASK_SUBJECT", "dd.remote.thread.*.tasks"),
-        nats_wakeup_subject: env_value("NATS_WAKEUP_SUBJECT", "dd.remote.orchestrator.wakeup"),
+        nats_task_stream: env_value("NATS_TASK_STREAM", DD_REMOTE_TASKS_STREAM_NAME),
+        nats_task_subject: env_value("NATS_TASK_SUBJECT", THREAD_TASKS_WILDCARD),
+        nats_wakeup_subject: env_value("NATS_WAKEUP_SUBJECT", ORCHESTRATOR_WAKEUP_SUBJECT),
         direct_dispatch_enabled: env_bool("DIRECT_DISPATCH_ENABLED", true),
         worker_health_timeout: Duration::from_millis(env_u64("WORKER_HEALTH_TIMEOUT_MS", 800)),
         worker_task_timeout: Duration::from_millis(env_u64("WORKER_TASK_TIMEOUT_MS", 30_000)),
@@ -316,7 +320,7 @@ async fn publish_task_to_nats(
         .map_err(|error| error.to_string())?;
     ensure_task_stream(config, client.clone()).await?;
 
-    let subject = format!("dd.remote.thread.{thread_id}.tasks");
+    let subject = thread_tasks_subject(thread_id);
     let payload = serde_json::to_vec(&NatsTaskMessage {
         version: 1,
         message_kind: "task.dispatch",
@@ -359,7 +363,7 @@ async fn publish_task_to_nats(
 fn skipped_nats_result(config: &Config, thread_id: &str) -> NatsPublishResult {
     NatsPublishResult {
         published: false,
-        subject: format!("dd.remote.thread.{thread_id}.tasks"),
+        subject: thread_tasks_subject(thread_id),
         wakeup_subject: config.nats_wakeup_subject.clone(),
     }
 }
@@ -664,7 +668,10 @@ async fn main() {
             "/api/agent-worker/threads/:thread_id/tasks",
             post(dispatch_task),
         )
-        .with_state(state);
+        .with_state(state)
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()

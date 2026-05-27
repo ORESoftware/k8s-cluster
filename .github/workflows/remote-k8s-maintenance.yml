@@ -6,6 +6,12 @@ on:
       - dev
     paths:
       - ".github/workflows/remote-k8s-maintenance.yml"
+      - "remote/deployments/container-pool-rs/**"
+      - "remote/deployments/queue-consumer-rs/**"
+      - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/host-cron/**"
+      - "remote/deployments/dev-server/src/server.ts"
+      - "remote/argocd/dd-next-runtime/**"
   workflow_dispatch:
     inputs:
       operation:
@@ -21,9 +27,14 @@ on:
           - deploy-lambda-ui
           - verify-lambda-checks
           - seed-container-pool-config
+          - test-container-pool-config
           - sync-agent-gh-pat
           - sync-agent-model-keys
           - verify-gleam-mcp-server
+          - bootstrap-thread-go-services
+          - verify-thread-go-services
+          - deploy-bastion-live-containers
+          - verify-bastion-live-containers
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false
@@ -53,7 +64,7 @@ jobs:
       - name: Run maintenance command through SSM
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          OPERATION: ${{ inputs.operation || 'inspect-unhealthy' }}
+          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
@@ -209,6 +220,38 @@ jobs:
           }
           JSON
               ;;
+            test-container-pool-config)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== wait for deployed services ==="
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-gateway --timeout=300s
+
+          echo "=== run /container-pool/config e2e from cluster ==="
+          bash scripts/test/container-pool-config-e2e.sh
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
             repair-gleamlang-secret)
               python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
@@ -278,12 +321,124 @@ jobs:
           PY
               ;;
             reconcile-runtime)
-              python3 - <<PY > /tmp/remote-k8s-commands.json
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
-          rev = ${TARGET_REVISION@Q}
+          import os
+          import shlex
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          tag_images = r'''set -euo pipefail
+          echo "=== copying dd-dev-server:dev image into dd-pool containerd namespace ==="
+          sudo ctr -n dd-pool namespace ls >/dev/null 2>&1 || sudo ctr namespace create dd-pool || true
+          if sudo nerdctl -n k8s.io images --quiet docker.io/library/dd-dev-server:dev >/tmp/dd-dev-server.found 2>/dev/null && [ -s /tmp/dd-dev-server.found ]; then
+            sudo ctr -n k8s.io image export /tmp/dd-dev-server.tar docker.io/library/dd-dev-server:dev
+            sudo ctr -n dd-pool image import /tmp/dd-dev-server.tar || true
+            sudo rm -f /tmp/dd-dev-server.tar
+            sudo nerdctl -n dd-pool images | grep dd-dev-server || true
+          else
+            echo "dd-dev-server:dev not present in k8s.io; skipping image copy"
+          fi
+          echo "=== removing any stale dd-pool managed containers in k8s.io ==="
+          for c in $(sudo nerdctl -n k8s.io ps -aq --filter label=dd.container-pool.managed=true 2>/dev/null); do
+            sudo nerdctl -n k8s.io rm -f "$c" || true
+          done
+          '''
+          diag = r'''set +e
+          echo "=== runtime versions on host ==="
+          sudo nerdctl --version 2>&1 || true
+          sudo containerd --version 2>&1 || true
+          sudo runc --version 2>&1 || true
+          which runc 2>&1 || true
+          ls -la /usr/bin/runc /usr/local/bin/runc /usr/sbin/runc 2>&1 || true
+          ls -la /usr/local/bin/containerd-shim-runc-v2 /usr/bin/containerd-shim-runc-v2 2>&1 || true
+          stat -c '%a %u %g %n' /run/containerd/containerd.sock 2>&1 || true
+          echo "=== live-mutex pool snapshot ==="
+          pod="$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath='{.items[0].metadata.name}')"
+          if [ -n "$pod" ]; then
+            kubectl -n default exec "$pod" -- bash -lc 'secret="${SERVER_AUTH_SECRET:-}"; curl -fsS -H "X-Server-Auth: $secret" http://127.0.0.1:8102/pools/nodejs-chat-claude-live-mutex-dev || true' | head -c 2000
+            echo
+          fi
+          echo "=== managed nerdctl workers (dd-pool namespace) ==="
+          sudo nerdctl -n dd-pool ps -a --format "{{.ID}} {{.Status}} {{.Names}}" | grep -E "dd-pool" || true
+          echo "=== ctr containers and tasks in dd-pool ==="
+          sudo ctr -n dd-pool containers ls 2>&1 | head -c 2000 || true
+          echo
+          sudo ctr -n dd-pool tasks ls 2>&1 | head -c 2000 || true
+          echo
+          echo "=== nerdctl inspect first worker ==="
+          first_worker="$(sudo nerdctl -n dd-pool ps -a --format '{{.Names}}' | grep '^dd-pool' | head -n1 || true)"
+          if [ -n "$first_worker" ]; then
+            echo "worker=$first_worker"
+            echo "--- raw inspect State ---"
+            sudo nerdctl -n dd-pool inspect "$first_worker" 2>/tmp/inspect.err | jq -r '.[0].State' 2>&1 | head -c 800 || true
+            echo
+            echo "--- inspect stderr ---"
+            cat /tmp/inspect.err | head -c 600 || true
+            echo
+            echo "--- worker logs ---"
+            sudo nerdctl -n dd-pool logs --tail 40 "$first_worker" 2>&1 | head -c 1500 || true
+            echo
+            echo "--- containerd journal for container ---"
+            sudo journalctl -u containerd --since "5 min ago" 2>&1 | grep -iE "error|fail|warn|dd-pool|runc" | tail -30 || true
+          fi
+          echo "=== removing stale workers ==="
+          for c in $(sudo nerdctl -n dd-pool ps -aq --filter label=dd.container-pool.managed=true 2>/dev/null); do
+            sudo nerdctl -n dd-pool rm -f "$c" 2>&1 | head -c 200 || true
+          done
+          echo "=== killing leaked nerdctl oci-hook postStop processes (root cause of unknown task state) ==="
+          stuck_hook_count=$(ps -eo pid,args 2>/dev/null | grep -F "nerdctl" | grep -F "internal oci-hook" | grep -v grep | wc -l)
+          echo "stuck oci-hook process count before kill: $stuck_hook_count"
+          sudo pkill -KILL -f "nerdctl .* internal oci-hook" 2>&1 | head -c 200 || true
+          sudo pkill -KILL -f "nerdctl.*internal oci-hook" 2>&1 | head -c 200 || true
+          sleep 2
+          stuck_hook_count_after=$(ps -eo pid,args 2>/dev/null | grep -F "nerdctl" | grep -F "internal oci-hook" | grep -v grep | wc -l)
+          echo "stuck oci-hook process count after kill: $stuck_hook_count_after"
+          echo "=== killing any hung containerd-shim-runc-v2 for dd-pool containers ==="
+          ps -eo pid,args 2>/dev/null | grep -F "containerd-shim-runc-v2" | grep -F "dd-pool" | grep -v grep | awk '{print $1}' | xargs -r sudo kill -KILL 2>&1 | head -c 200 || true
+          sleep 1
+          echo "=== restarting containerd on the host to clear any stuck shims ==="
+          sudo systemctl restart containerd 2>&1 | head -c 500 || true
+          sleep 6
+          sudo systemctl status containerd --no-pager --lines 0 2>&1 | head -c 1500 || true
+          echo "=== runc and containerd-shim-runc-v2 versions after restart ==="
+          sudo runc --version 2>&1 || true
+          sudo containerd-shim-runc-v2 -v 2>&1 || true
+          echo "=== minimal busybox smoke after containerd restart ==="
+          if sudo nerdctl -n k8s.io images --quiet docker.io/library/busybox:latest 2>/dev/null | grep -q .; then
+            sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never docker.io/library/busybox:latest /bin/sh -c "echo busybox-smoke-ok; id; date" 2>&1 | head -c 4000 || true
+            echo "--- busybox-smoke exit: $? ---"
+          else
+            echo "busybox not present; trying alpine"
+            if sudo nerdctl -n k8s.io images --quiet docker.io/library/alpine:latest 2>/dev/null | grep -q .; then
+              sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never docker.io/library/alpine:latest /bin/sh -c "echo alpine-smoke-ok; id; date" 2>&1 | head -c 4000 || true
+              echo "--- alpine-smoke exit: $? ---"
+            fi
+          fi
+          echo "=== dd-dev-server foreground (no --user, no --memory, no --pids-limit) ==="
+          sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never --entrypoint /bin/sh docker.io/library/dd-dev-server:dev -c "echo dd-dev-foreground-ok; id; date" 2>&1 | head -c 4000 || true
+          echo "--- dd-dev-foreground exit: $? ---"
+          echo "=== dd-dev-server detached default cmd (no --user, no --memory) ==="
+          sudo timeout 30 nerdctl -n dd-pool run -d --name dd-pool-smoke --network host --pull never docker.io/library/dd-dev-server:dev 2>&1 | head -c 800 || true
+          echo "--- dd-dev-detached exit: $? ---"
+          sleep 5
+          sudo timeout 10 nerdctl -n dd-pool inspect dd-pool-smoke 2>&1 | jq -r '.[0].State' 2>&1 | head -c 800 || true
+          sudo timeout 10 nerdctl -n dd-pool logs dd-pool-smoke 2>&1 | tail -c 2000 || true
+          sudo timeout 10 nerdctl -n dd-pool rm -f dd-pool-smoke 2>&1 | head -c 200 || true
+          echo "=== dd-pool images ==="
+          sudo nerdctl -n dd-pool images | grep -E "dd-dev-server|dd-container-pool|nodejs-runtime|busybox" || true
+          echo "=== container-pool recent logs ==="
+          for p in $(kubectl -n default get pods -l app=dd-container-pool -o name); do
+            kubectl -n default logs "$p" --tail=200 2>&1 | tail -180 || true
+          done
+          echo "=== queue-consumer recent logs ==="
+          for p in $(kubectl -n default get pods -l app=dd-remote-queue-consumer -o name); do
+            kubectl -n default logs "$p" --tail=120 2>&1 | tail -100 || true
+          done
+          '''
           commands = [
               "set -euo pipefail",
               f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
+              f"bash -lc {shlex.quote(tag_images)}",
+              "sudo bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && ./remote/deployments/host-cron/install.sh'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-secrets.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml'",
@@ -299,6 +454,7 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-fsharp-ws-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-gleam-mcp-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(diag)}",
           ]
           print(json.dumps({"commands": commands}))
           PY
@@ -314,13 +470,13 @@ jobs:
           repo=/home/ec2-user/codes/dd/dd-next-1
           cd "$repo"
 
-          echo "=== preserving dirty EC2 checkout, if any ==="
+          echo "=== checking EC2 checkout cleanliness ==="
           git status --short
-          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-            git stash push -u -m "pre-deploy-lambda-ui-${TARGET_REVISION:-dev}-$(date -u +%Y%m%dT%H%M%SZ)"
-          else
-            echo "checkout already clean"
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block deploy-lambda-ui" >&2
+            exit 1
           fi
+          echo "tracked checkout clean"
 
           echo "=== fast-forward checkout ==="
           git fetch origin "${TARGET_REVISION:-dev}"
@@ -334,8 +490,9 @@ jobs:
 
           echo "=== rebuild local runtime images ==="
           sudo nerdctl -n k8s.io build --progress=plain \
+            -f remote/deployments/web-home-rs/Dockerfile \
             -t docker.io/library/dd-remote-web-home:dev \
-            remote/deployments/web-home-rs
+            remote
           for runtime in nodejs python3 ruby bash; do
             sudo nerdctl -n k8s.io build --progress=plain \
               -f "remote/deployments/gleam-lambda-runner/runtime-images/${runtime}.Dockerfile" \
@@ -817,6 +974,489 @@ jobs:
               "commands": [
                   "set -euo pipefail",
                   f"sudo -u ec2-user -H env REMOTE_DEV_GH_PAT={shlex.quote(token)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            bootstrap-thread-go-services)
+              # One-shot kubectl-apply for the two new Argo CD Application
+              # manifests added on dev. Once registered, ArgoCD's
+              # automated/prune/selfHeal sync keeps both Apps in step with
+              # the dev branch on every subsequent push, so this operation
+              # only needs to run when bootstrapping the Apps for the
+              # first time (or after a deliberate prune).
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout ==="
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block bootstrap-thread-go-services" >&2
+            exit 1
+          fi
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== render manifests as a sanity check ==="
+          kubectl kustomize remote/deployments/thread-operator-go/k8s/ec2 | wc -l
+          kubectl kustomize remote/deployments/thread-fleet-exporter-go/k8s/ec2 | wc -l
+
+          echo "=== apply Argo CD Application manifests ==="
+          kubectl apply -f remote/argocd/apps/dd-thread-operator.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-thread-fleet-exporter.application.yaml
+
+          echo "=== nudge Argo CD to sync now ==="
+          kubectl -n argocd annotate \
+            application/dd-thread-operator \
+            application/dd-thread-fleet-exporter \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== wait for child Deployments ==="
+          for app in dd-thread-operator dd-thread-fleet-exporter; do
+            for attempt in $(seq 1 30); do
+              if kubectl -n default get deploy "$app" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 5
+            done
+            kubectl -n default rollout status deployment/"$app" --timeout=300s || true
+          done
+
+          echo "=== Argo CD application status ==="
+          kubectl -n argocd get application/dd-thread-operator application/dd-thread-fleet-exporter -o wide || true
+
+          echo "=== applied resources ==="
+          kubectl -n default get deploy,svc -l app.kubernetes.io/component=thread-operator -o wide || true
+          kubectl -n default get deploy,svc -l app.kubernetes.io/component=fleet-exporter -o wide || true
+          kubectl get crd threads.dd.dev -o wide || true
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-thread-go-services)
+              # Read-only smoke test: confirm operator and fleet-exporter
+              # pods are Running, /metrics responds, the Thread CRD is
+              # registered, and the operator has no Thread CRs adopted
+              # by accident (sanity check on the opt-in safety contract).
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== thread-operator + fleet-exporter pods ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods,deploy -l app=dd-thread-operator -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods,deploy -l app=dd-thread-fleet-exporter -o wide || true'",
+              "echo '=== Thread CRD ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get crd threads.dd.dev -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl get threads --all-namespaces || true'",
+              "echo '=== operator log tail ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-thread-operator -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --tail=120\" || true; done",
+              "echo '=== fleet-exporter log tail ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-thread-fleet-exporter -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --tail=120\" || true; done",
+              "echo '=== fleet-exporter /metrics smoke ==='",
+              "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-thread-fleet-exporter -o jsonpath=\"{.items[0].metadata.name}\" 2>/dev/null); if [ -n \"$pod\" ]; then kubectl -n default exec \"$pod\" -- sh -lc \"wget -qO- http://127.0.0.1:9103/metrics 2>/dev/null | grep -E \\\"^dd_thread_fleet_(total|replicas|pvcs|threads|scrape)\\\" | head -40\"; else echo \"no fleet-exporter pod found yet\"; fi'",
+              "echo '=== operator /metrics smoke ==='",
+              "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-thread-operator -o jsonpath=\"{.items[0].metadata.name}\" 2>/dev/null); if [ -n \"$pod\" ]; then kubectl -n default exec \"$pod\" -- sh -lc \"wget -qO- http://127.0.0.1:9101/metrics 2>/dev/null | grep -E \\\"^controller_runtime_|^workqueue_\\\" | head -20\"; else echo \"no operator pod found yet\"; fi'",
+              "echo '=== Argo CD application sync state ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-thread-operator application/dd-thread-fleet-exporter -o wide || true'"
+            ]
+          }
+          JSON
+              ;;
+            deploy-bastion-live-containers)
+              # Bring the Live containers card on /home up to date end-to-end:
+              #   1. Fast-forward /home/ec2-user/codes/dd/dd-next-1 so the
+              #      hostPath that dd-bastion mounts at /opt/dd-next-1
+              #      contains the latest source. The bastion deployment
+              #      runs `cargo run --release` at startup and compiles
+              #      from that path, so the checkout has to move BEFORE
+              #      we restart the pod.
+              #   2. Apply the new metrics-server Argo CD Application so
+              #      metrics.k8s.io/v1beta1 returns CPU/memory snapshots
+              #      that dd-bastion enriches the inventory with.
+              #   3. Re-apply the dd-vpn Application and force a hard
+              #      refresh so the new RBAC (pods/log + dd-bastion-exec
+              #      ClusterRole/Binding) and the BASTION_TERMINAL_ENABLED
+              #      env var land together with the deployment rollout.
+              #   4. rollout restart dd-bastion in the vpn namespace and
+              #      dd-remote-web-home in default so both run the new
+              #      code.
+              #   5. Print bastion startup logs and a smoke probe so the
+              #      operator can confirm the new endpoints are live.
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout (bastion compiles from this hostPath) ==="
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block deploy-bastion-live-containers" >&2
+            git status --short
+            exit 1
+          fi
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== apply metrics-server Argo CD Application ==="
+          kubectl apply -f remote/argocd/apps/metrics-server.application.yaml
+          kubectl -n argocd annotate application/metrics-server \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== apply / refresh dd-vpn Argo CD Application ==="
+          kubectl apply -f remote/argocd/apps/dd-vpn.application.yaml || true
+          kubectl -n argocd annotate application/dd-vpn \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== wait for metrics-server rollout ==="
+          for attempt in $(seq 1 30); do
+            if kubectl -n kube-system get deploy metrics-server >/dev/null 2>&1; then
+              break
+            fi
+            sleep 5
+          done
+          kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s || true
+
+          echo "=== rollout restart dd-bastion (picks up new RBAC + new code) ==="
+          kubectl -n vpn rollout restart deployment/dd-bastion || true
+          kubectl -n vpn rollout status deployment/dd-bastion --timeout=600s || true
+
+          echo "=== rollout restart dd-remote-web-home (new live-containers UI) ==="
+          kubectl -n default rollout restart deployment/dd-remote-web-home || true
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s || true
+
+          echo "=== bastion pod summary ==="
+          kubectl -n vpn get pods -l app=dd-bastion -o wide || true
+          for p in $(kubectl -n vpn get pods -l app=dd-bastion -o name 2>/dev/null); do
+            echo "=== LOGS $p (tail 120) ==="
+            kubectl -n vpn logs "$p" --tail=120 || true
+          done
+
+          echo "=== smoke /bastion/healthz from inside the cluster ==="
+          kubectl -n vpn exec deployment/dd-bastion -- sh -lc \
+            'wget -qO- --timeout=5 http://127.0.0.1:8111/healthz || curl -fsS --max-time 5 http://127.0.0.1:8111/healthz || true' \
+            | head -c 800 || true
+
+          echo "=== smoke metrics-server pod listing ==="
+          kubectl -n kube-system get pods -l k8s-app=metrics-server -o wide || true
+
+          echo "=== Argo CD application sync state ==="
+          kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-bastion-live-containers)
+              # Read-only deep smoke test: prove metrics-server is healthy,
+              # dd-bastion is running the new code (with metricsAvailable
+              # set in /runtime/deployments and the new /logs/ws route),
+              # the RBAC split landed, and the inventory route returns
+              # quickly. Uses the deployment label selector
+              # `app.kubernetes.io/name=dd-bastion` to match the actual
+              # pod template, plus `kubectl auth can-i` to confirm the
+              # ServiceAccount has the verbs we expect.
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import shlex
+
+          script = r'''set +e
+          echo "=== HEAD on EC2 checkout ==="
+          ( cd /home/ec2-user/codes/dd/dd-next-1 && git rev-parse --short HEAD )
+
+          echo "=== metrics-server deployment + pod ==="
+          kubectl -n kube-system get deploy metrics-server -o wide || true
+          kubectl -n kube-system get pods -l app.kubernetes.io/name=metrics-server -o wide || true
+
+          echo "=== metrics-server raw API (default namespace, first 60 entries) ==="
+          kubectl get --raw "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods" \
+            | jq -r ".items[] | \"\\(.metadata.name)  cpu=\\(.containers[0].usage.cpu // \"-\")  mem=\\(.containers[0].usage.memory // \"-\")\"" \
+            | head -60 || true
+
+          echo "=== metrics-server raw API across managed namespaces ==="
+          for ns in default ai-ml argocd kube-system monitoring vpn; do
+            count=$(kubectl get --raw "/apis/metrics.k8s.io/v1beta1/namespaces/$ns/pods" 2>/dev/null \
+              | jq ".items | length" 2>/dev/null || echo "ERR")
+            echo "$ns -> $count pods reporting"
+          done
+
+          echo "=== dd-bastion pods ==="
+          kubectl -n vpn get pods -l app.kubernetes.io/name=dd-bastion -o wide || true
+          bastion_pod="$(kubectl -n vpn get pods -l app.kubernetes.io/name=dd-bastion -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || true)"
+          echo "bastion_pod=$bastion_pod"
+
+          echo "=== dd-bastion env (subset) ==="
+          kubectl -n vpn get deploy dd-bastion \
+            -o jsonpath="{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\"\n\"}{end}" \
+            | grep -E "BASTION_TERMINAL_ENABLED|BASTION_PUBLIC|BASTION_KUBECTL|BASTION_WIREGUARD" || true
+
+          echo "=== dd-bastion ClusterRoles ==="
+          kubectl get clusterrole dd-bastion-readonly dd-bastion-exec -o jsonpath="{range .items[*]}{.metadata.name}{\"\n\"}{end}" || true
+
+          echo "=== dd-bastion-readonly rules ==="
+          kubectl get clusterrole dd-bastion-readonly \
+            -o jsonpath="{range .rules[*]}apiGroups={.apiGroups} resources={.resources} verbs={.verbs}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== dd-bastion-exec rules ==="
+          kubectl get clusterrole dd-bastion-exec \
+            -o jsonpath="{range .rules[*]}apiGroups={.apiGroups} resources={.resources} verbs={.verbs}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== ClusterRoleBindings reference dd-bastion ==="
+          kubectl get clusterrolebinding dd-bastion-readonly dd-bastion-exec \
+            -o jsonpath="{range .items[*]}{.metadata.name} -> {.roleRef.name} for {.subjects}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== kubectl auth can-i for the dd-bastion ServiceAccount ==="
+          # Modern --subresource= form (newer kubectl). The legacy
+          # 'pods/exec' positional resource form returns "no" on recent
+          # kubectl even when the role grants it, so we use both for
+          # cross-check.
+          for line in \
+            "list pods" \
+            "list pods.metrics.k8s.io" \
+            "get nodes.metrics.k8s.io" \
+            "get pods --subresource=log" \
+            "create pods --subresource=exec"; do
+            ans=$(kubectl auth can-i $line \
+              --as=system:serviceaccount:vpn:dd-bastion -n default 2>&1 | head -1 || true)
+            echo "  can $line -> $ans"
+          done
+
+          echo "=== resolve bastion SERVER_AUTH_SECRET from the pod env ==="
+          server_auth=""
+          if [ -n "$bastion_pod" ]; then
+            server_auth=$(kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              'printf %s "${SERVER_AUTH_SECRET:-}"' 2>/dev/null || true)
+          fi
+          if [ -n "$server_auth" ]; then
+            echo "  SERVER_AUTH_SECRET length=${#server_auth}"
+          else
+            echo "  WARN: SERVER_AUTH_SECRET not present in bastion pod"
+          fi
+
+          echo "=== /runtime/deployments JSON shape (timed, authed) ==="
+          if [ -n "$bastion_pod" ]; then
+            t0=$(date +%s%3N)
+            response=$(kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "curl -fsS --max-time 15 -H 'X-Server-Auth: ${server_auth}' http://127.0.0.1:8111/runtime/deployments" 2>/tmp/runtime_err || true)
+            rc=$?
+            t1=$(date +%s%3N)
+            elapsed=$((t1 - t0))
+            echo "curl exit=$rc elapsed=${elapsed} ms"
+            if [ -z "$response" ]; then
+              echo "curl stderr:"
+              cat /tmp/runtime_err 2>/dev/null | head -10
+            else
+              echo "$response" | jq "{
+                metricsAvailable,
+                deploymentsCount: (.deployments | length),
+                metricsErrorsCount: (.metricsErrors | length),
+                metricsErrors,
+                samplePod: (
+                  .deployments[0].pods[0] | {
+                    name,
+                    namespace,
+                    metrics,
+                    containers: [.containers[] | { name, ready, metrics, terminalUrl, logsUrl }]
+                  }
+                ),
+                managedNamespacesWithMetrics: (
+                  [.deployments[].pods[] | select(.metrics != null) | .namespace] | unique
+                ),
+                podsWithMetricsCount: (
+                  [.deployments[].pods[] | select(.metrics != null)] | length
+                ),
+                podsWithoutMetricsCount: (
+                  [.deployments[].pods[] | select(.metrics == null)] | length
+                ),
+                containersWithMetricsCount: (
+                  [.deployments[].pods[].containers[] | select(.metrics != null)] | length
+                ),
+                topByCpu: (
+                  [.deployments[].pods[] | select(.metrics != null) | {
+                    name, namespace,
+                    cpuMilli: .metrics.cpuMillicores,
+                    memoryMiB: ((.metrics.memoryBytes // 0) / 1048576 | floor)
+                  }]
+                  | sort_by(-.cpuMilli) | .[0:8]
+                ),
+                terminalUrlSample: (.deployments[].pods[].containers[].terminalUrl | select(. != null and . != \"\")) | [.] | first,
+                logsUrlSample: (.deployments[].pods[].containers[].logsUrl | select(. != null and . != \"\")) | [.] | first
+              }" 2>&1 | head -120 || (echo "raw response (first 2000 chars):"; echo "$response" | head -c 2000)
+            fi
+          fi
+
+          echo "=== /api/docs.json includes new routes (authed) ==="
+          if [ -n "$bastion_pod" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "curl -fsS -H 'X-Server-Auth: ${server_auth}' http://127.0.0.1:8111/api/docs.json" 2>/dev/null \
+              | jq -r ".paths | keys[]" 2>/dev/null \
+              | sort -u || echo "WARN: could not parse /api/docs.json"
+          fi
+
+          echo "=== real kubectl exec smoke against a target pod ==="
+          # Pick a Running default-namespace pod that the bastion's
+          # managed-deployment allowlist accepts and try a real exec
+          # using the dd-bastion ServiceAccount token mounted at
+          # /var/run/secrets/kubernetes.io/serviceaccount.
+          target=$(kubectl -n default get pods -l app=dd-remote-web-home \
+            -o jsonpath="{.items[?(@.status.phase=='Running')].metadata.name}" 2>/dev/null \
+            | awk "{print \$1}")
+          echo "target_pod=$target"
+          if [ -n "$bastion_pod" ] && [ -n "$target" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "kubectl --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) \
+                       --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                       --server=https://kubernetes.default.svc \
+                       -n default exec $target -- sh -lc 'echo bastion-exec-ok; hostname; id'" 2>&1 \
+              | head -10 || true
+          fi
+
+          echo "=== real kubectl logs smoke against a target pod ==="
+          if [ -n "$bastion_pod" ] && [ -n "$target" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "kubectl --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) \
+                       --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                       --server=https://kubernetes.default.svc \
+                       -n default logs $target --tail=3" 2>&1 \
+              | head -10 || true
+          fi
+
+          echo "=== /bastion/logs/ws WebSocket smoke (one connect, read N lines) ==="
+          # Resolve the container name from the inventory response so we
+          # do not hard-code a name that differs from the deployment
+          # template (the bastion validates target.container before the
+          # WS upgrade).
+          target_container=$(echo "$response" \
+            | jq --arg pod "$target" -r "[.deployments[].pods[] | select(.name == \$pod) | .containers[].name] | first // empty" 2>/tmp/jq_err || true)
+          echo "target_container=$target_container"
+          if [ -z "$target_container" ]; then
+            echo "jq_err:"; cat /tmp/jq_err 2>/dev/null | head -5
+            echo "response length=${#response}"
+            target_container="remote-web-home"
+            echo "fallback target_container=$target_container"
+          fi
+          if [ -n "$bastion_pod" ] && [ -n "$target" ] && [ -n "$target_container" ] && [ -n "$server_auth" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc "
+              python3 - <<'PYEOF'
+          import json, ssl, socket, base64, hashlib, secrets, urllib.parse, threading, time
+          host = '127.0.0.1'
+          port = 8111
+          path = '/logs/ws?namespace=default&deployment=dd-remote-web-home&pod=$target&container=$target_container'
+          key = base64.b64encode(secrets.token_bytes(16)).decode()
+          headers = (
+              f'GET {path} HTTP/1.1\r\n'
+              f'Host: {host}:{port}\r\n'
+              f'Upgrade: websocket\r\n'
+              f'Connection: Upgrade\r\n'
+              f'Sec-WebSocket-Key: {key}\r\n'
+              f'Sec-WebSocket-Version: 13\r\n'
+              f'X-Server-Auth: $server_auth\r\n'
+              '\r\n'
+          )
+          s = socket.create_connection((host, port), timeout=15)
+          s.sendall(headers.encode())
+          buf = b''
+          while b'\r\n\r\n' not in buf:
+              chunk = s.recv(4096)
+              if not chunk:
+                  break
+              buf += chunk
+          status_line = buf.split(b'\r\n', 1)[0].decode(errors='replace')
+          print(f'handshake: {status_line}')
+          assert b'101' in buf.split(b'\r\n', 1)[0], 'expected 101 Switching Protocols'
+          deadline = time.time() + 4
+          frames = []
+          tail = buf.split(b'\r\n\r\n', 1)[1]
+          s.settimeout(2.5)
+          try:
+              while time.time() < deadline:
+                  if tail:
+                      data = tail
+                      tail = b''
+                  else:
+                      try:
+                          data = s.recv(8192)
+                      except socket.timeout:
+                          break
+                      if not data:
+                          break
+                  while data:
+                      if len(data) < 2:
+                          break
+                      b1 = data[0]
+                      b2 = data[1]
+                      opcode = b1 & 0x0f
+                      length = b2 & 0x7f
+                      offset = 2
+                      if length == 126:
+                          length = int.from_bytes(data[offset:offset+2], 'big'); offset += 2
+                      elif length == 127:
+                          length = int.from_bytes(data[offset:offset+8], 'big'); offset += 8
+                      if offset + length > len(data):
+                          break
+                      payload = data[offset:offset+length]
+                      data = data[offset+length:]
+                      if opcode == 1:
+                          frames.append(payload.decode('utf-8', errors='replace'))
+                      if len(frames) >= 5:
+                          break
+                  if len(frames) >= 5:
+                      break
+          finally:
+              try:
+                  s.close()
+              except Exception:
+                  pass
+          print(f'frames: {len(frames)}')
+          for f in frames[:5]:
+              print(f'frame: {f[:200]}')
+          PYEOF
+            " 2>&1 | head -25 || true
+          fi
+
+          echo "=== /home public HTML markers ==="
+          curl -k -fsS --max-time 10 https://54.91.17.58/home 2>/dev/null \
+            | grep -oE "openTerminalPanel|openLogsPanel|safeBastionLogsUrl|metricChip|inline-panel|home-terminal-frame|terminal-dock" \
+            | sort | uniq -c || true
+
+          echo "=== bastion log scan for panic/error/warn (tail 400) ==="
+          if [ -n "$bastion_pod" ]; then
+            kubectl -n vpn logs "$bastion_pod" --tail=400 \
+              | grep -iE "panic|^error|fail|warn" \
+              | grep -v "Compiling" \
+              | head -40 || echo "(no panic/error/warn lines)"
+            echo "--- last 20 log lines ---"
+            kubectl -n vpn logs "$bastion_pod" --tail=20 || true
+          fi
+
+          echo "=== Argo CD application sync state ==="
+          kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
               ],
           }))
           PY

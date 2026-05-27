@@ -66,7 +66,7 @@ impl<'a> BraintreeOAuth<'a> {
             "{}/v1/oauth/braintree/callback",
             self.cfg.oauth_redirect_base
         );
-        let params = serde_urlencoded::to_string(&[
+        let params = serde_urlencoded::to_string([
             ("client_id", client_id.as_str()),
             ("response_type", "code"),
             ("scope", "read_only"),
@@ -94,7 +94,7 @@ impl<'a> BraintreeOAuth<'a> {
                 AppError::BadRequest("BRAINTREE_CLIENT_SECRET not configured".into())
             })?;
 
-        let body = serde_urlencoded::to_string(&[
+        let body = serde_urlencoded::to_string([
             ("client_id", client_id.as_str()),
             ("client_secret", client_secret.as_str()),
             ("code", code),

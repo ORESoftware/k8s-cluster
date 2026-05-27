@@ -31,7 +31,7 @@ assert.equal(
 const restApiDocs = JSON.parse(
   readFileSync(resolve(repoRoot, 'remote/deployments/rest-api-rs/generated/api-docs.json'), 'utf8'),
 );
-assert.equal(restApiDocs.routeTypeCounts['user-generated'], 20);
+assert.equal(restApiDocs.routeTypeCounts['user-generated'], 23);
 assert.ok(!Object.prototype.hasOwnProperty.call(restApiDocs.routeTypeCounts, 'pg' + '-first'));
 for (const path of ['/docs/api', '/api/docs', '/api/docs.json']) {
   assert.ok(

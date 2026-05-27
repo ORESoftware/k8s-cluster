@@ -18,6 +18,7 @@ spec:
         dd.dev/telemetry-revision: '2026-05-16-container-pool'
       labels:
         app: dd-container-pool
+        dd.dev/redis-cache-client: 'true'
     spec:
       serviceAccountName: dd-container-pool
       automountServiceAccountToken: false
@@ -52,12 +53,24 @@ spec:
               value: dd.remote.container_pool.results
             - name: CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES
               value: '2097152'
+            - name: CONTAINER_POOL_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/0
+            - name: CONTAINER_POOL_REDIS_LOCK_PREFIX
+              value: dd:container-pool:affinity
+            - name: CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS
+              value: '600'
+            - name: CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS
+              value: '420'
+            - name: CONTAINER_POOL_REDIS_LOCK_RETRY_MS
+              value: '250'
+            - name: CONTAINER_POOL_REDIS_LOCK_REQUEST_TIMEOUT_MS
+              value: '800'
             - name: CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES
               value: '2097152'
             - name: CONTAINER_POOL_NERDCTL_BIN
               value: /usr/local/bin/nerdctl
             - name: CONTAINER_POOL_CONTAINERD_NAMESPACE
-              value: k8s.io
+              value: dd-pool
             - name: CONTAINER_POOL_APP_CONFIG_SCOPE
               value: default
             - name: CONTAINER_POOL_APP_CONFIG_KEY
@@ -76,6 +89,8 @@ spec:
               value: '10'
             - name: CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS
               value: '300'
+            - name: CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS
+              value: '180'
             - name: CONTAINER_POOL_START_TIMEOUT_SECONDS
               value: '300'
             - name: CONTAINER_POOL_CONTAINER_MEMORY
@@ -83,9 +98,9 @@ spec:
             - name: CONTAINER_POOL_CONTAINER_CPUS
               value: '1'
             - name: CONTAINER_POOL_PIDS_LIMIT
-              value: '128'
+              value: '4096'
             - name: CONTAINER_POOL_NOFILE_LIMIT
-              value: '128'
+              value: '65536'
             - name: CONTAINER_POOL_HEALTH_CHECK_SECONDS
               value: '10'
             - name: CONTAINER_POOL_HEALTH_TIMEOUT_MS
@@ -97,12 +112,48 @@ spec:
             - name: CONTAINER_POOL_CLEANUP_ON_START
               value: 'true'
             - name: CONTAINER_POOL_FORWARD_ENV_KEYS
-              value: SERVER_AUTH_SECRET,REMOTE_DEV_SERVER_SECRET,GH_DEPLOY_KEY,GH_PAT,ANTHROPIC_API_KEY,ANTHROPIC_API_KEYS_JSON,CLAUDE_API_KEYS_JSON,OPENAI_API_KEY,OPENAI_API_KEYS_JSON,GOOGLE_API_KEY,GOOGLE_API_KEYS_JSON,GEMINI_API_KEY,GEMINI_API_KEYS_JSON,OPENCODE_API_KEY,OPENCODE_API_KEYS_JSON,OPENCODE_BASE_URL,OPENCODE_MODELS,DEEPSEEK_API_KEY,DEEPSEEK_API_KEYS_JSON,DEEPSEEK_BASE_URL,DEEPSEEK_MODELS,DASHSCOPE_API_KEY,DASHSCOPE_API_KEYS_JSON,DASHSCOPE_BASE_URL,QWEN_API_KEY,QWEN_API_KEYS_JSON,QWEN_BASE_URL,QWEN_MODELS,XAI_API_KEY,XAI_API_KEYS_JSON,XAI_BASE_URL,XAI_MODELS,GROK_API_KEY,GROK_API_KEYS_JSON,GROK_BASE_URL,GROK_MODELS,EVENT_INGEST_URL,EVENT_INGEST_SECRET,GLEAM_WORKER_WS_SECRET,WORKER_FANOUT_WS_SECRET,WORKER_FANOUT_WS_BASE_URL
+              value: SERVER_AUTH_SECRET,REMOTE_DEV_SERVER_SECRET,GH_DEPLOY_KEY,GH_PAT,ANTHROPIC_API_KEY,ANTHROPIC_API_KEYS_JSON,CLAUDE_API_KEYS_JSON,OPENAI_API_KEY,OPENAI_API_KEYS_JSON,GOOGLE_API_KEY,GOOGLE_API_KEYS_JSON,GEMINI_API_KEY,GEMINI_API_KEYS_JSON,OPENCODE_API_KEY,OPENCODE_API_KEYS_JSON,OPENCODE_BASE_URL,OPENCODE_MODELS,DEEPSEEK_API_KEY,DEEPSEEK_API_KEYS_JSON,DEEPSEEK_BASE_URL,DEEPSEEK_MODELS,DASHSCOPE_API_KEY,DASHSCOPE_API_KEYS_JSON,DASHSCOPE_BASE_URL,QWEN_API_KEY,QWEN_API_KEYS_JSON,QWEN_BASE_URL,QWEN_MODELS,XAI_API_KEY,XAI_API_KEYS_JSON,XAI_BASE_URL,XAI_MODELS,GROK_API_KEY,GROK_API_KEYS_JSON,GROK_BASE_URL,GROK_MODELS,EVENT_INGEST_URL,EVENT_INGEST_SECRET,NATS_EVENT_SUBJECT,THREAD_CONTEXT_BASE_URL,GLEAM_WORKER_WS_SECRET,WORKER_FANOUT_WS_SECRET,WORKER_FANOUT_WS_BASE_URL,GLEAM_BROADCAST_SECRET
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+            # Worker event-fanout wiring (forwarded into every warm worker via
+            # CONTAINER_POOL_FORWARD_ENV_KEYS). Without these, dd-dev-server in
+            # the warm pool starts with `EVENT_INGEST_URL`/`EVENT_INGEST_SECRET`
+            # unset, so the eventBus.startVercelIngest pipeline never runs and
+            # task events never reach the REST API → Postgres → websocket
+            # fanout. Mirrors the wiring used by dd-dev-server-api directly.
+            - name: EVENT_INGEST_URL
+              value: http://dd-remote-rest-api.default.svc.cluster.local:8082/api/agents/events
+            - name: EVENT_INGEST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: NATS_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: THREAD_CONTEXT_BASE_URL
+              value: http://dd-remote-rest-api.default.svc.cluster.local:8082
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-container-pool
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-container-pool
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-container-pool.default.svc.cluster.local:8102/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           envFrom:
             - secretRef:
                 name: dd-agent-secrets
@@ -112,6 +163,14 @@ spec:
                 optional: true
             - secretRef:
                 name: dd-container-pool-secrets
+                optional: true
+            # GLEAM_BROADCAST_SECRET lives in dd-gleamlang-server-secrets; the
+            # dev-server worker uses it as the third fallback for
+            # WORKER_FANOUT_WS_SECRET (see dev-server/src/ws-fanout.ts) so its
+            # outbound /worker-ws connection authenticates against the gleam
+            # broadcaster instead of falling back to NATS-only fanout.
+            - secretRef:
+                name: dd-gleamlang-server-secrets
                 optional: true
           ports:
             - name: http
@@ -151,6 +210,9 @@ spec:
             - name: containerd-root
               mountPath: /var/lib/containerd
               mountPropagation: Bidirectional
+            - name: nerdctl-data
+              mountPath: /var/lib/nerdctl
+              mountPropagation: Bidirectional
             - name: nerdctl-bin
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
@@ -167,6 +229,10 @@ spec:
           hostPath:
             path: /var/lib/containerd
             type: Directory
+        - name: nerdctl-data
+          hostPath:
+            path: /var/lib/nerdctl
+            type: DirectoryOrCreate
         - name: nerdctl-bin
           hostPath:
             path: /usr/local/bin/nerdctl

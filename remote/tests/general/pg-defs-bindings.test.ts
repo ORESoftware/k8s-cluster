@@ -194,6 +194,15 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
       new RegExp(`secretRef:[\\s\\S]*name:\\s*${service.secret}[\\s\\S]*optional:\\s*true`),
       `${service.name} ec2 deployment must envFrom secret ${service.secret} (optional)`,
     );
+    if (service.name === 'dd-gleamlang-server') {
+      assert.match(
+        ec2,
+        /name:\s*PG_DATABASE_URL[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*RDS_DATABASE_URL/,
+        'dd-gleamlang-server ec2 deployment must map PG_DATABASE_URL from RDS_DATABASE_URL for sharded LISTEN/NOTIFY',
+      );
+      assert.match(ec2, /name:\s*PRESENCE_NOTIFY_SHARDS[\s\S]*value:\s*"256"/);
+      assert.match(ec2, /name:\s*PRESENCE_WAL_ENABLED[\s\S]*value:\s*"true"/);
+    }
 
     const minikube = await readRepoFile(service.minikube);
     assert.match(
@@ -206,6 +215,15 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
       new RegExp(`secretRef:[\\s\\S]*name:\\s*${service.secret}`),
       `${service.name} minikube deployment must envFrom secret ${service.secret}`,
     );
+    if (service.name === 'dd-gleamlang-server') {
+      assert.match(
+        minikube,
+        /name:\s*PG_DATABASE_URL[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*RDS_DATABASE_URL/,
+        'dd-gleamlang-server minikube deployment must map PG_DATABASE_URL from RDS_DATABASE_URL for sharded LISTEN/NOTIFY',
+      );
+      assert.match(minikube, /name:\s*PRESENCE_NOTIFY_SHARDS[\s\S]*value:\s*"256"/);
+      assert.match(minikube, /name:\s*PRESENCE_WAL_ENABLED[\s\S]*value:\s*"true"/);
+    }
   }
 });
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run dd-nerdctl-hook-reaper.service every 60 seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=dd-nerdctl-hook-reaper.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

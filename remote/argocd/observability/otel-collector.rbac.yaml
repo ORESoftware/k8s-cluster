@@ -1,0 +1,46 @@
+# dd-otel-collector RBAC.
+#
+# The collector's `prometheus` receiver uses kubernetes_sd_configs to
+# discover the per-pod endpoints of selected workloads (currently
+# gcs-router, which has >1 replica and whose Service VIP would
+# round-robin between pods and hide per-pod counters from a single
+# scrape — see remote/argocd/observability/readme.md).
+#
+# Discovery role `pod` only needs read access to `pods`, scoped
+# cluster-wide so we don't have to maintain a per-namespace allowlist.
+# No write access, no other resources.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-otel-collector
+  namespace: observability
+  labels:
+    app: dd-otel-collector
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-otel-collector
+  labels:
+    app: dd-otel-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-otel-collector
+  labels:
+    app: dd-otel-collector
+subjects:
+  - kind: ServiceAccount
+    name: dd-otel-collector
+    namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-otel-collector

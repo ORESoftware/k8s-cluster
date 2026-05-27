@@ -29,6 +29,7 @@
 ////
 //// Each layer dedupes against the others so duplicate deliveries collapse.
 
+import dd_runtime_config_client
 import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/int
@@ -37,6 +38,7 @@ import gleam/option
 import gleam/otp/actor
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
+import gleam/string
 import gleamlang_presence_server/cluster
 import gleamlang_presence_server/conversations
 import gleamlang_presence_server/fanout
@@ -65,10 +67,7 @@ pub fn main() {
 
   let pg_url = env("PG_DATABASE_URL") |> option.from_result
   let nats_url = env("NATS_URL") |> option.from_result
-  let notify_shards =
-    env("PRESENCE_NOTIFY_SHARDS")
-    |> result.try(int.parse)
-    |> result.unwrap(256)
+  let notify_shards = positive_int_env("PRESENCE_NOTIFY_SHARDS", 256)
 
   let _ = case pg_start_link_raw(pg_groups.scope()) {
     Ok(_) -> Nil
@@ -76,16 +75,13 @@ pub fn main() {
   }
   io.println("presence: pg scope ready")
 
-  let reg_name: process.Name(
-    registry.Message(groups.ConnMsg, groups.ConnGroup),
-  ) = fanout.stable_name("presence_local_registry")
-  let assert Ok(reg_started) =
-    registry.start(reg_name, "presence_registry_ets")
+  let reg_name: process.Name(registry.Message(groups.ConnMsg, groups.ConnGroup)) =
+    fanout.stable_name("presence_local_registry")
+  let assert Ok(reg_started) = registry.start(reg_name, "presence_registry_ets")
   let reg = reg_started.data
   io.println("presence: registry started")
 
-  let assert Ok(fanout_started) =
-    fanout.start(fanout.relay_name(), reg)
+  let assert Ok(fanout_started) = fanout.start(fanout.relay_name(), reg)
   let fan = fanout_started.data
   io.println("presence: fanout relay started")
 
@@ -103,20 +99,22 @@ pub fn main() {
   let outbox_handle = case store.connection(s) {
     option.Some(conn) -> start_pg_outbox(conn, convs)
     option.None -> {
-      io.println(
-        "presence: store has no pog connection, skipping pg_outbox",
-      )
+      io.println("presence: store has no pog connection, skipping pg_outbox")
       option.None
     }
   }
 
-  // True WAL CDC via wal2json + pg_logical_slot_get_changes. Only attempts
-  // setup if the operator has flipped `wal_level=logical` AND installed
-  // the wal2json extension — otherwise the consumer logs a friendly
-  // disabled message and we lean on outbox + LISTEN/NOTIFY alone.
-  case store.connection(s) {
-    option.Some(conn) -> start_pg_wal(conn, convs)
-    option.None ->
+  // True WAL CDC via wal2json + pg_logical_slot_get_changes. Kept as an
+  // explicit operator opt-in because each presence pod owns a logical slot.
+  // The SQL outbox remains the default durable replay path and does not retain
+  // Postgres WAL.
+  case store.connection(s), bool_env("PRESENCE_WAL_ENABLED", False) {
+    option.Some(conn), True -> start_pg_wal(conn, convs)
+    option.Some(_conn), False ->
+      io.println(
+        "presence: pg_wal disabled (set PRESENCE_WAL_ENABLED=true to enable)",
+      )
+    option.None, _ ->
       io.println("presence: store has no pog connection, skipping pg_wal")
   }
 
@@ -154,12 +152,12 @@ pub fn main() {
     |> supervisor.start()
   io.println("presence: listening on 0.0.0.0:" <> int.to_string(port))
 
+  let _ = dd_runtime_config_client.start_registration_loop()
+
   process.sleep_forever()
 }
 
-fn start_store(
-  pg_url: option.Option(String),
-) -> Result(store.Store, String) {
+fn start_store(pg_url: option.Option(String)) -> Result(store.Store, String) {
   case pg_url {
     option.Some(url) ->
       store.start_postgres(url)
@@ -204,8 +202,7 @@ fn start_pg_listen(
             <> " shards)",
           )
         }
-        Error(_) ->
-          io.println("presence: pg_listen failed to start")
+        Error(_) -> io.println("presence: pg_listen failed to start")
       }
     }
   }
@@ -215,28 +212,19 @@ fn start_pg_wal(
   conn: pog.Connection,
   convs: conversations.Conversations,
 ) -> Nil {
-  let n_shards =
-    env("PRESENCE_NOTIFY_SHARDS")
-    |> result.try(int.parse)
-    |> result.unwrap(256)
-  let tick_ms =
-    env("PRESENCE_WAL_TICK_MS")
-    |> result.try(int.parse)
-    |> result.unwrap(1000)
+  let n_shards = positive_int_env("PRESENCE_NOTIFY_SHARDS", 256)
+  let tick_ms = positive_int_env("PRESENCE_WAL_TICK_MS", 1000)
   let on_event = fn(event: pg_listen.Event) -> Nil {
     process.send(convs, conversations.IncomingPgEvent(event))
   }
   case pg_wal.start(conn, on_event, n_shards, tick_ms) {
     Ok(_started) ->
       io.println(
-        "presence: pg_wal started (tick="
-        <> int.to_string(tick_ms)
-        <> "ms)",
+        "presence: pg_wal started (tick=" <> int.to_string(tick_ms) <> "ms)",
       )
     Error(actor.InitFailed(reason)) ->
       io.println("presence: pg_wal disabled — " <> reason)
-    Error(_) ->
-      io.println("presence: pg_wal failed to start (unknown reason)")
+    Error(_) -> io.println("presence: pg_wal failed to start (unknown reason)")
   }
 }
 
@@ -244,14 +232,8 @@ fn start_pg_outbox(
   conn: pog.Connection,
   convs: conversations.Conversations,
 ) -> option.Option(pg_outbox.PgOutbox) {
-  let n_shards =
-    env("PRESENCE_NOTIFY_SHARDS")
-    |> result.try(int.parse)
-    |> result.unwrap(256)
-  let tick_ms =
-    env("PRESENCE_OUTBOX_TICK_MS")
-    |> result.try(int.parse)
-    |> result.unwrap(5000)
+  let n_shards = positive_int_env("PRESENCE_NOTIFY_SHARDS", 256)
+  let tick_ms = positive_int_env("PRESENCE_OUTBOX_TICK_MS", 5000)
   // Outbox events are routed through the same IncomingPgEvent door as
   // the LISTEN path. Dedup in `conversations` handles the overlap.
   let on_event = fn(event: pg_listen.Event) -> Nil {
@@ -276,6 +258,37 @@ fn start_pg_outbox(
   }
 }
 
+fn positive_int_env(name: String, fallback: Int) -> Int {
+  case env(name) |> result.try(int.parse) {
+    Ok(n) -> {
+      case n > 0 {
+        True -> n
+        False -> fallback
+      }
+    }
+    Error(_) -> fallback
+  }
+}
+
+fn bool_env(name: String, fallback: Bool) -> Bool {
+  case env(name) {
+    Error(_) -> fallback
+    Ok(raw) -> {
+      case string.lowercase(raw) {
+        "1" -> True
+        "true" -> True
+        "yes" -> True
+        "on" -> True
+        "0" -> False
+        "false" -> False
+        "no" -> False
+        "off" -> False
+        _ -> fallback
+      }
+    }
+  }
+}
+
 fn start_nats(
   url: String,
   reg: registry.Registry(groups.ConnMsg, groups.ConnGroup),
@@ -286,10 +299,10 @@ fn start_nats(
   }
   case nats_transport.start(url, on_msg) {
     Ok(started) -> {
-      nats_transport.subscribe(started.data, "presence.broadcast.conv.>")
+      nats_transport.subscribe(started.data, nats_transport.broadcast_conv_wildcard)
       io.println(
         "presence: nats transport started, subscribed to "
-        <> "presence.broadcast.conv.>",
+        <> nats_transport.broadcast_conv_wildcard,
       )
       option.Some(started.data)
     }

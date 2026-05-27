@@ -33,7 +33,7 @@ minikube mount "$PWD:/workspace/k8s-cluster"
 Build the two local images the EC2 manifests expect as node-local images:
 
 ```bash
-minikube image build -t dd-remote-web-home:dev remote/deployments/web-home-rs
+minikube image build -f remote/deployments/web-home-rs/Dockerfile -t dd-remote-web-home:dev remote
 
 eval "$(minikube docker-env)"
 DOCKER_BUILDKIT=1 docker build \

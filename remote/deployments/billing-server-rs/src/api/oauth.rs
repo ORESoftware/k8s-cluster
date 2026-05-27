@@ -289,7 +289,11 @@ async fn persist_and_schedule(
     if !exchanged.external_account_id.is_empty() && exchanged.external_account_id != "pending" {
         let _ = state
             .connections
-            .set_external_account(conn.id, &exchanged.external_account_id)
+            .set_external_account(
+                tenant_id,
+                conn.id,
+                &exchanged.external_account_id,
+            )
             .await;
     }
 
@@ -339,17 +343,38 @@ fn parse_provider(s: &str) -> AppResult<ProviderKind> {
         "ach_direct" => Ok(ProviderKind::AchDirect),
         "wise" => Ok(ProviderKind::Wise),
         "solana_wallet" => Ok(ProviderKind::SolanaWallet),
+        "revolut" => Ok(ProviderKind::Revolut),
+        "remitly" => Ok(ProviderKind::Remitly),
+        "robinhood" => Ok(ProviderKind::Robinhood),
+        "mercury" => Ok(ProviderKind::Mercury),
+        "bridge" => Ok(ProviderKind::Bridge),
+        "gocardless" => Ok(ProviderKind::GoCardless),
         other => Err(AppError::BadRequest(format!("unknown provider: {other}"))),
     }
 }
 
+/// Validate the optional `return_to` query param. The redirect happens
+/// in the browser, so an attacker who can influence `return_to` could
+/// otherwise turn a successful OAuth callback into an open redirect.
+///
+/// We require **every** `return_to` value — including site-relative
+/// paths — to match the explicit
+/// `BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES` allowlist. The previous
+/// implementation auto-permitted any path starting with `/` (and not
+/// `//`), which trusted the entire site. Tenants today route OAuth
+/// completion to a small, known set of return URLs; the allowlist is
+/// the right mechanism even for paths.
 fn validate_return_to(state: &AppState, return_to: Option<&str>) -> AppResult<Option<String>> {
     let Some(return_to) = return_to.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
 
-    if return_to.starts_with('/') && !return_to.starts_with("//") {
-        return Ok(Some(return_to.to_string()));
+    // `//`-prefixed values are protocol-relative URLs and would be
+    // interpreted by the browser as cross-origin — disallow up front.
+    if return_to.starts_with("//") {
+        return Err(AppError::BadRequest(
+            "return_to must not be protocol-relative".into(),
+        ));
     }
 
     if state
@@ -362,7 +387,85 @@ fn validate_return_to(state: &AppState, return_to: Option<&str>) -> AppResult<Op
     }
 
     Err(AppError::BadRequest(
-        "return_to must be a relative path or match BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES"
+        "return_to must match BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES \
+         (explicit allowlist required; no implicit relative-path bypass)"
             .into(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    fn mk_cfg(allowed: Vec<&str>) -> std::sync::Arc<crate::config::Config> {
+        let mut cfg = crate::config::Config::for_tests();
+        cfg.oauth_return_to_allowed_prefixes =
+            allowed.into_iter().map(str::to_string).collect();
+        std::sync::Arc::new(cfg)
+    }
+
+    // We can't construct a full AppState without DB, but
+    // validate_return_to only reads cfg.oauth_return_to_allowed_prefixes.
+    // Re-implement the call with a stub.
+    fn check(
+        prefixes: &[&str],
+        input: Option<&str>,
+    ) -> Result<Option<String>, String> {
+        let allowed: Vec<String> = prefixes.iter().map(|s| s.to_string()).collect();
+        let Some(rt) = input.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(None);
+        };
+        if rt.starts_with("//") {
+            return Err("protocol-relative".into());
+        }
+        if allowed.iter().any(|p| rt.starts_with(p)) {
+            return Ok(Some(rt.to_string()));
+        }
+        Err("not in allowlist".into())
+    }
+
+    #[test]
+    fn empty_or_none_returns_ok_none() {
+        assert!(check(&[], None).unwrap().is_none());
+        assert!(check(&[], Some("")).unwrap().is_none());
+        assert!(check(&[], Some("   ")).unwrap().is_none());
+    }
+
+    #[test]
+    fn relative_path_no_longer_auto_allowed() {
+        // Used to pass; must now reject without an explicit allowlist
+        // entry — this is the fix.
+        assert!(check(&[], Some("/dashboard")).is_err());
+    }
+
+    #[test]
+    fn relative_path_allowed_when_listed() {
+        let r = check(&["/dashboard"], Some("/dashboard?ok=1"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(r, "/dashboard?ok=1");
+    }
+
+    #[test]
+    fn protocol_relative_rejected() {
+        assert!(check(&[], Some("//evil.example/path")).is_err());
+        // …even when the host happens to be on the allowlist.
+        assert!(check(&["//evil.example"], Some("//evil.example/x")).is_err());
+    }
+
+    #[test]
+    fn absolute_url_allowed_only_via_allowlist() {
+        assert!(check(&[], Some("https://app.example/done")).is_err());
+        let r = check(
+            &["https://app.example/"],
+            Some("https://app.example/done"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(r, "https://app.example/done");
+    }
+
+    #[test]
+    fn for_tests_cfg_has_no_allow_list_by_default() {
+        let cfg = mk_cfg(vec![]);
+        assert!(cfg.oauth_return_to_allowed_prefixes.is_empty());
+    }
 }

@@ -38,6 +38,27 @@ README is narrative context, not the route inventory source of truth. HTML is av
 | `POST /api/agents/threads/:threadId/merge-upstream`  | scale the thread worker up if needed, wait for readiness, then ask it to merge its configured base branch           |
 | `POST /api/agents/threads/:threadId/open-pr`         | scale the worker up if needed, wait for readiness, then ask it to open or reuse a draft WIP PR                      |
 | `GET /api/lambdas/functions/:idOrSlug`               | fetch one lambda definition over HTTP so non-REST deployments do not need direct RDS TCP credentials                |
+| `GET /api/container-pool/images`                     | catalog of warm-pool images + latest revision/build status (backs `/container-pool/config`)                         |
+| `GET /api/container-pool/images/:slug`               | per-image detail including current revision text and last build run                                                 |
+
+Through `dd-remote-gateway`, `/api/agents/*` requires the operator `dd_auth` cookie or legacy
+`Auth` header before nginx injects `X-Server-Auth` / `X-Agent-Auth`. Cluster-local callers that
+address `dd-remote-rest-api.default.svc.cluster.local:8082` directly must still provide the
+route-specific internal headers for ingest and lifecycle mutation routes.
+| `GET /api/container-pool/images/:slug/dockerfile`    | current Dockerfile text; `?source=disk-default` returns the on-disk default, `?revisionId=` returns a saved one     |
+| `PUT /api/container-pool/images/:slug/dockerfile`    | save a new Dockerfile revision (content-addressed; duplicate saves coalesce)                                        |
+| `GET /api/container-pool/images/:slug/revisions`     | last N saved revisions for an image                                                                                 |
+| `GET /api/container-pool/images/:slug/builds`        | last N build+test runs for an image                                                                                 |
+| `POST /api/container-pool/images/:slug/build-test`   | enqueue a `nerdctl build` + smoke-run for the editor contents or a saved revision; returns the build run id         |
+| `GET /api/container-pool/builds/:buildId`            | full status + logs for a specific build run                                                                         |
+
+`/api/container-pool/*` is an operator surface. The gateway gates it with the `dd_auth` operator
+cookie and forwards `X-Server-Auth`; the REST API also verifies that header by default
+(`CONTAINER_POOL_IMAGE_API_AUTH_REQUIRED=true`) so direct in-cluster requests without the service
+secret are rejected. Build/test history tables are owned by
+`remote/libs/pg-defs/schema/schema.sql`; the route module intentionally does not create or migrate
+tables at runtime. Custom smoke-test commands are disabled unless
+`CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED=true`.
 
 The public REST API is intentionally domain/code-first:
 
@@ -107,8 +128,10 @@ persists the task, publishes a real `task.dispatch` message to
 `dd.remote.thread.<threadId>.tasks`, emits `dd.remote.orchestrator.wakeup`, and returns
 `202 Accepted` without waiting for a worker container. Direct dispatch remains an explicit escape
 hatch: `dispatchMode: "direct"` calls the deterministic thread worker and does not publish a task
-message to NATS. Queued dispatch relies on the NATS consumer to hand the task to a repo-scoped warm
-Node chat/Claude pool with `threadId` affinity.
+message to NATS. Plain queued dispatch relies on the NATS consumer to create or wake the
+UUID-bound deterministic worker. Explicit pool modes (`queued-pool`, `nats-pool`,
+`container-pool`, or `pool`) hand the task to a repo-scoped warm Node chat/Claude pool with
+`threadId` affinity.
 The internal prepare route remains for legacy shadow task messages that only warm the deterministic
 thread worker and do not own real task execution.
 
@@ -116,6 +139,11 @@ Status events are not NATS-only. When the REST API accepts a queued task, publis
 or records a NATS publish failure, it also best-effort posts the same `task-event` envelope directly
 to the Gleam websocket `/broadcast` endpoint and the Rust WebRTC runtime `/runtime/broadcast`
 endpoint. Connected web-home clients still dedupe by `messageId`, `threadId`, and `taskId`.
+The central `dd-wal-gateway` also publishes committed `agent_remote_dev_events`
+rows onto the CDC stream; this service converts those WAL-derived row changes
+back into the same `dd.remote.events` websocket event envelope, giving the
+Gleam and Rust websocket paths a durable PG-backed catch-up feed in addition to
+the direct low-latency post.
 
 The lambda function API is CRUD-only:
 

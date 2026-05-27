@@ -51,6 +51,9 @@ The build can optionally receive a GitHub deploy key and `DD_REPO_URL` so the im
 pre-clone that repo at `--depth=1` and run `pnpm install`. Use BuildKit's `--secret` flag for the key, never
 `--build-arg`, so the key never lands in any image layer. If `DD_REPO_URL` is omitted, the image
 is a generic worker base and the container clones the configured repo at runtime.
+The base package includes the NATS and WebSocket client dependencies used by queued worker fanout;
+runtime repo, branch, and credentials are injected through Kubernetes env/secrets, not baked into
+the image.
 
 ```bash
 DOCKER_BUILDKIT=1 docker build \
@@ -117,11 +120,33 @@ workflow without a failing package install.
 ## Environment variables
 
 > **All credentials are read from `process.env` at runtime.** No secrets are baked into the image.
-> The image does bake git, OpenSSH, GitHub CLI, provider CLIs, the compiled server, and a warm
-> configured repo template owned by the built-in `node` user. In
-> production, the K8s `dd-agent-secrets` Secret (filled in from
+> The image does bake git, OpenSSH, GitHub CLI, provider CLIs, the compiled server, the system
+> agent rules at `/etc/agent/AGENTS.md`, and a warm configured repo template owned by the
+> built-in `node` user. In production, the K8s `dd-agent-secrets` Secret (filled in from
 > [`../../k8s/02-secrets.template.yaml`](../../k8s/02-secrets.template.yaml)) is consumed by every
 > per-thread pod via `envFrom`. Local dev: pass via `--env-file` or `docker run -e`.
+
+### System agent rules (PR / git / secret hygiene)
+
+`remote/deployments/dev-server/system-agents.md` is COPYed into every worker
+image at `/etc/agent/AGENTS.md`. `dd-dev-server` reads it on every task and
+prepends it to the prompt as `<system_agent_rules>` *before* the workspace
+`AGENTS.md`/`agents/*.md`/`docs/*.md` block. The two key contracts it locks
+in are:
+
+- **Pull requests are draft-only.** Workers may open drafts via
+  `gh pr create --draft`, post comments via the `pr_comment` workspace tool,
+  and replace the body via `pr_update_body`. `gh pr ready`, `gh pr merge`,
+  `gh pr close`, and any "auto-merge" flow are blocked at the tool layer
+  and called out as forbidden in the system rules.
+- **Workspace edits are not PR comments.** When the user prompt asks for a
+  PR comment or PR-body update, runners must use `pr_comment` /
+  `pr_update_body` (or `gh pr comment` from a shell-capable runner). File
+  appends are explicitly forbidden as a substitute.
+
+`SYSTEM_AGENTS_MD_PATH` overrides the path for local dev (omit / point at a
+test file). `SYSTEM_AGENTS_MD_MAX_CHARS` (default `16000`) caps the injected
+size.
 
 ### Required — server core
 
@@ -208,8 +233,10 @@ its provider-specific API key). The agent never sees `GH_PAT`, `GH_DEPLOY_KEY`,
 
 Every agent call receives a shared prompt wrapper before it reaches the selected SDK/CLI runner. The
 wrapper includes the thread UUID, current task UUID, optimistic operating mode, repo-local context
-from `AGENTS.md`/`agents/*.md`/`docs/*.md`, selected Postgres context blobs, previous thread
-summaries from Postgres, and the local `tmp/convos/thread.log` tail.
+from `AGENTS.md`/`agents/*.md`/`docs/*.md`, and the context rows the operator kept checked in the
+thread UI. The picker can seed the prompt with durable Postgres context blobs, previous thread
+tasks, and individual breadcrumbs from `agent_remote_dev_breadcrumbs`; unchecked rows are omitted
+from the worker payload. Breadcrumbs are no longer fetched as an automatic tail by the worker.
 
 When `AGENT_MCP_URL` is set, the worker injects a short runtime context section into every task
 prompt. The OpenAI SDK runner connects the endpoint as MCP server `dd_cluster`; the Claude SDK runner
@@ -253,9 +280,10 @@ route reports "alive" if either a fresh heartbeat or a live `/healthz` ping succ
 | `WORKSPACE_REPO`              | `/home/node/workspace/repo`     | Persistent thread workspace — seeded from `/home/node/repo-template` on cold boot, then `git fetch`ed each subsequent boot.           |
 | `OUTPUTS_DIR`                 | `/home/node/workspace/outputs`  | Where the agent writes publishable files (markdown, PDF, etc.); scanned + uploaded after the agent run exits.                         |
 | `REMOTE_DEV_THREAD_ID`        | unset                           | **Required.** The UUID created by `/u/admin/remote-dev` for the conversation. The container is pinned to one thread for its lifetime. |
+| `REMOTE_DEV_THREAD_TITLE`     | unset                           | Optional first-task title used to boot the thread worker directly onto the prompt-derived feature branch instead of a UUID placeholder branch. |
 | `IDLE_TIMEOUT_MS`             | `1800000`                       | In-process idle watchdog. For k8s thread pods we set this to `0` and let the control-plane reaper scale Deployment replicas to 0/1.   |
 | `ENTRYPOINT_INSTALL_DEPS`     | `false`                         | Set to `true` only when the entrypoint should run `pnpm install` before the server starts. Default defers dependency install until the server has prepared the feature branch, avoiding warm-boot base-branch resets. |
-| `THREAD_LOG_RELATIVE_PATH`    | `tmp/convos/thread.log`         | Every prompt/event is appended as JSONL here inside the thread workspace. `tmp/` is gitignored.                                       |
+| `THREAD_BREADCRUMB_WRITE_TIMEOUT_MS`| `5000`                     | Per-call timeout for fire-and-forget breadcrumb POSTs to rest-api.                                                                   |
 | `DEFAULT_STORAGE_PROVIDER`    | `local`                         | One of `local` / `s3` / `r2` / `gcs` / `drive`.                                                                                       |
 | `GH_DEPLOY_KEY_PATH`          | `/home/node/.ssh/id_ed25519`    | Where `GH_DEPLOY_KEY` is materialised at boot.                                                                                        |
 | `GIT_AUTHOR_NAME`             | `DD Agent`                      | Commit author.                                                                                                                        |
@@ -372,9 +400,12 @@ For each `POST /tasks` in that thread:
    merge `origin/<BASE_BRANCH>` into the feature branch before the user task starts. If conflicts
    occur, a workspace-capable provider gets a pre-task conflict-resolution prompt; unresolved
    conflicts abort the task.
-4. Append prompt/event metadata to `tmp/convos/thread.log` as JSONL.
+4. POST prompt/event/lifecycle breadcrumbs to rest-api (persisted in Postgres
+   `agent_remote_dev_breadcrumbs`; see `remote/libs/interfaces/redis` for the cross-runtime
+   shape and the optional Redis cache key conventions).
 5. `mkdir -p $OUTPUTS_DIR/<taskId>` so the agent has a place to write.
-6. Build the shared context prompt from repo files, Postgres context, and the thread-log tail.
+6. Build the shared context prompt from repo files, selected Postgres context rows, selected
+   previous-task rows, and selected breadcrumb rows.
 7. Apply any supported deterministic workspace edit, otherwise run the selected provider
    (`openai-sdk` by default, with Claude/Gemini overrides available).
 8. Stage workspace changes while excluding generated dependency/cache dirs, then commit and push `origin <session-branch>`.

@@ -17,6 +17,10 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use dd_nats_subject_defs::{
+    cdc_table_filter_subject, container_pool_events_subject, container_pool_heartbeats_subject,
+    CONTAINER_POOL_REQUESTS_SUBJECT, CONTAINER_POOL_RESULTS_SUBJECT,
+};
 use futures_util::StreamExt;
 use reqwest::header::{HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -32,6 +36,9 @@ const DEFAULT_PORT: u16 = 8102;
 const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_NATS_PAYLOAD_BYTES: usize = 2 * 1024 * 1024;
 const MAX_WORKER_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const DEFAULT_REDIS_LOCK_PREFIX: &str = "dd:container-pool:affinity";
+
+static LOCK_TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 struct AppState {
@@ -39,6 +46,7 @@ struct AppState {
     registry: Arc<Mutex<PoolRegistry>>,
     http: reqwest::Client,
     nats: Option<async_nats::Client>,
+    redis_locks: Option<RedisLockManager>,
     metrics: Arc<Metrics>,
 }
 
@@ -55,10 +63,17 @@ struct ServiceConfig {
     nats_subject: String,
     nats_result_subject: String,
     nats_max_payload_bytes: usize,
+    redis_url: Option<String>,
+    redis_lock_prefix: String,
+    redis_lock_ttl: Duration,
+    redis_lock_wait_timeout: Duration,
+    redis_lock_retry_delay: Duration,
+    redis_lock_request_timeout: Duration,
     worker_response_max_bytes: usize,
     config_refresh: Duration,
     reconcile_interval: Duration,
     command_timeout: Duration,
+    nerdctl_run_timeout: Duration,
     container_start_timeout: Duration,
     health_check_interval: Duration,
     health_check_timeout: Duration,
@@ -73,6 +88,8 @@ struct ServiceConfig {
     forward_env_keys: Vec<String>,
     pids_limit: u64,
     nofile_limit: u64,
+    cap_drop_all: bool,
+    no_new_privileges: bool,
 }
 
 #[derive(Default)]
@@ -161,6 +178,7 @@ struct DispatchRequest {
     pool_id: Option<String>,
     pool_slug: Option<String>,
     affinity_key: Option<String>,
+    fresh_affinity: Option<bool>,
     path: Option<String>,
     headers: Option<BTreeMap<String, String>>,
     payload: Option<Value>,
@@ -236,6 +254,217 @@ struct ContainerLease {
     container: WarmContainer,
 }
 
+#[derive(Clone)]
+struct RedisLockManager {
+    client: redis::Client,
+    key_prefix: String,
+    ttl: Duration,
+    wait_timeout: Duration,
+    retry_delay: Duration,
+    request_timeout: Duration,
+}
+
+struct RedisLockGuard {
+    manager: RedisLockManager,
+    key: String,
+    token: String,
+}
+
+impl RedisLockManager {
+    fn new(
+        redis_url: &str,
+        key_prefix: String,
+        ttl: Duration,
+        wait_timeout: Duration,
+        retry_delay: Duration,
+        request_timeout: Duration,
+    ) -> Result<Self, String> {
+        let client = redis::Client::open(redis_url)
+            .map_err(|error| format!("invalid container pool redis url: {error}"))?;
+        Ok(Self {
+            client,
+            key_prefix: key_prefix.trim_matches(':').to_string(),
+            ttl,
+            wait_timeout,
+            retry_delay,
+            request_timeout,
+        })
+    }
+
+    fn lock_key(&self, suffix: &str) -> String {
+        format!("{}:{suffix}", self.key_prefix)
+    }
+
+    async fn acquire(&self, suffix: &str) -> Result<RedisLockGuard, String> {
+        let key = self.lock_key(suffix);
+        let token = next_lock_token();
+        let started = tokio::time::Instant::now();
+        let mut last_error = None::<String>;
+        loop {
+            match self.try_acquire(&key, &token).await {
+                Ok(true) => {
+                    return Ok(RedisLockGuard {
+                        manager: self.clone(),
+                        key,
+                        token,
+                    });
+                }
+                Ok(false) => {}
+                Err(error) => last_error = Some(error),
+            }
+            if started.elapsed() >= self.wait_timeout {
+                let waited_ms = duration_millis_u64(started.elapsed());
+                let detail = last_error
+                    .map(|error| format!("; last redis error: {error}"))
+                    .unwrap_or_default();
+                return Err(format!(
+                    "timed out after {waited_ms}ms waiting for container affinity lock {key}{detail}"
+                ));
+            }
+            sleep(self.retry_delay).await;
+        }
+    }
+
+    async fn try_acquire(&self, key: &str, token: &str) -> Result<bool, String> {
+        let mut connection = timeout(
+            self.request_timeout,
+            self.client.get_multiplexed_async_connection(),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis connection timed out after {}ms",
+                duration_millis_u64(self.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let ttl_ms = duration_millis_u64(self.ttl).max(1);
+        let response: Option<String> = timeout(
+            self.request_timeout,
+            redis::cmd("SET")
+                .arg(key)
+                .arg(token)
+                .arg("NX")
+                .arg("PX")
+                .arg(ttl_ms)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis SET NX timed out after {}ms",
+                duration_millis_u64(self.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        Ok(response
+            .as_deref()
+            .is_some_and(|value| value.eq_ignore_ascii_case("OK")))
+    }
+}
+
+impl RedisLockGuard {
+    async fn release(self) -> Result<bool, String> {
+        let mut connection = timeout(
+            self.manager.request_timeout,
+            self.manager.client.get_multiplexed_async_connection(),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis connection timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let _: String = timeout(
+            self.manager.request_timeout,
+            redis::cmd("WATCH")
+                .arg(&self.key)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis WATCH timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let current: Option<String> = timeout(
+            self.manager.request_timeout,
+            redis::cmd("GET")
+                .arg(&self.key)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis GET timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        if current.as_deref() != Some(self.token.as_str()) {
+            let _: String = timeout(
+                self.manager.request_timeout,
+                redis::cmd("UNWATCH").query_async(&mut connection),
+            )
+            .await
+            .map_err(|_| {
+                format!(
+                    "redis UNWATCH timed out after {}ms",
+                    duration_millis_u64(self.manager.request_timeout)
+                )
+            })?
+            .map_err(|error| error.to_string())?;
+            return Ok(false);
+        }
+        let _: String = timeout(
+            self.manager.request_timeout,
+            redis::cmd("MULTI").query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis MULTI timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let _: String = timeout(
+            self.manager.request_timeout,
+            redis::cmd("DEL")
+                .arg(&self.key)
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis DEL timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        let deleted: Option<Vec<i64>> = timeout(
+            self.manager.request_timeout,
+            redis::cmd("EXEC").query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "redis EXEC timed out after {}ms",
+                duration_millis_u64(self.manager.request_timeout)
+            )
+        })?
+        .map_err(|error| error.to_string())?;
+        Ok(deleted
+            .and_then(|values| values.first().copied())
+            .unwrap_or_default()
+            > 0)
+    }
+}
+
 fn first_env(keys: &[&str]) -> Option<String> {
     keys.iter().find_map(|key| {
         env::var(key)
@@ -288,6 +517,11 @@ fn now_ms() -> u128 {
         .as_millis()
 }
 
+fn next_lock_token() -> String {
+    let seq = LOCK_TOKEN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{SERVICE_NAME}:{}:{}:{seq}", std::process::id(), now_ms())
+}
+
 fn service_config_from_env() -> ServiceConfig {
     let port_start = env_u16("CONTAINER_POOL_PORT_START", 12_000);
     let port_end = env_u16("CONTAINER_POOL_PORT_END", 12_999).max(port_start);
@@ -317,17 +551,35 @@ fn service_config_from_env() -> ServiceConfig {
         nats_url: first_env(&["NATS_URL"]),
         nats_subject: env_value(
             "CONTAINER_POOL_NATS_SUBJECT",
-            "dd.remote.container_pool.requests",
+            CONTAINER_POOL_REQUESTS_SUBJECT,
         ),
         nats_result_subject: env_value(
             "CONTAINER_POOL_NATS_RESULT_SUBJECT",
-            "dd.remote.container_pool.results",
+            CONTAINER_POOL_RESULTS_SUBJECT,
         ),
         nats_max_payload_bytes: env_usize(
             "CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES",
             MAX_NATS_PAYLOAD_BYTES,
         )
         .min(16 * 1024 * 1024),
+        redis_url: first_env(&["CONTAINER_POOL_REDIS_URL", "REDIS_URL"]),
+        redis_lock_prefix: env_value(
+            "CONTAINER_POOL_REDIS_LOCK_PREFIX",
+            DEFAULT_REDIS_LOCK_PREFIX,
+        ),
+        redis_lock_ttl: Duration::from_secs(env_u64("CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS", 600)),
+        redis_lock_wait_timeout: Duration::from_secs(env_u64(
+            "CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS",
+            420,
+        )),
+        redis_lock_retry_delay: Duration::from_millis(env_u64(
+            "CONTAINER_POOL_REDIS_LOCK_RETRY_MS",
+            250,
+        )),
+        redis_lock_request_timeout: Duration::from_millis(env_u64(
+            "CONTAINER_POOL_REDIS_LOCK_REQUEST_TIMEOUT_MS",
+            800,
+        )),
         worker_response_max_bytes: env_usize(
             "CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES",
             MAX_WORKER_RESPONSE_BYTES,
@@ -336,6 +588,10 @@ fn service_config_from_env() -> ServiceConfig {
         config_refresh: Duration::from_secs(env_u64("CONTAINER_POOL_CONFIG_REFRESH_SECONDS", 30)),
         reconcile_interval: Duration::from_secs(env_u64("CONTAINER_POOL_RECONCILE_SECONDS", 10)),
         command_timeout: Duration::from_secs(env_u64("CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS", 30)),
+        nerdctl_run_timeout: Duration::from_secs(env_u64(
+            "CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS",
+            180,
+        )),
         container_start_timeout: Duration::from_secs(env_u64(
             "CONTAINER_POOL_START_TIMEOUT_SECONDS",
             15,
@@ -364,8 +620,10 @@ fn service_config_from_env() -> ServiceConfig {
         container_cpus: first_env(&["CONTAINER_POOL_CONTAINER_CPUS"])
             .filter(|value| safe_resource_value(value)),
         forward_env_keys: forwarded_worker_env_keys(),
-        pids_limit: env_u64("CONTAINER_POOL_PIDS_LIMIT", 128).clamp(16, 4096),
-        nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 128).clamp(32, 8192),
+        pids_limit: env_u64("CONTAINER_POOL_PIDS_LIMIT", 4096).clamp(16, 16384),
+        nofile_limit: env_u64("CONTAINER_POOL_NOFILE_LIMIT", 65536).clamp(32, 262144),
+        cap_drop_all: env_bool("CONTAINER_POOL_CAP_DROP_ALL", false),
+        no_new_privileges: env_bool("CONTAINER_POOL_NO_NEW_PRIVILEGES", false),
     }
 }
 
@@ -1073,15 +1331,19 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
         format!("dd.container-pool.service={SERVICE_NAME}"),
         "--user".to_string(),
         pool.user.clone(),
-        "--cap-drop".to_string(),
-        "ALL".to_string(),
-        "--security-opt".to_string(),
-        "no-new-privileges".to_string(),
         "--pids-limit".to_string(),
         state.config.pids_limit.to_string(),
         "--ulimit".to_string(),
         format!("nofile={limit}:{limit}", limit = state.config.nofile_limit),
     ];
+    if state.config.cap_drop_all {
+        args.push("--cap-drop".to_string());
+        args.push("ALL".to_string());
+    }
+    if state.config.no_new_privileges {
+        args.push("--security-opt".to_string());
+        args.push("no-new-privileges".to_string());
+    }
     if pool.read_only {
         args.push("--read-only".to_string());
         args.push("--tmpfs".to_string());
@@ -1151,10 +1413,10 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
             .or_insert_with(|| nats_url.to_string());
         container_env
             .entry("DD_POOL_NATS_EVENT_SUBJECT".to_string())
-            .or_insert_with(|| format!("dd.remote.container_pool.{}.events", pool.slug));
+            .or_insert_with(|| container_pool_events_subject(&pool.slug));
         container_env
             .entry("DD_POOL_NATS_HEARTBEAT_SUBJECT".to_string())
-            .or_insert_with(|| format!("dd.remote.container_pool.{}.heartbeats", pool.slug));
+            .or_insert_with(|| container_pool_heartbeats_subject(&pool.slug));
     }
     for key in &state.config.forward_env_keys {
         if container_env.contains_key(key) {
@@ -1174,9 +1436,72 @@ async fn start_one_for_pool(state: &AppState, pool_id: &str) -> Result<WarmConta
     args.push(pool.image.clone());
     args.extend(pool.command.clone());
 
-    let container_run_timeout = state.config.command_timeout.min(Duration::from_secs(30));
+    let container_run_timeout = state.config.nerdctl_run_timeout;
+    let scrubbed_args = args
+        .iter()
+        .map(|arg| {
+            // Match either env-name prefixes or value-bearing args whose
+            // name reveals sensitivity. The substring checks below catch
+            // any env name containing API_KEY/SECRET/DEPLOY_KEY/TOKEN
+            // (covers AWS_SESSION_TOKEN, GITHUB_TOKEN, etc.) and the
+            // explicit `AWS_` prefix scrubs AWS_ACCESS_KEY_ID, which
+            // would otherwise slip past every substring rule.
+            if arg.starts_with("GH_DEPLOY_KEY=")
+                || arg.starts_with("SERVER_AUTH_SECRET=")
+                || arg.starts_with("ANTHROPIC_API_KEY=")
+                || arg.starts_with("OPENAI_API_KEY=")
+                || arg.starts_with("CLAUDE_API_KEYS_JSON=")
+                || arg.starts_with("OPENAI_API_KEYS_JSON=")
+                || arg.starts_with("EVENT_INGEST_SECRET=")
+                || arg.starts_with("GH_PAT=")
+                || arg.starts_with("AWS_")
+                || arg.contains("API_KEY")
+                || arg.contains("SECRET")
+                || arg.contains("DEPLOY_KEY")
+                || arg.contains("TOKEN")
+            {
+                let prefix = arg.splitn(2, '=').next().unwrap_or("").to_string();
+                format!("{prefix}=<redacted>")
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    eprintln!(
+        "dd-container-pool nerdctl run for {name}: {bin} {scrubbed_args:?}",
+        name = container.name,
+        bin = state.config.nerdctl_bin,
+    );
+    // Surface the *names* (not values) of the env keys that end up forwarded
+    // into the warm worker. This makes silent-misconfig regressions obvious in
+    // pod logs — e.g. when EVENT_INGEST_URL/EVENT_INGEST_SECRET are missing,
+    // the dev-server's eventBus.startVercelIngest pipeline never starts and
+    // task events never reach the websocket fanout.
+    let mut env_keys: Vec<&str> = container_env.keys().map(String::as_str).collect();
+    env_keys.sort_unstable();
+    let event_ingest_url_present = container_env.contains_key("EVENT_INGEST_URL");
+    let event_ingest_secret_present = container_env.contains_key("EVENT_INGEST_SECRET");
+    let nats_url_present = container_env.contains_key("NATS_URL");
+    let worker_fanout_secret_present = container_env.contains_key("WORKER_FANOUT_WS_SECRET")
+        || container_env.contains_key("GLEAM_WORKER_WS_SECRET")
+        || container_env.contains_key("GLEAM_BROADCAST_SECRET");
+    eprintln!(
+        "dd-container-pool worker env for {name}: keys={env_keys:?} \
+         event_ingest_url={event_ingest_url_present} \
+         event_ingest_secret={event_ingest_secret_present} \
+         nats_url={nats_url_present} \
+         worker_fanout_secret={worker_fanout_secret_present}",
+        name = container.name,
+    );
     match run_command(&state.config.nerdctl_bin, &args, container_run_timeout).await {
-        Ok(_) => {
+        Ok(output) => {
+            let trimmed = output.trim();
+            if !trimmed.is_empty() {
+                eprintln!(
+                    "dd-container-pool nerdctl run -d output for {name}: {trimmed}",
+                    name = container.name
+                );
+            }
             if let Err(error) = wait_container_ready(state, &pool, &container).await {
                 let mut registry = state.registry.lock().await;
                 registry.containers.remove(&container.name);
@@ -1304,6 +1629,14 @@ async fn run_command(
         .map_err(|_| format!("{program} timed out after {}s", command_timeout.as_secs()))?
         .map_err(|error| format!("{program} failed to start: {error}"))?;
     if output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_trimmed = stderr.trim();
+        if !stderr_trimmed.is_empty() && args.iter().any(|arg| arg == "run" || arg == "inspect") {
+            eprintln!(
+                "{program} stderr (exit 0, args={args:?}): {}",
+                stderr_trimmed.chars().take(1500).collect::<String>()
+            );
+        }
         return Ok(String::from_utf8_lossy(&output.stdout).to_string());
     }
     let stderr = String::from_utf8_lossy(&output.stderr)
@@ -1317,7 +1650,7 @@ async fn run_command(
 }
 
 async fn inspect_container_running(state: &AppState, name: &str) -> Result<bool, String> {
-    let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(5));
+    let inspect_timeout = state.config.command_timeout.min(Duration::from_secs(15));
     let args = vec![
         "-n".to_string(),
         state.config.containerd_namespace.clone(),
@@ -1650,6 +1983,28 @@ fn affinity_map_key(pool_id: &str, affinity_key: &str) -> String {
     format!("{pool_id}:{affinity_key}")
 }
 
+async fn acquire_affinity_dispatch_lock(
+    state: &AppState,
+    selector: &str,
+    affinity_key: Option<&str>,
+) -> Result<Option<RedisLockGuard>, String> {
+    let Some(affinity_key) = affinity_key else {
+        return Ok(None);
+    };
+    let Some(redis_locks) = state.redis_locks.as_ref() else {
+        return Ok(None);
+    };
+    let pool_id = {
+        let registry = state.registry.lock().await;
+        pool_id_from_selector(&registry, selector)
+            .ok_or_else(|| format!("unknown container pool: {selector}"))?
+    };
+    redis_locks
+        .acquire(&affinity_map_key(&pool_id, affinity_key))
+        .await
+        .map(Some)
+}
+
 fn remove_affinity_for_container(registry: &mut PoolRegistry, container_name: &str) {
     registry
         .affinity
@@ -1663,10 +2018,22 @@ fn container_can_accept(pool: &PoolConfig, container: &WarmContainer) -> bool {
     ) && container.in_flight < pool.max_concurrency_per_container
 }
 
+fn container_matches_affinity_request(
+    container: &WarmContainer,
+    affinity_key: &str,
+    fresh_affinity: bool,
+) -> bool {
+    match container.affinity_key.as_deref() {
+        Some(bound) => bound == affinity_key,
+        None => !fresh_affinity || container.request_count == 0,
+    }
+}
+
 async fn lease_container(
     state: &AppState,
     selector: &str,
     affinity_key: Option<&str>,
+    fresh_affinity: bool,
 ) -> Result<ContainerLease, String> {
     let affinity_key = normalized_affinity_key(affinity_key);
     let pool_id = {
@@ -1735,11 +2102,11 @@ async fn lease_container(
                         .filter(|container| container.pool_id == pool.id)
                         .filter(|container| container_can_accept(&pool, container))
                         .filter(|container| {
-                            container
-                                .affinity_key
-                                .as_deref()
-                                .map(|bound| bound == affinity_key)
-                                .unwrap_or(true)
+                            container_matches_affinity_request(
+                                container,
+                                affinity_key,
+                                fresh_affinity,
+                            )
                         })
                         .min_by_key(|container| {
                             (
@@ -1839,6 +2206,59 @@ fn target_url(container: &WarmContainer, path: &str) -> String {
     format!("http://127.0.0.1:{}{path}", container.port)
 }
 
+fn payload_string<'a>(body: &'a Value, camel_key: &str, snake_key: &str) -> Option<&'a str> {
+    body.get(camel_key)
+        .or_else(|| body.get(snake_key))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn normalized_repo_identity(value: &str) -> String {
+    let mut repo = value.trim().trim_end_matches('/').trim_end_matches(".git");
+    if let Some(rest) = repo.strip_prefix("git@github.com:") {
+        repo = rest;
+    } else if let Some(rest) = repo.strip_prefix("ssh://git@github.com/") {
+        repo = rest;
+    } else if let Some(rest) = repo.strip_prefix("https://github.com/") {
+        repo = rest;
+    } else if let Some(rest) = repo.strip_prefix("http://github.com/") {
+        repo = rest;
+    }
+    repo.to_ascii_lowercase()
+}
+
+fn validate_repo_affinity(pool: &PoolConfig, body: &Value) -> Result<(), String> {
+    let Some(configured_repo) = pool.env.get("DD_REPO_URL").map(String::as_str) else {
+        return Ok(());
+    };
+    let Some(request_repo) = payload_string(body, "repo", "repo") else {
+        return Ok(());
+    };
+    if normalized_repo_identity(configured_repo) != normalized_repo_identity(request_repo) {
+        return Err(format!(
+            "pool {} is configured for repo {configured_repo}, not {request_repo}",
+            pool.slug
+        ));
+    }
+
+    let configured_branch = pool
+        .env
+        .get("BASE_BRANCH")
+        .or_else(|| pool.env.get("DD_REPO_REF"))
+        .map(String::as_str)
+        .unwrap_or("dev")
+        .trim();
+    let request_branch = payload_string(body, "baseBranch", "base_branch").unwrap_or("dev");
+    if configured_branch != request_branch {
+        return Err(format!(
+            "pool {} is configured for baseBranch {configured_branch}, not {request_branch}",
+            pool.slug
+        ));
+    }
+    Ok(())
+}
+
 fn apply_forward_headers(
     mut builder: reqwest::RequestBuilder,
     headers: Option<&BTreeMap<String, String>>,
@@ -1907,9 +2327,38 @@ async fn dispatch_to_pool(
     selector: &str,
     request: DispatchRequest,
 ) -> Result<DispatchResponse, String> {
-    let started = now_ms();
     let affinity_key = normalized_affinity_key(request.affinity_key.as_deref());
-    let lease = lease_container(state, selector, affinity_key.as_deref()).await?;
+    let fresh_affinity = request.fresh_affinity.unwrap_or(false) && affinity_key.is_some();
+    let lock_guard =
+        match acquire_affinity_dispatch_lock(state, selector, affinity_key.as_deref()).await {
+            Ok(lock_guard) => lock_guard,
+            Err(error) => {
+                state
+                    .metrics
+                    .dispatch_failures_total
+                    .fetch_add(1, Ordering::Relaxed);
+                return Err(error);
+            }
+        };
+    let result =
+        dispatch_to_pool_inner(state, selector, request, affinity_key, fresh_affinity).await;
+    if let Some(lock_guard) = lock_guard {
+        if let Err(error) = lock_guard.release().await {
+            eprintln!("container pool redis affinity lock release failed: {error}");
+        }
+    }
+    result
+}
+
+async fn dispatch_to_pool_inner(
+    state: &AppState,
+    selector: &str,
+    request: DispatchRequest,
+    affinity_key: Option<String>,
+    fresh_affinity: bool,
+) -> Result<DispatchResponse, String> {
+    let started = now_ms();
+    let lease = lease_container(state, selector, affinity_key.as_deref(), fresh_affinity).await?;
     let path = match safe_dispatch_path(request.path.as_deref(), &lease.pool.request_path) {
         Ok(path) => path,
         Err(error) => {
@@ -1923,6 +2372,14 @@ async fn dispatch_to_pool(
     };
     let url = target_url(&lease.container, &path);
     let body = dispatch_body(&request);
+    if let Err(error) = validate_repo_affinity(&lease.pool, &body) {
+        release_container(state, &lease.container.name, true).await;
+        state
+            .metrics
+            .dispatch_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+        return Err(error);
+    }
     let request_id = request_id_from_request(&request);
     let backfill_state = state.clone();
     let backfill_pool_id = lease.pool.id.clone();
@@ -1932,7 +2389,14 @@ async fn dispatch_to_pool(
         }
     });
 
-    let send = apply_forward_headers(state.http.post(&url), request.headers.as_ref()).json(&body);
+    let mut send = apply_forward_headers(state.http.post(&url), request.headers.as_ref());
+    if let Some(secret) = state.config.server_auth_secret.as_deref() {
+        send = send
+            .header("x-server-auth", secret)
+            .header("x-container-pool-auth", secret)
+            .header("x-agent-auth", secret);
+    }
+    let send = send.json(&body);
     let response = timeout(lease.pool.request_timeout, send.send()).await;
     let mut retire_reason = None::<String>;
     let result = match response {
@@ -2336,10 +2800,11 @@ async fn run_cdc_refresh_subscription(state: AppState) {
             "dd-container-pool-app-config-{}",
             cdc_sanitize(&format!("{scope}.{key}"))
         );
+        let app_config_filter = cdc_table_filter_subject("cdc", "public", "app_config");
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream_name.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.app_config.>")
+            .filter_subject(app_config_filter.clone())
             .start(&jetstream, move |change: dd_wal_consumer::RowChange| {
                 let task_state = task_state.clone();
                 let scope = scope.clone();
@@ -2354,7 +2819,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
                 }
             })
             .await;
-        log_cdc_subscription_result(&durable, "cdc.public.app_config.>", result);
+        log_cdc_subscription_result(&durable, &app_config_filter, result);
     }
 
     // Subscription 2 — container_pool_configs (no row filter, every change
@@ -2362,10 +2827,11 @@ async fn run_cdc_refresh_subscription(state: AppState) {
     {
         let task_state = state.clone();
         let durable = "dd-container-pool-table".to_string();
+        let table_filter = cdc_table_filter_subject("cdc", "public", "container_pool_configs");
         let result = dd_wal_consumer::Subscription::builder()
             .stream(stream_name.clone())
             .durable_name(durable.clone())
-            .filter_subject("cdc.public.container_pool_configs.>")
+            .filter_subject(table_filter.clone())
             .start(&jetstream, move |_change: dd_wal_consumer::RowChange| {
                 let task_state = task_state.clone();
                 async move {
@@ -2373,7 +2839,7 @@ async fn run_cdc_refresh_subscription(state: AppState) {
                 }
             })
             .await;
-        log_cdc_subscription_result(&durable, "cdc.public.container_pool_configs.>", result);
+        log_cdc_subscription_result(&durable, &table_filter, result);
     }
 }
 
@@ -2520,21 +2986,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         },
         None => None,
     };
+    let redis_locks = match config.redis_url.as_deref() {
+        Some(url) => Some(RedisLockManager::new(
+            url,
+            config.redis_lock_prefix.clone(),
+            config.redis_lock_ttl,
+            config.redis_lock_wait_timeout,
+            config.redis_lock_retry_delay,
+            config.redis_lock_request_timeout,
+        )?),
+        None => None,
+    };
     let state = AppState {
         config,
         registry,
         http,
         nats,
+        redis_locks,
         metrics: Arc::new(Metrics::default()),
     };
 
     println!(
-        "{SERVICE_NAME} starting: nerdctl={} namespace={} network={} db_configured={} nats_subject={}",
+        "{SERVICE_NAME} starting: nerdctl={} namespace={} network={} db_configured={} nats_subject={} redis_locks={}",
         state.config.nerdctl_bin,
         state.config.containerd_namespace,
         state.config.network,
         state.config.database_url.is_some(),
-        state.config.nats_subject
+        state.config.nats_subject,
+        state.redis_locks.is_some()
     );
 
     if let Err(error) = cleanup_managed_containers_on_start(&state).await {
@@ -2565,7 +3044,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/pools/:pool/warm", post(warm_pool))
         .route("/pools/:pool/dispatch", post(dispatch_pool))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .merge(dd_runtime_config_client::router());
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let host = env_value("HOST", "0.0.0.0");
     let port = env_u16("PORT", DEFAULT_PORT);
@@ -2580,4 +3062,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         })
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_container(affinity_key: Option<&str>, request_count: u64) -> WarmContainer {
+        WarmContainer {
+            name: "dd-pool-test-1".to_string(),
+            pool_id: "pool-1".to_string(),
+            pool_slug: "nodejs-chat-claude-k8s-cluster-dev".to_string(),
+            affinity_key: affinity_key.map(str::to_string),
+            port: 31001,
+            status: ContainerStatus::Idle,
+            in_flight: 0,
+            launched_at_ms: 1,
+            last_used_at_ms: 1,
+            last_health_at_ms: None,
+            last_healthy_at_ms: None,
+            health_failure_count: 0,
+            last_health_error: None,
+            request_count,
+            failure_count: 0,
+        }
+    }
+
+    #[test]
+    fn redis_affinity_lock_key_uses_normalized_thread_affinity() {
+        let affinity_key = normalized_affinity_key(Some(" thread 1 / bad chars "))
+            .expect("normalized affinity key");
+
+        assert_eq!(affinity_key, "thread-1---bad-chars");
+        assert_eq!(
+            affinity_map_key("nodejs-chat-claude-k8s-cluster-dev", &affinity_key),
+            "nodejs-chat-claude-k8s-cluster-dev:thread-1---bad-chars"
+        );
+    }
+
+    #[test]
+    fn fresh_affinity_does_not_reuse_unbound_used_container() {
+        let new_thread = "47fc0453-5af1-4807-821e-5b24c4839398";
+        let used_unbound = test_container(None, 1);
+        let clean_unbound = test_container(None, 0);
+        let same_thread = test_container(Some(new_thread), 7);
+        let other_thread = test_container(Some("11111111-1111-4111-8111-111111111111"), 3);
+
+        assert!(!container_matches_affinity_request(
+            &used_unbound,
+            new_thread,
+            true
+        ));
+        assert!(container_matches_affinity_request(
+            &clean_unbound,
+            new_thread,
+            true
+        ));
+        assert!(container_matches_affinity_request(
+            &same_thread,
+            new_thread,
+            true
+        ));
+        assert!(!container_matches_affinity_request(
+            &other_thread,
+            new_thread,
+            true
+        ));
+        assert!(container_matches_affinity_request(
+            &used_unbound,
+            new_thread,
+            false
+        ));
+    }
 }

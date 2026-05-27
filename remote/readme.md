@@ -19,6 +19,14 @@ Today there are several key runtime services:
 - [`deployments/trading-server-rs/`](./deployments/trading-server-rs/) — Rust trading decision service that turns scraper,
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
+- [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
+  source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
+  current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and
+  the admin UI at `/runtime-config/admin` triggers on-demand pushes. Short-lived consumers
+  (lambdas, container-pool images, cron jobs) pull through the rest-api at
+  `/api/runtime-config/snapshot/{env}`. Shared payload types live in
+  [`libs/interfaces/shared/`](./libs/interfaces/shared/) and are generated from JSON Schema into
+  Rust, TypeScript, Python, and Gleam.
 
 Future entries (a long-running queue worker, a stateful LLM evaluator, a headless browser farm,
 etc.) would live as siblings.
@@ -31,6 +39,14 @@ There are also runtime siblings for queueing, scheduling, and optimization:
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
 - [`deployments/mdp-optimizer-rs/`](./deployments/mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
+- [`deployments/thread-operator-go/`](./deployments/thread-operator-go/) — Go Kubernetes operator that owns the
+  per-thread workspace lifecycle as a `Thread` CRD (`dd.dev/v1alpha1`). Strictly opt-in: only
+  reconciles `Thread` CRs and refuses to adopt resources that lack the
+  `dd.dev/managed-by=dd-thread-operator` label, so existing template-provisioned threads are
+  unaffected.
+- [`deployments/thread-fleet-exporter-go/`](./deployments/thread-fleet-exporter-go/) — Go Prometheus exporter
+  for the `dd-dev` thread fleet. Read-only; exposes the same `active|starting|sleeping|failed|dead`
+  taxonomy used by `/u/admin/k8s` so Grafana and alert rules can finally see thread health.
 
 The AI/ML platform seed layer lives in
 [`argocd/ai-ml-platform/`](./argocd/ai-ml-platform/) and is managed by the
@@ -125,7 +141,7 @@ being tuned:
 - K8s runtime entrypoint: Deployment `dd-remote-gateway` in namespace `default`, with
   `hostPort: 80` and `hostPort: 443`
 - Public web deployment behind the gateway: `dd-remote-web-home`
-- Internal/public JSON API deployment behind the gateway: `dd-remote-rest-api`
+- Authenticated JSON API deployment behind the gateway: `dd-remote-rest-api`
 - Worker dispatch broker behind the gateway: `dd-agent-worker-broker`
 - Authenticated build/deploy server behind the gateway: `dd-build-server`
 - Bootstrap Node.js coding-agent task manager behind the gateway: `dd-dev-server-api`
@@ -136,7 +152,7 @@ being tuned:
     bootstrap)
   - `https://54.91.17.58/agents/threads` (Rust thread-first chat UI with stored response stream and
     feedback)
-  - `https://54.91.17.58/api/agents/tasks` (Rust REST API snapshot, public during bootstrap)
+    - `https://54.91.17.58/api/agents/tasks` (Rust REST API snapshot, requires `Auth` or `dd_auth`)
   - `https://54.91.17.58/api/agent-worker/threads/<threadId>/tasks` (Rust worker broker, requires
     `Auth`)
   - `https://54.91.17.58/container-pools` (Rust container pool control surface, requires `Auth`)
@@ -159,8 +175,8 @@ This fallback service keeps the box observable while we continue promoting the f
 path in `dd-dev`.
 
 `/agents/tasks` and `/agents/threads` are served by the Rust web deployment, not Vercel/Next.js.
-They are HTML-only; the browser calls the public gateway routes `/api/agents/tasks` and
-`/api/agents/tasks/:taskId/events` directly. The REST API owns RDS/Postgres access via
+They are HTML-only; the browser calls the authenticated same-origin gateway routes
+`/api/agents/tasks` and `/api/agents/tasks/:taskId/events` directly. The REST API owns RDS/Postgres access via
 `AGENT_TASKS_RDS_DATABASE_URL` or `RDS_DATABASE_URL`, with `AGENT_TASKS_DATABASE_URL` /
 `DATABASE_URL` and Supabase REST as migration fallbacks. When we deploy Postgres inside the
 cluster, only the REST API needs to point at that internal service.

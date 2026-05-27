@@ -38,17 +38,18 @@ NATs, corporate firewalls, or mobile carrier networks. Add an SFU only when we
 need server-side multi-party media routing, recording, simulcast, moderation, or
 large rooms.
 
-## Public Gateway Paths
+## Gateway Paths
 
-When deployed behind `dd-remote-gateway`:
+When deployed behind `dd-remote-gateway`, these paths require the operator `Auth` header or the
+`dd_auth` browser cookie:
 
 - `GET /webrtc/` renders the service page.
 - `GET /webrtc/healthz` returns JSON health.
 - `GET /webrtc/metrics` exposes Prometheus metrics.
 - `GET /webrtc/signal?room=<roomId>&peer=<peerId>` upgrades to WebSocket.
 
-Use `wss://54.91.17.58/webrtc/signal?room=<roomId>&peer=<peerId>` from browser
-or mobile clients when hitting the current EC2 gateway.
+Use `wss://54.91.17.58/webrtc/signal?room=<roomId>&peer=<peerId>` from an authenticated browser or
+operator client when hitting the current EC2 gateway.
 
 ## WebSocket Protocol
 
@@ -96,6 +97,10 @@ The server wraps forwarded frames as:
 The protected admin websocket at `/webrtc/runtime/ws` is also used as the Rust websocket backup path
 for remote-dev task status. It forwards `k8s-runtime-event` and `task-event` payloads from
 `RUNTIME_ADMIN_EVENT_SUBJECT` when NATS is healthy, and it stays connected if NATS is unavailable.
+`dd-remote-rest-api` publishes direct task events there and also maps
+`dd-wal-gateway` CDC changes from `agent_remote_dev_events` onto the same
+NATS subject, so this service does not need its own Postgres connection or
+logical replication slot.
 Internal services can post the same JSON envelope directly to:
 
 ```text

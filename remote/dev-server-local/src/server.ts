@@ -116,6 +116,24 @@ const config = {
   taskGcIntervalMs: 5 * 60 * 1000, // 5 min sweep
 };
 
+// Paths the dev-server owns by contract and must never treat as user
+// repo content (commits, dirty-state guards, install-artifact cleans):
+//   - dependency caches that should not pollute commits or dirty checks
+//   - tmp/convos: per-thread breadcrumb log written by this server even
+//     when the underlying repo does not gitignore tmp/. Mirrors the
+//     k8s dd-dev-server contract; see remote/deployments/dev-server/src/server.ts
+//     and AGENTS.md for the breadcrumb contract.
+const GENERATED_GIT_EXCLUDE_PATHS = [
+  ".pnpm-store",
+  "node_modules",
+  ".next",
+  ".turbo",
+  "tmp/convos",
+];
+const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS.map(
+  (path) => `:(exclude)${path}`,
+);
+
 // ---------- Event types ----------
 
 type WrappedEvent =
@@ -650,23 +668,53 @@ async function runTask(state: TaskState): Promise<void> {
   }
 
   // Stage + commit anything the agent left uncommitted, then push.
+  // Path excludes (and the post-`add` reset) keep the dev-server's own
+  // breadcrumb log + dependency caches out of the resulting PR even when
+  // the underlying repo doesn't gitignore tmp/, node_modules, etc.
   emit(state, { kind: "status", status: "pushing" });
   const status = await shCapture(
     "git",
-    ["status", "--porcelain"],
+    [
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--",
+      ".",
+      ...GENERATED_GIT_STATUS_EXCLUDES,
+    ],
     state.worktreePath,
     { timeoutMs: TIMEOUT_GIT_QUICK },
   );
   if (status.trim()) {
-    await shCapture("git", ["add", "-A"], state.worktreePath, {
+    await shCapture("git", ["add", "-A", "--", "."], state.worktreePath, {
       timeoutMs: TIMEOUT_GIT_QUICK,
     });
     await shCapture(
       "git",
-      ["commit", "-m", `agent(${state.session.sessionId}): ${state.taskId}`],
+      ["reset", "-q", "HEAD", "--", ...GENERATED_GIT_EXCLUDE_PATHS],
       state.worktreePath,
       { timeoutMs: TIMEOUT_GIT_QUICK },
     );
+    let hasStagedChanges = true;
+    try {
+      await shCapture(
+        "git",
+        ["diff", "--cached", "--quiet"],
+        state.worktreePath,
+        { timeoutMs: TIMEOUT_GIT_QUICK },
+      );
+      hasStagedChanges = false;
+    } catch {
+      // diff --cached --quiet exits non-zero when there are staged changes
+    }
+    if (hasStagedChanges) {
+      await shCapture(
+        "git",
+        ["commit", "-m", `agent(${state.session.sessionId}): ${state.taskId}`],
+        state.worktreePath,
+        { timeoutMs: TIMEOUT_GIT_QUICK },
+      );
+    }
   }
   await shCapture(
     "git",
