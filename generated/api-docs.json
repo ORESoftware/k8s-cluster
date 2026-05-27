@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleam-lambda-runner",
   "language": "gleam",
-  "routeCount": 12,
+  "routeCount": 13,
   "routeTypeCounts": {
-    "service": 5,
+    "service": 6,
     "user-generated": 4,
     "runtime-config": 3
   },
@@ -16,10 +16,24 @@
   ],
   "routes": [
     {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/api/docs",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ],
       "routeType": "service",
       "implementation": "service",
@@ -29,13 +43,12 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/api/docs.json",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ],
       "routeType": "service",
       "implementation": "service",
@@ -45,12 +58,11 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/check",
       "methods": [
-        "GET",
         "POST"
       ],
       "routeType": "user-generated",
@@ -61,12 +73,11 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/destroy/:reuse_key",
       "methods": [
-        "GET",
         "POST"
       ],
       "routeType": "user-generated",
@@ -77,13 +88,12 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/docs/api",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ],
       "routeType": "service",
       "implementation": "service",
@@ -93,13 +103,12 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/healthz",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ],
       "routeType": "service",
       "implementation": "service",
@@ -109,13 +118,12 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/home",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ],
       "routeType": "user-generated",
       "implementation": "code-first",
@@ -125,7 +133,7 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/internal/runtime-config",
@@ -181,7 +189,6 @@
     {
       "path": "/invoke/:function_id",
       "methods": [
-        "GET",
         "POST"
       ],
       "routeType": "user-generated",
@@ -192,13 +199,12 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     },
     {
       "path": "/metrics",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ],
       "routeType": "service",
       "implementation": "service",
@@ -208,7 +214,7 @@
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
-      "notes": "Method is inferred from route body; inspect source for exact method guard."
+      "notes": ""
     }
   ]
 }
