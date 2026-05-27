@@ -71,8 +71,20 @@ data:
       ssl_protocols TLSv1.2 TLSv1.3;
       ssl_session_cache shared:SSL:10m;
       ssl_session_timeout 10m;
-      add_header Strict-Transport-Security "max-age=3600" always;
+      # Strict-Transport-Security: 180 days. Bootstrap cert is self-signed
+      # (or a short-lived Let's Encrypt IP cert) so we deliberately stop
+      # short of the standard 1y/preload window; revisit when we have a
+      # stable trusted cert chain.
+      add_header Strict-Transport-Security "max-age=15552000" always;
       add_header Content-Security-Policy "upgrade-insecure-requests" always;
+      # Defensive headers: prevent clickjacking, MIME sniffing, and
+      # cross-origin Referer leaks. Safe to apply globally; individual
+      # locations can override with their own add_header if needed.
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+      # Hide nginx version from the Server response header.
+      server_tokens off;
 
       client_max_body_size 10m;
       proxy_connect_timeout 5s;
@@ -367,6 +379,12 @@ data:
           return 401;
         }
         proxy_http_version 1.1;
+        # Grafana Live uses a WebSocket at /telemetry/api/live/ws, so the
+        # gateway must forward Upgrade/Connection through this location.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

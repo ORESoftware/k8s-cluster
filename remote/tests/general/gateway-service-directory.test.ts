@@ -575,7 +575,10 @@ test('gateway terminates self-signed TLS on host port 443', async () => {
   assert.match(gateway, /ssl_certificate \/etc\/nginx\/tls\/tls\.crt/);
   assert.match(gateway, /ssl_certificate_key \/etc\/nginx\/tls\/tls\.key/);
   assert.match(gateway, /ssl_protocols TLSv1\.2 TLSv1\.3/);
-  assert.match(gateway, /Strict-Transport-Security "max-age=3600" always/);
+  // HSTS max-age is gateway-hardening-controlled and must be at least 90d.
+  // The exact value is asserted in cluster-hardening.test.ts; here we just
+  // confirm the header is present.
+  assert.match(gateway, /Strict-Transport-Security "max-age=\d+" always/);
   assert.match(gateway, /Content-Security-Policy "upgrade-insecure-requests" always/);
   assert.match(gateway, /location \/\.well-known\/acme-challenge\//);
   assert.match(gateway, /root \/var\/www\/acme/);

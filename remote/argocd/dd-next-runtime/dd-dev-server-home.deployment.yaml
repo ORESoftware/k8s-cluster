@@ -94,6 +94,17 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # Conservative requests/limits so this Node bootstrap pod
+          # cannot starve other deployments on the single-node EC2 host
+          # under load. Adjust upward if the per-thread workload
+          # actually requires more headroom.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
           volumeMounts:
             - name: workspace
               mountPath: /home/node/workspace

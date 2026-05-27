@@ -70,7 +70,11 @@ const targets = [
   { name: "dev server agents", path: "/agents", kind: protectedUi, expect: /agents|providers|remote/i },
   { name: "dev server status", path: "/status", kind: protectedStatus, expect: /status|ok|health/i },
   { name: "container pools", path: "/container-pools", kind: protectedUi, expect: /container|pool|warm/i },
-  { name: "build server", path: "/builds", kind: protectedUi, expect: /build|jobs|logs/i },
+  // /builds is a JSON listing endpoint (GET returns the build job
+  // array). It does not serve HTML, so classify it as a protected
+  // status surface and accept either the JSON envelope or a populated
+  // job list.
+  { name: "build server", path: "/builds", kind: protectedStatus, expect: /^\s*\[|build|jobs|logs/i },
   { name: "bastion inventory", path: "/bastion/runtime/deployments", kind: protectedStatus, expect: /deployment|pod|container/i },
   { name: "headlamp", path: "/headlamp/", kind: protectedUi, expect: /headlamp|kubernetes|token/i },
   { name: "gleam service", path: "/gleam/home", kind: protectedUi, expect: /gleam|websocket|connect/i },

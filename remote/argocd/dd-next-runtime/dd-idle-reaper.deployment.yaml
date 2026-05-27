@@ -26,6 +26,15 @@ spec:
         - name: reaper
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
+          # Additive baseline: no privilege escalation + RuntimeDefault
+          # seccomp. We do NOT drop capabilities or set runAsNonRoot
+          # because this pod talks to /run/containerd/containerd.sock
+          # via nerdctl (worker image rebuild path), which needs root +
+          # DAC_OVERRIDE. Tightening further is a coordinated change.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc

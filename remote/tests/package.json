@@ -12,6 +12,7 @@
     "test:cli:general": "pnpm exec tsx --test general/cli.test.ts",
     "test:cli:deep": "pnpm exec tsx --test general/cli.deep.test.ts",
     "test:cli:cluster-doctor-cron": "pnpm exec tsx --test general/cluster-doctor-cron.test.ts",
+    "test:cli:cluster-hardening": "pnpm exec tsx --test general/cluster-hardening.test.ts",
     "test:cli:container-pool-config": "pnpm exec tsx --test general/container-pool-config.test.ts",
     "test:cli:contract-service-config": "pnpm exec tsx --test general/contract-service-config.test.ts",
     "test:cli:des-simulator-config": "pnpm exec tsx --test general/des-simulator-config.test.ts",
@@ -51,5 +52,6 @@
     "playwright": "^1.60.0",
     "puppeteer": "^25.0.4",
     "tsx": "^4.22.0"
-  }
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
 }
