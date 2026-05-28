@@ -19,7 +19,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-05-20-lambda-checks-ui"
+        dd.dev/telemetry-revision: "2026-05-28-factmachine-markets"
       labels:
         app: dd-remote-web-home
     spec:

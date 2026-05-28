@@ -5,6 +5,7 @@ WORKDIR /app/deployments/web-home-rs
 
 COPY deployments/web-home-rs/Cargo.toml deployments/web-home-rs/Cargo.lock ./
 COPY libs/runtime-config-client-rs /app/libs/runtime-config-client-rs
+COPY libs/nats/subject-defs/generated/rust /app/libs/nats/subject-defs/generated/rust
 COPY deployments/web-home-rs/generated ./generated
 COPY deployments/web-home-rs/src ./src
 RUN cargo build --release
