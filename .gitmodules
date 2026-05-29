@@ -23,3 +23,7 @@
 	path = remote/submodules/rust-network-mutex-rs
 	url = git@github.com:ORESoftware/live-mutex-rs.git
 	branch = dev
+[submodule "remote/submodules/discrete-event-system"]
+	path = remote/submodules/discrete-event-system
+	url = https://github.com/ORESoftware/discrete-event-system.git
+	branch = main

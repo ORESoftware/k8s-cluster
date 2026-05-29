@@ -66,6 +66,10 @@ spec:
               value: /tmp/cargo
             - name: CARGO_TARGET_DIR
               value: /tmp/des-target
+            # Rendered discrete-event-system HTML served at /des/out/ from the
+            # discrete-event-system submodule checked out in the mounted repo.
+            - name: DES_OUT_DIR
+              value: /opt/dd-next-1/remote/submodules/discrete-event-system/out
             # runtime-config wiring: registers this pod with the control plane
             # so it receives /internal/update-runtime-config pushes every 5 min
             # plus on-demand admin pushes.
