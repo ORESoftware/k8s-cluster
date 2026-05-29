@@ -1,6 +1,15 @@
 {
   "ok": true,
   "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "centralDocsRoutes": [
+    "/api-docs",
+    "/api-docs.json"
+  ],
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
   "services": [
     {
       "service": "agent-worker-broker-rs",
@@ -59,6 +68,32 @@
       ]
     },
     {
+      "service": "billing-server-rs",
+      "language": "rust",
+      "routeCount": 45,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 39
+      },
+      "generated": [
+        "remote/deployments/billing-server-rs/generated/api-docs.json",
+        "remote/deployments/billing-server-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "browser-test-server",
+      "language": "node",
+      "routeCount": 14,
+      "routeTypeCounts": {
+        "service": 8,
+        "user-generated": 6
+      },
+      "generated": [
+        "remote/deployments/browser-test-server/generated/api-docs.json",
+        "remote/deployments/browser-test-server/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "build-server-rs",
       "language": "rust",
       "routeCount": 12,
@@ -98,6 +133,19 @@
       "generated": [
         "remote/deployments/contract-service-rs/generated/api-docs.json",
         "remote/deployments/contract-service-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dart-server",
+      "language": "dart",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 14
+      },
+      "generated": [
+        "remote/deployments/dart-server/generated/api-docs.json",
+        "remote/deployments/dart-server/generated/api-docs.html"
       ]
     },
     {
@@ -157,11 +205,24 @@
       ]
     },
     {
+      "service": "fsharp-ws-server",
+      "language": "fsharp",
+      "routeCount": 23,
+      "routeTypeCounts": {
+        "service": 8,
+        "user-generated": 15
+      },
+      "generated": [
+        "remote/deployments/fsharp-ws-server/generated/api-docs.json",
+        "remote/deployments/fsharp-ws-server/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "gleam-lambda-runner",
       "language": "gleam",
-      "routeCount": 12,
+      "routeCount": 13,
       "routeTypeCounts": {
-        "service": 5,
+        "service": 6,
         "user-generated": 4,
         "runtime-config": 3
       },
@@ -201,9 +262,9 @@
     {
       "service": "gleamlang-server",
       "language": "gleam",
-      "routeCount": 12,
+      "routeCount": 13,
       "routeTypeCounts": {
-        "service": 5,
+        "service": 6,
         "user-generated": 4,
         "runtime-config": 3
       },
@@ -271,9 +332,9 @@
     {
       "service": "runtime-config-rs",
       "language": "rust",
-      "routeCount": 15,
+      "routeCount": 18,
       "routeTypeCounts": {
-        "service": 3,
+        "service": 6,
         "user-generated": 12
       },
       "generated": [
@@ -311,15 +372,28 @@
     {
       "service": "web-home-rs",
       "language": "rust",
-      "routeCount": 29,
+      "routeCount": 35,
       "routeTypeCounts": {
-        "service": 4,
+        "service": 10,
         "user-generated": 22,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/web-home-rs/generated/api-docs.json",
         "remote/deployments/web-home-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "web-scraper-service",
+      "language": "node",
+      "routeCount": 13,
+      "routeTypeCounts": {
+        "service": 8,
+        "user-generated": 5
+      },
+      "generated": [
+        "remote/deployments/web-scraper-service/generated/api-docs.json",
+        "remote/deployments/web-scraper-service/generated/api-docs.html"
       ]
     },
     {

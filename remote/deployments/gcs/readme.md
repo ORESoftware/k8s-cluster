@@ -55,6 +55,7 @@ The current chat server starts two listeners:
 
 - REST API: `gcs.default.svc.cluster.local:3000`
 - WebSocket API: `gcs.default.svc.cluster.local:3001`
+- GCS server metrics: `gcs.default.svc.cluster.local:3000/chat/metrics`
 - Gateway REST health: `https://54.91.17.58/gcs/health` with the operator `Auth` header or
   `dd_auth` browser cookie
 - Gateway WebSocket listener health: `https://54.91.17.58/gcs/ws-health` with the operator `Auth`
