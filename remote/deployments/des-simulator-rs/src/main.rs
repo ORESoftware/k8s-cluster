@@ -1493,7 +1493,7 @@ fn prune_jobs(jobs: &mut HashMap<String, SimulationJobSnapshot>) {
         .iter()
         .map(|(job_id, snapshot)| (job_id.clone(), snapshot.submitted_at_ms))
         .collect::<Vec<_>>();
-    oldest.sort_by(|left, right| left.1.cmp(&right.1));
+    oldest.sort_by_key(|entry| entry.1);
     let remove_count = oldest.len().saturating_sub(MAX_RETAINED_JOBS - 1);
     for (job_id, _) in oldest.into_iter().take(remove_count) {
         jobs.remove(&job_id);
@@ -1971,14 +1971,49 @@ fn des_out_dir() -> PathBuf {
 fn des_out_content_type(path: &StdPath) -> &'static str {
     match path.extension().and_then(|ext| ext.to_str()) {
         Some("html" | "htm") => "text/html; charset=utf-8",
-        Some("json") => "application/json; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json" | "map") => "application/json; charset=utf-8",
         Some("jsonl") => "application/x-ndjson; charset=utf-8",
         Some("csv") => "text/csv; charset=utf-8",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("ico") => "image/x-icon",
+        Some("woff2") => "font/woff2",
+        Some("wasm") => "application/wasm",
         Some("md") => "text/markdown; charset=utf-8",
         Some("txt") => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
+    }
+}
+
+/// Canonicalize `requested` and return it only if it stays inside the
+/// canonicalized `base`. Returns `None` for traversal attempts, escaping
+/// symlinks, or paths that do not exist.
+fn des_out_resolve_within(base: &StdPath, requested: &StdPath) -> Option<PathBuf> {
+    let canon_base = base.canonicalize().ok()?;
+    let canon_req = requested.canonicalize().ok()?;
+    canon_req.starts_with(&canon_base).then_some(canon_req)
+}
+
+/// Read and return an already path-validated file with a conservative set of
+/// response headers. `nosniff` blocks MIME confusion on served artifacts, and a
+/// short cache window keeps re-renders fresh while still helping repeat loads.
+fn serve_des_file(path: &StdPath) -> Response {
+    match std::fs::read(path) {
+        Ok(bytes) => (
+            [
+                ("content-type", des_out_content_type(path)),
+                ("x-content-type-options", "nosniff"),
+                ("cache-control", "public, max-age=60"),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
 }
 
@@ -2008,8 +2043,25 @@ fn html_escape(input: &str) -> String {
         .replace('"', "&quot;")
 }
 
-async fn des_out_index() -> impl axum::response::IntoResponse {
+/// Redirect bare `/out` to `/out/` using a relative target so the curated
+/// index's relative links resolve correctly behind any gateway path prefix.
+async fn des_out_redirect() -> Response {
+    axum::response::Redirect::permanent("out/").into_response()
+}
+
+async fn des_out_index() -> Response {
     let base = des_out_dir();
+
+    // Prefer the curated landing page (out/index.html) when present so /des/out/
+    // serves the hand-built index instead of an auto-generated file listing.
+    if let Some(index) = des_out_resolve_within(&base, &base.join("index.html")) {
+        if index.is_file() {
+            return serve_des_file(&index);
+        }
+    }
+
+    // Fallback: generated listing of every rendered HTML artifact. Hrefs are
+    // relative so they resolve under whatever prefix this page is served at.
     let mut files = Vec::new();
     des_out_collect_html(&base, &base, &mut files);
     files.sort();
@@ -2026,7 +2078,7 @@ async fn des_out_index() -> impl axum::response::IntoResponse {
         for file in &files {
             let safe = html_escape(file);
             items.push_str(&format!(
-                "<li><a href=\"/des/out/{href}\">{label}</a></li>",
+                "<li><a href=\"{href}\">{label}</a></li>",
                 href = safe,
                 label = safe
             ));
@@ -2056,30 +2108,34 @@ async fn des_out_index() -> impl axum::response::IntoResponse {
         items = items
     );
 
-    axum::response::Html(body)
+    axum::response::Html(body).into_response()
 }
 
 async fn des_out_file(Path(rel_path): Path<String>) -> Response {
     let base = des_out_dir();
-    let requested = base.join(&rel_path);
 
-    // Defend against path traversal: the canonicalized target must stay inside
-    // the canonicalized out/ directory.
-    let (Ok(canon_base), Ok(canon_req)) = (base.canonicalize(), requested.canonicalize()) else {
+    // Defend against path traversal: the canonicalized target (symlinks and
+    // `..` resolved) must stay inside the canonicalized out/ directory.
+    let Some(target) = des_out_resolve_within(&base, &base.join(&rel_path)) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
-    if !canon_req.starts_with(&canon_base) || !canon_req.is_file() {
+
+    // Serve <dir>/index.html for directory requests; never expose raw directory
+    // listings of arbitrary subpaths.
+    if target.is_dir() {
+        if let Some(index) = des_out_resolve_within(&base, &target.join("index.html")) {
+            if index.is_file() {
+                return serve_des_file(&index);
+            }
+        }
         return (StatusCode::NOT_FOUND, "not found").into_response();
     }
 
-    match std::fs::read(&canon_req) {
-        Ok(bytes) => (
-            [("content-type", des_out_content_type(&canon_req))],
-            bytes,
-        )
-            .into_response(),
-        Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
+    if !target.is_file() {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
     }
+
+    serve_des_file(&target)
 }
 
 #[tokio::main]
@@ -2119,7 +2175,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/validate", post(validate_with_metrics))
         .route("/simulate", post(simulate_http))
         .route("/simulations/:job_id", get(job_status))
-        .route("/out", get(des_out_index))
+        .route("/out", get(des_out_redirect))
         .route("/out/", get(des_out_index))
         .route("/out/*path", get(des_out_file))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
@@ -2362,6 +2418,57 @@ mod tests {
             4.0
         );
         assert!(!result.truncated);
+    }
+
+    #[test]
+    fn out_content_type_maps_known_and_unknown_extensions() {
+        assert_eq!(
+            des_out_content_type(StdPath::new("a/b.html")),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("a.svg")),
+            "image/svg+xml"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("a.js")),
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("a.bin")),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("no-extension")),
+            "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn out_resolve_within_confines_to_base_and_blocks_traversal() {
+        let root = std::env::temp_dir().join(format!(
+            "des-out-test-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let base = root.join("out");
+        std::fs::create_dir_all(base.join("sub")).expect("create base");
+        std::fs::write(base.join("index.html"), b"<h1>ok</h1>").expect("write index");
+        std::fs::write(base.join("sub/page.html"), b"<h1>sub</h1>").expect("write sub page");
+        std::fs::write(root.join("secret.txt"), b"top secret").expect("write secret");
+
+        // In-bounds files resolve.
+        assert!(des_out_resolve_within(&base, &base.join("index.html")).is_some());
+        assert!(des_out_resolve_within(&base, &base.join("sub/page.html")).is_some());
+
+        // Traversal out of the base is rejected even though the target exists.
+        assert!(des_out_resolve_within(&base, &base.join("../secret.txt")).is_none());
+        assert!(des_out_resolve_within(&base, &base.join("sub/../../secret.txt")).is_none());
+
+        // Missing paths resolve to None (canonicalize fails).
+        assert!(des_out_resolve_within(&base, &base.join("nope.html")).is_none());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
