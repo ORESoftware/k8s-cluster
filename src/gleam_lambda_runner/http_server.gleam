@@ -1,7 +1,7 @@
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
-import gleam/http
+import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/http/response
 import gleam/int
@@ -54,25 +54,26 @@ pub fn bind_port() -> Int {
 fn route(
   req: request.Request(mist.Connection),
 ) -> response.Response(mist.ResponseData) {
-  case request.path_segments(req) {
-    [] -> redirect("/home")
-    ["home"] -> home_page()
-    ["docs", "api"] -> api_docs.html()
-    ["api", "docs"] -> api_docs.html()
-    ["api", "docs.json"] -> api_docs.json()
-    ["healthz"] -> healthz()
-    ["metrics"] -> metrics()
-    ["invoke", function_id] ->
+  case req.method, request.path_segments(req) {
+    Get, [] -> redirect("/home")
+    Get, ["home"] -> home_page()
+    Get, ["docs", "api"] -> api_docs.html()
+    Get, ["api", "docs"] -> api_docs.html()
+    Get, ["api", "docs.json"] -> api_docs.json()
+    Get, ["healthz"] -> healthz()
+    Get, ["metrics"] -> metrics()
+    Post, ["invoke", function_id] ->
       require_authenticated_post(req, fn() { invoke(req, function_id) })
-    ["check"] -> require_authenticated_post(req, fn() { check(req) })
-    ["destroy", reuse_key] ->
+    Post, ["check"] -> require_authenticated_post(req, fn() { check(req) })
+    Post, ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
-    ["internal", "runtime-config"] -> dd_runtime_config_client.handle_snapshot(req)
-    ["internal", "update-runtime-config"] ->
+    Get, ["internal", "runtime-config"] ->
+      dd_runtime_config_client.handle_snapshot(req)
+    Post, ["internal", "update-runtime-config"] ->
       dd_runtime_config_client.handle_apply(req)
-    ["internal", "runtime-config", "reset"] ->
+    Post, ["internal", "runtime-config", "reset"] ->
       dd_runtime_config_client.handle_reset(req)
-    _ -> not_found()
+    _, _ -> not_found()
   }
 }
 
@@ -234,7 +235,7 @@ fn require_post(
   next: fn() -> response.Response(mist.ResponseData),
 ) -> response.Response(mist.ResponseData) {
   case req.method {
-    http.Post -> next()
+    Post -> next()
     _ -> method_not_allowed()
   }
 }
