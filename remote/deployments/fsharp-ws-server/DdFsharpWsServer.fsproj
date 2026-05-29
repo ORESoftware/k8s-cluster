@@ -36,6 +36,8 @@
   -->
   <ItemGroup>
     <Content Include="sql/schema.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="generated/api-docs.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="generated/api-docs.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

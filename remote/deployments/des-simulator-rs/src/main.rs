@@ -4,6 +4,7 @@ use std::{
     env,
     error::Error,
     net::SocketAddr,
+    path::{Path as StdPath, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -1706,7 +1707,9 @@ async fn root() -> impl IntoResponse {
             "namedExample": "GET /model/examples/:name",
             "validate": "POST /validate",
             "simulate": "POST /simulate",
-            "jobStatus": "GET /simulations/:jobId"
+            "jobStatus": "GET /simulations/:jobId",
+            "renderedOutputIndex": "GET /out",
+            "renderedOutputFile": "GET /out/*path"
         },
         "nats": {
             "simulateSubject": DES_SIMULATE_SUBJECT,
@@ -1933,6 +1936,152 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
     )
 }
 
+// Rendered discrete-event-system output, served from the
+// `discrete-event-system` submodule's `out/` directory (committed HTML/PNG/SVG
+// artifacts). These files are read off disk per request rather than embedded,
+// since some HTML pages are tens of MB. Reached publicly via the gateway as
+// `/des/out/...` (the gateway strips the `/des/` prefix, so this service sees
+// `/out/...`).
+
+/// Resolve the directory holding the discrete-event-system `out/` artifacts.
+///
+/// Honors `DES_OUT_DIR` first (set in the deployment), then probes paths that
+/// match a local checkout so `cargo run` works without extra env wiring.
+fn des_out_dir() -> PathBuf {
+    if let Ok(dir) = env::var("DES_OUT_DIR") {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    let candidates = [
+        "/opt/dd-next-1/remote/submodules/discrete-event-system/out",
+        "../../submodules/discrete-event-system/out",
+        "../../../submodules/discrete-event-system/out",
+        "remote/submodules/discrete-event-system/out",
+    ];
+    for candidate in candidates {
+        let path = PathBuf::from(candidate);
+        if path.is_dir() {
+            return path;
+        }
+    }
+    PathBuf::from("/opt/dd-next-1/remote/submodules/discrete-event-system/out")
+}
+
+fn des_out_content_type(path: &StdPath) -> &'static str {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("html" | "htm") => "text/html; charset=utf-8",
+        Some("json") => "application/json; charset=utf-8",
+        Some("jsonl") => "application/x-ndjson; charset=utf-8",
+        Some("csv") => "text/csv; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("md") => "text/markdown; charset=utf-8",
+        Some("txt") => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Recursively collect `*.html` files under `dir`, returned as forward-slash
+/// relative paths sorted alphabetically for a stable index listing.
+fn des_out_collect_html(dir: &StdPath, base: &StdPath, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            des_out_collect_html(&path, base, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("html") {
+            if let Ok(rel) = path.strip_prefix(base) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+}
+
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+async fn des_out_index() -> impl axum::response::IntoResponse {
+    let base = des_out_dir();
+    let mut files = Vec::new();
+    des_out_collect_html(&base, &base, &mut files);
+    files.sort();
+
+    let mut items = String::new();
+    if files.is_empty() {
+        items.push_str(&format!(
+            "<p class=\"empty\">No HTML found under {}. \
+             Set DES_OUT_DIR or initialize the discrete-event-system submodule.</p>",
+            html_escape(&base.display().to_string())
+        ));
+    } else {
+        items.push_str("<ul>");
+        for file in &files {
+            let safe = html_escape(file);
+            items.push_str(&format!(
+                "<li><a href=\"/des/out/{href}\">{label}</a></li>",
+                href = safe,
+                label = safe
+            ));
+        }
+        items.push_str("</ul>");
+    }
+
+    let body = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>discrete-event-system output</title><style>\
+         body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;\
+         background:#0d1117;color:#e6edf3;}}\
+         main{{max-width:960px;margin:0 auto;padding:24px 20px 64px;}}\
+         h1{{font-size:1.5rem;margin:0 0 4px;}}\
+         p.sub{{color:#8b949e;margin:0 0 20px;font-size:.9rem;}}\
+         ul{{list-style:none;padding:0;margin:0;}}\
+         li{{border-bottom:1px solid #21262d;}}\
+         li a{{display:block;padding:10px 8px;color:#58a6ff;text-decoration:none;\
+         font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem;}}\
+         li a:hover{{background:#161b22;}}\
+         p.empty{{color:#8b949e;padding:16px 8px;}}</style></head><body><main>\
+         <h1>discrete-event-system output</h1>\
+         <p class=\"sub\">Rendered HTML from the discrete-event-system submodule's out/ \
+         directory ({count} files).</p>{items}</main></body></html>",
+        count = files.len(),
+        items = items
+    );
+
+    axum::response::Html(body)
+}
+
+async fn des_out_file(Path(rel_path): Path<String>) -> Response {
+    let base = des_out_dir();
+    let requested = base.join(&rel_path);
+
+    // Defend against path traversal: the canonicalized target must stay inside
+    // the canonicalized out/ directory.
+    let (Ok(canon_base), Ok(canon_req)) = (base.canonicalize(), requested.canonicalize()) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    if !canon_req.starts_with(&canon_base) || !canon_req.is_file() {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    }
+
+    match std::fs::read(&canon_req) {
+        Ok(bytes) => (
+            [("content-type", des_out_content_type(&canon_req))],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
@@ -1970,6 +2119,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/validate", post(validate_with_metrics))
         .route("/simulate", post(simulate_http))
         .route("/simulations/:job_id", get(job_status))
+        .route("/out", get(des_out_index))
+        .route("/out/", get(des_out_index))
+        .route("/out/*path", get(des_out_file))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());

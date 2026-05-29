@@ -53,6 +53,7 @@
 ///   GET  /dart/mobile, /dart/mobile/* — Flutter mobile static
 ///   GET  /dart/assets/*      — Flutter asset files
 ///   GET  /healthz            — local mirror (probes on :8090 work too)
+///   GET  /docs/api, /api/docs, /api/docs.json — generated API docs
 library;
 
 import 'dart:async';
@@ -96,6 +97,7 @@ Future<void> main(List<String> args) async {
   final staticDirPath = Platform.environment['STATIC_DIR'] ?? './public';
   final mobileStaticDirPath =
       Platform.environment['MOBILE_STATIC_DIR'] ?? './mobile-public';
+  final apiDocsDirPath = Platform.environment['API_DOCS_DIR'] ?? './generated';
   final ready = Platform.environment['READY_AT_BOOT'] != 'false';
   final hotReloadEnabled = Platform.environment['HOT_RELOAD'] == 'true';
   final gatewayShards = (int.tryParse(
@@ -186,7 +188,7 @@ Future<void> main(List<String> args) async {
 
   // ---- HTTP isolate ------------------------------------------------------
   final httpHandshake = ReceivePort('dd-dart-http-isolate-handshake');
-  await Isolate.spawn<HttpIsolateBoot>(
+  final httpIsolate = await Isolate.spawn<HttpIsolateBoot>(
     httpIsolateEntry,
     HttpIsolateBoot(
       handshake: httpHandshake.sendPort,
@@ -194,6 +196,7 @@ Future<void> main(List<String> args) async {
       port: httpInternalPort,
       staticDirPath: staticDirPath,
       mobileStaticDirPath: mobileStaticDirPath,
+      apiDocsDirPath: apiDocsDirPath,
       metricsBus: metricsInbox.sendPort,
     ),
     debugName: 'dd-dart-http',
@@ -387,6 +390,7 @@ Future<void> main(List<String> args) async {
     'gateway_shards': gatewayShards,
     'static_dir': staticDirPath,
     'mobile_static_dir': mobileStaticDirPath,
+    'api_docs_dir': apiDocsDirPath,
     'ready': ready,
   }));
 
@@ -416,6 +420,7 @@ Future<void> main(List<String> args) async {
     try {
       await adminServer.close(force: false);
     } catch (_) {/* swallow */}
+    httpIsolate.kill(priority: Isolate.immediate);
     for (final shard in shards) {
       if (shard.dead) continue;
       try {
@@ -446,10 +451,10 @@ Future<void> main(List<String> args) async {
     c.complete();
   }
 
-  ProcessSignal.sigterm.watch().listen((_) {
+  final sigtermSub = ProcessSignal.sigterm.watch().listen((_) {
     unawaited(beginShutdown('SIGTERM'));
   });
-  ProcessSignal.sigint.watch().listen((_) {
+  final sigintSub = ProcessSignal.sigint.watch().listen((_) {
     unawaited(beginShutdown('SIGINT'));
   });
 
@@ -466,6 +471,18 @@ Future<void> main(List<String> args) async {
     ));
   }
 
+  final shutdown = shuttingDown;
+  if (shutdown != null) {
+    await shutdown.future;
+  }
+  for (final shard in shards) {
+    await shard.exitSub?.cancel();
+    await shard.errorSub?.cancel();
+    shard.exit.close();
+    shard.error.close();
+  }
+  await sigtermSub.cancel();
+  await sigintSub.cancel();
   await hotReloader?.close();
   metricsInbox.close();
   await pgPool?.close();

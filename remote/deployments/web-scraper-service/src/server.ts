@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
-import { access, readdir } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { isIP } from 'node:net';
@@ -306,6 +306,18 @@ fastify.get('/status', async () => statusDescriptor());
 fastify.get('/scrape/status', async () => statusDescriptor());
 fastify.get('/healthz', async () => healthDescriptor());
 fastify.get('/scrape/healthz', async () => healthDescriptor());
+fastify.get('/docs/api', async (_request, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs', async (_request, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs.json', async (_request, reply) => {
+  reply.header('content-type', 'application/json; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.json', import.meta.url), 'utf8');
+});
 fastify.get('/metrics', async (_request, reply) => {
   reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return renderMetrics();
