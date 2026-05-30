@@ -455,20 +455,28 @@ async fn out_redirect() -> Response {
 async fn out_index(State(state): State<AppState>) -> Response {
     let base: &StdPath = state.out_dir.as_path();
 
-    // Prefer the curated landing page (out/index.html, written by build_site).
-    if let Some(index) = resolve_within(base, &base.join("index.html")) {
-        if index.is_file() {
-            return serve_file(&index);
-        }
-    }
-
-    // Fallback: generated listing of every rendered artifact.
+    // Always render a live listing of the current artifacts so simulations run
+    // on demand (POST /simulate after startup) are immediately discoverable.
+    // The curated build_site landing (out/index.html) is a startup-time
+    // snapshot — it does not list sims run afterward — so we surface it as a
+    // link at the top instead of serving it verbatim as the directory index.
     let mut files = Vec::new();
     collect_artifacts(base, base, &mut files);
     files.sort();
 
+    let has_curated = files.iter().any(|f| f == "index.html");
+    let artifacts: Vec<&String> = files.iter().filter(|f| f.as_str() != "index.html").collect();
+
+    let mut header = String::new();
+    if has_curated {
+        header.push_str(
+            "<p class=\"curated\"><a href=\"index.html\">Curated overview &rarr;</a> \
+             <span class=\"hint\">(startup snapshot)</span></p>",
+        );
+    }
+
     let mut items = String::new();
-    if files.is_empty() {
+    if artifacts.is_empty() {
         items.push_str(
             "<p class=\"empty\">No artifacts yet. Run a simulation, e.g. \
              <code>curl -X POST :PORT/simulate -H 'content-type: application/json' \
@@ -477,7 +485,7 @@ async fn out_index(State(state): State<AppState>) -> Response {
         );
     } else {
         items.push_str("<ul>");
-        for file in &files {
+        for file in &artifacts {
             let safe = html_escape(file);
             items.push_str(&format!(
                 "<li><a href=\"{href}\">{label}</a></li>",
@@ -496,7 +504,11 @@ async fn out_index(State(state): State<AppState>) -> Response {
          background:#0d1117;color:#e6edf3;}}\
          main{{max-width:960px;margin:0 auto;padding:24px 20px 64px;}}\
          h1{{font-size:1.5rem;margin:0 0 4px;}}\
-         p.sub{{color:#8b949e;margin:0 0 20px;font-size:.9rem;}}\
+         p.sub{{color:#8b949e;margin:0 0 16px;font-size:.9rem;}}\
+         p.curated{{margin:0 0 18px;}}\
+         p.curated a{{color:#58a6ff;text-decoration:none;font-weight:600;}}\
+         p.curated a:hover{{text-decoration:underline;}}\
+         p.curated .hint{{color:#8b949e;font-size:.8rem;}}\
          code{{background:#161b22;padding:1px 5px;border-radius:4px;}}\
          ul{{list-style:none;padding:0;margin:0;}}\
          li{{border-bottom:1px solid #21262d;}}\
@@ -505,9 +517,10 @@ async fn out_index(State(state): State<AppState>) -> Response {
          li a:hover{{background:#161b22;}}\
          p.empty{{color:#8b949e;padding:16px 8px;}}</style></head><body><main>\
          <h1>discrete-event-system.rs output</h1>\
-         <p class=\"sub\">Artifacts rendered by the Rust DES engine ({count} files).</p>\
-         {items}</main></body></html>",
-        count = files.len(),
+         <p class=\"sub\">Artifacts rendered by the Rust DES engine ({count} files, live listing).</p>\
+         {header}{items}</main></body></html>",
+        count = artifacts.len(),
+        header = header,
         items = items
     );
 
