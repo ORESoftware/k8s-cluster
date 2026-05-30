@@ -20,6 +20,7 @@ on:
         type: choice
         options:
           - inspect-unhealthy
+          - inspect-next-runtime
           - inspect-container-pool
           - free-thread-pod-slots
           - repair-gleamlang-secret
@@ -169,6 +170,44 @@ jobs:
               "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server|dd-container-pool|dd-remote-rest-api|dd-remote-queue-consumer'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -160\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=180\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=180 2>/dev/null\" || true; done",
               "echo '=== AWS secret candidates ==='",
               "for s in dd/remote-dev/gleamlang-server-secrets; do aws secretsmanager describe-secret --region us-east-1 --secret-id \"$s\" --query Name --output text 2>/dev/null || true; done"
+            ]
+          }
+          JSON
+              ;;
+            inspect-next-runtime)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== dd-next-runtime summary ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o wide || true'",
+              "echo '--- sync.status ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.sync.status}; echo'",
+              "echo '--- sync.revision ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.sync.revision}; echo'",
+              "echo '--- health.status ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.health.status}; echo'",
+              "echo '--- operationState.phase ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.operationState.phase}; echo'",
+              "echo '--- operationState.message ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.operationState.message}; echo'",
+              "echo '--- operationState.syncResult.revision ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.operationState.syncResult.revision}; echo'",
+              "echo '--- condition types ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.conditions[*].type}; echo'",
+              "echo '--- condition messages ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.conditions[*].message}; echo'",
+              "echo '=== dd-des-rs presence (default ns) ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get deploy,svc,pod -l app=dd-des-rs -o wide || true'",
+              "echo '=== app-controller recent errors mentioning dd-next-runtime ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd logs -l app.kubernetes.io/name=argocd-application-controller --tail=300 2>/dev/null | egrep -i \"dd-next-runtime|comparison|failed to|fetch|repository|permission denied\" | tail -40 || true'",
+              "echo '=== force hard refresh ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite || true'",
+              "sleep 30",
+              "echo '=== after refresh: summary + sync.status + dd-des-rs ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.sync.status}; echo'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get deploy -l app=dd-des-rs -o wide || true'"
             ]
           }
           JSON
