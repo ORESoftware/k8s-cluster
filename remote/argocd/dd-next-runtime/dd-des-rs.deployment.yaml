@@ -109,13 +109,19 @@ spec:
               memory: 128Mi
             limits:
               cpu: '2'
-              memory: 1Gi
+              # Headroom for the cold release build: the pod recompiles the full
+              # des_engine crate (plus axum/tokio) from an empty /tmp on every
+              # (re)start, which peaks higher than des-simulator's smaller build.
+              memory: 2Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
+            # Cold release build of the engine + server from an empty /tmp can
+            # take several minutes on the 2-CPU node, so allow up to ~15 min
+            # before the startup probe gives up (5s * 180).
             periodSeconds: 5
-            failureThreshold: 60
+            failureThreshold: 180
           readinessProbe:
             httpGet:
               path: /healthz
