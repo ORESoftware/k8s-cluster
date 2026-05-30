@@ -498,7 +498,11 @@ jobs:
           echo "opState.msg:    $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.message}')"
           echo "=== dd-des-rs presence ==="
           kubectl -n default get deploy,svc -l app=dd-des-rs -o wide || true
-          echo "=== gateway ConfigMap des-rs line count: $(kubectl -n default get configmap dd-remote-gateway-config -o yaml 2>/dev/null | grep -c des-rs) ==="
+          echo "--- dd-des-rs pods (READY/STATUS/RESTARTS) ---"
+          kubectl -n default get pods -l app=dd-des-rs -o wide || true
+          echo "--- dd-des-rs recent log tail (build/serve progress) ---"
+          kubectl -n default logs -l app=dd-des-rs --tail=15 --all-containers 2>/dev/null | tail -15 || true
+          echo "=== gateway ConfigMap des-rs line count: $(kubectl -n default get configmap dd-remote-gateway-config -o jsonpath='{.data}' 2>/dev/null | grep -c des-rs) ==="
           '''
           commands = [
               "set -euo pipefail",
