@@ -27,3 +27,7 @@
 	path = remote/submodules/discrete-event-system
 	url = https://github.com/ORESoftware/discrete-event-system.git
 	branch = main
+[submodule "remote/submodules/discrete-event-system.rs"]
+	path = remote/submodules/discrete-event-system.rs
+	url = https://github.com/ORESoftware/discrete-event-system.rs.git
+	branch = main
