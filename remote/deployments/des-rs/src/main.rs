@@ -11,10 +11,11 @@
 //! ## HTTP API
 //!
 //! - `GET /healthz` — readiness/liveness probe.
-//! - `GET /` — service info + endpoint map.
+//! - `GET /` — interactive landing page with per-simulation "Run" buttons.
+//! - `GET /info` — service info + endpoint map (JSON).
 //! - `GET /simulations` — the engine's full simulation catalogue.
-//! - `POST /simulate` — run sims whose name contains `name`, in series, e.g. `{"name":"electric_circuit"}`.
-//! - `GET /simulations/:name/run` — convenience GET form of `/simulate`.
+//! - `POST /simulate` — run sims by `name` (filter, or exact via `{"exact":true}`), in series.
+//! - `GET /simulations/:name/run` — convenience GET form (`?exact=1` for one entry).
 //! - `GET /out`, `/out/`, `/out/*path` — serve rendered artifacts (curated `index.html` if present, else a listing).
 //! - `GET /docs/api`, `/api/docs` — generated HTML API docs.
 //! - `GET /api/docs.json` — machine-readable API docs.
@@ -27,13 +28,14 @@
 use std::{
     env,
     net::SocketAddr,
+    panic::{catch_unwind, AssertUnwindSafe},
     path::{Path as StdPath, PathBuf},
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -55,6 +57,106 @@ const DEFAULT_STARTUP_SIMS: &str = "main_wind_mppt_anim,main_temp_control_anim,m
 
 const MAX_HTTP_BODY_BYTES: usize = 64 * 1024;
 const MAX_FILTER_LEN: usize = 96;
+
+/// Interactive landing page. All `fetch`/link URLs are RELATIVE so the page
+/// works both at `/` (local `cargo run`) and behind the gateway at `/des-rs/`
+/// (which strips the prefix). "Run" buttons hit `simulations/<name>/run?exact=1`
+/// so a click runs exactly one catalogue entry.
+const LANDING_HTML: &str = r####"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>discrete-event-system.rs — DES engine</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;background:#0b1021;color:#e6edf3}
+main{max-width:1040px;margin:0 auto;padding:32px 22px 80px}
+h1{font-size:1.7rem;margin:0 0 6px}
+.sub{color:#9aa4b2;margin:0 0 18px;font-size:.95rem;line-height:1.5;max-width:70ch}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+a.btn,button.btn{font:inherit;font-size:.9rem;cursor:pointer;border-radius:8px;padding:9px 14px;text-decoration:none;border:1px solid #2b3344;background:#161b22;color:#e6edf3}
+a.btn.primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
+a.btn:hover,button.btn:hover{border-color:#3b82f6}
+h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
+.muted{color:#6b7689;font-weight:400;font-size:.85rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:10px}
+.sim{display:flex;flex-direction:column;gap:8px;border:1px solid #21262d;border-radius:10px;padding:12px;background:#0f1422}
+.sim .label{font-size:.92rem;text-transform:capitalize}
+.sim .name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;color:#9ecbff;word-break:break-all}
+.sim .row{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-top:2px}
+.run{font:inherit;font-size:.82rem;cursor:pointer;border-radius:7px;padding:6px 14px;border:1px solid #238636;background:#238636;color:#fff}
+.run:hover{background:#2ea043}
+.run[disabled]{opacity:.55;cursor:default}
+.st{font-size:.8rem;color:#9aa4b2;min-height:1.1em}
+.st.ok{color:#3fb950}.st.err{color:#f85149}
+#filter{font:inherit;font-size:.9rem;background:#0f1422;border:1px solid #21262d;border-radius:8px;color:#e6edf3;padding:8px 12px;width:260px;margin-bottom:12px}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(160%);transition:transform .25s;background:#161b22;border:1px solid #2b3344;border-radius:10px;padding:12px 18px;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:.9rem}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast a{color:#58a6ff}
+</style>
+</head>
+<body>
+<main>
+<h1>discrete-event-system.rs</h1>
+<p class="sub">A Rust discrete-event simulation engine, imported here as a <strong>library</strong> (git submodule). Click <em>Run</em> on a simulation to execute it in-process, then open the rendered HTML/JSON results.</p>
+<div class="actions">
+  <a class="btn primary" href="out/">View rendered results &rarr;</a>
+  <a class="btn" href="info">Service info</a>
+  <a class="btn" href="docs/api">API docs</a>
+  <a class="btn" href="simulations">Catalogue JSON</a>
+</div>
+<h2>Featured</h2>
+<div id="featured" class="grid"></div>
+<h2>All simulations <span id="count" class="muted"></span></h2>
+<input id="filter" placeholder="filter by name…" oninput="filterSims()" autocomplete="off">
+<div id="all" class="grid"></div>
+</main>
+<div id="toast" class="toast"></div>
+<script>
+const FEATURED=[["main_build_site","Build site index"],["main_empirical_control_report","Empirical control report"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
+function toast(html){const t=document.getElementById('toast');t.innerHTML=html;t.classList.add('show');clearTimeout(window.__tt);window.__tt=setTimeout(function(){t.classList.remove('show');},6000);}
+function simCard(name,label){
+  const card=document.createElement('div');card.className='sim';card.dataset.name=name;
+  const lab=document.createElement('div');lab.className='label';lab.textContent=label||name;
+  const nm=document.createElement('div');nm.className='name';nm.textContent=name;
+  const row=document.createElement('div');row.className='row';
+  const st=document.createElement('span');st.className='st';
+  const btn=document.createElement('button');btn.className='run';btn.textContent='Run';
+  btn.onclick=function(){run(name,btn,st);};
+  row.appendChild(st);row.appendChild(btn);
+  card.appendChild(lab);card.appendChild(nm);card.appendChild(row);
+  return card;
+}
+async function run(name,btn,st){
+  btn.disabled=true;const old=btn.textContent;btn.textContent='Running…';st.className='st';st.textContent='running…';
+  try{
+    const r=await fetch('simulations/'+encodeURIComponent(name)+'/run?exact=1');
+    const d=await r.json();
+    const o=(d.ran&&d.ran[0])||{};
+    if(d.ok){st.className='st ok';st.textContent='\u2713 '+(o.millis!=null?o.millis+' ms':'done');toast('Ran <code>'+name+'</code> — <a href="out/">view results &rarr;</a>');}
+    else{st.className='st err';st.textContent='\u2717 '+(d.error||'failed');}
+  }catch(e){st.className='st err';st.textContent='\u2717 '+e;}
+  finally{btn.disabled=false;btn.textContent=old;}
+}
+function filterSims(){
+  const q=document.getElementById('filter').value.toLowerCase();
+  document.querySelectorAll('#all .sim').forEach(function(c){c.style.display=c.dataset.name.indexOf(q)>=0?'':'none';});
+}
+(async function(){
+  const f=document.getElementById('featured');
+  FEATURED.forEach(function(p){f.appendChild(simCard(p[0],p[1]));});
+  try{
+    const r=await fetch('simulations');const d=await r.json();
+    document.getElementById('count').textContent='('+d.count+')';
+    const all=document.getElementById('all');
+    d.simulations.forEach(function(n){all.appendChild(simCard(n,n.replace(/^main_/,'').replace(/_/g,' ')));});
+  }catch(e){document.getElementById('count').textContent='(failed to load)';}
+})();
+</script>
+</body>
+</html>"####;
 
 #[derive(Clone)]
 struct AppState {
@@ -96,13 +198,39 @@ fn outcome_json(outcomes: &[SimOutcome]) -> Vec<Value> {
         .collect()
 }
 
-/// Run every catalogue sim whose name contains `needle`, in series, on a
-/// blocking thread, while holding the serial simulation lock.
-async fn run_filter(state: &AppState, needle: String) -> Vec<SimOutcome> {
+/// Run exactly the catalogue entry whose name equals `needle` (0 or 1 sims),
+/// with the same panic isolation + timing as the engine's serial driver. Used
+/// by the UI "Run" buttons so e.g. `main` does not match every `main_*` name.
+fn run_exact(needle: &str) -> Vec<SimOutcome> {
+    simulation_catalogue()
+        .into_iter()
+        .filter(|(name, _)| *name == needle)
+        .map(|(name, sim)| {
+            let start = Instant::now();
+            let ok = catch_unwind(AssertUnwindSafe(sim)).is_ok();
+            SimOutcome {
+                name,
+                ok,
+                millis: start.elapsed().as_millis(),
+            }
+        })
+        .collect()
+}
+
+/// Run catalogue sims in series on a blocking thread, holding the serial
+/// simulation lock. `exact` runs only the exactly-named entry; otherwise every
+/// sim whose name *contains* `needle` runs (the engine's filter semantics).
+async fn run_filter(state: &AppState, needle: String, exact: bool) -> Vec<SimOutcome> {
     let _guard = state.sim_lock.lock().await;
-    tokio::task::spawn_blocking(move || run_simulations_matching(&needle))
-        .await
-        .unwrap_or_default()
+    tokio::task::spawn_blocking(move || {
+        if exact {
+            run_exact(&needle)
+        } else {
+            run_simulations_matching(&needle)
+        }
+    })
+    .await
+    .unwrap_or_default()
 }
 
 // =============================================================================
@@ -113,17 +241,26 @@ async fn healthz() -> impl IntoResponse {
     Json(json!({ "ok": true, "service": "dd-des-rs", "atMs": now_ms() }))
 }
 
-async fn root() -> impl IntoResponse {
+/// Human-facing landing page: featured + full catalogue with "Run" buttons
+/// (each does a relative `fetch` so it works at `/` locally and behind the
+/// gateway at `/des-rs/`), plus a link to the rendered `out/` results.
+async fn root() -> Html<&'static str> {
+    Html(LANDING_HTML)
+}
+
+/// Machine-readable service info (the old JSON root).
+async fn info() -> impl IntoResponse {
     Json(json!({
         "ok": true,
         "service": "dd-des-rs",
         "mode": "runs the discrete-event-system.rs engine (library) and serves rendered HTML",
         "engineSimulations": sim_names().len(),
         "endpoints": {
+            "landing": "GET /",
             "healthz": "GET /healthz",
             "simulations": "GET /simulations",
-            "simulate": "POST /simulate  {\"name\":\"<filter>\"}",
-            "runNamed": "GET /simulations/:name/run",
+            "simulate": "POST /simulate  {\"name\":\"<filter>\",\"exact\":false}",
+            "runNamed": "GET /simulations/:name/run?exact=1",
             "renderedOutputIndex": "GET /out/",
             "renderedOutputFile": "GET /out/*path",
             "apiDocs": "GET /docs/api",
@@ -145,6 +282,17 @@ async fn list_simulations() -> impl IntoResponse {
 #[derive(Debug, Deserialize)]
 struct SimulateRequest {
     name: String,
+    #[serde(default)]
+    exact: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunQuery {
+    exact: Option<String>,
+}
+
+fn truthy(value: &Option<String>) -> bool {
+    matches!(value.as_deref(), Some("1" | "true" | "yes"))
 }
 
 fn validate_filter(raw: &str) -> Result<String, String> {
@@ -161,14 +309,15 @@ fn validate_filter(raw: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
-async fn run_response(state: &AppState, needle: String) -> Response {
-    let outcomes = run_filter(state, needle.clone()).await;
+async fn run_response(state: &AppState, needle: String, exact: bool) -> Response {
+    let outcomes = run_filter(state, needle.clone(), exact).await;
     if outcomes.is_empty() {
+        let how = if exact { "named" } else { "matching" };
         return (
             StatusCode::NOT_FOUND,
             Json(json!({
                 "ok": false,
-                "error": format!("no simulation name contains `{needle}`"),
+                "error": format!("no simulation {how} `{needle}`"),
                 "simulations": sim_names(),
             })),
         )
@@ -178,8 +327,9 @@ async fn run_response(state: &AppState, needle: String) -> Response {
     Json(json!({
         "ok": all_ok,
         "filter": needle,
+        "exact": exact,
         "ran": outcome_json(&outcomes),
-        "outputIndex": "/out/",
+        "outputIndex": "out/",
         "atMs": now_ms(),
     }))
     .into_response()
@@ -187,7 +337,7 @@ async fn run_response(state: &AppState, needle: String) -> Response {
 
 async fn simulate(State(state): State<AppState>, Json(req): Json<SimulateRequest>) -> Response {
     match validate_filter(&req.name) {
-        Ok(needle) => run_response(&state, needle).await,
+        Ok(needle) => run_response(&state, needle, req.exact).await,
         Err(error) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "ok": false, "error": error })),
@@ -196,9 +346,13 @@ async fn simulate(State(state): State<AppState>, Json(req): Json<SimulateRequest
     }
 }
 
-async fn run_named(State(state): State<AppState>, Path(name): Path<String>) -> Response {
+async fn run_named(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Query(query): Query<RunQuery>,
+) -> Response {
     match validate_filter(&name) {
-        Ok(needle) => run_response(&state, needle).await,
+        Ok(needle) => run_response(&state, needle, truthy(&query.exact)).await,
         Err(error) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "ok": false, "error": error })),
@@ -392,7 +546,8 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
 fn api_routes() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
         ("GET", "/healthz", "Readiness/liveness probe."),
-        ("GET", "/", "Service info and endpoint map."),
+        ("GET", "/", "Interactive landing page with run buttons."),
+        ("GET", "/info", "Service info and endpoint map (JSON)."),
         (
             "GET",
             "/simulations",
@@ -401,12 +556,12 @@ fn api_routes() -> Vec<(&'static str, &'static str, &'static str)> {
         (
             "POST",
             "/simulate",
-            "Run sims whose name contains `name`, in series.",
+            "Run sims by `name` (filter, or exact with `\"exact\":true`), in series.",
         ),
         (
             "GET",
             "/simulations/:name/run",
-            "Convenience GET form of /simulate.",
+            "Convenience GET form of /simulate (`?exact=1` for exact name).",
         ),
         (
             "GET",
@@ -511,7 +666,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
             {
-                let outcomes = run_filter(&startup_state, needle.clone()).await;
+                let outcomes = run_filter(&startup_state, needle.clone(), false).await;
                 println!(
                     "[dd-des-rs] startup `{needle}`: ran {} sim(s)",
                     outcomes.len()
@@ -523,6 +678,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let app = Router::new()
         .route("/", get(root))
+        .route("/info", get(info))
         .route("/healthz", get(healthz))
         .route("/simulations", get(list_simulations))
         .route("/simulate", post(simulate))

@@ -27,11 +27,17 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 ## HTTP API
 
 - `GET  /healthz` — readiness/liveness probe.
-- `GET  /` — service info + endpoint map.
+- `GET  /` — interactive landing page: per-simulation **Run** buttons (featured +
+  full catalogue) that execute a sim in-process, plus a link to the rendered
+  `out/` results. All of its `fetch`/links are relative, so it works both at `/`
+  locally and behind the gateway at `/des-rs/`.
+- `GET  /info` — service info + endpoint map (JSON).
 - `GET  /simulations` — the engine's full simulation catalogue.
-- `POST /simulate` — run sims whose name contains `name`, e.g.
-  `{"name":"electric_circuit"}`. Returns per-sim `{name, ok, millis}`.
-- `GET  /simulations/<name>/run` — convenience GET form of `/simulate`.
+- `POST /simulate` — run sims by `name` (a *filter*; every sim whose name
+  contains it runs), e.g. `{"name":"electric_circuit"}`. Pass `{"exact":true}`
+  to run only the exactly-named entry. Returns per-sim `{name, ok, millis}`.
+- `GET  /simulations/<name>/run` — convenience GET form of `/simulate`; add
+  `?exact=1` to run exactly the named sim (this is what the UI buttons use).
 - `GET  /out` → `/out/` — curated `index.html` if present, else a generated
   listing of every rendered artifact.
 - `GET  /out/<path>` — serve an individual artifact (path-traversal confined to
@@ -65,6 +71,11 @@ via `cargo run --release` against the repo mounted read-only at
 `/opt/dd-next-1`, with `CARGO_*`/`HOME`/`DES_WORK_DIR` pointed at the writable
 `/tmp` emptyDir. See `remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml`
 and `dd-des-rs.service.yaml` (registered in that overlay's `kustomization.yaml`).
+
+The gateway exposes the landing page behind auth at **`/des-rs/`** (nginx
+`location /des-rs/` → `dd-des-rs:8112/`, mirroring `/des/`), and the Rust
+web-home service directory (`/home`) links to it as the `dd-des-rs` deployment /
+`/des-rs/` row.
 
 > The submodule pins the engine's `origin/main`. Bump the pointer
 > (`git -C remote/submodules/discrete-event-system.rs pull && git add` the
