@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-autofetch'
+        dd.dev/telemetry-revision: '2026-05-30-des-rs-anim-player'
       labels:
         app: dd-des-rs
     spec:
