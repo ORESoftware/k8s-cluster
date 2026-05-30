@@ -473,6 +473,33 @@ jobs:
             kubectl -n default logs "$p" --tail=120 2>&1 | tail -100 || true
           done
           '''
+          argocd_sync = r'''set +e
+          app=application/dd-next-runtime
+          echo "=== dd-next-runtime BEFORE force-sync ==="
+          kubectl -n argocd get $app -o wide || true
+          echo "sync.status:    $(kubectl -n argocd get $app -o jsonpath='{.status.sync.status}')"
+          echo "sync.revision:  $(kubectl -n argocd get $app -o jsonpath='{.status.sync.revision}')"
+          echo "health.status:  $(kubectl -n argocd get $app -o jsonpath='{.status.health.status}')"
+          echo "opState.phase:  $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
+          echo "opState.msg:    $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.message}')"
+          echo "conditions:     $(kubectl -n argocd get $app -o jsonpath='{range .status.conditions[*]}{.type}={.message};{end}')"
+          echo "=== forcing Argo sync to HEAD ==="
+          kubectl -n argocd patch $app --type merge -p '{"operation":{"initiatedBy":{"username":"maintenance-reconcile"},"info":[{"name":"reason","value":"reconcile-runtime"}],"sync":{"revision":"HEAD","prune":true}}}' || true
+          for i in $(seq 1 30); do
+            ph="$(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
+            echo "  wait $i phase=$ph"
+            case "$ph" in Succeeded|Failed|Error) break;; esac
+            sleep 5
+          done
+          echo "=== dd-next-runtime AFTER force-sync ==="
+          kubectl -n argocd get $app -o wide || true
+          echo "sync.status:    $(kubectl -n argocd get $app -o jsonpath='{.status.sync.status}')"
+          echo "opState.phase:  $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
+          echo "opState.msg:    $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.message}')"
+          echo "=== dd-des-rs presence ==="
+          kubectl -n default get deploy,svc -l app=dd-des-rs -o wide || true
+          echo "=== gateway ConfigMap des-rs line count: $(kubectl -n default get configmap dd-remote-gateway-config -o yaml 2>/dev/null | grep -c des-rs) ==="
+          '''
           commands = [
               "set -euo pipefail",
               f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
@@ -483,6 +510,7 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-gleam-mcp-server.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n argocd annotate application/dd-secrets application/dd-next-runtime application/dd-fsharp-ws-server application/dd-gleam-mcp-server argocd.argoproj.io/refresh=hard --overwrite || true'",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(argocd_sync)}",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-remote-gateway --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-webrtc-signaling --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-fsharp-ws-server --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
