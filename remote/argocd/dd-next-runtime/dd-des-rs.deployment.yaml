@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-library'
+        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-autofetch'
       labels:
         app: dd-des-rs
     spec:
@@ -43,17 +43,46 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              # Imports the discrete-event-system.rs engine as a library via the
-              # remote/submodules/discrete-event-system.rs git submodule, which
-              # must be initialized in the mounted repo
-              # (git submodule update --init remote/submodules/discrete-event-system.rs).
-              cd /opt/dd-next-1/remote/deployments/des-rs
+              # Resolve the discrete-event-system.rs engine source. By default we
+              # fetch the engine's latest origin/main at pod start
+              # (DES_ENGINE_GIT_URL / DES_ENGINE_GIT_REF) into the writable /tmp
+              # emptyDir and build against it, so this deployment tracks the
+              # engine's main branch automatically without depending on the node
+              # having the git submodule checked out. If the clone fails — or
+              # DES_ENGINE_GIT_URL is set empty — we fall back to the pinned
+              # submodule in the read-only repo mount.
+              engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
+              if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
+                rm -rf /tmp/engine
+                if git clone --depth 1 --branch "${DES_ENGINE_GIT_REF:-main}" "${DES_ENGINE_GIT_URL}" /tmp/engine; then
+                  engine_src=/tmp/engine
+                  echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C /tmp/engine rev-parse --short HEAD))"
+                else
+                  echo "[dd-des-rs] engine clone failed; using pinned submodule at ${engine_src}" >&2
+                fi
+              fi
+              # Build from a writable copy so the engine path dependency can be
+              # repointed and Cargo.lock stays writable under the read-only root fs.
+              rm -rf /tmp/des-rs
+              mkdir -p /tmp/des-rs
+              cp -a /opt/dd-next-1/remote/deployments/des-rs/. /tmp/des-rs/
+              rm -rf /tmp/des-rs/target
+              cd /tmp/des-rs
+              sed -i "s#path = \"../../submodules/discrete-event-system.rs\"#path = \"${engine_src}\"#" Cargo.toml
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
               value: 0.0.0.0
             - name: PORT
               value: '8112'
+            # Engine source: fetch the latest origin/main of the engine repo at
+            # pod start and build against it. Set DES_ENGINE_GIT_URL to "" to
+            # instead use the pinned git submodule in the mounted repo, or point
+            # DES_ENGINE_GIT_REF at a tag/branch/sha to pin a specific revision.
+            - name: DES_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/discrete-event-system.rs.git
+            - name: DES_ENGINE_GIT_REF
+              value: main
             - name: HOME
               value: /tmp
             - name: CARGO_HOME

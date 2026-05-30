@@ -52,6 +52,8 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 | `PORT` | `8112` | bind port |
 | `DES_WORK_DIR` | `<tmp>/dd-des-rs` | writable dir; engine renders into `<dir>/out` |
 | `DES_STARTUP_SIMS` | curated fast set | comma-separated name filters run at startup (empty = skip) |
+| `DES_ENGINE_GIT_URL` | engine repo HTTPS URL | *(deployment startup script, not the server)* clone this engine repo at pod start and build against it; set empty to use the pinned submodule instead |
+| `DES_ENGINE_GIT_REF` | `main` | *(deployment startup script)* branch/tag/sha to clone for the engine |
 
 ## Run locally
 
@@ -67,10 +69,22 @@ open http://localhost:8112/out/
 ## Deploy
 
 Runs in the `dd-next-runtime` overlay on the stock `rust:1.90-bookworm` image
-via `cargo run --release` against the repo mounted read-only at
-`/opt/dd-next-1`, with `CARGO_*`/`HOME`/`DES_WORK_DIR` pointed at the writable
-`/tmp` emptyDir. See `remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml`
+via `cargo run --release`, with `CARGO_*`/`HOME`/`DES_WORK_DIR` pointed at the
+writable `/tmp` emptyDir. See `remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml`
 and `dd-des-rs.service.yaml` (registered in that overlay's `kustomization.yaml`).
+
+**Engine source (auto-fetch).** At pod start the startup script clones the
+engine's latest `origin/main` (`DES_ENGINE_GIT_URL` / `DES_ENGINE_GIT_REF`) into
+`/tmp/engine`, copies this crate into the writable `/tmp/des-rs`, repoints its
+`des_engine` path dependency at the clone, and builds. This means the deployment
+**tracks the engine's `main` branch automatically on every (re)start** and does
+**not** depend on the node having the git submodule checked out (the push-time
+`reconcile-runtime` only fast-forwards the repo; it does not `git submodule
+update --init`). If the clone fails — or `DES_ENGINE_GIT_URL` is set empty — it
+falls back to the pinned `remote/submodules/discrete-event-system.rs` submodule
+in the read-only repo mount. For reproducible/pinned builds, set
+`DES_ENGINE_GIT_REF` to a tag/sha (or clear `DES_ENGINE_GIT_URL` and bump the
+submodule pointer).
 
 The gateway exposes the landing page behind auth at **`/des-rs/`** (nginx
 `location /des-rs/` → `dd-des-rs:8112/`, mirroring `/des/`), and the Rust
