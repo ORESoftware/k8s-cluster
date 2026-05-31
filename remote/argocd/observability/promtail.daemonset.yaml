@@ -16,22 +16,40 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/config-revision: "2026-05-22-kubernetes-sd"
+        dd.dev/config-revision: "2026-05-31-container-log-labels"
       labels:
         app: dd-promtail
     spec:
       serviceAccountName: dd-promtail
       automountServiceAccountToken: true
+      # Logs come from every node, including tainted control-plane or
+      # dedicated nodes, so tolerate all taints. Without this a tainted
+      # node silently ships no logs and Loki looks "empty".
+      tolerations:
+        - operator: Exists
       containers:
         - name: promtail
           image: grafana/promtail:3.2.1
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            # Container log files under /var/log/pods are root-owned; run as
+            # root so promtail can actually read them (a non-root default
+            # would tail nothing and leave Loki without streams).
+            runAsUser: 0
             seccompProfile:
               type: RuntimeDefault
           args:
             - -config.file=/etc/promtail/promtail.yaml
+            # Expand ${NODE_NAME}/${CLUSTER_NAME} in the config's external_labels.
+            - -config.expand-env=true
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CLUSTER_NAME
+              value: dd-ec2
           ports:
             - name: http
               containerPort: 9080

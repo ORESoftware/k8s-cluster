@@ -14,25 +14,24 @@ data:
 
     clients:
       - url: http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/push
-        # Agent-scoped labels stamped onto every stream this node pushes.
-        # cluster/env let a shared Loki (or a future stage cluster) tell
-        # prod and stage log sources apart, and node pins the source host.
-        # Values are injected from the DaemonSet env; the DaemonSet runs
-        # promtail with -config.expand-env=true so ${...} is substituted.
+        # cluster/node are stamped on every stream this node ships. Their values
+        # come from the DaemonSet env (promtail runs with -config.expand-env=true
+        # so ${...} is substituted). The stage/prod `env` label is intentionally
+        # NOT cluster-wide: this single cluster runs both stage and prod
+        # workloads, so `env` is derived per deployment in the pipeline below.
         external_labels:
           cluster: ${CLUSTER_NAME}
-          env: ${CLUSTER_ENV}
           node: ${NODE_NAME}
 
     # Tail every container's CRI log through the stable /var/log/containers
-    # symlink farm. The host /var/log mount exposes both the symlinks and
-    # their /var/log/pods targets, so this single glob reliably produces
-    # streams without depending on the Kubernetes API for discovery (the
-    # previous kubernetes_sd + /var/log/pods/*$1/*.log setup left Loki with
-    # zero streams). The cri stage decodes the containerd log envelope, then
-    # the filename regex lifts namespace, pod, and container into first-class
-    # Loki labels so a query can pin one deployment directly, for example
-    # {namespace="default", container="dart-server"} or {env="prod"}.
+    # symlink farm (exposed via the host /var/log mount). We deliberately do NOT
+    # use kubernetes_sd_configs: on this cluster the SD informer silently
+    # discovered 0 targets (API reachability, the mounted ServiceAccount token,
+    # RBAC list/watch, and TLS against the in-cluster CA were all verified
+    # working from inside the pod, yet promtail found nothing and Loki stayed
+    # empty). A static file glob is informer-independent and reliable. Labels
+    # are parsed from the filename so Loki can pin a single deployment, e.g.
+    # {namespace="default", app="dd-dart-server"} or {env="production"}.
     scrape_configs:
       - job_name: kubernetes-containers
         static_configs:
@@ -42,14 +41,34 @@ data:
               job: kubernetes-containers
               __path__: /var/log/containers/*.log
         pipeline_stages:
+          # Decode the containerd log envelope ("<ts> <stream> <flag> <msg>").
           - cri: {}
+          # /var/log/containers/<pod>_<namespace>_<container>-<containerid>.log
+          # pod and namespace never contain "_", so the underscores split cleanly.
           - regex:
               source: filename
               expression: '^/var/log/containers/(?P<pod>[^_]+)_(?P<namespace>[^_]+)_(?P<container>.+)-[0-9a-f]+\.log$'
+          # Per-deployment `app`: strip the trailing ReplicaSet pod-template-hash
+          # + random pod suffix (Deployments/DaemonSets) or the ordinal
+          # (StatefulSets). The k8s hash/suffix alphabet excludes vowels, so a
+          # real name segment (e.g. "promtail") is never mistaken for a hash.
+          - regex:
+              source: pod
+              expression: '^(?P<app>.+?)(-[bcdfghjklmnpqrstvwxz0-9]{8,10})?-(?:[bcdfghjklmnpqrstvwxz0-9]{5}|[0-9]+)$'
+          # Default every stream to stage; the known production services are
+          # promoted to env=production just below.
+          - static_labels:
+              env: stage
           - labels:
               namespace:
               pod:
               container:
+              app:
+          - match:
+              selector: '{app=~"dd-billing-server|dd-web-scraper|dd-browser-test-server"}'
+              stages:
+                - static_labels:
+                    env: production
           # filename carries the 64-char container id and rotates on every
           # restart; drop it so it does not explode Loki stream cardinality.
           - labeldrop:
