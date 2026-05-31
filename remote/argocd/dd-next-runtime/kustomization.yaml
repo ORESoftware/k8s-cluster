@@ -47,6 +47,8 @@ resources:
   - dd-web-scraper.service.yaml
   - dd-browser-test-server.deployment.yaml
   - dd-browser-test-server.service.yaml
+  - dd-selenium-server.deployment.yaml
+  - dd-selenium-server.service.yaml
   - dd-remote-web-home.deployment.yaml
   - dd-remote-web-home.pdb.yaml
   - dd-remote-web-home.service.yaml

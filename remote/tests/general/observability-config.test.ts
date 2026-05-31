@@ -100,7 +100,7 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(promtail, /source:\s*pod[\s\S]*\?P<deployment>/);
   assert.match(promtail, /env:\s*stage[\s\S]*environment:\s*stage/);
   assert.match(promtail, /app:\s*deployment[\s\S]*deployment:/);
-  assert.match(promtail, /selector:\s*'\{deployment=~"dd-billing-server\|dd-web-scraper\|dd-browser-test-server"\}'/);
+  assert.match(promtail, /selector:\s*'\{deployment=~"dd-billing-server\|dd-web-scraper\|dd-browser-test-server\|dd-selenium-server"\}'/);
   assert.match(promtail, /env:\s*prod[\s\S]*environment:\s*prod/);
   assert.match(promtail, /labeldrop:[\s\S]*-\s*filename/);
   assert.match(promtail, /- cri:\s*\{\}/);

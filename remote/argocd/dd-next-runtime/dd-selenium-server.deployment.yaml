@@ -1,0 +1,183 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-selenium-server
+  namespace: default
+  labels:
+    app: dd-selenium-server
+spec:
+  replicas: 1
+  # Single-node cluster has no headroom to run two browser pods during a deploy, and the API
+  # container self-builds from the mounted repo; recreate keeps exactly one pod at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-selenium-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-31-selenium-server'
+      labels:
+        app: dd-selenium-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        # --- Selenium Grid (the actual long-lived Selenium server) ------------------
+        # The official standalone image bundles Chromium + chromedriver + a Selenium
+        # server on :4444. This is the "just selenium" runtime; the API container drives
+        # it over RemoteWebDriver at localhost:4444 and :4444 is never exposed via the
+        # Service, so the only authenticated entrypoint is the Java API on :8105.
+        - name: selenium
+          image: selenium/standalone-chromium:4.27.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1200
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: SE_NODE_MAX_SESSIONS
+              value: '2'
+            - name: SE_NODE_OVERRIDE_MAX_SESSIONS
+              value: 'true'
+            - name: SE_NODE_SESSION_TIMEOUT
+              value: '300'
+            - name: SE_ENABLE_TRACING
+              value: 'false'
+            - name: SE_JAVA_OPTS
+              value: -Xmx512m
+          ports:
+            - name: grid
+              containerPort: 4444
+          startupProbe:
+            httpGet:
+              path: /status
+              port: grid
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: grid
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: grid
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 700Mi
+            limits:
+              cpu: '1500m'
+              memory: 2Gi
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+        # --- Java Vert.x API (embedded selenium-java RemoteWebDriver) ---------------
+        # Mirrors dd-spark-pipeline-server: the maven base image self-builds the shaded
+        # jar from the mounted repo on first start, then runs it. No Chromium here.
+        - name: selenium-api
+          image: docker.io/library/maven:3.9.9-eclipse-temurin-17
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          # `set -o pipefail` is bash-only; the maven base image ships dash as /bin/sh.
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/selenium-server
+              if [ ! -f target/dd-selenium-server.jar ]; then
+                echo "Building dd-selenium-server with Maven..."
+                mvn -B -e -DskipTests package
+              fi
+              exec java $JAVA_OPTS -jar target/dd-selenium-server.jar
+          env:
+            - name: HTTP_HOST
+              value: 0.0.0.0
+            - name: HTTP_PORT
+              value: '8105'
+            - name: SELENIUM_REMOTE_URL
+              value: http://localhost:4444
+            - name: SELENIUM_MAX_CONCURRENT
+              value: '2'
+            - name: SELENIUM_DEFAULT_TIMEOUT_MS
+              value: '30000'
+            - name: SELENIUM_MAX_TIMEOUT_MS
+              value: '180000'
+            - name: SELENIUM_STEP_TIMEOUT_MS
+              value: '15000'
+            - name: SELENIUM_MAX_STEPS
+              value: '64'
+            - name: SELENIUM_MAX_SCREENSHOT_BYTES
+              value: '1500000'
+            - name: SELENIUM_BROWSER_HEADLESS
+              value: 'true'
+            # Arbitrary in-page script execution must default to off in production manifests.
+            - name: SELENIUM_ALLOW_EVALUATE
+              value: 'false'
+            - name: JAVA_OPTS
+              value: -XX:+UseG1GC -XX:MaxRAMPercentage=70 -Dfile.encoding=UTF-8
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+          ports:
+            - name: http
+              containerPort: 8105
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi

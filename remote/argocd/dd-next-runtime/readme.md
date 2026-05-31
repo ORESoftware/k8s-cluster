@@ -13,6 +13,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
 - `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
+- `dd-selenium-server` (Java/Vert.x + selenium-java API driving an in-pod Selenium Grid over RemoteWebDriver)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
@@ -97,6 +98,9 @@ Gateway path map:
 - `/browser-test`, `/browser-test/healthz`, `/browser-test/metrics`, `/browser-test/status`,
   `/browser-test/tools` -> `dd-browser-test-server:8104` (internal auth required;
   `POST /run` accepts a bounded scenario DSL across Playwright, Puppeteer, and Selenium)
+- `/selenium`, `/selenium/healthz`, `/selenium/metrics`, `/selenium/status`, `/selenium/tools` ->
+  `dd-selenium-server:8105` (internal auth required; `POST /run` accepts the same bounded scenario
+  DSL but Selenium-only, driving an in-pod Selenium Grid over RemoteWebDriver)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
 - `/dd-thread/<short>/...` -> target per-thread Kubernetes Ingress shape; the selected Node.js
   worker is pinned to one thread and does not route UUIDs itself. `/dd-thread/<short>/ws` is the
@@ -473,3 +477,22 @@ HTML extraction runs in Node `worker_threads` through `src/extraction-worker.ts`
 do not block Fastify or browser orchestration. The service fails closed when `SERVER_AUTH_SECRET`
 is missing, revalidates redirect and browser subresource targets, and blocks URL credentials plus
 sensitive outbound headers unless their explicit opt-in env vars are enabled.
+
+## Selenium server
+
+`dd-selenium-server` is a dedicated, long-lived, Selenium-only runtime. It is a single pod with two
+containers: the official `selenium/standalone-chromium` image (the actual Selenium server / Grid on
+`:4444`, owning Chromium + chromedriver) and a Java/Vert.x API container that self-builds
+`remote/deployments/selenium-server` with Maven and drives the Grid through `selenium-java`
+`RemoteWebDriver` at `localhost:4444`. The Grid port is never published on the Service, so the only
+reachable entrypoint is the authenticated API on `:8105`.
+
+The API exposes `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /status`, `GET /tools`, and
+`POST /run`; the gateway mirrors those under `/selenium/...`. `POST /run` accepts the same bounded
+scenario DSL as `dd-browser-test-server` (`goto`, `click`, `fill`, `select`, `press`,
+`waitForSelector`, `waitForUrl`, `waitForTimeout`, `extractText`, `extractAttribute`, `screenshot`,
+`evaluate`) and returns structured step logs, extracted values, screenshots, and console entries.
+It fails closed when `SERVER_AUTH_SECRET` is missing, caps work at `SELENIUM_MAX_CONCURRENT` browser
+sessions (returning 429 over the cap), bounds scenarios with `SELENIUM_MAX_STEPS` /
+`SELENIUM_MAX_TIMEOUT_MS`, and keeps arbitrary in-page script execution opt-in behind
+`SELENIUM_ALLOW_EVALUATE=false`.
