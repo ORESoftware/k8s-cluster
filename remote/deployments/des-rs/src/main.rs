@@ -16,6 +16,11 @@
 //! - `GET /simulations` — the engine's full simulation catalogue.
 //! - `POST /simulate` — run sims by `name` (filter, or exact via `{"exact":true}`), in series.
 //! - `GET /simulations/:name/run` — convenience GET form (`?exact=1` for one entry).
+//! - `GET /models` — first-class model registry (mdp, pomdp, hybrid, studio) with example specs.
+//! - `GET /models/:kind/run` — run a kind's example spec and render an interactive player (`?format=json` for the raw artifact).
+//! - `POST /models/:kind/run` — run a user-supplied JSON spec for a kind (renders a player; `?format=json` for the artifact).
+//! - `GET /streaming` — JSONL streaming-solver contracts (lp, milp, mdp, pomdp).
+//! - `POST /streaming/:name` — stream JSONL commands to a solver; responds with a JSONL frame stream.
 //! - `GET /out`, `/out/`, `/out/*path` — serve rendered artifacts (curated `index.html` if present, else a listing).
 //! - `GET /docs/api`, `/api/docs` — generated HTML API docs.
 //! - `GET /api/docs.json` — machine-readable API docs.
@@ -36,7 +41,7 @@ use std::{
 
 use axum::{
     extract::{DefaultBodyLimit, Path, Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
@@ -45,7 +50,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
+use des_engine::des::model::{with_builtins, CitizenError};
+use des_engine::des::service::{
+    Capability, DesExtension, EndpointKind, EngineCatalogExtension, ServiceBuilder,
+    ServiceDescriptor, ServiceInfo, DD_API_DOCS_HEADER,
+};
 use des_engine::des::simulations::{run_simulations_matching, simulation_catalogue, SimOutcome};
+use des_engine::des::streaming::{run_named_jsonl, streaming_contracts, streaming_model_names};
 
 /// Fast, HTML-producing simulations run once at startup so `/out/` has content
 /// immediately. `main_build_site` is run last because it assembles the curated
@@ -55,7 +66,9 @@ use des_engine::des::simulations::{run_simulations_matching, simulation_catalogu
 /// `DES_STARTUP_SIMS` (comma-separated name filters), or set it empty to skip.
 const DEFAULT_STARTUP_SIMS: &str = "main_wind_mppt_anim,main_temp_control_anim,main_observability_controllability_anim,main_empirical_control_report,main_elevator_highrise,main_two_disease,main_build_site";
 
-const MAX_HTTP_BODY_BYTES: usize = 64 * 1024;
+// Generous enough for model specs and JSONL streaming command batches, while
+// still bounding memory per request (simulations themselves take no body).
+const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_FILTER_LEN: usize = 96;
 
 /// Interactive landing page. All `fetch`/link URLs are RELATIVE so the page
@@ -85,7 +98,16 @@ h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
 .sim{display:flex;flex-direction:column;gap:8px;border:1px solid #21262d;border-radius:10px;padding:12px;background:#0f1422}
 .sim .label{font-size:.92rem;text-transform:capitalize}
 .sim .name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;color:#9ecbff;word-break:break-all}
-.sim .row{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-top:2px}
+.sim .desc{font-size:.8rem;color:#8b949e;line-height:1.45;flex:1}
+.sim .row{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:2px}
+.sim .open{font:inherit;font-size:.82rem;cursor:pointer;border-radius:7px;padding:6px 14px;border:1px solid #1f6feb;background:#1f6feb;color:#fff;text-decoration:none}
+.sim .open:hover{background:#388bfd;border-color:#388bfd}
+.sim .json{font:inherit;font-size:.8rem;border-radius:7px;padding:6px 10px;border:1px solid #2b3344;background:#161b22;color:#9aa4b2;text-decoration:none}
+.sim .json:hover{border-color:#3b82f6;color:#e6edf3}
+.list{display:flex;flex-direction:column;gap:8px}
+.strow{border:1px solid #21262d;border-radius:9px;padding:10px 14px;background:#0f1422;font-size:.86rem;line-height:1.45;color:#c9d4e3}
+.strow code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#9ecbff;background:#161b22;padding:1px 7px;border-radius:5px}
+.strow .ops{color:#6b7689;font-size:.78rem;margin-left:6px}
 .run{font:inherit;font-size:.82rem;cursor:pointer;border-radius:7px;padding:6px 14px;border:1px solid #238636;background:#238636;color:#fff}
 .run:hover{background:#2ea043}
 .run[disabled]{opacity:.55;cursor:default}
@@ -100,13 +122,19 @@ h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
 <body>
 <main>
 <h1>discrete-event-system.rs</h1>
-<p class="sub">A Rust discrete-event simulation engine, imported here as a <strong>library</strong> (git submodule). Click <em>Run</em> on a simulation to execute it in-process, then open the rendered HTML/JSON results.</p>
+<p class="sub">A Rust modeling &amp; simulation engine, imported here as a <strong>library</strong> (git submodule). Run a <strong>first-class model</strong> to get an interactive player, stream commands to a <strong>solver</strong>, or run any catalogue <strong>simulation</strong> in-process and open the rendered HTML/JSON.</p>
 <div class="actions">
   <a class="btn primary" href="out/">View rendered results &rarr;</a>
   <a class="btn" href="info">Service info</a>
   <a class="btn" href="docs/api">API docs</a>
+  <a class="btn" href="models">Models JSON</a>
+  <a class="btn" href="streaming">Streaming JSON</a>
   <a class="btn" href="simulations">Catalogue JSON</a>
 </div>
+<h2>First-class models <span class="muted">— describe &rarr; run &rarr; interactive player</span></h2>
+<div id="models" class="grid"></div>
+<h2>Streaming solvers <span class="muted">— JSONL commands in, JSONL frames out</span></h2>
+<div id="streaming" class="list"></div>
 <h2>Featured</h2>
 <div id="featured" class="grid"></div>
 <h2>All simulations <span id="count" class="muted"></span></h2>
@@ -144,6 +172,37 @@ function filterSims(){
   const q=document.getElementById('filter').value.toLowerCase();
   document.querySelectorAll('#all .sim').forEach(function(c){c.style.display=c.dataset.name.indexOf(q)>=0?'':'none';});
 }
+function modelCard(m){
+  const card=document.createElement('div');card.className='sim';
+  const lab=document.createElement('div');lab.className='label';lab.textContent=m.title||m.kind;
+  const nm=document.createElement('div');nm.className='name';nm.textContent=m.kind+' \u00b7 '+(m.specSchema||'')+(m.methods&&m.methods.length?' \u00b7 '+m.methods.join(', '):'');
+  const desc=document.createElement('div');desc.className='desc';desc.textContent=m.description||'';
+  const row=document.createElement('div');row.className='row';
+  const js=document.createElement('a');js.className='json';js.textContent='JSON';js.href='models/'+encodeURIComponent(m.kind)+'/run?format=json';js.target='_blank';js.rel='noopener';
+  const open=document.createElement('a');open.className='open';open.textContent='Open player \u2197';open.href='models/'+encodeURIComponent(m.kind)+'/run';open.target='_blank';open.rel='noopener';
+  row.appendChild(js);row.appendChild(open);
+  card.appendChild(lab);card.appendChild(nm);card.appendChild(desc);card.appendChild(row);
+  return card;
+}
+function streamRow(c){
+  const row=document.createElement('div');row.className='strow';
+  const ops=(c.inputOps&&c.inputOps.length)||0;
+  row.innerHTML='POST <code>streaming/'+c.model+'</code><span class="ops">'+ops+' command op(s)</span><br>'+
+    (c.description||'').replace(/[<>&]/g,function(ch){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[ch];});
+  return row;
+}
+(async function(){
+  try{
+    const r=await fetch('models');const d=await r.json();
+    const wrap=document.getElementById('models');
+    (d.models||[]).forEach(function(m){wrap.appendChild(modelCard(m));});
+  }catch(e){document.getElementById('models').textContent='failed to load models';}
+  try{
+    const r=await fetch('streaming');const d=await r.json();
+    const wrap=document.getElementById('streaming');
+    (d.streaming||[]).forEach(function(c){wrap.appendChild(streamRow(c));});
+  }catch(e){document.getElementById('streaming').textContent='failed to load streaming contracts';}
+})();
 (async function(){
   const f=document.getElementById('featured');
   FEATURED.forEach(function(p){f.appendChild(simCard(p[0],p[1]));});
@@ -166,6 +225,15 @@ struct AppState {
     out_dir: Arc<PathBuf>,
     /// Serializes simulation runs (the engine is single-clock / single-RNG).
     sim_lock: Arc<Mutex<()>>,
+    /// Discovery `Link` header (relative RFC 8288 targets) emitted on the
+    /// canonical landing routes so a machine can find the docs from `/` alone.
+    link_header: Arc<str>,
+    /// `dd-server-api-docs` discovery header value (relative).
+    dd_docs_header: Arc<str>,
+    /// The independently-rendered HTML docs page (a view over the descriptor).
+    docs_html: Arc<str>,
+    /// The canonical machine-readable descriptor JSON (`/api/docs.json`).
+    docs_json: Arc<str>,
 }
 
 fn now_ms() -> u128 {
@@ -243,31 +311,51 @@ async fn healthz() -> impl IntoResponse {
 
 /// Human-facing landing page: featured + full catalogue with "Run" buttons
 /// (each does a relative `fetch` so it works at `/` locally and behind the
-/// gateway at `/des-rs/`), plus a link to the rendered `out/` results.
-async fn root() -> Html<&'static str> {
-    Html(LANDING_HTML)
+/// gateway at `/des-rs/`), plus a link to the rendered `out/` results. The
+/// canonical landing route also carries the discovery headers, so a machine
+/// that hits only `/` learns where the docs live.
+async fn root(State(state): State<AppState>) -> Response {
+    let mut res = Html(LANDING_HTML).into_response();
+    apply_discovery_headers(res.headers_mut(), &state);
+    res
 }
 
-/// Machine-readable service info (the old JSON root).
-async fn info() -> impl IntoResponse {
-    Json(json!({
+/// Machine-readable service info (the old JSON root), including the discovery
+/// hints that are also returned as HTTP response headers.
+async fn info(State(state): State<AppState>) -> Response {
+    let mut res = Json(json!({
         "ok": true,
         "service": "dd-des-rs",
         "mode": "runs the discrete-event-system.rs engine (library) and serves rendered HTML",
         "engineSimulations": sim_names().len(),
+        "modelKinds": with_builtins().kinds(),
+        "streamingSolvers": streaming_model_names(),
         "endpoints": {
             "landing": "GET /",
             "healthz": "GET /healthz",
             "simulations": "GET /simulations",
             "simulate": "POST /simulate  {\"name\":\"<filter>\",\"exact\":false}",
             "runNamed": "GET /simulations/:name/run?exact=1",
+            "models": "GET /models",
+            "runModel": "GET /models/:kind/run  (POST a JSON spec to run your own; ?format=json for the artifact)",
+            "streaming": "GET /streaming",
+            "streamModel": "POST /streaming/:name  (JSONL in -> JSONL out)",
             "renderedOutputIndex": "GET /out/",
             "renderedOutputFile": "GET /out/*path",
             "apiDocs": "GET /docs/api",
             "apiDocsJson": "GET /api/docs.json"
         },
+        "discovery": {
+            "linkHeader": &*state.link_header,
+            "ddHeader": DD_API_DOCS_HEADER,
+            "ddHeaderValue": &*state.dd_docs_header,
+            "note": "GET / and GET /info also return these as HTTP response headers (RFC 8288 Link with service-doc/service-desc relations); relative targets resolve under the gateway prefix."
+        },
         "atMs": now_ms()
     }))
+    .into_response();
+    apply_discovery_headers(res.headers_mut(), &state);
+    res
 }
 
 async fn list_simulations() -> impl IntoResponse {
@@ -356,6 +444,184 @@ async fn run_named(
         Err(error) => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "ok": false, "error": error })),
+        )
+            .into_response(),
+    }
+}
+
+// =============================================================================
+// First-class models + streaming solvers.
+//
+// These expose the platform's "describe a model as JSON → run → interactive
+// player" loop directly over HTTP, alongside the simulation catalogue.
+// `with_builtins()` registers zero-sized citizens, so a fresh registry per
+// request is cheap; runs are serialized behind `sim_lock` and panic-isolated on
+// a blocking thread, exactly like the simulations, since the engine drives
+// process-global state.
+// =============================================================================
+
+#[derive(Debug, Deserialize)]
+struct FormatQuery {
+    format: Option<String>,
+}
+
+fn wants_json(query: &FormatQuery) -> bool {
+    matches!(query.format.as_deref(), Some("json"))
+}
+
+fn unknown_model_response(kind: &str) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({
+            "ok": false,
+            "error": format!("unknown model kind `{kind}`"),
+            "models": with_builtins().kinds(),
+        })),
+    )
+        .into_response()
+}
+
+/// `GET /models` — the model-citizen registry: every kind's descriptor (title,
+/// schema, solve methods, and a runnable example spec the UI/LLM can target).
+async fn list_models() -> impl IntoResponse {
+    let descriptors = with_builtins().descriptors();
+    Json(json!({
+        "ok": true,
+        "count": descriptors.len(),
+        "models": descriptors,
+        "note": "Run a model: GET models/<kind>/run renders its example spec as an interactive player; POST models/<kind>/run with a JSON spec runs your own (add ?format=json for the raw artifact).",
+    }))
+}
+
+/// `GET /streaming` — the JSONL streaming-solver contracts (lp, milp/mip/ip,
+/// mdp, pomdp): each is an iterative solver fed a JSONL command stream.
+async fn list_streaming() -> impl IntoResponse {
+    let contracts = streaming_contracts();
+    Json(json!({
+        "ok": true,
+        "count": contracts.len(),
+        "streaming": contracts,
+        "note": "POST streaming/<name> with a JSONL body (one command per line); the response is a JSONL stream of result frames.",
+    }))
+}
+
+/// Validate, run, and render (or JSON-encode) a model spec. Serialized behind
+/// the simulation lock and panic-isolated on a blocking thread.
+async fn run_model_spec(state: &AppState, kind: String, spec: Value, as_json: bool) -> Response {
+    let _guard = state.sim_lock.lock().await;
+    let kind_for_run = kind.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        catch_unwind(AssertUnwindSafe(|| with_builtins().run(&kind_for_run, &spec)))
+    })
+    .await;
+
+    match outcome {
+        Ok(Ok(Ok(artifact))) => {
+            if as_json {
+                Json(json!({
+                    "ok": true,
+                    "kind": artifact.kind,
+                    "title": artifact.title,
+                    "description": artifact.description,
+                    "summary": artifact.summary,
+                    "frameCount": artifact.frames.len(),
+                    "results": artifact.results,
+                }))
+                .into_response()
+            } else {
+                Html(artifact.to_player_html()).into_response()
+            }
+        }
+        Ok(Ok(Err(CitizenError::UnknownKind(k)))) => unknown_model_response(&k),
+        Ok(Ok(Err(err))) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "kind": kind, "error": err.to_string() })),
+        )
+            .into_response(),
+        Ok(Err(_)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "kind": kind, "error": "model run panicked" })),
+        )
+            .into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "kind": kind, "error": "model task failed to join" })),
+        )
+            .into_response(),
+    }
+}
+
+/// `GET /models/:kind/run` — run the kind's built-in example spec (one-click
+/// demo). `?format=json` returns the raw artifact instead of the player.
+async fn model_run_example(
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+    Query(query): Query<FormatQuery>,
+) -> Response {
+    // Pull the owned example spec out before any `.await` so the non-`Send`
+    // registry never crosses the await point.
+    let spec = {
+        let reg = with_builtins();
+        match reg.get(&kind) {
+            Some(citizen) => citizen.descriptor().example_spec,
+            None => return unknown_model_response(&kind),
+        }
+    };
+    run_model_spec(&state, kind, spec, wants_json(&query)).await
+}
+
+/// `POST /models/:kind/run` — run a user-supplied JSON spec for the kind.
+async fn model_run_post(
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+    Query(query): Query<FormatQuery>,
+    Json(spec): Json<Value>,
+) -> Response {
+    run_model_spec(&state, kind, spec, wants_json(&query)).await
+}
+
+/// `POST /streaming/:name` — feed a JSONL command stream to a named solver and
+/// return its JSONL result stream. Body is `text/plain`/`application/x-ndjson`.
+async fn streaming_run(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    body: String,
+) -> Response {
+    let _guard = state.sim_lock.lock().await;
+    let name_for_run = name.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let mut out: Vec<u8> = Vec::new();
+        let handled = run_named_jsonl(&name_for_run, body.as_bytes(), &mut out);
+        (handled, out)
+    })
+    .await;
+
+    match outcome {
+        Ok((Ok(true), out)) => (
+            [
+                ("content-type", "application/x-ndjson; charset=utf-8"),
+                ("x-content-type-options", "nosniff"),
+            ],
+            out,
+        )
+            .into_response(),
+        Ok((Ok(false), _)) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "ok": false,
+                "error": format!("unknown streaming model `{name}`"),
+                "streaming": streaming_model_names(),
+            })),
+        )
+            .into_response(),
+        Ok((Err(err), _)) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "ok": false, "error": format!("stream error: {err}") })),
+        )
+            .into_response(),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "ok": false, "error": "stream task failed to join" })),
         )
             .into_response(),
     }
@@ -551,86 +817,301 @@ async fn out_file(State(state): State<AppState>, Path(rel_path): Path<String>) -
 }
 
 // =============================================================================
-// API docs — derived at runtime from the route descriptor below (the same
-// table the router is built from), per the repo's "no hand-maintained route
-// inventory" contract.
+// Service descriptor + API docs.
+//
+// The engine library owns the machine-readable contract (`ServiceDescriptor`,
+// JSON-first). This server (a) builds that descriptor from its own routes plus
+// engine/extension contributions, (b) serves it verbatim at /api/docs.json,
+// and (c) renders its OWN HTML docs page as a *view* over the descriptor. One
+// source of truth (the JSON), two representations; presentation stays a server
+// concern. New servers that embed the engine reuse the same descriptor + the
+// same discovery convention for free.
 // =============================================================================
 
-fn api_routes() -> Vec<(&'static str, &'static str, &'static str)> {
-    vec![
-        ("GET", "/healthz", "Readiness/liveness probe."),
-        ("GET", "/", "Interactive landing page with run buttons."),
-        ("GET", "/info", "Service info and endpoint map (JSON)."),
-        (
+/// Advertises the engine's first-class model citizens and streaming solvers as
+/// discoverable capabilities, so `/api/docs` lists `model:<kind>` /
+/// `streaming:<name>` alongside the simulation catalogue.
+struct ModelRegistryExtension;
+
+impl DesExtension for ModelRegistryExtension {
+    fn name(&self) -> &str {
+        "des-model-registry"
+    }
+    fn version(&self) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
+    fn capabilities(&self) -> Vec<Capability> {
+        let mut caps: Vec<Capability> = with_builtins()
+            .descriptors()
+            .into_iter()
+            .map(|d| Capability {
+                name: format!("model:{}", d.kind),
+                description: format!("{} — {} (schema {})", d.title, d.description, d.spec_schema),
+                provided_by: "des-model-registry".to_string(),
+            })
+            .collect();
+        for contract in streaming_contracts() {
+            caps.push(Capability {
+                name: format!("streaming:{}", contract.model),
+                description: contract.description.clone(),
+                provided_by: "des-model-registry".to_string(),
+            });
+        }
+        caps
+    }
+}
+
+/// Server-local extension demonstrating the engine's plugin seam: it advertises
+/// the curated rendered-output site this server layers on top of the engine.
+struct RenderedSiteExtension;
+
+impl DesExtension for RenderedSiteExtension {
+    fn name(&self) -> &str {
+        "dd-des-rs-rendered-site"
+    }
+    fn version(&self) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
+    fn capabilities(&self) -> Vec<Capability> {
+        vec![Capability {
+            name: "rendered-output-site".to_string(),
+            description:
+                "Curated HTML index of the artifacts simulations render, served under /out/."
+                    .to_string(),
+            provided_by: "dd-des-rs-rendered-site".to_string(),
+        }]
+    }
+}
+
+/// Build this service's descriptor: its own (host) endpoints, the engine's
+/// simulation catalogue (as capabilities), and this server's own extension.
+fn build_descriptor() -> ServiceDescriptor {
+    let mut builder = ServiceBuilder::new(ServiceInfo {
+        name: "dd-des-rs".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        description: "Runs the discrete-event-system.rs engine as a library and serves the \
+                      HTML/JSON result pages its simulations render."
+            .to_string(),
+    });
+    builder
+        .endpoint(
+            "GET",
+            "/",
+            "Interactive landing page with run buttons.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/info",
+            "Service info, endpoint map, and discovery hints (JSON).",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/healthz",
+            "Readiness/liveness probe.",
+            EndpointKind::Service,
+        )
+        .endpoint(
             "GET",
             "/simulations",
             "List the engine's simulation catalogue.",
-        ),
-        (
+            EndpointKind::Service,
+        )
+        .endpoint(
             "POST",
             "/simulate",
             "Run sims by `name` (filter, or exact with `\"exact\":true`), in series.",
-        ),
-        (
+            EndpointKind::Action,
+        )
+        .endpoint(
             "GET",
             "/simulations/:name/run",
             "Convenience GET form of /simulate (`?exact=1` for exact name).",
-        ),
-        (
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
+            "/models",
+            "First-class model registry (mdp, pomdp, hybrid, studio) with example specs.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/models/:kind/run",
+            "Run a kind's example spec and render an interactive player (`?format=json` for the artifact).",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "POST",
+            "/models/:kind/run",
+            "Run a JSON model spec for a kind; renders a player (`?format=json` for the artifact).",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
+            "/streaming",
+            "List JSONL streaming-solver contracts (lp, milp/mip/ip, mdp, pomdp).",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "POST",
+            "/streaming/:name",
+            "Stream JSONL commands to a solver; responds with a JSONL frame stream.",
+            EndpointKind::Action,
+        )
+        .endpoint(
             "GET",
             "/out/",
             "Curated index.html, else a listing of rendered artifacts.",
-        ),
-        (
+            EndpointKind::Service,
+        )
+        .endpoint(
             "GET",
             "/out/*path",
             "Serve an individual rendered artifact.",
-        ),
-        ("GET", "/docs/api", "This HTML API documentation."),
-        (
-            "GET",
-            "/api/docs.json",
-            "Machine-readable API documentation.",
-        ),
-    ]
+            EndpointKind::Service,
+        );
+    // Built-in engine catalogue + this server's own plugin. Registration only
+    // fails on a duplicate extension name, which would be a programming error.
+    builder
+        .register(Box::new(EngineCatalogExtension))
+        .expect("engine catalogue extension registers cleanly");
+    builder
+        .register(Box::new(ModelRegistryExtension))
+        .expect("model-registry extension registers cleanly");
+    builder
+        .register(Box::new(RenderedSiteExtension))
+        .expect("rendered-site extension registers cleanly");
+    builder.build()
 }
 
-fn api_docs_value() -> Value {
-    json!({
-        "service": "dd-des-rs",
-        "description": "Runs the discrete-event-system.rs engine as a library and serves rendered HTML.",
-        "routes": api_routes()
-            .into_iter()
-            .map(|(method, path, desc)| json!({ "method": method, "path": path, "description": desc }))
-            .collect::<Vec<_>>(),
-    })
-}
-
-async fn api_docs_html() -> Html<String> {
-    let mut rows = String::new();
-    for (method, path, desc) in api_routes() {
-        rows.push_str(&format!(
-            "<tr><td>{m}</td><td><code>{p}</code></td><td>{d}</td></tr>",
-            m = method,
-            p = html_escape(path),
-            d = html_escape(desc)
-        ));
+/// Insert the discovery headers (computed once at startup) onto a response so a
+/// machine that hits the canonical landing route can find the docs from headers
+/// alone. Relative targets resolve correctly behind the gateway's `/des-rs/`.
+fn apply_discovery_headers(headers: &mut HeaderMap, state: &AppState) {
+    if let Ok(value) = HeaderValue::from_str(&state.link_header) {
+        headers.insert(header::LINK, value);
     }
-    Html(format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-         <title>dd-des-rs API</title><style>\
-         body{{font-family:system-ui,sans-serif;margin:0;background:#0d1117;color:#e6edf3;}}\
-         main{{max-width:900px;margin:0 auto;padding:24px 20px;}}\
-         table{{border-collapse:collapse;width:100%;}}\
-         td,th{{text-align:left;padding:8px;border-bottom:1px solid #21262d;font-size:.9rem;}}\
-         code{{color:#58a6ff;}}</style></head><body><main>\
-         <h1>dd-des-rs API</h1><table><tr><th>Method</th><th>Path</th><th>Description</th></tr>\
-         {rows}</table></main></body></html>"
-    ))
+    if let Ok(value) = HeaderValue::from_str(&state.dd_docs_header) {
+        headers.insert(HeaderName::from_static(DD_API_DOCS_HEADER), value);
+    }
 }
 
-async fn api_docs_json() -> impl IntoResponse {
-    Json(api_docs_value())
+fn kind_label(kind: EndpointKind) -> &'static str {
+    match kind {
+        EndpointKind::Service => "service",
+        EndpointKind::Docs => "docs",
+        EndpointKind::Action => "action",
+        EndpointKind::Custom => "custom",
+    }
+}
+
+/// Independently render the HTML docs page from the JSON descriptor. The engine
+/// library deliberately ships no HTML; this is the server's own branded view,
+/// guaranteed consistent with `/api/docs.json` because both come from the same
+/// [`ServiceDescriptor`]. The JSON link is `../api/docs.json` so it resolves
+/// from `/docs/api` (and `/api/docs`) at the root or behind the gateway prefix.
+fn render_docs_html(descriptor: &ServiceDescriptor) -> String {
+    let endpoint_rows = descriptor
+        .endpoints
+        .iter()
+        .map(|e| {
+            let provided = e
+                .provided_by
+                .as_deref()
+                .map(|p| format!("<span class=\"by\">{}</span>", html_escape(p)))
+                .unwrap_or_default();
+            format!(
+                "<tr><td><span class=\"m\">{method}</span></td><td><code>{path}</code></td>\
+                 <td><span class=\"k k-{kind}\">{kind}</span></td><td>{desc}{provided}</td></tr>",
+                method = html_escape(&e.method),
+                path = html_escape(&e.path),
+                kind = kind_label(e.kind),
+                desc = html_escape(&e.description),
+            )
+        })
+        .collect::<String>();
+
+    let capability_rows = descriptor
+        .capabilities
+        .iter()
+        .map(|c| {
+            format!(
+                "<tr><td><code>{name}</code></td><td>{desc}</td>\
+                 <td><span class=\"by\">{by}</span></td></tr>",
+                name = html_escape(&c.name),
+                desc = html_escape(&c.description),
+                by = html_escape(&c.provided_by),
+            )
+        })
+        .collect::<String>();
+
+    let extension_rows = descriptor
+        .extensions
+        .iter()
+        .map(|x| {
+            format!(
+                "<li><code>{name}</code> <span class=\"by\">v{version}</span> — \
+                 {ep} endpoint(s), {cap} capability(ies)</li>",
+                name = html_escape(&x.name),
+                version = html_escape(&x.version),
+                ep = x.endpoint_count,
+                cap = x.capability_count,
+            )
+        })
+        .collect::<String>();
+
+    format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>{name} API</title><style>\
+         :root{{color-scheme:dark}}body{{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;margin:0;background:#0b1021;color:#e6edf3}}\
+         main{{max-width:1040px;margin:0 auto;padding:28px 22px 72px}}\
+         h1{{margin:0 0 4px}}h2{{margin:30px 0 10px;font-size:1.05rem}}\
+         p.sub{{color:#9aa4b2;margin:0 0 10px}}a{{color:#58a6ff}}\
+         table{{border-collapse:collapse;width:100%;font-size:.88rem}}\
+         td,th{{text-align:left;padding:8px 10px;border-bottom:1px solid #21262d;vertical-align:top}}\
+         th{{color:#9aa4b2;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}}\
+         code{{color:#58a6ff;font-family:ui-monospace,Menlo,Consolas,monospace}}\
+         .m{{font-weight:700}}\
+         .k{{font-size:.72rem;border:1px solid #2b3344;border-radius:5px;padding:1px 6px;white-space:nowrap}}\
+         .k-service{{color:#7ee787}}.k-docs{{color:#d2a8ff}}.k-action{{color:#ffa657}}.k-custom{{color:#9aa4b2}}\
+         .by{{color:#6e7781;font-size:.78rem;margin-left:6px}}\
+         .pill{{display:inline-block;border:1px solid #2b3344;border-radius:6px;padding:2px 8px;margin:0 6px 8px 0;font-size:.8rem;text-decoration:none}}\
+         </style></head><body><main>\
+         <h1>{name} <span class=\"by\">v{version}</span></h1>\
+         <p class=\"sub\">{description}</p>\
+         <div><span class=\"pill\">schema {schema}</span>\
+         <span class=\"pill\">{n_ep} endpoints</span>\
+         <span class=\"pill\">{n_cap} capabilities</span>\
+         <a class=\"pill\" href=\"../api/docs.json\">machine descriptor (JSON) &rarr;</a></div>\
+         <h2>Endpoints</h2>\
+         <table><tr><th>Method</th><th>Path</th><th>Kind</th><th>Description</th></tr>{endpoint_rows}</table>\
+         <h2>Capabilities</h2>\
+         <table><tr><th>Name</th><th>Description</th><th>Source</th></tr>{capability_rows}</table>\
+         <h2>Extensions</h2><ul>{extension_rows}</ul>\
+         </main></body></html>",
+        name = html_escape(&descriptor.info.name),
+        version = html_escape(&descriptor.info.version),
+        description = html_escape(&descriptor.info.description),
+        schema = html_escape(&descriptor.schema),
+        n_ep = descriptor.endpoints.len(),
+        n_cap = descriptor.capabilities.len(),
+    )
+}
+
+async fn api_docs_html(State(state): State<AppState>) -> Html<String> {
+    Html(state.docs_html.to_string())
+}
+
+async fn api_docs_json(State(state): State<AppState>) -> Response {
+    let mut res = state.docs_json.to_string().into_response();
+    res.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    res
 }
 
 // =============================================================================
@@ -663,9 +1144,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .canonicalize()
         .unwrap_or_else(|_| work.join("out"));
 
+    // Build the machine-readable service descriptor once (the JSON-first
+    // contract owned by the engine library), then precompute the HTML view and
+    // the discovery headers so request handlers stay allocation-light.
+    let descriptor = build_descriptor();
+    let link_header: Arc<str> = Arc::from(descriptor.link_header_relative());
+    let dd_docs_header: Arc<str> = Arc::from(descriptor.dd_api_docs_relative());
+    let docs_html: Arc<str> = Arc::from(render_docs_html(&descriptor));
+    let docs_json: Arc<str> = Arc::from(descriptor.to_json_string());
+
     let state = AppState {
         out_dir: Arc::new(out_dir),
         sim_lock: Arc::new(Mutex::new(())),
+        link_header,
+        dd_docs_header,
+        docs_html,
+        docs_json,
     };
 
     // Populate `out/` in the background so /healthz comes up immediately while
@@ -696,6 +1190,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/simulations", get(list_simulations))
         .route("/simulate", post(simulate))
         .route("/simulations/:name/run", get(run_named))
+        .route("/models", get(list_models))
+        .route("/models/:kind/run", get(model_run_example).post(model_run_post))
+        .route("/streaming", get(list_streaming))
+        .route("/streaming/:name", post(streaming_run))
         .route("/out", get(out_redirect))
         .route("/out/", get(out_index))
         .route("/out/*path", get(out_file))
@@ -730,6 +1228,55 @@ mod tests {
         assert!(names.len() >= 56, "expected the full engine catalogue");
         assert!(names.contains(&"main_build_site"));
         assert!(names.contains(&"main_electric_circuit"));
+    }
+
+    #[test]
+    fn model_registry_and_streaming_solvers_are_exposed() {
+        let kinds = with_builtins().kinds();
+        for expected in ["mdp", "pomdp", "hybrid", "studio"] {
+            assert!(kinds.contains(&expected.to_string()), "missing kind {expected}");
+        }
+        assert!(streaming_model_names().contains(&"lp"));
+        assert!(streaming_model_names().contains(&"mdp"));
+        assert!(
+            streaming_contracts().len() >= 4,
+            "expected lp/milp/mdp/pomdp streaming contracts"
+        );
+    }
+
+    #[test]
+    fn descriptor_advertises_model_and_streaming_endpoints() {
+        let descriptor = build_descriptor();
+        let paths: Vec<&str> = descriptor.endpoints.iter().map(|e| e.path.as_str()).collect();
+        assert!(paths.contains(&"/models"));
+        assert!(paths.contains(&"/models/:kind/run"));
+        assert!(paths.contains(&"/streaming"));
+        assert!(paths.contains(&"/streaming/:name"));
+        // The model-registry extension contributes `model:<kind>` capabilities.
+        assert!(descriptor
+            .capabilities
+            .iter()
+            .any(|c| c.name == "model:mdp"));
+        assert!(descriptor
+            .capabilities
+            .iter()
+            .any(|c| c.name.starts_with("streaming:")));
+    }
+
+    #[test]
+    fn every_model_kind_runs_its_example_and_renders_a_player() {
+        let reg = with_builtins();
+        for desc in reg.descriptors() {
+            let artifact = reg
+                .run(&desc.kind, &desc.example_spec)
+                .unwrap_or_else(|e| panic!("kind {} failed: {e}", desc.kind));
+            let html = artifact.to_player_html();
+            assert!(
+                html.contains("<html") || html.contains("<!DOCTYPE") || html.contains("<!doctype"),
+                "kind {} did not render an HTML player",
+                desc.kind
+            );
+        }
     }
 
     #[test]

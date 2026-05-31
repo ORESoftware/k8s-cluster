@@ -38,11 +38,36 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
   to run only the exactly-named entry. Returns per-sim `{name, ok, millis}`.
 - `GET  /simulations/<name>/run` — convenience GET form of `/simulate`; add
   `?exact=1` to run exactly the named sim (this is what the UI buttons use).
+- `GET  /models` — the first-class **model registry** (e.g. `mdp`, `pomdp`,
+  `hybrid`, `studio`): each kind's descriptor (title, schema, solve methods,
+  and a runnable example spec the UI/LLM can target).
+- `GET  /models/<kind>/run` — run that kind's built-in example spec and render
+  an interactive player; add `?format=json` for the raw artifact.
+- `POST /models/<kind>/run` — run a user-supplied JSON spec for a kind (renders
+  a player; `?format=json` returns the artifact). Validated, panic-isolated, and
+  serialized behind the same lock as the simulations.
+- `GET  /streaming` — the JSONL **streaming-solver** contracts (`lp`, `milp`,
+  `mdp`, `pomdp`): iterative solvers fed a JSONL command stream.
+- `POST /streaming/<name>` — stream JSONL commands (one per line) to a solver;
+  responds with a JSONL stream of result frames.
 - `GET  /out` → `/out/` — curated `index.html` if present, else a generated
   listing of every rendered artifact.
 - `GET  /out/<path>` — serve an individual artifact (path-traversal confined to
   the `out/` directory via canonicalized checks).
-- `GET  /docs/api`, `GET /api/docs`, `GET /api/docs.json` — generated API docs.
+- `GET  /api/docs.json` — the canonical **machine-readable service descriptor**
+  (`des/service-descriptor/v1`). It is built by the engine library's
+  `des::service` module (JSON-first) from this server's endpoints plus every
+  registered extension's contributions (the engine simulation catalogue + this
+  server's own `dd-des-rs-rendered-site` plugin).
+- `GET  /docs/api`, `GET /api/docs` — a human-readable HTML **view** rendered
+  independently by this server from that same descriptor (one source of truth,
+  two representations).
+- **Discovery:** `GET /` and `GET /info` return discovery response headers so a
+  machine that hits only the canonical landing route can find the docs:
+  `Link: <docs/api>; rel="service-doc", <api/docs.json>; rel="service-desc"`
+  (RFC 8288 / RFC 8631) plus a first-party `dd-server-api-docs` header. The
+  targets are relative, so they resolve to `/des-rs/docs/api` etc. behind the
+  gateway. `GET /info` also echoes these under a `discovery` object.
 
 ## Environment
 
