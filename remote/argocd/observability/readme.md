@@ -9,7 +9,7 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
 - `dd-prometheus`: stores collector-exported metrics.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
 - `dd-loki` + `dd-promtail`: collect Kubernetes container stdout/stderr logs
-  from `/var/log/containers/*.log`.
+  from `/var/log/pods/*`.
 - `dd-tempo` and `dd-jaeger`: trace backends for collector-exported spans.
 - `dd-nats` scrape target: NATS metrics are collected from the exporter sidecar
   at `dd-nats.messaging.svc.cluster.local:7777`.
@@ -68,15 +68,20 @@ Currently opted-in:
 ### Per-pod metrics + log labels
 
 - `dd-otel-collector` uses `kubernetes_sd_configs (role: pod)` for the
-  `gcs-router` scrape job so each router pod is scraped directly. The
-  collector exports `gcs_router_*` counters with a `pod` label, which
-  is needed because the per-pod ring counters disagree (each pod
-  tracks routing decisions from its own perspective) and the Service
-  VIP would hide half the signal behind round-robin scraping.
+  `gcs-router` and `dd-promtail` scrape jobs so each pod is scraped
+  directly. The collector exports `gcs_router_*` counters with a `pod`
+  label, which is needed because the per-pod ring counters disagree
+  (each pod tracks routing decisions from its own perspective) and the
+  Service VIP would hide half the signal behind round-robin scraping.
+  Promtail metrics are scraped the same way so empty-Loki incidents can
+  be diagnosed from Prometheus.
 - `dd-promtail` runs with `kubernetes_sd_configs (role: pod)` so each
-  log stream carries `pod`, `container`, `namespace`, `app`, and
-  `node` labels. Loki queries should pin on these labels rather than
-  regexing `filename`.
+  log stream carries `cluster`, `environment`, `namespace`,
+  `deployment`, `app`, `pod`, `container`, `workload_kind`,
+  `workload`, and `node` labels. The EC2 runtime defaults
+  `environment=stage`; a namespace literally named `prod` or
+  `production` is relabeled as `environment=prod`. Loki queries should
+  pin on these labels rather than regexing `filename`.
 
 The OTEL collector + promtail each have their own minimal RBAC
 (`otel-collector.rbac.yaml`, `promtail.rbac.yaml`) granting cluster-

@@ -6,8 +6,8 @@
 # `filename` and forced every Loki query to use a regex on the path).
 #
 # Discovery role `pod` only needs read on pods, cluster-wide because
-# promtail tails container logs from every namespace via the hostPath
-# /var/log/containers mount. Read-only, no other resources.
+# promtail tails container logs from every namespace via the read-only
+# hostPath /var/log mount. Read-only, no other resources.
 ---
 apiVersion: v1
 kind: ServiceAccount

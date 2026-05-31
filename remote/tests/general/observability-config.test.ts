@@ -61,8 +61,12 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collector, /dd-billing-server\.default\.svc\.cluster\.local:80/);
   assert.match(collector, /dd-formal-methods-service\.default\.svc\.cluster\.local:8111/);
   assert.match(collector, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
-  assert.match(collector, /gcs-router\.default\.svc\.cluster\.local:9100/);
+  assert.match(collector, /job_name:\s*gcs-router/);
+  assert.match(collector, /kubernetes_sd_configs:[\s\S]*role:\s*pod/);
+  assert.match(collector, /__meta_kubernetes_pod_label_app[\s\S]*regex:\s*gcs-router/);
   assert.match(collector, /dd-nats\.messaging\.svc\.cluster\.local:7777/);
+  assert.match(collector, /job_name:\s*dd-promtail/);
+  assert.match(collector, /__meta_kubernetes_pod_label_app[\s\S]*regex:\s*dd-promtail/);
   assert.match(collector, /endpoint:\s*dd-tempo\.observability\.svc\.cluster\.local:4317/);
   assert.match(collector, /endpoint:\s*dd-jaeger\.observability\.svc\.cluster\.local:4317/);
 });
@@ -80,7 +84,14 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(prometheus, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
   assert.match(prometheus, /gcs-router\.default\.svc\.cluster\.local:9100/);
   assert.match(promtail, /dd-loki\.observability\.svc\.cluster\.local:3100\/loki\/api\/v1\/push/);
-  assert.match(promtail, /__path__:\s*\/var\/log\/containers\/\*\.log/);
+  assert.match(promtail, /external_labels:[\s\S]*cluster:\s*dd-ec2/);
+  assert.match(promtail, /replacement:\s*stage[\s\S]*target_label:\s*environment/);
+  assert.match(promtail, /replacement:\s*prod[\s\S]*target_label:\s*environment/);
+  assert.match(promtail, /target_label:\s*deployment/);
+  assert.match(promtail, /target_label:\s*environment/);
+  assert.match(promtail, /target_label:\s*workload_kind/);
+  assert.match(promtail, /target_label:\s*workload/);
+  assert.match(promtail, /replacement:\s*\/var\/log\/pods\/\*\$1\/\*\.log/);
   assert.match(promtail, /- cri:\s*\{\}/);
 });
 

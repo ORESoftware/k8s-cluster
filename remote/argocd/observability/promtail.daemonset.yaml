@@ -16,7 +16,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/config-revision: "2026-05-22-kubernetes-sd"
+        dd.dev/config-revision: "2026-05-31-loki-labels"
       labels:
         app: dd-promtail
     spec:
@@ -28,6 +28,8 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            runAsUser: 0
+            runAsGroup: 0
             seccompProfile:
               type: RuntimeDefault
           args:

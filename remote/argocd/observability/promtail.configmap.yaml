@@ -14,12 +14,13 @@ data:
 
     clients:
       - url: http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/push
+        external_labels:
+          cluster: dd-ec2
 
     # Discover every pod via the Kubernetes API and tail its container
-    # logs from /var/log/pods. Labels are derived from pod metadata
-    # (pod, namespace, container, app, node), so Loki queries can pin
-    # by app/pod directly instead of regexing __path__ as the previous
-    # filename-only static_configs setup required.
+    # logs from /var/log/pods. Labels are derived from pod metadata so
+    # Loki queries can pin by environment, namespace, deployment, app,
+    # pod, container, workload kind/name, or node without regexing paths.
     scrape_configs:
       - job_name: kubernetes-pods
         kubernetes_sd_configs:
@@ -38,8 +39,33 @@ data:
             target_label: pod
           - source_labels: [__meta_kubernetes_pod_container_name]
             target_label: container
+          - source_labels: [__meta_kubernetes_pod_controller_kind]
+            regex: (.+)
+            target_label: workload_kind
+          - source_labels: [__meta_kubernetes_pod_controller_name]
+            regex: (.+)
+            target_label: workload
+          - source_labels: [__meta_kubernetes_pod_controller_name]
+            regex: ^(.+)-[a-f0-9]{8,10}$
+            replacement: $1
+            target_label: deployment
           - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: (.+)
             target_label: app
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: (.+)
+            target_label: deployment
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            regex: (.+)
+            target_label: app_kubernetes_io_name
+          - source_labels: [__meta_kubernetes_namespace]
+            regex: .*
+            replacement: stage
+            target_label: environment
+          - source_labels: [__meta_kubernetes_namespace]
+            regex: ^(prod|production)$
+            replacement: prod
+            target_label: environment
           # Canonical promtail pattern. The actual on-node directory is
           # /var/log/pods/<ns>_<pod>_<uid>/<container>/<N>.log, so the
           # leading `*` glob absorbs the <ns>_<pod>_ prefix while we
