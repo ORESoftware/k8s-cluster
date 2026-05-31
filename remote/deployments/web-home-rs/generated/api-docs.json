@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "web-home-rs",
   "language": "rust",
-  "routeCount": 35,
+  "routeCount": 37,
   "routeTypeCounts": {
     "service": 10,
-    "user-generated": 22,
+    "user-generated": 24,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -366,6 +366,40 @@
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
         "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/factmachine-markets",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "factmachine_markets_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/factmachine-markets/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "factmachine_markets_html"
       ],
       "sourceFiles": [
         "remote/deployments/web-home-rs/src/main.rs"

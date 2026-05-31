@@ -992,3 +992,131 @@ ticks the shield bit; `dart_pool_shield_max_hosts` shows the active budget;
   HTMX handlers, new Jaspr pages to a running cluster without dropping
   any open WebSocket. JIT in dev/staging, AOT in prod — you opt into
   the trade-off via a single env var.
+
+---
+
+## Concurrency model & the road past 50K
+
+The [Architecture](#per-connection-isolates-phoenix-style) section above gives
+the *conceptual* unit — one WebSocket peer ↔ one private RxDart/Jaspr graph.
+This section explains how that unit is actually laid out across isolates so a
+**single pod** carries 50K concurrent sockets at ~2.77 GiB, and how the MDP/POMDP
+autotuner is the lever that pushes the ceiling higher.
+
+### Three nested layers of concurrency
+
+A booted pod is not one isolate per connection — at 50K that would mean 50K
+heaps and 50K event loops. Instead it is a three-layer tree, and each layer is
+a *different* axis of parallelism:
+
+```
+                       ┌──────────────────────────────────────────────┐
+   main / coordinator  │  routing decisions · :pg EventBus · Presence  │
+   (1 isolate)         │  ConversationRegistry · MDP control loop      │
+                       │  /metrics + admin (:8088) · shard self-heal   │
+                       └───────────────┬──────────────────────────────┘
+                                       │ spawns + ShardPoolDirective
+              ┌────────────────────────┼────────────────────────┐
+              ▼                        ▼                        ▼
+        gateway shard 0          gateway shard 1   …      gateway shard N-1     ← WS_GATEWAY_SHARDS
+        (SO_REUSEPORT :8089)     (SO_REUSEPORT)           (SO_REUSEPORT)           kernel hash-balances
+        SessionSupervisor        SessionSupervisor        SessionSupervisor       new TCP accepts
+              │                        │                        │
+        ┌─────┴─────┐            ┌─────┴─────┐            ┌─────┴─────┐
+        ▼           ▼            ▼           ▼            ▼           ▼
+     host 0      host 1   …   host k     host k+1  …   host m     host m+1       ← warm host pool
+     ≤ D sess.   ≤ D sess.     ≤ D sess.  ≤ D sess.     ≤ D sess.  ≤ D sess.        D = sessionsPerHost
+     │ │ │ …      │ │ │ …       │ │ │ …    │ │ │ …        │ │ │ …    │ │ │ …          (density)
+     each "│" = one session: private BehaviorSubjects + Jaspr render closure
+```
+
+| Layer | Count | Axis of parallelism it buys | Tuned by |
+| ----- | ----- | --------------------------- | -------- |
+| **Gateway shards** | `WS_GATEWAY_SHARDS` | **Accept + socket I/O throughput.** All shards `bind` the same port with `SO_REUSEPORT`; the kernel spreads inbound connections across them, so socket reads/writes run on N event loops in parallel. Scales with vCPUs. | static (set to ~#vCPU) |
+| **Session-host isolates** | MDP `targetHosts` | **Fault isolation + GC parallelism.** A crash or a long GC pause on one host only touches its own sessions (see [Crash resilience](#crash-resilience)); other hosts keep pumping frames on their own heaps. | MDP lever #1 |
+| **Sessions per host** | MDP `sessionsPerHost` (`D`) | **Memory amortisation.** Multiplexing hundreds of sessions onto one isolate spreads the ~tens-of-KB base heap + scheduler cost across all of them — this is what keeps 50K sockets at single-digit GiB. | MDP lever #2 |
+
+Why this shape scales where naïve `async` or 1:1-isolate models stall:
+
+* **The accept path is sharded, not single-threaded.** A lone listener isolate
+  serializes every TLS/WS handshake; `SO_REUSEPORT` across `WS_GATEWAY_SHARDS`
+  was the change that broke the **~39K wall** (8 → 16 shards) by parallelising
+  accepts across cores.
+* **Sessions are multiplexed, not 1:1 with isolates.** Carrying `D` sessions per
+  host turns "50K heaps" into "≈ `50K / D` heaps". At `D≈300` that is ~167 host
+  isolates instead of 50,000 — the difference between 2.77 GiB and OOM.
+* **Fan-out stays star-shaped.** SendPorts can only be read by their owning
+  isolate, so cross-session delivery routes through the `:pg` EventBus on main.
+  Every session ↔ bridge edge is the only topology isolates can actually pump
+  over; topics keep that fan-out bounded to interested sessions.
+
+### What we actually measured (single pod)
+
+| Scenario | Result |
+| -------- | ------ |
+| 50,000 sockets (30K rust @ 2 msg/s + 20K gleam) | RSS **2.77 GiB**, 6.5 / 10 cores, p50 adopt ≈ 6 ms, **0** failed, **0** restarts |
+| 30,000 @ 2 msg/s (= 60K msg/s inbound) | 6.2 cores, 1.46 GiB, adopt p99.5 **< 1 ms** |
+| Kill one host isolate under load | only its sessions drop (**312 / 30K = 1.04 %**), reconnect in **~6 s**, pod survives |
+
+The remaining single-pod ceiling is **node CPU**, not the Dart server's memory
+or any intrinsic isolate limit — i.e. the architecture is already in the regime
+where the *operating point* (how many hosts, how dense), not the design, decides
+the ceiling. That operating point is exactly what the autotuner searches.
+
+### Why MDP — and why it's really a POMDP
+
+Going past 50K is not a code change; it's a search for the cheapest pool that
+still holds latency. The two levers — **host count** and **density** — trade off
+against each other and against load shape, message rate, and GC behaviour, so a
+hand-picked constant is wrong the moment traffic moves. The
+[MDP isolate-pool autotuner](#mdp-isolate-pool-autotuner) learns it online
+instead (see that section for the full state/action/reward and env vars).
+
+It is a **POMDP**, not a clean MDP, because the variables that actually decide
+the right setpoint are **hidden**:
+
+| True (hidden) state | What we can observe (the belief inputs) |
+| ------------------- | --------------------------------------- |
+| per-isolate event-loop queue depth / contention | `dart_ws_adopt_latency_seconds`, `dart_ws_first_frame_latency_seconds` histograms |
+| GC pause distribution per host heap | tail of those same latency histograms |
+| kernel run-queue / scheduler pressure | adopt-latency drift vs. arrival rate |
+| real arrival process | session-count delta (arrival-trend bucket) |
+| effective free capacity | utilisation bucket + cold-starts / refusals |
+
+The autotuner never reads contention or GC directly — it acts on a **belief**
+formed from that partial projection (utilisation bucket × arrival-trend bucket,
+with the latency histograms as the channel that betrays hidden contention). A
+density that looks free by slot-count but is actually thrashing one event loop
+shows up *only* as a fatter p99 tail; the reward
+(`-(latency·w + coldStarts·w + refusals·w + idleHosts·w + size·w)`) turns that
+hidden cost into a learnable signal and walks the policy off it.
+
+### How that lifts the ceiling above 50K
+
+1. **Find the densest safe packing.** The learner searches `WS_HOST_DENSITY_LEVELS`
+   for the most sessions/host that doesn't tip p99 — directly raising how many
+   sockets fit under the memory budget. More density at equal latency = more
+   connections per GiB.
+2. **Keep the ramp clean.** Holding cold-starts and `1013` refusals at zero
+   (the `dart_session_cold_start_spawns_total` / `dart_sessions_refused_capacity_total`
+   terms) means you can push the connect ramp harder without the synchronized
+   stalls that capped earlier runs.
+3. **Stay memory-safe while you grow.** The
+   [storm-dampening shield](#mdp-isolate-pool-autotuner) clamps any exploratory
+   pick into the feasible region, so to scale up you raise the budget
+   (`WS_MDP_MAX_HOST_BUDGET`) and the accept width (`WS_GATEWAY_SHARDS`, ~#vCPU)
+   and let the policy **re-converge** on the new optimum — no manual re-tuning.
+4. **Make horizontal scaling linear.** Once a single pod's CPU is the wall, a
+   learned, stable per-pod density makes each pod's capacity predictable, so
+   adding replicas behind the `dd-dart-server` Service scales connections
+   roughly linearly — every pod autotunes its own pool independently.
+
+### Next increment — library-segmented (typed) pools
+
+The action space is built to grow. Today it is `size × density` over one
+homogeneous host pool. Folding a **pool-count** lever (`{2,3}`) into the same
+joint action index adds `lite` / `render` / `data` host entrypoints, so a
+benchmark/passthrough connection never initialises Jaspr into its heap. Lower
+base heap per host → higher achievable density at equal latency → a higher
+connection ceiling on the same hardware — learned the same way the density
+lever was added to the size lever, with no plumbing rework.

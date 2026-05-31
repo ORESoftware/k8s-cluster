@@ -67,7 +67,7 @@ data:
               app: deployment
               deployment:
           - match:
-              selector: '{deployment=~"dd-billing-server|dd-web-scraper|dd-browser-test-server|dd-selenium-server"}'
+              selector: '{deployment=~"dd-billing-server|dd-web-scraper|dd-browser-test-server|dd-selenium-server|dd-browser-job-runner"}'
               stages:
                 - static_labels:
                     env: prod

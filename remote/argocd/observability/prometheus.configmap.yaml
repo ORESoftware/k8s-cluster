@@ -62,6 +62,11 @@ data:
         static_configs:
           - targets:
               - dd-contract-service.default.svc.cluster.local:8101
+      - job_name: dd-rust-vapi-phone
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-rust-vapi-phone.default.svc.cluster.local:8113
       - job_name: dd-trading-server
         metrics_path: /metrics
         static_configs:

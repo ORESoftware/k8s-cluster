@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-browser-job-runner
+  namespace: default
+  labels:
+    app: dd-browser-job-runner
+spec:
+  replicas: 1
+  # The API container self-builds from the mounted repo and drives the node's
+  # containerd via nerdctl; a single instance owns the dd-browser-jobs namespace
+  # lifecycle, so recreate keeps exactly one spawner at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-browser-job-runner
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-31-browser-job-runner'
+      labels:
+        app: dd-browser-job-runner
+    spec:
+      automountServiceAccountToken: false
+      # Same posture as dd-container-pool / dd-gleam-lambda-runner: a privileged,
+      # host-network pod that spawns short-lived nerdctl worker containers on the
+      # node's containerd. hostNetwork + ClusterFirstWithHostNet lets both this
+      # pod AND its `--network host` workers resolve and reach the NATS ClusterIP
+      # (dd-nats.messaging.svc.cluster.local:4222) for publishing scrape results.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: browser-job-runner
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/browser-job-runner-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8106'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: BROWSER_JOB_NATS_SUBJECT_PREFIX
+              value: dd.remote.browser_jobs
+            - name: BROWSER_JOB_NATS_RESULT_SUBJECT
+              value: dd.remote.browser_jobs.results
+            - name: BROWSER_JOB_NERDCTL_BIN
+              value: /usr/local/bin/nerdctl
+            - name: BROWSER_JOB_CONTAINERD_NAMESPACE
+              value: dd-browser-jobs
+            - name: BROWSER_JOB_NETWORK
+              value: host
+            - name: BROWSER_JOB_IMAGE
+              value: docker.io/library/dd-browser-job-worker:dev
+            - name: BROWSER_JOB_PULL_POLICY
+              value: never
+            - name: BROWSER_JOB_MAX_CONCURRENT
+              value: '4'
+            # Hard ceiling: no per-job browser container outlives 9 minutes.
+            - name: BROWSER_JOB_MAX_LIFETIME_SECONDS
+              value: '540'
+            - name: BROWSER_JOB_DEFAULT_ENGINE
+              value: playwright
+            - name: BROWSER_JOB_DEFAULT_TIMEOUT_MS
+              value: '60000'
+            - name: BROWSER_JOB_MAX_STEPS
+              value: '64'
+            - name: BROWSER_JOB_MAX_SCREENSHOT_BYTES
+              value: '1500000'
+            - name: BROWSER_JOB_BROWSER_HEADLESS
+              value: 'true'
+            # Arbitrary in-page script execution must default to off in production manifests.
+            - name: BROWSER_JOB_ALLOW_EVALUATE
+              value: 'false'
+            - name: BROWSER_JOB_CONTAINER_MEMORY
+              value: 1g
+            - name: BROWSER_JOB_CONTAINER_CPUS
+              value: '1'
+            - name: BROWSER_JOB_CONTAINER_SHM_SIZE
+              value: 512m
+            - name: BROWSER_JOB_PIDS_LIMIT
+              value: '512'
+            - name: BROWSER_JOB_NOFILE_LIMIT
+              value: '8192'
+            - name: BROWSER_JOB_TRACK_INTERVAL_SECONDS
+              value: '5'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+          ports:
+            - name: http
+              containerPort: 8106
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+            - name: containerd-sock
+              mountPath: /run/containerd/containerd.sock
+            - name: containerd-root
+              mountPath: /var/lib/containerd
+              mountPropagation: Bidirectional
+            - name: nerdctl-data
+              mountPath: /var/lib/nerdctl
+              mountPropagation: Bidirectional
+            - name: nerdctl-bin
+              mountPath: /usr/local/bin/nerdctl
+              readOnly: true
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: containerd-sock
+          hostPath:
+            path: /run/containerd/containerd.sock
+            type: Socket
+        - name: containerd-root
+          hostPath:
+            path: /var/lib/containerd
+            type: Directory
+        - name: nerdctl-data
+          hostPath:
+            path: /var/lib/nerdctl
+            type: DirectoryOrCreate
+        - name: nerdctl-bin
+          hostPath:
+            path: /usr/local/bin/nerdctl
+            type: File

@@ -48,6 +48,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'mdp-optimizer-rs',
   'rest-api-rs',
   'runtime-config-rs',
+  'rust-vapi-phone-rs',
   'trading-server-rs',
   'wal-gateway-rs',
   'web-home-rs',

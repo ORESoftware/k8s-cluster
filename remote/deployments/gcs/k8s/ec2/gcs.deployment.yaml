@@ -74,7 +74,6 @@ spec:
                 /usr/local/go/bin/go mod download
                 /usr/local/go/bin/go get -v github.com/oresoftware/json-logging@master
                 /usr/local/go/bin/go get -v github.com/oresoftware/cmd-line-parser@main
-                /usr/local/go/bin/go get -v github.com/oresoftware/go-iterators@main
                 /usr/local/go/bin/go build -p "$(nproc)" -o "$BIN" "$PWD/src/main"
               fi
 

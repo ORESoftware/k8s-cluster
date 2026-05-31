@@ -940,6 +940,55 @@ data:
         proxy_pass http://dd-contract-service.default.svc.cluster.local:8101/;
       }
 
+      # /vapi/webhook — Vapi.ai server webhook. This is the one /vapi/* path
+      # that is NOT behind the operator cookie, because Vapi (the external
+      # caller) cannot send it. Instead the dd-rust-vapi-phone service verifies
+      # the `x-vapi-secret` shared secret on the body, the same signature model
+      # other webhook receivers use. POST only; the exact-match location wins
+      # over the /vapi/ prefix block below.
+      location = /vapi/webhook {
+        if ($request_method != POST) {
+          return 405;
+        }
+        client_max_body_size 1m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 10;
+        proxy_read_timeout 30;
+        proxy_send_timeout 30;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://dd-rust-vapi-phone.default.svc.cluster.local:8113/webhook;
+      }
+
+      location = /vapi {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /vapi/;
+      }
+
+      # /vapi/ — operator-gated surface for the phone screener: the HTML home,
+      # /vapi/config, /vapi/status, /vapi/setup, /vapi/healthz, /vapi/metrics,
+      # and the generated docs. /setup + /status reach the Vapi management API,
+      # so the gateway injects X-Server-Auth which the service checks.
+      location /vapi/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-rust-vapi-phone.default.svc.cluster.local:8113/;
+      }
+
       location = /ml {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -1082,6 +1131,38 @@ data:
         proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         proxy_set_header Auth $dd_gateway_auth_header;
         proxy_pass http://dd-selenium-server.default.svc.cluster.local:8105;
+      }
+
+      location = /browser-jobs {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-browser-job-runner.default.svc.cluster.local:8106;
+      }
+
+      location /browser-jobs/ {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
+        proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_pass http://dd-browser-job-runner.default.svc.cluster.local:8106;
       }
 
       location = /builds {

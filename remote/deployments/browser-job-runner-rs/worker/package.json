@@ -1,0 +1,29 @@
+{
+  "name": "dd-browser-job-worker",
+  "version": "0.1.0",
+  "description": "Single-shot Playwright/Puppeteer scenario worker. Reads a job from JOB_SPEC_B64, runs it once, publishes the JSON result to NATS, then exits. Spawned per-job by dd-browser-job-runner.",
+  "private": true,
+  "type": "module",
+  "main": "dist/worker.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/worker.js",
+    "start:src": "tsx src/worker.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "nats": "^2.29.3",
+    "playwright": "1.56.0",
+    "puppeteer": "^24.22.3",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

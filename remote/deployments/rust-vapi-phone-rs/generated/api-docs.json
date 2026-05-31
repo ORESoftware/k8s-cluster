@@ -1,13 +1,13 @@
 {
   "ok": true,
   "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "des-simulator-rs",
+  "service": "rust-vapi-phone-rs",
   "language": "rust",
-  "routeCount": 19,
+  "routeCount": 13,
   "routeTypeCounts": {
     "service": 6,
-    "runtime-config": 3,
-    "user-generated": 10
+    "user-generated": 4,
+    "runtime-config": 3
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -25,10 +25,10 @@
       "auth": "public",
       "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
       "handlers": [
-        "root"
+        "home"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -45,7 +45,7 @@
         "api_docs_html"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -62,7 +62,24 @@
         "api_docs_json"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "config_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -79,7 +96,7 @@
         "api_docs_html"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -96,7 +113,7 @@
         "healthz"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
@@ -164,131 +181,12 @@
         "metrics"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/model/example",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "example_http"
-      ],
-      "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/model/examples",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "examples_http"
-      ],
-      "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/model/examples/:name",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "named_example_http"
-      ],
-      "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/model/schema",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "schema_http"
-      ],
-      "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/out",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "des_out_redirect"
-      ],
-      "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/out/",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "des_out_index"
-      ],
-      "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/out/*path",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "des_out_file"
-      ],
-      "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/simulate",
+      "path": "/setup",
       "methods": [
         "POST"
       ],
@@ -297,15 +195,15 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "simulate_http"
+        "setup_http"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/simulations/:job_id",
+      "path": "/status",
       "methods": [
         "GET"
       ],
@@ -314,15 +212,15 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "job_status"
+        "status_http"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     },
     {
-      "path": "/validate",
+      "path": "/webhook",
       "methods": [
         "POST"
       ],
@@ -331,10 +229,10 @@
       "auth": "service-defined",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "validate_with_metrics"
+        "webhook"
       ],
       "sourceFiles": [
-        "remote/deployments/des-simulator-rs/src/main.rs"
+        "remote/deployments/rust-vapi-phone-rs/src/main.rs"
       ],
       "notes": ""
     }

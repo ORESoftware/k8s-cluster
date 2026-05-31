@@ -151,11 +151,11 @@
     {
       "service": "des-simulator-rs",
       "language": "rust",
-      "routeCount": 16,
+      "routeCount": 19,
       "routeTypeCounts": {
         "service": 6,
         "runtime-config": 3,
-        "user-generated": 7
+        "user-generated": 10
       },
       "generated": [
         "remote/deployments/des-simulator-rs/generated/api-docs.json",
@@ -343,6 +343,20 @@
       ]
     },
     {
+      "service": "rust-vapi-phone-rs",
+      "language": "rust",
+      "routeCount": 13,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 4,
+        "runtime-config": 3
+      },
+      "generated": [
+        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.json",
+        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "trading-server-rs",
       "language": "rust",
       "routeCount": 13,
@@ -372,10 +386,10 @@
     {
       "service": "web-home-rs",
       "language": "rust",
-      "routeCount": 35,
+      "routeCount": 37,
       "routeTypeCounts": {
         "service": 10,
-        "user-generated": 22,
+        "user-generated": 24,
         "runtime-config": 3
       },
       "generated": [

@@ -14,6 +14,7 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
 - `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
 - `dd-selenium-server` (Java/Vert.x + selenium-java API driving an in-pod Selenium Grid over RemoteWebDriver)
+- `dd-browser-job-runner` (Rust/axum spawner that runs one ephemeral nerdctl Playwright/Puppeteer worker per job and publishes results to NATS)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
@@ -101,6 +102,10 @@ Gateway path map:
 - `/selenium`, `/selenium/healthz`, `/selenium/metrics`, `/selenium/status`, `/selenium/tools` ->
   `dd-selenium-server:8105` (internal auth required; `POST /run` accepts the same bounded scenario
   DSL but Selenium-only, driving an in-pod Selenium Grid over RemoteWebDriver)
+- `/browser-jobs`, `/browser-jobs/healthz`, `/browser-jobs/metrics`, `/browser-jobs/status`,
+  `/browser-jobs/jobs`, `/browser-jobs/tools` -> `dd-browser-job-runner:8106` (internal auth required;
+  `POST /run` spawns ONE ephemeral Playwright/Puppeteer worker container per job and returns a `jobId`
+  plus NATS result subject immediately — results are published to NATS, not the HTTP response)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
 - `/dd-thread/<short>/...` -> target per-thread Kubernetes Ingress shape; the selected Node.js
   worker is pinned to one thread and does not route UUIDs itself. `/dd-thread/<short>/ws` is the
@@ -496,3 +501,50 @@ It fails closed when `SERVER_AUTH_SECRET` is missing, caps work at `SELENIUM_MAX
 sessions (returning 429 over the cap), bounds scenarios with `SELENIUM_MAX_STEPS` /
 `SELENIUM_MAX_TIMEOUT_MS`, and keeps arbitrary in-page script execution opt-in behind
 `SELENIUM_ALLOW_EVALUATE=false`.
+
+## dd-browser-job-runner (per-job ephemeral Playwright/Puppeteer)
+
+Where `dd-selenium-server` and `dd-browser-test-server` are long-lived in-process runners,
+`dd-browser-job-runner` is a **spawner**: each `POST /run` launches its own short-lived worker
+container, runs one scenario, and tears the container down. It is a privileged, host-network Rust
+(axum) pod that drives the node's containerd via `nerdctl` — the same posture as `dd-container-pool`
+and `dd-gleam-lambda-runner`. Source: `remote/deployments/browser-job-runner-rs` (the spawner) and
+`remote/deployments/browser-job-runner-rs/worker` (the `dd-browser-job-worker` Node/TS image).
+
+Request flow:
+
+1. Operators `POST /run` (gateway `/browser-jobs/run`, internal auth required) with `{ engine,
+   url?, steps[], viewport?, ... }`, where `engine` is `playwright` or `puppeteer` and `steps` is the
+   same bounded DSL as `dd-browser-test-server` (`goto`, `click`, `fill`, `select`, `press`,
+   `waitForSelector`, `waitForUrl`, `waitForTimeout`, `extractText`, `extractAttribute`, `screenshot`,
+   `evaluate`).
+2. The spawner validates the job, reserves a concurrency slot
+   (`BROWSER_JOB_MAX_CONCURRENT`, returning 429 over the cap), and spawns one
+   `nerdctl -n dd-browser-jobs run -d --rm --network host …` worker labelled
+   `dd.browser-job.managed=true` with a `dd.browser-job.deadline-ms` no more than
+   `BROWSER_JOB_MAX_LIFETIME_SECONDS` (**hard cap 540s / 9 min**) in the future.
+3. It responds **immediately** (HTTP 202) with `{ jobId, engine, resultSubject, eventsSubject,
+   resultFanoutSubject, deadlineMs }`. **Results are not returned over HTTP.**
+4. The worker runs the scenario once and publishes its JSON result to NATS
+   (`nats://dd-nats.messaging.svc.cluster.local:4222`) on the per-job
+   `dd.remote.browser_jobs.<jobId>.result` subject and the shared `dd.remote.browser_jobs.results`
+   fanout subject, emits `dd.remote.browser_jobs.<jobId>.events` progress, then exits so the `--rm`
+   container is reclaimed. Host networking lets the worker reach the NATS ClusterIP exactly like the
+   container-pool / lambda workers do.
+
+Lifetime is enforced in three independent layers: the worker's own watchdog hard-exits at
+`BROWSER_JOB_MAX_MS`; the spawner's tracker force-removes any container that passes its deadline and
+prunes finished ones (keeping the concurrency count and `GET /browser-jobs/jobs` accurate); and
+`dd-idle-reaper` runs a `BROWSER_JOB_REAP_*` backstop loop that force-removes any
+`dd.browser-job.managed=true` container in the `dd-browser-jobs` namespace that outlives its deadline
+label plus a grace, covering the case where the spawner pod itself died.
+
+The spawner fails closed when `SERVER_AUTH_SECRET` is missing (unless
+`BROWSER_JOB_ALLOW_UNAUTHENTICATED=true`) and keeps arbitrary in-page script execution opt-in behind
+`BROWSER_JOB_ALLOW_EVALUATE=false`. The worker image must be built into the `dd-browser-jobs`
+containerd namespace (it is pulled with `--pull=never`):
+
+```
+nerdctl -n dd-browser-jobs build -t docker.io/library/dd-browser-job-worker:dev \
+  remote/deployments/browser-job-runner-rs/worker
+```

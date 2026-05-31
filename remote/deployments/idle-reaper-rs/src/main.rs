@@ -140,6 +140,18 @@ struct K8sRuntimeWatchJob {
     retry_interval_seconds: u64,
 }
 
+#[derive(Clone)]
+struct BrowserJobReapJob {
+    nerdctl: String,
+    namespace: String,
+    label: String,
+    deadline_label: String,
+    interval_seconds: u64,
+    grace_seconds: u64,
+    nats_url: String,
+    event_subject: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QueueTaskMessage {
@@ -455,6 +467,149 @@ fn k8s_runtime_watch_job_from_env() -> Option<K8sRuntimeWatchJob> {
         ),
         retry_interval_seconds: env_u64("K8S_RUNTIME_WATCH_RETRY_SECONDS", 5),
     })
+}
+
+fn browser_job_reap_job_from_env() -> Option<BrowserJobReapJob> {
+    if !env_bool("BROWSER_JOB_REAP_ENABLED", false) {
+        println!("browser job reaper disabled: BROWSER_JOB_REAP_ENABLED is false");
+        return None;
+    }
+
+    Some(BrowserJobReapJob {
+        nerdctl: env_string("BROWSER_JOB_REAP_NERDCTL").unwrap_or_else(|| "/usr/local/bin/nerdctl".to_string()),
+        namespace: env_string("BROWSER_JOB_REAP_NAMESPACE").unwrap_or_else(|| "dd-browser-jobs".to_string()),
+        label: env_string("BROWSER_JOB_REAP_LABEL")
+            .unwrap_or_else(|| "dd.browser-job.managed=true".to_string()),
+        deadline_label: env_string("BROWSER_JOB_REAP_DEADLINE_LABEL")
+            .unwrap_or_else(|| "dd.browser-job.deadline-ms".to_string()),
+        interval_seconds: env_u64("BROWSER_JOB_REAP_INTERVAL_SECONDS", 60),
+        // Backstop only: the spawner kills its own overruns at the 9-minute
+        // deadline, so the reaper waits an extra grace before force-removing in
+        // case the spawner pod itself is gone.
+        grace_seconds: env_u64("BROWSER_JOB_REAP_GRACE_SECONDS", 60),
+        nats_url: env_string("NATS_URL")
+            .unwrap_or_else(|| "nats://dd-nats.messaging.svc.cluster.local:4222".to_string()),
+        event_subject: env_string("BROWSER_JOB_REAP_EVENT_SUBJECT")
+            .unwrap_or_else(|| RUNTIME_EVENTS_SUBJECT.to_string()),
+    })
+}
+
+fn parse_label_value(labels: &str, key: &str) -> Option<String> {
+    labels
+        .split(',')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(k, _)| k.trim() == key)
+        .map(|(_, value)| value.trim().to_string())
+}
+
+async fn publish_browser_job_reap_event(job: &BrowserJobReapJob, reaped: &[String]) {
+    let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
+        eprintln!("browser job reaper could not publish event: nats connect failed");
+        return;
+    };
+    let payload = json!({
+        "type": "browser-job-reap",
+        "scope": "admin",
+        "source": "dd-idle-reaper",
+        "namespace": job.namespace,
+        "reapedCount": reaped.len(),
+        "reaped": reaped,
+        "atMs": now_ms(),
+    })
+    .to_string();
+    if let Err(error) = nats.publish(job.event_subject.clone(), payload.into()).await {
+        eprintln!("browser job reap event publish failed: {error}");
+    }
+}
+
+async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
+    // List managed (running + stopped) browser-job containers with their labels.
+    let mut list = Command::new(&job.nerdctl);
+    list.arg("-n")
+        .arg(&job.namespace)
+        .arg("ps")
+        .arg("-a")
+        .arg("--no-trunc")
+        .arg("--filter")
+        .arg(format!("label={}", job.label))
+        .arg("--format")
+        .arg("{{.Names}}|{{.Labels}}");
+    let output = match list.output().await {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            eprintln!(
+                "browser job reaper ps failed: {}",
+                truncate_for_log(&output.stderr).trim()
+            );
+            return;
+        }
+        Err(error) => {
+            eprintln!("browser job reaper ps could not start: {error}");
+            return;
+        }
+    };
+
+    let now = now_ms();
+    let grace_ms = (job.grace_seconds as u128) * 1000;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut targets: Vec<String> = Vec::new();
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let (name, labels) = line.split_once('|').unwrap_or((line, ""));
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        // Reap when past deadline + grace, or when a managed container has no
+        // parseable deadline label at all (malformed/leaked → not ours-shaped).
+        let expired = match parse_label_value(labels, &job.deadline_label).and_then(|v| v.parse::<u128>().ok()) {
+            Some(deadline_ms) => now > deadline_ms + grace_ms,
+            None => true,
+        };
+        if expired {
+            targets.push(name.to_string());
+        }
+    }
+
+    if targets.is_empty() {
+        return;
+    }
+
+    let mut reaped: Vec<String> = Vec::new();
+    for name in &targets {
+        let mut remove = Command::new(&job.nerdctl);
+        remove
+            .arg("-n")
+            .arg(&job.namespace)
+            .arg("rm")
+            .arg("-f")
+            .arg(name);
+        match remove.output().await {
+            Ok(output) if output.status.success() => {
+                println!("browser job reaper removed expired container {name}");
+                reaped.push(name.clone());
+            }
+            Ok(output) => eprintln!(
+                "browser job reaper failed to remove {name}: {}",
+                truncate_for_log(&output.stderr).trim()
+            ),
+            Err(error) => eprintln!("browser job reaper rm could not start for {name}: {error}"),
+        }
+    }
+
+    if !reaped.is_empty() {
+        publish_browser_job_reap_event(job, &reaped).await;
+    }
+}
+
+async fn run_browser_job_reap_loop(job: BrowserJobReapJob) {
+    println!(
+        "browser job reaper starting: namespace={} label={} interval={}s grace={}s",
+        job.namespace, job.label, job.interval_seconds, job.grace_seconds
+    );
+    loop {
+        run_browser_job_reap_once(&job).await;
+        sleep(Duration::from_secs(job.interval_seconds)).await;
+    }
 }
 
 fn sweep_url(job: &SweepJob) -> String {
@@ -1743,6 +1898,7 @@ async fn main() {
     let runtime_floor_job = runtime_floor_job_from_env();
     let worker_image_build_job = worker_image_build_job_from_env();
     let k8s_runtime_watch_job = k8s_runtime_watch_job_from_env();
+    let browser_job_reap_job = browser_job_reap_job_from_env();
 
     println!("idle-reaper starting: timeout={}s", timeout_seconds);
 
@@ -1770,6 +1926,10 @@ async fn main() {
     if let Some(k8s_runtime_watch) = k8s_runtime_watch_job {
         enabled_jobs += 1;
         tokio::spawn(run_k8s_runtime_watch_loop(k8s_runtime_watch));
+    }
+    if let Some(browser_job_reap) = browser_job_reap_job {
+        enabled_jobs += 1;
+        tokio::spawn(run_browser_job_reap_loop(browser_job_reap));
     }
 
     if enabled_jobs == 0 {

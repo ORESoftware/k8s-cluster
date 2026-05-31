@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-31-des-rs-engine-f4898d4-temp-control-stochastic'
+        dd.dev/telemetry-revision: '2026-05-31-des-rs-soccer-rotation-anim'
       labels:
         app: dd-des-rs
     spec:
@@ -98,8 +98,16 @@ spec:
             # has content immediately (ends with build_site for the curated
             # index.html). Override or set empty to skip. Heavy sims are run on
             # demand via POST /simulate.
+            #
+            # main_soccer_rotation_anim renders the 7-a-side rotation showcase:
+            # a 13-player squad, four 10-minute periods, the IP/MIP solver with a
+            # "no more than 3 consecutive periods on the field" stamina cap, and
+            # forces ANIMATE on internally (so no global ANIMATE env is needed,
+            # leaving the other startup sims unaffected). Roster/match knobs
+            # (NUM_PLAYERS, NUM_PERIODS, MINUTES_PER_PERIOD, MAX_CONSEC_ON_FIELD,
+            # POLICY) can still be overridden via env if desired.
             - name: DES_STARTUP_SIMS
-              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_build_site
+              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_soccer_rotation_anim,main_build_site
           ports:
             - name: http
               containerPort: 8112

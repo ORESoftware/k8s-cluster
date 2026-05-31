@@ -14,6 +14,9 @@ Today there are several key runtime services:
   and controlled Kubernetes deploys
 - [`deployments/contract-service-rs/`](./deployments/contract-service-rs/) — Rust Solana contract gateway for validated
   instruction envelopes, signed transaction simulation, and NATS validation results.
+- [`deployments/rust-vapi-phone-rs/`](./deployments/rust-vapi-phone-rs/) — Rust Vapi.ai AI phone-tree call screener. It
+  provisions a Vapi phone number + assistant through the Vapi REST API and serves the Vapi server webhook that screens
+  inbound callers, warm-transferring verified humans to a personal forwarding number and declining scammers/spammers.
 - [`deployments/ai-ml-pipeline/`](./deployments/ai-ml-pipeline/) — Python3 online feature pipeline for telemetry analysis
   and MDP-ready AI/ML signals.
 - [`deployments/trading-server-rs/`](./deployments/trading-server-rs/) — Rust trading decision service that turns scraper,
