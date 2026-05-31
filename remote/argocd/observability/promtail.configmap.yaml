@@ -14,14 +14,14 @@ data:
 
     clients:
       - url: http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/push
-        # cluster/node are stamped on every stream this node ships. Their values
-        # come from the DaemonSet env (promtail runs with -config.expand-env=true
-        # so ${...} is substituted). The stage/prod `env` label is intentionally
-        # NOT cluster-wide: this single cluster runs both stage and prod
-        # workloads, so `env` is derived per deployment in the pipeline below.
+        # `cluster` identifies this single self-managed EC2 cluster. We use a
+        # literal value (NOT env-var templating): promtail is deliberately run
+        # WITHOUT -config.expand-env, because that expander collides with the
+        # regex `$` end-anchors in the pipeline below. The stage/prod `env`
+        # label is intentionally not cluster-wide (this cluster runs both stage
+        # and prod workloads) and is derived per deployment in the pipeline.
         external_labels:
-          cluster: ${CLUSTER_NAME}
-          node: ${NODE_NAME}
+          cluster: dd-ec2
 
     # Tail every container's CRI log through the stable /var/log/containers
     # symlink farm (exposed via the host /var/log mount). We deliberately do NOT
