@@ -69,7 +69,13 @@ spec:
                 mkdir -p "$WORK" "$GOCACHE" "$GOMODCACHE"
                 cp -R --no-preserve=mode,ownership,timestamps "$SRC"/. "$WORK"/
                 cd "$WORK"
-                grep -v "^replace" go.mod > go.mod.tmp
+                # Strip ONLY local/relative-path replace directives (their ../ or
+                # ./ targets don't exist in this build context). KEEP module=>module
+                # replaces such as github.com/oresoftware/amqp091-go (the rabbitmq
+                # fork) so the fork is actually compiled into the binary. This
+                # mirrors Dockerfile.local.df; a naive `grep -v "^replace"` would
+                # silently drop the fork and build upstream amqp091-go instead.
+                grep -vE '^replace[[:space:]].*=>[[:space:]]*\.\.?/' go.mod > go.mod.tmp
                 mv go.mod.tmp go.mod
                 /usr/local/go/bin/go mod download
                 /usr/local/go/bin/go get -v github.com/oresoftware/json-logging@master
@@ -173,7 +179,12 @@ spec:
               memory: 512Mi
             limits:
               cpu: '2'
-              memory: 2Gi
+              # Raised 2Gi -> 6Gi after a load test OOMKilled (exit 137) every
+              # replica: under heavy fan-out the mongo wait-queue backlog plus
+              # kafka producer churn blew past 2Gi. The node has ~124Gi
+              # allocatable and CPU (not memory) is the binding constraint here,
+              # so a 6Gi ceiling x3 replicas is comfortably safe.
+              memory: 6Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000
