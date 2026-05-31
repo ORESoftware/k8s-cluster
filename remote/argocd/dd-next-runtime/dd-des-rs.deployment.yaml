@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-3cd1f02-studio-harden'
+        dd.dev/telemetry-revision: '2026-05-31-des-rs-engine-f4898d4-temp-control-stochastic'
       labels:
         app: dd-des-rs
     spec:
