@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-d749fd8-shadow-eval-control-ui'
+        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-3cd1f02-studio-harden'
       labels:
         app: dd-des-rs
     spec:
