@@ -15,6 +15,10 @@ const DEFAULT_WS_URL: &str = "ws://dd-gleamlang-server.default.svc.cluster.local
 /// LOAD_MODE values.
 const LOAD_MODE_HOLD: &str = "hold";
 const LOAD_MODE_PIPELINE: &str = "pipeline";
+/// gcs mode drives the chat.vibe Go websocket server (via gcs-router) using its
+/// real chat protocol rather than the akka-style echo frames. See the
+/// `run_gcs_client` block below for the wire format.
+const LOAD_MODE_GCS: &str = "gcs";
 
 #[derive(Debug, Default)]
 struct Stats {
@@ -62,6 +66,11 @@ struct Config {
     /// Pipeline-mode: drop unmatched-request entries older than this (memory bound on
     /// pending-request map).
     correlation_timeout_seconds: u64,
+    /// gcs-mode: how many websocket clients share a single conversation (drives
+    /// conv-hash routing in gcs-router and the fan-out factor).
+    gcs_clients_per_conv: usize,
+    /// gcs-mode: how many clients per conversation actually send (0 => all send).
+    gcs_senders_per_conv: usize,
 }
 
 fn env_usize(name: &str, default_value: usize) -> usize {
@@ -103,6 +112,13 @@ fn load_config() -> Config {
         message_payload: env::var("MESSAGE_PAYLOAD")
             .unwrap_or_else(|_| "a benchmark message body".to_string()),
         correlation_timeout_seconds: env_u64("CORRELATION_TIMEOUT_SECONDS", 10),
+        gcs_clients_per_conv: env_usize("GCS_CLIENTS_PER_CONV", 5),
+        // env_usize filters out 0, so an unset/zero value falls through to this
+        // 0 sentinel meaning "every client in the conversation sends".
+        gcs_senders_per_conv: env::var("GCS_SENDERS_PER_CONV")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0),
     }
 }
 
@@ -323,6 +339,291 @@ fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+// ---------------------------------------------------------------------------
+// GCS (chat.vibe) mode.
+//
+// Unlike the akka-style {"id","payload"} echo protocol, the chat.vibe Go server
+// (reached via gcs-router:3001) expects:
+//   * a connect URL with query params:
+//       /gcs/ws/?userId=<oid>&deviceId=<oid>&conversationIds=<urlenc(["<oid>"])>
+//     (one conv id => gcs-router pins the connection to a pod via conv-hash)
+//   * application frames shaped as
+//       {"Meta":{}, "List":[{"@vibe-meta":{}, "@vibe-type":"MongoChatMessage",
+//                            "@vibe-data":"<inner MongoChatMessage JSON string>"}]}
+//   * the server fans every accepted message out to ALL clients subscribed to
+//     that conversation as {"Meta":{...}, "Messages":[ <message> ]}.
+//
+// Each sender embeds its send time (µs) in the message marker so any receiver
+// can compute true end-to-end fan-out latency (all clients share this process's
+// wall clock). No auth is required in-cluster.
+// ---------------------------------------------------------------------------
+
+static OID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+fn now_micros() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros() as u64
+}
+
+/// 24-hex-char value shaped like a Mongo ObjectId (8 hex seconds + 16 hex of
+/// process/counter entropy). Unique within the process; the server only needs a
+/// valid non-zero ObjectId.
+fn object_id() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let ts = now.as_secs() as u32;
+    let ctr = OID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = process::id() as u64;
+    let lo = (now.subsec_nanos() as u64) ^ (pid << 32) ^ ctr.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    format!("{:08x}{:016x}", ts, lo)
+}
+
+/// RFC3339 UTC timestamp with millisecond precision (e.g. 2026-05-31T20:50:00.123Z).
+/// gcs unmarshals CreatedAt/DateFirstOnServer into Go time.Time, which requires
+/// valid RFC3339; hand-rolled to avoid a chrono dep in the on-pod cargo build.
+fn rfc3339_now() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs() as i64;
+    let millis = now.subsec_millis();
+    let days = secs.div_euclid(86_400);
+    let tod = secs.rem_euclid(86_400);
+    let (hour, min, sec) = (tod / 3600, (tod % 3600) / 60, tod % 60);
+    let (y, m, d) = civil_from_days(days);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        y, m, d, hour, min, sec, millis
+    )
+}
+
+/// Howard Hinnant's days->civil algorithm; `z` is days since 1970-01-01.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32; // [1, 12]
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Percent-encode per RFC3986 unreserved set; used for the conversationIds JSON.
+fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+fn gcs_connect_url(base: &str, user_id: &str, device_id: &str, conv_id: &str) -> String {
+    let conv_ids_json = format!("[\"{}\"]", conv_id);
+    format!(
+        "{}/gcs/ws/?userId={}&deviceId={}&conversationIds={}",
+        base.trim_end_matches('/'),
+        user_id,
+        device_id,
+        url_encode(&conv_ids_json)
+    )
+}
+
+/// Build the outer envelope carrying one MongoChatMessage. `marker` goes into
+/// `Messages[0]` and is the latency beacon receivers parse.
+fn build_gcs_chat_frame(conv_id: &str, user_id: &str, members: &[String], marker: &str) -> String {
+    let now = rfc3339_now();
+    let priority = members
+        .iter()
+        .map(|u| format!("\"{}\"", u))
+        .collect::<Vec<_>>()
+        .join(",");
+    let inner = format!(
+        r#"{{"_id":"{id}","IsGroupChat":{group},"PriorityUserIds":[{priority}],"CreatedByUserId":"{u}","CreatedBy":"{u}","CreatedAt":"{now}","ChatId":"{conv}","Messages":["{marker}"],"DateCreatedOnDevice":"{now}","DateFirstOnServer":"{now}"}}"#,
+        id = object_id(),
+        group = members.len() > 2,
+        priority = priority,
+        u = user_id,
+        now = now,
+        conv = conv_id,
+        marker = marker
+    );
+    format!(
+        r#"{{"Meta":{{}},"List":[{{"@vibe-meta":{{}},"@vibe-type":"MongoChatMessage","@vibe-data":"{}"}}]}}"#,
+        json_escape(&inner)
+    )
+}
+
+/// Scan a received frame for our `gcsrt-<client>-<seq>-<sendMicros>` markers,
+/// pushing an end-to-end latency (µs) for each one found.
+fn parse_gcs_markers(text: &str, out: &mut Vec<u64>) {
+    let needle = "gcsrt-";
+    let mut idx = 0usize;
+    while let Some(pos) = text[idx..].find(needle) {
+        let start = idx + pos;
+        let rest = &text[start..];
+        // The marker is `gcsrt-<client>-<seq>-<micros>`; every char is in
+        // [0-9a-zA-Z-]. Stop at the first byte outside that set so we don't pick
+        // up a trailing quote or escape character regardless of how the frame is
+        // (re)serialized.
+        let marker_len = rest
+            .bytes()
+            .take_while(|b| b.is_ascii_alphanumeric() || *b == b'-')
+            .count();
+        let marker = &rest[..marker_len];
+        if let Some(send_us) = marker
+            .rsplit('-')
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+        {
+            out.push(now_micros().saturating_sub(send_us));
+        }
+        idx = start + marker_len.max(needle.len());
+    }
+}
+
+struct GcsAssignment {
+    conv_id: String,
+    user_id: String,
+    device_id: String,
+    members: Arc<Vec<String>>,
+    is_sender: bool,
+}
+
+/// Pre-compute conversations, members and per-client roles for gcs mode.
+fn build_gcs_assignments(config: &Config) -> Vec<Arc<GcsAssignment>> {
+    let clients_per_conv = config.gcs_clients_per_conv.max(1);
+    let senders_per_conv = if config.gcs_senders_per_conv == 0 {
+        clients_per_conv
+    } else {
+        config.gcs_senders_per_conv.min(clients_per_conv)
+    };
+    let conv_count = (config.client_count + clients_per_conv - 1) / clients_per_conv;
+
+    let mut members: Vec<Vec<String>> = vec![Vec::new(); conv_count];
+    for i in 0..config.client_count {
+        members[i / clients_per_conv].push(object_id());
+    }
+    let conv_ids: Vec<String> = (0..conv_count).map(|_| object_id()).collect();
+    let members_arc: Vec<Arc<Vec<String>>> = members.into_iter().map(Arc::new).collect();
+
+    (0..config.client_count)
+        .map(|i| {
+            let c = i / clients_per_conv;
+            let idx = i % clients_per_conv;
+            Arc::new(GcsAssignment {
+                conv_id: conv_ids[c].clone(),
+                user_id: members_arc[c][idx].clone(),
+                device_id: object_id(),
+                members: Arc::clone(&members_arc[c]),
+                is_sender: idx < senders_per_conv,
+            })
+        })
+        .collect()
+}
+
+/// Shared receive loop: count frames and record fan-out latency from markers.
+async fn gcs_read_loop<S>(mut reader: S, stats: &Stats, latencies: &Mutex<Histogram<u64>>)
+where
+    S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
+    let mut lat_buf: Vec<u64> = Vec::new();
+    while let Some(message) = reader.next().await {
+        match message {
+            Ok(Message::Text(text)) => {
+                stats.messages.fetch_add(1, Ordering::Relaxed);
+                lat_buf.clear();
+                parse_gcs_markers(&text, &mut lat_buf);
+                for latency_us in lat_buf.drain(..) {
+                    stats.record_latency_us(latency_us, latencies);
+                }
+            }
+            Ok(_) => {}
+            Err(_) => {
+                stats.receive_errors.fetch_add(1, Ordering::Relaxed);
+                break;
+            }
+        }
+    }
+}
+
+async fn run_gcs_client(
+    client_id: usize,
+    assignment: Arc<GcsAssignment>,
+    config: Arc<Config>,
+    stats: Arc<Stats>,
+    latencies: Arc<Mutex<Histogram<u64>>>,
+) -> ! {
+    let connect_timeout = Duration::from_secs(config.connect_timeout_seconds);
+    let reconnect_delay = Duration::from_millis(config.reconnect_delay_ms);
+    let send_interval =
+        Duration::from_nanos((1_000_000_000.0 / config.messages_per_second_per_client) as u64);
+    let url = gcs_connect_url(
+        &config.target_ws_url,
+        &assignment.user_id,
+        &assignment.device_id,
+        &assignment.conv_id,
+    );
+
+    loop {
+        stats.attempted.fetch_add(1, Ordering::Relaxed);
+        match timeout(connect_timeout, connect_async(&url)).await {
+            Ok(Ok((socket, _response))) => {
+                stats.connected.fetch_add(1, Ordering::Relaxed);
+                stats.open.fetch_add(1, Ordering::Relaxed);
+
+                if assignment.is_sender {
+                    let (mut writer, reader) = socket.split();
+                    let send_stats = Arc::clone(&stats);
+                    let conv = assignment.conv_id.clone();
+                    let user = assignment.user_id.clone();
+                    let members = Arc::clone(&assignment.members);
+                    let sender = tokio::spawn(async move {
+                        let mut seq: u64 = 0;
+                        let mut ticker = tokio::time::interval(send_interval);
+                        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                        loop {
+                            ticker.tick().await;
+                            seq = seq.wrapping_add(1);
+                            let marker = format!("gcsrt-{}-{}-{}", client_id, seq, now_micros());
+                            let frame = build_gcs_chat_frame(&conv, &user, &members, &marker);
+                            if writer.send(Message::Text(frame)).await.is_err() {
+                                break;
+                            }
+                            send_stats.sent.fetch_add(1, Ordering::Relaxed);
+                        }
+                    });
+                    gcs_read_loop(reader, &stats, &latencies).await;
+                    sender.abort();
+                } else {
+                    gcs_read_loop(socket, &stats, &latencies).await;
+                }
+
+                stats.open.fetch_sub(1, Ordering::Relaxed);
+            }
+            Ok(Err(error)) => {
+                stats.failed.fetch_add(1, Ordering::Relaxed);
+                eprintln!("gcs connect failed client={} error={}", client_id, error);
+            }
+            Err(_elapsed) => {
+                stats.failed.fetch_add(1, Ordering::Relaxed);
+                eprintln!("gcs connect timeout client={}", client_id);
+            }
+        }
+        sleep(reconnect_delay).await;
+    }
+}
+
 async fn run_client(client_id: usize, config: Arc<Config>, stats: Arc<Stats>) -> ! {
     let connect_timeout = Duration::from_secs(config.connect_timeout_seconds);
     let receive_timeout = Duration::from_secs(config.receive_timeout_seconds);
@@ -388,7 +689,8 @@ async fn report_stats(
         let open = stats.open.load(Ordering::Relaxed);
         let messages = stats.messages.load(Ordering::Relaxed);
 
-        if config.load_mode == LOAD_MODE_PIPELINE {
+        // pipeline and gcs both produce per-message latency samples.
+        if config.load_mode == LOAD_MODE_PIPELINE || config.load_mode == LOAD_MODE_GCS {
             // Take a snapshot of the histogram so the read doesn't race with concurrent writes.
             let (p50, p95, p99, max, sample_count, mean_us) = match latencies.lock() {
                 Ok(hist) => {
@@ -410,10 +712,12 @@ async fn report_stats(
             let correlation_misses = stats.correlation_misses.load(Ordering::Relaxed);
             let in_flight = stats.in_flight.load(Ordering::Relaxed);
 
+            // received/sent ratio approximates conversation fan-out in gcs mode.
             println!(
-                "ws-loadtest-rs pipeline-report attempted={} connected={} failed={} open={} \
+                "ws-loadtest-rs {}-report attempted={} connected={} failed={} open={} \
                  sent={} received={} in_flight={} correlation_misses={} receive_errors={} \
                  p50_us={} p95_us={} p99_us={} max_us={} mean_us={:.0} sample={}",
+                config.load_mode,
                 attempted,
                 connected,
                 failed,
@@ -484,14 +788,41 @@ async fn main() {
         report_stats(reporter_config, reporter_stats, reporter_latencies).await;
     });
 
+    // gcs mode needs deterministic conversation/member assignments shared across
+    // clients so each conversation's clients hash to the same gcs pod and fan
+    // out to one another.
+    let gcs_assignments: Vec<Arc<GcsAssignment>> = if config.load_mode == LOAD_MODE_GCS {
+        let assignments = build_gcs_assignments(&config);
+        let cpc = config.gcs_clients_per_conv.max(1);
+        let convs = (config.client_count + cpc - 1) / cpc;
+        println!(
+            "ws-loadtest-rs gcs-setup conversations={} clients_per_conv={} senders_per_conv={}",
+            convs,
+            config.gcs_clients_per_conv,
+            if config.gcs_senders_per_conv == 0 {
+                config.gcs_clients_per_conv
+            } else {
+                config.gcs_senders_per_conv.min(config.gcs_clients_per_conv)
+            }
+        );
+        assignments
+    } else {
+        Vec::new()
+    };
+
     let ramp = Duration::from_millis(config.ramp_delay_ms);
     for client_id in 0..config.client_count {
         let client_config = Arc::clone(&config);
         let client_stats = Arc::clone(&stats);
         let client_latencies = Arc::clone(&latencies);
         let mode = config.load_mode.clone();
+        let assignment = gcs_assignments.get(client_id).cloned();
         tokio::spawn(async move {
-            if mode == LOAD_MODE_PIPELINE {
+            if mode == LOAD_MODE_GCS {
+                let assignment = assignment.expect("gcs assignment for every client");
+                run_gcs_client(client_id, assignment, client_config, client_stats, client_latencies)
+                    .await;
+            } else if mode == LOAD_MODE_PIPELINE {
                 run_pipeline_client(client_id, client_config, client_stats, client_latencies).await;
             } else {
                 run_client(client_id, client_config, client_stats).await;

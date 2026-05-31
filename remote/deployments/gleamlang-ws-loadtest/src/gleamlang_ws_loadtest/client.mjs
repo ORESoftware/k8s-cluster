@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 const DEFAULT_WS_URL = "ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws";
 const LOAD_MODE_HOLD = "hold";
 const LOAD_MODE_PIPELINE = "pipeline";
+// gcs mode drives the chat.vibe Go server (via gcs-router) using its real chat
+// protocol instead of the akka-style echo frames. See connectGcsClient below.
+const LOAD_MODE_GCS = "gcs";
 
 function parsePositiveInt(name, fallback) {
   const raw = process.env[name];
@@ -40,6 +43,14 @@ export function run() {
   const messagesPerSecondPerClient = parsePositiveFloat("MESSAGES_PER_SECOND_PER_CLIENT", 10.0);
   const messagePayload = process.env.MESSAGE_PAYLOAD || "a benchmark message body";
   const correlationTimeoutMs = parsePositiveInt("CORRELATION_TIMEOUT_MS", 10_000);
+  // gcs-mode: clients per conversation (fan-out factor + conv-hash grouping)
+  // and how many of them send (0/unset => all send).
+  const gcsClientsPerConv = parsePositiveInt("GCS_CLIENTS_PER_CONV", 5);
+  const gcsSendersPerConvRaw = Number.parseInt(process.env.GCS_SENDERS_PER_CONV || "0", 10);
+  const gcsSendersPerConv =
+    Number.isFinite(gcsSendersPerConvRaw) && gcsSendersPerConvRaw > 0
+      ? Math.min(gcsSendersPerConvRaw, gcsClientsPerConv)
+      : gcsClientsPerConv;
 
   let attempted = 0;
   let connected = 0;
@@ -197,16 +208,104 @@ export function run() {
     });
   }
 
-  const connect = loadMode === LOAD_MODE_PIPELINE ? connectPipelineClient : connectHoldClient;
+  // gcs-mode setup: deterministic conversations/members so each conversation's
+  // clients hash to the same gcs pod (conv-hash) and fan out to one another.
+  const convCount = Math.ceil(clientCount / gcsClientsPerConv);
+  /** @type {string[]} */
+  const convIds = [];
+  /** @type {string[][]} */
+  const convMembers = [];
+  if (loadMode === LOAD_MODE_GCS) {
+    for (let c = 0; c < convCount; c += 1) {
+      convIds.push(objectId());
+      convMembers.push([]);
+    }
+    for (let i = 0; i < clientCount; i += 1) {
+      convMembers[Math.floor(i / gcsClientsPerConv)].push(objectId());
+    }
+    console.log(
+      `gleamlang-ws-loadtest gcs-setup conversations=${convCount} ` +
+        `clients_per_conv=${gcsClientsPerConv} senders_per_conv=${gcsSendersPerConv}`,
+    );
+  }
+
+  function connectGcsClient(clientId) {
+    attempted += 1;
+    const c = Math.floor(clientId / gcsClientsPerConv);
+    const idx = clientId % gcsClientsPerConv;
+    const convId = convIds[c];
+    const userId = convMembers[c][idx];
+    const deviceId = objectId();
+    const members = convMembers[c];
+    const isSender = idx < gcsSendersPerConv;
+    const url = gcsConnectUrl(targetWsUrl, userId, deviceId, convId);
+
+    const socket = new WebSocket(url, {
+      perMessageDeflate: false,
+      handshakeTimeout: connectTimeoutMs,
+    });
+
+    let opened = false;
+    let sendTimer = null;
+    let seq = 0;
+
+    socket.on("open", () => {
+      opened = true;
+      connected += 1;
+      open += 1;
+      if (isSender) {
+        sendTimer = setInterval(() => {
+          seq += 1;
+          const marker = `gcsrt-${clientId}-${seq}-${Math.round(performance.now() * 1000)}`;
+          const frame = buildGcsFrame(convId, userId, members, marker);
+          try {
+            socket.send(frame);
+            sent += 1;
+          } catch (_error) {
+            receiveErrors += 1;
+          }
+        }, sendIntervalMs);
+      }
+    });
+
+    socket.on("message", (data) => {
+      messages += 1;
+      const text = typeof data === "string" ? data : data.toString();
+      const now = Math.round(performance.now() * 1000);
+      for (const sendUs of parseGcsSendMicros(text)) {
+        received += 1;
+        latenciesUs.push(Math.max(0, now - sendUs));
+      }
+    });
+
+    socket.on("error", (_error) => {
+      failed += 1;
+    });
+
+    socket.on("close", () => {
+      if (sendTimer) clearInterval(sendTimer);
+      if (opened) open = Math.max(0, open - 1);
+      setTimeout(() => connectGcsClient(clientId), reconnectDelayMs);
+    });
+  }
+
+  const connect =
+    loadMode === LOAD_MODE_PIPELINE
+      ? connectPipelineClient
+      : loadMode === LOAD_MODE_GCS
+        ? connectGcsClient
+        : connectHoldClient;
   for (let clientId = 0; clientId < clientCount; clientId += 1) {
     setTimeout(() => connect(clientId), clientId * rampDelayMs);
   }
 
   setInterval(() => {
-    if (loadMode === LOAD_MODE_PIPELINE) {
+    // pipeline and gcs both produce per-message latency samples; in gcs mode
+    // received/sent approximates conversation fan-out.
+    if (loadMode === LOAD_MODE_PIPELINE || loadMode === LOAD_MODE_GCS) {
       const p = percentiles(latenciesUs);
       console.log(
-        `gleamlang-ws-loadtest pipeline-report attempted=${attempted} connected=${connected} ` +
+        `gleamlang-ws-loadtest ${loadMode}-report attempted=${attempted} connected=${connected} ` +
           `failed=${failed} open=${open} sent=${sent} received=${received} ` +
           `in_flight_peak=${inFlightTotal} correlation_misses=${correlationMisses} ` +
           `receive_errors=${receiveErrors} p50_us=${p.p50} p95_us=${p.p95} p99_us=${p.p99} ` +
@@ -250,6 +349,67 @@ function percentiles(samples) {
     max: sorted[sorted.length - 1] | 0,
     mean: Math.round(sum / samples.length),
   };
+}
+
+// --- gcs (chat.vibe) helpers -------------------------------------------------
+
+/** 24-hex-char Mongo ObjectId, matching the working chat.vibe test scripts. */
+function objectId() {
+  const ts = Math.floor(Date.now() / 1000)
+    .toString(16)
+    .padStart(8, "0");
+  const r1 = Math.floor(Math.random() * 0xffffff)
+    .toString(16)
+    .padStart(6, "0");
+  const r2 = Math.floor(Math.random() * 0xffff)
+    .toString(16)
+    .padStart(4, "0");
+  const r3 = Math.floor(Math.random() * 0xffffff)
+    .toString(16)
+    .padStart(6, "0");
+  return ts + r1 + r2 + r3;
+}
+
+/** chat.vibe connect URL: query params carry the subscription (no auth in-cluster). */
+function gcsConnectUrl(base, userId, deviceId, convId) {
+  const b = base.replace(/\/$/, "");
+  const convIds = encodeURIComponent(JSON.stringify([convId]));
+  return `${b}/gcs/ws/?userId=${userId}&deviceId=${deviceId}&conversationIds=${convIds}`;
+}
+
+/** Outer envelope holding one MongoChatMessage; @vibe-data is a JSON string. */
+function buildGcsFrame(convId, userId, members, marker) {
+  const now = new Date().toISOString();
+  const inner = JSON.stringify({
+    _id: objectId(),
+    IsGroupChat: members.length > 2,
+    PriorityUserIds: members,
+    CreatedByUserId: userId,
+    CreatedBy: userId,
+    CreatedAt: now,
+    ChatId: convId,
+    Messages: [marker],
+    DateCreatedOnDevice: now,
+    DateFirstOnServer: now,
+  });
+  return JSON.stringify({
+    Meta: {},
+    List: [{ "@vibe-meta": {}, "@vibe-type": "MongoChatMessage", "@vibe-data": inner }],
+  });
+}
+
+const GCS_MARKER_RE = /gcsrt-\d+-\d+-(\d+)/g;
+
+/** Extract the embedded send-time (µs) from every `gcsrt-` marker in a frame. */
+function parseGcsSendMicros(text) {
+  const out = [];
+  GCS_MARKER_RE.lastIndex = 0;
+  let match;
+  while ((match = GCS_MARKER_RE.exec(text)) !== null) {
+    const value = Number.parseInt(match[1], 10);
+    if (Number.isFinite(value)) out.push(value);
+  }
+  return out;
 }
 
 function containerPoolDispatchUrl() {
