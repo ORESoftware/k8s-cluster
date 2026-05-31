@@ -33,10 +33,11 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            # Container log files under /var/log/pods are root-owned; run as
-            # root so promtail can actually read them (a non-root default
-            # would tail nothing and leave Loki without streams).
+            # Container log symlinks under /var/log/containers resolve to
+            # root-owned pod log files; run as root so promtail can actually
+            # read them (a non-root default would tail nothing).
             runAsUser: 0
+            runAsGroup: 0
             seccompProfile:
               type: RuntimeDefault
           args:

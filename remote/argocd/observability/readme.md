@@ -6,7 +6,8 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
 
 - `dd-otel-collector`: receives OTLP traces and scrapes runtime `/metrics`
   endpoints.
-- `dd-prometheus`: stores collector-exported metrics.
+- `dd-prometheus`: stores collector-exported metrics plus direct service
+  scrapes for observability, messaging, and selected runtime endpoints.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
 - `dd-loki` + `dd-promtail`: collect Kubernetes container stdout/stderr logs
   from `/var/log/containers/*.log`.
@@ -67,22 +68,38 @@ Currently opted-in:
 
 ### Per-pod metrics + log labels
 
+- `dd-prometheus` scrapes Grafana at `/telemetry/metrics` to match the
+  gateway subpath config, and scrapes Loki directly at `/metrics`. Keep
+  those as explicit jobs so Grafana target health and Loki ingestion
+  health stay independently visible.
 - `dd-otel-collector` uses `kubernetes_sd_configs (role: pod)` for the
-  `gcs-router` scrape job so each router pod is scraped directly. The
-  collector exports `gcs_router_*` counters with a `pod` label, which
-  is needed because the per-pod ring counters disagree (each pod
-  tracks routing decisions from its own perspective) and the Service
-  VIP would hide half the signal behind round-robin scraping.
-- `dd-promtail` tails `/var/log/containers/*.log` directly via
-  `static_configs` (no Kubernetes API dependency), decodes the
-  containerd envelope with the `cri` pipeline stage, and lifts
-  `namespace`, `pod`, and `container` out of the log filename into
-  first-class stream labels. The push client also stamps agent-scoped
-  `cluster`, `env`, and `node` labels (from `CLUSTER_NAME`,
-  `CLUSTER_ENV`, and the downward-API `NODE_NAME`, expanded with
-  `-config.expand-env=true`). Loki queries should pin on these labels,
-  e.g. `{env="prod", namespace="default", container="dart-server"}`.
-  The high-cardinality auto `filename` label is dropped after parsing.
+  `gcs-router` and `dd-promtail` scrape jobs so each pod is scraped
+  directly. The collector exports `gcs_router_*` counters with a `pod`
+  label, which is needed because the per-pod ring counters disagree
+  (each pod tracks routing decisions from its own perspective) and the
+  Service VIP would hide half the signal behind round-robin scraping.
+  Promtail's own `/metrics` is scraped the same way so empty-Loki
+  incidents can be diagnosed from Prometheus.
+- `dd-promtail` tails the stable `/var/log/containers/*.log` symlink
+  farm directly via `static_configs` (no Kubernetes API dependency): the
+  service-discovery informer once found zero targets in this EC2 cluster
+  even though API reachability, the mounted ServiceAccount token, RBAC,
+  and TLS were all verified healthy, so the static file glob is the
+  reliable source of log streams. The `cri` pipeline stage decodes the
+  containerd envelope, and the log filename is parsed into `namespace`,
+  `pod`, and `container` stream labels plus a per-deployment
+  `app`/`deployment` label (the ReplicaSet hash + pod suffix are
+  stripped). A literal `cluster=dd-ec2` external label is stamped on the
+  push client — promtail deliberately runs WITHOUT
+  `-config.expand-env=true`, since that expander collides with the `$`
+  end-anchors in the pipeline regexes. Every stream defaults to
+  `env=stage`/`environment=stage`; known production deployments
+  (`dd-billing-server`, `dd-web-scraper`, `dd-browser-test-server`) are
+  promoted to `env=prod`/`environment=prod` by a `match` stage. Loki
+  queries should pin on these labels, e.g.
+  `{namespace="default", deployment="dd-dart-server"}` or
+  `{environment="prod"}`, rather than regexing `filename`, which Promtail
+  drops after parsing to avoid per-restart stream cardinality.
 
   Note: an earlier revision moved promtail to
   `kubernetes_sd_configs (role: pod)` with a
@@ -95,10 +112,13 @@ Currently opted-in:
   from the start and replaying old rotated lines that Loki rejects as
   `timestamp too old`.
 
-  To distinguish a future stage cluster from prod, deploy promtail with
-  `CLUSTER_ENV=stage` (and a distinct `CLUSTER_NAME`); the per-cluster
-  `env`/`cluster` labels then separate the two log sources in a shared
-  or proxied Loki.
+  Stage vs prod is a per-deployment label, not a per-cluster one (this
+  EC2 cluster runs both): streams default to `env=stage` and the `match`
+  stage promotes the known production deployments to `env=prod`. To
+  onboard another prod service, add it to that selector in
+  `promtail.configmap.yaml`. A genuinely separate future cluster would
+  instead set a distinct literal `cluster` external label so a shared or
+  proxied Loki can tell the two clusters apart.
 
 The OTEL collector keeps its own minimal RBAC
 (`otel-collector.rbac.yaml`) for `kubernetes_sd` pod discovery.

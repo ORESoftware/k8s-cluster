@@ -61,8 +61,12 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collector, /dd-billing-server\.default\.svc\.cluster\.local:80/);
   assert.match(collector, /dd-formal-methods-service\.default\.svc\.cluster\.local:8111/);
   assert.match(collector, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
-  assert.match(collector, /gcs-router\.default\.svc\.cluster\.local:9100/);
+  assert.match(collector, /job_name:\s*gcs-router/);
+  assert.match(collector, /kubernetes_sd_configs:[\s\S]*role:\s*pod/);
+  assert.match(collector, /__meta_kubernetes_pod_label_app[\s\S]*regex:\s*gcs-router/);
   assert.match(collector, /dd-nats\.messaging\.svc\.cluster\.local:7777/);
+  assert.match(collector, /job_name:\s*dd-promtail/);
+  assert.match(collector, /__meta_kubernetes_pod_label_app[\s\S]*regex:\s*dd-promtail/);
   assert.match(collector, /endpoint:\s*dd-tempo\.observability\.svc\.cluster\.local:4317/);
   assert.match(collector, /endpoint:\s*dd-jaeger\.observability\.svc\.cluster\.local:4317/);
 });
@@ -72,6 +76,15 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   const promtail = await readRepoFile("remote/argocd/observability/promtail.configmap.yaml");
 
   assert.match(prometheus, /dd-otel-collector\.observability\.svc\.cluster\.local:8889/);
+  assert.match(
+    prometheus,
+    /job_name:\s*dd-grafana[\s\S]*metrics_path:\s*\/telemetry\/metrics[\s\S]*dd-grafana\.observability\.svc\.cluster\.local:3000/,
+  );
+  assert.match(
+    prometheus,
+    /job_name:\s*dd-loki[\s\S]*metrics_path:\s*\/metrics[\s\S]*dd-loki\.observability\.svc\.cluster\.local:3100/,
+  );
+  assert.doesNotMatch(prometheus, /job_name:\s*observability-stack/);
   assert.match(prometheus, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
   assert.match(prometheus, /dd-agent-worker-broker\.default\.svc\.cluster\.local:8098/);
   assert.match(prometheus, /dd-remote-auth\.default\.svc\.cluster\.local:8083/);
@@ -80,7 +93,16 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(prometheus, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
   assert.match(prometheus, /gcs-router\.default\.svc\.cluster\.local:9100/);
   assert.match(promtail, /dd-loki\.observability\.svc\.cluster\.local:3100\/loki\/api\/v1\/push/);
+  assert.match(promtail, /external_labels:[\s\S]*cluster:\s*dd-ec2/);
   assert.match(promtail, /__path__:\s*\/var\/log\/containers\/\*\.log/);
+  assert.doesNotMatch(promtail, /^\s*kubernetes_sd_configs:/m);
+  assert.match(promtail, /source:\s*filename[\s\S]*\/var\/log\/containers/);
+  assert.match(promtail, /source:\s*pod[\s\S]*\?P<deployment>/);
+  assert.match(promtail, /env:\s*stage[\s\S]*environment:\s*stage/);
+  assert.match(promtail, /app:\s*deployment[\s\S]*deployment:/);
+  assert.match(promtail, /selector:\s*'\{deployment=~"dd-billing-server\|dd-web-scraper\|dd-browser-test-server"\}'/);
+  assert.match(promtail, /env:\s*prod[\s\S]*environment:\s*prod/);
+  assert.match(promtail, /labeldrop:[\s\S]*-\s*filename/);
   assert.match(promtail, /- cri:\s*\{\}/);
 });
 

@@ -237,6 +237,30 @@ data:
               static_configs:
                 - targets:
                     - dd-nats.messaging.svc.cluster.local:7777
+            - job_name: dd-promtail
+              scrape_interval: 10s
+              metrics_path: /metrics
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                      - observability
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  action: keep
+                  regex: dd-promtail
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  action: keep
+                  regex: http
+                - source_labels: [__meta_kubernetes_pod_phase]
+                  action: keep
+                  regex: Running
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  target_label: app
 
     processors:
       batch: {}

@@ -31,7 +31,7 @@ data:
     # working from inside the pod, yet promtail found nothing and Loki stayed
     # empty). A static file glob is informer-independent and reliable. Labels
     # are parsed from the filename so Loki can pin a single deployment, e.g.
-    # {namespace="default", app="dd-dart-server"} or {env="production"}.
+    # {namespace="default", deployment="dd-dart-server"} or {environment="prod"}.
     scrape_configs:
       - job_name: kubernetes-containers
         static_configs:
@@ -54,21 +54,24 @@ data:
           # real name segment (e.g. "promtail") is never mistaken for a hash.
           - regex:
               source: pod
-              expression: '^(?P<app>.+?)(-[bcdfghjklmnpqrstvwxz0-9]{8,10})?-(?:[bcdfghjklmnpqrstvwxz0-9]{5}|[0-9]+)$'
+              expression: '^(?P<deployment>.+?)(-[bcdfghjklmnpqrstvwxz0-9]{8,10})?-(?:[bcdfghjklmnpqrstvwxz0-9]{5}|[0-9]+)$'
           # Default every stream to stage; the known production services are
-          # promoted to env=production just below.
+          # promoted to prod just below.
           - static_labels:
               env: stage
+              environment: stage
           - labels:
               namespace:
               pod:
               container:
-              app:
+              app: deployment
+              deployment:
           - match:
-              selector: '{app=~"dd-billing-server|dd-web-scraper|dd-browser-test-server"}'
+              selector: '{deployment=~"dd-billing-server|dd-web-scraper|dd-browser-test-server"}'
               stages:
                 - static_labels:
-                    env: production
+                    env: prod
+                    environment: prod
           # filename carries the 64-char container id and rotates on every
           # restart; drop it so it does not explode Loki stream cardinality.
           - labeldrop:
