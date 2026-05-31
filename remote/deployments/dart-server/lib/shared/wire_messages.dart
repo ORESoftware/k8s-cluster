@@ -182,6 +182,19 @@ final class MetricEvent extends OutboundFrame {
   final int delta;
 }
 
+/// Latency / size observation forwarded from a gateway shard to the
+/// coordinator's canonical histogram. [micros] is the sample in
+/// microseconds (kept integral so the value crosses the isolate boundary
+/// without float surprises); the coordinator divides by 1e6 to fold it
+/// into the `seconds`-unit histogram named [name]. Volume is bounded by
+/// the connection rate (the supervisor observes adopt + first-frame
+/// latency once per session), not steady-state traffic.
+final class ObserveEvent {
+  const ObserveEvent(this.name, this.micros);
+  final String name;
+  final int micros;
+}
+
 /// Subscribe the emitting session to [topic] in the EventBus. Idempotent.
 /// Matches Erlang's `:pg.join(group, self())`.
 final class BusJoin extends OutboundFrame {
@@ -358,6 +371,11 @@ final class GatewayShardBoot {
     required this.clockIntervalSeconds,
     required this.benchmarkMode,
     required this.gaugeReportIntervalMs,
+    this.poolControllerEnabled = false,
+    this.poolMinWarmHosts = 0,
+    this.poolMaxHosts = 0,
+    this.poolReconcileMaxSpawnPerTick = 8,
+    this.poolRetireCooldownMs = 15000,
   });
 
   /// Distinct identity for the shard, used as a label in [GaugeReport]s.
@@ -391,6 +409,36 @@ final class GatewayShardBoot {
 
   /// How often the shard pushes a [GaugeReport] to [metricsBus].
   final int gaugeReportIntervalMs;
+
+  /// When true, the shard's `SessionSupervisor` runs the directive-driven
+  /// warm-pool reconciler instead of the legacy lazy-spawn-only policy:
+  /// it pre-spawns hosts up to the coordinator-set target off the adopt
+  /// hot path and gracefully retires idle hosts back down. The
+  /// coordinator's MDP autotuner sets the per-shard target via
+  /// [ShardPoolDirective]. When false, behaviour is identical to the
+  /// original lazy-spawn supervisor (no pre-spawn, no retire, no cap).
+  final bool poolControllerEnabled;
+
+  /// Floor on live host isolates the reconciler keeps warm per shard,
+  /// even when the autotuner target is lower. Hides cold-start latency
+  /// for the first connections after an idle trough.
+  final int poolMinWarmHosts;
+
+  /// Hard ceiling on host isolates per shard. 0 = unbounded. The
+  /// reconciler and the hot-path spawn both respect it; at the ceiling a
+  /// full pool refuses new sessions with a 1013 (try-again) close so the
+  /// pod sheds load instead of unboundedly forking isolates.
+  final int poolMaxHosts;
+
+  /// Cap on hosts the reconciler will pre-spawn in a single directive
+  /// application, so a large target jump ramps over a few control ticks
+  /// rather than forking a burst of isolates at once.
+  final int poolReconcileMaxSpawnPerTick;
+
+  /// How long a host must sit empty before the reconciler may retire it.
+  /// Smooths over brief lulls so we don't thrash hosts that are about to
+  /// receive the next connection.
+  final int poolRetireCooldownMs;
 }
 
 /// Periodic per-shard gauge snapshot. Main keeps the latest report
@@ -409,4 +457,32 @@ final class GaugeReport {
 /// it to drain (refuse new attaches, close all sessions, exit).
 final class ShardShutdown {
   const ShardShutdown();
+}
+
+/// Sent by the coordinator's MDP autotuner over a shard's control port to
+/// set the shard's warm-pool target AND per-host density. The supervisor
+/// reconciles its host pool toward [targetHosts] (pre-spawning up to it,
+/// retiring idle hosts back down to it), clamped to
+/// `[poolMinWarmHosts, poolMaxHosts]`, and adopts [sessionsPerHost] as the
+/// new per-host session cap for subsequent placements.
+///
+/// The coordinator derives [targetHosts] from the global MDP action by
+/// dividing the pod-wide host-isolate target (one of 20/30/40/50) across
+/// the live shard count, so the *sum* of per-shard targets tracks the
+/// learned global setpoint. [sessionsPerHost] is a per-host property, so it
+/// is broadcast to every shard unchanged (not divided).
+final class ShardPoolDirective {
+  const ShardPoolDirective({
+    required this.targetHosts,
+    this.sessionsPerHost = 0,
+  });
+
+  /// Desired number of live session-host isolates this shard should keep.
+  final int targetHosts;
+
+  /// Desired per-host session cap (the autotuner's density action). `0`
+  /// means "leave the shard's current cap unchanged" — preserves
+  /// back-compat for pool-size-only experiments and any caller that does
+  /// not drive density.
+  final int sessionsPerHost;
 }

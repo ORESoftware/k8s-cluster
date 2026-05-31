@@ -37,6 +37,12 @@ spec:
         app: dd-dart-server
       annotations:
         dd.dev/code-revision: '2026-05-23-30k-target-1000-sessions-per-host'
+        # Bump when the Prometheus exposition / scrape contract changes so
+        # reloader-style tooling can correlate dashboards with the running
+        # build. This revision adds the MDP isolate-pool autotuner metrics
+        # and the WS adopt / first-frame latency histograms, plus the joint
+        # pool-size × host-density action and its target-density gauges.
+        dd.dev/telemetry-revision: '2026-05-31-mdp-pool-autotuner-density'
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -151,6 +157,60 @@ spec:
             # kubelet to deliver SIGKILL after the drain budget.
             - name: SHUTDOWN_GRACE_SECONDS
               value: '25'
+            # ---- MDP isolate-pool autotuner --------------------------------
+            # Learns how to size + pack the session-host isolate pool,
+            # online, from live telemetry (p99 adopt/first-frame latency,
+            # cold-start + capacity-refusal pressure, idle-host waste). Each
+            # control tick it jointly picks a pod-wide host-isolate target
+            # from WS_POOL_SIZE_LEVELS AND a per-host density from
+            # WS_HOST_DENSITY_LEVELS, then pre-warms / retires hosts and
+            # retunes the per-host cap toward that decision off the hot path.
+            #
+            #   off    — legacy lazy-spawn-only behaviour (default; identical
+            #            to pre-autotuner builds).
+            #   local  — in-process tabular Q-learner (zero external deps).
+            #   remote — delegate to dd-mdp-optimizer, fall back to a held
+            #            setpoint when it is unreachable.
+            #
+            # Flip to `local` to run the joint size × density experiment.
+            - name: WS_MDP_MODE
+              value: 'off'
+            # Discrete host-isolate ladder the autotuner chooses between
+            # (pod-wide, summed across shards). These are the four levels we
+            # A/B/n across on the way to 50K connections.
+            - name: WS_POOL_SIZE_LEVELS
+              value: '20,30,40,50'
+            # Second experiment: discrete per-host *density* ladder
+            # (sessionsPerHost caps) the autotuner jointly tunes with pool
+            # size. The learner explores the full size × density grid (e.g.
+            # "40 hosts × 250/host" vs "20 hosts × 1000/host") to find the
+            # cheapest packing that holds the offered load at low tail
+            # latency. Set to a single value (e.g. '1000') to pin density and
+            # run the pool-size-only experiment. The live cap is published as
+            # `dart_sessions_per_host_cap`; the chosen target as
+            # `dart_pool_target_density`.
+            - name: WS_HOST_DENSITY_LEVELS
+              value: '100,250,500,1000'
+            # Control-loop cadence: read telemetry, decide, broadcast a
+            # per-shard ShardPoolDirective.
+            - name: WS_MDP_CONTROL_INTERVAL_MS
+              value: '5000'
+            # Warm floor: hosts kept alive per shard even at the lowest
+            # target, so the first connections after an idle trough skip the
+            # cold-start spawn.
+            - name: WS_POOL_MIN_WARM_HOSTS
+              value: '1'
+            # Hard per-shard host ceiling. 0 = unbounded. Defaults (when
+            # unset) to ceil(max_level / shards) + 2. At the ceiling a full
+            # pool sheds new connections (1013) instead of forking past it.
+            - name: WS_POOL_MAX_HOSTS_PER_SHARD
+              value: '0'
+            # Idle dwell before an empty host may be retired (anti-thrash).
+            - name: WS_POOL_RETIRE_COOLDOWN_MS
+              value: '15000'
+            # dd-mdp-optimizer endpoint used only when WS_MDP_MODE=remote.
+            - name: WS_MDP_OPTIMIZER_URL
+              value: 'http://dd-mdp-optimizer.default.svc.cluster.local:8096'
           ports:
             - name: admin
               containerPort: 8088

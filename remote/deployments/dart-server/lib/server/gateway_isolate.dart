@@ -76,6 +76,11 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
     slowClientWindows: boot.slowClientWindows,
     clockIntervalSeconds: boot.clockIntervalSeconds,
     benchmarkMode: boot.benchmarkMode,
+    poolControllerEnabled: boot.poolControllerEnabled,
+    poolMinWarmHosts: boot.poolMinWarmHosts,
+    poolMaxHosts: boot.poolMaxHosts,
+    poolReconcileMaxSpawnPerTick: boot.poolReconcileMaxSpawnPerTick,
+    poolRetireCooldownMs: boot.poolRetireCooldownMs,
   );
 
   // Control port: the coordinator sends [ShardShutdown] when the pod
@@ -97,6 +102,9 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
         () => supervisor.hostsTerminatedTotal)
     ..registerGauge(
         'dart_sessions_per_host_cap', () => supervisor.sessionsPerHost)
+    ..registerGauge('dart_pool_idle_hosts', () => supervisor.idleHostCount)
+    ..registerGauge('dart_pool_free_slots', () => supervisor.freeSlots)
+    ..registerGauge('dart_pool_target_hosts', () => supervisor.targetHosts)
     ..registerGauge('dart_ws_idle_timeout_seconds',
         () => supervisor.idleTimeoutSeconds)
     ..registerGauge('dart_ws_max_age_seconds',
@@ -127,6 +135,9 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
       'dart_session_hosts_spawned': supervisor.hostsSpawnedTotal,
       'dart_session_hosts_terminated': supervisor.hostsTerminatedTotal,
       'dart_sessions_per_host_cap': supervisor.sessionsPerHost,
+      'dart_pool_idle_hosts': supervisor.idleHostCount,
+      'dart_pool_free_slots': supervisor.freeSlots,
+      'dart_pool_target_hosts': supervisor.targetHosts,
       'dart_ws_idle_timeout_seconds': supervisor.idleTimeoutSeconds,
       'dart_ws_max_age_seconds': supervisor.maxAgeSeconds,
       'dart_ws_age_based_idle_seconds': supervisor.ageBasedIdleSeconds,
@@ -192,6 +203,14 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
   control.listen((msg) {
     if (msg is ShardShutdown) {
       unawaited(drain());
+    } else if (msg is ShardPoolDirective) {
+      // MDP autotuner setpoint from the coordinator: reconcile the warm
+      // pool toward the per-shard host-isolate target and adopt the chosen
+      // per-host density (`dart_sessions_per_host_cap` gauge tracks it).
+      supervisor.applyTargetHosts(
+        msg.targetHosts,
+        sessionsPerHost: msg.sessionsPerHost,
+      );
     }
   });
 
@@ -231,6 +250,17 @@ class _ForwardingMetrics extends Metrics {
     super.inc(name, delta);
     try {
       _bus.send(MetricEvent(name, delta));
+    } catch (_) {/* coordinator gone or in shutdown */}
+  }
+
+  @override
+  void observe(String name, double value, {List<double>? bounds}) {
+    // Histograms are rendered only on the coordinator; forward the sample
+    // (as integer microseconds) instead of keeping a per-shard copy that
+    // nothing renders. The coordinator folds every shard's samples into
+    // one canonical histogram.
+    try {
+      _bus.send(ObserveEvent(name, (value * 1000000.0).round()));
     } catch (_) {/* coordinator gone or in shutdown */}
   }
 }

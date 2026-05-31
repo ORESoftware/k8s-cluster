@@ -73,11 +73,35 @@ Currently opted-in:
   is needed because the per-pod ring counters disagree (each pod
   tracks routing decisions from its own perspective) and the Service
   VIP would hide half the signal behind round-robin scraping.
-- `dd-promtail` runs with `kubernetes_sd_configs (role: pod)` so each
-  log stream carries `pod`, `container`, `namespace`, `app`, and
-  `node` labels. Loki queries should pin on these labels rather than
-  regexing `filename`.
+- `dd-promtail` tails `/var/log/containers/*.log` directly via
+  `static_configs` (no Kubernetes API dependency), decodes the
+  containerd envelope with the `cri` pipeline stage, and lifts
+  `namespace`, `pod`, and `container` out of the log filename into
+  first-class stream labels. The push client also stamps agent-scoped
+  `cluster`, `env`, and `node` labels (from `CLUSTER_NAME`,
+  `CLUSTER_ENV`, and the downward-API `NODE_NAME`, expanded with
+  `-config.expand-env=true`). Loki queries should pin on these labels,
+  e.g. `{env="prod", namespace="default", container="dart-server"}`.
+  The high-cardinality auto `filename` label is dropped after parsing.
 
-The OTEL collector + promtail each have their own minimal RBAC
-(`otel-collector.rbac.yaml`, `promtail.rbac.yaml`) granting cluster-
-wide read-only access to pods.
+  Note: an earlier revision moved promtail to
+  `kubernetes_sd_configs (role: pod)` with a
+  `/var/log/pods/*$1/*.log` glob; that left Loki with no streams and
+  no labels. The DaemonSet now also tolerates all node taints and runs
+  as root (`runAsUser: 0`) so it schedules on every node and can read
+  the root-owned container log files. Promtail's positions file lives on a
+  `hostPath` (`/var/lib/dd-promtail`) rather than an `emptyDir`, so a restart
+  resumes from the last read offset instead of re-reading every container log
+  from the start and replaying old rotated lines that Loki rejects as
+  `timestamp too old`.
+
+  To distinguish a future stage cluster from prod, deploy promtail with
+  `CLUSTER_ENV=stage` (and a distinct `CLUSTER_NAME`); the per-cluster
+  `env`/`cluster` labels then separate the two log sources in a shared
+  or proxied Loki.
+
+The OTEL collector keeps its own minimal RBAC
+(`otel-collector.rbac.yaml`) for `kubernetes_sd` pod discovery.
+`promtail.rbac.yaml` is retained (read-only pods) for optional metadata
+enrichment, but the current filename-based pipeline does not require the
+Kubernetes API.

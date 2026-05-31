@@ -67,6 +67,8 @@ import 'package:dd_dart_server/server/gateway_isolate.dart';
 import 'package:dd_dart_server/server/hot_reloader.dart';
 import 'package:dd_dart_server/server/http_isolate.dart';
 import 'package:dd_dart_server/server/metrics.dart';
+import 'package:dd_dart_server/server/optimizer_client.dart';
+import 'package:dd_dart_server/server/pool_autotuner.dart';
 import 'package:dd_dart_server/server/postgres.dart';
 import 'package:dd_dart_server/server/session_supervisor.dart';
 import 'package:dd_dart_server/shared/wire_messages.dart';
@@ -84,6 +86,61 @@ const int _kDefaultGaugeReportIntervalMs = 1000;
 /// to 16–32 for 20K+ if pod CPU allows. Override with
 /// `WS_GATEWAY_SHARDS`.
 const int _kDefaultGatewayShards = 8;
+
+/// Default MDP autotuner control-loop cadence. Each tick the coordinator
+/// reads aggregated telemetry, picks a pod-wide host-isolate target, and
+/// broadcasts a per-shard [ShardPoolDirective]. Override with
+/// `WS_MDP_CONTROL_INTERVAL_MS`.
+const int _kDefaultMdpControlIntervalMs = 5000;
+
+/// Default discrete host-isolate ladder the autotuner chooses between.
+/// Override with `WS_POOL_SIZE_LEVELS` (comma-separated).
+const List<int> _kDefaultPoolSizeLevels = <int>[20, 30, 40, 50];
+
+/// Default discrete per-host density ladder (`sessionsPerHost` caps) the
+/// autotuner jointly tunes alongside pool size. Override with
+/// `WS_HOST_DENSITY_LEVELS` (comma-separated). A single value collapses the
+/// density dimension back to the pool-size-only experiment.
+const List<int> _kDefaultHostDensityLevels = <int>[100, 250, 500, 1000];
+
+/// Parse the `WS_MDP_MODE` env var. `off` (default) keeps the legacy
+/// lazy-spawn supervisor; `local` runs the in-process Q-learner; `remote`
+/// delegates to the `dd-mdp-optimizer` service (falling back to a held
+/// setpoint when it is unreachable).
+enum MdpMode { off, local, remote }
+
+MdpMode _parseMdpMode(String? raw) {
+  switch ((raw ?? '').toLowerCase().trim()) {
+    case 'local':
+      return MdpMode.local;
+    case 'remote':
+      return MdpMode.remote;
+    case 'on':
+    case 'true':
+      return MdpMode.local;
+    default:
+      return MdpMode.off;
+  }
+}
+
+/// Parse a comma-separated, positive, ascending integer ladder (e.g.
+/// `WS_POOL_SIZE_LEVELS` / `WS_HOST_DENSITY_LEVELS`). Falls back to
+/// [fallback] when unset/empty/all-invalid.
+List<int> _parseIntLevels(String? raw, List<int> fallback) {
+  if (raw == null || raw.trim().isEmpty) return fallback;
+  final parsed = raw
+      .split(',')
+      .map((s) => int.tryParse(s.trim()))
+      .whereType<int>()
+      .where((n) => n > 0)
+      .toSet()
+      .toList()
+    ..sort();
+  return parsed.isEmpty ? fallback : parsed;
+}
+
+double _envDouble(String name, double fallback) =>
+    double.tryParse(Platform.environment[name] ?? '') ?? fallback;
 
 Future<void> main(List<String> args) async {
   final host = Platform.environment['HTTP_HOST'] ?? '0.0.0.0';
@@ -147,6 +204,53 @@ Future<void> main(List<String> args) async {
       25;
   final wsBenchmarkMode =
       Platform.environment['WS_BENCHMARK_MODE']?.toLowerCase() == 'true';
+
+  // ---- MDP isolate-pool autotuner config --------------------------------
+  final mdpMode = _parseMdpMode(Platform.environment['WS_MDP_MODE']);
+  final mdpEnabled = mdpMode != MdpMode.off;
+  final poolSizeLevels = _parseIntLevels(
+    Platform.environment['WS_POOL_SIZE_LEVELS'],
+    _kDefaultPoolSizeLevels,
+  );
+  final hostDensityLevels = _parseIntLevels(
+    Platform.environment['WS_HOST_DENSITY_LEVELS'],
+    _kDefaultHostDensityLevels,
+  );
+  final mdpControlIntervalMs = int.tryParse(
+        Platform.environment['WS_MDP_CONTROL_INTERVAL_MS'] ?? '',
+      ) ??
+      _kDefaultMdpControlIntervalMs;
+  final poolMinWarmHosts =
+      int.tryParse(Platform.environment['WS_POOL_MIN_WARM_HOSTS'] ?? '') ?? 1;
+  // Hard per-shard host ceiling. Default derives from the top size level so
+  // a single shard can't fork past its fair share of the largest pod-wide
+  // target (plus a little headroom for cold-start bursts).
+  final poolMaxHostsPerShard = int.tryParse(
+        Platform.environment['WS_POOL_MAX_HOSTS_PER_SHARD'] ?? '',
+      ) ??
+      ((poolSizeLevels.last / gatewayShards).ceil() + 2);
+  final poolRetireCooldownMs = int.tryParse(
+        Platform.environment['WS_POOL_RETIRE_COOLDOWN_MS'] ?? '',
+      ) ??
+      15000;
+  final mdpOptimizerUrl = Platform.environment['WS_MDP_OPTIMIZER_URL'] ??
+      'http://dd-mdp-optimizer.default.svc.cluster.local:8096';
+
+  final autotunerConfig = AutotunerConfig(
+    sizeLevels: poolSizeLevels,
+    densityLevels: hostDensityLevels,
+    alpha: _envDouble('WS_MDP_ALPHA', 0.2),
+    gamma: _envDouble('WS_MDP_GAMMA', 0.6),
+    epsilonStart: _envDouble('WS_MDP_EPSILON', 0.30),
+    epsilonMin: _envDouble('WS_MDP_EPSILON_MIN', 0.02),
+    epsilonDecay: _envDouble('WS_MDP_EPSILON_DECAY', 0.995),
+    targetLatencySeconds: _envDouble('WS_MDP_TARGET_LATENCY_SECONDS', 0.05),
+    wLatency: _envDouble('WS_MDP_W_LATENCY', 1.0),
+    wColdStart: _envDouble('WS_MDP_W_COLD_START', 0.05),
+    wRefusal: _envDouble('WS_MDP_W_REFUSAL', 0.5),
+    wIdle: _envDouble('WS_MDP_W_IDLE', 0.02),
+    wSize: _envDouble('WS_MDP_W_SIZE', 0.2),
+  );
   final watchPaths = (Platform.environment['HOT_RELOAD_PATHS'] ?? 'lib,bin')
       .split(',')
       .map((s) => s.trim())
@@ -183,6 +287,11 @@ Future<void> main(List<String> args) async {
     } else if (msg is GaugeReport) {
       perShardGauges[msg.shardId] = msg.values;
       lastGaugeReportAtMs[msg.shardId] = DateTime.now().millisecondsSinceEpoch;
+    } else if (msg is ObserveEvent) {
+      // Latency samples from every shard fold into one canonical
+      // histogram so /metrics renders a pod-wide adopt / first-frame
+      // latency distribution (and the autotuner reads its p99).
+      metrics.observe(msg.name, msg.micros / 1000000.0);
     }
   });
 
@@ -241,6 +350,10 @@ Future<void> main(List<String> args) async {
           clockIntervalSeconds: wsClockIntervalSeconds,
           benchmarkMode: wsBenchmarkMode,
           gaugeReportIntervalMs: gaugeReportIntervalMs,
+          poolControllerEnabled: mdpEnabled,
+          poolMinWarmHosts: poolMinWarmHosts,
+          poolMaxHosts: poolMaxHostsPerShard,
+          poolRetireCooldownMs: poolRetireCooldownMs,
         ),
         debugName: 'dd-dart-gateway-shard-$shardId',
         errorsAreFatal: false,
@@ -359,7 +472,177 @@ Future<void> main(List<String> args) async {
     ..registerGauge('dart_conversations',
         () => _sumShardGauge('dart_conversations'))
     ..registerGauge('dart_conversation_memberships',
-        () => _sumShardGauge('dart_conversation_memberships'));
+        () => _sumShardGauge('dart_conversation_memberships'))
+    ..registerGauge('dart_pool_idle_hosts',
+        () => _sumShardGauge('dart_pool_idle_hosts'))
+    ..registerGauge('dart_pool_free_slots',
+        () => _sumShardGauge('dart_pool_free_slots'))
+    ..registerGauge('dart_pool_target_hosts',
+        () => _sumShardGauge('dart_pool_target_hosts'));
+
+  // ---- MDP isolate-pool autotuner ---------------------------------------
+  // Coordinator-side control loop. Each tick it reads aggregated telemetry
+  // (live sessions/hosts, cold-start + refusal counter deltas, p99 adopt /
+  // first-frame latency), asks the policy for a pod-wide host-isolate
+  // target from the {20,30,40,50} ladder, divides it across the live
+  // shards, and pushes a `ShardPoolDirective` to each. Behind WS_MDP_MODE;
+  // `off` skips all of this and leaves shards in legacy lazy-spawn mode.
+  OptimizerClient? optimizerClient;
+  Timer? mdpTimer;
+  var mdpLastTargetGlobal = poolSizeLevels[(poolSizeLevels.length / 2).floor()];
+  // Last per-host density the autotuner chose (broadcast to every shard).
+  // Seeded from the static SESSIONS_PER_HOST so the first directive is a
+  // no-op until the learner moves it.
+  var mdpLastDensity = hostDensityLevels[
+      (hostDensityLevels.length / 2).floor()];
+  var mdpPrevSessions = 0;
+  var mdpPrevColdStarts = 0;
+  var mdpPrevRefusals = 0;
+
+  if (mdpEnabled) {
+    // `final` locals so the timer / gauge closures promote them to
+    // non-null cleanly. Exactly one is non-null per mode.
+    final autotuner =
+        mdpMode == MdpMode.local ? PoolAutotuner(autotunerConfig) : null;
+    final optimizer = mdpMode == MdpMode.remote
+        ? OptimizerClient(baseUrl: mdpOptimizerUrl)
+        : null;
+    optimizerClient = optimizer; // hand to outer scope for shutdown close()
+
+    // Autotuner telemetry as coordinator-local gauges.
+    metrics
+      ..registerGauge('dart_pool_target_hosts_global', () => mdpLastTargetGlobal)
+      ..registerGauge('dart_pool_target_density', () => mdpLastDensity)
+      ..registerGauge('dart_pool_size_levels_count', () => poolSizeLevels.length)
+      ..registerGauge(
+          'dart_pool_density_levels_count', () => hostDensityLevels.length)
+      ..registerGauge(
+          'dart_pool_autotuner_mode',
+          () => switch (mdpMode) {
+                MdpMode.local => 1,
+                MdpMode.remote => 2,
+                MdpMode.off => 0,
+              });
+    if (autotuner != null) {
+      metrics
+        ..registerGauge('dart_pool_autotuner_epsilon', () => autotuner.epsilon)
+        ..registerGauge(
+            'dart_pool_autotuner_reward_ema', () => autotuner.rewardEma)
+        ..registerGauge('dart_pool_autotuner_updates', () => autotuner.updates)
+        ..registerGauge('dart_pool_autotuner_states_visited',
+            () => autotuner.statesVisited);
+    }
+
+    Future<void> mdpTick() async {
+      final liveShards = shards.where((s) => !s.dead).toList(growable: false);
+      if (liveShards.isEmpty) return;
+
+      final totalSessions =
+          (metrics.gauge('dart_sessions_live') ?? 0).toInt();
+      final liveHosts =
+          (metrics.gauge('dart_session_hosts_live') ?? 0).toInt();
+      final idleHosts = (metrics.gauge('dart_pool_idle_hosts') ?? 0).toInt();
+      // Ground-truth per-host density currently applied across shards (the
+      // max per-shard cap; all shards share the broadcast density). Used for
+      // the utilisation/capacity signal so the observation reflects what the
+      // pool is actually doing, not last tick's chosen-but-not-yet-applied
+      // setpoint. Falls back to the static cap before the first GaugeReport.
+      final appliedDensityRaw =
+          (metrics.gauge('dart_sessions_per_host_cap') ?? 0).toInt();
+      final appliedDensity =
+          appliedDensityRaw > 0 ? appliedDensityRaw : sessionsPerHost;
+      final coldStartsTotal =
+          metrics.counter('dart_session_cold_start_spawns_total');
+      final refusalsTotal =
+          metrics.counter('dart_sessions_refused_capacity_total');
+      final coldStarts =
+          (coldStartsTotal - mdpPrevColdStarts).clamp(0, 1 << 30).toInt();
+      final refusals =
+          (refusalsTotal - mdpPrevRefusals).clamp(0, 1 << 30).toInt();
+      final p99Adopt =
+          metrics.histogramQuantile('dart_ws_adopt_latency_seconds', 0.99);
+      final p99FirstFrame = metrics.histogramQuantile(
+        'dart_ws_first_frame_latency_seconds',
+        0.99,
+      );
+
+      var targetGlobal = mdpLastTargetGlobal;
+      var targetDensity = mdpLastDensity;
+      if (optimizer != null) {
+        final capacity = liveHosts * appliedDensity;
+        final util = capacity > 0 ? totalSessions / capacity : 0.0;
+        final windowS = mdpControlIntervalMs / 1000.0;
+        final remote = await optimizer.recommend(
+          OptimizerSignals(
+            utilization: util,
+            coldStartRate: windowS > 0 ? coldStarts / windowS : 0.0,
+            refusalRate: windowS > 0 ? refusals / windowS : 0.0,
+            p99AdoptSeconds: p99Adopt,
+            windowMs: mdpControlIntervalMs,
+            sizeLevels: poolSizeLevels,
+            densityLevels: hostDensityLevels,
+          ),
+        );
+        // Hold each lever's previous setpoint when the optimizer is
+        // unreachable or returns an unmappable action for that lever.
+        targetGlobal = remote.targetHosts ?? mdpLastTargetGlobal;
+        targetDensity = remote.sessionsPerHost ?? mdpLastDensity;
+        metrics.inc((remote.targetHosts != null || remote.sessionsPerHost != null)
+            ? 'dart_pool_optimizer_ok_total'
+            : 'dart_pool_optimizer_miss_total');
+      } else if (autotuner != null) {
+        final decision = autotuner.decide(AutotunerObservation(
+          totalSessions: totalSessions,
+          liveHosts: liveHosts,
+          sessionsPerHost: appliedDensity,
+          sessionsDelta: totalSessions - mdpPrevSessions,
+          coldStarts: coldStarts,
+          refusals: refusals,
+          idleHosts: idleHosts,
+          p99AdoptSeconds: p99Adopt,
+          p99FirstFrameSeconds: p99FirstFrame,
+        ));
+        targetGlobal = decision.targetHosts;
+        targetDensity = decision.sessionsPerHost;
+      }
+
+      mdpLastTargetGlobal = targetGlobal;
+      mdpLastDensity = targetDensity;
+      mdpPrevSessions = totalSessions;
+      mdpPrevColdStarts = coldStartsTotal;
+      mdpPrevRefusals = refusalsTotal;
+
+      // Split the pod-wide host target across live shards (ceil so the sum
+      // is at least the target). Density is a per-host property, so it goes
+      // to every shard unchanged. Each shard reconciles toward its slice.
+      final perShard = (targetGlobal / liveShards.length).ceil();
+      for (final shard in liveShards) {
+        try {
+          shard.control.send(ShardPoolDirective(
+            targetHosts: perShard,
+            sessionsPerHost: targetDensity,
+          ));
+        } catch (_) {/* shard gone mid-tick */}
+      }
+      metrics.inc('dart_pool_autotuner_ticks_total');
+    }
+
+    mdpTimer = Timer.periodic(
+      Duration(milliseconds: mdpControlIntervalMs),
+      (_) => unawaited(mdpTick()),
+    );
+    print(jsonEncode({
+      'event': 'mdp_autotuner_init',
+      'mode': mdpMode.name,
+      'size_levels': poolSizeLevels,
+      'density_levels': hostDensityLevels,
+      'joint_action_count': poolSizeLevels.length * hostDensityLevels.length,
+      'control_interval_ms': mdpControlIntervalMs,
+      'min_warm_hosts': poolMinWarmHosts,
+      'max_hosts_per_shard': poolMaxHostsPerShard,
+      'optimizer_url': mdpMode == MdpMode.remote ? mdpOptimizerUrl : null,
+    }));
+  }
 
   // ---- Hot reloader ------------------------------------------------------
   HotReloader? hotReloader;
@@ -417,6 +700,7 @@ Future<void> main(List<String> args) async {
       'live_sessions': liveSessions,
       'grace_seconds': shutdownGraceSeconds,
     }));
+    mdpTimer?.cancel();
     try {
       await adminServer.close(force: false);
     } catch (_) {/* swallow */}
@@ -483,6 +767,8 @@ Future<void> main(List<String> args) async {
   }
   await sigtermSub.cancel();
   await sigintSub.cancel();
+  mdpTimer?.cancel();
+  optimizerClient?.close();
   await hotReloader?.close();
   metricsInbox.close();
   await pgPool?.close();

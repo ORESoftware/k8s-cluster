@@ -130,7 +130,12 @@ class SessionSupervisor {
     this.slowClientWindows = kDefaultSlowClientWindows,
     this.clockIntervalSeconds = kDefaultClockIntervalSeconds,
     this.benchmarkMode = kDefaultBenchmarkMode,
-  }) : sessionsPerHost = sessionsPerHost
+    this.poolControllerEnabled = false,
+    this.poolMinWarmHosts = 0,
+    this.poolMaxHosts = 0,
+    this.poolReconcileMaxSpawnPerTick = 8,
+    this.poolRetireCooldownMs = 15000,
+  }) : _sessionsPerHost = sessionsPerHost
             .clamp(kMinSessionsPerHost, kMaxSessionsPerHost);
 
   final Metrics metrics;
@@ -139,9 +144,12 @@ class SessionSupervisor {
   final ConversationRegistry conversations;
 
   /// Maximum sessions one session-host isolate is allowed to own. The
-  /// supervisor lazily spawns a new host when all existing hosts are
-  /// at this cap.
-  final int sessionsPerHost;
+  /// supervisor lazily spawns a new host when all existing hosts are at
+  /// this cap. Mutable: the MDP autotuner's *density* action retunes it at
+  /// runtime via [applyTargetHosts] (controller mode only). Always clamped
+  /// to `[kMinSessionsPerHost, kMaxSessionsPerHost]`.
+  int _sessionsPerHost;
+  int get sessionsPerHost => _sessionsPerHost;
 
   /// Per-session idle timeout, in seconds, propagated into the
   /// `SessionBootMessage` so each session enforces it independently.
@@ -181,6 +189,44 @@ class SessionSupervisor {
   /// CPU in pure-connection benchmarks at >10K live sessions.
   final bool benchmarkMode;
 
+  /// When true, the host pool is driven by [applyTargetHosts] (the
+  /// coordinator's MDP autotuner): hosts are pre-spawned up to the target
+  /// off the adopt hot path and idle hosts are gracefully retired back
+  /// down. When false, the legacy lazy-spawn-only behaviour is preserved
+  /// exactly (no pre-spawn, no retire, no cap, no refusals).
+  final bool poolControllerEnabled;
+
+  /// Floor on warm host isolates (only meaningful when
+  /// [poolControllerEnabled]).
+  final int poolMinWarmHosts;
+
+  /// Hard ceiling on host isolates. 0 = unbounded. At the ceiling a full
+  /// pool refuses new sessions with a 1013 close (load shedding).
+  final int poolMaxHosts;
+
+  /// Max hosts pre-spawned per reconcile pass.
+  final int poolReconcileMaxSpawnPerTick;
+
+  /// Idle dwell time before an empty host may be retired.
+  final int poolRetireCooldownMs;
+
+  /// Coordinator-set warm-pool target (host isolates for this shard). 0
+  /// until the first [ShardPoolDirective] arrives.
+  int _targetHosts = 0;
+  int get targetHosts => _targetHosts;
+
+  // Reconciler / autotuner telemetry, surfaced as gauges + counters.
+  int _coldStartSpawns = 0;
+  int _refusals = 0;
+  int _prewarmInFlight = 0;
+  int _retiredHosts = 0;
+  int _prewarmedHosts = 0;
+
+  int get coldStartSpawnsTotal => _coldStartSpawns;
+  int get refusalsTotal => _refusals;
+  int get retiredHostsTotal => _retiredHosts;
+  int get prewarmedHostsTotal => _prewarmedHosts;
+
   /// `true` once SIGTERM (or supervisor.requestDrain) has run. The
   /// supervisor refuses new attaches and forwards the drain sentinel
   /// to all hosts. Idempotent.
@@ -198,8 +244,36 @@ class SessionSupervisor {
   int get liveCount => _liveCount.value;
   int get spawnedTotal => _spawnedTotal;
 
-  /// Number of session-host isolates currently alive.
+  /// Number of session-host isolates currently alive (includes hosts that
+  /// are draining toward retirement until their isolate actually exits).
   int get hostCount => _hosts.where((h) => !h.dead).length;
+
+  /// Hosts available to accept new sessions (alive AND not retiring). Used
+  /// by the reconciler's target math and the autotuner's utilisation
+  /// signal so a draining host isn't counted as live capacity.
+  int get liveHostCount => _hosts.where((h) => !h.dead && !h.retiring).length;
+
+  /// Hosts that currently own zero sessions (and have none pending). These
+  /// are the over-provisioning cost the autotuner trades against
+  /// cold-start latency.
+  int get idleHostCount => _hosts
+      .where((h) =>
+          !h.dead && !h.retiring && h.sessionCount == 0 && h.pendingAttaches == 0)
+      .length;
+
+  /// Total free session slots across non-retiring live hosts. Clamped
+  /// per-host so a host that is over a freshly-lowered density cap (the
+  /// autotuner can shrink `sessionsPerHost` mid-flight) contributes zero
+  /// rather than a negative that would mask free slots on sibling hosts.
+  int get freeSlots {
+    var free = 0;
+    for (final h in _hosts) {
+      if (h.dead || h.retiring) continue;
+      final slot = _sessionsPerHost - (h.sessionCount + h.pendingAttaches);
+      if (slot > 0) free += slot;
+    }
+    return free;
+  }
 
   /// Total session-host isolates ever spawned in this process.
   int get hostsSpawnedTotal => _hostsSpawnedTotal;
@@ -225,10 +299,24 @@ class SessionSupervisor {
     }
 
     // Pick or spawn a host BEFORE we start mutating session-scoped state
-    // — if Isolate.spawn fails we want a clean error.
+    // — if Isolate.spawn fails we want a clean error. `_acquireHost`
+    // returns null only when the pool is capped and full (controller
+    // mode): shed the connection instead of forking past the ceiling.
+    final adoptStartUs = DateTime.now().microsecondsSinceEpoch;
     final host = await _acquireHost();
+    if (host == null) {
+      _refusals++;
+      metrics.inc('dart_sessions_refused_capacity_total');
+      try {
+        await socket.close(1013, 'try_again_later');
+      } catch (_) {/* swallow */}
+      return;
+    }
 
     final outbound = ReceivePort('dd-dart-outbound-$sessionId');
+    // First-frame latency: measured from host-attach to the first outbound
+    // text/binary frame actually written to this socket.
+    var firstFrameSent = false;
 
     StreamSubscription<dynamic>? inboundSub;
     StreamSubscription<dynamic>? outboundSub;
@@ -320,6 +408,15 @@ class SessionSupervisor {
 
     host.mailbox.send(AttachSession(boot));
 
+    // Adopt latency: acquire-or-spawn-a-host + attach, the part of the
+    // connection setup the isolate-pool sizing actually controls. Forwarded
+    // to the coordinator's canonical histogram via `ObserveEvent`.
+    final attachedAtUs = DateTime.now().microsecondsSinceEpoch;
+    metrics.observe(
+      'dart_ws_adopt_latency_seconds',
+      (attachedAtUs - adoptStartUs) / 1000000.0,
+    );
+
     // Slow-client tracker. We bucket outbound frames into 1-second
     // windows and compare against [maxOutboundRatePerSecond]. The
     // supervisor force-closes a session that exceeds the limit for
@@ -392,14 +489,29 @@ class SessionSupervisor {
       return false;
     }
 
+    void recordFirstFrame() {
+      if (firstFrameSent) return;
+      firstFrameSent = true;
+      metrics.observe(
+        'dart_ws_first_frame_latency_seconds',
+        (DateTime.now().microsecondsSinceEpoch - attachedAtUs) / 1000000.0,
+      );
+    }
+
     outboundSub = outbound.listen((msg) {
       switch (msg) {
         case OutboundText(:final text):
           if (tickOutbound()) return;
-          if (socket.readyState == WebSocket.open) socket.add(text);
+          if (socket.readyState == WebSocket.open) {
+            recordFirstFrame();
+            socket.add(text);
+          }
         case OutboundBinary(:final bytes):
           if (tickOutbound()) return;
-          if (socket.readyState == WebSocket.open) socket.add(bytes);
+          if (socket.readyState == WebSocket.open) {
+            recordFirstFrame();
+            socket.add(bytes);
+          }
         case OutboundClose(:final code, :final reason):
           unawaited(socket.close(code, reason));
         case MetricEvent(:final name, :final delta):
@@ -463,12 +575,18 @@ class SessionSupervisor {
   // ---- Host-pool management ---------------------------------------------
 
   /// Returns a host with at least one free slot, spawning a new one if
-  /// every existing host is dead or full. Increments the host's reserved
-  /// count synchronously so concurrent adopt() calls don't oversubscribe.
-  Future<_HostState> _acquireHost() async {
+  /// every existing host is dead/retiring/full. Increments the host's
+  /// reserved count synchronously so concurrent adopt() calls don't
+  /// oversubscribe.
+  ///
+  /// Returns null only in controller mode when the pool is at its hard
+  /// [poolMaxHosts] ceiling and full — the caller sheds the connection.
+  /// In legacy mode (controller disabled, `poolMaxHosts == 0`) it never
+  /// returns null: behaviour is identical to the original lazy spawn.
+  Future<_HostState?> _acquireHost() async {
     _HostState? best;
     for (final h in _hosts) {
-      if (h.dead) continue;
+      if (h.dead || h.retiring) continue;
       if (h.sessionCount + h.pendingAttaches >= sessionsPerHost) continue;
       if (best == null ||
           h.sessionCount + h.pendingAttaches <
@@ -480,9 +598,109 @@ class SessionSupervisor {
       best.pendingAttaches++;
       return best;
     }
+    // No warm host with a free slot. Either spawn one on this connection's
+    // hot path (a "cold start" — the latency the autotuner learns to hide
+    // by pre-warming) or, if capped and full, shed the connection.
+    if (poolMaxHosts > 0 && liveHostCount >= poolMaxHosts) {
+      return null;
+    }
+    _coldStartSpawns++;
+    metrics.inc('dart_session_cold_start_spawns_total');
     final fresh = await _spawnHost();
     fresh.pendingAttaches++;
     return fresh;
+  }
+
+  // ---- Warm-pool reconciler (controller mode) ---------------------------
+
+  /// Apply a coordinator MDP-autotuner directive: set this shard's warm
+  /// host-isolate target (and, when [sessionsPerHost] > 0, its per-host
+  /// density) then reconcile the pool toward the target. No-op when the
+  /// controller is disabled.
+  ///
+  /// A density change only affects *future* placements: existing hosts keep
+  /// the sessions they already own. Lowering the cap below a host's current
+  /// occupancy simply stops that host accepting more until it drains;
+  /// raising it lets warm hosts absorb additional sessions before the pool
+  /// needs to grow. The new cap is clamped to
+  /// `[kMinSessionsPerHost, kMaxSessionsPerHost]`.
+  void applyTargetHosts(int targetHosts, {int sessionsPerHost = 0}) {
+    if (!poolControllerEnabled) return;
+    if (sessionsPerHost > 0) {
+      _sessionsPerHost =
+          sessionsPerHost.clamp(kMinSessionsPerHost, kMaxSessionsPerHost);
+    }
+    _targetHosts = targetHosts < 0 ? 0 : targetHosts;
+    _reconcile();
+  }
+
+  /// Clamp the raw target into `[minWarm, maxHosts]`.
+  int _desiredHosts() {
+    var d = _targetHosts;
+    if (poolMinWarmHosts > 0 && d < poolMinWarmHosts) d = poolMinWarmHosts;
+    if (poolMaxHosts > 0 && d > poolMaxHosts) d = poolMaxHosts;
+    return d;
+  }
+
+  /// Pre-spawn hosts toward the desired count (bounded per pass) and retire
+  /// hosts that have been idle past the cooldown. Driven by the periodic
+  /// [ShardPoolDirective] cadence; the hot path never blocks on this.
+  void _reconcile() {
+    if (!poolControllerEnabled || _draining) return;
+    _hosts.removeWhere((h) => h.dead);
+    final desired = _desiredHosts();
+
+    final deficit = desired - liveHostCount - _prewarmInFlight;
+    if (deficit > 0) {
+      final toSpawn = deficit.clamp(0, poolReconcileMaxSpawnPerTick);
+      for (var i = 0; i < toSpawn; i++) {
+        _prewarmInFlight++;
+        unawaited(_spawnHostPrewarm());
+      }
+    }
+
+    _retireIdleHosts(desired);
+  }
+
+  Future<void> _spawnHostPrewarm() async {
+    try {
+      await _spawnHost();
+      _prewarmedHosts++;
+      metrics.inc('dart_session_hosts_prewarmed_total');
+    } catch (_) {
+      // _spawnHost already emitted dart_session_hosts_spawn_failed_total.
+    } finally {
+      if (_prewarmInFlight > 0) _prewarmInFlight--;
+    }
+  }
+
+  void _retireIdleHosts(int desired) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final h in _hosts) {
+      if (h.dead || h.retiring) continue;
+      if (h.sessionCount != 0 || h.pendingAttaches != 0) {
+        h.emptySinceMs = 0;
+        continue;
+      }
+      // Empty host: start (or honour) its cooldown before retiring.
+      if (h.emptySinceMs == 0) {
+        h.emptySinceMs = now;
+        continue;
+      }
+      if (now - h.emptySinceMs < poolRetireCooldownMs) continue;
+      // Stop once we're at/under target or the warm floor. liveHostCount
+      // excludes hosts already marked retiring this pass, so the counts
+      // stay correct as we retire several in one sweep.
+      if (liveHostCount <= desired) break;
+      if (poolMinWarmHosts > 0 && liveHostCount <= poolMinWarmHosts) break;
+      h.retiring = true;
+      _retiredHosts++;
+      metrics.inc('dart_session_hosts_retired_total');
+      try {
+        // Empty host drains instantly; its exit port fires _markHostDead.
+        requestHostShutdown(h.mailbox);
+      } catch (_) {/* swallow */}
+    }
   }
 
   Future<_HostState> _spawnHost() async {
@@ -824,6 +1042,17 @@ class _HostState {
   int pendingAttaches = 0;
 
   bool dead = false;
+
+  /// Set by the reconciler when this (empty) host has been asked to drain
+  /// + exit. Retiring hosts are excluded from placement and from the live
+  /// capacity counts, but stay in `_hosts` until their exit port fires.
+  bool retiring = false;
+
+  /// Wall-clock ms at which this host first became empty (0 = not empty).
+  /// The reconciler retires it once it has been empty for at least
+  /// `poolRetireCooldownMs`.
+  int emptySinceMs = 0;
+
   StreamSubscription<dynamic>? exitSub;
   StreamSubscription<dynamic>? errorSub;
 

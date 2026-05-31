@@ -8,7 +8,7 @@ A single Dart binary serves:
 | ----------------------- | --------------------------------------------------------------------------- |
 | `GET /healthz`          | Liveness probe.                                                             |
 | `GET /readyz`           | Readiness probe.                                                            |
-| `GET /metrics`          | Prometheus exposition (counters + gauges).                                  |
+| `GET /metrics`          | Prometheus exposition (counters + gauges + latency histograms).             |
 | `GET /`, `/dart`        | 301 → `/dart/pages`.                                                        |
 | `GET /dart/pages`       | Jaspr SSR home page.                                                        |
 | `GET /dart/pages/*`     | Jaspr SSR routed pages (`/about`, `/architecture`, `/wss`, `/hot-reload`).  |
@@ -734,6 +734,128 @@ prefixed `dart_*`:
 | `dart_pg_connections_opened_total` (gauge)  | gauge   | pool open count (idempotent if already open) |
 | `dart_pg_connections_closed_total` (gauge)  | gauge   | pool close count                           |
 | `dart_pg_notify_events_total` (gauge)       | gauge   | LISTEN/NOTIFY events received (when wired) |
+
+### Isolate-pool autotuner + latency telemetry
+
+The coordinator also exposes the metrics that drive (and observe) the MDP
+isolate-pool autotuner. Counters are folded from every shard; gauges are
+summed/aggregated at scrape time; histograms are folded from per-shard
+`ObserveEvent`s into one pod-wide distribution.
+
+| Metric                                       | Type      | Source                                                        |
+| -------------------------------------------- | --------- | ------------------------------------------------------------- |
+| `dart_ws_adopt_latency_seconds`              | histogram | acquire/spawn-a-host + attach, per accepted WS                |
+| `dart_ws_first_frame_latency_seconds`        | histogram | attach → first outbound frame written to the socket           |
+| `dart_session_cold_start_spawns_total`       | counter   | host spawned on a connection's hot path (no warm host free)   |
+| `dart_sessions_refused_capacity_total`       | counter   | connection shed (1013) because the pool hit its hard ceiling  |
+| `dart_session_hosts_prewarmed_total`         | counter   | hosts pre-spawned off the hot path by the reconciler          |
+| `dart_session_hosts_retired_total`           | counter   | idle hosts gracefully retired toward target                   |
+| `dart_pool_autotuner_ticks_total`            | counter   | control-loop iterations                                       |
+| `dart_pool_optimizer_ok_total`               | counter   | `dd-mdp-optimizer` recommendations applied (remote mode)      |
+| `dart_pool_optimizer_miss_total`             | counter   | optimizer unreachable/unmappable; held setpoint (remote mode) |
+| `dart_pool_idle_hosts` (gauge)               | gauge     | empty live hosts (over-provisioning cost)                     |
+| `dart_pool_free_slots` (gauge)               | gauge     | free session slots across live hosts                          |
+| `dart_pool_target_hosts` (gauge)             | gauge     | sum of per-shard warm-pool targets                            |
+| `dart_pool_target_hosts_global` (gauge)      | gauge     | coordinator's chosen pod-wide host-isolate target             |
+| `dart_pool_target_density` (gauge)           | gauge     | coordinator's chosen per-host session cap (density action)    |
+| `dart_sessions_per_host_cap` (gauge)         | gauge     | live per-host density actually applied across shards          |
+| `dart_pool_autotuner_mode` (gauge)           | gauge     | 0=off, 1=local, 2=remote                                       |
+| `dart_pool_autotuner_epsilon` (gauge)        | gauge     | current ε-greedy exploration rate (local mode)                |
+| `dart_pool_autotuner_reward_ema` (gauge)     | gauge     | EMA of the per-tick reward (local mode)                       |
+| `dart_pool_autotuner_updates` (gauge)        | gauge     | Q-learning updates applied (local mode)                       |
+| `dart_pool_autotuner_states_visited` (gauge) | gauge     | distinct state buckets seen (local mode)                      |
+
+Prometheus scrapes these from the coordinator's `admin` port (`8088`) via
+the `dd-dart-server` jobs in `remote/argocd/observability/{prometheus,
+otel-collector}.configmap.yaml`. The **Dart WSS Runtime** Grafana dashboard
+(`grafana.dashboards.configmap.yaml`, uid `dd-dart-wss-runtime`) renders the
+pool target vs live/idle hosts, the adopt/first-frame latency quantiles, the
+pool churn (cold starts / refusals / prewarm / retire), and the autotuner's
+learning curve.
+
+---
+
+## MDP isolate-pool autotuner
+
+> Behind `WS_MDP_MODE` (`off` by default). `off` keeps the original
+> lazy-spawn-only supervisor; `local`/`remote` turn on the directive-driven
+> warm pool and the coordinator control loop.
+
+**Problem.** Each gateway shard lazily spawns a session-host isolate when no
+warm host has a free slot, *on the accepting connection's hot path*. That
+cold start is pure latency, and idle hosts only ever retire on crash — so the
+pool both stalls under bursty arrivals and wastes memory after a trough. The
+open question is the steady-state size: how many host isolates should the pod
+keep warm to carry medium load toward 50K connections without paying
+cold-start latency or over-provisioning?
+
+**Approach.** Model it as a small MDP and learn the answer online:
+
+* **State** — pool utilisation bucket × arrival-trend bucket
+  (`liveSessions / (liveHosts × sessionsPerHost)` and the session-count
+  delta).
+* **Action** — a *joint* choice over two levers, decoded from one action
+  index over the `WS_POOL_SIZE_LEVELS × WS_HOST_DENSITY_LEVELS` grid:
+  1. the pod-wide host-isolate target from `WS_POOL_SIZE_LEVELS`
+     (default `20,30,40,50`), and
+  2. the per-host session **density** (`sessionsPerHost` cap) from
+     `WS_HOST_DENSITY_LEVELS` (default `100,250,500,1000`) — how densely to
+     pack sessions onto each isolate. Low density spreads load across more,
+     quieter event loops (lower per-isolate contention, more base-heap
+     overhead); high density packs fewer, busier isolates (cheaper RAM
+     floor, higher tail latency under contention). So for the same offered
+     load the learner can compare e.g. "40 hosts × 250/host" against
+     "20 hosts × 1000/host" and keep whichever the reward prefers.
+* **Reward** — `-(latency·w + coldStarts·w + refusals·w + idleHosts·w +
+  size·w)`: the cheapest pool that keeps p99 adopt/first-frame latency low
+  and cold-starts/refusals at zero wins. Density is optimised *implicitly*
+  through this same reward — over-packing shows up as adopt/first-frame
+  latency (per-isolate contention); under-packing shows up as extra hosts
+  (cold-starts/refusals or idle/size cost).
+
+The coordinator runs one control loop every `WS_MDP_CONTROL_INTERVAL_MS`. It
+reads the aggregated telemetry above, asks the policy for a `(targetHosts,
+sessionsPerHost)` decision, divides the host target across the live shards
+(density is per-host, so it is broadcast unchanged), and pushes a
+`ShardPoolDirective` to each. Every shard reconciles its pool toward the
+per-shard host target — pre-spawning warm hosts off the hot path (up to
+`WS_POOL_MAX_HOSTS_PER_SHARD`, never below `WS_POOL_MIN_WARM_HOSTS`) and
+retiring hosts that have sat empty for `WS_POOL_RETIRE_COOLDOWN_MS` — and
+adopts the new density cap for subsequent placements (existing sessions are
+untouched).
+
+**Two brains, same action set:**
+
+* `local` — an in-process tabular Q-learner (`lib/server/pool_autotuner.dart`,
+  ε-greedy, zero external deps). Self-contained and unit-tested; this is the
+  one to use for the joint size × density experiment.
+* `remote` — delegates to the cluster's `dd-mdp-optimizer` service
+  (`POST /telemetry/learn`). It asks two concurrent ladders per tick —
+  candidate actions `pool-20 … pool-50` for the host target and
+  `density-100 … density-1000` for the per-host cap — and holds each lever's
+  previous setpoint independently when the optimizer is unreachable or
+  returns an unmappable action.
+
+| Env var                         | Default                | Meaning                                            |
+| ------------------------------- | ---------------------- | -------------------------------------------------- |
+| `WS_MDP_MODE`                   | `off`                  | `off` / `local` / `remote`                          |
+| `WS_POOL_SIZE_LEVELS`           | `20,30,40,50`          | discrete pod-wide host-isolate targets             |
+| `WS_HOST_DENSITY_LEVELS`        | `100,250,500,1000`     | discrete per-host density caps (2nd lever; single value pins density) |
+| `WS_MDP_CONTROL_INTERVAL_MS`    | `5000`                 | control-loop cadence                               |
+| `WS_POOL_MIN_WARM_HOSTS`        | `1`                    | warm floor per shard                               |
+| `WS_POOL_MAX_HOSTS_PER_SHARD`   | `ceil(max/shards)+2`   | hard per-shard ceiling (0 = unbounded)             |
+| `WS_POOL_RETIRE_COOLDOWN_MS`    | `15000`                | idle dwell before retiring a host                  |
+| `WS_MDP_OPTIMIZER_URL`          | `dd-mdp-optimizer:8096`| optimizer endpoint (remote mode)                   |
+| `WS_MDP_{ALPHA,GAMMA,EPSILON,…}`| see `pool_autotuner.dart` | learner hyperparameters + reward weights        |
+
+> **Next increment — library-segmented pools.** The autotuner now tunes two
+> levers (pool size × host density) over one homogeneous host pool. The planned
+> follow-up adds 2–3 *typed* pools (`lite` / `render` / `data`) with per-kind
+> host entrypoints so a benchmark/passthrough host never initialises Jaspr into
+> its heap, and folds a pool-count action (`{2,3}`) into the same joint action
+> index — exactly how the density lever was added to the size lever here. The
+> action space and directive plumbing are built to extend to that without
+> rework.
 
 ---
 
