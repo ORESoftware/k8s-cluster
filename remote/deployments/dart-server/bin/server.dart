@@ -216,6 +216,13 @@ Future<void> main(List<String> args) async {
       25;
   final wsBenchmarkMode =
       Platform.environment['WS_BENCHMARK_MODE']?.toLowerCase() == 'true';
+  // Chaos / fault-injection switch. OFF by default. When enabled, the
+  // admin port exposes `POST /dart/admin/debug/crash-host`, which forces a
+  // shard to hard-kill one session-host isolate so the supervisor teardown
+  // path can be exercised under load. Admin port is non-public (see
+  // AGENTS.md access posture); never enable on an Internet-exposed path.
+  final wsDebugCrash = const {'1', 'true'}.contains(
+      Platform.environment['WS_DEBUG_CRASH']?.toLowerCase().trim());
 
   // ---- MDP isolate-pool autotuner config --------------------------------
   final mdpMode = _parseMdpMode(Platform.environment['WS_MDP_MODE']);
@@ -368,11 +375,22 @@ Future<void> main(List<String> args) async {
   // accepted connection onward (lazy spawn would re-shuffle established
   // accepts as the listening-socket count grows).
   final shards = <_GatewayShardHandle>[];
-  for (var shardId = 0; shardId < gatewayShards; shardId++) {
+  // Flipped true at the start of `beginShutdown` so the exit handler can
+  // tell an intentional drain-kill (don't respawn) apart from an
+  // unexpected shard death (self-heal by respawning). Closed over by both
+  // `spawnShard` (below) and `beginShutdown` (later in this scope).
+  var shardsDraining = false;
+  var shardRespawns = 0;
+  // Cap respawns so a deterministically-crashing shard can't spin a hot
+  // restart loop forever; past the cap we leave the pool degraded and let
+  // k8s liveness recycle the pod.
+  const maxShardRespawns = 100;
+
+  Future<void> spawnShard(int shardId) async {
     final handshake = ReceivePort('dd-dart-shard-$shardId-handshake');
     final exit = ReceivePort('dd-dart-shard-$shardId-exit');
     final error = ReceivePort('dd-dart-shard-$shardId-error');
-    Isolate? isolate;
+    final Isolate isolate;
     try {
       isolate = await Isolate.spawn<GatewayShardBoot>(
         gatewayShardEntry,
@@ -430,6 +448,32 @@ Future<void> main(List<String> args) async {
       handle.dead = true;
       metrics.inc('dart_gateway_shards_terminated_total');
       exit.close();
+      // Self-heal. An UNEXPECTED shard exit (not part of pod drain)
+      // strands every WS the kernel had routed to that listener, and
+      // there is no other way to get the SO_REUSEPORT pool back to full
+      // width. Respawn a replacement after a short backoff. Established
+      // connections on sibling shards are unaffected; only NEW accepts
+      // rebalance across the (briefly narrower, then restored) pool.
+      if (shardsDraining || shardRespawns >= maxShardRespawns) return;
+      shardRespawns++;
+      metrics.inc('dart_gateway_shards_respawned_total');
+      // ignore: avoid_print
+      print(jsonEncode({
+        'event': 'gateway_shard_respawn',
+        'shard': shardId,
+        'respawns': shardRespawns,
+      }));
+      Timer(const Duration(seconds: 1), () {
+        if (shardsDraining) return;
+        unawaited(spawnShard(shardId).catchError((Object e, StackTrace st) {
+          // ignore: avoid_print
+          print(jsonEncode({
+            'event': 'gateway_shard_respawn_failed',
+            'shard': shardId,
+            'error': '$e',
+          }));
+        }));
+      });
     });
     handle.errorSub = error.listen((err) {
       metrics.inc('dart_gateway_shards_error_total');
@@ -440,6 +484,10 @@ Future<void> main(List<String> args) async {
         'error': '$err',
       }));
     });
+  }
+
+  for (var shardId = 0; shardId < gatewayShards; shardId++) {
+    await spawnShard(shardId);
   }
   print(jsonEncode({
     'event': 'gateway_shards_ready',
@@ -779,6 +827,9 @@ Future<void> main(List<String> args) async {
     if (shuttingDown != null) return shuttingDown!.future;
     final c = Completer<void>();
     shuttingDown = c;
+    // Stop the self-heal respawner before we start killing shards, so the
+    // exit-port handler treats these terminations as an intentional drain.
+    shardsDraining = true;
     final liveShards = shards.where((s) => !s.dead).length;
     final liveSessions = _sumShardGauge('dart_sessions_live').toInt();
     // ignore: avoid_print
@@ -834,6 +885,40 @@ Future<void> main(List<String> args) async {
   // ---- Admin request loop ------------------------------------------------
   await for (final req in adminServer) {
     metrics.inc('dart_admin_requests_total');
+    // Chaos probe (only mounted when WS_DEBUG_CRASH is set): pick the live
+    // shard carrying the most sessions and tell it to hard-kill one host
+    // isolate, simulating a crash so we can measure the real blast radius.
+    if (wsDebugCrash &&
+        req.method.toUpperCase() == 'POST' &&
+        req.uri.path == '/dart/admin/debug/crash-host') {
+      _GatewayShardHandle? target;
+      var bestLive = -1.0;
+      for (final s in shards) {
+        if (s.dead) continue;
+        final live =
+            (perShardGauges[s.shardId]?['dart_sessions_live'] ?? 0).toDouble();
+        if (target == null || live > bestLive) {
+          target = s;
+          bestLive = live;
+        }
+      }
+      if (target != null) {
+        try {
+          target.control.send(const ShardDebugCrashHost());
+        } catch (_) {/* swallow */}
+        metrics.inc('dart_debug_crash_host_requests_total');
+      }
+      await _plain(
+        req,
+        jsonEncode({
+          'ok': target != null,
+          'shard': target?.shardId,
+          'shard_sessions_live': bestLive < 0 ? 0 : bestLive.toInt(),
+        }),
+        contentType: 'application/json',
+      );
+      continue;
+    }
     unawaited(_routeAdmin(
       req,
       metrics: metrics,

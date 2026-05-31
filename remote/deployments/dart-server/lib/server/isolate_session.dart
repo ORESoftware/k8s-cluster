@@ -25,6 +25,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:isolate';
 
 import 'package:jaspr/jaspr.dart';
@@ -55,6 +56,26 @@ const String _convListTopic = 'conv-list';
 /// error / exit ports and tears down all attached sessions on a hard
 /// host-level failure.
 Future<void> hostIsolateEntry(SendPort handshakePort) async {
+  // Crash-resilience guard. Any asynchronous error that escapes a
+  // session's own try/catch — a Jaspr render throwing inside a detached
+  // RxDart pipeline, an error in the 1 Hz Timer callback, a dropped
+  // Future — lands in this zone handler instead of propagating to the VM.
+  // Without it a single bad render in ONE session would kill the whole
+  // host isolate and drop every session sharing it (up to
+  // `sessionsPerHost`). We log a rate-limited line and keep the host
+  // serving its other sessions. Genuine isolate termination (OOM,
+  // explicit kill) is still observed by the supervisor's exit port, which
+  // tears the host's sessions down cleanly.
+  await runZonedGuarded(() async {
+    try {
+      await _runHost(handshakePort);
+    } catch (e, st) {
+      _logHostUncaught(e, st);
+    }
+  }, _logHostUncaught);
+}
+
+Future<void> _runHost(SendPort handshakePort) async {
   ensureJasprInit();
 
   final mailbox = ReceivePort('dd-dart-host-mailbox');
@@ -95,6 +116,27 @@ Future<void> hostIsolateEntry(SendPort handshakePort) async {
       // Defensive: never let a malformed frame from main kill the host.
     }
   }
+}
+
+int _hostUncaughtErrors = 0;
+int _hostUncaughtLoggedAtMs = 0;
+
+/// Zone handler for a session-host isolate. Swallows the error (keeping
+/// the host alive for its other sessions) and logs at most ~once per
+/// second so a render-error storm can't flood stdout / Loki. The running
+/// total is included so operators can still see the true error volume.
+void _logHostUncaught(Object error, StackTrace stack) {
+  _hostUncaughtErrors++;
+  final now = DateTime.now().millisecondsSinceEpoch;
+  if (now - _hostUncaughtLoggedAtMs < 1000) return;
+  _hostUncaughtLoggedAtMs = now;
+  // ignore: avoid_print
+  print(jsonEncode({
+    'event': 'session_host_uncaught_error',
+    'total': _hostUncaughtErrors,
+    'error': '$error',
+    'stack': stack.toString().split('\n').take(3).join(' | '),
+  }));
 }
 
 /// Sentinel the supervisor can send to a host mailbox to ask it to drain
@@ -229,7 +271,7 @@ class Session {
           .distinct()
           .map((v) => Counter(v))
           .asyncMap(renderFragment)
-          .listen(_emitText),
+          .listen(_emitText, onError: _onRenderError),
     );
 
     _subs.add(
@@ -238,7 +280,7 @@ class Session {
               rows.length <= 8 ? rows : rows.sublist(rows.length - 8))
           .map((rows) => EchoPanel(rows))
           .asyncMap(renderFragment)
-          .listen(_emitText),
+          .listen(_emitText, onError: _onRenderError),
     );
 
     _subs.add(
@@ -247,7 +289,7 @@ class Session {
               rows.length <= 16 ? rows : rows.sublist(rows.length - 16))
           .map((rows) => LobbyPanel(rows))
           .asyncMap(renderFragment)
-          .listen(_emitText),
+          .listen(_emitText, onError: _onRenderError),
     );
 
     // Identity pill re-renders any time our own identity changes.
@@ -257,7 +299,7 @@ class Session {
           .map((id) =>
               IdentityPanel(userId: id.userId, displayName: id.displayName))
           .asyncMap(renderFragment)
-          .listen(_emitText),
+          .listen(_emitText, onError: _onRenderError),
     );
 
     // Conversation directory + active conversation drive two panels.
@@ -269,7 +311,7 @@ class Session {
           conversations: dir.values.toList(growable: false),
           activeId: active,
         ),
-      ).asyncMap(renderFragment).listen(_emitText),
+      ).asyncMap(renderFragment).listen(_emitText, onError: _onRenderError),
     );
 
     _subs.add(
@@ -280,14 +322,33 @@ class Session {
           activeId: active,
           messages: msgs[active] ?? const <ConvMessage>[],
         ),
-      ).asyncMap(renderFragment).listen(_emitText),
+      ).asyncMap(renderFragment).listen(_emitText, onError: _onRenderError),
     );
 
-    // HTMX inbound → state.
-    _subs.add(_inboundHtmx.listen(_handleHtmxTrigger));
+    // HTMX inbound → state. A throw in the trigger handler is contained to
+    // this session (counted + dropped) rather than escaping to the host.
+    _subs.add(_inboundHtmx.listen(
+      (msg) {
+        try {
+          _handleHtmxTrigger(msg);
+        } catch (_) {
+          _send(const MetricEvent('dart_session_render_errors_total'));
+        }
+      },
+      onError: _onRenderError,
+    ));
 
-    // Bus inbound → state mutations.
-    _subs.add(_busInbound.listen(_handleBusDelivery));
+    // Bus inbound → state mutations. Same per-session containment.
+    _subs.add(_busInbound.listen(
+      (delivery) {
+        try {
+          _handleBusDelivery(delivery);
+        } catch (_) {
+          _send(const MetricEvent('dart_session_render_errors_total'));
+        }
+      },
+      onError: _onRenderError,
+    ));
 
     // Server-driven 1Hz tick. The idle-disconnect check fires on
     // every tick (it's cheap — just two int subtractions + a metric
@@ -297,15 +358,29 @@ class Session {
     // the lifecycle gates.
     var tickCount = 0;
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      tickCount++;
-      final clockInterval = _boot.clockIntervalSeconds;
-      if (clockInterval > 0 && tickCount % clockInterval == 0) {
-        unawaited(_emitFragment(
-          Clock(DateTime.now().toUtc().toIso8601String()),
-        ));
+      // A throw here would otherwise be an uncaught error on the host's
+      // event loop (no surrounding await) — contain it to this session.
+      try {
+        tickCount++;
+        final clockInterval = _boot.clockIntervalSeconds;
+        if (clockInterval > 0 && tickCount % clockInterval == 0) {
+          unawaited(_emitFragment(
+            Clock(DateTime.now().toUtc().toIso8601String()),
+          ));
+        }
+        _checkIdle();
+      } catch (_) {
+        _send(const MetricEvent('dart_session_tick_errors_total'));
       }
-      _checkIdle();
     });
+  }
+
+  /// `onError` for every per-session render pipeline. A render/pipeline
+  /// failure for one widget must never tear down the session — let alone
+  /// the host isolate it shares with up to `sessionsPerHost` peers. Count
+  /// it and drop the frame; the next state change re-renders.
+  void _onRenderError(Object error, StackTrace stack) {
+    _send(const MetricEvent('dart_session_render_errors_total'));
   }
 
   /// Per-tick lifecycle gate. Two independent reasons can decide to
@@ -479,8 +554,15 @@ class Session {
   /// driven by a long-lived RxDart pipeline (status pills, the
   /// initial greeting, the 1Hz clock, etc.).
   Future<void> _emitFragment(Component component) async {
-    final html = await renderFragment(component);
-    _emitText(html);
+    // Used in many `unawaited(...)` contexts (greeting, clock, status
+    // pills). A Jaspr render throwing here would become an uncaught async
+    // error on the host loop, so swallow + count instead.
+    try {
+      final html = await renderFragment(component);
+      _emitText(html);
+    } catch (_) {
+      _send(const MetricEvent('dart_session_render_errors_total'));
+    }
   }
 
   // ---- HTMX trigger handling ---------------------------------------------

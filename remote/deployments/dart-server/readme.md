@@ -776,6 +776,61 @@ pool target vs live/idle hosts, the adopt/first-frame latency quantiles, the
 pool churn (cold starts / refusals / prewarm / retire), and the autotuner's
 learning curve.
 
+### Crash resilience
+
+WebSocket sockets live on a **gateway-shard** isolate; the per-session
+RxDart/Jaspr render logic runs on a **session-host** isolate. The blast
+radius of a crash depends on which isolate dies, so each layer is hardened
+to contain errors instead of propagating them to the VM:
+
+* **Per session** — every render pipeline (`.listen(..., onError:)`), the
+  HTMX/bus trigger handlers, the 1 Hz ticker, and `_emitFragment` catch and
+  count their own failures (`dart_session_render_errors_total`,
+  `dart_session_tick_errors_total`). A bad render drops one frame; the next
+  state change re-renders. It can no longer escape the session.
+* **Per session-host** — `hostIsolateEntry` runs inside a
+  `runZonedGuarded`, and hosts are now spawned `errorsAreFatal: false`. A
+  stray async error that slips a session is caught at the host boundary
+  (rate-limited `session_host_uncaught_error` log) rather than killing the
+  isolate and dropping all ~`sessionsPerHost` sessions on it. Genuine
+  termination (OOM, explicit kill) still fires the supervisor's exit port,
+  which closes each attached socket cleanly (1000) so clients reconnect.
+* **Per gateway-shard** — `gatewayShardEntry` runs inside a
+  `runZonedGuarded` (forwarding `dart_gateway_shard_uncaught_errors_total`),
+  and the control-message + gauge-report callbacks are individually
+  guarded so a malformed directive can't take down the shard's control
+  plane (which also drives SIGTERM drain).
+* **Shard self-heal** — if a shard isolate ever does exit unexpectedly
+  (i.e. *not* during pod drain), the coordinator respawns a replacement
+  after a 1 s backoff so the `SO_REUSEPORT` listener pool returns to full
+  width (`dart_gateway_shards_respawned_total`, capped at 100 to avoid a
+  crash loop). Established connections on sibling shards are unaffected;
+  only new accepts rebalance across the briefly-narrower pool.
+
+**Blast radius if an isolate is lost anyway**
+
+| Isolate            | Connections affected                          | Recovery                                                            |
+| ------------------ | --------------------------------------------- | ------------------------------------------------------------------- |
+| session-host       | the host's sessions (≤ `sessionsPerHost`)     | supervisor closes each socket 1000 → clients reconnect; siblings OK |
+| gateway-shard      | sessions the kernel routed to it (≈ total ÷ `WS_GATEWAY_SHARDS`) | coordinator respawns the shard; capacity self-restores              |
+| HTTP isolate       | 0 WS (only `:8090` pages/admin/metrics)       | —                                                                   |
+| main / coordinator | all (pod exits)                               | Kubernetes restarts the pod                                         |
+
+| Metric                                        | Type    | Source                                                       |
+| --------------------------------------------- | ------- | ------------------------------------------------------------ |
+| `dart_session_render_errors_total`            | counter | a render/pipeline/handler threw in a session (frame dropped) |
+| `dart_session_tick_errors_total`              | counter | the per-session 1 Hz ticker callback threw                   |
+| `dart_gateway_shard_uncaught_errors_total`    | counter | an error reached a gateway shard's zone guard                |
+| `dart_gateway_shards_respawned_total`         | counter | shards respawned by the coordinator after an unexpected exit |
+| `dart_session_hosts_debug_crashed_total`      | counter | hosts hard-killed by the chaos hook (`WS_DEBUG_CRASH`)       |
+| `dart_debug_crash_host_requests_total`        | counter | `POST /dart/admin/debug/crash-host` calls accepted           |
+
+**Fault injection.** With `WS_DEBUG_CRASH=1`, `POST /dart/admin/debug/crash-host`
+(admin port `8088`, non-public) makes the busiest live shard hard-kill one of
+its session-host isolates. Use it under load to confirm empirically that only
+that host's ≤ `sessionsPerHost` sockets close (cleanly, 1000) and reconnect,
+while the shard, its sibling hosts, and the pod keep running. Off by default.
+
 ---
 
 ## MDP isolate-pool autotuner
@@ -890,6 +945,7 @@ ticks the shield bit; `dart_pool_shield_max_hosts` shows the active budget;
 | `WS_MDP_DENSITY_MAX_DROP`       | `0.5`                  | max fraction density may fall per tick (0 disables slew) |
 | `WS_MDP_OPTIMIZER_URL`          | `dd-mdp-optimizer:8096`| optimizer endpoint (remote mode)                   |
 | `WS_MDP_{ALPHA,GAMMA,EPSILON,…}`| see `pool_autotuner.dart` | learner hyperparameters + reward weights        |
+| `WS_DEBUG_CRASH`                | `off`                  | chaos hook: mounts `POST /dart/admin/debug/crash-host` (admin port) to hard-kill one session-host isolate; off by default |
 
 > **Next increment — library-segmented pools.** The autotuner now tunes two
 > levers (pool size × host density) over one homogeneous host pool. The planned

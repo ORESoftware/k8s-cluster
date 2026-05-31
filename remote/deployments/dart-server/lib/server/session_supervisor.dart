@@ -715,11 +715,14 @@ class SessionSupervisor {
         hostIsolateEntry,
         handshake.sendPort,
         debugName: 'dd-dart-session-host-$hostId',
-        // Sessions inside a host swallow their own errors. We only kill
-        // the host on a truly hard failure, in which case the supervisor
-        // observes via `error` / `exit` and tears down all attached
-        // sessions.
-        errorsAreFatal: true,
+        // Non-fatal: the host wraps its event loop in `runZonedGuarded`
+        // and every session guards its own pipelines, so an app-level
+        // error is caught and logged rather than killing the isolate and
+        // dropping all ~sessionsPerHost sessions on it. We still watch the
+        // `error` / `exit` ports: a genuine isolate termination (OOM,
+        // explicit kill, VM-fatal) fires `exit`, and the supervisor then
+        // tears the attached sessions down cleanly (each WS closes 1000).
+        errorsAreFatal: false,
         onExit: exit.sendPort,
         onError: error.sendPort,
       );
@@ -775,6 +778,30 @@ class SessionSupervisor {
     try {
       host.errorSub?.cancel();
     } catch (_) {/* swallow */}
+  }
+
+  /// Chaos hook (only reachable when the coordinator runs with
+  /// `WS_DEBUG_CRASH=1`): hard-kill the most-loaded live host isolate to
+  /// simulate a host crash. The kill fires the host's exit port, which
+  /// drives [_markHostDead] → every attached session's WebSocket is closed
+  /// cleanly (1000) while this shard and its sibling hosts keep serving.
+  /// Returns the number of sessions that were on the killed host (0 if no
+  /// killable host exists). Never invoked in normal operation.
+  int debugKillOneHost() {
+    _HostState? victim;
+    for (final h in _hosts) {
+      if (h.dead || h.retiring) continue;
+      if (victim == null || h.sessionCount > victim.sessionCount) {
+        victim = h;
+      }
+    }
+    if (victim == null) return 0;
+    final lost = victim.sessionCount;
+    metrics.inc('dart_session_hosts_debug_crashed_total');
+    try {
+      victim.isolate.kill(priority: Isolate.immediate);
+    } catch (_) {/* swallow */}
+    return lost;
   }
 
   // ---- Identity / conversation handlers ---------------------------------

@@ -486,3 +486,13 @@ final class ShardPoolDirective {
   /// not drive density.
   final int sessionsPerHost;
 }
+
+/// Chaos / fault-injection control message. Sent by the coordinator over a
+/// shard's control port (only when `WS_DEBUG_CRASH` is enabled) to force
+/// the shard's supervisor to hard-kill one live session-host isolate,
+/// simulating a host crash so the supervisor's teardown path (close every
+/// attached socket cleanly, leave the shard + sibling hosts running) can
+/// be exercised under load. Never sent in normal operation.
+final class ShardDebugCrashHost {
+  const ShardDebugCrashHost();
+}

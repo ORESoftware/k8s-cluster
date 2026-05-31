@@ -51,7 +51,49 @@ const String _wssPath = '/dart/wss';
 
 /// Entry point handed to `Isolate.spawn(gatewayShardEntry, boot)`. Runs
 /// for the lifetime of the shard.
+///
+/// The body runs inside a [runZonedGuarded] so an uncaught asynchronous
+/// error in the accept loop, a control-message handler, or a forwarded
+/// callback cannot escape to the VM. The shard is already spawned
+/// `errorsAreFatal: false`, but the zone gives us a clean, rate-limited
+/// log plus a forwarded `dart_gateway_shard_uncaught_errors_total` counter
+/// AND keeps the shard's HttpServer accept loop alive — losing a shard
+/// would strand every WebSocket the kernel routed to it (~connections ÷
+/// shards), so we work hard to keep it running.
 Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
+  await runZonedGuarded(() async {
+    try {
+      await _runShard(boot);
+    } catch (e, st) {
+      _logShardUncaught(boot, e, st);
+    }
+  }, (error, stack) => _logShardUncaught(boot, error, stack));
+}
+
+int _shardUncaughtErrors = 0;
+int _shardUncaughtLoggedAtMs = 0;
+
+/// Zone handler for a gateway shard. Forwards a counter to the coordinator
+/// (so /metrics surfaces shard error volume) and logs a rate-limited line.
+void _logShardUncaught(GatewayShardBoot boot, Object error, StackTrace st) {
+  _shardUncaughtErrors++;
+  try {
+    boot.metricsBus.send(const MetricEvent('dart_gateway_shard_uncaught_errors_total'));
+  } catch (_) {/* coordinator gone or in shutdown */}
+  final now = DateTime.now().millisecondsSinceEpoch;
+  if (now - _shardUncaughtLoggedAtMs < 1000) return;
+  _shardUncaughtLoggedAtMs = now;
+  // ignore: avoid_print
+  print(jsonEncode({
+    'event': 'gateway_shard_uncaught_error',
+    'shard': boot.shardId,
+    'total': _shardUncaughtErrors,
+    'error': '$error',
+    'stack': st.toString().split('\n').take(3).join(' | '),
+  }));
+}
+
+Future<void> _runShard(GatewayShardBoot boot) async {
   // Per-shard `Metrics` subclass. Counters increment locally AND get
   // forwarded as [MetricEvent]s to the coordinator so the canonical
   // /metrics on port 8088 stays globally accurate. Gauges only live
@@ -128,29 +170,33 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
   // in its own /metrics.
   final reportTimer = Timer.periodic(
       Duration(milliseconds: boot.gaugeReportIntervalMs), (_) {
-    final values = <String, num>{
-      'dart_sessions_live': supervisor.liveCount,
-      'dart_sessions_spawned': supervisor.spawnedTotal,
-      'dart_session_hosts_live': supervisor.hostCount,
-      'dart_session_hosts_spawned': supervisor.hostsSpawnedTotal,
-      'dart_session_hosts_terminated': supervisor.hostsTerminatedTotal,
-      'dart_sessions_per_host_cap': supervisor.sessionsPerHost,
-      'dart_pool_idle_hosts': supervisor.idleHostCount,
-      'dart_pool_free_slots': supervisor.freeSlots,
-      'dart_pool_target_hosts': supervisor.targetHosts,
-      'dart_ws_idle_timeout_seconds': supervisor.idleTimeoutSeconds,
-      'dart_ws_max_age_seconds': supervisor.maxAgeSeconds,
-      'dart_ws_age_based_idle_seconds': supervisor.ageBasedIdleSeconds,
-      'dart_ws_clock_interval_seconds': supervisor.clockIntervalSeconds,
-      'dart_eventbus_topics': bus.topicCount,
-      'dart_eventbus_sessions': bus.sessionCount,
-      'dart_eventbus_total_joins': bus.totalJoinCount,
-      'dart_presence_users': presence.userCount,
-      'dart_presence_sessions': presence.sessionCount,
-      'dart_conversations': conversations.conversationCount,
-      'dart_conversation_memberships': conversations.totalMemberships,
-    };
-    boot.metricsBus.send(GaugeReport(shardId: boot.shardId, values: values));
+    try {
+      final values = <String, num>{
+        'dart_sessions_live': supervisor.liveCount,
+        'dart_sessions_spawned': supervisor.spawnedTotal,
+        'dart_session_hosts_live': supervisor.hostCount,
+        'dart_session_hosts_spawned': supervisor.hostsSpawnedTotal,
+        'dart_session_hosts_terminated': supervisor.hostsTerminatedTotal,
+        'dart_sessions_per_host_cap': supervisor.sessionsPerHost,
+        'dart_pool_idle_hosts': supervisor.idleHostCount,
+        'dart_pool_free_slots': supervisor.freeSlots,
+        'dart_pool_target_hosts': supervisor.targetHosts,
+        'dart_ws_idle_timeout_seconds': supervisor.idleTimeoutSeconds,
+        'dart_ws_max_age_seconds': supervisor.maxAgeSeconds,
+        'dart_ws_age_based_idle_seconds': supervisor.ageBasedIdleSeconds,
+        'dart_ws_clock_interval_seconds': supervisor.clockIntervalSeconds,
+        'dart_eventbus_topics': bus.topicCount,
+        'dart_eventbus_sessions': bus.sessionCount,
+        'dart_eventbus_total_joins': bus.totalJoinCount,
+        'dart_presence_users': presence.userCount,
+        'dart_presence_sessions': presence.sessionCount,
+        'dart_conversations': conversations.conversationCount,
+        'dart_conversation_memberships': conversations.totalMemberships,
+      };
+      boot.metricsBus.send(GaugeReport(shardId: boot.shardId, values: values));
+    } catch (e, st) {
+      _logShardUncaught(boot, e, st);
+    }
   });
 
   final HttpServer server;
@@ -201,16 +247,32 @@ Future<void> gatewayShardEntry(GatewayShardBoot boot) async {
   }
 
   control.listen((msg) {
-    if (msg is ShardShutdown) {
-      unawaited(drain());
-    } else if (msg is ShardPoolDirective) {
-      // MDP autotuner setpoint from the coordinator: reconcile the warm
-      // pool toward the per-shard host-isolate target and adopt the chosen
-      // per-host density (`dart_sessions_per_host_cap` gauge tracks it).
-      supervisor.applyTargetHosts(
-        msg.targetHosts,
-        sessionsPerHost: msg.sessionsPerHost,
-      );
+    try {
+      if (msg is ShardShutdown) {
+        unawaited(drain());
+      } else if (msg is ShardPoolDirective) {
+        // MDP autotuner setpoint from the coordinator: reconcile the warm
+        // pool toward the per-shard host-isolate target and adopt the
+        // chosen per-host density (`dart_sessions_per_host_cap` tracks it).
+        supervisor.applyTargetHosts(
+          msg.targetHosts,
+          sessionsPerHost: msg.sessionsPerHost,
+        );
+      } else if (msg is ShardDebugCrashHost) {
+        // Chaos hook (coordinator only sends this with WS_DEBUG_CRASH set):
+        // simulate a host crash to exercise the supervisor teardown path.
+        final lost = supervisor.debugKillOneHost();
+        // ignore: avoid_print
+        print(jsonEncode({
+          'event': 'gateway_shard_debug_crash_host',
+          'shard': boot.shardId,
+          'sessions_on_killed_host': lost,
+        }));
+      }
+    } catch (e, st) {
+      // A malformed/edge-case directive must not take down the shard's
+      // control plane (which would also stop draining on SIGTERM).
+      _logShardUncaught(boot, e, st);
     }
   });
 
