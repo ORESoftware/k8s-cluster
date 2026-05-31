@@ -69,6 +69,7 @@ import 'package:dd_dart_server/server/http_isolate.dart';
 import 'package:dd_dart_server/server/metrics.dart';
 import 'package:dd_dart_server/server/optimizer_client.dart';
 import 'package:dd_dart_server/server/pool_autotuner.dart';
+import 'package:dd_dart_server/server/pool_shield.dart';
 import 'package:dd_dart_server/server/postgres.dart';
 import 'package:dd_dart_server/server/session_supervisor.dart';
 import 'package:dd_dart_server/shared/wire_messages.dart';
@@ -102,6 +103,17 @@ const List<int> _kDefaultPoolSizeLevels = <int>[20, 30, 40, 50];
 /// `WS_HOST_DENSITY_LEVELS` (comma-separated). A single value collapses the
 /// density dimension back to the pool-size-only experiment.
 const List<int> _kDefaultHostDensityLevels = <int>[100, 250, 500, 1000];
+
+/// Default pod-wide ceiling on session-host isolates, summed across shards.
+/// The per-shard cap derives from this (`ceil(pod / shards)`). Sized so the
+/// storm-dampening shield ([shieldPoolDirective]) can hold ~50K WS at a
+/// *mid* density level (≈500/host ⇒ ~115 hosts) with cold-start headroom,
+/// while still bounding host-isolate base-heap RAM well under the 6 GB pod
+/// target — the load test peaked at ~2.3 Gi with ~58 hosts, so ~192 idle-cap
+/// isolates leaves comfortable margin. It is the shield's memory governor:
+/// the density feasibility floor rises as this falls. Override with
+/// `WS_POOL_MAX_HOSTS_PER_SHARD` (per-shard, not pod-wide).
+const int _kDefaultMaxHostIsolatesPerPod = 192;
 
 /// Parse the `WS_MDP_MODE` env var. `off` (default) keeps the legacy
 /// lazy-spawn supervisor; `local` runs the in-process Q-learner; `remote`
@@ -222,19 +234,49 @@ Future<void> main(List<String> args) async {
       _kDefaultMdpControlIntervalMs;
   final poolMinWarmHosts =
       int.tryParse(Platform.environment['WS_POOL_MIN_WARM_HOSTS'] ?? '') ?? 1;
-  // Hard per-shard host ceiling. Default derives from the top size level so
-  // a single shard can't fork past its fair share of the largest pod-wide
-  // target (plus a little headroom for cold-start bursts).
+  // Hard per-shard host ceiling. The default is the larger of two bounds:
+  //   * the top size level's fair share across shards (+ cold-start headroom),
+  //     so a single shard can't fork past its slice of the largest target; and
+  //   * the pod-wide memory governor (`_kDefaultMaxHostIsolatesPerPod`) split
+  //     across shards, which gives the storm-dampening shield enough room to
+  //     hold the offered load at a *lower* density without slamming into the
+  //     ceiling (the failure mode that produced refusal storms when the
+  //     ceiling was derived from the size ladder alone, i.e. only feasible at
+  //     the top density).
+  final poolMaxHostsBySize = (poolSizeLevels.last / gatewayShards).ceil() + 2;
+  final poolMaxHostsByMem =
+      (_kDefaultMaxHostIsolatesPerPod / gatewayShards).ceil();
   final poolMaxHostsPerShard = int.tryParse(
         Platform.environment['WS_POOL_MAX_HOSTS_PER_SHARD'] ?? '',
       ) ??
-      ((poolSizeLevels.last / gatewayShards).ceil() + 2);
+      (poolMaxHostsBySize > poolMaxHostsByMem
+          ? poolMaxHostsBySize
+          : poolMaxHostsByMem);
   final poolRetireCooldownMs = int.tryParse(
         Platform.environment['WS_POOL_RETIRE_COOLDOWN_MS'] ?? '',
       ) ??
       15000;
   final mdpOptimizerUrl = Platform.environment['WS_MDP_OPTIMIZER_URL'] ??
       'http://dd-mdp-optimizer.default.svc.cluster.local:8096';
+
+  // Storm-dampening shield: clamps the broadcast pool directive into the
+  // feasible, memory-bounded region so an exploratory (size, density) pick
+  // can't starve the live load and trigger a cold-start / refusal storm. On
+  // by default; set `WS_MDP_SHIELD=false` to broadcast raw policy choices.
+  final mdpShieldEnabled =
+      (Platform.environment['WS_MDP_SHIELD']?.toLowerCase().trim() ?? 'true') !=
+          'false';
+  final mdpCapacityHeadroom = _envDouble('WS_MDP_CAPACITY_HEADROOM', 0.2);
+  final mdpDensityMaxDrop = _envDouble('WS_MDP_DENSITY_MAX_DROP', 0.5);
+  // Pod-wide host-isolate budget the shield enforces, *independent* of the
+  // operator's hard refusal ceiling (`WS_POOL_MAX_HOSTS_PER_SHARD`). This is
+  // what keeps the warm pool + density memory-safe even when the refusal
+  // ceiling is left unbounded (`0`, the "never shed connections" posture):
+  // the shield's density floor rises as this budget falls, packing the load
+  // onto at most this many isolates. Override with `WS_MDP_MAX_HOST_BUDGET`.
+  final mdpMaxHostBudget =
+      int.tryParse(Platform.environment['WS_MDP_MAX_HOST_BUDGET'] ?? '') ??
+          _kDefaultMaxHostIsolatesPerPod;
 
   final autotunerConfig = AutotunerConfig(
     sizeLevels: poolSizeLevels,
@@ -522,7 +564,15 @@ Future<void> main(List<String> args) async {
                 MdpMode.local => 1,
                 MdpMode.remote => 2,
                 MdpMode.off => 0,
-              });
+              })
+      ..registerGauge(
+          'dart_pool_shield_enabled', () => mdpShieldEnabled ? 1 : 0)
+      ..registerGauge('dart_pool_shield_max_hosts', () {
+        final live = shards.where((s) => !s.dead).length;
+        final supCeil = poolMaxHostsPerShard > 0 ? poolMaxHostsPerShard * live : 0;
+        if (supCeil <= 0) return mdpMaxHostBudget;
+        return supCeil < mdpMaxHostBudget ? supCeil : mdpMaxHostBudget;
+      });
     if (autotuner != null) {
       metrics
         ..registerGauge('dart_pool_autotuner_epsilon', () => autotuner.epsilon)
@@ -606,6 +656,41 @@ Future<void> main(List<String> args) async {
         targetDensity = decision.sessionsPerHost;
       }
 
+      // ---- Storm-dampening shield -----------------------------------------
+      // Clamp the policy's choice into the feasible, memory-bounded region
+      // before it leaves the coordinator. The learner above still recorded
+      // its own (size, density) pick; only the broadcast setpoint is
+      // corrected, so exploration can never starve the live load into a
+      // cold-start / refusal storm. Applies identically to local + remote.
+      if (mdpShieldEnabled) {
+        // Effective pod-wide host cap for the shield: the operator's hard
+        // refusal ceiling when set, else (unbounded ceiling) the shield's own
+        // memory budget — and never above that budget. Keeps the shield's
+        // feasibility floor / ceiling active regardless of the refusal-ceiling
+        // posture, so an unbounded ceiling can't disable the memory governor.
+        final supervisorPodCeiling =
+            poolMaxHostsPerShard > 0 ? poolMaxHostsPerShard * liveShards.length : 0;
+        final shieldMaxHosts = supervisorPodCeiling > 0
+            ? (supervisorPodCeiling < mdpMaxHostBudget
+                ? supervisorPodCeiling
+                : mdpMaxHostBudget)
+            : mdpMaxHostBudget;
+        final shielded = shieldPoolDirective(
+          chosenTargetHosts: targetGlobal,
+          chosenDensity: targetDensity,
+          lastDensity: mdpLastDensity,
+          liveSessions: totalSessions,
+          maxTotalHosts: shieldMaxHosts,
+          headroom: mdpCapacityHeadroom,
+          densityMaxDrop: mdpDensityMaxDrop,
+          minDensity: kMinSessionsPerHost,
+          maxDensity: kMaxSessionsPerHost,
+        );
+        targetGlobal = shielded.targetHosts;
+        targetDensity = shielded.sessionsPerHost;
+        if (shielded.engaged) metrics.inc('dart_pool_shield_engaged_total');
+      }
+
       mdpLastTargetGlobal = targetGlobal;
       mdpLastDensity = targetDensity;
       mdpPrevSessions = totalSessions;
@@ -640,6 +725,10 @@ Future<void> main(List<String> args) async {
       'control_interval_ms': mdpControlIntervalMs,
       'min_warm_hosts': poolMinWarmHosts,
       'max_hosts_per_shard': poolMaxHostsPerShard,
+      'shield': mdpShieldEnabled,
+      'shield_host_budget': mdpMaxHostBudget,
+      'capacity_headroom': mdpCapacityHeadroom,
+      'density_max_drop': mdpDensityMaxDrop,
       'optimizer_url': mdpMode == MdpMode.remote ? mdpOptimizerUrl : null,
     }));
   }

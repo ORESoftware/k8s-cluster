@@ -760,6 +760,9 @@ summed/aggregated at scrape time; histograms are folded from per-shard
 | `dart_pool_target_density` (gauge)           | gauge     | coordinator's chosen per-host session cap (density action)    |
 | `dart_sessions_per_host_cap` (gauge)         | gauge     | live per-host density actually applied across shards          |
 | `dart_pool_autotuner_mode` (gauge)           | gauge     | 0=off, 1=local, 2=remote                                       |
+| `dart_pool_shield_enabled` (gauge)           | gauge     | 1 when the storm-dampening shield is active (`WS_MDP_SHIELD`)  |
+| `dart_pool_shield_engaged_total`             | counter   | ticks where the shield clamped the policy's chosen directive   |
+| `dart_pool_shield_max_hosts` (gauge)         | gauge     | pod-wide host-isolate budget the shield enforces (memory governor) |
 | `dart_pool_autotuner_epsilon` (gauge)        | gauge     | current ε-greedy exploration rate (local mode)                |
 | `dart_pool_autotuner_reward_ema` (gauge)     | gauge     | EMA of the per-tick reward (local mode)                       |
 | `dart_pool_autotuner_updates` (gauge)        | gauge     | Q-learning updates applied (local mode)                       |
@@ -824,6 +827,42 @@ retiring hosts that have sat empty for `WS_POOL_RETIRE_COOLDOWN_MS` — and
 adopts the new density cap for subsequent placements (existing sessions are
 untouched).
 
+**Storm-dampening shield (`lib/server/pool_shield.dart`).** ε-greedy
+exploration over the *full* size × density grid will, by design, occasionally
+pick a combination whose capacity is far below the current live load — e.g.
+density `100` at 40K sessions, which would need ~500 host isolates pod-wide.
+Broadcast verbatim, that pick collapses every warm host's free-slot count to
+zero in one tick, forces a synchronized cold-start / `1013` refusal storm on
+the accept hot path, and wedges the per-shard response loop (the failure seen
+at the very top of the 50K load-test ramp). The shield clamps the **applied**
+directive into the feasible, memory-bounded region *without* constraining what
+the policy learns (the Q-table still records the raw choice; only the
+broadcast setpoint is corrected — classic shielded RL):
+
+1. **density-decrease slew** — density may fall at most `WS_MDP_DENSITY_MAX_DROP`
+   per tick (default `0.5` = halve), so a big single-tick drop can't strand
+   every host over the new cap at once. Rising density is unrestricted.
+2. **density feasibility floor** — density is raised until the shield's
+   pod-wide host budget (`WS_MDP_MAX_HOST_BUDGET`, default `192`) can hold the
+   load; this floor is the memory governor (a smaller budget packs sessions
+   onto fewer isolates).
+3. **host floor** — given the shielded density, the host target is raised to
+   hold the load plus `WS_MDP_CAPACITY_HEADROOM` (default `0.2`) spare.
+4. **host ceiling** — the target never exceeds that budget.
+
+The shield's budget is deliberately **decoupled** from the operator's hard
+refusal ceiling (`WS_POOL_MAX_HOSTS_PER_SHARD`): the deployment runs the
+ceiling at `0` (never shed connections), which on its own would leave density
+unbounded and let a low-density exploration fork hundreds of host isolates.
+The shield enforces the memory budget regardless, so the warm pool + density
+stay memory-safe even with an unbounded refusal ceiling. (When the refusal
+ceiling *is* set, the shield uses the smaller of the two.) The default
+`WS_POOL_MAX_HOSTS_PER_SHARD` was also widened to the larger of the size-ladder
+share and `ceil(192/shards)` so a finite ceiling, if configured, doesn't
+re-introduce the refusal storm. `dart_pool_shield_engaged_total` counts the
+ticks the shield bit; `dart_pool_shield_max_hosts` shows the active budget;
+`dart_pool_target_density` shows the *post-shield* density.
+
 **Two brains, same action set:**
 
 * `local` — an in-process tabular Q-learner (`lib/server/pool_autotuner.dart`,
@@ -843,8 +882,12 @@ untouched).
 | `WS_HOST_DENSITY_LEVELS`        | `100,250,500,1000`     | discrete per-host density caps (2nd lever; single value pins density) |
 | `WS_MDP_CONTROL_INTERVAL_MS`    | `5000`                 | control-loop cadence                               |
 | `WS_POOL_MIN_WARM_HOSTS`        | `1`                    | warm floor per shard                               |
-| `WS_POOL_MAX_HOSTS_PER_SHARD`   | `ceil(max/shards)+2`   | hard per-shard ceiling (0 = unbounded)             |
+| `WS_POOL_MAX_HOSTS_PER_SHARD`   | `max(ceil(max/shards)+2, ceil(192/shards))` | hard per-shard ceiling (0 = unbounded) |
 | `WS_POOL_RETIRE_COOLDOWN_MS`    | `15000`                | idle dwell before retiring a host                  |
+| `WS_MDP_SHIELD`                 | `true`                 | clamp the directive into the feasible region (storm-dampening) |
+| `WS_MDP_MAX_HOST_BUDGET`        | `192`                  | pod-wide host-isolate budget the shield enforces (memory governor) |
+| `WS_MDP_CAPACITY_HEADROOM`      | `0.2`                  | spare capacity the applied directive must provide above live load |
+| `WS_MDP_DENSITY_MAX_DROP`       | `0.5`                  | max fraction density may fall per tick (0 disables slew) |
 | `WS_MDP_OPTIMIZER_URL`          | `dd-mdp-optimizer:8096`| optimizer endpoint (remote mode)                   |
 | `WS_MDP_{ALPHA,GAMMA,EPSILON,…}`| see `pool_autotuner.dart` | learner hyperparameters + reward weights        |
 
