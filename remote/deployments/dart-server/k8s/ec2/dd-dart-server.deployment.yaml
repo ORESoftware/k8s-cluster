@@ -174,7 +174,7 @@ spec:
             #
             # Flip to `local` to run the joint size × density experiment.
             - name: WS_MDP_MODE
-              value: 'off'
+              value: 'local'
             # Discrete host-isolate ladder the autotuner chooses between
             # (pod-wide, summed across shards). These are the four levels we
             # A/B/n across on the way to 50K connections.
