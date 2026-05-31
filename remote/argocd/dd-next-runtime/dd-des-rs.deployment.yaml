@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-8d87652-elevator-fel-mdp-pomdp'
+        dd.dev/telemetry-revision: '2026-05-30-des-rs-engine-d749fd8-shadow-eval-control-ui'
       labels:
         app: dd-des-rs
     spec:
@@ -99,7 +99,7 @@ spec:
             # index.html). Override or set empty to skip. Heavy sims are run on
             # demand via POST /simulate.
             - name: DES_STARTUP_SIMS
-              value: main_empirical_control_report,main_elevator_highrise,main_two_disease,main_build_site
+              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_build_site
           ports:
             - name: http
               containerPort: 8112

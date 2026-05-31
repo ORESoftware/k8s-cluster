@@ -88,20 +88,36 @@ const LANDING_HTML: &str = r####"<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>discrete-event-system.rs — DES engine</title>
 <style>
-:root{color-scheme:dark}
+:root{color-scheme:dark;--bg:#0b1021;--panel:#0f1422;--line:#21262d;--ink:#e6edf3;--dim:#9aa4b2;--accent:#1f6feb;--accent2:#388bfd;--ok:#3fb950;--err:#f85149}
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;background:#0b1021;color:#e6edf3}
-main{max-width:1040px;margin:0 auto;padding:32px 22px 80px}
-h1{font-size:1.7rem;margin:0 0 6px}
-.sub{color:#9aa4b2;margin:0 0 18px;font-size:.95rem;line-height:1.5;max-width:70ch}
-.actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;color:var(--ink);
+  background:
+    radial-gradient(1100px 520px at 12% -8%,rgba(31,111,235,.20),transparent 60%),
+    radial-gradient(900px 480px at 96% 0%,rgba(126,231,135,.10),transparent 55%),
+    var(--bg)}
+main{max-width:1060px;margin:0 auto;padding:30px 22px 80px}
+.hero{border:1px solid var(--line);border-radius:16px;padding:24px 24px 22px;margin:6px 0 28px;
+  background:linear-gradient(180deg,rgba(31,111,235,.10),rgba(15,20,34,.6));backdrop-filter:blur(2px)}
+.hero .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:1.8rem;margin:0;letter-spacing:-.01em;background:linear-gradient(90deg,#e6edf3,#9ecbff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.pill-health{display:inline-flex;align-items:center;gap:7px;font-size:.78rem;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:4px 11px;background:#0b1021}
+.pill-health .dot{width:8px;height:8px;border-radius:50%;background:#6b7689;box-shadow:0 0 0 0 rgba(63,185,80,.5)}
+.pill-health.up .dot{background:var(--ok);animation:pulse 2.2s infinite}
+.pill-health.down .dot{background:var(--err)}
+.pill-health.up{color:#b7f0c2;border-color:rgba(63,185,80,.35)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,185,80,.45)}70%{box-shadow:0 0 0 7px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+.sub{color:var(--dim);margin:12px 0 16px;font-size:.95rem;line-height:1.55;max-width:74ch}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:0}
 a.btn,button.btn{font:inherit;font-size:.9rem;cursor:pointer;border-radius:8px;padding:9px 14px;text-decoration:none;border:1px solid #2b3344;background:#161b22;color:#e6edf3}
 a.btn.primary{background:#1f6feb;border-color:#1f6feb;color:#fff}
 a.btn:hover,button.btn:hover{border-color:#3b82f6}
-h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
+h2{font-size:1.06rem;margin:34px 0 12px;color:#c9d4e3;display:flex;align-items:center;gap:9px}
+h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-gradient(180deg,var(--accent),var(--accent2))}
 .muted{color:#6b7689;font-weight:400;font-size:.85rem}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:10px}
-.sim{display:flex;flex-direction:column;gap:8px;border:1px solid #21262d;border-radius:10px;padding:12px;background:#0f1422}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(244px,1fr));gap:12px}
+.sim{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--panel);transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
+.sim:hover{transform:translateY(-2px);border-color:#30496f;box-shadow:0 10px 26px rgba(0,0,0,.35)}
+.sim.feat{background:linear-gradient(180deg,rgba(31,111,235,.07),var(--panel))}
 .sim .label{font-size:.92rem;text-transform:capitalize}
 .sim .name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;color:#9ecbff;word-break:break-all}
 .sim .desc{font-size:.8rem;color:#8b949e;line-height:1.45;flex:1}
@@ -119,7 +135,11 @@ h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
 .run[disabled]{opacity:.55;cursor:default}
 .st{font-size:.8rem;color:#9aa4b2;min-height:1.1em}
 .st.ok{color:#3fb950}.st.err{color:#f85149}
-#filter{font:inherit;font-size:.9rem;background:#0f1422;border:1px solid #21262d;border-radius:8px;color:#e6edf3;padding:8px 12px;width:260px;margin-bottom:12px}
+.filterbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:10px 0;background:linear-gradient(180deg,var(--bg) 70%,rgba(11,16,33,0))}
+#filter{font:inherit;font-size:.9rem;background:#0f1422;border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:9px 12px;width:280px;max-width:60vw}
+#filter:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,111,235,.25)}
+.filterbar .kbd{font-family:ui-monospace,Menlo,monospace;font-size:.72rem;color:#8b949e;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;background:#0b1021}
+.filterbar .shown{color:#8b949e;font-size:.82rem}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(160%);transition:transform .25s;background:#161b22;border:1px solid #2b3344;border-radius:10px;padding:12px 18px;box-shadow:0 8px 30px rgba(0,0,0,.5);font-size:.9rem}
 .toast.show{transform:translateX(-50%) translateY(0)}
 .toast a{color:#58a6ff}
@@ -127,17 +147,22 @@ h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
 </head>
 <body>
 <main>
-<h1>discrete-event-system.rs</h1>
-<p class="sub">A Rust modeling &amp; simulation engine, imported here as a <strong>library</strong> (git submodule). Run a <strong>first-class model</strong> to get an interactive player, stream commands to a <strong>solver</strong>, or run any catalogue <strong>simulation</strong> in-process and open the rendered HTML/JSON.</p>
-<div class="actions">
-  <a class="btn primary" href="out/">View rendered results &rarr;</a>
-  <a class="btn" href="info">Service info</a>
-  <a class="btn" href="docs/api">API docs</a>
-  <a class="btn" href="models">Models JSON</a>
-  <a class="btn" href="streaming">Streaming JSON</a>
-  <a class="btn" href="simulations">Catalogue JSON</a>
+<div class="hero">
+  <div class="top">
+    <h1>discrete-event-system.rs</h1>
+    <span id="health" class="pill-health"><span class="dot"></span><span class="txt">checking…</span></span>
+  </div>
+  <p class="sub">A Rust modeling &amp; simulation engine, imported here as a <strong>library</strong> (git submodule) and run <strong>in-process</strong>. Run a <strong>first-class model</strong> for an interactive player, stream commands to a <strong>solver</strong>, or run any catalogue <strong>simulation</strong> and open the rendered HTML/JSON.</p>
+  <div class="actions">
+    <a class="btn primary" href="out/">View rendered results &rarr;</a>
+    <a class="btn" href="docs/api">API docs</a>
+    <a class="btn" href="info">Service info</a>
+    <a class="btn" href="models">Models JSON</a>
+    <a class="btn" href="streaming">Streaming JSON</a>
+    <a class="btn" href="simulations">Catalogue JSON</a>
+  </div>
 </div>
-<h2>Elevator <span class="muted">— new next-event (FEL) sim + dispatch decision models</span></h2>
+<h2>Elevator <span class="muted">— next-event (FEL) sim + dispatch decision models</span></h2>
 <div class="grid">
   <div class="sim">
     <div class="label">FEL elevator</div>
@@ -158,6 +183,8 @@ h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
     <div class="row"><a class="open" href="elevator-pomdp" target="_blank" rel="noopener">Open player &#8599;</a></div>
   </div>
 </div>
+<h2>Control &amp; estimation <span class="muted">— back-EMF DC motor, controllability/observability, shadow Gramians</span></h2>
+<div id="control" class="grid"></div>
 <h2>First-class models <span class="muted">— describe &rarr; run &rarr; interactive player</span></h2>
 <div id="models" class="grid"></div>
 <h2>Streaming solvers <span class="muted">— JSONL commands in, JSONL frames out</span></h2>
@@ -165,23 +192,35 @@ h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
 <h2>Featured</h2>
 <div id="featured" class="grid"></div>
 <h2>All simulations <span id="count" class="muted"></span></h2>
-<input id="filter" placeholder="filter by name…" oninput="filterSims()" autocomplete="off">
+<div class="filterbar">
+  <input id="filter" placeholder="filter by name…" oninput="filterSims()" autocomplete="off" spellcheck="false">
+  <span class="kbd">/</span><span class="shown" id="shown"></span>
+</div>
 <div id="all" class="grid"></div>
 </main>
 <div id="toast" class="toast"></div>
 <script>
-const FEATURED=[["main_build_site","Build site index"],["main_empirical_control_report","Empirical control report"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
+const FEATURED=[["main_build_site","Build site index"],["main_elevator_highrise","Elevator high-rise"],["main_factmachine_markets","FactMachine markets"],["main_two_disease","Two-disease epidemic"],["main_electric_circuit","Electric circuit"],["main_traffic","Traffic network"],["main_court_mdp","Court MDP"],["main_convolution","Convolution"]];
+const CONTROL=[
+  ["main_shadow_eval","Shadow Gramians","Probe each plant as a black box: recover controllability/observability Gramians from perturbed shadow copies, cross-check against the analytic model, then re-ask via a nested MDP/POMDP of the motor's speed regimes."],
+  ["main_observability_controllability_anim","Obs / ctrl (animated)","Kalman rank tests for controllability & observability of a state-space model, animated step by step."],
+  ["main_empirical_control_report","Empirical control report","Monte-Carlo trials + Gramian eigenvalue degrees that quantify how much control and observation authority a system actually has."],
+  ["main_dc_motor_anim","DC motor (back-EMF)","Separately-excited DC motor with explicit back-EMF coupling (E = K_e·ω), RK4-integrated and animated."],
+  ["main_wind_mppt_anim","Wind MPPT","Maximum-power-point-tracking controller on a wind turbine, animated."]
+];
 function toast(html){const t=document.getElementById('toast');t.innerHTML=html;t.classList.add('show');clearTimeout(window.__tt);window.__tt=setTimeout(function(){t.classList.remove('show');},6000);}
-function simCard(name,label){
-  const card=document.createElement('div');card.className='sim';card.dataset.name=name;
+function simCard(name,label,desc,feat){
+  const card=document.createElement('div');card.className=feat?'sim feat':'sim';card.dataset.name=name;
   const lab=document.createElement('div');lab.className='label';lab.textContent=label||name;
   const nm=document.createElement('div');nm.className='name';nm.textContent=name;
+  card.appendChild(lab);card.appendChild(nm);
+  if(desc){const d=document.createElement('div');d.className='desc';d.textContent=desc;card.appendChild(d);}
   const row=document.createElement('div');row.className='row';
   const st=document.createElement('span');st.className='st';
   const btn=document.createElement('button');btn.className='run';btn.textContent='Run';
   btn.onclick=function(){run(name,btn,st);};
   row.appendChild(st);row.appendChild(btn);
-  card.appendChild(lab);card.appendChild(nm);card.appendChild(row);
+  card.appendChild(row);
   return card;
 }
 async function run(name,btn,st){
@@ -197,7 +236,9 @@ async function run(name,btn,st){
 }
 function filterSims(){
   const q=document.getElementById('filter').value.toLowerCase();
-  document.querySelectorAll('#all .sim').forEach(function(c){c.style.display=c.dataset.name.indexOf(q)>=0?'':'none';});
+  let shown=0,total=0;
+  document.querySelectorAll('#all .sim').forEach(function(c){total++;const m=c.dataset.name.indexOf(q)>=0;c.style.display=m?'':'none';if(m)shown++;});
+  document.getElementById('shown').textContent=q?(shown+' / '+total+' shown'):'';
 }
 function modelCard(m){
   const card=document.createElement('div');card.className='sim';
@@ -230,9 +271,13 @@ function streamRow(c){
     (d.streaming||[]).forEach(function(c){wrap.appendChild(streamRow(c));});
   }catch(e){document.getElementById('streaming').textContent='failed to load streaming contracts';}
 })();
+(function(){
+  const c=document.getElementById('control');
+  CONTROL.forEach(function(p){c.appendChild(simCard(p[0],p[1],p[2],true));});
+})();
 (async function(){
   const f=document.getElementById('featured');
-  FEATURED.forEach(function(p){f.appendChild(simCard(p[0],p[1]));});
+  FEATURED.forEach(function(p){f.appendChild(simCard(p[0],p[1],null,true));});
   try{
     const r=await fetch('simulations');const d=await r.json();
     document.getElementById('count').textContent='('+d.count+')';
@@ -240,6 +285,20 @@ function streamRow(c){
     d.simulations.forEach(function(n){all.appendChild(simCard(n,n.replace(/^main_/,'').replace(/_/g,' ')));});
   }catch(e){document.getElementById('count').textContent='(failed to load)';}
 })();
+(async function(){
+  const el=document.getElementById('health');
+  try{
+    const r=await fetch('healthz',{cache:'no-store'});
+    const d=await r.json();
+    el.className='pill-health '+(d&&d.ok?'up':'down');
+    el.querySelector('.txt').textContent=d&&d.ok?'healthy':'unhealthy';
+  }catch(e){el.className='pill-health down';el.querySelector('.txt').textContent='offline';}
+})();
+document.addEventListener('keydown',function(e){
+  const fi=document.getElementById('filter');
+  if(e.key==='/'&&document.activeElement!==fi){e.preventDefault();fi.focus();fi.select();}
+  else if(e.key==='Escape'&&document.activeElement===fi){fi.value='';filterSims();fi.blur();}
+});
 </script>
 </body>
 </html>"####;
