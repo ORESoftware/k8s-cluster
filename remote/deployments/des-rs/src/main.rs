@@ -21,6 +21,9 @@
 //! - `POST /models/:kind/run` — run a user-supplied JSON spec for a kind (renders a player; `?format=json` for the artifact).
 //! - `GET /streaming` — JSONL streaming-solver contracts (lp, milp, mdp, pomdp).
 //! - `POST /streaming/:name` — stream JSONL commands to a solver; responds with a JSONL frame stream.
+//! - `GET /elevator-fel` — the new next-event (FEL) elevator simulation, animated.
+//! - `GET /elevator-mdp` — elevator-dispatch MDP player (value-iterated).
+//! - `GET /elevator-pomdp` — elevator-dispatch POMDP player (noisy call button; belief-tracked).
 //! - `GET /out`, `/out/`, `/out/*path` — serve rendered artifacts (curated `index.html` if present, else a listing).
 //! - `GET /docs/api`, `/api/docs` — generated HTML API docs.
 //! - `GET /api/docs.json` — machine-readable API docs.
@@ -50,6 +53,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
+use des_engine::des::fel::elevator::{
+    elevator_mdp_spec, elevator_pomdp_spec, render_elevator_html, run_fel_elevator, ElevatorConfig,
+};
 use des_engine::des::model::{with_builtins, CitizenError};
 use des_engine::des::service::{
     Capability, DesExtension, EndpointKind, EngineCatalogExtension, ServiceBuilder,
@@ -130,6 +136,27 @@ h2{font-size:1.05rem;margin:30px 0 12px;color:#c9d4e3}
   <a class="btn" href="models">Models JSON</a>
   <a class="btn" href="streaming">Streaming JSON</a>
   <a class="btn" href="simulations">Catalogue JSON</a>
+</div>
+<h2>Elevator <span class="muted">— new next-event (FEL) sim + dispatch decision models</span></h2>
+<div class="grid">
+  <div class="sim">
+    <div class="label">FEL elevator</div>
+    <div class="name">des::fel::elevator</div>
+    <div class="desc">A next-event single-car elevator under a LOOK (collective-control) policy. The clock jumps event-to-event (arrival / car-step / doors-close) and skips idle time. Animated shaft with boarding/alighting and live charts.</div>
+    <div class="row"><a class="open" href="elevator-fel" target="_blank" rel="noopener">Open animation &#8599;</a></div>
+  </div>
+  <div class="sim">
+    <div class="label">Elevator dispatch MDP</div>
+    <div class="name">des/mdp/v1 &middot; value-iteration</div>
+    <div class="desc">Fully-observed dispatch as a 12-state MDP (car floor &times; pending call). Value iteration recovers the drive-to-the-call-and-serve policy, animated over the state graph.</div>
+    <div class="row"><a class="open" href="elevator-mdp" target="_blank" rel="noopener">Open player &#8599;</a></div>
+  </div>
+  <div class="sim">
+    <div class="label">Elevator dispatch POMDP</div>
+    <div class="name">des/pomdp/v1 &middot; belief tracking</div>
+    <div class="desc">Dispatch under a noisy hall-call button: hidden demand is empty / waiting / crowded and the button false-triggers and misses. Belief over hidden states drives the hold-vs-dispatch decision.</div>
+    <div class="row"><a class="open" href="elevator-pomdp" target="_blank" rel="noopener">Open player &#8599;</a></div>
+  </div>
 </div>
 <h2>First-class models <span class="muted">— describe &rarr; run &rarr; interactive player</span></h2>
 <div id="models" class="grid"></div>
@@ -234,6 +261,12 @@ struct AppState {
     docs_html: Arc<str>,
     /// The canonical machine-readable descriptor JSON (`/api/docs.json`).
     docs_json: Arc<str>,
+    /// Pre-rendered HTML for the new FEL elevator artifacts. These are
+    /// deterministic (fixed seeds / tabular solves), so they are rendered once
+    /// at startup and served verbatim — no per-request engine run, no lock.
+    elevator_fel_html: Arc<str>,
+    elevator_mdp_html: Arc<str>,
+    elevator_pomdp_html: Arc<str>,
 }
 
 fn now_ms() -> u128 {
@@ -340,6 +373,9 @@ async fn info(State(state): State<AppState>) -> Response {
             "runModel": "GET /models/:kind/run  (POST a JSON spec to run your own; ?format=json for the artifact)",
             "streaming": "GET /streaming",
             "streamModel": "POST /streaming/:name  (JSONL in -> JSONL out)",
+            "elevatorFel": "GET /elevator-fel  (new next-event elevator sim, animated)",
+            "elevatorMdp": "GET /elevator-mdp  (elevator-dispatch MDP player)",
+            "elevatorPomdp": "GET /elevator-pomdp  (elevator-dispatch POMDP player)",
             "renderedOutputIndex": "GET /out/",
             "renderedOutputFile": "GET /out/*path",
             "apiDocs": "GET /docs/api",
@@ -624,6 +660,45 @@ async fn streaming_run(
             Json(json!({ "ok": false, "error": "stream task failed to join" })),
         )
             .into_response(),
+    }
+}
+
+// =============================================================================
+// Elevator showcase: the new FEL elevator sim + its MDP/POMDP dispatch models.
+//
+// All three are rendered once at startup into `AppState` (deterministic), so
+// these routes just serve cached HTML — fast, lock-free, and always available.
+// =============================================================================
+
+/// `GET /elevator-fel` — the next-event (future-event-list) single-car elevator
+/// under a LOOK policy, as a self-contained animated page.
+async fn elevator_fel(State(state): State<AppState>) -> Html<String> {
+    Html(state.elevator_fel_html.to_string())
+}
+
+/// `GET /elevator-mdp` — the fully-observed elevator-dispatch MDP, value-iterated
+/// and rendered as an animated state-graph rollout player.
+async fn elevator_mdp(State(state): State<AppState>) -> Html<String> {
+    Html(state.elevator_mdp_html.to_string())
+}
+
+/// `GET /elevator-pomdp` — elevator dispatch under a noisy hall-call button,
+/// rendered as a belief-tracking player.
+async fn elevator_pomdp(State(state): State<AppState>) -> Html<String> {
+    Html(state.elevator_pomdp_html.to_string())
+}
+
+/// Render the elevator MDP/POMDP players at startup, degrading to a small error
+/// page (rather than panicking the server) if a solve ever fails.
+fn render_model_player(kind: &str, spec: &Value) -> String {
+    match with_builtins().run(kind, spec) {
+        Ok(artifact) => artifact.to_player_html(),
+        Err(err) => format!(
+            "<!doctype html><html><head><meta charset=\"utf-8\"><title>{kind} unavailable</title>\
+             </head><body style=\"font-family:system-ui;background:#0b1021;color:#e6edf3;padding:40px\">\
+             <h1>elevator {kind} model unavailable</h1><p>{}</p></body></html>",
+            html_escape(&err.to_string())
+        ),
     }
 }
 
@@ -962,6 +1037,24 @@ fn build_descriptor() -> ServiceDescriptor {
         )
         .endpoint(
             "GET",
+            "/elevator-fel",
+            "Next-event (FEL) single-car elevator under a LOOK policy, animated.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/elevator-mdp",
+            "Elevator-dispatch MDP player (value-iterated drive-to-the-call policy).",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/elevator-pomdp",
+            "Elevator-dispatch POMDP player (noisy hall-call button; belief-tracked).",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
             "/out/",
             "Curated index.html, else a listing of rendered artifacts.",
             EndpointKind::Service,
@@ -1153,6 +1246,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let docs_html: Arc<str> = Arc::from(render_docs_html(&descriptor));
     let docs_json: Arc<str> = Arc::from(descriptor.to_json_string());
 
+    // Pre-render the (deterministic) FEL elevator artifacts once. Done before
+    // the server starts serving and before the startup catalogue task spawns, so
+    // there is no contention on the engine's process-global clock/RNG.
+    let elevator_fel_html: Arc<str> =
+        Arc::from(render_elevator_html(&run_fel_elevator(&ElevatorConfig::default())));
+    let elevator_mdp_html: Arc<str> = Arc::from(render_model_player("mdp", &elevator_mdp_spec()));
+    let elevator_pomdp_html: Arc<str> =
+        Arc::from(render_model_player("pomdp", &elevator_pomdp_spec()));
+
     let state = AppState {
         out_dir: Arc::new(out_dir),
         sim_lock: Arc::new(Mutex::new(())),
@@ -1160,6 +1262,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         dd_docs_header,
         docs_html,
         docs_json,
+        elevator_fel_html,
+        elevator_mdp_html,
+        elevator_pomdp_html,
     };
 
     // Populate `out/` in the background so /healthz comes up immediately while
@@ -1194,6 +1299,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/models/:kind/run", get(model_run_example).post(model_run_post))
         .route("/streaming", get(list_streaming))
         .route("/streaming/:name", post(streaming_run))
+        .route("/elevator-fel", get(elevator_fel))
+        .route("/elevator-mdp", get(elevator_mdp))
+        .route("/elevator-pomdp", get(elevator_pomdp))
         .route("/out", get(out_redirect))
         .route("/out/", get(out_index))
         .route("/out/*path", get(out_file))
