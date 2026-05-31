@@ -14,39 +14,43 @@ data:
 
     clients:
       - url: http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/push
+        # Agent-scoped labels stamped onto every stream this node pushes.
+        # cluster/env let a shared Loki (or a future stage cluster) tell
+        # prod and stage log sources apart, and node pins the source host.
+        # Values are injected from the DaemonSet env; the DaemonSet runs
+        # promtail with -config.expand-env=true so ${...} is substituted.
+        external_labels:
+          cluster: ${CLUSTER_NAME}
+          env: ${CLUSTER_ENV}
+          node: ${NODE_NAME}
 
-    # Discover every pod via the Kubernetes API and tail its container
-    # logs from /var/log/pods. Labels are derived from pod metadata
-    # (pod, namespace, container, app, node), so Loki queries can pin
-    # by app/pod directly instead of regexing __path__ as the previous
-    # filename-only static_configs setup required.
+    # Tail every container's CRI log through the stable /var/log/containers
+    # symlink farm. The host /var/log mount exposes both the symlinks and
+    # their /var/log/pods targets, so this single glob reliably produces
+    # streams without depending on the Kubernetes API for discovery (the
+    # previous kubernetes_sd + /var/log/pods/*$1/*.log setup left Loki with
+    # zero streams). The cri stage decodes the containerd log envelope, then
+    # the filename regex lifts namespace, pod, and container into first-class
+    # Loki labels so a query can pin one deployment directly, for example
+    # {namespace="default", container="dart-server"} or {env="prod"}.
     scrape_configs:
-      - job_name: kubernetes-pods
-        kubernetes_sd_configs:
-          - role: pod
+      - job_name: kubernetes-containers
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: kubernetes-containers
+              __path__: /var/log/containers/*.log
         pipeline_stages:
           - cri: {}
-        relabel_configs:
-          - action: replace
-            replacement: kubernetes-pods
-            target_label: job
-          - source_labels: [__meta_kubernetes_pod_node_name]
-            target_label: node
-          - source_labels: [__meta_kubernetes_namespace]
-            target_label: namespace
-          - source_labels: [__meta_kubernetes_pod_name]
-            target_label: pod
-          - source_labels: [__meta_kubernetes_pod_container_name]
-            target_label: container
-          - source_labels: [__meta_kubernetes_pod_label_app]
-            target_label: app
-          # Canonical promtail pattern. The actual on-node directory is
-          # /var/log/pods/<ns>_<pod>_<uid>/<container>/<N>.log, so the
-          # leading `*` glob absorbs the <ns>_<pod>_ prefix while we
-          # match the pod uid+container suffix exactly.
-          - source_labels:
-              - __meta_kubernetes_pod_uid
-              - __meta_kubernetes_pod_container_name
-            target_label: __path__
-            separator: /
-            replacement: /var/log/pods/*$1/*.log
+          - regex:
+              source: filename
+              expression: '^/var/log/containers/(?P<pod>[^_]+)_(?P<namespace>[^_]+)_(?P<container>.+)-[0-9a-f]+\.log$'
+          - labels:
+              namespace:
+              pod:
+              container:
+          # filename carries the 64-char container id and rotates on every
+          # restart; drop it so it does not explode Loki stream cardinality.
+          - labeldrop:
+              - filename
