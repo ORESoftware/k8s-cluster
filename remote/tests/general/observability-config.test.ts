@@ -76,6 +76,15 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   const promtail = await readRepoFile("remote/argocd/observability/promtail.configmap.yaml");
 
   assert.match(prometheus, /dd-otel-collector\.observability\.svc\.cluster\.local:8889/);
+  assert.match(
+    prometheus,
+    /job_name:\s*dd-grafana[\s\S]*metrics_path:\s*\/telemetry\/metrics[\s\S]*dd-grafana\.observability\.svc\.cluster\.local:3000/,
+  );
+  assert.match(
+    prometheus,
+    /job_name:\s*dd-loki[\s\S]*metrics_path:\s*\/metrics[\s\S]*dd-loki\.observability\.svc\.cluster\.local:3100/,
+  );
+  assert.doesNotMatch(prometheus, /job_name:\s*observability-stack/);
   assert.match(prometheus, /dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090/);
   assert.match(prometheus, /dd-agent-worker-broker\.default\.svc\.cluster\.local:8098/);
   assert.match(prometheus, /dd-remote-auth\.default\.svc\.cluster\.local:8083/);
@@ -85,13 +94,15 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(prometheus, /gcs-router\.default\.svc\.cluster\.local:9100/);
   assert.match(promtail, /dd-loki\.observability\.svc\.cluster\.local:3100\/loki\/api\/v1\/push/);
   assert.match(promtail, /external_labels:[\s\S]*cluster:\s*dd-ec2/);
-  assert.match(promtail, /replacement:\s*stage[\s\S]*target_label:\s*environment/);
-  assert.match(promtail, /replacement:\s*prod[\s\S]*target_label:\s*environment/);
-  assert.match(promtail, /target_label:\s*deployment/);
-  assert.match(promtail, /target_label:\s*environment/);
-  assert.match(promtail, /target_label:\s*workload_kind/);
-  assert.match(promtail, /target_label:\s*workload/);
-  assert.match(promtail, /replacement:\s*\/var\/log\/pods\/\*\$1\/\*\.log/);
+  assert.match(promtail, /__path__:\s*\/var\/log\/containers\/\*\.log/);
+  assert.doesNotMatch(promtail, /^\s*kubernetes_sd_configs:/m);
+  assert.match(promtail, /source:\s*filename[\s\S]*\/var\/log\/containers/);
+  assert.match(promtail, /source:\s*pod[\s\S]*\?P<deployment>/);
+  assert.match(promtail, /env:\s*stage[\s\S]*environment:\s*stage/);
+  assert.match(promtail, /app:\s*deployment[\s\S]*deployment:/);
+  assert.match(promtail, /selector:\s*'\{deployment=~"dd-billing-server\|dd-web-scraper\|dd-browser-test-server"\}'/);
+  assert.match(promtail, /env:\s*prod[\s\S]*environment:\s*prod/);
+  assert.match(promtail, /labeldrop:[\s\S]*-\s*filename/);
   assert.match(promtail, /- cri:\s*\{\}/);
 });
 

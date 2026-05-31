@@ -89,6 +89,29 @@ test("nats main container drops all linux capabilities", async () => {
   assert.match(block, /seccompProfile:\s*\n\s*type:\s*RuntimeDefault/);
 });
 
+test("promtail host log reader keeps root scope constrained", async () => {
+  const promtail = await readRepoFile(
+    "remote/argocd/observability/promtail.daemonset.yaml",
+  );
+
+  const promtailContainer = promtail.match(
+    /-\s*name:\s*promtail\b[\s\S]*?(?=^\s{8}-\s*name:|\n\s*volumes:)/m,
+  );
+  assert.ok(promtailContainer, "expected promtail container block");
+  const block = promtailContainer?.[0] ?? "";
+
+  assert.match(block, /allowPrivilegeEscalation:\s*false/);
+  assert.match(block, /runAsUser:\s*0/);
+  assert.match(block, /runAsGroup:\s*0/);
+  assert.match(block, /seccompProfile:\s*\n\s*type:\s*RuntimeDefault/);
+  assert.doesNotMatch(block, /privileged:\s*true/);
+  assert.match(promtail, /name:\s*varlog[\s\S]*mountPath:\s*\/var\/log[\s\S]*readOnly:\s*true/);
+  assert.match(
+    promtail,
+    /name:\s*varlog[\s\S]*hostPath:\s*\n\s*path:\s*\/var\/log\s*\n\s*type:\s*Directory/,
+  );
+});
+
 test("dd-dev-server-api declares resource requests and limits", async () => {
   const devServer = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml",

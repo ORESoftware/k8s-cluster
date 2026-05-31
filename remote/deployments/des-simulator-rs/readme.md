@@ -13,6 +13,25 @@ Rust service for asynchronous discrete event simulations.
 - `POST /validate` - validates a simulation request without scheduling work.
 - `POST /simulate` - validates and starts an asynchronous simulation job, returning `202`.
 - `GET /simulations/<jobId>` - returns queued/running/succeeded/failed job state.
+- `GET /out` - redirects to `/out/` (relative) so the index's relative links resolve under any prefix.
+- `GET /out/` - the curated `index.html` landing page when present, else an auto-generated HTML listing.
+- `GET /out/<path>` - serves an individual rendered artifact (HTML/PNG/SVG/JSON/CSV/JSONL); directory
+  paths serve their `index.html` if present, never a raw directory listing.
+
+## Rendered Output (`/des/out/`)
+
+The committed HTML/PNG/SVG artifacts from the `discrete-event-system` submodule are served from
+its `out/` directory. Publicly these are reached through the gateway as `GET /des/out/` (index) and
+`GET /des/out/<path>` (the gateway strips the `/des/` prefix, so this service sees `/out/...`).
+
+The directory is resolved from `DES_OUT_DIR` (set in the deployment to
+`/opt/dd-next-1/remote/submodules/discrete-event-system/out`), falling back to local-checkout paths
+for `cargo run`. Files are read off disk per request rather than embedded in the binary because some
+rendered pages are tens of MB. Requests are confined to the resolved `out/` directory via
+canonicalized path checks (symlinks and `..` are resolved, then the target must remain inside the
+canonicalized `out/`). Served artifacts carry `X-Content-Type-Options: nosniff` and a short
+`Cache-Control` window. The submodule must be initialized in the mounted repo for these routes to
+return content; otherwise `/out/` renders an empty index and files return `404`.
 
 ## NATS API
 

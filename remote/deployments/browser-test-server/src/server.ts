@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { z } from 'zod';
 
@@ -225,6 +226,18 @@ fastify.get('/status', async () => statusDescriptor());
 fastify.get('/browser-test/status', async () => statusDescriptor());
 fastify.get('/healthz', async () => healthDescriptor());
 fastify.get('/browser-test/healthz', async () => healthDescriptor());
+fastify.get('/docs/api', async (_request, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs', async (_request, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs.json', async (_request, reply) => {
+  reply.header('content-type', 'application/json; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.json', import.meta.url), 'utf8');
+});
 fastify.get('/metrics', async (_request, reply) => {
   reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return renderMetrics();

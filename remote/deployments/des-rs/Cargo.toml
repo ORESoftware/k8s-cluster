@@ -1,0 +1,17 @@
+[package]
+name = "dd-des-rs"
+version = "0.1.0"
+edition = "2021"
+description = "HTTP server that runs the discrete-event-system.rs engine as a library and serves the rendered HTML result pages."
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The discrete-event-system.rs engine, imported as a LIBRARY via the git
+# submodule checked out at `remote/submodules/discrete-event-system.rs`.
+# This is the whole point of the deployment: run the real Rust DES engine
+# in-process and serve the HTML/JSON artifacts its simulations render.
+des_engine = { path = "../../submodules/discrete-event-system.rs" }

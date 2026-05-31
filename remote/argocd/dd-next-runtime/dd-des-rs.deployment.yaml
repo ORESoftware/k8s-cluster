@@ -1,0 +1,151 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-des-rs
+  namespace: default
+  labels:
+    app: dd-des-rs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-des-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-31-des-rs-engine-f4898d4-temp-control-stochastic'
+      labels:
+        app: dd-des-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: des-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Resolve the discrete-event-system.rs engine source. By default we
+              # fetch the engine's latest origin/main at pod start
+              # (DES_ENGINE_GIT_URL / DES_ENGINE_GIT_REF) into the writable /tmp
+              # emptyDir and build against it, so this deployment tracks the
+              # engine's main branch automatically without depending on the node
+              # having the git submodule checked out. If the clone fails — or
+              # DES_ENGINE_GIT_URL is set empty — we fall back to the pinned
+              # submodule in the read-only repo mount.
+              engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
+              if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
+                rm -rf /tmp/engine
+                if git clone --depth 1 --branch "${DES_ENGINE_GIT_REF:-main}" "${DES_ENGINE_GIT_URL}" /tmp/engine; then
+                  engine_src=/tmp/engine
+                  echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C /tmp/engine rev-parse --short HEAD))"
+                else
+                  echo "[dd-des-rs] engine clone failed; using pinned submodule at ${engine_src}" >&2
+                fi
+              fi
+              # Build from a writable copy so the engine path dependency can be
+              # repointed and Cargo.lock stays writable under the read-only root fs.
+              rm -rf /tmp/des-rs
+              mkdir -p /tmp/des-rs
+              cp -a /opt/dd-next-1/remote/deployments/des-rs/. /tmp/des-rs/
+              rm -rf /tmp/des-rs/target
+              cd /tmp/des-rs
+              sed -i "s#path = \"../../submodules/discrete-event-system.rs\"#path = \"${engine_src}\"#" Cargo.toml
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8112'
+            # Engine source: fetch the latest origin/main of the engine repo at
+            # pod start and build against it. Set DES_ENGINE_GIT_URL to "" to
+            # instead use the pinned git submodule in the mounted repo, or point
+            # DES_ENGINE_GIT_REF at a tag/branch/sha to pin a specific revision.
+            - name: DES_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/discrete-event-system.rs.git
+            - name: DES_ENGINE_GIT_REF
+              value: main
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/des-rs-target
+            # Writable working dir the engine renders artifacts into (out/ is
+            # created here). Kept on the /tmp emptyDir so the repo can stay
+            # read-only.
+            - name: DES_WORK_DIR
+              value: /tmp/des-rs-work
+            # Fast, HTML-producing simulations rendered once at startup so /out/
+            # has content immediately (ends with build_site for the curated
+            # index.html). Override or set empty to skip. Heavy sims are run on
+            # demand via POST /simulate.
+            - name: DES_STARTUP_SIMS
+              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_build_site
+          ports:
+            - name: http
+              containerPort: 8112
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '2'
+              # Headroom for the cold release build: the pod recompiles the full
+              # des_engine crate (plus axum/tokio) from an empty /tmp on every
+              # (re)start, which peaks higher than des-simulator's smaller build.
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build of the engine + server from an empty /tmp can
+            # take several minutes on the 2-CPU node, so allow up to ~15 min
+            # before the startup probe gives up (5s * 180).
+            periodSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}

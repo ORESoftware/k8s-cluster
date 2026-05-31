@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-18-headlamp-route'
+        dd.dev/telemetry-revision: '2026-05-30-des-rs-route'
       labels:
         app: dd-remote-gateway
     spec:

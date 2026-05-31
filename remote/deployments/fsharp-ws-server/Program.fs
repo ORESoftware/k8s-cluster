@@ -1,6 +1,7 @@
 module OresSoftware.Dd.FsWs.Program
 
 open System
+open System.IO
 open System.Threading.Tasks
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Http
@@ -18,6 +19,37 @@ open OresSoftware.Dd.FsWs.WsRoutes
 
 let private toReqDelegate (handler: HttpContext -> Task) : RequestDelegate =
     RequestDelegate(fun ctx -> handler ctx)
+
+let private readGeneratedFile (fileName: string) : string =
+    let candidates =
+        [|
+            Path.Combine(AppContext.BaseDirectory, "generated", fileName)
+            Path.Combine(Environment.CurrentDirectory, "generated", fileName)
+        |]
+
+    match candidates |> Array.tryFind File.Exists with
+    | Some path -> File.ReadAllText path
+    | None ->
+        failwithf
+            "generated API docs file %s not found in %s"
+            fileName
+            (String.concat ", " candidates)
+
+let private writeGeneratedFile
+        (contentType: string)
+        (fileName: string)
+        (ctx: HttpContext)
+        : Task =
+    task {
+        ctx.Response.ContentType <- contentType
+        do! ctx.Response.WriteAsync(readGeneratedFile fileName)
+    }
+
+let private handleApiDocsHtml (ctx: HttpContext) : Task =
+    writeGeneratedFile "text/html; charset=utf-8" "api-docs.html" ctx
+
+let private handleApiDocsJson (ctx: HttpContext) : Task =
+    writeGeneratedFile "application/json; charset=utf-8" "api-docs.json" ctx
 
 /// Process entry point for dd-fsharp-ws-server. Boots an ASP.NET Core / Kestrel
 /// host, wires up every Rx-based pipeline + transport, and exposes them through
@@ -197,6 +229,9 @@ let main args =
     app.MapGet("/readyz",                 toReqDelegate handleReady)            |> ignore
     app.MapGet("/livez",                  toReqDelegate handleLive)             |> ignore
     app.MapGet("/metrics",                toReqDelegate handleMetrics)          |> ignore
+    app.MapGet("/docs/api",               toReqDelegate handleApiDocsHtml)      |> ignore
+    app.MapGet("/api/docs",               toReqDelegate handleApiDocsHtml)      |> ignore
+    app.MapGet("/api/docs.json",          toReqDelegate handleApiDocsJson)      |> ignore
     app.MapGet("/v1/benchmark",           toReqDelegate handleBenchmark)        |> ignore
     app.MapGet("/v1/rx-stats",            toReqDelegate handleRxStats)          |> ignore
     app.MapGet("/v1/rx-stats/history",    toReqDelegate handleRxStatsHistory)   |> ignore

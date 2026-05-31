@@ -1,0 +1,409 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "fsharp-ws-server",
+  "language": "fsharp",
+  "routeCount": 23,
+  "routeTypeCounts": {
+    "service": 8,
+    "user-generated": 15
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "handleIndex"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "handleApiDocsHtml"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "handleApiDocsJson"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "handleApiDocsHtml"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "handleHealth"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/livez",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Liveness check.",
+      "handlers": [
+        "handleLive"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "handleMetrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "handleReady"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/sse/rx-stats",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxStatsSse"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/benchmark",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleBenchmark"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/rx-stats",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxStats"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/rx-stats/history",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxStatsHistory"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/rx-stats/sources",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxStatsSources"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/async",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleAsync"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRx"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-burst",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxBurst"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-nats-echo",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxNatsEcho"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-presence",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxPresence"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-publish",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxPublish"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-sample",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxSample"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-stream",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxStream"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-throttle",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxThrottle"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ws/rx-window",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "handleRxWindow"
+      ],
+      "sourceFiles": [
+        "remote/deployments/fsharp-ws-server/Program.fs"
+      ],
+      "notes": ""
+    }
+  ]
+}

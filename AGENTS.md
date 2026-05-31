@@ -42,6 +42,11 @@ The following commands are blacklisted for agents in this repo: `git checkout`, 
 scripts. If a checkout has tracked dirty files, stop and surface the dirty state explicitly instead
 of hiding it. Leave untracked runtime files alone unless a human asks for a specific cleanup.
 
+Default branch posture for agent work is `dev`. Agents should not check out or switch to feature
+branches for local operator work unless a human explicitly changes that posture for a specific task.
+If the workspace is already on a non-`dev` branch, surface that state before doing branch-sensitive
+work and prefer integrating feature work back into `dev` instead of continuing on the feature branch.
+
 ## Postgres Contract
 
 RDS Postgres plus `remote/libs/pg-defs/schema/schema.sql` are the database contract. Do not generate

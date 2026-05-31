@@ -114,6 +114,7 @@ WORKDIR /opt/dd-dart-server
 COPY --from=dart-build           /tmp/dd-dart-server                          /opt/dd-dart-server/dd-dart-server
 COPY --from=flutter-build        /workspace/flutter_app/build/web             /opt/dd-dart-server/public
 COPY --from=flutter-mobile-build /workspace/flutter_mobile_app/build/web      /opt/dd-dart-server/mobile-public
+COPY remote/deployments/dart-server/generated                                 /opt/dd-dart-server/generated
 
 RUN chown -R dart:dart /opt/dd-dart-server
 
@@ -124,7 +125,8 @@ ENV HTTP_HOST=0.0.0.0 \
     HTTP_INTERNAL_PORT=8090 \
     ADMIN_PORT=8088 \
     STATIC_DIR=/opt/dd-dart-server/public \
-    MOBILE_STATIC_DIR=/opt/dd-dart-server/mobile-public
+    MOBILE_STATIC_DIR=/opt/dd-dart-server/mobile-public \
+    API_DOCS_DIR=/opt/dd-dart-server/generated
 
 # 8088 — coordinator admin/probes/metrics.
 # 8089 — gateway-shard pool (shared:true SO_REUSEPORT inside the pod).

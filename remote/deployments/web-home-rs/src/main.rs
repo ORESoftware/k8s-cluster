@@ -86,6 +86,37 @@ async fn home(State(state): State<AppState>) -> impl IntoResponse {
     home_document(&state)
 }
 
+async fn api_docs_html() -> Html<&'static str> {
+    record_request("GET", "/docs/api", StatusCode::OK);
+    Html(include_str!("../generated/api-docs.html"))
+}
+
+async fn api_docs_json() -> impl IntoResponse {
+    record_request("GET", "/api/docs.json", StatusCode::OK);
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        include_str!("../generated/api-docs.json"),
+    )
+}
+
+async fn api_docs_index_html() -> Html<&'static str> {
+    record_request("GET", "/api-docs", StatusCode::OK);
+    Html(include_str!("../../generated-api-docs-index.html"))
+}
+
+async fn api_docs_index_json() -> impl IntoResponse {
+    record_request("GET", "/api-docs.json", StatusCode::OK);
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        include_str!("../../generated-api-docs-index.json"),
+    )
+}
+
+async fn factmachine_markets_html() -> Html<&'static str> {
+    record_request("GET", "/factmachine-markets", StatusCode::OK);
+    Html(include_str!("../generated/factmachine-markets.html"))
+}
+
 #[derive(Clone, Copy)]
 struct AccessPill {
     label: &'static str,
@@ -207,6 +238,7 @@ fn shared_header(active_page: &'static str) -> Markup {
                         option value="/auth?return=/home" { "Auth" }
                         option value="/bastion/runtime/deployments" { "Bastion inventory" }
                         option value="/headlamp/" { "Headlamp" }
+                        option value="/api-docs" { "API docs" }
                         option value="/telemetry/" { "Grafana" }
                         option value="/prometheus/" { "Prometheus" }
                     }
@@ -244,15 +276,15 @@ fn home_summary() -> Markup {
             "Public entrypoint for the EC2 Kubernetes runtime. Open paths: "
             code { "/" } ", " code { "/home" } ", " code { "/auth" } ", "
             code { "/agents/tasks" } ", " code { "/agents/threads" } ", "
-            code { "/presence-test" } ", "
-            code { "/wss-test" } ". Server-auth paths: "
+            code { "/factmachine-markets" } ", " code { "/presence-test" } ", "
+            code { "/wss-test" } ", " code { "/api-docs" } ". Server-auth paths: "
             code { "/api/agents/" } ", " code { "/lambdas/functions" } ", " code { "/lambdas/invoke/<function-id>" } ", "
             code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
             code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
             code { "/builds" } ", " code { "/gleam/" } ", " code { "/mcp" } ", and "
             code { "/gcs/" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
-            code { "/mdp/" } ", and " code { "/des/" } ". Internal-access ops: " code { "/headlamp/" } ", "
+            code { "/mdp/" } ", " code { "/des/" } ", and " code { "/des-rs/" } ". Internal-access ops: " code { "/headlamp/" } ", "
             code { "/telemetry/" } ", "
             code { "/prometheus/" } ", " code { "/nats/" } ", " code { "/nats-metrics/" } ", "
             code { "/reaper/" } ", " code { "/cron/" } ", plus the new "
@@ -442,6 +474,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-build-server"], service: &["dd-build-server:8100"], service_note: None, access: SERVER_AUTH, notes: "Rust CI/CD server that clones allowlisted repos, builds allowlisted ECR images, pushes through ECR login, and applies constrained manifests with kubectl." },
     DeploymentRow { deployments: &["dd-ai-ml-pipeline"], service: &["dd-ai-ml-pipeline.ai-ml:8099"], service_note: None, access: SERVER_AUTH, notes: "Python3 online feature pipeline for telemetry risk scoring, anomaly detection, transition hints, and MDP-ready events on dd.remote.telemetry.mdp." },
     DeploymentRow { deployments: &["dd-des-simulator"], service: &["dd-des-simulator:8099"], service_note: None, access: SERVER_AUTH, notes: "Rust DES simulator with declared des.v1 schema, validation endpoint, async job status, and NATS result publishing." },
+    DeploymentRow { deployments: &["dd-des-rs"], service: &["dd-des-rs:8112"], service_note: None, access: SERVER_AUTH, notes: "Rust DES engine deployment that imports the discrete-event-system.rs crate as a library (git submodule), runs its simulation catalogue in-process, and serves the rendered HTML/JSON results at /des-rs/." },
     DeploymentRow { deployments: &["dd-contract-service"], service: &["dd-contract-service:8101"], service_note: None, access: SERVER_AUTH, notes: "Rust Solana contract gateway for solana.contract.v1 validation, signed transaction simulation, metrics, and NATS validation results." },
     DeploymentRow { deployments: &["dd-vpn"], service: &["dd-vpn-ui.vpn:51821"], service_note: None, access: VPN_PRIVATE, notes: "WireGuard wg-easy VPN server and private admin UI for split-tunnel access to the cluster service and pod CIDRs." },
     DeploymentRow { deployments: &["dd-live-mutex"], service: &["dd-live-mutex:6970"], service_note: None, access: CLUSTER_LOCAL, notes: "Singleton live-mutex broker deployment for TCP lock coordination." },
@@ -481,6 +514,8 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
 
 static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/", href: Some("/") }, PathEntry { label: "/home", href: Some("/home") }, PathEntry { label: "/agents/tasks", href: Some("/agents/tasks") }, PathEntry { label: "/agents/threads", href: Some("/agents/threads") }], target: "Rust web homepage deployment", access: PUBLIC, notes: "Service directory plus cluster-served task/thread/PR UI. Browser UIs call JSON APIs for stored state while runtime invocation paths stay separate." },
+    PathRow { paths: &[PathEntry { label: "/api-docs", href: Some("/api-docs") }, PathEntry { label: "/api-docs.json", href: Some("/api-docs.json") }, PathEntry { label: "/docs/api", href: Some("/docs/api") }, PathEntry { label: "/api/docs", href: Some("/api/docs") }], target: "Generated API documentation", access: PUBLIC, notes: "Central generated index plus this deployment's standard generated docs endpoints. Each HTTP API deployment also serves /docs/api, /api/docs, and /api/docs.json on its own service port." },
+    PathRow { paths: &[PathEntry { label: "/factmachine-markets", href: Some("/factmachine-markets") }], target: "FactMachine MDP/POMDP market simulation", access: PUBLIC, notes: "Single generated HTML artifact with a 50-day multi-market simulation, time-step controls, and scalar/binary/scale comparison plots." },
     PathRow { paths: &[PathEntry { label: "/tasks", href: Some("/tasks") }, PathEntry { label: "/status", href: Some("/status") }, PathEntry { label: "/stream/<uuid>", href: Some("/stream/example-task-id") }], target: "Node.js Coding Agent Task Manager", access: SERVER_AUTH, notes: "Runs inside the already-selected worker container. It executes prompts, tracks taskIds, streams events, and rejects requests for the wrong pinned thread." },
     PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: SERVER_AUTH, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks and uses the dd_auth cookie for same-origin API reads." },
     PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
@@ -496,6 +531,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/webrtc/", href: Some("/webrtc/") }, PathEntry { label: "/webrtc/healthz", href: Some("/webrtc/healthz") }, PathEntry { label: "/webrtc/metrics", href: Some("/webrtc/metrics") }, PathEntry { label: "/webrtc/signal test", href: Some("/wss-test?preset=webrtc") }], target: "Rust WebRTC signaling service", access: SERVER_AUTH, notes: "Room WebSocket signaling for browser/mobile peer handshakes. Media and data channels stay peer-to-peer. The gateway requires the operator Auth header or dd_auth cookie before forwarding." },
     PathRow { paths: &[PathEntry { label: "/mdp/", href: Some("/mdp/") }, PathEntry { label: "/mdp/healthz", href: Some("/mdp/healthz") }, PathEntry { label: "/mdp/metrics", href: Some("/mdp/metrics") }, PathEntry { label: "POST /mdp/optimize", href: Some("/mdp/optimize") }, PathEntry { label: "POST /mdp/telemetry/learn", href: Some("/mdp/telemetry/learn") }, PathEntry { label: MDP_OPTIMIZE_SUBJECT, href: None }, PathEntry { label: TELEMETRY_MDP_SUBJECT, href: None }], target: "Rust MDP/POMDP optimizer", access: SERVER_AUTH, notes: "Async optimizer behind the authenticated gateway; it subscribes to NATS optimization and telemetry jobs, then publishes runtime events." },
     PathRow { paths: &[PathEntry { label: "/des/", href: Some("/des/") }, PathEntry { label: "/des/healthz", href: Some("/des/healthz") }, PathEntry { label: "/des/metrics", href: Some("/des/metrics") }, PathEntry { label: "/des/model/schema", href: Some("/des/model/schema") }, PathEntry { label: "/des/model/example", href: Some("/des/model/example") }, PathEntry { label: "POST /des/validate", href: Some("/des/validate") }, PathEntry { label: "POST /des/simulate", href: Some("/des/simulate") }, PathEntry { label: DES_SIMULATE_SUBJECT, href: None }], target: "Rust discrete event simulator", access: SERVER_AUTH, notes: "Async DES job runner behind the authenticated gateway, with declared des.v1 schema, strict validation, in-memory job status, metrics, and NATS result publishing." },
+    PathRow { paths: &[PathEntry { label: "/des-rs/", href: Some("/des-rs/") }, PathEntry { label: "/des-rs/info", href: Some("/des-rs/info") }, PathEntry { label: "/des-rs/simulations", href: Some("/des-rs/simulations") }, PathEntry { label: "POST /des-rs/simulate", href: Some("/des-rs/simulate") }, PathEntry { label: "/des-rs/out/", href: Some("/des-rs/out/") }, PathEntry { label: "/des-rs/healthz", href: Some("/des-rs/healthz") }, PathEntry { label: "/des-rs/docs/api", href: Some("/des-rs/docs/api") }, PathEntry { label: "/des-rs/api/docs.json", href: Some("/des-rs/api/docs.json") }], target: "Rust DES engine (library) result pages", access: SERVER_AUTH, notes: "Landing page with per-simulation run buttons that execute the discrete-event-system.rs engine (git submodule) in-process and serve its rendered HTML/JSON result pages. Ships a canonical machine-readable service descriptor at /api/docs.json (built JSON-first by the engine's des::service module), an HTML view at /docs/api, and RFC 8288 service-doc/service-desc discovery headers on / and /info." },
     PathRow { paths: &[PathEntry { label: "/contracts/", href: Some("/contracts/") }, PathEntry { label: "/contracts/healthz", href: Some("/contracts/healthz") }, PathEntry { label: "/contracts/metrics", href: Some("/contracts/metrics") }, PathEntry { label: "/contracts/schema", href: Some("/contracts/schema") }, PathEntry { label: "/contracts/example", href: Some("/contracts/example") }, PathEntry { label: "POST /contracts/validate", href: Some("/contracts/validate") }, PathEntry { label: "POST /contracts/simulate", href: Some("/contracts/simulate") }, PathEntry { label: CONTRACTS_SOLANA_VALIDATE_SUBJECT, href: None }], target: "Rust Solana contract service", access: SERVER_AUTH, notes: "Validates solana.contract.v1 instruction envelopes, proxies signed simulation through Solana JSON-RPC, and publishes NATS validation results." },
     PathRow { paths: &[PathEntry { label: "/ml/", href: Some("/ml/") }, PathEntry { label: "/ml/healthz", href: Some("/ml/healthz") }, PathEntry { label: "/ml/metrics", href: Some("/ml/metrics") }, PathEntry { label: "/ml/status", href: Some("/ml/status") }, PathEntry { label: "POST /ml/analyze", href: Some("/ml/analyze") }, PathEntry { label: "POST /ml/ingest", href: Some("/ml/ingest") }, PathEntry { label: TELEMETRY_RAW_SUBJECT, href: None }, PathEntry { label: ML_FEATURES_SUBJECT, href: None }], target: "Python AI/ML feature pipeline", access: SERVER_AUTH, notes: "Normalizes runtime telemetry into features, EWMA baselines, z-score anomalies, transition estimates, and MDP telemetry requests." },
     PathRow { paths: &[PathEntry { label: "/trading/", href: Some("/trading/") }, PathEntry { label: "/trading/healthz", href: Some("/trading/healthz") }, PathEntry { label: "/trading/metrics", href: Some("/trading/metrics") }, PathEntry { label: "/trading/schema", href: Some("/trading/schema") }, PathEntry { label: "/trading/example", href: Some("/trading/example") }, PathEntry { label: "POST /trading/decide", href: Some("/trading/decide") }, PathEntry { label: TRADING_SIGNALS_SUBJECT, href: None }, PathEntry { label: TRADING_ORDER_INTENTS_SUBJECT, href: None }], target: "Rust trading decision service", access: SERVER_AUTH, notes: "Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions." },
@@ -9897,6 +9933,14 @@ async fn main() {
         .route("/wss-test", get(wss_test_page))
         .route("/wss-test/", get(wss_test_page))
         .route("/healthz", get(healthz))
+        .route("/docs/api", get(api_docs_html))
+        .route("/api/docs", get(api_docs_html))
+        .route("/api/docs.json", get(api_docs_json))
+        .route("/api-docs", get(api_docs_index_html))
+        .route("/api-docs/", get(api_docs_index_html))
+        .route("/api-docs.json", get(api_docs_index_json))
+        .route("/factmachine-markets", get(factmachine_markets_html))
+        .route("/factmachine-markets/", get(factmachine_markets_html))
         .route("/metrics", get(metrics))
         .route("/favicon.ico", get(favicon))
         .with_state(state)

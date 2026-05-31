@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "web-home-rs",
   "language": "rust",
-  "routeCount": 29,
+  "routeCount": 35,
   "routeTypeCounts": {
-    "service": 4,
+    "service": 10,
     "user-generated": 22,
     "runtime-config": 3
   },
@@ -94,6 +94,91 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "agents_threads_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api-docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Central generated API documentation index.",
+      "handlers": [
+        "api_docs_index_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api-docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable central generated API documentation index.",
+      "handlers": [
+        "api_docs_index_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api-docs/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Central generated API documentation index.",
+      "handlers": [
+        "api_docs_index_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
       ],
       "sourceFiles": [
         "remote/deployments/web-home-rs/src/main.rs"
@@ -264,6 +349,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "container_pool_config_page"
+      ],
+      "sourceFiles": [
+        "remote/deployments/web-home-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
       ],
       "sourceFiles": [
         "remote/deployments/web-home-rs/src/main.rs"

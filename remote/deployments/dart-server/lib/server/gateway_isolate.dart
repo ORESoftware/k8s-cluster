@@ -250,7 +250,7 @@ Future<void> _route(
     return;
   }
 
-  if (path == _wssPath) {
+  if (method == 'GET' && path == _wssPath) {
     if (!WebSocketTransformer.isUpgradeRequest(req)) {
       await _plain(
         req,

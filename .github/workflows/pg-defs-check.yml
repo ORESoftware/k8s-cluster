@@ -23,6 +23,7 @@ on:
       - 'scripts/pg/diff/**'
       - 'remote/deployments/**/generated/api-docs.*'
       - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-docs-index.html'
       - 'AGENTS.md'
       - '.github/workflows/pg-defs-check.yml'
   push:
@@ -50,6 +51,7 @@ on:
       - 'scripts/pg/diff/**'
       - 'remote/deployments/**/generated/api-docs.*'
       - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-docs-index.html'
       - 'AGENTS.md'
       - '.github/workflows/pg-defs-check.yml'
 

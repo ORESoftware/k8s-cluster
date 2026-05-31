@@ -42,9 +42,9 @@
     <h1>gleam-lambda-runner API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>12 routes</span>
+      <span>13 routes</span>
       <span>gleam</span>
-      <span>5 service</span>
+      <span>6 service</span>
       <span>4 user-generated</span>
       
       <span>3 runtime-config</span>
@@ -56,57 +56,65 @@
       <tbody>
 <tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/</code></td>
+  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs</code></td>
-  <td data-label="Purpose">Human-readable generated API documentation.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs.json</code></td>
-  <td data-label="Purpose">Machine-readable generated API route metadata.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/check</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/destroy/:reuse_key</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/docs/api</code></td>
-  <td data-label="Purpose">Human-readable generated API documentation.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/healthz</code></td>
-  <td data-label="Purpose">Health check.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Health check.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/home</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">service-defined</td>
 </tr>
@@ -136,17 +144,17 @@
 </tr>
 <tr>
   <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
   <td data-label="Path"><code>/invoke/:function_id</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">service-defined</td>
 </tr>
 <tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
-  <td data-label="Purpose">Prometheus metrics.<div class="muted">Method is inferred from route body; inspect source for exact method guard.</div></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>

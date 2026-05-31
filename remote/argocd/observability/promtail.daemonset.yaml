@@ -16,23 +16,36 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/config-revision: "2026-05-31-loki-labels"
+        dd.dev/config-revision: "2026-05-31-container-log-labels-durable-positions"
       labels:
         app: dd-promtail
     spec:
       serviceAccountName: dd-promtail
       automountServiceAccountToken: true
+      # Logs come from every node, including tainted control-plane or
+      # dedicated nodes, so tolerate all taints. Without this a tainted
+      # node silently ships no logs and Loki looks "empty".
+      tolerations:
+        - operator: Exists
       containers:
         - name: promtail
           image: grafana/promtail:3.2.1
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            # Container log symlinks under /var/log/containers resolve to
+            # root-owned pod log files; run as root so promtail can actually
+            # read them (a non-root default would tail nothing).
             runAsUser: 0
             runAsGroup: 0
             seccompProfile:
               type: RuntimeDefault
           args:
+            # NB: deliberately NOT -config.expand-env=true. The promtail config
+            # uses regex `$` end-anchors for label parsing, and the env-var
+            # expander treats a bare `$` as a malformed variable and refuses to
+            # start ("unable to parse variable name"). Cluster/env labels are
+            # set without templating (literal cluster, pipeline-derived env).
             - -config.file=/etc/promtail/promtail.yaml
           ports:
             - name: http
@@ -61,4 +74,13 @@ spec:
             path: /var/log
             type: Directory
         - name: positions
-          emptyDir: {}
+          # Durable on-node positions. With an emptyDir, every pod restart
+          # wiped the cursor and promtail re-read each /var/log/containers
+          # file from the beginning, replaying days-old rotated lines that
+          # Loki rejects with HTTP 400 "timestamp too old" (reject_old_samples).
+          # A hostPath survives restarts so promtail resumes where it left off.
+          # The DaemonSet schedules exactly one promtail per node, so there is
+          # no positions-file sharing between pods.
+          hostPath:
+            path: /var/lib/dd-promtail
+            type: DirectoryOrCreate

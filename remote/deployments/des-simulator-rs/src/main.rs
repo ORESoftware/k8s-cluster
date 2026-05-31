@@ -4,6 +4,7 @@ use std::{
     env,
     error::Error,
     net::SocketAddr,
+    path::{Path as StdPath, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -1492,7 +1493,7 @@ fn prune_jobs(jobs: &mut HashMap<String, SimulationJobSnapshot>) {
         .iter()
         .map(|(job_id, snapshot)| (job_id.clone(), snapshot.submitted_at_ms))
         .collect::<Vec<_>>();
-    oldest.sort_by(|left, right| left.1.cmp(&right.1));
+    oldest.sort_by_key(|entry| entry.1);
     let remove_count = oldest.len().saturating_sub(MAX_RETAINED_JOBS - 1);
     for (job_id, _) in oldest.into_iter().take(remove_count) {
         jobs.remove(&job_id);
@@ -1706,7 +1707,9 @@ async fn root() -> impl IntoResponse {
             "namedExample": "GET /model/examples/:name",
             "validate": "POST /validate",
             "simulate": "POST /simulate",
-            "jobStatus": "GET /simulations/:jobId"
+            "jobStatus": "GET /simulations/:jobId",
+            "renderedOutputIndex": "GET /out",
+            "renderedOutputFile": "GET /out/*path"
         },
         "nats": {
             "simulateSubject": DES_SIMULATE_SUBJECT,
@@ -1933,6 +1936,208 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
     )
 }
 
+// Rendered discrete-event-system output, served from the
+// `discrete-event-system` submodule's `out/` directory (committed HTML/PNG/SVG
+// artifacts). These files are read off disk per request rather than embedded,
+// since some HTML pages are tens of MB. Reached publicly via the gateway as
+// `/des/out/...` (the gateway strips the `/des/` prefix, so this service sees
+// `/out/...`).
+
+/// Resolve the directory holding the discrete-event-system `out/` artifacts.
+///
+/// Honors `DES_OUT_DIR` first (set in the deployment), then probes paths that
+/// match a local checkout so `cargo run` works without extra env wiring.
+fn des_out_dir() -> PathBuf {
+    if let Ok(dir) = env::var("DES_OUT_DIR") {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    let candidates = [
+        "/opt/dd-next-1/remote/submodules/discrete-event-system/out",
+        "../../submodules/discrete-event-system/out",
+        "../../../submodules/discrete-event-system/out",
+        "remote/submodules/discrete-event-system/out",
+    ];
+    for candidate in candidates {
+        let path = PathBuf::from(candidate);
+        if path.is_dir() {
+            return path;
+        }
+    }
+    PathBuf::from("/opt/dd-next-1/remote/submodules/discrete-event-system/out")
+}
+
+fn des_out_content_type(path: &StdPath) -> &'static str {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("html" | "htm") => "text/html; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("json" | "map") => "application/json; charset=utf-8",
+        Some("jsonl") => "application/x-ndjson; charset=utf-8",
+        Some("csv") => "text/csv; charset=utf-8",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("ico") => "image/x-icon",
+        Some("woff2") => "font/woff2",
+        Some("wasm") => "application/wasm",
+        Some("md") => "text/markdown; charset=utf-8",
+        Some("txt") => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Canonicalize `requested` and return it only if it stays inside the
+/// canonicalized `base`. Returns `None` for traversal attempts, escaping
+/// symlinks, or paths that do not exist.
+fn des_out_resolve_within(base: &StdPath, requested: &StdPath) -> Option<PathBuf> {
+    let canon_base = base.canonicalize().ok()?;
+    let canon_req = requested.canonicalize().ok()?;
+    canon_req.starts_with(&canon_base).then_some(canon_req)
+}
+
+/// Read and return an already path-validated file with a conservative set of
+/// response headers. `nosniff` blocks MIME confusion on served artifacts, and a
+/// short cache window keeps re-renders fresh while still helping repeat loads.
+fn serve_des_file(path: &StdPath) -> Response {
+    match std::fs::read(path) {
+        Ok(bytes) => (
+            [
+                ("content-type", des_out_content_type(path)),
+                ("x-content-type-options", "nosniff"),
+                ("cache-control", "public, max-age=60"),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+/// Recursively collect `*.html` files under `dir`, returned as forward-slash
+/// relative paths sorted alphabetically for a stable index listing.
+fn des_out_collect_html(dir: &StdPath, base: &StdPath, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            des_out_collect_html(&path, base, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("html") {
+            if let Ok(rel) = path.strip_prefix(base) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+}
+
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Redirect bare `/out` to `/out/` using a relative target so the curated
+/// index's relative links resolve correctly behind any gateway path prefix.
+async fn des_out_redirect() -> Response {
+    axum::response::Redirect::permanent("out/").into_response()
+}
+
+async fn des_out_index() -> Response {
+    let base = des_out_dir();
+
+    // Prefer the curated landing page (out/index.html) when present so /des/out/
+    // serves the hand-built index instead of an auto-generated file listing.
+    if let Some(index) = des_out_resolve_within(&base, &base.join("index.html")) {
+        if index.is_file() {
+            return serve_des_file(&index);
+        }
+    }
+
+    // Fallback: generated listing of every rendered HTML artifact. Hrefs are
+    // relative so they resolve under whatever prefix this page is served at.
+    let mut files = Vec::new();
+    des_out_collect_html(&base, &base, &mut files);
+    files.sort();
+
+    let mut items = String::new();
+    if files.is_empty() {
+        items.push_str(&format!(
+            "<p class=\"empty\">No HTML found under {}. \
+             Set DES_OUT_DIR or initialize the discrete-event-system submodule.</p>",
+            html_escape(&base.display().to_string())
+        ));
+    } else {
+        items.push_str("<ul>");
+        for file in &files {
+            let safe = html_escape(file);
+            items.push_str(&format!(
+                "<li><a href=\"{href}\">{label}</a></li>",
+                href = safe,
+                label = safe
+            ));
+        }
+        items.push_str("</ul>");
+    }
+
+    let body = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>discrete-event-system output</title><style>\
+         body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;\
+         background:#0d1117;color:#e6edf3;}}\
+         main{{max-width:960px;margin:0 auto;padding:24px 20px 64px;}}\
+         h1{{font-size:1.5rem;margin:0 0 4px;}}\
+         p.sub{{color:#8b949e;margin:0 0 20px;font-size:.9rem;}}\
+         ul{{list-style:none;padding:0;margin:0;}}\
+         li{{border-bottom:1px solid #21262d;}}\
+         li a{{display:block;padding:10px 8px;color:#58a6ff;text-decoration:none;\
+         font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem;}}\
+         li a:hover{{background:#161b22;}}\
+         p.empty{{color:#8b949e;padding:16px 8px;}}</style></head><body><main>\
+         <h1>discrete-event-system output</h1>\
+         <p class=\"sub\">Rendered HTML from the discrete-event-system submodule's out/ \
+         directory ({count} files).</p>{items}</main></body></html>",
+        count = files.len(),
+        items = items
+    );
+
+    axum::response::Html(body).into_response()
+}
+
+async fn des_out_file(Path(rel_path): Path<String>) -> Response {
+    let base = des_out_dir();
+
+    // Defend against path traversal: the canonicalized target (symlinks and
+    // `..` resolved) must stay inside the canonicalized out/ directory.
+    let Some(target) = des_out_resolve_within(&base, &base.join(&rel_path)) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+
+    // Serve <dir>/index.html for directory requests; never expose raw directory
+    // listings of arbitrary subpaths.
+    if target.is_dir() {
+        if let Some(index) = des_out_resolve_within(&base, &target.join("index.html")) {
+            if index.is_file() {
+                return serve_des_file(&index);
+            }
+        }
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    }
+
+    if !target.is_file() {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    }
+
+    serve_des_file(&target)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let host = env_value("HOST", "0.0.0.0");
@@ -1970,6 +2175,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .route("/validate", post(validate_with_metrics))
         .route("/simulate", post(simulate_http))
         .route("/simulations/:job_id", get(job_status))
+        .route("/out", get(des_out_redirect))
+        .route("/out/", get(des_out_index))
+        .route("/out/*path", get(des_out_file))
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
@@ -2210,6 +2418,57 @@ mod tests {
             4.0
         );
         assert!(!result.truncated);
+    }
+
+    #[test]
+    fn out_content_type_maps_known_and_unknown_extensions() {
+        assert_eq!(
+            des_out_content_type(StdPath::new("a/b.html")),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("a.svg")),
+            "image/svg+xml"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("a.js")),
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("a.bin")),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            des_out_content_type(StdPath::new("no-extension")),
+            "application/octet-stream"
+        );
+    }
+
+    #[test]
+    fn out_resolve_within_confines_to_base_and_blocks_traversal() {
+        let root = std::env::temp_dir().join(format!(
+            "des-out-test-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        let base = root.join("out");
+        std::fs::create_dir_all(base.join("sub")).expect("create base");
+        std::fs::write(base.join("index.html"), b"<h1>ok</h1>").expect("write index");
+        std::fs::write(base.join("sub/page.html"), b"<h1>sub</h1>").expect("write sub page");
+        std::fs::write(root.join("secret.txt"), b"top secret").expect("write secret");
+
+        // In-bounds files resolve.
+        assert!(des_out_resolve_within(&base, &base.join("index.html")).is_some());
+        assert!(des_out_resolve_within(&base, &base.join("sub/page.html")).is_some());
+
+        // Traversal out of the base is rejected even though the target exists.
+        assert!(des_out_resolve_within(&base, &base.join("../secret.txt")).is_none());
+        assert!(des_out_resolve_within(&base, &base.join("sub/../../secret.txt")).is_none());
+
+        // Missing paths resolve to None (canonicalize fails).
+        assert!(des_out_resolve_within(&base, &base.join("nope.html")).is_none());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

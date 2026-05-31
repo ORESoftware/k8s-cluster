@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "runtime-config-rs",
   "language": "rust",
-  "routeCount": 15,
+  "routeCount": 18,
   "routeTypeCounts": {
-    "service": 3,
+    "service": 6,
     "user-generated": 12
   },
   "standardDocsRoutes": [
@@ -76,6 +76,57 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "admin_upsert"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
       ],
       "sourceFiles": [
         "remote/deployments/runtime-config-rs/src/main.rs"
