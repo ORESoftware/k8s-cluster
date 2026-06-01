@@ -11,6 +11,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # watches the per-thread tasks wildcard for liveness signals; pulling those
 # from the generated lib keeps it in sync with the producer side.
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+dd-shared-interfaces = { path = "../../libs/interfaces/shared/generated/rust" }
 chrono-tz = "0.10"
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }

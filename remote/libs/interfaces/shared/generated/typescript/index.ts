@@ -2,6 +2,46 @@
 // Do not edit by hand; edit the JSON Schema under schema/ and regenerate.
 // Source schemas: remote/libs/interfaces/shared/schema/*.schema.json
 
+// JSON payload published to the per-thread NATS task subject and orchestrator wakeup subject when a remote-agent task is queued for async execution.
+export type AgentTaskQueueMessage = {
+  /** Envelope version. Current producers emit 1. */
+  version?: number;
+  /** Logical envelope kind, e.g. 'task.dispatch' or 'task.shadow'. */
+  messageKind?: string;
+  /** Logical task kind. Agent prompt execution uses 'agent.prompt'. */
+  taskKind?: string;
+  /** True when this message should only prepare or warm a worker and must not execute the prompt. */
+  shadow?: boolean;
+  /** True when direct worker dispatch already owns execution and NATS is only being used for auxiliary wakeup or preparation. */
+  directDispatch?: boolean;
+  /** Requested dispatch mode after normalization, e.g. 'queued', 'direct', 'queued-pool', or 'container-pool'. */
+  dispatchMode?: string;
+  /** True when the queue consumer should route execution through the container-pool runtime instead of a per-thread pod. */
+  containerPoolDispatch?: boolean;
+  /** Remote-dev thread UUID. */
+  threadId: string;
+  /** Remote-dev task UUID. */
+  taskId: string;
+  /** Optional agent provider requested by the dispatch UI/API. */
+  provider?: string | null;
+  /** Git repository URL or slug for the thread workspace. */
+  repo?: string | null;
+  /** Base branch used to prepare the thread workspace. */
+  baseBranch?: string | null;
+  /** Feature branch to use or resume for the task, when already known. */
+  featureBranch?: string | null;
+  /** User prompt for the queued agent task. */
+  prompt?: string | null;
+  /** Optional display title used when deriving a new thread branch. */
+  threadTitle?: string | null;
+  /** Context injection mode selected by the operator, e.g. automatic, selected, or none. */
+  contextMode?: string | null;
+  /** Selected durable context IDs to hydrate before agent execution. */
+  contextIds?: string[];
+  /** Unix epoch milliseconds when the producer created the envelope. */
+  createdAtMs?: number;
+};
+
 // Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 export type RuntimeConfigApplyReason = "cron" | "admin" | "register" | "manual" | "initial";
 

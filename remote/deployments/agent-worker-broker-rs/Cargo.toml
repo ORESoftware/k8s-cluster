@@ -12,6 +12,7 @@ axum = { version = "0.7", features = ["macros"] }
 # strongly-typed helpers keep it in lock-step with the queue consumer.
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+dd-shared-interfaces = { path = "../../libs/interfaces/shared/generated/rust" }
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }

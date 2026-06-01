@@ -429,7 +429,7 @@ test('gleam lambda runner ships ec2 service manifests', async () => {
   assert.match(ec2Deployment, /LAMBDA_RESULT_MAX_BYTES[\s\S]*1048576/);
   assert.match(ec2Deployment, /LAMBDA_ALLOW_HOST_RUNTIMES[\s\S]*nodejs/);
   assert.match(ec2Deployment, /LAMBDA_PREWARM_RUNTIMES[\s\S]*nodejs/);
-  assert.match(ec2Deployment, /LAMBDA_PREWARM_CONTAINER_RUNTIMES[\s\S]*nodejs,python3,ruby,bash/);
+  assert.match(ec2Deployment, /LAMBDA_PREWARM_CONTAINER_RUNTIMES[\s\S]*value:\s*''/);
   assert.match(ec2Deployment, /mountPath:\s*\/run\/containerd/);
   assert.match(ec2Deployment, /mountPath:\s*\/var\/lib\/containerd/);
   assert.match(ec2Deployment, /mountPropagation:\s*Bidirectional/);

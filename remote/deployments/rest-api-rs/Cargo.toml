@@ -19,6 +19,7 @@ dd-pg-defs = { path = "../../libs/pg-defs/generated/rust" }
 # magic strings so a subject rename in remote/libs/nats/subject-defs/schema/
 # breaks the build here instead of silently producing wrong subjects.
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+dd-shared-interfaces = { path = "../../libs/interfaces/shared/generated/rust" }
 # Receive runtime-config push updates from dd-runtime-config so the public
 # proxy at /api/runtime-config/snapshot/:env and the gateway-fronted admin
 # UI keep this REST API's own runtime overrides (auth flags, rate limits,

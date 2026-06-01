@@ -4,6 +4,76 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// JSON payload published to the per-thread NATS task subject and orchestrator wakeup subject when a remote-agent task is queued for async execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskQueueMessage {
+    /// Envelope version. Current producers emit 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<i64>,
+    /// Logical envelope kind, e.g. 'task.dispatch' or 'task.shadow'.
+    #[serde(rename = "messageKind")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_kind: Option<String>,
+    /// Logical task kind. Agent prompt execution uses 'agent.prompt'.
+    #[serde(rename = "taskKind")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_kind: Option<String>,
+    /// True when this message should only prepare or warm a worker and must not execute the prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<bool>,
+    /// True when direct worker dispatch already owns execution and NATS is only being used for auxiliary wakeup or preparation.
+    #[serde(rename = "directDispatch")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direct_dispatch: Option<bool>,
+    /// Requested dispatch mode after normalization, e.g. 'queued', 'direct', 'queued-pool', or 'container-pool'.
+    #[serde(rename = "dispatchMode")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dispatch_mode: Option<String>,
+    /// True when the queue consumer should route execution through the container-pool runtime instead of a per-thread pod.
+    #[serde(rename = "containerPoolDispatch")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_pool_dispatch: Option<bool>,
+    /// Remote-dev thread UUID.
+    #[serde(rename = "threadId")]
+    pub thread_id: String,
+    /// Remote-dev task UUID.
+    #[serde(rename = "taskId")]
+    pub task_id: String,
+    /// Optional agent provider requested by the dispatch UI/API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Git repository URL or slug for the thread workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// Base branch used to prepare the thread workspace.
+    #[serde(rename = "baseBranch")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+    /// Feature branch to use or resume for the task, when already known.
+    #[serde(rename = "featureBranch")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_branch: Option<String>,
+    /// User prompt for the queued agent task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// Optional display title used when deriving a new thread branch.
+    #[serde(rename = "threadTitle")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_title: Option<String>,
+    /// Context injection mode selected by the operator, e.g. automatic, selected, or none.
+    #[serde(rename = "contextMode")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_mode: Option<String>,
+    /// Selected durable context IDs to hydrate before agent execution.
+    #[serde(rename = "contextIds")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_ids: Option<Vec<String>>,
+    /// Unix epoch milliseconds when the producer created the envelope.
+    #[serde(rename = "createdAtMs")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at_ms: Option<i64>,
+}
+
 /// Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -19,6 +19,7 @@ use dd_nats_subject_defs::{
     thread_tasks_subject, DD_REMOTE_TASKS_STREAM_NAME, ORCHESTRATOR_WAKEUP_SUBJECT,
     THREAD_TASKS_WILDCARD,
 };
+use dd_shared_interfaces::AgentTaskQueueMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -113,26 +114,6 @@ struct BrokerResponse {
     nats: NatsPublishResult,
     direct_dispatch: WorkerDispatchResult,
     wake: K8sWakeResult,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NatsTaskMessage {
-    version: u8,
-    message_kind: &'static str,
-    task_kind: &'static str,
-    shadow: bool,
-    direct_dispatch: bool,
-    thread_id: String,
-    task_id: String,
-    provider: Option<String>,
-    repo: String,
-    base_branch: String,
-    feature_branch: Option<String>,
-    prompt: String,
-    context_mode: Option<String>,
-    context_ids: Option<Vec<String>>,
-    created_at_ms: u128,
 }
 
 fn first_env(keys: &[&str]) -> Option<String> {
@@ -321,22 +302,25 @@ async fn publish_task_to_nats(
     ensure_task_stream(config, client.clone()).await?;
 
     let subject = thread_tasks_subject(thread_id);
-    let payload = serde_json::to_vec(&NatsTaskMessage {
-        version: 1,
-        message_kind: "task.dispatch",
-        task_kind: "agent.prompt",
-        shadow: false,
-        direct_dispatch: false,
+    let payload = serde_json::to_vec(&AgentTaskQueueMessage {
+        version: Some(1),
+        message_kind: Some("task.dispatch".to_string()),
+        task_kind: Some("agent.prompt".to_string()),
+        shadow: Some(false),
+        direct_dispatch: Some(false),
+        dispatch_mode: None,
+        container_pool_dispatch: None,
         thread_id: thread_id.to_string(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
-        repo: repo.to_string(),
-        base_branch: base_branch.to_string(),
+        repo: Some(repo.to_string()),
+        base_branch: Some(base_branch.to_string()),
         feature_branch: None,
-        prompt: request.prompt.clone(),
+        prompt: Some(request.prompt.clone()),
+        thread_title: None,
         context_mode: request.context_mode.clone(),
         context_ids: request.context_ids.clone(),
-        created_at_ms: now_ms(),
+        created_at_ms: Some(now_ms() as i64),
     })
     .map_err(|error| error.to_string())?;
 

@@ -8,6 +8,47 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Literal, Optional, Union
 
+# JSON payload published to the per-thread NATS task subject and orchestrator wakeup subject when a remote-agent task is queued for async execution.
+@dataclass
+class AgentTaskQueueMessage:
+    """JSON payload published to the per-thread NATS task subject and orchestrator wakeup subject when a remote-agent task is queued for async execution."""
+    # Remote-dev thread UUID.
+    threadId: str
+    # Remote-dev task UUID.
+    taskId: str
+    # Envelope version. Current producers emit 1.
+    version: Optional[int] = None
+    # Logical envelope kind, e.g. 'task.dispatch' or 'task.shadow'.
+    messageKind: Optional[str] = None
+    # Logical task kind. Agent prompt execution uses 'agent.prompt'.
+    taskKind: Optional[str] = None
+    # True when this message should only prepare or warm a worker and must not execute the prompt.
+    shadow: Optional[bool] = None
+    # True when direct worker dispatch already owns execution and NATS is only being used for auxiliary wakeup or preparation.
+    directDispatch: Optional[bool] = None
+    # Requested dispatch mode after normalization, e.g. 'queued', 'direct', 'queued-pool', or 'container-pool'.
+    dispatchMode: Optional[str] = None
+    # True when the queue consumer should route execution through the container-pool runtime instead of a per-thread pod.
+    containerPoolDispatch: Optional[bool] = None
+    # Optional agent provider requested by the dispatch UI/API.
+    provider: Optional[str] = None
+    # Git repository URL or slug for the thread workspace.
+    repo: Optional[str] = None
+    # Base branch used to prepare the thread workspace.
+    baseBranch: Optional[str] = None
+    # Feature branch to use or resume for the task, when already known.
+    featureBranch: Optional[str] = None
+    # User prompt for the queued agent task.
+    prompt: Optional[str] = None
+    # Optional display title used when deriving a new thread branch.
+    threadTitle: Optional[str] = None
+    # Context injection mode selected by the operator, e.g. automatic, selected, or none.
+    contextMode: Optional[str] = None
+    # Selected durable context IDs to hydrate before agent execution.
+    contextIds: Optional[List[str]] = field(default_factory=list)
+    # Unix epoch milliseconds when the producer created the envelope.
+    createdAtMs: Optional[int] = None
+
 # Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 RuntimeConfigApplyReason = Literal["cron", "admin", "register", "manual", "initial"]
 
