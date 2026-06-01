@@ -103,8 +103,8 @@ is not a stable generic CNI entrypoint from inside that trusted pod. Treat the r
 node-level infrastructure: keep invocation and CRUD routes authenticated, and rely on the
 per-lambda runtime flags above for the untrusted function containers.
 
-The EC2 and minikube manifests include a `startupProbe` on `/healthz` so package install, dependency
-download, and Gleam build work at boot do not trip liveness before the service is ready.
+The EC2 manifest includes a `startupProbe` on `/healthz` so package install, dependency download,
+and Gleam build work at boot do not trip liveness before the service is ready.
 
 ## Runtime images
 

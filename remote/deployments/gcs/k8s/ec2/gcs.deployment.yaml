@@ -173,13 +173,11 @@ spec:
               containerPort: 3001
           resources:
             requests:
-              # Lowered from 250m -> 100m so 3 replicas fit on the
-              # single-node EC2 cluster (the node is shared with many
-              # other workloads). Keep the request low so the pods can
-              # schedule, but let each pod burst to 6 vCPU during WSS
-              # load tests.
+              # Keep scheduler reservations small enough for the
+              # single-node EC2 cluster; the load-test CPU/memory
+              # allowance is expressed by the limits below.
               cpu: 100m
-              memory: 3Gi
+              memory: 512Mi
             limits:
               cpu: '6'
               memory: 3Gi

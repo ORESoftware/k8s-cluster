@@ -35,7 +35,6 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const clusterMcp = await readRepoFile('remote/deployments/dev-server/src/agents/cluster-mcp.ts');
   const workspaceTools = await readRepoFile('remote/deployments/dev-server/src/agents/workspace-tools.ts');
   const dockerfile = await readRepoFile('remote/deployments/dev-server/Dockerfile');
-  const localDockerfile = await readRepoFile('remote/dev-server-local/Dockerfile');
   const readme = await readRepoFile('remote/deployments/dev-server/readme.md');
   const lockfile = await readRepoFile('remote/deployments/dev-server/pnpm-lock.yaml');
   const brokerServer = await readRepoFile('remote/deployments/agent-worker-broker-rs/src/main.rs');
@@ -45,7 +44,6 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const config = await readRepoFile('remote/k8s/01-configmap.yaml');
-  const localMinikube = await readRepoFile('remote/dev-server-local/k8s/minikube-dev-server.yaml');
   const secretsTemplate = await readRepoFile('remote/k8s/02-secrets.template.yaml');
   const threadTemplate = await readRepoFile('remote/k8s/07-thread-deployment.template.yaml');
   const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
@@ -475,16 +473,12 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(dockerfile, /test -n "\$DD_REPO_URL"/);
   assert.match(dockerfile, /if \[ -n "\$DD_REPO_URL" \]; then/);
   assert.match(dockerfile, /DD_REPO_URL not provided; building generic repo-configured worker base/);
-  assert.match(localDockerfile, /ARG DD_REPO_URL\s*\n/);
-  assert.doesNotMatch(localDockerfile, /ARG DD_REPO_URL=git@github\.com/);
-  assert.match(localDockerfile, /test -n "\$DD_REPO_URL"/);
   assert.match(dockerfile, /echo "\$DD_REPO_CACHE_BUST" > \/tmp\/dd-repo-cache-bust/);
   assert.match(
     dockerfile,
     /if \[ -f package\.json \]; then[\s\S]*pnpm install --store-dir \/home\/node\/repo-template\/\.pnpm-store --frozen-lockfile/,
   );
   assert.match(dockerfile, /no root package\.json in repo-template; skipping pnpm install/);
-  assert.match(localDockerfile, /if \[ -f package\.json \]; then[\s\S]*pnpm install --frozen-lockfile/);
   assert.doesNotMatch(
     dockerfile,
     /PNPM_STORE_DIR=\/home\/node\/repo-template\/\.pnpm-store pnpm install --frozen-lockfile/,
@@ -607,7 +601,6 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   );
   assert.doesNotMatch(restServer, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(restServer, /apt-get update/);
-  assert.doesNotMatch(localMinikube, /AGENT_MCP_URL|AGENT_MCP_CONNECT_TIMEOUT_MS/);
   assert.match(agentsMd, /docs\/\*\.md/);
   assert.match(agentsMd, /agents\/\*\.md/);
   assert.match(agentsMd, /dd_cluster/);

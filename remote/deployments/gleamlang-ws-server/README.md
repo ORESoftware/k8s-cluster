@@ -53,7 +53,7 @@ remote/deployments/gleamlang-ws-server/
 │       └── wire.gleam                client-facing JSON wire format
 ├── test/                            gleeunit tests
 ├── scripts/                         local cluster + demo helpers
-└── k8s/                             k8s manifests (ec2 / minikube / cluster)
+└── k8s/                             k8s manifests (ec2 / cluster)
 ```
 
 ## Routes
@@ -123,11 +123,11 @@ unless noted.
 | `GLEAM_WORKER_WS_SECRET`         | falls back to `GLEAM_BROADCAST_SECRET`      | Per-route override for `/worker-ws/<secret>`.                    |
 | `GLEAM_NATS_PUBLISH_URL`         | `http://127.0.0.1:8083/publish`             | Sidecar publish endpoint (legacy).                               |
 | `NATS_PUBLISH_SUBJECT`           | `dd.remote.websocket.events`                | Default subject for sidecar-mediated publishes.                  |
-| `PG_DATABASE_URL`                | (in-memory)                                 | If set, opens a pog pool, SQL outbox, and sharded LISTEN/NOTIFY; otherwise in-memory fallback. The EC2/minikube manifests map this from the `RDS_DATABASE_URL` secret so PG fanout is active when the secret exists. |
+| `PG_DATABASE_URL`                | (in-memory)                                 | If set, opens a pog pool, SQL outbox, and sharded LISTEN/NOTIFY; otherwise in-memory fallback. The EC2 manifest maps this from the `RDS_DATABASE_URL` secret so PG fanout is active when the secret exists. |
 | `NATS_URL`                       | (disabled)                                  | If set, native NATS transport boots in-process.                  |
 | `PRESENCE_NOTIFY_SHARDS`         | `256`                                       | LISTEN/NOTIFY and outbox shard count.                            |
 | `PRESENCE_OUTBOX_TICK_MS`        | `5000`                                      | Outbox safety-net poll interval.                                 |
-| `PRESENCE_WAL_ENABLED`           | `false` (EC2/minikube set `true`)           | Enables the per-pod wal2json logical slot for the Gleam WSS presence path. Keep `max_slot_wal_keep_size`/slot-lag alerts in place before scaling replicas. |
+| `PRESENCE_WAL_ENABLED`           | `false` (EC2 sets `true`)                   | Enables the per-pod wal2json logical slot for the Gleam WSS presence path. Keep `max_slot_wal_keep_size`/slot-lag alerts in place before scaling replicas. |
 | `PRESENCE_WAL_TICK_MS`           | `1000`                                      | WAL poll interval. Ignored unless `PRESENCE_WAL_ENABLED=true`.   |
 | `CLUSTER_PEERS`                  | (empty)                                     | Comma-separated full node names. Wins over k8s mode.             |
 | `CLUSTER_NAMESPACE`              | `default`                                   | k8s namespace for pod discovery.                                 |
@@ -163,9 +163,6 @@ Erlang node names; container and port names in the same response are ignored.
 - `k8s/ec2/` — single-replica Deployment with the Node.js `nats-bridge`
   sidecar, builds `gleam run` from a hostpath checkout. Drop-in
   replacement for the legacy `dd-gleamlang-server` ec2 deployment.
-- `k8s/minikube/` — single-replica Deployment using a locally-built
-  image (`dd-gleamlang-ws-server:dev`). Drop-in replacement for the
-  legacy minikube target.
 - `k8s/cluster/` — full presence StatefulSet with RBAC + headless
   Service + NetworkPolicy. Replaces the standalone presence stack.
 

@@ -121,7 +121,7 @@ java -jar target/dd-spark-pipeline-server.jar
 
 * `k8s/dd-spark-pipeline-server.deployment.yaml` — main Deployment.
 * `k8s/dd-spark-pipeline-server.service.yaml` — ClusterIP Service on 8085.
-* `k8s/kustomization.yaml` — minikube / local kustomize entry point.
+* `k8s/kustomization.yaml` — local kustomize entry point.
 * `k8s/ec2/kustomization.yaml` — EC2 overlay consumed by Argo CD via
   `remote/argocd/apps/dd-spark-pipeline-server.application.yaml`.
 

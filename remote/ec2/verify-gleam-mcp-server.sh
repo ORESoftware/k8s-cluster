@@ -22,7 +22,7 @@ fi
 
 if [[ "${ALLOW_NON_EC2_CONTEXT:-false}" != "true" ]]; then
   case "${context}" in
-    *minikube*|*kind*|*docker-desktop*|*colima*)
+    *kind*|*docker-desktop*|*colima*)
       echo "Refusing to verify EC2 MCP against local kubectl context '${context}'." >&2
       echo "Use the EC2 host kubeconfig, or set ALLOW_NON_EC2_CONTEXT=true only for deliberate local testing." >&2
       exit 2

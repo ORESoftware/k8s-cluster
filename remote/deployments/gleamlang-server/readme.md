@@ -1,7 +1,7 @@
 # `remote/deployments/gleamlang-server`
 
 This directory owns the Kubernetes service name `dd-gleamlang-server`, which is the live gateway
-target for `/gleam/*`. The EC2 and Minikube manifests now run the unified
+target for `/gleam/*`. The EC2 manifest runs the unified
 [`../gleamlang-ws-server`](../gleamlang-ws-server) implementation under that stable service name so
 the live `/gleam/ws` path gets the Postgres-backed presence store, sharded LISTEN/NOTIFY, and
 explicit WAL opt-in while preserving the existing gateway, secret, and service wiring.
@@ -63,28 +63,10 @@ docker run --rm -p 8081:8081 dd-gleamlang-server:latest
 
 Then open `http://localhost:8081/home`.
 
-## Kubernetes targets
-
-Two k8s variants are included:
+## Kubernetes Target
 
 - `k8s/ec2`: uses the EC2 host checkout at `/home/ec2-user/codes/dd/dd-next-1` and runs
   `remote/deployments/gleamlang-ws-server` from source inside the `dd-gleamlang-server` pod.
-- `k8s/minikube`: uses the local `dd-gleamlang-ws-server:dev` image for Minikube, while keeping the
-  Service and Deployment name `dd-gleamlang-server`.
-
-Build the Minikube image:
-
-```bash
-minikube image build -t dd-gleamlang-ws-server:dev -f remote/deployments/gleamlang-ws-server/Dockerfile .
-```
-
-Then apply with:
-
-```bash
-kubectl apply -k remote/deployments/gleamlang-server/k8s/minikube
-```
-
-For EC2:
 
 ```bash
 kubectl apply -k remote/deployments/gleamlang-server/k8s/ec2
@@ -95,4 +77,3 @@ kubectl apply -k remote/deployments/gleamlang-server/k8s/ec2
 GitOps app manifests:
 
 - `remote/argocd/apps/dd-gleamlang-server.application.yaml` (EC2 path)
-- `remote/argocd/apps/dd-gleamlang-server-minikube.application.yaml` (Minikube path)

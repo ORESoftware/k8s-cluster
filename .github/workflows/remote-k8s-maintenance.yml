@@ -11,6 +11,13 @@ on:
       - "remote/deployments/rest-api-rs/**"
       - "remote/deployments/host-cron/**"
       - "remote/deployments/dev-server/src/server.ts"
+      - "remote/deployments/gcs/**"
+      - "remote/deployments/ws-loadtest-rs/**"
+      - "remote/deployments/gleamlang-ws-loadtest/**"
+      - "remote/argocd/apps/gcs.application.yaml"
+      - "remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml"
+      - "remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml"
+      - "remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml"
       - "remote/argocd/dd-next-runtime/**"
   workflow_dispatch:
     inputs:
@@ -1547,8 +1554,18 @@ jobs:
           case "$duration" in
             ''|*[!0-9]*) duration=180 ;;
           esac
+          loader_replicas="${LOADTEST_LOADER_REPLICAS:-8}"
+          case "$loader_replicas" in
+            ''|*[!0-9]*) loader_replicas=8 ;;
+          esac
+          clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-2500}"
+          case "$clients_per_replica" in
+            ''|*[!0-9]*) clients_per_replica=2500 ;;
+          esac
+          total_connections=$((loader_replicas * clients_per_replica))
 
           apps="gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
+          loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
 
           sync_app() {
@@ -1570,6 +1587,23 @@ jobs:
             kubectl -n argocd get "application/$app" -o wide || true
           }
 
+          restore_loadtest_apps() {
+            kubectl apply -f remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml || true
+            kubectl apply -f remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml || true
+            kubectl apply -f remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml || true
+            for app in $loadtest_apps; do
+              sync_app "$app"
+            done
+          }
+
+          disable_loadtest_autosync() {
+            echo "=== disable loadtest Argo auto-sync while live scaling ==="
+            for app in $loadtest_apps; do
+              kubectl -n argocd patch "application/$app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+              kubectl -n argocd get "application/$app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            done
+          }
+
           cleanup() {
             set +e
             echo "=== cleanup: scale GCS WSS loadtest deployments to 0 ==="
@@ -1578,21 +1612,24 @@ jobs:
             done
             kubectl -n default get deploy $loaders -o wide || true
             echo "=== cleanup: restore loadtest deployments from Argo desired state ==="
-            for app in dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs; do
-              sync_app "$app"
-            done
+            restore_loadtest_apps
           }
           trap cleanup EXIT
 
           echo "=== sync EC2 checkout and recorded submodules ==="
           cd "$repo"
+          before_revision="$(git rev-parse HEAD 2>/dev/null || true)"
           git status --short --branch
           git fetch origin "${TARGET_REVISION:-dev}"
           git merge --ff-only "origin/${TARGET_REVISION:-dev}"
+          after_revision="$(git rev-parse HEAD)"
+          changed_paths="$(git diff --name-only "${before_revision:-$after_revision}" "$after_revision" 2>/dev/null || true)"
           git submodule sync --recursive
           git submodule update --init --recursive
           git rev-parse --short HEAD
           git submodule status --recursive
+          echo "=== changed paths pulled on EC2 ==="
+          printf '%s\n' "${changed_paths:-none}" | head -80
 
           echo "=== apply Argo CD Applications ==="
           kubectl apply -f remote/argocd/apps/gcs.application.yaml
@@ -1603,11 +1640,63 @@ jobs:
           for app in $apps; do
             sync_app "$app"
           done
+          disable_loadtest_autosync
 
-          echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
-          kubectl -n default rollout restart deployment/gcs deployment/gcs-router
-          kubectl -n default rollout status deployment/gcs --timeout=900s
-          kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          wait_available() {
+            d="$1"
+            expected="$2"
+            for i in $(seq 1 300); do
+              available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+              if [ "${available:-0}" -ge "$expected" ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo "ERROR: deployment/$d did not reach availableReplicas >= $expected" >&2
+            kubectl -n default get deploy "$d" -o wide || true
+            kubectl -n default get pods -l "app=$d" -o wide || true
+            echo "=== $d describe ==="
+            kubectl -n default describe "deployment/$d" || true
+            echo "=== $d current logs ==="
+            kubectl -n default logs -l "app=$d" --all-containers --tail=120 --prefix=true --max-log-requests=20 || true
+            echo "=== $d previous logs ==="
+            for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            done
+            echo "=== $d selected events ==="
+            kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -80 || true
+            return 1
+          }
+
+          diagnose_gcs_dependencies() {
+            echo "=== gcs-kafka focused diagnostics ==="
+            kubectl -n default get deploy gcs-kafka -o wide || true
+            kubectl -n default get pods -l app=gcs-kafka -o wide || true
+            kubectl -n default describe deploy/gcs-kafka || true
+            kubectl -n default logs -l app=gcs-kafka --all-containers --tail=220 --prefix=true --max-log-requests=5 || true
+            for pod in $(kubectl -n default get pods -l app=gcs-kafka -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            done
+            echo "=== gcs dependency status ==="
+            kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            kubectl -n default get statefulset gcs-mongodb -o wide || true
+            echo "=== gcs dependency pods ==="
+            kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+          }
+
+          if printf '%s\n' "$changed_paths" | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml)' >/dev/null; then
+            echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
+            kubectl -n default rollout restart deployment/gcs deployment/gcs-router
+            kubectl -n default rollout status deployment/gcs --timeout=900s
+            kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          else
+            echo "=== verify existing gcs/chat.vibe deployment (no GCS source path changes) ==="
+            diagnose_gcs_dependencies
+            wait_available gcs 3
+            wait_available gcs-router 2
+          fi
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
 
@@ -1624,33 +1713,78 @@ jobs:
 
           collect_loader() {
             d="$1"
-            echo "=== $d deploy/pods ==="
-            kubectl -n default get deploy "$d" -o wide || true
-            kubectl -n default get pods -l "app=$d" -o wide || true
-            echo "=== $d top ==="
-            kubectl -n default top pods -l "app=$d" 2>/dev/null || true
-            echo "=== $d recent reports ==="
-            kubectl -n default logs -l "app=$d" --all-containers --tail=80 --prefix=true --max-log-requests=20 2>/dev/null \
-              | grep -E 'starting|gcs-setup|gcs-report|connect failed|connect timeout|receive_errors' \
-              | tail -120 || true
+            echo "=== $d compact state ==="
+            kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas} updated={.status.updatedReplicas}{"\n"}' || true
+            kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null \
+              | awk '{counts[$3]++; total++} END {printf "pod-status "; if (total == 0) {print "none"} else {for (s in counts) printf "%s=%d ", s, counts[s]; print ""}}' || true
+            kubectl -n default logs -l "app=$d" --all-containers --tail=400 --prefix=true --max-log-requests=20 2>/dev/null \
+              | awk '
+                /gcs-report/ {
+                  pod = $1
+                  sub(/^\[pod\//, "", pod)
+                  sub(/\/.*$/, "", pod)
+                  latest[pod] = $0
+                }
+                END {
+                  for (pod in latest) {
+                    pods++
+                    n = split(latest[pod], fields, " ")
+                    for (i = 1; i <= n; i++) {
+                      split(fields[i], kv, "=")
+                      key = kv[1]
+                      val = kv[2] + 0
+                      if (key == "attempted") attempted += val
+                      else if (key == "connected") connected += val
+                      else if (key == "failed") failed += val
+                      else if (key == "open") open += val
+                      else if (key == "sent") sent += val
+                      else if (key == "received") received += val
+                      else if (key == "in_flight") in_flight += val
+                      else if (key == "correlation_misses") correlation_misses += val
+                      else if (key == "receive_errors") receive_errors += val
+                      else if (key == "p50_us" && val > max_p50_us) max_p50_us = val
+                      else if (key == "p95_us" && val > max_p95_us) max_p95_us = val
+                      else if (key == "p99_us" && val > max_p99_us) max_p99_us = val
+                      else if (key == "max_us" && val > max_us) max_us = val
+                    }
+                  }
+                  if (pods == 0) {
+                    print "gcs-summary none"
+                  } else {
+                    printf "gcs-summary pods=%d attempted=%d connected=%d failed=%d open=%d sent=%d received=%d in_flight=%d correlation_misses=%d receive_errors=%d max_p50_us=%d max_p95_us=%d max_p99_us=%d max_us=%d\n", pods, attempted, connected, failed, open, sent, received, in_flight, correlation_misses, receive_errors, max_p50_us, max_p95_us, max_p99_us, max_us
+                  }
+                }' || true
           }
 
           run_loader() {
             d="$1"
             label="$2"
-            echo "=== start $label: 20k conns, 2.5 msg/(conn*second), duration=${duration}s ==="
+            echo "=== start $label: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), 2.5 msg/(conn*second), duration=${duration}s ==="
             kubectl -n default set resources "deployment/$d" \
               --requests=cpu=100m,memory=512Mi \
               --limits=cpu=4,memory=8Gi || true
             kubectl -n default set env "deployment/$d" \
-              CLIENT_COUNT=2000 \
+              CLIENT_COUNT="$clients_per_replica" \
               GCS_CLIENTS_PER_CONV=5 \
               GCS_SENDERS_PER_CONV=0 \
               MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
               RAMP_DELAY_MS=2 \
               REPORT_INTERVAL_SECONDS=10
-            kubectl -n default scale "deployment/$d" --replicas=10
-            kubectl -n default rollout status "deployment/$d" --timeout=900s
+            kubectl -n default scale "deployment/$d" --replicas="$loader_replicas"
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=900s; then
+              echo "ERROR: $d failed to roll out with ${loader_replicas} replicas" >&2
+              collect_loader "$d"
+              kubectl -n default describe "deployment/$d" || true
+              kubectl -n default describe pods -l "app=$d" || true
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -160 || true
+              exit 1
+            fi
+            actual_replicas="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+            if [ "$actual_replicas" != "$loader_replicas" ]; then
+              echo "ERROR: $d expected spec.replicas=${loader_replicas} after scale-up, got ${actual_replicas:-unset}" >&2
+              kubectl -n argocd get "application/$d" -o yaml | grep -E 'automated:|syncPolicy:|syncOptions:' || true
+              exit 1
+            fi
             collect_loader "$d"
             echo "=== router metrics before $label load window ==="
             router_metrics
@@ -1667,10 +1801,12 @@ jobs:
               echo "=== router metrics during $label ==="
               router_metrics
             done
+            echo "=== final $label loader summary ==="
+            collect_loader "$d"
             echo "=== stop $label ==="
             kubectl -n default scale "deployment/$d" --replicas=0
             sleep 15
-            collect_loader "$d"
+            kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas}{"\n"}' || true
           }
 
           run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
@@ -1709,7 +1845,7 @@ jobs:
           )"
           echo "command_id=$command_id"
           status=""
-          for attempt in {1..180}; do
+          for attempt in {1..540}; do
             status="$(
               aws ssm get-command-invocation \
                 --command-id "$command_id" \
@@ -1722,9 +1858,31 @@ jobs:
                 break
                 ;;
             esac
-            echo "SSM command $command_id status=${status:-pending} attempt=$attempt/180"
+            if (( attempt <= 5 || attempt % 10 == 0 )); then
+              echo "SSM command $command_id status=${status:-pending} attempt=$attempt/540"
+            fi
             sleep 10
           done
+          if [ "${status:-}" = "InProgress" ]; then
+            echo "SSM command $command_id still InProgress after polling; cancelling to avoid orphaned cluster load"
+            aws ssm cancel-command --command-id "$command_id" --instance-ids "$INSTANCE_ID" || true
+            for attempt in {1..30}; do
+              status="$(
+                aws ssm get-command-invocation \
+                  --command-id "$command_id" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query "Status" \
+                  --output text 2>/dev/null || true
+              )"
+              case "$status" in
+                Cancelled|Failed|Success|TimedOut)
+                  break
+                  ;;
+              esac
+              echo "SSM command $command_id cancellation status=${status:-pending} attempt=$attempt/30"
+              sleep 5
+            done
+          fi
           aws ssm get-command-invocation \
             --command-id "$command_id" \
             --instance-id "$INSTANCE_ID" \

@@ -477,10 +477,8 @@ For k8s pods, sleep/wake is managed outside the container by the control-plane r
 `IDLE_TIMEOUT_MS=0` to avoid self-terminating loops.
 
 This folder is the AWS EC2 Kubernetes variant. Use it for the ECR image and the per-thread pods
-created by the v4 manifests in `remote/k8s/`. Laptop/minikube iteration belongs in
-[`../../dev-server-local`](../../dev-server-local/), which carries its own local manifest and headless
-smoke tests. Direct `docker run` from this folder is still useful for isolated debugging, but it is
-not the local cluster path.
+created by the v4 manifests in `remote/k8s/`. Direct `docker run` from this folder is still useful
+for isolated debugging, but the Kubernetes runtime path is EC2.
 
 The ECR refresh workflow lives at
 [`../../../.github/workflows/remote-dev-server-ecr.yml`](../../../.github/workflows/remote-dev-server-ecr.yml).

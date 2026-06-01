@@ -56,6 +56,14 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
   IP/MIP solver.
 - `POST /soccer/planner/stream` — planner-specific JSONL stream alias for
   adding roster variables/constraints and solving.
+- `GET  /music` — generative music-production workbench for microtonal albums
+  and MP4 sample-seed variations.
+- `POST /music/sample-seed` — upload a 10-50s MP4 seed plus prompt text and
+  render a WAV variation with a JSON manifest.
+- `GET  /delivery-planner.html` — friendly redirect to the generated delivery
+  planner artifact.
+- `GET  /deliver-planner.html` — typo-compatible redirect to the same generated
+  delivery planner artifact.
 - `GET  /out` → `/out/` — curated `index.html` if present, else a generated
   listing of every rendered artifact.
 - `GET  /out/<path>` — serve an individual artifact (path-traversal confined to
@@ -83,8 +91,10 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 | `PORT` | `8112` | bind port |
 | `DES_WORK_DIR` | `<tmp>/dd-des-rs` | writable dir; engine renders into `<dir>/out` |
 | `DES_STARTUP_SIMS` | curated fast set | comma-separated name filters run at startup (empty = skip) |
+| `DES_SERVER_GIT_URL` | k8s repo HTTPS URL | *(deployment startup script, not the server)* clone this repo at pod start and copy `remote/deployments/des-rs` from it; set empty to use the mounted repo |
+| `DES_SERVER_GIT_REF` | `dev` | *(deployment startup script)* branch/tag/sha to clone for the server crate |
 | `DES_ENGINE_GIT_URL` | engine repo HTTPS URL | *(deployment startup script, not the server)* clone this engine repo at pod start and build against it; set empty to use the pinned submodule instead |
-| `DES_ENGINE_GIT_REF` | `main` | *(deployment startup script)* branch/tag/sha to clone for the engine |
+| `DES_ENGINE_GIT_REF` | `0c77c0560fb804080de284681885c75a2398606c` | *(deployment startup script)* branch/tag/sha to clone for the engine |
 
 ## Run locally
 
@@ -104,18 +114,24 @@ via `cargo run --release`, with `CARGO_*`/`HOME`/`DES_WORK_DIR` pointed at the
 writable `/tmp` emptyDir. See `remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml`
 and `dd-des-rs.service.yaml` (registered in that overlay's `kustomization.yaml`).
 
-**Engine source (auto-fetch).** At pod start the startup script clones the
-engine's latest `origin/main` (`DES_ENGINE_GIT_URL` / `DES_ENGINE_GIT_REF`) into
-`/tmp/engine`, copies this crate into the writable `/tmp/des-rs`, repoints its
-`des_engine` path dependency at the clone, and builds. This means the deployment
-**tracks the engine's `main` branch automatically on every (re)start** and does
-**not** depend on the node having the git submodule checked out (the push-time
-`reconcile-runtime` only fast-forwards the repo; it does not `git submodule
-update --init`). If the clone fails — or `DES_ENGINE_GIT_URL` is set empty — it
-falls back to the pinned `remote/submodules/discrete-event-system.rs` submodule
-in the read-only repo mount. For reproducible/pinned builds, set
-`DES_ENGINE_GIT_REF` to a tag/sha (or clear `DES_ENGINE_GIT_URL` and bump the
-submodule pointer).
+**Engine source (auto-fetch).** At pod start the startup script fetches
+`DES_ENGINE_GIT_REF` from `DES_ENGINE_GIT_URL` into `/tmp/engine`, copies this
+crate into the writable `/tmp/des-rs`, repoints its `des_engine` path dependency
+at the clone, and builds. The deployment currently pins the engine at
+`0c77c0560fb804080de284681885c75a2398606c`, so it does **not** depend on the
+node having the git submodule checked out (the push-time `reconcile-runtime`
+only fast-forwards the repo; it does not `git submodule update --init`). If the
+clone fails — or `DES_ENGINE_GIT_URL` is set empty — it falls back to the pinned
+`remote/submodules/discrete-event-system.rs` submodule in the read-only repo
+mount. To change engine source, set `DES_ENGINE_GIT_REF` to a branch/tag/sha or
+clear `DES_ENGINE_GIT_URL` and bump the submodule pointer.
+
+**Server source (auto-fetch).** The startup script also clones this k8s repo
+(`DES_SERVER_GIT_URL` / `DES_SERVER_GIT_REF`) and copies
+`remote/deployments/des-rs` from that fresh clone before building. This keeps
+server routes in sync with Argo-applied manifests even when the EC2 hostPath
+checkout mounted at `/opt/dd-next-1` has not been pulled yet. If the clone fails
+or `DES_SERVER_GIT_URL` is empty, it falls back to the mounted repo.
 
 The gateway exposes the landing page behind auth at **`/des-rs/`** (nginx
 `location /des-rs/` → `dd-des-rs:8112/`, mirroring `/des/`), and the Rust
