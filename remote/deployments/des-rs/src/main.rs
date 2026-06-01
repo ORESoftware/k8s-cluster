@@ -19,8 +19,11 @@
 //! - `GET /models` — first-class model registry (mdp, pomdp, hybrid, studio) with example specs.
 //! - `GET /models/:kind/run` — run a kind's example spec and render an interactive player (`?format=json` for the raw artifact).
 //! - `POST /models/:kind/run` — run a user-supplied JSON spec for a kind (renders a player; `?format=json` for the artifact).
-//! - `GET /streaming` — JSONL streaming-solver contracts (lp, milp, mdp, pomdp).
+//! - `GET /streaming` — JSONL streaming-solver contracts (lp, milp, mdp, pomdp, soccer-planner).
 //! - `POST /streaming/:name` — stream JSONL commands to a solver; responds with a JSONL frame stream.
+//! - `GET /soccer/planner` — interactive 11-a-side rotation planner UI.
+//! - `POST /soccer/planner/solve` — re-solve the planner request with the Rust IP/MIP solver.
+//! - `POST /soccer/planner/stream` — soccer planner JSONL stream alias.
 //! - `GET /elevator-fel` — the new next-event (FEL) elevator simulation, animated.
 //! - `GET /elevator-mdp` — elevator-dispatch MDP player (value-iterated).
 //! - `GET /elevator-pomdp` — elevator-dispatch POMDP player (noisy call button; belief-tracked).
@@ -62,6 +65,9 @@ use des_engine::des::service::{
     ServiceDescriptor, ServiceInfo, DD_API_DOCS_HEADER,
 };
 use des_engine::des::simulations::{run_simulations_matching, simulation_catalogue, SimOutcome};
+use des_engine::des::soccer_planner::{
+    planner_page_html, planner_response_to_json, solve_planner, PlannerRequest,
+};
 use des_engine::des::streaming::{run_named_jsonl, streaming_contracts, streaming_model_names};
 
 /// Fast, HTML-producing simulations run once at startup so `/out/` has content
@@ -181,6 +187,15 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
     <div class="name">des/pomdp/v1 &middot; belief tracking</div>
     <div class="desc">Dispatch under a noisy hall-call button: hidden demand is empty / waiting / crowded and the button false-triggers and misses. Belief over hidden states drives the hold-vs-dispatch decision.</div>
     <div class="row"><a class="open" href="elevator-pomdp" target="_blank" rel="noopener">Open player &#8599;</a></div>
+  </div>
+</div>
+<h2>Soccer rotation planner <span class="muted">— 11-a-side IP/MIP, roster constraints, pitch + solver</span></h2>
+<div class="grid">
+  <div class="sim feat">
+    <div class="label">Interactive planner</div>
+    <div class="name">soccer/planner</div>
+    <div class="desc">11-a-side (4-4-2), max 7 subs. Mark players AWOL/injured/guest, lock positions, ban roles, set per-position scores and chemistry rules (9/10 if partner in slot Y). Re-solve with IP/MIP; toggle Pitch vs solver view.</div>
+    <div class="row"><a class="open" href="soccer/planner" target="_blank" rel="noopener">Open planner &#8599;</a></div>
   </div>
 </div>
 <h2>Control &amp; estimation <span class="muted">— back-EMF DC motor, controllability/observability, shadow Gramians</span></h2>
@@ -326,6 +341,8 @@ struct AppState {
     elevator_fel_html: Arc<str>,
     elevator_mdp_html: Arc<str>,
     elevator_pomdp_html: Arc<str>,
+    /// Interactive 11-a-side rotation planner (roster constraints + re-solve).
+    soccer_planner_html: Arc<str>,
 }
 
 fn now_ms() -> u128 {
@@ -433,6 +450,9 @@ async fn info(State(state): State<AppState>) -> Response {
             "streaming": "GET /streaming",
             "streamModel": "POST /streaming/:name  (JSONL in -> JSONL out)",
             "elevatorFel": "GET /elevator-fel  (new next-event elevator sim, animated)",
+            "soccerPlanner": "GET /soccer/planner  (11-a-side rotation planner UI)",
+            "soccerPlannerSolve": "POST /soccer/planner/solve  (re-solve with constraints)",
+            "soccerPlannerStream": "POST /soccer/planner/stream  (planner JSONL command stream)",
             "elevatorMdp": "GET /elevator-mdp  (elevator-dispatch MDP player)",
             "elevatorPomdp": "GET /elevator-pomdp  (elevator-dispatch POMDP player)",
             "renderedOutputIndex": "GET /out/",
@@ -589,7 +609,8 @@ async fn list_models() -> impl IntoResponse {
 }
 
 /// `GET /streaming` — the JSONL streaming-solver contracts (lp, milp/mip/ip,
-/// mdp, pomdp): each is an iterative solver fed a JSONL command stream.
+/// mdp, pomdp, soccer-planner): each is an iterative solver fed a JSONL
+/// command stream.
 async fn list_streaming() -> impl IntoResponse {
     let contracts = streaming_contracts();
     Json(json!({
@@ -606,7 +627,9 @@ async fn run_model_spec(state: &AppState, kind: String, spec: Value, as_json: bo
     let _guard = state.sim_lock.lock().await;
     let kind_for_run = kind.clone();
     let outcome = tokio::task::spawn_blocking(move || {
-        catch_unwind(AssertUnwindSafe(|| with_builtins().run(&kind_for_run, &spec)))
+        catch_unwind(AssertUnwindSafe(|| {
+            with_builtins().run(&kind_for_run, &spec)
+        }))
     })
     .await;
 
@@ -675,13 +698,7 @@ async fn model_run_post(
     run_model_spec(&state, kind, spec, wants_json(&query)).await
 }
 
-/// `POST /streaming/:name` — feed a JSONL command stream to a named solver and
-/// return its JSONL result stream. Body is `text/plain`/`application/x-ndjson`.
-async fn streaming_run(
-    State(state): State<AppState>,
-    Path(name): Path<String>,
-    body: String,
-) -> Response {
+async fn run_streaming_model(state: AppState, name: String, body: String) -> Response {
     let _guard = state.sim_lock.lock().await;
     let name_for_run = name.clone();
     let outcome = tokio::task::spawn_blocking(move || {
@@ -722,6 +739,16 @@ async fn streaming_run(
     }
 }
 
+/// `POST /streaming/:name` — feed a JSONL command stream to a named solver and
+/// return its JSONL result stream. Body is `text/plain`/`application/x-ndjson`.
+async fn streaming_run(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    body: String,
+) -> Response {
+    run_streaming_model(state, name, body).await
+}
+
 // =============================================================================
 // Elevator showcase: the new FEL elevator sim + its MDP/POMDP dispatch models.
 //
@@ -745,6 +772,42 @@ async fn elevator_mdp(State(state): State<AppState>) -> Html<String> {
 /// rendered as a belief-tracking player.
 async fn elevator_pomdp(State(state): State<AppState>) -> Html<String> {
     Html(state.elevator_pomdp_html.to_string())
+}
+
+/// `GET /soccer/planner` — interactive 11-a-side rotation planner UI.
+async fn soccer_planner_page(State(state): State<AppState>) -> Html<String> {
+    Html(state.soccer_planner_html.to_string())
+}
+
+/// `POST /soccer/planner/solve` — re-solve with roster/constraints from the UI.
+async fn soccer_planner_solve(
+    State(state): State<AppState>,
+    Json(req): Json<PlannerRequest>,
+) -> Response {
+    let _guard = state.sim_lock.lock().await;
+    let result = tokio::task::spawn_blocking(move || solve_planner(&req)).await;
+    let resp = match result {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "ok": false, "error": format!("solve task failed: {e}") })),
+            )
+                .into_response();
+        }
+    };
+    let status = if resp.ok {
+        StatusCode::OK
+    } else {
+        StatusCode::UNPROCESSABLE_ENTITY
+    };
+    (status, Json(planner_response_to_json(&resp))).into_response()
+}
+
+/// `POST /soccer/planner/stream` — planner-specific alias for the generic
+/// `streaming/soccer-planner` JSONL endpoint.
+async fn soccer_planner_stream(State(state): State<AppState>, body: String) -> Response {
+    run_streaming_model(state, "soccer-planner".to_string(), body).await
 }
 
 /// Render the elevator MDP/POMDP players at startup, degrading to a small error
@@ -865,7 +928,10 @@ async fn out_index(State(state): State<AppState>) -> Response {
     files.sort();
 
     let has_curated = files.iter().any(|f| f == "index.html");
-    let artifacts: Vec<&String> = files.iter().filter(|f| f.as_str() != "index.html").collect();
+    let artifacts: Vec<&String> = files
+        .iter()
+        .filter(|f| f.as_str() != "index.html")
+        .collect();
 
     let mut header = String::new();
     if has_curated {
@@ -1085,7 +1151,7 @@ fn build_descriptor() -> ServiceDescriptor {
         .endpoint(
             "GET",
             "/streaming",
-            "List JSONL streaming-solver contracts (lp, milp/mip/ip, mdp, pomdp).",
+            "List JSONL streaming-solver contracts (lp, milp/mip/ip, mdp, pomdp, soccer-planner).",
             EndpointKind::Service,
         )
         .endpoint(
@@ -1111,6 +1177,24 @@ fn build_descriptor() -> ServiceDescriptor {
             "/elevator-pomdp",
             "Elevator-dispatch POMDP player (noisy hall-call button; belief-tracked).",
             EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/soccer/planner",
+            "Interactive 11-a-side rotation planner (pitch + IP/MIP solver tabs).",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "POST",
+            "/soccer/planner/solve",
+            "Re-solve optimal rotation from roster/constraints JSON.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "POST",
+            "/soccer/planner/stream",
+            "Stream planner edits and solve via the soccer-planner JSONL model.",
+            EndpointKind::Action,
         )
         .endpoint(
             "GET",
@@ -1308,11 +1392,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Pre-render the (deterministic) FEL elevator artifacts once. Done before
     // the server starts serving and before the startup catalogue task spawns, so
     // there is no contention on the engine's process-global clock/RNG.
-    let elevator_fel_html: Arc<str> =
-        Arc::from(render_elevator_html(&run_fel_elevator(&ElevatorConfig::default())));
+    let elevator_fel_html: Arc<str> = Arc::from(render_elevator_html(&run_fel_elevator(
+        &ElevatorConfig::default(),
+    )));
     let elevator_mdp_html: Arc<str> = Arc::from(render_model_player("mdp", &elevator_mdp_spec()));
     let elevator_pomdp_html: Arc<str> =
         Arc::from(render_model_player("pomdp", &elevator_pomdp_spec()));
+    let soccer_planner_html: Arc<str> = Arc::from(planner_page_html());
 
     let state = AppState {
         out_dir: Arc::new(out_dir),
@@ -1324,6 +1410,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         elevator_fel_html,
         elevator_mdp_html,
         elevator_pomdp_html,
+        soccer_planner_html,
     };
 
     // Populate `out/` in the background so /healthz comes up immediately while
@@ -1355,12 +1442,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/simulate", post(simulate))
         .route("/simulations/:name/run", get(run_named))
         .route("/models", get(list_models))
-        .route("/models/:kind/run", get(model_run_example).post(model_run_post))
+        .route(
+            "/models/:kind/run",
+            get(model_run_example).post(model_run_post),
+        )
         .route("/streaming", get(list_streaming))
         .route("/streaming/:name", post(streaming_run))
         .route("/elevator-fel", get(elevator_fel))
         .route("/elevator-mdp", get(elevator_mdp))
         .route("/elevator-pomdp", get(elevator_pomdp))
+        .route("/soccer/planner", get(soccer_planner_page))
+        .route("/soccer/planner/solve", post(soccer_planner_solve))
+        .route("/soccer/planner/stream", post(soccer_planner_stream))
         .route("/out", get(out_redirect))
         .route("/out/", get(out_index))
         .route("/out/*path", get(out_file))
@@ -1401,24 +1494,35 @@ mod tests {
     fn model_registry_and_streaming_solvers_are_exposed() {
         let kinds = with_builtins().kinds();
         for expected in ["mdp", "pomdp", "hybrid", "studio"] {
-            assert!(kinds.contains(&expected.to_string()), "missing kind {expected}");
+            assert!(
+                kinds.contains(&expected.to_string()),
+                "missing kind {expected}"
+            );
         }
         assert!(streaming_model_names().contains(&"lp"));
         assert!(streaming_model_names().contains(&"mdp"));
+        assert!(streaming_model_names().contains(&"soccer-planner"));
         assert!(
-            streaming_contracts().len() >= 4,
-            "expected lp/milp/mdp/pomdp streaming contracts"
+            streaming_contracts().len() >= 5,
+            "expected lp/milp/mdp/pomdp/soccer-planner streaming contracts"
         );
     }
 
     #[test]
     fn descriptor_advertises_model_and_streaming_endpoints() {
         let descriptor = build_descriptor();
-        let paths: Vec<&str> = descriptor.endpoints.iter().map(|e| e.path.as_str()).collect();
+        let paths: Vec<&str> = descriptor
+            .endpoints
+            .iter()
+            .map(|e| e.path.as_str())
+            .collect();
         assert!(paths.contains(&"/models"));
         assert!(paths.contains(&"/models/:kind/run"));
         assert!(paths.contains(&"/streaming"));
         assert!(paths.contains(&"/streaming/:name"));
+        assert!(paths.contains(&"/soccer/planner"));
+        assert!(paths.contains(&"/soccer/planner/solve"));
+        assert!(paths.contains(&"/soccer/planner/stream"));
         // The model-registry extension contributes `model:<kind>` capabilities.
         assert!(descriptor
             .capabilities
