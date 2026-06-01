@@ -1657,15 +1657,47 @@ jobs:
 
           collect_loader() {
             d="$1"
-            echo "=== $d deploy/pods ==="
-            kubectl -n default get deploy "$d" -o wide || true
-            kubectl -n default get pods -l "app=$d" -o wide || true
-            echo "=== $d top ==="
-            kubectl -n default top pods -l "app=$d" 2>/dev/null || true
-            echo "=== $d recent reports ==="
-            kubectl -n default logs -l "app=$d" --all-containers --tail=80 --prefix=true --max-log-requests=20 2>/dev/null \
-              | grep -E 'starting|gcs-setup|gcs-report|connect failed|connect timeout|receive_errors' \
-              | tail -120 || true
+            echo "=== $d compact state ==="
+            kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas} updated={.status.updatedReplicas}{"\n"}' || true
+            kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null \
+              | awk '{counts[$3]++; total++} END {printf "pod-status "; if (total == 0) {print "none"} else {for (s in counts) printf "%s=%d ", s, counts[s]; print ""}}' || true
+            kubectl -n default logs -l "app=$d" --all-containers --tail=400 --prefix=true --max-log-requests=20 2>/dev/null \
+              | awk '
+                /gcs-report/ {
+                  pod = $1
+                  sub(/^\[pod\//, "", pod)
+                  sub(/\/.*$/, "", pod)
+                  latest[pod] = $0
+                }
+                END {
+                  for (pod in latest) {
+                    pods++
+                    n = split(latest[pod], fields, " ")
+                    for (i = 1; i <= n; i++) {
+                      split(fields[i], kv, "=")
+                      key = kv[1]
+                      val = kv[2] + 0
+                      if (key == "attempted") attempted += val
+                      else if (key == "connected") connected += val
+                      else if (key == "failed") failed += val
+                      else if (key == "open") open += val
+                      else if (key == "sent") sent += val
+                      else if (key == "received") received += val
+                      else if (key == "in_flight") in_flight += val
+                      else if (key == "correlation_misses") correlation_misses += val
+                      else if (key == "receive_errors") receive_errors += val
+                      else if (key == "p50_us" && val > max_p50_us) max_p50_us = val
+                      else if (key == "p95_us" && val > max_p95_us) max_p95_us = val
+                      else if (key == "p99_us" && val > max_p99_us) max_p99_us = val
+                      else if (key == "max_us" && val > max_us) max_us = val
+                    }
+                  }
+                  if (pods == 0) {
+                    print "gcs-summary none"
+                  } else {
+                    printf "gcs-summary pods=%d attempted=%d connected=%d failed=%d open=%d sent=%d received=%d in_flight=%d correlation_misses=%d receive_errors=%d max_p50_us=%d max_p95_us=%d max_p99_us=%d max_us=%d\n", pods, attempted, connected, failed, open, sent, received, in_flight, correlation_misses, receive_errors, max_p50_us, max_p95_us, max_p99_us, max_us
+                  }
+                }' || true
           }
 
           run_loader() {
@@ -1713,10 +1745,12 @@ jobs:
               echo "=== router metrics during $label ==="
               router_metrics
             done
+            echo "=== final $label loader summary ==="
+            collect_loader "$d"
             echo "=== stop $label ==="
             kubectl -n default scale "deployment/$d" --replicas=0
             sleep 15
-            collect_loader "$d"
+            kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas}{"\n"}' || true
           }
 
           run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
