@@ -1554,6 +1554,15 @@ jobs:
           case "$duration" in
             ''|*[!0-9]*) duration=180 ;;
           esac
+          loader_replicas="${LOADTEST_LOADER_REPLICAS:-8}"
+          case "$loader_replicas" in
+            ''|*[!0-9]*) loader_replicas=8 ;;
+          esac
+          clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-2500}"
+          case "$clients_per_replica" in
+            ''|*[!0-9]*) clients_per_replica=2500 ;;
+          esac
+          total_connections=$((loader_replicas * clients_per_replica))
 
           apps="gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
@@ -1662,22 +1671,29 @@ jobs:
           run_loader() {
             d="$1"
             label="$2"
-            echo "=== start $label: 20k conns, 2.5 msg/(conn*second), duration=${duration}s ==="
+            echo "=== start $label: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), 2.5 msg/(conn*second), duration=${duration}s ==="
             kubectl -n default set resources "deployment/$d" \
               --requests=cpu=100m,memory=512Mi \
               --limits=cpu=4,memory=8Gi || true
             kubectl -n default set env "deployment/$d" \
-              CLIENT_COUNT=2000 \
+              CLIENT_COUNT="$clients_per_replica" \
               GCS_CLIENTS_PER_CONV=5 \
               GCS_SENDERS_PER_CONV=0 \
               MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
               RAMP_DELAY_MS=2 \
               REPORT_INTERVAL_SECONDS=10
-            kubectl -n default scale "deployment/$d" --replicas=10
-            kubectl -n default rollout status "deployment/$d" --timeout=900s
+            kubectl -n default scale "deployment/$d" --replicas="$loader_replicas"
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=900s; then
+              echo "ERROR: $d failed to roll out with ${loader_replicas} replicas" >&2
+              collect_loader "$d"
+              kubectl -n default describe "deployment/$d" || true
+              kubectl -n default describe pods -l "app=$d" || true
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -160 || true
+              exit 1
+            fi
             actual_replicas="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
-            if [ "$actual_replicas" != "10" ]; then
-              echo "ERROR: $d expected spec.replicas=10 after scale-up, got ${actual_replicas:-unset}" >&2
+            if [ "$actual_replicas" != "$loader_replicas" ]; then
+              echo "ERROR: $d expected spec.replicas=${loader_replicas} after scale-up, got ${actual_replicas:-unset}" >&2
               kubectl -n argocd get "application/$d" -o yaml | grep -E 'automated:|syncPolicy:|syncOptions:' || true
               exit 1
             fi
