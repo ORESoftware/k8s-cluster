@@ -1554,13 +1554,13 @@ jobs:
           case "$duration" in
             ''|*[!0-9]*) duration=90 ;;
           esac
-          loader_replicas="${LOADTEST_LOADER_REPLICAS:-8}"
+          loader_replicas="${LOADTEST_LOADER_REPLICAS:-6}"
           case "$loader_replicas" in
-            ''|*[!0-9]*) loader_replicas=8 ;;
+            ''|*[!0-9]*) loader_replicas=6 ;;
           esac
-          clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-2500}"
+          clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-3335}"
           case "$clients_per_replica" in
-            ''|*[!0-9]*) clients_per_replica=2500 ;;
+            ''|*[!0-9]*) clients_per_replica=3335 ;;
           esac
           total_connections=$((loader_replicas * clients_per_replica))
 
@@ -1809,7 +1809,7 @@ jobs:
             label="$2"
             echo "=== start $label: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), 2.5 msg/(conn*second), duration=${duration}s ==="
             kubectl -n default set resources "deployment/$d" \
-              --requests=cpu=10m,memory=512Mi \
+              --requests=cpu=1m,memory=512Mi \
               --limits=cpu=4,memory=8Gi || true
             kubectl -n default set env "deployment/$d" \
               CLIENT_COUNT="$clients_per_replica" \
@@ -1819,7 +1819,7 @@ jobs:
               RAMP_DELAY_MS=2 \
               REPORT_INTERVAL_SECONDS=10
             kubectl -n default scale "deployment/$d" --replicas="$loader_replicas"
-            if ! kubectl -n default rollout status "deployment/$d" --timeout=900s; then
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=240s; then
               echo "ERROR: $d failed to roll out with ${loader_replicas} replicas" >&2
               collect_loader "$d"
               kubectl -n default describe "deployment/$d" || true
