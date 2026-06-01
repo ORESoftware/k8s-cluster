@@ -11,6 +11,13 @@ on:
       - "remote/deployments/rest-api-rs/**"
       - "remote/deployments/host-cron/**"
       - "remote/deployments/dev-server/src/server.ts"
+      - "remote/deployments/gcs/**"
+      - "remote/deployments/ws-loadtest-rs/**"
+      - "remote/deployments/gleamlang-ws-loadtest/**"
+      - "remote/argocd/apps/gcs.application.yaml"
+      - "remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml"
+      - "remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml"
+      - "remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml"
       - "remote/argocd/dd-next-runtime/**"
   workflow_dispatch:
     inputs:
