@@ -36,6 +36,7 @@ on:
           - verify-thread-go-services
           - deploy-bastion-live-containers
           - verify-bastion-live-containers
+          - loadtest-gcs-wss
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false
@@ -1528,6 +1529,165 @@ jobs:
               "commands": [
                   "set -euo pipefail",
                   f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            loadtest-gcs-wss)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          duration = os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          duration="${LOADTEST_DURATION_SECONDS:-180}"
+          case "$duration" in
+            ''|*[!0-9]*) duration=180 ;;
+          esac
+
+          apps="gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
+          loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
+
+          sync_app() {
+            app="$1"
+            echo "=== Argo CD sync request: $app ==="
+            kubectl -n argocd annotate "application/$app" argocd.argoproj.io/refresh=hard --overwrite || true
+            kubectl -n argocd patch "application/$app" --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"gcs-wss-loadtest\"}],\"sync\":{\"revision\":\"HEAD\",\"prune\":true}}}" || true
+            for i in $(seq 1 60); do
+              phase="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+              sync="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+              health="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+              echo "  $app wait=$i phase=${phase:-none} sync=${sync:-unknown} health=${health:-unknown}"
+              case "$phase:$sync" in
+                Succeeded:Synced|:Synced) break ;;
+                Failed:*|Error:*) break ;;
+              esac
+              sleep 5
+            done
+            kubectl -n argocd get "application/$app" -o wide || true
+          }
+
+          cleanup() {
+            set +e
+            echo "=== cleanup: scale GCS WSS loadtest deployments to 0 ==="
+            for d in $loaders; do
+              kubectl -n default scale "deployment/$d" --replicas=0 || true
+            done
+            kubectl -n default get deploy $loaders -o wide || true
+            echo "=== cleanup: restore loadtest deployments from Argo desired state ==="
+            for app in dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs; do
+              sync_app "$app"
+            done
+          }
+          trap cleanup EXIT
+
+          echo "=== sync EC2 checkout and recorded submodules ==="
+          cd "$repo"
+          git status --short --branch
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only "origin/${TARGET_REVISION:-dev}"
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          git rev-parse --short HEAD
+          git submodule status --recursive
+
+          echo "=== apply Argo CD Applications ==="
+          kubectl apply -f remote/argocd/apps/gcs.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml
+
+          for app in $apps; do
+            sync_app "$app"
+          done
+
+          echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
+          kubectl -n default rollout restart deployment/gcs deployment/gcs-router
+          kubectl -n default rollout status deployment/gcs --timeout=900s
+          kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          kubectl -n default get deploy gcs gcs-router -o wide
+          kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
+
+          router_metrics() {
+            pod="$(kubectl -n default get pods -l app=gcs-router -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+            if [ -z "$pod" ]; then
+              echo "(no gcs-router pod found)"
+              return
+            fi
+            kubectl -n default exec "$pod" -- bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9100; printf "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3' 2>/dev/null \
+              | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns|gcs_router_upstream_errors_total)' \
+              | head -120 || true
+          }
+
+          collect_loader() {
+            d="$1"
+            echo "=== $d deploy/pods ==="
+            kubectl -n default get deploy "$d" -o wide || true
+            kubectl -n default get pods -l "app=$d" -o wide || true
+            echo "=== $d top ==="
+            kubectl -n default top pods -l "app=$d" 2>/dev/null || true
+            echo "=== $d recent reports ==="
+            kubectl -n default logs -l "app=$d" --all-containers --tail=80 --prefix=true --max-log-requests=20 2>/dev/null \
+              | grep -E 'starting|gcs-setup|gcs-report|connect failed|connect timeout|receive_errors' \
+              | tail -120 || true
+          }
+
+          run_loader() {
+            d="$1"
+            label="$2"
+            echo "=== start $label: 20k conns, 2.5 msg/(conn*second), duration=${duration}s ==="
+            kubectl -n default set resources "deployment/$d" \
+              --requests=cpu=100m,memory=512Mi \
+              --limits=cpu=4,memory=8Gi || true
+            kubectl -n default set env "deployment/$d" \
+              CLIENT_COUNT=2000 \
+              GCS_CLIENTS_PER_CONV=5 \
+              GCS_SENDERS_PER_CONV=0 \
+              MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
+              RAMP_DELAY_MS=2 \
+              REPORT_INTERVAL_SECONDS=10
+            kubectl -n default scale "deployment/$d" --replicas=10
+            kubectl -n default rollout status "deployment/$d" --timeout=900s
+            collect_loader "$d"
+            echo "=== router metrics before $label load window ==="
+            router_metrics
+            remaining="$duration"
+            while [ "$remaining" -gt 0 ]; do
+              step=30
+              if [ "$remaining" -lt "$step" ]; then
+                step="$remaining"
+              fi
+              sleep "$step"
+              remaining=$((remaining - step))
+              echo "=== $label sample: ${remaining}s remaining ==="
+              collect_loader "$d"
+              echo "=== router metrics during $label ==="
+              router_metrics
+            done
+            echo "=== stop $label ==="
+            kubectl -n default scale "deployment/$d" --replicas=0
+            sleep 15
+            collect_loader "$d"
+          }
+
+          run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
+          run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"
+          run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"
+
+          echo "=== final gcs/router state ==="
+          kubectl -n default get deploy gcs gcs-router -o wide
+          kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
+          echo "=== final router metrics ==="
+          router_metrics
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY

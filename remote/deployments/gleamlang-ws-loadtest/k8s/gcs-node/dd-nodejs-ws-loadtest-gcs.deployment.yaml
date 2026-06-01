@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-nodejs-ws-loadtest-gcs
+  namespace: default
+  labels:
+    app: dd-nodejs-ws-loadtest-gcs
+    role: loadtest
+    target: gcs-router
+spec:
+  # Direct Node.js runner for the shared gcs-mode load generator. The
+  # companion Gleam deployment invokes the same client through `gleam run`;
+  # this deployment runs the JavaScript module with Node directly.
+  #
+  # Default replicas: 0. For a 20k connection run, scale to 10 replicas with
+  # CLIENT_COUNT=2000.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dd-nodejs-ws-loadtest-gcs
+  template:
+    metadata:
+      labels:
+        app: dd-nodejs-ws-loadtest-gcs
+        role: loadtest
+        target: gcs-router
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              ulimit -n 131072 || true
+              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-loadtest
+              npm install --omit=dev
+              exec node src/gleamlang_ws_loadtest/client.mjs
+          env:
+            - name: TARGET_WS_URL
+              value: ws://gcs-router.default.svc.cluster.local:3001
+            - name: LOAD_MODE
+              value: "gcs"
+            - name: CLIENT_COUNT
+              value: "2000"
+            - name: GCS_CLIENTS_PER_CONV
+              value: "5"
+            # 0 => every client in a conversation sends (max fan-out).
+            - name: GCS_SENDERS_PER_CONV
+              value: "0"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "2.5"
+            - name: CONNECT_TIMEOUT_MS
+              value: "30000"
+            - name: RECONNECT_DELAY_MS
+              value: "2000"
+            - name: RAMP_DELAY_MS
+              value: "2"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "6"
+              memory: 12Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
