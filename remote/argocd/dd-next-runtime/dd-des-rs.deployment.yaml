@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-engine-0c77c05'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-engine-0c77c05-build-headroom'
         dd.dev/des-engine-revision: '0c77c0560fb804080de284681885c75a2398606c'
       labels:
         app: dd-des-rs
@@ -110,6 +110,12 @@ spec:
               value: /tmp/cargo
             - name: CARGO_TARGET_DIR
               value: /tmp/des-rs-target
+            # Keep rustc memory predictable during the cold in-pod release
+            # build. The node has enough headroom, but parallel crate builds
+            # previously pushed the pod over its memory limit before the server
+            # could start.
+            - name: CARGO_BUILD_JOBS
+              value: '1'
             # Writable working dir the engine renders artifacts into (out/ is
             # created here). Kept on the /tmp emptyDir so the repo can stay
             # read-only.
@@ -134,14 +140,14 @@ spec:
               containerPort: 8112
           resources:
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: '1'
+              memory: 2Gi
             limits:
               cpu: '2'
               # Headroom for the cold release build: the pod recompiles the full
               # des_engine crate (plus axum/tokio) from an empty /tmp on every
               # (re)start, which peaks higher than des-simulator's smaller build.
-              memory: 2Gi
+              memory: 8Gi
           startupProbe:
             httpGet:
               path: /healthz
