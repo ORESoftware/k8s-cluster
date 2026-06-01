@@ -903,6 +903,13 @@ data:
         return 302 /des-rs/;
       }
 
+      location = /music {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /des-rs/music;
+      }
+
       location = /des-rs/delivery-planner.html {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
