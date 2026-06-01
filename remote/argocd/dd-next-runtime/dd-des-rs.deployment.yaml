@@ -15,7 +15,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-server-source-clone'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-engine-23e78ae'
+        dd.dev/des-engine-revision: '23e78aeab58ddf59b673e74f5c2017236b20f06c'
       labels:
         app: dd-des-rs
     spec:
@@ -57,18 +58,18 @@ spec:
                   echo "[dd-des-rs] server clone failed; using mounted source at ${server_src}" >&2
                 fi
               fi
-              # Resolve the discrete-event-system.rs engine source. By default we
-              # fetch the engine's latest origin/main at pod start
-              # (DES_ENGINE_GIT_URL / DES_ENGINE_GIT_REF) into the writable /tmp
-              # emptyDir and build against it, so this deployment tracks the
-              # engine's main branch automatically without depending on the node
-              # having the git submodule checked out. If the clone fails — or
-              # DES_ENGINE_GIT_URL is set empty — we fall back to the pinned
-              # submodule in the read-only repo mount.
+              # Resolve the discrete-event-system.rs engine source. Fetch
+              # DES_ENGINE_GIT_REF (default: main) into the writable /tmp
+              # emptyDir and build against it, so the deployment does not depend
+              # on the node having the git submodule checked out. If the clone
+              # fails — or DES_ENGINE_GIT_URL is set empty — we fall back to the
+              # pinned submodule in the read-only repo mount.
               engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
               if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
                 rm -rf /tmp/engine
-                if git clone --depth 1 --branch "${DES_ENGINE_GIT_REF:-main}" "${DES_ENGINE_GIT_URL}" /tmp/engine; then
+                if git clone --depth 1 --no-checkout "${DES_ENGINE_GIT_URL}" /tmp/engine \
+                  && git -C /tmp/engine fetch --depth 1 origin "${DES_ENGINE_GIT_REF:-main}" \
+                  && git -C /tmp/engine switch --detach FETCH_HEAD; then
                   engine_src=/tmp/engine
                   echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C /tmp/engine rev-parse --short HEAD))"
                 else
@@ -95,14 +96,14 @@ spec:
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: DES_SERVER_GIT_REF
               value: dev
-            # Engine source: fetch the latest origin/main of the engine repo at
-            # pod start and build against it. Set DES_ENGINE_GIT_URL to "" to
-            # instead use the pinned git submodule in the mounted repo, or point
-            # DES_ENGINE_GIT_REF at a tag/branch/sha to pin a specific revision.
+            # Engine source: fetch the pinned engine revision at pod start and
+            # build against it. Set DES_ENGINE_GIT_URL to "" to instead use the
+            # pinned git submodule in the mounted repo, or point
+            # DES_ENGINE_GIT_REF at a branch/tag/sha to change the revision.
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: main
+              value: 23e78aeab58ddf59b673e74f5c2017236b20f06c
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
