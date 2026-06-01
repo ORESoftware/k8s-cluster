@@ -171,8 +171,11 @@ spec:
               containerPort: 3001
           resources:
             requests:
-              cpu: '6'
-              memory: 3Gi
+              # Keep scheduler reservations small enough for the
+              # single-node EC2 cluster; the load-test CPU/memory
+              # allowance is expressed by the limits below.
+              cpu: 100m
+              memory: 512Mi
             limits:
               cpu: '6'
               memory: 3Gi
