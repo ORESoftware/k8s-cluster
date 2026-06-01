@@ -18,8 +18,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-music-link-auth-engine-605eb41'
-        dd.dev/des-engine-revision: '605eb415c28eb93f855178d2540cc356665294db'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-delivery-objectives-engine-5c51466'
+        dd.dev/des-engine-revision: '5c5146663e8559fc50d16ec0c8b63b31a1172192'
       labels:
         app: dd-des-rs
     spec:
@@ -106,7 +106,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 605eb415c28eb93f855178d2540cc356665294db
+              value: 5c5146663e8559fc50d16ec0c8b63b31a1172192
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
