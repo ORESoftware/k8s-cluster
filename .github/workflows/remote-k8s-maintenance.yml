@@ -1704,6 +1704,7 @@ jobs:
           }
 
           echo "=== clean restart gcs stack before correctness/perf validation ==="
+          git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.deployment.yaml" | kubectl apply -f -
           kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
           kubectl -n default get statefulset gcs-mongodb -o wide || true
           kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
@@ -1730,7 +1731,7 @@ jobs:
           run_correctness_job() {
             echo "=== GCS correctness smoke: chat.vibe CLI scripts ==="
             kubectl -n default delete job/gcs-loadtest --ignore-not-found=true || true
-            kubectl apply -f remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml
+            git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml" | kubectl apply -f -
             result="timeout"
             for i in $(seq 1 300); do
               succeeded="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
@@ -1808,7 +1809,7 @@ jobs:
             label="$2"
             echo "=== start $label: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), 2.5 msg/(conn*second), duration=${duration}s ==="
             kubectl -n default set resources "deployment/$d" \
-              --requests=cpu=100m,memory=512Mi \
+              --requests=cpu=10m,memory=512Mi \
               --limits=cpu=4,memory=8Gi || true
             kubectl -n default set env "deployment/$d" \
               CLIENT_COUNT="$clients_per_replica" \
