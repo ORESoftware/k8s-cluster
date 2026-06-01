@@ -1707,8 +1707,7 @@ jobs:
           kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
           kubectl -n default get statefulset gcs-mongodb -o wide || true
           kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
-          kubectl -n default rollout restart deployment/gcs-kafka
-          kubectl -n default rollout status deployment/gcs-kafka --timeout=600s
+          wait_available gcs-kafka 1
           kubectl -n default rollout restart deployment/gcs deployment/gcs-router
           kubectl -n default rollout status deployment/gcs --timeout=900s
           kubectl -n default rollout status deployment/gcs-router --timeout=600s
