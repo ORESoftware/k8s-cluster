@@ -171,20 +171,11 @@ spec:
               containerPort: 3001
           resources:
             requests:
-              # Lowered from 250m -> 100m so 3 replicas fit on the
-              # single-node EC2 cluster (the node is shared with many
-              # other workloads). Real CPU usage is tiny when idle;
-              # the limit (2 vCPU) bursts handle hot paths.
-              cpu: 100m
-              memory: 512Mi
+              cpu: '6'
+              memory: 3Gi
             limits:
-              cpu: '2'
-              # Raised 2Gi -> 6Gi after a load test OOMKilled (exit 137) every
-              # replica: under heavy fan-out the mongo wait-queue backlog plus
-              # kafka producer churn blew past 2Gi. The node has ~124Gi
-              # allocatable and CPU (not memory) is the binding constraint here,
-              # so a 6Gi ceiling x3 replicas is comfortably safe.
-              memory: 6Gi
+              cpu: '6'
+              memory: 3Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000
