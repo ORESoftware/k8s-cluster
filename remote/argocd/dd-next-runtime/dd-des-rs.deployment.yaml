@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-delivery-planner-engine-605eb41'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-music-link-auth-engine-605eb41'
         dd.dev/des-engine-revision: '605eb415c28eb93f855178d2540cc356665294db'
       labels:
         app: dd-des-rs
