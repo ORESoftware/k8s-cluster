@@ -65,8 +65,7 @@ when bootstrapping Argo, then let Git + Argo own runtime Deployment, Service, Co
 changes.
 
 There are also two Gleam/OTP services with their own ArgoCD Application manifests for the EC2 k8s
-runtime. Local minikube mirrors may exist for rendering or development checks, but the live MCP and
-agent cluster-context path is EC2:
+runtime. The live MCP and agent cluster-context path is EC2:
 
 - [`deployments/gleamlang-server/`](./deployments/gleamlang-server/) — WebSocket streaming service.
 - [`deployments/gleam-mcp-server/`](./deployments/gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools

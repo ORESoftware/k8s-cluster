@@ -600,7 +600,7 @@ A finding has this shape:
   `GITHUB_WEBHOOK_SECRET` and `GITHUB_API_TOKEN` are read from the
   `dd-agent-secrets` Secret (both are optional).
 * `k8s/dd-formal-methods-server.service.yaml` — ClusterIP Service on port 8110.
-* `k8s/kustomization.yaml` — minikube / local kustomize entry point.
+* `k8s/kustomization.yaml` — local kustomize entry point.
 * `k8s/ec2/kustomization.yaml` — EC2 overlay consumed by Argo CD via
   `remote/argocd/apps/dd-formal-methods-server.application.yaml`.
 

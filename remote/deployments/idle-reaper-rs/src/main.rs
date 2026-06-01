@@ -12,6 +12,7 @@ use dd_nats_subject_defs::{
     DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
     THREAD_TASKS_WILDCARD,
 };
+use dd_shared_interfaces::AgentTaskQueueMessage;
 use futures_util::StreamExt;
 use reqwest::{Certificate, Client};
 use serde::Deserialize;
@@ -152,15 +153,7 @@ struct BrowserJobReapJob {
     event_subject: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct QueueTaskMessage {
-    message_kind: Option<String>,
-    thread_id: String,
-    task_id: String,
-    shadow: Option<bool>,
-    direct_dispatch: Option<bool>,
-}
+type QueueTaskMessage = AgentTaskQueueMessage;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

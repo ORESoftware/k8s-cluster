@@ -112,6 +112,8 @@ spec:
               value: 'true'
             - name: vibe_log_level
               value: info
+            - name: GCS_DIAG_LOGS
+              value: 'true'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host

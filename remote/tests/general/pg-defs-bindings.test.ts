@@ -155,28 +155,24 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
   const services: ReadonlyArray<{
     name: string;
     ec2: string;
-    minikube: string;
     secret: string;
     primaryUrlKey: string;
   }> = [
     {
       name: 'dd-gleam-lambda-runner',
       ec2: 'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
-      minikube: 'remote/deployments/gleam-lambda-runner/k8s/minikube/dd-gleam-lambda-runner.deployment.yaml',
       secret: 'dd-gleam-lambda-runner-secrets',
       primaryUrlKey: 'LAMBDA_DATABASE_URL',
     },
     {
       name: 'dd-gleam-mcp-server',
       ec2: 'remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml',
-      minikube: 'remote/deployments/gleam-mcp-server/k8s/minikube/dd-gleam-mcp-server.deployment.yaml',
       secret: 'dd-gleam-mcp-server-secrets',
       primaryUrlKey: 'RDS_DATABASE_URL',
     },
     {
       name: 'dd-gleamlang-server',
       ec2: 'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
-      minikube: 'remote/deployments/gleamlang-server/k8s/minikube/dd-gleamlang-server.deployment.yaml',
       secret: 'dd-gleamlang-server-secrets',
       primaryUrlKey: 'RDS_DATABASE_URL',
     },
@@ -202,27 +198,6 @@ test('every gleam runtime deployment can reach RDS Postgres via an optional secr
       );
       assert.match(ec2, /name:\s*PRESENCE_NOTIFY_SHARDS[\s\S]*value:\s*"256"/);
       assert.match(ec2, /name:\s*PRESENCE_WAL_ENABLED[\s\S]*value:\s*"true"/);
-    }
-
-    const minikube = await readRepoFile(service.minikube);
-    assert.match(
-      minikube,
-      new RegExp(`name:\\s*${service.primaryUrlKey}[\\s\\S]*key:\\s*${service.primaryUrlKey}`),
-      `${service.name} minikube deployment must wire ${service.primaryUrlKey} from ${service.secret}`,
-    );
-    assert.match(
-      minikube,
-      new RegExp(`secretRef:[\\s\\S]*name:\\s*${service.secret}`),
-      `${service.name} minikube deployment must envFrom secret ${service.secret}`,
-    );
-    if (service.name === 'dd-gleamlang-server') {
-      assert.match(
-        minikube,
-        /name:\s*PG_DATABASE_URL[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*RDS_DATABASE_URL/,
-        'dd-gleamlang-server minikube deployment must map PG_DATABASE_URL from RDS_DATABASE_URL for sharded LISTEN/NOTIFY',
-      );
-      assert.match(minikube, /name:\s*PRESENCE_NOTIFY_SHARDS[\s\S]*value:\s*"256"/);
-      assert.match(minikube, /name:\s*PRESENCE_WAL_ENABLED[\s\S]*value:\s*"true"/);
     }
   }
 });

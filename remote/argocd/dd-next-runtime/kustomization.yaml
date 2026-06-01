@@ -51,6 +51,7 @@ resources:
   - dd-browser-test-server.service.yaml
   - dd-selenium-server.deployment.yaml
   - dd-selenium-server.service.yaml
+  - dd-browser-job-runner-rbac.yaml
   - dd-browser-job-runner.deployment.yaml
   - dd-browser-job-runner.service.yaml
   - dd-remote-web-home.deployment.yaml

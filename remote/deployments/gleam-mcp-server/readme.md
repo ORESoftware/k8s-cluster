@@ -261,10 +261,7 @@ That Argo CD application must point at `remote/deployments/gleam-mcp-server/k8s/
 remote/ec2/verify-gleam-mcp-server.sh
 ```
 
-The verifier refuses obvious local contexts such as `minikube` unless
+The verifier refuses obvious non-EC2 contexts such as `kind`, `docker-desktop`, or `colima` unless
 `ALLOW_NON_EC2_CONTEXT=true` is set explicitly. It applies the EC2 Argo app, checks that the app
 tracks the EC2 overlay, validates the read-only RBAC shape, waits for rollout, and calls
 `human_access_policy` plus `kubernetes_inventory` through the in-cluster service.
-
-The minikube overlay is only a local mirror for development/rendering. Do not use it for live MCP
-cluster context, agent runtime defaults, or gateway-facing MCP work.

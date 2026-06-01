@@ -75,6 +75,12 @@ values (
         "image": "docker.io/library/dd-container-pool-erlang-runtime:dev",
         "dockerfile": "remote/deployments/container-pool-rs/runtime-images/erlang.Dockerfile",
         "buildContext": "remote/deployments/container-pool-rs"
+      },
+      {
+        "runtime": "browser-jobs",
+        "image": "docker.io/library/dd-browser-job-worker:dev",
+        "dockerfile": "remote/deployments/browser-job-runner-rs/worker/Dockerfile",
+        "buildContext": "remote/deployments/browser-job-runner-rs/worker"
       }
     ],
     "pools": [
@@ -292,6 +298,28 @@ values (
         "idleTtlSeconds": 900,
         "natsSubject": "dd.remote.container_pool.erlang.requests",
         "labels": ["runtime", "erlang", "beam"]
+      },
+      {
+        "slug": "browser-jobs",
+        "displayName": "Ephemeral Playwright/Puppeteer scraping workers",
+        "image": "docker.io/library/dd-browser-job-worker:dev",
+        "command": [],
+        "env": {
+          "BROWSER_JOB_HEADLESS": "true",
+          "BROWSER_JOB_ALLOW_EVALUATE": "false",
+          "BROWSER_JOB_MAX_MS": "540000"
+        },
+        "requestPath": "/run",
+        "healthPath": "/healthz",
+        "containerPort": 8080,
+        "readOnly": false,
+        "minWarm": 1,
+        "maxWarm": 3,
+        "maxConcurrencyPerContainer": 1,
+        "requestTimeoutMs": 540000,
+        "idleTtlSeconds": 1800,
+        "natsSubject": "dd.remote.container_pool.browser-jobs.requests",
+        "labels": ["runtime", "browser", "playwright", "puppeteer", "scraping"]
       }
     ]
   }'::jsonb,

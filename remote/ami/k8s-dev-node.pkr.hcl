@@ -2,7 +2,7 @@
 # DD K8s Dev-Node AMI — Packer HCL2 Template
 #
 # Builds an Amazon Linux 2023 AMI with:
-#   • Full Kubernetes stack (containerd + kubeadm + minikube)
+#   • Full Kubernetes stack (containerd + kubeadm)
 #   • Polyglot dev toolchain (Node, Python 2/3, Go, Rust, Java,
 #     Elixir, Gleam, Dart, Flutter)
 #   • Cloud IaC (Terraform, Ansible, AWS CDK)
@@ -96,11 +96,6 @@ variable "elixir_version" {
   description = "Elixir version installed from precompiled release assets; use latest to resolve at build time"
 }
 
-variable "minikube_version" {
-  type    = string
-  default = "latest"
-}
-
 variable "tags" {
   type = map(string)
   default = {
@@ -149,7 +144,7 @@ source "amazon-ebs" "k8s_dev_node" {
 
   # AMI configuration
   ami_name        = local.ami_name
-  ami_description = "DD K8s dev node — polyglot toolchain + containerd + kubeadm + minikube (${local.timestamp})"
+  ami_description = "DD K8s dev node — polyglot toolchain + containerd + kubeadm (${local.timestamp})"
 
   ami_block_device_mappings {
     device_name           = "/dev/xvda"
@@ -196,12 +191,11 @@ build {
     execute_command = "sudo -S env {{ .Vars }} bash '{{ .Path }}'"
   }
 
-  # ── 03: Kubernetes — kubectl, kubeadm, kubelet, minikube, helm, etcdctl, k9s, stern, ArgoCD CLI ──
+  # ── 03: Kubernetes — kubectl, kubeadm, kubelet, helm, etcdctl, k9s, stern, ArgoCD CLI ──
   provisioner "shell" {
     script = "${path.root}/scripts/03-kubernetes.sh"
     environment_vars = [
       "K8S_VERSION=${var.k8s_version}",
-      "MINIKUBE_VERSION=${var.minikube_version}",
     ]
     execute_command = "sudo -S env {{ .Vars }} bash '{{ .Path }}'"
   }

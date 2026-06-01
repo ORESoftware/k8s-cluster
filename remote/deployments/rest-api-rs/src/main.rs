@@ -29,6 +29,7 @@ use dd_nats_subject_defs::{
     GIT_REPOS_CHANGES_SUBJECT, LAMBDAS_FUNCTIONS_SUBJECT, ORCHESTRATOR_WAKEUP_SUBJECT,
     RUNTIME_EVENTS_SUBJECT, THREAD_TASKS_WILDCARD,
 };
+use dd_shared_interfaces::AgentTaskQueueMessage;
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounterVec, IntGauge, Opts, TextEncoder};
 use serde::{Deserialize, Serialize};
@@ -456,29 +457,6 @@ struct ThreadControlRequest {
     task_id: Option<String>,
     requested_by: Option<String>,
     reason: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NatsTaskMessage {
-    version: u8,
-    message_kind: &'static str,
-    task_kind: &'static str,
-    shadow: bool,
-    direct_dispatch: bool,
-    dispatch_mode: String,
-    container_pool_dispatch: bool,
-    thread_id: String,
-    task_id: String,
-    provider: Option<String>,
-    repo: String,
-    base_branch: String,
-    feature_branch: Option<String>,
-    prompt: String,
-    thread_title: Option<String>,
-    context_mode: Option<String>,
-    context_ids: Option<Vec<String>>,
-    created_at_ms: u128,
 }
 
 #[derive(Clone)]
@@ -4907,28 +4885,28 @@ async fn publish_task_to_nats(
     let repo_config = normalized_repo_config(request)?;
     let dispatch_mode = dispatch_mode_value(request);
     let container_pool_dispatch = is_container_pool_dispatch_mode(&dispatch_mode);
-    let message = NatsTaskMessage {
-        version: 1,
-        message_kind,
-        task_kind: "agent.prompt",
-        shadow,
-        direct_dispatch: false,
-        dispatch_mode,
-        container_pool_dispatch,
+    let message = AgentTaskQueueMessage {
+        version: Some(1),
+        message_kind: Some(message_kind.to_string()),
+        task_kind: Some("agent.prompt".to_string()),
+        shadow: Some(shadow),
+        direct_dispatch: Some(false),
+        dispatch_mode: Some(dispatch_mode),
+        container_pool_dispatch: Some(container_pool_dispatch),
         thread_id: request.thread_id.clone(),
         task_id: request.task_id.clone(),
         provider: request.provider.clone(),
-        repo: repo_config.repo,
-        base_branch: repo_config.base_branch,
+        repo: Some(repo_config.repo),
+        base_branch: Some(repo_config.base_branch),
         feature_branch: branch.map(str::to_string),
-        prompt: request.prompt.clone(),
+        prompt: Some(request.prompt.clone()),
         thread_title: repo_config.thread_title.clone(),
         context_mode: Some(normalize_context_mode(
             request.context_mode.as_deref(),
             request.context_ids.as_ref().map_or(0, Vec::len),
         )),
         context_ids: request.context_ids.clone(),
-        created_at_ms: now_ms(),
+        created_at_ms: Some(now_ms() as i64),
     };
     let payload = serde_json::to_vec(&message).map_err(|error| error.to_string())?;
     let client = async_nats::connect(nats_url())

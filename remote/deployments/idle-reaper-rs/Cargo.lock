@@ -241,6 +241,14 @@ name = "dd-nats-subject-defs"
 version = "0.1.0"
 
 [[package]]
+name = "dd-shared-interfaces"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -660,6 +668,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "dd-nats-subject-defs",
+ "dd-shared-interfaces",
  "futures-util",
  "reqwest",
  "serde",

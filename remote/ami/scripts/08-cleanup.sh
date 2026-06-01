@@ -75,7 +75,6 @@ echo -n "ctr:        " && ctr --version
 echo -n "crictl:     " && crictl --version
 echo -n "nerdctl:    " && nerdctl --version
 echo -n "etcdctl:    " && etcdctl version | head -1
-echo -n "minikube:   " && minikube version --short
 echo -n "k9s:        " && k9s version --short 2>/dev/null || k9s version
 echo -n "stern:      " && stern --version
 echo -n "argocd:     " && argocd version --client --short 2>/dev/null || argocd version --client

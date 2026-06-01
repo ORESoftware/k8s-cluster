@@ -296,10 +296,19 @@ name = "dd-runtime-config-client"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "dd-shared-interfaces",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "dd-shared-interfaces"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

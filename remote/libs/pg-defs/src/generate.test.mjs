@@ -11,10 +11,23 @@
 // Whenever the parser learns a new shape, please add a regression test below so silent breakage
 // in adapter codegen becomes a loud test failure instead.
 import { strict as assert } from "node:assert";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { parseSchemaSql } from "./sql-contract.mjs";
+
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const generatorPath = path.join(packageRoot, "src", "generate.mjs");
+
+test("generated outputs are up to date with schema source", () => {
+  execFileSync(process.execPath, [generatorPath, "--check"], {
+    cwd: packageRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+});
 
 function findColumn(schema, tableName, columnName) {
   const table = schema.tables.find((item) => item.name === tableName);

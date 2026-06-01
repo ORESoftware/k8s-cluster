@@ -963,7 +963,7 @@ pub struct PresenceUsersDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
-    presence_events (id) {
+    presence_events (seq) {
         seq -> Int8,
         event_at -> Timestamptz,
         op -> Text,
@@ -1009,7 +1009,7 @@ pub struct PresenceEventsDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
-    presence_consumer_checkpoints (id) {
+    presence_consumer_checkpoints (consumer_id) {
         consumer_id -> Text,
         last_seq -> Int8,
         updated_at -> Timestamptz,

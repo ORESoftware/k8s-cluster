@@ -256,6 +256,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
     'dart',
     'gleamlang',
     'erlang',
+    'browser-jobs',
   ];
 
   assert.equal(parsed.runtimeContract.defaultRequestPath, '/invoke');
@@ -300,6 +301,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
       'dart',
       'gleamlang',
       'erlang',
+      'browser-jobs',
     ].sort(),
   );
 
@@ -312,7 +314,15 @@ test('container pool app_config seed is a complete runtime contract', async () =
         : undefined);
     assert.ok(baseImage, `pool ${pool.slug} should have a matching base image`);
     assert.equal(pool.image, baseImage.image);
-    if (pool.slug.startsWith('nodejs-chat-claude-')) {
+    if (pool.slug === 'browser-jobs') {
+      // Not a language runtime: the per-job Playwright/Puppeteer worker image,
+      // built from the browser-job-runner crate's worker/ directory. It serves
+      // /run + /healthz over HTTP (the manager bridges NATS) and self-exits after
+      // one job, so the pool reconciles a fresh container each time.
+      assert.equal(baseImage.dockerfile, 'remote/deployments/browser-job-runner-rs/worker/Dockerfile');
+      assert.equal(baseImage.buildContext, 'remote/deployments/browser-job-runner-rs/worker');
+      assert.equal(pool.requestPath, '/run');
+    } else if (pool.slug.startsWith('nodejs-chat-claude-')) {
       assert.equal(baseImage.dockerfile, 'remote/deployments/dev-server/Dockerfile');
       assert.equal(baseImage.buildContext, 'remote/deployments/dev-server');
       assert.equal(pool.requestPath, '/tasks');

@@ -1840,18 +1840,22 @@ function renderRust(contract) {
     lines.push('}');
     lines.push('');
 
+    const rowValidationLines = renderRustValidationStatements(table, 'value', false);
+    const rowValueBinding = rowValidationLines.length > 0 ? 'value' : '_value';
     lines.push(
-      `pub fn validate_${table.name}_row(value: &${baseName}Row) -> Result<(), String> {`,
+      `pub fn validate_${table.name}_row(${rowValueBinding}: &${baseName}Row) -> Result<(), String> {`,
     );
-    lines.push(...renderRustValidationStatements(table, 'value', false));
+    lines.push(...rowValidationLines);
     lines.push('    Ok(())');
     lines.push('}');
     lines.push('');
 
+    const insertValidationLines = renderRustValidationStatements(table, 'value', true);
+    const insertValueBinding = insertValidationLines.length > 0 ? 'value' : '_value';
     lines.push(
-      `pub fn validate_${table.name}_insert(value: &${baseName}Insert) -> Result<(), String> {`,
+      `pub fn validate_${table.name}_insert(${insertValueBinding}: &${baseName}Insert) -> Result<(), String> {`,
     );
-    lines.push(...renderRustValidationStatements(table, 'value', true));
+    lines.push(...insertValidationLines);
     lines.push('    Ok(())');
     lines.push('}');
     lines.push('');
@@ -2095,9 +2099,13 @@ function renderDieselRust(contract) {
 
   for (const table of contract.tables) {
     const baseName = table.names?.rust ?? pascal(table.name);
+    const primaryKeyColumns = table.columns
+      .filter((column) => column.primaryKey)
+      .map((column) => column.name);
+    const primaryKey = primaryKeyColumns.length > 0 ? primaryKeyColumns.join(', ') : table.columns[0]?.name ?? 'id';
     lines.push('diesel::table! {');
     lines.push('    use diesel::sql_types::*;');
-    lines.push(`    ${table.name} (id) {`);
+    lines.push(`    ${table.name} (${primaryKey}) {`);
     for (const column of table.columns) {
       lines.push(`        ${column.name} -> ${dieselSqlType(column)},`);
     }
@@ -2147,6 +2155,11 @@ function renderSeaOrmRust(contract) {
   ];
 
   for (const table of contract.tables) {
+    const baseName = table.names?.rust ?? pascal(table.name);
+    const moduleName = table.name;
+    lines.push(`pub mod ${moduleName} {`);
+    lines.push('    use super::*;');
+    lines.push('');
     lines.push('#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]');
     lines.push(`#[sea_orm(table_name = ${JSON.stringify(table.name)})]`);
     lines.push('pub struct Model {');
@@ -2172,6 +2185,11 @@ function renderSeaOrmRust(contract) {
     lines.push('pub enum Relation {}');
     lines.push('');
     lines.push('impl ActiveModelBehavior for ActiveModel {}');
+    lines.push('');
+    lines.push('}');
+    lines.push('');
+    lines.push(`pub use ${moduleName}::Entity as ${baseName}Entity;`);
+    lines.push(`pub use ${moduleName}::Model as ${baseName}Model;`);
     lines.push('');
   }
 

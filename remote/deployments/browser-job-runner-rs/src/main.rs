@@ -8,6 +8,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use async_nats::Client as NatsClient;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
@@ -22,17 +23,29 @@ use tokio::{process::Command, sync::Mutex, time::sleep};
 
 // dd-browser-job-runner
 //
-// One pod, one HTTP API, many ephemeral browser containers. Each POST /run
-// spawns a fresh `nerdctl run` worker (the dd-browser-job-worker image) that
-// executes a bounded Playwright/Puppeteer scenario and publishes its JSON
-// result to NATS. This mirrors dd-container-pool / dd-gleam-lambda-runner: a
-// privileged, host-network pod that drives the node's containerd via nerdctl.
+// One pod, one HTTP API, and one bounded Playwright/Puppeteer scenario per
+// POST /run. The result is always published to NATS (POST /run is async and
+// returns only a jobId). There are two execution paths:
+//
+//   primary — dd-container-pool: we NATS request/reply the pool's subject
+//     (dd.remote.container_pool.browser-jobs.requests). The pool leases a warm
+//     dd-browser-job-worker container, HTTP-dispatches the scenario to its /run,
+//     and replies with the worker's RunResult. We republish that to the per-job
+//     subject + fanout. The warm worker self-exits after one job, so the pool
+//     reconciles a fresh replacement (one clean browser per job).
+//
+//   fallback — direct nerdctl: when the pool is down or cannot serve (no
+//     responders / dispatch error / saturated), we spawn a short-lived
+//     `nerdctl run` worker ourselves (one-shot mode), which publishes its own
+//     result to NATS. This mirrors dd-container-pool / dd-gleam-lambda-runner:
+//     a privileged, host-network pod that drives the node's containerd.
 //
 // Hard rules:
-// - Every job container is labeled and lives no longer than BROWSER_JOB_MAX_LIFETIME_SECONDS
-//   (default 540s / 9 min). This server kills overruns; dd-idle-reaper backstops leaks.
+// - Every fallback container is labeled and lives no longer than
+//   BROWSER_JOB_MAX_LIFETIME_SECONDS (default 540s / 9 min). This server kills
+//   overruns; dd-idle-reaper backstops leaks. Pool containers are reaped by the
+//   pool itself.
 // - The scenario DSL is bounded (no arbitrary script eval unless explicitly enabled).
-// - Results never come back through this server; they go to NATS. POST /run is async.
 
 const ALLOWED_ACTIONS: &[&str] = &[
     "goto",
@@ -87,6 +100,11 @@ struct Config {
     nats_url: String,
     result_subject_prefix: String,
     result_fanout_subject: String,
+
+    pool_enabled: bool,
+    pool_slug: String,
+    pool_subject: String,
+    pool_request_timeout_ms: u64,
 }
 
 #[derive(Clone)]
@@ -107,6 +125,9 @@ struct Metrics {
     completed_total: AtomicU64,
     killed_total: AtomicU64,
     rejected_total: AtomicU64,
+    pool_dispatched_total: AtomicU64,
+    pool_failures_total: AtomicU64,
+    fallback_total: AtomicU64,
 }
 
 #[derive(Clone)]
@@ -116,6 +137,7 @@ struct AppState {
     metrics: Arc<Metrics>,
     job_counter: Arc<AtomicU64>,
     server_started_at: Arc<String>,
+    nats: Arc<Mutex<Option<NatsClient>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -220,6 +242,20 @@ fn config_from_env() -> Config {
         result_fanout_subject: env_value(
             "BROWSER_JOB_NATS_RESULT_SUBJECT",
             "dd.remote.browser_jobs.results",
+        ),
+
+        pool_enabled: env_bool("BROWSER_JOB_POOL_ENABLED", true),
+        pool_slug: env_value("BROWSER_JOB_POOL_SLUG", "browser-jobs"),
+        pool_subject: env_value(
+            "BROWSER_JOB_POOL_SUBJECT",
+            "dd.remote.container_pool.browser-jobs.requests",
+        ),
+        // Wait at least as long as the pool itself may take (its per-pool request
+        // timeout, up to the 9 min lifetime) plus headroom, so a slow-but-working
+        // pool returns a real result instead of us prematurely double-spawning.
+        pool_request_timeout_ms: env_u64(
+            "BROWSER_JOB_POOL_REQUEST_TIMEOUT_MS",
+            max_lifetime_seconds * 1000 + 30_000,
         ),
     }
 }
@@ -462,11 +498,197 @@ async fn run_tracker_loop(state: AppState) {
     }
 }
 
+// Connect to NATS once at startup (with retry) and store the client. async-nats
+// reconnects internally afterwards. While the client is absent we skip the pool
+// path and go straight to the nerdctl fallback.
+async fn connect_nats_loop(state: AppState) {
+    let mut attempt: u32 = 0;
+    loop {
+        match async_nats::ConnectOptions::new()
+            .name("dd-browser-job-runner")
+            .connect(&state.config.nats_url)
+            .await
+        {
+            Ok(client) => {
+                *state.nats.lock().await = Some(client);
+                println!("dd-browser-job-runner connected to NATS at {}", state.config.nats_url);
+                return;
+            }
+            Err(error) => {
+                attempt = attempt.saturating_add(1);
+                eprintln!(
+                    "dd-browser-job-runner NATS connect attempt {attempt} failed: {error}; retrying"
+                );
+                sleep(Duration::from_secs(5)).await;
+            }
+        }
+    }
+}
+
+// Ask dd-container-pool to run the scenario on a warm worker. Returns the
+// worker's RunResult on success (whether the scenario passed or failed), or an
+// Err describing why the pool could not serve, in which case we fall back.
+async fn dispatch_via_pool(
+    config: &Config,
+    client: &NatsClient,
+    tracked: &TrackedJob,
+    spec: &Value,
+) -> Result<Value, String> {
+    let request = json!({
+        "requestId": tracked.job_id,
+        "poolSlug": config.pool_slug,
+        "payload": spec,
+    });
+    let payload = serde_json::to_vec(&request).map_err(|error| error.to_string())?;
+    let timeout = Duration::from_millis(config.pool_request_timeout_ms);
+    let reply = client
+        .send_request(
+            config.pool_subject.clone(),
+            async_nats::Request::new().payload(payload.into()).timeout(Some(timeout)),
+        )
+        .await
+        .map_err(|error| format!("pool request failed: {error}"))?;
+
+    let value: Value = serde_json::from_slice(&reply.payload)
+        .map_err(|error| format!("pool reply was not JSON: {error}"))?;
+
+    // A DispatchResponse carries the worker's RunResult under "body" plus the
+    // worker's HTTP "status". A dispatch-level failure (no warm container,
+    // lease/transport error) comes back as {"ok": false, "error": ...} with no
+    // "body". HTTP 409 means we raced onto a warm worker that already ran its one
+    // job — treat that, and any missing body, as "fall back to nerdctl".
+    let status = value.get("status").and_then(Value::as_u64).unwrap_or(0);
+    match value.get("body") {
+        Some(body) if status != 409 => Ok(body.clone()),
+        Some(_) => Err("pool worker already consumed (409)".to_string()),
+        None => {
+            let reason = value
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("pool dispatch returned no result");
+            Err(reason.to_string())
+        }
+    }
+}
+
+async fn publish_run_result(
+    client: &NatsClient,
+    tracked: &TrackedJob,
+    result: &Value,
+    config: &Config,
+) {
+    let payload = match serde_json::to_vec(result) {
+        Ok(payload) => payload,
+        Err(error) => {
+            eprintln!("browser-job result serialize failed job={}: {error}", tracked.job_id);
+            return;
+        }
+    };
+    if let Err(error) = client
+        .publish(tracked.result_subject.clone(), payload.clone().into())
+        .await
+    {
+        eprintln!("browser-job result publish failed job={}: {error}", tracked.job_id);
+    }
+    if !config.result_fanout_subject.is_empty() {
+        let _ = client
+            .publish(config.result_fanout_subject.clone(), payload.into())
+            .await;
+    }
+    let _ = client.flush().await;
+}
+
+fn failed_result_value(tracked: &TrackedJob, error: &str) -> Value {
+    json!({
+        "ok": false,
+        "jobId": tracked.job_id,
+        "engine": tracked.engine,
+        "durationMs": 0,
+        "startedAt": tracked.started_ms,
+        "steps": [],
+        "extracted": {},
+        "screenshots": [],
+        "consoleEntries": [],
+        "pageErrors": [],
+        "error": error,
+    })
+}
+
+// Drive one accepted job to completion: pool first, nerdctl fallback. Runs
+// detached from the HTTP request (POST /run already returned 202).
+async fn process_job(state: AppState, tracked: TrackedJob, spec: Value, max_ms: u64) {
+    if state.config.pool_enabled {
+        let client = state.nats.lock().await.clone();
+        if let Some(client) = client {
+            match dispatch_via_pool(&state.config, &client, &tracked, &spec).await {
+                Ok(result) => {
+                    publish_run_result(&client, &tracked, &result, &state.config).await;
+                    state.metrics.pool_dispatched_total.fetch_add(1, Ordering::Relaxed);
+                    state.metrics.completed_total.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
+                Err(reason) => {
+                    state.metrics.pool_failures_total.fetch_add(1, Ordering::Relaxed);
+                    eprintln!(
+                        "browser-job pool path unavailable job={} ({reason}); falling back to nerdctl",
+                        tracked.job_id
+                    );
+                }
+            }
+        } else {
+            eprintln!(
+                "browser-job pool path skipped job={} (no NATS client yet); using nerdctl fallback",
+                tracked.job_id
+            );
+        }
+    }
+
+    fallback_spawn(&state, &tracked, &spec, max_ms).await;
+}
+
+// Fallback: spawn a one-shot worker directly via nerdctl. The worker publishes
+// its own result to NATS, so we only own the spawn, the concurrency slot, and
+// the deadline (enforced by run_tracker_loop).
+async fn fallback_spawn(state: &AppState, tracked: &TrackedJob, spec: &Value, max_ms: u64) {
+    {
+        let mut jobs = state.jobs.lock().await;
+        if jobs.len() >= state.config.max_concurrent {
+            state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+            drop(jobs);
+            if let Some(client) = state.nats.lock().await.clone() {
+                let failed = failed_result_value(tracked, "browser job fallback concurrency limit reached");
+                publish_run_result(&client, tracked, &failed, &state.config).await;
+            }
+            eprintln!("browser-job fallback rejected job={} (concurrency limit)", tracked.job_id);
+            return;
+        }
+        jobs.insert(tracked.job_id.clone(), tracked.clone());
+    }
+
+    let spec_b64 = base64::engine::general_purpose::STANDARD.encode(spec.to_string().as_bytes());
+    match spawn_job(&state.config, tracked, &spec_b64, max_ms).await {
+        Ok(()) => {
+            state.metrics.spawned_total.fetch_add(1, Ordering::Relaxed);
+            state.metrics.fallback_total.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(error) => {
+            state.metrics.spawn_failures_total.fetch_add(1, Ordering::Relaxed);
+            state.jobs.lock().await.remove(&tracked.job_id);
+            force_remove(&state.config, &tracked.container_name).await;
+            eprintln!("browser-job fallback spawn failed job={}: {error}", tracked.job_id);
+            if let Some(client) = state.nats.lock().await.clone() {
+                let failed = failed_result_value(tracked, &format!("fallback spawn failed: {error}"));
+                publish_run_result(&client, tracked, &failed, &state.config).await;
+            }
+        }
+    }
+}
+
 fn service_descriptor(state: &AppState) -> Value {
     json!({
         "service": "dd-browser-job-runner",
         "ok": true,
-        "model": "spawns one ephemeral nerdctl worker container per POST /run; results are published to NATS",
+        "model": "per POST /run, runs one bounded scenario on a dd-container-pool warm worker (NATS request/reply), falling back to a direct nerdctl worker when the pool is unavailable; the JSON result is published to NATS",
         "engines": ENGINES,
         "defaultEngine": state.config.default_engine,
         "endpoints": {
@@ -478,6 +700,11 @@ fn service_descriptor(state: &AppState) -> Value {
         },
         "resultSubjectPrefix": state.config.result_subject_prefix,
         "resultFanoutSubject": state.config.result_fanout_subject,
+        "pool": {
+            "enabled": state.config.pool_enabled,
+            "slug": state.config.pool_slug,
+            "subject": state.config.pool_subject,
+        },
         "maxLifetimeSeconds": state.config.max_lifetime_seconds,
         "allowEvaluate": state.config.allow_evaluate,
     })
@@ -496,12 +723,15 @@ fn tools_descriptor(state: &AppState) -> Value {
 }
 
 async fn status_descriptor(state: &AppState) -> Value {
-    let jobs = state.jobs.lock().await;
+    let in_flight = state.jobs.lock().await.len();
+    let nats_connected = state.nats.lock().await.is_some();
     json!({
         "ok": true,
         "service": "dd-browser-job-runner",
         "serverStartedAt": state.server_started_at.as_str(),
-        "inFlight": jobs.len(),
+        // inFlight counts only fallback nerdctl containers we track; pool jobs are
+        // tracked by dd-container-pool, not here.
+        "inFlight": in_flight,
         "maxConcurrent": state.config.max_concurrent,
         "maxLifetimeSeconds": state.config.max_lifetime_seconds,
         "maxSteps": state.config.max_steps,
@@ -509,7 +739,14 @@ async fn status_descriptor(state: &AppState) -> Value {
         "network": state.config.network,
         "image": state.config.image,
         "natsUrl": state.config.nats_url,
+        "natsConnected": nats_connected,
+        "poolEnabled": state.config.pool_enabled,
+        "poolSlug": state.config.pool_slug,
+        "poolSubject": state.config.pool_subject,
         "spawnedTotal": state.metrics.spawned_total.load(Ordering::Relaxed),
+        "poolDispatchedTotal": state.metrics.pool_dispatched_total.load(Ordering::Relaxed),
+        "poolFailuresTotal": state.metrics.pool_failures_total.load(Ordering::Relaxed),
+        "fallbackTotal": state.metrics.fallback_total.load(Ordering::Relaxed),
         "completedTotal": state.metrics.completed_total.load(Ordering::Relaxed),
         "killedTotal": state.metrics.killed_total.load(Ordering::Relaxed),
     })
@@ -562,9 +799,18 @@ fn render_metrics(state: &AppState, in_flight: usize) -> String {
     lines.push("# HELP browser_job_killed_total Total jobs force-killed for exceeding their lifetime.".to_string());
     lines.push("# TYPE browser_job_killed_total counter".to_string());
     lines.push(format!("browser_job_killed_total {}", m.killed_total.load(Ordering::Relaxed)));
-    lines.push("# HELP browser_job_rejected_total Total POST /run requests rejected over the concurrency cap.".to_string());
+    lines.push("# HELP browser_job_rejected_total Total fallback spawns rejected over the concurrency cap.".to_string());
     lines.push("# TYPE browser_job_rejected_total counter".to_string());
     lines.push(format!("browser_job_rejected_total {}", m.rejected_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_pool_dispatched_total Total jobs served by the dd-container-pool warm pool.".to_string());
+    lines.push("# TYPE browser_job_pool_dispatched_total counter".to_string());
+    lines.push(format!("browser_job_pool_dispatched_total {}", m.pool_dispatched_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_pool_failures_total Total pool dispatch attempts that fell back to nerdctl.".to_string());
+    lines.push("# TYPE browser_job_pool_failures_total counter".to_string());
+    lines.push(format!("browser_job_pool_failures_total {}", m.pool_failures_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_fallback_total Total jobs spawned via the direct nerdctl fallback.".to_string());
+    lines.push("# TYPE browser_job_fallback_total counter".to_string());
+    lines.push(format!("browser_job_fallback_total {}", m.fallback_total.load(Ordering::Relaxed)));
     format!("{}\n", lines.join("\n"))
 }
 
@@ -609,58 +855,27 @@ async fn handle_run(
         events_subject: events_subject.clone(),
     };
 
-    // Reserve the concurrency slot atomically before spawning so two requests
-    // can't both pass the cap check and over-subscribe the node.
-    {
-        let mut jobs = state.jobs.lock().await;
-        if jobs.len() >= state.config.max_concurrent {
-            state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({
-                    "ok": false,
-                    "error": "browser job concurrency limit reached",
-                    "maxConcurrent": state.config.max_concurrent,
-                })),
-            );
-        }
-        jobs.insert(job_id.clone(), tracked.clone());
-    }
-
     let spec = build_job_spec(&request, &engine, &job_id, max_ms);
-    let spec_b64 = base64::engine::general_purpose::STANDARD.encode(spec.to_string().as_bytes());
 
-    match spawn_job(&state.config, &tracked, &spec_b64, max_ms).await {
-        Ok(()) => {
-            state.metrics.spawned_total.fetch_add(1, Ordering::Relaxed);
-            (
-                StatusCode::ACCEPTED,
-                Json(json!({
-                    "ok": true,
-                    "status": "accepted",
-                    "jobId": job_id,
-                    "engine": engine,
-                    "containerName": container_name,
-                    "deadlineMs": deadline_ms,
-                    "maxMs": max_ms,
-                    "resultSubject": result_subject,
-                    "eventsSubject": events_subject,
-                    "resultFanoutSubject": state.config.result_fanout_subject,
-                })),
-            )
-        }
-        Err(error) => {
-            state.metrics.spawn_failures_total.fetch_add(1, Ordering::Relaxed);
-            let mut jobs = state.jobs.lock().await;
-            jobs.remove(&job_id);
-            drop(jobs);
-            force_remove(&state.config, &container_name).await;
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "ok": false, "jobId": job_id, "error": error })),
-            )
-        }
-    }
+    // POST /run is async: accept the job, then drive pool-first / nerdctl-fallback
+    // in the background. The result always lands on resultSubject (+ fanout).
+    tokio::spawn(process_job(state.clone(), tracked, spec, max_ms));
+
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({
+            "ok": true,
+            "status": "accepted",
+            "jobId": job_id,
+            "engine": engine,
+            "deadlineMs": deadline_ms,
+            "maxMs": max_ms,
+            "resultSubject": result_subject,
+            "eventsSubject": events_subject,
+            "resultFanoutSubject": state.config.result_fanout_subject,
+            "poolSubject": state.config.pool_subject,
+        })),
+    )
 }
 
 fn router(state: AppState) -> Router {
@@ -755,9 +970,11 @@ async fn main() {
                 .map(|d| d.as_millis().to_string())
                 .unwrap_or_else(|_| "0".to_string()),
         ),
+        nats: Arc::new(Mutex::new(None)),
     };
 
     tokio::spawn(run_tracker_loop(state.clone()));
+    tokio::spawn(connect_nats_loop(state.clone()));
 
     let bind = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&bind)

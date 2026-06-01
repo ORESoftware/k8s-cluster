@@ -102,9 +102,6 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   const deployment = await readRepoFile(
     'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
   );
-  const minikubeDeployment = await readRepoFile(
-    'remote/deployments/gleamlang-server/k8s/minikube/dd-gleamlang-server.deployment.yaml',
-  );
 
   assert.match(broadcaster, /BroadcastJson\(payload: String\)/);
   assert.match(broadcaster, /const dedupe_ttl_ms = 300_000/);
@@ -181,18 +178,6 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(deployment, /GLEAM_BROADCAST_URL[\s\S]*127\.0\.0\.1:8081\/broadcast/);
   assert.match(
     deployment,
-    /name:\s*GLEAM_BROADCAST_SECRET[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*GLEAM_BROADCAST_SECRET/,
-  );
-  assert.match(minikubeDeployment, /name:\s*nats-bridge/);
-  assert.match(minikubeDeployment, /image:\s*dd-gleamlang-ws-server:dev/);
-  assert.match(minikubeDeployment, /exec node \/app\/remote\/deployments\/gleamlang-ws-server\/nats-bridge\.mjs/);
-  assert.match(minikubeDeployment, /NATS_READ_SUBJECT[\s\S]*dd\.remote\.events/);
-  assert.match(minikubeDeployment, /NATS_PUBLISH_SUBJECT[\s\S]*dd\.remote\.websocket\.events/);
-  assert.match(minikubeDeployment, /name:\s*PG_DATABASE_URL[\s\S]*key:\s*RDS_DATABASE_URL/);
-  assert.match(minikubeDeployment, /name:\s*PRESENCE_NOTIFY_SHARDS[\s\S]*value:\s*"256"/);
-  assert.match(minikubeDeployment, /name:\s*PRESENCE_WAL_ENABLED[\s\S]*value:\s*"true"/);
-  assert.match(
-    minikubeDeployment,
     /name:\s*GLEAM_BROADCAST_SECRET[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-gleamlang-server-secrets[\s\S]*key:\s*GLEAM_BROADCAST_SECRET/,
   );
 });

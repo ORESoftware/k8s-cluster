@@ -32,8 +32,8 @@ sets `contextMode: none` so previous tasks, breadcrumbs, and selected blobs are 
 When the cluster MCP server is configured as `dd_cluster`, use it before guessing live EC2
 Kubernetes deployment state, service wiring, inventory, or observability status. The MCP surface is
 read-only by default; do not add write-capable AWS or Kubernetes tools without a separate
-short-lived human grant, auth, and audit design. Treat minikube overlays as local mirrors only, not
-as the live runtime source of truth.
+short-lived human grant, auth, and audit design. Treat the EC2 Kubernetes manifests and live
+`dd_cluster` output as the runtime source of truth.
 
 ## Command Safety
 

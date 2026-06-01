@@ -104,8 +104,7 @@ go build -o /tmp/dd-thread-operator ./cmd/operator
 /tmp/dd-thread-operator --help
 ```
 
-To run against a real cluster (for example minikube), point `KUBECONFIG` at the cluster and
-run the binary on your laptop:
+To run against a real cluster, point `KUBECONFIG` at the cluster and run the binary on your laptop:
 
 ```bash
 KUBECONFIG=$HOME/.kube/config /tmp/dd-thread-operator \

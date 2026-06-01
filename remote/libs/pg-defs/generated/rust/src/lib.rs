@@ -2398,11 +2398,11 @@ pub struct PresenceUsersInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_presence_users_row(value: &PresenceUsersRow) -> Result<(), String> {
+pub fn validate_presence_users_row(_value: &PresenceUsersRow) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_presence_users_insert(value: &PresenceUsersInsert) -> Result<(), String> {
+pub fn validate_presence_users_insert(_value: &PresenceUsersInsert) -> Result<(), String> {
     Ok(())
 }
 
@@ -2522,11 +2522,11 @@ pub struct PresenceConsumerCheckpointsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_presence_consumer_checkpoints_row(value: &PresenceConsumerCheckpointsRow) -> Result<(), String> {
+pub fn validate_presence_consumer_checkpoints_row(_value: &PresenceConsumerCheckpointsRow) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_presence_consumer_checkpoints_insert(value: &PresenceConsumerCheckpointsInsert) -> Result<(), String> {
+pub fn validate_presence_consumer_checkpoints_insert(_value: &PresenceConsumerCheckpointsInsert) -> Result<(), String> {
     Ok(())
 }
 

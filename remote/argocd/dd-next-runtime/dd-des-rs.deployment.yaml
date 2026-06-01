@@ -8,15 +8,18 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-des-rs
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-engine-0c77c05-build-headroom-low-cpu-request'
-        dd.dev/des-engine-revision: '0c77c0560fb804080de284681885c75a2398606c'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-delivery-planner-engine-d5e81ec'
+        dd.dev/des-engine-revision: 'd5e81ec76159c6667cb637295cb5a26471ed0447'
       labels:
         app: dd-des-rs
     spec:
@@ -103,7 +106,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 0c77c0560fb804080de284681885c75a2398606c
+              value: d5e81ec76159c6667cb637295cb5a26471ed0447
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -134,7 +137,7 @@ spec:
             # (NUM_PLAYERS, NUM_PERIODS, MINUTES_PER_PERIOD, MAX_CONSEC_ON_FIELD,
             # POLICY) can still be overridden via env if desired.
             - name: DES_STARTUP_SIMS
-              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_soccer_rotation_anim,main_soccer_planner,main_build_site
+              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_soccer_rotation_anim,main_soccer_planner,main_delivery_planner,main_build_site
           ports:
             - name: http
               containerPort: 8112

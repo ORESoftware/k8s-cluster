@@ -37,26 +37,42 @@ const STEP_ACTIONS = [
   'evaluate',
 ] as const;
 
-test('browser-job-runner is a Rust axum spawner that launches one nerdctl worker per job', async () => {
+test('browser-job-runner is a pool-first Rust axum orchestrator with a nerdctl fallback', async () => {
   const cargo = await readRepoFile(`${CRATE}/Cargo.toml`);
   const main = await readRepoFile(`${CRATE}/src/main.rs`);
   const readme = await readRepoFile(`${CRATE}/readme.md`);
 
-  // Lean axum/tokio crate that shells out to nerdctl (no bollard, no NATS dep).
+  // axum/tokio crate that now also speaks NATS (request/reply to the pool +
+  // republishing results) and still shells out to nerdctl for the fallback.
   assert.match(cargo, /name = "dd-browser-job-runner"/);
   assert.match(cargo, /axum = /);
   assert.match(cargo, /tokio = .*process/);
   assert.match(cargo, /base64 = /);
   assert.match(cargo, /serde_json = /);
+  assert.match(cargo, /async-nats = "=0\.38\.0"/);
 
-  // Each POST /run spawns one detached, self-removing, host-network worker.
+  // Primary path: NATS request/reply to the container-pool subject, then
+  // republish the worker's RunResult to the per-job subject + fanout.
+  assert.match(main, /fn dispatch_via_pool/);
+  assert.match(main, /send_request/);
+  assert.match(main, /fn connect_nats_loop/);
+  assert.match(main, /fn publish_run_result/);
+  assert.match(main, /fn process_job/);
+  assert.match(main, /BROWSER_JOB_POOL_ENABLED/);
+  assert.match(main, /BROWSER_JOB_POOL_SUBJECT/);
+  assert.match(main, /dd\.remote\.container_pool\.browser-jobs\.requests/);
+  // A DispatchResponse "body" is the result; a 409 means we raced a used worker
+  // and must fall back rather than publish a bogus result.
+  assert.match(main, /value\.get\("body"\)/);
+  assert.match(main, /409/);
+
+  // Fallback path: spawn one detached, self-removing, host-network worker.
+  assert.match(main, /fn fallback_spawn/);
   assert.match(main, /"run", "-d", "--rm"/);
   assert.match(main, /"--network", &config\.network/);
   assert.match(main, /dd\.browser-job\.managed=true/);
   assert.match(main, /dd\.browser-job\.deadline-ms=/);
-  assert.match(main, /dd\.browser-job\.job-id=/);
   assert.match(main, /JOB_SPEC_B64=/);
-  assert.match(main, /NATS_URL=/);
   assert.match(main, /BROWSER_JOB_RESULT_SUBJECT=/);
   assert.match(main, /--pull=/);
 
@@ -70,14 +86,16 @@ test('browser-job-runner is a Rust axum spawner that launches one nerdctl worker
   assert.match(main, /BROWSER_JOB_MAX_LIFETIME_SECONDS", 540\)\.clamp\(30, 540\)/);
   assert.match(main, /deadline_ms = started_ms \+ \(state\.config\.max_lifetime_seconds as u128\) \* 1000/);
 
-  // Async model: results go to NATS, the HTTP response is just an accepted ticket.
+  // Async model: POST /run is just an accepted ticket; results go to NATS.
   assert.match(main, /StatusCode::ACCEPTED/);
+  assert.match(main, /tokio::spawn\(process_job/);
   assert.match(main, /"resultSubject": result_subject/);
+  assert.match(main, /"poolSubject": state\.config\.pool_subject/);
   assert.match(main, /dd\.remote\.browser_jobs/);
 
-  // Concurrency cap returns 429 rather than oversubscribing the node.
-  assert.match(main, /StatusCode::TOO_MANY_REQUESTS/);
+  // The fallback path owns the concurrency cap (not the synchronous handler).
   assert.match(main, /jobs\.len\(\) >= state\.config\.max_concurrent/);
+  assert.match(main, /rejected_total/);
 
   // Constant-time auth on the same headers as the sibling browser services.
   assert.match(main, /constant_time_equals/);
@@ -92,22 +110,27 @@ test('browser-job-runner is a Rust axum spawner that launches one nerdctl worker
   assert.match(main, /"\/status"/);
   assert.match(main, /"\/jobs"/);
 
-  // The in-server tracker enforces the deadline and prunes finished containers.
+  // The in-server tracker enforces the fallback deadline and prunes containers.
   assert.match(main, /run_tracker_loop/);
   assert.match(main, /force_remove/);
 
+  // Pool metrics so the path split is observable.
+  assert.match(main, /browser_job_pool_dispatched_total/);
+  assert.match(main, /browser_job_fallback_total/);
+
   assert.match(readme, /dd-browser-job-runner/);
+  assert.match(readme, /dd-container-pool/);
   assert.match(readme, /nerdctl/);
   assert.match(readme, /9 minutes/);
   assert.match(readme, /NATS/);
 });
 
-test('browser-job worker runs one Playwright/Puppeteer scenario and publishes to NATS', async () => {
+test('browser-job worker is dual-mode: HTTP serve for the pool + one-shot for the fallback', async () => {
   const pkg = await readRepoFile(`${CRATE}/worker/package.json`);
   const worker = await readRepoFile(`${CRATE}/worker/src/worker.ts`);
   const dockerfile = await readRepoFile(`${CRATE}/worker/Dockerfile`);
 
-  // Worker speaks NATS and both browser engines; it has no HTTP server.
+  // Worker speaks NATS and both browser engines; HTTP server is node:http, not fastify.
   assert.match(pkg, /"name": "dd-browser-job-worker"/);
   assert.match(pkg, /"nats":/);
   assert.match(pkg, /"playwright":/);
@@ -115,8 +138,21 @@ test('browser-job worker runs one Playwright/Puppeteer scenario and publishes to
   assert.match(pkg, /"zod":/);
   assert.doesNotMatch(pkg, /"fastify":/);
 
-  // Single-shot: read the job from env, run it, publish JSON to NATS, exit.
+  // Mode is chosen at startup by whether JOB_SPEC_B64 is set.
   assert.match(worker, /process\.env\.JOB_SPEC_B64/);
+  assert.match(worker, /async function runOneShot/);
+  assert.match(worker, /async function runServe/);
+
+  // serve mode: a tiny node:http server with /healthz + /run that exits after one job.
+  assert.match(worker, /from 'node:http'/);
+  assert.match(worker, /createServer/);
+  assert.match(worker, /'\/healthz'/);
+  assert.match(worker, /'\/run'/);
+  assert.match(worker, /already consumed/);
+  assert.match(worker, /scheduleExit/);
+  assert.match(worker, /closeAllConnections/);
+
+  // one-shot mode: read the job from env, run it, publish JSON to NATS, exit.
   assert.match(worker, /from 'nats'/);
   assert.match(worker, /JSONCodec/);
   assert.match(worker, /config\.resultSubject/);
@@ -127,9 +163,9 @@ test('browser-job worker runs one Playwright/Puppeteer scenario and publishes to
   assert.match(worker, /--no-sandbox/);
   assert.match(worker, /--disable-dev-shm-usage/);
 
-  // Independent watchdog guarantees the process never outlives its budget.
+  // Independent watchdog guarantees a running job never outlives its budget.
   assert.match(worker, /BROWSER_JOB_MAX_MS/);
-  assert.match(worker, /watchdog/);
+  assert.match(worker, /armWatchdog/);
   assert.match(worker, /process\.exit/);
 
   // Every DSL action is handled.
@@ -142,7 +178,26 @@ test('browser-job worker runs one Playwright/Puppeteer scenario and publishes to
   assert.match(dockerfile, /CMD \["node", "dist\/worker\.js"\]/);
 });
 
-test('browser-job-runner deploys as a privileged host-network spawner through Argo and the gateway', async () => {
+test('container-pool seed defines the browser-jobs warm pool + base image', async () => {
+  const seed = await readRepoFile('remote/databases/pg/seeds/container-pool-app-config.sql');
+
+  // baseImages entry so the pool's image build/sync path knows the worker image.
+  assert.match(seed, /"runtime": "browser-jobs"/);
+  assert.match(seed, /remote\/deployments\/browser-job-runner-rs\/worker\/Dockerfile/);
+  assert.match(seed, /"buildContext": "remote\/deployments\/browser-job-runner-rs\/worker"/);
+
+  // The pool itself: HTTP serve worker, /run + /healthz, the dispatch subject,
+  // one job per container, and a 9-minute request timeout.
+  assert.match(seed, /"slug": "browser-jobs"/);
+  assert.match(seed, /"image": "docker\.io\/library\/dd-browser-job-worker:dev"/);
+  assert.match(seed, /"requestPath": "\/run"/);
+  assert.match(seed, /"healthPath": "\/healthz"/);
+  assert.match(seed, /"natsSubject": "dd\.remote\.container_pool\.browser-jobs\.requests"/);
+  assert.match(seed, /"maxConcurrencyPerContainer": 1/);
+  assert.match(seed, /"requestTimeoutMs": 540000/);
+});
+
+test('browser-job-runner deploys as a privileged host-network orchestrator through Argo and the gateway', async () => {
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-browser-job-runner.deployment.yaml',
   );
@@ -166,10 +221,12 @@ test('browser-job-runner deploys as a privileged host-network spawner through Ar
   assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/browser-job-runner-rs/);
   assert.match(deployment, /cargo run --release/);
 
-  // Port + NATS + namespace + worker image + the 9-minute ceiling.
+  // Port + NATS + pool wiring + namespace + worker image + the 9-minute ceiling.
   assert.match(deployment, /containerPort:\s*8106/);
   assert.match(deployment, /name:\s*PORT[\s\S]*value:\s*'8106'/);
   assert.match(deployment, /name:\s*NATS_URL[\s\S]*nats:\/\/dd-nats\.messaging\.svc\.cluster\.local:4222/);
+  assert.match(deployment, /name:\s*BROWSER_JOB_POOL_ENABLED[\s\S]*value:\s*'true'/);
+  assert.match(deployment, /name:\s*BROWSER_JOB_POOL_SUBJECT[\s\S]*dd\.remote\.container_pool\.browser-jobs\.requests/);
   assert.match(deployment, /name:\s*BROWSER_JOB_CONTAINERD_NAMESPACE[\s\S]*value:\s*dd-browser-jobs/);
   assert.match(deployment, /name:\s*BROWSER_JOB_NETWORK[\s\S]*value:\s*host/);
   assert.match(deployment, /name:\s*BROWSER_JOB_IMAGE[\s\S]*dd-browser-job-worker:dev/);
@@ -185,7 +242,7 @@ test('browser-job-runner deploys as a privileged host-network spawner through Ar
   assert.match(deployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
   assert.match(deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
 
-  // The Service exposes only the spawner API; no browser/grid port is published.
+  // The Service exposes only the orchestrator API; no browser/grid port is published.
   assert.match(service, /name:\s*dd-browser-job-runner/);
   assert.match(service, /port:\s*8106/);
   assert.match(service, /targetPort:\s*http/);
@@ -207,6 +264,7 @@ test('browser-job-runner deploys as a privileged host-network spawner through Ar
   assert.match(promtail, /dd-browser-job-runner/);
   assert.match(runtimeReadme, /`dd-browser-job-runner`/);
   assert.match(runtimeReadme, /dd\.remote\.browser_jobs/);
+  assert.match(runtimeReadme, /dd-container-pool/);
 });
 
 test('idle-reaper backstops rogue browser-job containers in the dd-browser-jobs namespace', async () => {

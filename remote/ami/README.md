@@ -118,7 +118,7 @@ Java (Corretto), TypeScript, pnpm
 
 ### K8s & Containers
 kubectl, kubeadm, kubelet, helm, containerd, crictl, ctr, nerdctl,
-etcdctl, minikube, k9s, stern, ArgoCD, Cilium CLI, Hubble
+etcdctl, k9s, stern, ArgoCD, Cilium CLI, Hubble
 
 ### AWS & IaC
 AWS CLI v2, AWS CDK, Terraform, Ansible
