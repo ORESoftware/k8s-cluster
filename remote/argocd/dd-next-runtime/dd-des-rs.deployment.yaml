@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-soccer-planner-stream'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-server-source-clone'
       labels:
         app: dd-des-rs
     spec:
@@ -43,6 +43,20 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Resolve the dd-des-rs server source. The mounted repo on the EC2
+              # node can lag Git after an Argo-only sync, so prefer a fresh clone
+              # of this k8s repo and fall back to the mount only if GitHub is
+              # unavailable.
+              server_src="/opt/dd-next-1/remote/deployments/des-rs"
+              if [ -n "${DES_SERVER_GIT_URL:-}" ]; then
+                rm -rf /tmp/k8s-source
+                if git clone --depth 1 --branch "${DES_SERVER_GIT_REF:-dev}" "${DES_SERVER_GIT_URL}" /tmp/k8s-source; then
+                  server_src=/tmp/k8s-source/remote/deployments/des-rs
+                  echo "[dd-des-rs] server: cloned ${DES_SERVER_GIT_URL}@${DES_SERVER_GIT_REF:-dev} ($(git -C /tmp/k8s-source rev-parse --short HEAD))"
+                else
+                  echo "[dd-des-rs] server clone failed; using mounted source at ${server_src}" >&2
+                fi
+              fi
               # Resolve the discrete-event-system.rs engine source. By default we
               # fetch the engine's latest origin/main at pod start
               # (DES_ENGINE_GIT_URL / DES_ENGINE_GIT_REF) into the writable /tmp
@@ -65,7 +79,7 @@ spec:
               # repointed and Cargo.lock stays writable under the read-only root fs.
               rm -rf /tmp/des-rs
               mkdir -p /tmp/des-rs
-              cp -a /opt/dd-next-1/remote/deployments/des-rs/. /tmp/des-rs/
+              cp -a "${server_src}/." /tmp/des-rs/
               rm -rf /tmp/des-rs/target
               cd /tmp/des-rs
               sed -i "s#path = \"../../submodules/discrete-event-system.rs\"#path = \"${engine_src}\"#" Cargo.toml
@@ -75,6 +89,12 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8112'
+            # Server source: fetch this k8s repo at pod start so route code does
+            # not depend on the EC2 hostPath checkout being freshly pulled.
+            - name: DES_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: DES_SERVER_GIT_REF
+              value: dev
             # Engine source: fetch the latest origin/main of the engine repo at
             # pod start and build against it. Set DES_ENGINE_GIT_URL to "" to
             # instead use the pinned git submodule in the mounted repo, or point

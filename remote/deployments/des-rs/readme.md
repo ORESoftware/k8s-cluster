@@ -83,6 +83,8 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 | `PORT` | `8112` | bind port |
 | `DES_WORK_DIR` | `<tmp>/dd-des-rs` | writable dir; engine renders into `<dir>/out` |
 | `DES_STARTUP_SIMS` | curated fast set | comma-separated name filters run at startup (empty = skip) |
+| `DES_SERVER_GIT_URL` | k8s repo HTTPS URL | *(deployment startup script, not the server)* clone this repo at pod start and copy `remote/deployments/des-rs` from it; set empty to use the mounted repo |
+| `DES_SERVER_GIT_REF` | `dev` | *(deployment startup script)* branch/tag/sha to clone for the server crate |
 | `DES_ENGINE_GIT_URL` | engine repo HTTPS URL | *(deployment startup script, not the server)* clone this engine repo at pod start and build against it; set empty to use the pinned submodule instead |
 | `DES_ENGINE_GIT_REF` | `main` | *(deployment startup script)* branch/tag/sha to clone for the engine |
 
@@ -116,6 +118,13 @@ falls back to the pinned `remote/submodules/discrete-event-system.rs` submodule
 in the read-only repo mount. For reproducible/pinned builds, set
 `DES_ENGINE_GIT_REF` to a tag/sha (or clear `DES_ENGINE_GIT_URL` and bump the
 submodule pointer).
+
+**Server source (auto-fetch).** The startup script also clones this k8s repo
+(`DES_SERVER_GIT_URL` / `DES_SERVER_GIT_REF`) and copies
+`remote/deployments/des-rs` from that fresh clone before building. This keeps
+server routes in sync with Argo-applied manifests even when the EC2 hostPath
+checkout mounted at `/opt/dd-next-1` has not been pulled yet. If the clone fails
+or `DES_SERVER_GIT_URL` is empty, it falls back to the mounted repo.
 
 The gateway exposes the landing page behind auth at **`/des-rs/`** (nginx
 `location /des-rs/` → `dd-des-rs:8112/`, mirroring `/des/`), and the Rust
