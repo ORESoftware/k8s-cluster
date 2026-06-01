@@ -1618,13 +1618,18 @@ jobs:
 
           echo "=== sync EC2 checkout and recorded submodules ==="
           cd "$repo"
+          before_revision="$(git rev-parse HEAD 2>/dev/null || true)"
           git status --short --branch
           git fetch origin "${TARGET_REVISION:-dev}"
           git merge --ff-only "origin/${TARGET_REVISION:-dev}"
+          after_revision="$(git rev-parse HEAD)"
+          changed_paths="$(git diff --name-only "${before_revision:-$after_revision}" "$after_revision" 2>/dev/null || true)"
           git submodule sync --recursive
           git submodule update --init --recursive
           git rev-parse --short HEAD
           git submodule status --recursive
+          echo "=== changed paths pulled on EC2 ==="
+          printf '%s\n' "${changed_paths:-none}" | head -80
 
           echo "=== apply Argo CD Applications ==="
           kubectl apply -f remote/argocd/apps/gcs.application.yaml
@@ -1637,10 +1642,33 @@ jobs:
           done
           disable_loadtest_autosync
 
-          echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
-          kubectl -n default rollout restart deployment/gcs deployment/gcs-router
-          kubectl -n default rollout status deployment/gcs --timeout=900s
-          kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          wait_available() {
+            d="$1"
+            expected="$2"
+            for i in $(seq 1 300); do
+              available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+              if [ "${available:-0}" -ge "$expected" ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo "ERROR: deployment/$d did not reach availableReplicas >= $expected" >&2
+            kubectl -n default get deploy "$d" -o wide || true
+            kubectl -n default get pods -l "app=$d" -o wide || true
+            kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -80 || true
+            return 1
+          }
+
+          if printf '%s\n' "$changed_paths" | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml)' >/dev/null; then
+            echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
+            kubectl -n default rollout restart deployment/gcs deployment/gcs-router
+            kubectl -n default rollout status deployment/gcs --timeout=900s
+            kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          else
+            echo "=== verify existing gcs/chat.vibe deployment (no GCS source path changes) ==="
+            wait_available gcs 3
+            wait_available gcs-router 2
+          fi
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
 
