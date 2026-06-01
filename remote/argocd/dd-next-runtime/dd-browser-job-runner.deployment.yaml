@@ -22,11 +22,14 @@ spec:
       labels:
         app: dd-browser-job-runner
     spec:
+      serviceAccountName: dd-browser-job-runner
       automountServiceAccountToken: false
       # Same posture as dd-container-pool / dd-gleam-lambda-runner: a privileged,
-      # host-network pod that spawns short-lived nerdctl worker containers on the
-      # node's containerd. hostNetwork + ClusterFirstWithHostNet lets both this
-      # pod AND its `--network host` workers resolve and reach the NATS ClusterIP
+      # host-network pod. Primary path leases warm workers from dd-container-pool
+      # over NATS; the fallback path spawns short-lived nerdctl worker containers
+      # on the node's containerd when the pool is unavailable. hostNetwork +
+      # ClusterFirstWithHostNet lets this pod, the pool's warm workers, AND our
+      # `--network host` fallback workers resolve and reach the NATS ClusterIP
       # (dd-nats.messaging.svc.cluster.local:4222) for publishing scrape results.
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
@@ -57,6 +60,15 @@ spec:
               value: dd.remote.browser_jobs
             - name: BROWSER_JOB_NATS_RESULT_SUBJECT
               value: dd.remote.browser_jobs.results
+            # Primary path: lease a warm worker from dd-container-pool over NATS
+            # request/reply. The 'browser-jobs' pool is defined in the container-pool
+            # app-config seed (remote/databases/pg/seeds/container-pool-app-config.sql).
+            - name: BROWSER_JOB_POOL_ENABLED
+              value: 'true'
+            - name: BROWSER_JOB_POOL_SLUG
+              value: browser-jobs
+            - name: BROWSER_JOB_POOL_SUBJECT
+              value: dd.remote.container_pool.browser-jobs.requests
             - name: BROWSER_JOB_NERDCTL_BIN
               value: /usr/local/bin/nerdctl
             - name: BROWSER_JOB_CONTAINERD_NAMESPACE
@@ -78,8 +90,14 @@ spec:
               value: '60000'
             - name: BROWSER_JOB_MAX_STEPS
               value: '64'
+            # Per-screenshot raw cap. Kept well below the pool's 2 MB
+            # CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES so a RunResult (base64
+            # screenshots inflate ~1.33x, plus the default final screenshot)
+            # survives the pool's HTTP->NATS bridge without truncation. The
+            # nerdctl fallback path publishes straight to NATS (8 MB max_payload)
+            # so it could carry more, but one env keeps both paths consistent.
             - name: BROWSER_JOB_MAX_SCREENSHOT_BYTES
-              value: '1500000'
+              value: '600000'
             - name: BROWSER_JOB_BROWSER_HEADLESS
               value: 'true'
             # Arbitrary in-page script execution must default to off in production manifests.
@@ -129,9 +147,13 @@ spec:
             requests:
               cpu: 50m
               memory: 192Mi
+            # Matches dd-container-pool: the headroom is for the in-cluster
+            # `cargo run --release` build (axum + tokio + async-nats/rustls),
+            # not steady state. Per-job browsers run in the node's containerd
+            # (pool warm workers or nerdctl fallback), outside this pod's cgroup.
             limits:
-              cpu: '1'
-              memory: 1Gi
+              cpu: '2'
+              memory: 2Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1

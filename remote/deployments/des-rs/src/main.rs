@@ -24,6 +24,10 @@
 //! - `GET /soccer/planner` — interactive 11-a-side rotation planner UI.
 //! - `POST /soccer/planner/solve` — re-solve the planner request with the Rust IP/MIP solver.
 //! - `POST /soccer/planner/stream` — soccer planner JSONL stream alias.
+//! - `GET /music` — generative music production workbench UI.
+//! - `POST /music/sample-seed` — upload or link a 10-50s MP4 plus a prompt and render a WAV variation.
+//! - `GET /delivery-planner.html` — friendly redirect to the delivery planner artifact.
+//! - `GET /deliver-planner.html` — typo-compatible redirect to the delivery planner artifact.
 //! - `GET /elevator-fel` — the new next-event (FEL) elevator simulation, animated.
 //! - `GET /elevator-mdp` — elevator-dispatch MDP player (value-iterated).
 //! - `GET /elevator-pomdp` — elevator-dispatch POMDP player (noisy call button; belief-tracked).
@@ -37,16 +41,18 @@
 //! `run_all_simulations` is likewise strictly serial).
 
 use std::{
-    env,
+    env, fs,
     net::SocketAddr,
     panic::{catch_unwind, AssertUnwindSafe},
     path::{Path as StdPath, PathBuf},
+    process::{Command, Stdio},
     sync::Arc,
+    thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -58,6 +64,10 @@ use tokio::sync::Mutex;
 
 use des_engine::des::fel::elevator::{
     elevator_mdp_spec, elevator_pomdp_spec, render_elevator_html, run_fel_elevator, ElevatorConfig,
+};
+use des_engine::des::general::music_production::{
+    analyze_music_sample_prompt, derive_music_sample_seed_from_mp4, generate_microtonal_song,
+    song_spec_from_music_sample_seed_with_prompt, ArrangementSummary,
 };
 use des_engine::des::model::{with_builtins, CitizenError};
 use des_engine::des::service::{
@@ -81,6 +91,9 @@ const DEFAULT_STARTUP_SIMS: &str = "main_wind_mppt_anim,main_temp_control_anim,m
 // Generous enough for model specs and JSONL streaming command batches, while
 // still bounding memory per request (simulations themselves take no body).
 const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
+const MAX_MUSIC_UPLOAD_BYTES: usize = 96 * 1024 * 1024;
+const MAX_MUSIC_PROMPT_CHARS: usize = 12_000;
+const MUSIC_DOWNLOAD_TIMEOUT_SECS: u64 = 180;
 const MAX_FILTER_LEN: usize = 96;
 
 /// Interactive landing page. All `fetch`/link URLs are RELATIVE so the page
@@ -165,6 +178,7 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
     <a class="btn" href="info">Service info</a>
     <a class="btn" href="models">Models JSON</a>
     <a class="btn" href="streaming">Streaming JSON</a>
+    <a class="btn" href="music">Music production</a>
     <a class="btn" href="simulations">Catalogue JSON</a>
   </div>
 </div>
@@ -196,6 +210,15 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
     <div class="name">soccer/planner</div>
     <div class="desc">11-a-side (4-4-2), max 7 subs. Mark players AWOL/injured/guest, lock positions, ban roles, set per-position scores and chemistry rules (9/10 if partner in slot Y). Re-solve with IP/MIP; toggle Pitch vs solver view.</div>
     <div class="row"><a class="open" href="soccer/planner" target="_blank" rel="noopener">Open planner &#8599;</a></div>
+  </div>
+</div>
+<h2>Music production <span class="muted">— microtonal generator, breakbeat/DnB album runs, sample-seed workflow</span></h2>
+<div class="grid">
+  <div class="sim feat">
+    <div class="label">Generative song workbench</div>
+    <div class="name">music-production</div>
+    <div class="desc">Build 3-minute instrumental albums with FFT-backed analysis, synthetic instrument discovery, meter changes, drum fills, reduced percussion gain, and a 10-50s MP4 music-sample-seed variation path.</div>
+    <div class="row"><a class="open" href="music" target="_blank" rel="noopener">Open workbench &#8599;</a></div>
   </div>
 </div>
 <h2>Control &amp; estimation <span class="muted">— back-EMF DC motor, controllability/observability, shadow Gramians</span></h2>
@@ -318,6 +341,263 @@ document.addEventListener('keydown',function(e){
 </body>
 </html>"####;
 
+const MUSIC_PRODUCTION_HTML: &str = r####"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DES music production</title>
+<style>
+:root{color-scheme:dark;--bg:#090d16;--panel:#101724;--panel2:#151b24;--line:#273140;--ink:#eef3f8;--dim:#9ba7b5;--accent:#24a0ed;--hot:#e65f7a;--ok:#39d98a}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#090d16,#10151f 48%,#0c1018);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 18px 56px}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
+.crumb{color:var(--dim);text-decoration:none;font-size:.86rem}
+h1{font-size:1.65rem;margin:3px 0 7px;letter-spacing:0}
+.sub{max-width:76ch;color:var(--dim);line-height:1.5;margin:0}
+.pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:#0e141e;color:#b9c6d4;font-size:.78rem;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.layout{display:grid;grid-template-columns:minmax(280px,360px) 1fr;gap:14px;align-items:start}
+.panel{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:15px}
+.panel h2{font-size:.96rem;margin:0 0 12px;color:#dce7f2;letter-spacing:0}
+label{display:block;color:#bac5d1;font-size:.8rem;margin:12px 0 5px}
+input,select,textarea{width:100%;font:inherit;color:var(--ink);background:#0b111b;border:1px solid #2d3949;border-radius:8px;padding:9px 10px}
+textarea{min-height:108px;resize:vertical}
+input[type=range]{padding:0;accent-color:var(--accent)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
+button,a.btn{font:inherit;font-size:.86rem;border-radius:8px;border:1px solid #344153;background:#151d29;color:#eef3f8;padding:9px 12px;text-decoration:none;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#041018}
+button:hover,a.btn:hover{border-color:#58b8f2}
+.meters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.meter{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:12px;min-height:74px}
+.meter b{display:block;font-size:1.12rem;margin-bottom:5px;color:#fff}
+.meter span{font-size:.75rem;color:var(--dim)}
+.wide{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#080d14;border:1px solid #263242;border-radius:10px;padding:13px;color:#c9e6ff;font-size:.82rem;line-height:1.45;min-height:132px}
+.timeline{height:76px;border:1px solid var(--line);border-radius:10px;background:#0b111b;position:relative;overflow:hidden;margin-top:6px}
+.section{position:absolute;top:0;bottom:0;border-right:1px solid rgba(255,255,255,.18)}
+.section:nth-child(1){background:#1b4d89}.section:nth-child(2){background:#75415f}.section:nth-child(3){background:#2d705d}.section:nth-child(4){background:#725d24}.section:nth-child(5){background:#41386b}
+.section span{position:absolute;left:8px;bottom:7px;font-size:.7rem;color:#f3f7fb}
+.seed-status{font-size:.8rem;color:var(--dim);min-height:1.2em;margin-top:8px}
+.seed-status.ok{color:var(--ok)}.seed-status.err{color:var(--hot)}
+.result{font-size:.8rem;color:#c9e6ff;line-height:1.45;margin-top:10px;word-break:break-word}
+.result a{color:#76c7ff}
+.result.ok{color:var(--ok)}.result.err{color:var(--hot)}
+.note{font-size:.78rem;color:var(--dim);line-height:1.45;margin-top:10px}
+@media(max-width:860px){.layout,.wide{grid-template-columns:1fr}.meters{grid-template-columns:1fr 1fr}.top{flex-direction:column}}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <a class="crumb" href="./">des-rs</a>
+      <h1>Music Production Workbench</h1>
+      <p class="sub">Microtonal, mostly instrumental generation with synthetic instruments, FFT spectrum checks, breakbeat and drum-n-bass album recipes, richer meter changes, legal sample provenance, and a 10-50 second MP4/link music-sample-seed path.</p>
+    </div>
+    <span class="pill"><span class="dot"></span>ready for local renders</span>
+  </div>
+
+  <div class="layout">
+    <section class="panel">
+      <h2>Render Setup</h2>
+      <label for="mode">Mode</label>
+      <select id="mode">
+        <option value="album-more">10-track breakbeat/DnB album</option>
+        <option value="album">10-track broad microtonal album</option>
+        <option value="sample">MP4 music-sample-seed variation</option>
+      </select>
+      <div class="row">
+        <div>
+          <label for="seed">Seed</label>
+          <input id="seed" value="20260602" inputmode="numeric">
+        </div>
+        <div>
+          <label for="duration">Song seconds</label>
+          <input id="duration" type="number" min="30" max="480" step="1" value="180">
+        </div>
+      </div>
+      <label for="percussion">Main percussion gain</label>
+      <input id="percussion" type="range" min="80" max="90" value="84">
+      <label for="variation">Drum variation target</label>
+      <input id="variation" type="range" min="10" max="20" value="10">
+      <label for="sourceUrl">Public link seed</label>
+      <input id="sourceUrl" type="url" placeholder="https://www.youtube.com/watch?v=... or a direct .mp4 URL">
+      <label for="sample">MP4 seed upload (10-50s)</label>
+      <input id="sample" type="file" accept="video/mp4,audio/mp4,.mp4">
+      <div id="sampleStatus" class="seed-status"></div>
+      <label for="prompt">Prompt / direction</label>
+      <textarea id="prompt" placeholder="Expand the seed into faster jungle, keep the melody bright, use 13/16 stutter fills, soften the main drums, add massive synth pressure."></textarea>
+      <div class="actions">
+        <button class="primary" onclick="renderSampleSeed()">Render via server</button>
+        <button onclick="update()">Refresh recipe</button>
+        <button onclick="copyCommand()">Copy command</button>
+        <a class="btn" href="out/" target="_blank" rel="noopener">Open output</a>
+      </div>
+      <div id="serverResult" class="result"></div>
+      <p class="note">Use sources you own or are licensed to transform. Server links use direct HTTP for public media files and yt-dlp when available for YouTube, Facebook, Instagram, X, and similar public pages.</p>
+    </section>
+
+    <div>
+      <div class="meters">
+        <div class="meter"><b id="tracks">10</b><span>tracks</span></div>
+        <div class="meter"><b id="meter">7/8+</b><span>meter changes</span></div>
+        <div class="meter"><b id="drums">10%</b><span>less repetition target</span></div>
+        <div class="meter"><b id="gain">0.84</b><span>percussion gain</span></div>
+      </div>
+      <section class="panel">
+        <h2>Song Shape</h2>
+        <div class="timeline" aria-label="song timeline">
+          <div class="section" style="left:0;width:16%"><span>intro</span></div>
+          <div class="section" style="left:16%;width:22%"><span>pressure</span></div>
+          <div class="section" style="left:38%;width:28%"><span>collage</span></div>
+          <div class="section" style="left:66%;width:20%"><span>swerve</span></div>
+          <div class="section" style="left:86%;width:14%"><span>outro</span></div>
+        </div>
+      </section>
+      <div class="wide" style="margin-top:14px">
+        <section class="panel">
+          <h2>Command</h2>
+          <pre id="command"></pre>
+        </section>
+        <section class="panel">
+          <h2>Manifest Preview</h2>
+          <pre id="manifest"></pre>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let sampleOk=false;
+let sampleName="";
+const savedPrompt=localStorage.getItem("desMusicPrompt")||"";
+$("prompt").value=savedPrompt;
+function clampInt(value,fallback){const n=parseInt(value,10);return Number.isFinite(n)?n:fallback;}
+function shellQuote(value){return "'"+String(value).replace(/'/g,"'\\''")+"'";}
+function hashText(value){
+  let h=0x811c9dc5;
+  for(const ch of value){h^=ch.charCodeAt(0);h=Math.imul(h,0x01000193)>>>0;}
+  return h>>>0;
+}
+function promptTags(value){
+  const l=value.toLowerCase();
+  const tags=[];
+  [["expand",["expand","longer arc","build out"]],["alter",["alter","mutate","transform"]],["slice",["slice","chop","cut-up","collage"]],["melody",["melody","melodic","hook","theme"]],["massive-synth",["massive synth","big synth","wall of synth"]],["space",["space","reverb","wide","dub"]],["less-drums",["less drums","softer drums","lower drums"]],["more-drums",["more drums","drum fills","busier drums"]]].forEach(([tag,words])=>{if(words.some(w=>l.includes(w)))tags.push(tag);});
+  return tags;
+}
+function promptText(){return $("prompt").value.trim();}
+function sourceUrl(){return $("sourceUrl").value.trim();}
+function command(){
+  const mode=$("mode").value;
+  const duration=clampInt($("duration").value,180);
+  const seed=clampInt($("seed").value,20260602);
+  if(mode==="sample"){
+    const url=sourceUrl();
+    const source=url?"out/music-sample-seed-source.mp4":(sampleName||"/absolute/path/to/seed.mp4");
+    const prompt=promptText();
+    const promptPath="out/music-sample-seed-prompt.txt";
+    const urlPrefix=url?`mkdir -p out\nyt-dlp --no-playlist --force-overwrites --merge-output-format mp4 -o ${source} ${shellQuote(url)}\n`:"";
+    const promptPrefix=prompt?`mkdir -p out\nprintf %s ${shellQuote(prompt)} > ${promptPath}\n`:"";
+    const promptFlag=prompt?` --prompt-file ${promptPath}`:"";
+    return `${urlPrefix}${promptPrefix}cargo run --bin main_music_production -- --sample-seed "${source}" out/music-sample-seed-variation.wav ${duration}${promptFlag}`;
+  }
+  const out=mode==="album-more"?"out/music-production-ten-more-breaks":"out/music-production-ten-songs";
+  const flag=mode==="album-more"?"--album-more":"--album";
+  return `cargo run --bin main_music_production -- ${flag} ${out} ${seed} ${duration}`;
+}
+function update(){
+  const mode=$("mode").value;
+  const duration=clampInt($("duration").value,180);
+  const percussion=(clampInt($("percussion").value,84)/100).toFixed(2);
+  const variation=clampInt($("variation").value,10);
+  const prompt=promptText();
+  const url=sourceUrl();
+  localStorage.setItem("desMusicPrompt", $("prompt").value);
+  $("tracks").textContent=mode==="sample"?"1":"10";
+  $("drums").textContent=variation+"%";
+  $("gain").textContent=percussion;
+  $("meter").textContent=mode==="sample"?"seeded":"7/8+";
+  $("command").textContent=command();
+  $("manifest").textContent=JSON.stringify({
+    mode,
+    duration_seconds: duration,
+    percussion_gain: Number(percussion),
+    drum_repetition_reduction_target: variation/100,
+    synthesis: ["microtonal", "pitch-bend", "FFT spectrum", "invented instruments"],
+    http_endpoint: mode==="sample" ? "POST music/sample-seed" : null,
+    sample_seed: mode==="sample" ? { required_seconds: "10-50", valid_loaded_file: sampleOk, file: sampleName || null, source_url: url || null } : null,
+    prompt: prompt ? { chars: [...prompt].length, hash: hashText(prompt), tags: promptTags(prompt) } : null
+  }, null, 2);
+}
+$("sample").addEventListener("change", function(){
+  const file=this.files&&this.files[0];
+  sampleOk=false;sampleName=file?file.name:"";
+  const status=$("sampleStatus");
+  if(!file){status.className="seed-status";status.textContent="";update();return;}
+  const url=URL.createObjectURL(file);
+  const video=document.createElement("video");
+  video.preload="metadata";
+  video.onloadedmetadata=function(){
+    URL.revokeObjectURL(url);
+    const d=video.duration||0;
+    sampleOk=d>=10&&d<=50;
+    status.className="seed-status "+(sampleOk?"ok":"err");
+    status.textContent=sampleOk?`loaded ${file.name} (${d.toFixed(2)}s)`:`${file.name} is ${d.toFixed(2)}s; expected 10-50s`;
+    update();
+  };
+  video.onerror=function(){URL.revokeObjectURL(url);status.className="seed-status err";status.textContent="could not read MP4 metadata";update();};
+  video.src=url;
+});
+["mode","seed","duration","percussion","variation","prompt","sourceUrl"].forEach(id=>$(id).addEventListener("input",update));
+async function copyCommand(){
+  const text=command();
+  try{await navigator.clipboard.writeText(text);$("command").textContent=text+"\n\ncopied";}
+  catch(e){$("command").textContent=text;}
+}
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));}
+async function renderSampleSeed(){
+  const result=$("serverResult");
+  const file=$("sample").files&&$("sample").files[0];
+  const url=sourceUrl();
+  if($("mode").value!=="sample"){
+    result.className="result err";
+    result.textContent="Switch mode to MP4 music-sample-seed variation.";
+    return;
+  }
+  if(!file&&!url){
+    result.className="result err";
+    result.textContent="Choose a 10-50s MP4 seed or paste a public media link first.";
+    return;
+  }
+  const fd=new FormData();
+  if(file) fd.append("sample",file,file.name);
+  if(url) fd.append("source_url",url);
+  fd.append("prompt",$("prompt").value);
+  fd.append("duration_seconds",String(clampInt($("duration").value,180)));
+  fd.append("title","music-sample-seed variation");
+  result.className="result";
+  result.textContent="rendering on des-rs...";
+  try{
+    const r=await fetch("music/sample-seed",{method:"POST",body:fd});
+    const d=await r.json();
+    if(!r.ok||!d.ok){throw new Error(d.error||("HTTP "+r.status));}
+    result.className="result ok";
+    result.innerHTML=`Wrote <a href="${escapeHtml(d.wav_url)}" target="_blank" rel="noopener">${escapeHtml(d.wav_url)}</a><br>genre ${escapeHtml(d.summary.genre)} · bpm ${Number(d.summary.bpm).toFixed(1)} · prompt hash ${d.prompt&&d.prompt.hash?d.prompt.hash:"none"}`;
+    $("manifest").textContent=JSON.stringify(d,null,2);
+  }catch(e){
+    result.className="result err";
+    result.textContent="render failed: "+e.message;
+  }
+}
+update();
+</script>
+</body>
+</html>"####;
+
 #[derive(Clone)]
 struct AppState {
     /// Absolute path to the directory the engine writes artifacts into
@@ -429,6 +709,538 @@ async fn root(State(state): State<AppState>) -> Response {
     res
 }
 
+async fn music_production_page(State(state): State<AppState>) -> Response {
+    let mut res = Html(MUSIC_PRODUCTION_HTML).into_response();
+    apply_discovery_headers(res.headers_mut(), &state);
+    res
+}
+
+async fn music_sample_seed_render(
+    State(state): State<AppState>,
+    mut multipart: Multipart,
+) -> Response {
+    let mut sample_bytes: Option<Vec<u8>> = None;
+    let mut source_url: Option<String> = None;
+    let mut prompt = String::new();
+    let mut title = "music-sample-seed variation".to_string();
+    let mut duration_seconds = 180.0;
+
+    while let Some(field) = match multipart.next_field().await {
+        Ok(field) => field,
+        Err(e) => {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid multipart body: {e}"),
+            )
+        }
+    } {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "sample" => match field.bytes().await {
+                Ok(bytes) => sample_bytes = Some(bytes.to_vec()),
+                Err(e) => {
+                    return json_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("failed to read sample upload: {e}"),
+                    )
+                }
+            },
+            "source_url" => match field.text().await {
+                Ok(text) if !text.trim().is_empty() => source_url = Some(text.trim().to_string()),
+                Ok(_) => {}
+                Err(e) => {
+                    return json_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("failed to read source_url: {e}"),
+                    )
+                }
+            },
+            "prompt" => match field.text().await {
+                Ok(text) => prompt = text,
+                Err(e) => {
+                    return json_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("failed to read prompt: {e}"),
+                    )
+                }
+            },
+            "title" => match field.text().await {
+                Ok(text) if !text.trim().is_empty() => title = text.trim().to_string(),
+                Ok(_) => {}
+                Err(e) => {
+                    return json_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("failed to read title: {e}"),
+                    )
+                }
+            },
+            "duration_seconds" => match field.text().await {
+                Ok(text) => match text.trim().parse::<f64>() {
+                    Ok(value) if (15.0..=240.0).contains(&value) => duration_seconds = value,
+                    Ok(_) => {
+                        return json_error(
+                            StatusCode::BAD_REQUEST,
+                            "duration_seconds must be between 15 and 240".to_string(),
+                        )
+                    }
+                    Err(e) => {
+                        return json_error(
+                            StatusCode::BAD_REQUEST,
+                            format!("invalid duration_seconds: {e}"),
+                        )
+                    }
+                },
+                Err(e) => {
+                    return json_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("failed to read duration_seconds: {e}"),
+                    )
+                }
+            },
+            _ => {}
+        }
+    }
+
+    if prompt.chars().count() > MAX_MUSIC_PROMPT_CHARS {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            format!("prompt must be at most {MAX_MUSIC_PROMPT_CHARS} characters"),
+        );
+    }
+
+    let now = now_ms();
+    let upload_dir = env::temp_dir().join("dd-des-rs-music-uploads");
+    if let Err(e) = fs::create_dir_all(&upload_dir) {
+        return json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to create upload dir: {e}"),
+        );
+    }
+    let upload_path = upload_dir.join(format!("music-sample-seed-{now}.mp4"));
+    let source_kind = if let Some(sample_bytes) = sample_bytes {
+        if sample_bytes.is_empty() {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                "sample upload is empty".to_string(),
+            );
+        }
+        if let Err(e) = fs::write(&upload_path, &sample_bytes) {
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed to persist upload: {e}"),
+            );
+        }
+        "upload".to_string()
+    } else if let Some(url) = &source_url {
+        match download_music_source_url(url, &upload_path).await {
+            Ok(kind) => kind,
+            Err(e) => return json_error(StatusCode::BAD_REQUEST, e),
+        }
+    } else {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "provide multipart field `sample` or `source_url`".to_string(),
+        );
+    };
+
+    let render_dir = state.out_dir.join("music-production").join("sample-seed");
+    if let Err(e) = fs::create_dir_all(&render_dir) {
+        let _ = fs::remove_file(&upload_path);
+        return json_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to create music output dir: {e}"),
+        );
+    }
+    let wav_path = render_dir.join(format!("sample-seed-{now}.wav"));
+    let manifest_path = render_dir.join(format!("sample-seed-{now}.json"));
+    let wav_url = out_url(&state, &wav_path).unwrap_or_else(|| "out/".to_string());
+    let manifest_url = out_url(&state, &manifest_path).unwrap_or_else(|| "out/".to_string());
+    let prompt_for_render = prompt.trim().to_string();
+
+    let _guard = state.sim_lock.lock().await;
+    let render_result: Result<Value, String> = tokio::task::spawn_blocking(move || {
+        let sample = derive_music_sample_seed_from_mp4(&upload_path)
+            .map_err(|e| format!("failed to derive music-sample-seed: {e}"))?;
+        let prompt_influence = if prompt_for_render.is_empty() {
+            None
+        } else {
+            analyze_music_sample_prompt(&prompt_for_render)
+        };
+        let spec = song_spec_from_music_sample_seed_with_prompt(
+            &sample,
+            title,
+            duration_seconds,
+            if prompt_for_render.is_empty() {
+                None
+            } else {
+                Some(prompt_for_render.as_str())
+            },
+        );
+        let render = generate_microtonal_song(spec);
+        render
+            .audio
+            .write_wav16(&wav_path)
+            .map_err(|e| format!("failed to write wav: {e}"))?;
+        let response = json!({
+            "ok": true,
+            "wav_url": wav_url,
+            "manifest_url": manifest_url,
+            "wav_path": wav_path.display().to_string(),
+            "sample": {
+                "source_kind": source_kind,
+                "source_url": source_url,
+                "source_duration_seconds": sample.duration_seconds,
+                "seed": sample.seed,
+                "byte_entropy": sample.byte_entropy,
+                "suggested_genre": sample.suggested_genre.as_str(),
+                "suggested_bpm": sample.suggested_bpm,
+                "descriptors": sample.descriptors,
+                "source_audio_copied": false
+            },
+            "prompt": prompt_influence.map(|influence| json!({
+                "chars": influence.prompt_chars,
+                "hash": influence.prompt_hash,
+                "genre": influence.genre.map(|genre| genre.as_str()),
+                "bpm_delta": influence.bpm_delta,
+                "key_bias_delta": influence.key_bias_delta,
+                "meter_bias": influence.meter_bias.map(|(n, d)| format!("{n}/{d}")),
+                "tags": influence.feature_tags
+            })),
+            "summary": music_summary_json(&render.summary)
+        });
+        fs::write(
+            &manifest_path,
+            serde_json::to_string_pretty(&response)
+                .map_err(|e| format!("failed to serialize manifest: {e}"))?,
+        )
+        .map_err(|e| format!("failed to write manifest: {e}"))?;
+        let _ = fs::remove_file(&upload_path);
+        Ok(response)
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("music render task failed: {e}")));
+
+    match render_result {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => json_error(StatusCode::BAD_REQUEST, error),
+    }
+}
+
+fn music_summary_json(summary: &ArrangementSummary) -> Value {
+    json!({
+        "title": &summary.title,
+        "genre": summary.genre.as_str(),
+        "duration_seconds": summary.duration_seconds,
+        "bpm": summary.bpm,
+        "scale": &summary.scale_name,
+        "key_changes": summary.key_changes.len(),
+        "time_signature_changes": summary.time_signature_changes.len(),
+        "pauses": summary.pauses.len(),
+        "drum_patterns": summary.drum_variation.pattern_names.len(),
+        "drum_fills": summary.drum_variation.fills,
+        "drum_micro_variations": summary.drum_variation.micro_variations,
+        "drum_variation_ratio": summary.drum_variation.variation_ratio(),
+        "percussion_gain": summary.drum_variation.percussion_gain,
+        "instruments": &summary.instruments,
+        "parts": summary.parts.iter().map(|part| json!({
+            "name": &part.name,
+            "role": part.role.as_str(),
+            "instrument": &part.instrument,
+            "events": part.events
+        })).collect::<Vec<_>>(),
+        "rendered_events": summary.rendered_events,
+        "peak": summary.peak,
+        "rms": summary.rms,
+        "spectral_centroid_hz": summary.spectral_centroid_hz
+    })
+}
+
+fn out_url(state: &AppState, path: &StdPath) -> Option<String> {
+    path.strip_prefix(state.out_dir.as_path())
+        .ok()
+        .map(|rel| format!("out/{}", rel.to_string_lossy().replace('\\', "/")))
+}
+
+fn json_error(status: StatusCode, error: impl Into<String>) -> Response {
+    (status, Json(json!({ "ok": false, "error": error.into() }))).into_response()
+}
+
+async fn download_music_source_url(raw: &str, path: &StdPath) -> Result<String, String> {
+    let url = validate_public_music_url(raw)?;
+    if prefers_ytdlp(&url) {
+        match download_with_ytdlp(url.as_str().to_string(), path.to_path_buf()).await {
+            Ok(kind) => return Ok(kind),
+            Err(ytdlp_error) => match download_direct_media(&url, path).await {
+                Ok(kind) => return Ok(format!("{kind}; yt-dlp fallback reason: {ytdlp_error}")),
+                Err(direct_error) => {
+                    return Err(format!(
+                            "could not download public media link. yt-dlp: {ytdlp_error}; direct HTTP: {direct_error}"
+                        ));
+                }
+            },
+        }
+    }
+
+    match download_direct_media(&url, path).await {
+        Ok(kind) => Ok(kind),
+        Err(direct_error) => match download_with_ytdlp(url.as_str().to_string(), path.to_path_buf()).await
+        {
+            Ok(kind) => Ok(format!("{kind}; direct HTTP fallback reason: {direct_error}")),
+            Err(ytdlp_error) => Err(format!(
+                "could not download public media link. direct HTTP: {direct_error}; yt-dlp: {ytdlp_error}"
+            )),
+        },
+    }
+}
+
+fn validate_public_music_url(raw: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(raw.trim()).map_err(|e| format!("invalid source_url: {e}"))?;
+    match url.scheme() {
+        "http" | "https" => {}
+        _ => return Err("source_url must use http or https".to_string()),
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "source_url must include a public host".to_string())?
+        .to_ascii_lowercase();
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host == "0.0.0.0"
+        || host == "::1"
+        || host.ends_with(".local")
+        || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || is_private_172_host(&host)
+    {
+        return Err(
+            "source_url must point to a public resource, not localhost/private network".to_string(),
+        );
+    }
+    Ok(url)
+}
+
+fn is_private_172_host(host: &str) -> bool {
+    let Some(rest) = host.strip_prefix("172.") else {
+        return false;
+    };
+    let Some(second) = rest.split('.').next() else {
+        return false;
+    };
+    matches!(second.parse::<u8>(), Ok(n) if (16..=31).contains(&n))
+}
+
+fn prefers_ytdlp(url: &reqwest::Url) -> bool {
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let social_host = [
+        "youtube.com",
+        "youtu.be",
+        "facebook.com",
+        "fb.watch",
+        "instagram.com",
+        "x.com",
+        "twitter.com",
+        "tiktok.com",
+        "soundcloud.com",
+        "vimeo.com",
+    ]
+    .iter()
+    .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")));
+    social_host || !looks_like_direct_media_url(url)
+}
+
+fn looks_like_direct_media_url(url: &reqwest::Url) -> bool {
+    let path = url.path().to_ascii_lowercase();
+    [
+        ".mp4", ".m4v", ".mov", ".webm", ".mkv", ".mp3", ".m4a", ".wav", ".aac", ".ogg",
+    ]
+    .iter()
+    .any(|suffix| path.ends_with(suffix))
+}
+
+async fn download_direct_media(url: &reqwest::Url, path: &StdPath) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(MUSIC_DOWNLOAD_TIMEOUT_SECS))
+        .user_agent("dd-des-rs-music-sample-seed/0.1")
+        .redirect(reqwest::redirect::Policy::limited(8))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+    let response = client
+        .get(url.clone())
+        .send()
+        .await
+        .map_err(|e| format!("GET failed: {e}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("GET returned HTTP {status}"));
+    }
+    if let Some(len) = response.content_length() {
+        if len > MAX_MUSIC_UPLOAD_BYTES as u64 {
+            return Err(format!(
+                "resource is too large ({len} bytes; max {MAX_MUSIC_UPLOAD_BYTES})"
+            ));
+        }
+    }
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !looks_like_direct_media_url(url)
+        && !content_type.starts_with("video/")
+        && !content_type.starts_with("audio/")
+        && !content_type.contains("octet-stream")
+    {
+        return Err(format!(
+            "direct HTTP resource is not advertised as audio/video (content-type {content_type:?})"
+        ));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("failed to read body: {e}"))?;
+    if bytes.len() > MAX_MUSIC_UPLOAD_BYTES {
+        return Err(format!(
+            "resource is too large ({} bytes; max {MAX_MUSIC_UPLOAD_BYTES})",
+            bytes.len()
+        ));
+    }
+    fs::write(path, &bytes).map_err(|e| format!("failed to write downloaded media: {e}"))?;
+    Ok("direct-http".to_string())
+}
+
+async fn download_with_ytdlp(url: String, path: PathBuf) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || run_ytdlp_download(&url, &path))
+        .await
+        .unwrap_or_else(|e| Err(format!("yt-dlp task failed: {e}")))
+}
+
+fn run_ytdlp_download(url: &str, path: &StdPath) -> Result<String, String> {
+    let mut attempts = Vec::new();
+    if let Ok(bin) = env::var("DES_YTDLP_BIN") {
+        if !bin.trim().is_empty() {
+            attempts.push(YtDlpCommand::Binary(bin));
+        }
+    }
+    attempts.push(YtDlpCommand::Binary("yt-dlp".to_string()));
+    attempts.push(YtDlpCommand::Binary("youtube-dl".to_string()));
+    attempts.push(YtDlpCommand::PythonModule);
+
+    let args = vec![
+        "--no-playlist".to_string(),
+        "--force-overwrites".to_string(),
+        "--max-filesize".to_string(),
+        format!("{}m", (MAX_MUSIC_UPLOAD_BYTES / (1024 * 1024)).max(1)),
+        "--merge-output-format".to_string(),
+        "mp4".to_string(),
+        "--remux-video".to_string(),
+        "mp4".to_string(),
+        "-f".to_string(),
+        "b[ext=mp4]/bv*[ext=mp4]+ba[ext=m4a]/best".to_string(),
+        "-o".to_string(),
+        path.display().to_string(),
+        url.to_string(),
+    ];
+
+    let mut errors = Vec::new();
+    for attempt in attempts {
+        match run_ytdlp_attempt(&attempt, &args) {
+            Ok(()) => {
+                if path.exists() {
+                    return Ok(match attempt {
+                        YtDlpCommand::Binary(name) => format!("yt-dlp:{name}"),
+                        YtDlpCommand::PythonModule => "yt-dlp:python3 -m yt_dlp".to_string(),
+                    });
+                }
+                errors.push(format!(
+                    "{} exited successfully but did not create {}",
+                    attempt.label(),
+                    path.display()
+                ));
+            }
+            Err(e) => errors.push(format!("{}: {e}", attempt.label())),
+        }
+    }
+    Err(errors.join("; "))
+}
+
+enum YtDlpCommand {
+    Binary(String),
+    PythonModule,
+}
+
+impl YtDlpCommand {
+    fn label(&self) -> String {
+        match self {
+            YtDlpCommand::Binary(name) => name.clone(),
+            YtDlpCommand::PythonModule => "python3 -m yt_dlp".to_string(),
+        }
+    }
+}
+
+fn run_ytdlp_attempt(command: &YtDlpCommand, args: &[String]) -> Result<(), String> {
+    let mut cmd = match command {
+        YtDlpCommand::Binary(name) => Command::new(name),
+        YtDlpCommand::PythonModule => {
+            let mut cmd = Command::new("python3");
+            cmd.arg("-m").arg("yt_dlp");
+            cmd
+        }
+    };
+    let mut child = cmd
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to start: {e}"))?;
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let output = child
+                    .wait_with_output()
+                    .map_err(|e| format!("failed to collect output: {e}"))?;
+                if output.status.success() {
+                    return Ok(());
+                }
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                return Err(format!(
+                    "exit {}: {}{}",
+                    output.status,
+                    truncate_for_error(stderr.trim(), 700),
+                    if stdout.trim().is_empty() {
+                        "".to_string()
+                    } else {
+                        format!("; stdout: {}", truncate_for_error(stdout.trim(), 300))
+                    }
+                ));
+            }
+            Ok(None) => {
+                if started.elapsed() > Duration::from_secs(MUSIC_DOWNLOAD_TIMEOUT_SECS) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("timed out after {MUSIC_DOWNLOAD_TIMEOUT_SECS}s"));
+                }
+                thread::sleep(Duration::from_millis(250));
+            }
+            Err(e) => return Err(format!("wait failed: {e}")),
+        }
+    }
+}
+
+fn truncate_for_error(value: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for (i, ch) in value.chars().enumerate() {
+        if i >= max_chars {
+            out.push_str("...");
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
 /// Machine-readable service info (the old JSON root), including the discovery
 /// hints that are also returned as HTTP response headers.
 async fn info(State(state): State<AppState>) -> Response {
@@ -453,6 +1265,10 @@ async fn info(State(state): State<AppState>) -> Response {
             "soccerPlanner": "GET /soccer/planner  (11-a-side rotation planner UI)",
             "soccerPlannerSolve": "POST /soccer/planner/solve  (re-solve with constraints)",
             "soccerPlannerStream": "POST /soccer/planner/stream  (planner JSONL command stream)",
+            "musicProduction": "GET /music  (microtonal music-production workbench UI)",
+            "musicSampleSeed": "POST /music/sample-seed  (multipart sample=<10-50s mp4>, prompt, duration_seconds -> WAV)",
+            "deliveryPlanner": "GET /delivery-planner.html  (redirects to out/delivery-planner.html)",
+            "deliverPlannerAlias": "GET /deliver-planner.html  (typo-compatible redirect)",
             "elevatorMdp": "GET /elevator-mdp  (elevator-dispatch MDP player)",
             "elevatorPomdp": "GET /elevator-pomdp  (elevator-dispatch POMDP player)",
             "renderedOutputIndex": "GET /out/",
@@ -915,6 +1731,10 @@ async fn out_redirect() -> Response {
     Redirect::permanent("out/").into_response()
 }
 
+async fn delivery_planner_redirect() -> Response {
+    Redirect::temporary("out/delivery-planner.html").into_response()
+}
+
 async fn out_index(State(state): State<AppState>) -> Response {
     let base: &StdPath = state.out_dir.as_path();
 
@@ -1198,6 +2018,30 @@ fn build_descriptor() -> ServiceDescriptor {
         )
         .endpoint(
             "GET",
+            "/music",
+            "Generative music production workbench for microtonal albums and MP4 sample seeds.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "POST",
+            "/music/sample-seed",
+            "Upload a 10-50s MP4 seed plus prompt text; renders a WAV variation and JSON manifest.",
+            EndpointKind::Action,
+        )
+        .endpoint(
+            "GET",
+            "/delivery-planner.html",
+            "Friendly redirect to the generated delivery planner artifact.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/deliver-planner.html",
+            "Typo-compatible redirect to the generated delivery planner artifact.",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
             "/out/",
             "Curated index.html, else a listing of rendered artifacts.",
             EndpointKind::Service,
@@ -1454,6 +2298,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/soccer/planner", get(soccer_planner_page))
         .route("/soccer/planner/solve", post(soccer_planner_solve))
         .route("/soccer/planner/stream", post(soccer_planner_stream))
+        .route("/music", get(music_production_page))
+        .route(
+            "/music/sample-seed",
+            post(music_sample_seed_render).layer(DefaultBodyLimit::max(MAX_MUSIC_UPLOAD_BYTES)),
+        )
+        .route("/delivery-planner.html", get(delivery_planner_redirect))
+        .route("/deliver-planner.html", get(delivery_planner_redirect))
         .route("/out", get(out_redirect))
         .route("/out/", get(out_index))
         .route("/out/*path", get(out_file))

@@ -3,18 +3,22 @@ name = "dd-browser-job-runner"
 version = "0.1.0"
 edition = "2021"
 
-# Per-job Puppeteer/Playwright spawner. A small axum HTTP API that, for each
-# POST /run, launches ONE short-lived nerdctl worker container (the
-# dd-browser-job-worker image) on the node's containerd, hands it the scenario
-# plus a NATS result subject, and returns immediately. The worker publishes its
-# JSON result to NATS; this server only owns spawn, lifetime (<= 9 min), and
-# concurrency. It deliberately has no NATS dependency of its own.
+# Per-job Puppeteer/Playwright orchestrator. A small axum HTTP API that, for each
+# POST /run, gets ONE bounded scenario executed and its JSON result published to
+# NATS. The primary path leases a warm worker from dd-container-pool over NATS
+# request/reply (the pool keeps dd-browser-job-worker containers warm and bridges
+# the result back). When the pool is down or cannot serve, it falls back to
+# spawning a short-lived `nerdctl run` worker directly on the node's containerd.
+# This server owns request validation, the pool-vs-fallback decision, lifetime
+# (<= 9 min) for the fallback path, and republishing pool results to the per-job
+# NATS subject. POST /run is async: it returns a jobId immediately.
 
 [[bin]]
 name = "dd-browser-job-runner"
 path = "src/main.rs"
 
 [dependencies]
+async-nats = "=0.38.0"
 axum = { version = "0.7", features = ["macros"] }
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { connect, JSONCodec, type NatsConnection } from 'nats';
 import { z } from 'zod';
 
@@ -10,25 +11,38 @@ import puppeteer, { type Browser as PuppeteerBrowser } from 'puppeteer';
 
 // dd-browser-job-worker
 //
-// Single-shot sibling of dd-browser-test-server. Spawned as its own container
-// per job by dd-browser-job-runner, it:
-//   1. decodes the scenario from JOB_SPEC_B64,
-//   2. runs it once with Playwright or Puppeteer (the same bounded step DSL),
-//   3. publishes the JSON result to NATS (per-job subject + shared fanout), and
-//   4. exits, so the --rm container is reclaimed.
+// Sibling of dd-browser-test-server that runs ONE bounded Playwright/Puppeteer
+// scenario per container. It has two mutually exclusive run modes, chosen at
+// startup by whether JOB_SPEC_B64 is set:
 //
-// A hard watchdog guarantees the process never outlives BROWSER_JOB_MAX_MS,
-// independent of the spawner's own deadline kill and the idle-reaper backstop.
+//   serve mode (default, used by the dd-container-pool warm pool):
+//     A tiny HTTP server exposes GET /healthz + POST /run. The pool keeps the
+//     container warm, dispatches the scenario to /run, and reads the JSON
+//     RunResult from the HTTP response (the pool bridges that back to NATS).
+//     After one job the worker reports unhealthy and exits, so the pool retires
+//     it and reconciles a fresh replacement — one clean browser per job.
+//
+//   one-shot mode (fallback, used when dd-browser-job-runner spawns us directly
+//   via nerdctl because the pool is down):
+//     We decode the scenario from JOB_SPEC_B64, run it once, publish the JSON
+//     RunResult to NATS (per-job subject + shared fanout), then exit.
+//
+// In both modes a hard watchdog bounds a running job by BROWSER_JOB_MAX_MS,
+// independent of the spawner's deadline kill, the pool request timeout, and the
+// idle-reaper backstop.
 
 type Engine = 'playwright' | 'puppeteer';
 
 const config = {
   jobId: process.env.BROWSER_JOB_ID ?? randomUUID(),
+  port: readNumberEnv('PORT', 8080),
+  bodyLimitBytes: readNumberEnv('BROWSER_JOB_BODY_LIMIT_BYTES', 4_000_000),
   natsUrl: process.env.NATS_URL ?? 'nats://dd-nats.messaging.svc.cluster.local:4222',
   resultSubject: process.env.BROWSER_JOB_RESULT_SUBJECT ?? '',
   resultFanoutSubject: process.env.BROWSER_JOB_RESULT_FANOUT_SUBJECT ?? 'dd.remote.browser_jobs.results',
   eventsSubject: process.env.BROWSER_JOB_EVENTS_SUBJECT ?? '',
   maxMs: readNumberEnv('BROWSER_JOB_MAX_MS', 540_000),
+  serveExitDelayMs: readNumberEnv('BROWSER_JOB_SERVE_EXIT_DELAY_MS', 500),
   headless: readBooleanEnv('BROWSER_JOB_HEADLESS', true),
   allowEvaluate: readBooleanEnv('BROWSER_JOB_ALLOW_EVALUATE', false),
   maxScreenshotBytes: readNumberEnv('BROWSER_JOB_MAX_SCREENSHOT_BYTES', 1_500_000),
@@ -137,12 +151,19 @@ interface ScenarioDriver {
 }
 
 async function main(): Promise<void> {
+  // JOB_SPEC_B64 is the marker for the direct nerdctl fallback path. When the
+  // pool spawns us it injects PORT (and no spec), so we serve instead.
+  if (process.env.JOB_SPEC_B64) {
+    await runOneShot();
+    return;
+  }
+  await runServe();
+}
+
+// one-shot mode: decode JOB_SPEC_B64, run once, publish to NATS, exit.
+async function runOneShot(): Promise<void> {
   // Hard watchdog: never outlive the lifetime budget the spawner granted.
-  const watchdog = setTimeout(() => {
-    console.error(`dd-browser-job-worker watchdog fired after ${config.maxMs}ms; exiting`);
-    process.exit(2);
-  }, config.maxMs);
-  watchdog.unref?.();
+  const watchdog = armWatchdog();
 
   const startedAtIso = new Date().toISOString();
   const startedAtMs = Date.now();
@@ -162,7 +183,7 @@ async function main(): Promise<void> {
   const nats = await connectNats();
 
   if (!spec) {
-    const result = failedResult(engine, startedAtIso, startedAtMs, parseError ?? 'invalid job spec');
+    const result = failedResult(config.jobId, engine, startedAtIso, startedAtMs, parseError ?? 'invalid job spec');
     await publishResult(nats, result);
     await closeNats(nats);
     process.exit(0);
@@ -170,7 +191,7 @@ async function main(): Promise<void> {
 
   await publishEvent(nats, { kind: 'started', jobId: config.jobId, engine, atMs: Date.now() });
 
-  const result = await runScenario(engine, spec, startedAtIso, startedAtMs);
+  const result = await runScenario(config.jobId, engine, spec, startedAtIso, startedAtMs);
   await publishResult(nats, result);
   await publishEvent(nats, {
     kind: 'finished',
@@ -185,7 +206,124 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
+// serve mode: warm HTTP worker managed by dd-container-pool. Handles exactly
+// one /run, then reports unhealthy and exits so the pool replaces it.
+async function runServe(): Promise<void> {
+  let state: 'idle' | 'busy' | 'closing' = 'idle';
+
+  const server = createServer((req, res) => {
+    const path = (req.url ?? '/').split('?')[0];
+
+    if (req.method === 'GET' && (path === '/healthz' || path === '/readyz')) {
+      // Stay healthy only until we accept a job. After that we report 503 so the
+      // pool retires this container instead of dispatching a second job to it.
+      if (state === 'idle') return sendJson(res, 200, { ok: true, jobId: config.jobId, state });
+      return sendJson(res, 503, { ok: false, jobId: config.jobId, state });
+    }
+
+    if (req.method === 'GET' && path === '/') {
+      return sendJson(res, 200, { service: 'dd-browser-job-worker', mode: 'serve', jobId: config.jobId, state });
+    }
+
+    if (req.method === 'POST' && path === '/run') {
+      if (state !== 'idle') {
+        return sendJson(res, 409, { ok: false, error: 'worker already consumed (one job per container)' }, { connection: 'close' });
+      }
+      state = 'busy';
+      void handleServeRun(req, res).finally(() => {
+        state = 'closing';
+        // Stop accepting new connections immediately. A dispatch that races in
+        // after the pool returns us to idle then gets connection-refused, so the
+        // pool retires us and reconciles a fresh worker instead of reusing one
+        // that has already run its single job.
+        server.close();
+        scheduleExit(server);
+      });
+      return;
+    }
+
+    sendJson(res, 404, { ok: false, error: 'not found' });
+  });
+
+  server.listen(config.port, () => {
+    console.log(`dd-browser-job-worker serve mode listening on :${config.port} (job ${config.jobId})`);
+  });
+}
+
+async function handleServeRun(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const startedAtIso = new Date().toISOString();
+  const startedAtMs = Date.now();
+  const watchdog = armWatchdog();
+  try {
+    const raw = await readRequestBody(req, config.bodyLimitBytes);
+    const spec = JobSpecSchema.parse(raw.length ? JSON.parse(raw) : {});
+    const jobId = spec.jobId ?? config.jobId;
+    const engine: Engine = spec.engine ?? 'playwright';
+    const result = await runScenario(jobId, engine, spec, startedAtIso, startedAtMs);
+    sendJson(res, result.ok ? 200 : 422, result, { connection: 'close' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    sendJson(res, 400, failedResult(config.jobId, 'playwright', startedAtIso, startedAtMs, message), { connection: 'close' });
+  } finally {
+    clearTimeout(watchdog);
+  }
+}
+
+function armWatchdog(): ReturnType<typeof setTimeout> {
+  const watchdog = setTimeout(() => {
+    console.error(`dd-browser-job-worker watchdog fired after ${config.maxMs}ms; exiting`);
+    process.exit(2);
+  }, config.maxMs);
+  watchdog.unref?.();
+  return watchdog;
+}
+
+function scheduleExit(server: ReturnType<typeof createServer>): void {
+  setTimeout(() => {
+    // The current response has flushed by now; drop any lingering keep-alive
+    // sockets and exit so the pool reconciles a replacement.
+    server.closeAllConnections?.();
+    process.exit(0);
+  }, config.serveExitDelayMs);
+  // Hard backstop in case something keeps the loop alive.
+  setTimeout(() => process.exit(0), config.serveExitDelayMs + 2000).unref?.();
+}
+
+function readRequestBody(req: IncomingMessage, limitBytes: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limitBytes) {
+        reject(new Error(`request body exceeds ${limitBytes} bytes`));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', (error) => reject(error));
+  });
+}
+
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  extraHeaders: Record<string, string> = {},
+): void {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    'content-length': Buffer.byteLength(payload),
+    ...extraHeaders,
+  });
+  res.end(payload);
+}
+
 async function runScenario(
+  jobId: string,
   engine: Engine,
   input: JobSpec,
   startedAtIso: string,
@@ -259,7 +397,7 @@ async function runScenario(
 
   return {
     ok: outcome.ok,
-    jobId: config.jobId,
+    jobId,
     requestId: input.requestId ?? undefined,
     engine,
     durationMs: Date.now() - startedAtMs,
@@ -503,10 +641,10 @@ function stringifyEvaluateResult(value: unknown): string {
   }
 }
 
-function failedResult(engine: Engine, startedAtIso: string, startedAtMs: number, error: string): RunResult {
+function failedResult(jobId: string, engine: Engine, startedAtIso: string, startedAtMs: number, error: string): RunResult {
   return {
     ok: false,
-    jobId: config.jobId,
+    jobId,
     engine,
     durationMs: Date.now() - startedAtMs,
     startedAt: startedAtIso,

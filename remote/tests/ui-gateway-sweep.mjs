@@ -66,6 +66,7 @@ const targets = [
   { name: "webrtc signaling", path: "/webrtc/", kind: protectedUi, expect: /webrtc|signal/i },
   { name: "mdp optimizer", path: "/mdp/", kind: protectedUi, expect: /mdp|optimizer|healthz/i },
   { name: "des simulator", path: "/des/", kind: protectedUi, expect: /des|simulation|model/i },
+  { name: "des music production", path: "/des/music", kind: protectedUi, expect: /music production|music-sample-seed|breakbeat/i },
   { name: "fsharp websocket", path: "/fsws/", kind: protectedUi, expect: /f#|websocket|rx|async/i },
   { name: "dev server agents", path: "/agents", kind: protectedUi, expect: /agents|providers|remote/i },
   { name: "dev server status", path: "/status", kind: protectedStatus, expect: /status|ok|health/i },

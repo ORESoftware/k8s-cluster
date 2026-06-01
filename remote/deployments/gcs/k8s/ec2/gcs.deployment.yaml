@@ -112,6 +112,8 @@ spec:
               value: 'true'
             - name: vibe_log_level
               value: info
+            - name: GCS_DIAG_LOGS
+              value: 'true'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
@@ -173,18 +175,14 @@ spec:
             requests:
               # Lowered from 250m -> 100m so 3 replicas fit on the
               # single-node EC2 cluster (the node is shared with many
-              # other workloads). Real CPU usage is tiny when idle;
-              # the limit (2 vCPU) bursts handle hot paths.
+              # other workloads). Keep the request low so the pods can
+              # schedule, but let each pod burst to 6 vCPU during WSS
+              # load tests.
               cpu: 100m
-              memory: 512Mi
+              memory: 3Gi
             limits:
-              cpu: '2'
-              # Raised 2Gi -> 6Gi after a load test OOMKilled (exit 137) every
-              # replica: under heavy fan-out the mongo wait-queue backlog plus
-              # kafka producer churn blew past 2Gi. The node has ~124Gi
-              # allocatable and CPU (not memory) is the binding constraint here,
-              # so a 6Gi ceiling x3 replicas is comfortably safe.
-              memory: 6Gi
+              cpu: '6'
+              memory: 3Gi
           startupProbe:
             httpGet:
               path: /chat/v1/health/3000
