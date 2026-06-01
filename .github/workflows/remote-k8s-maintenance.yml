@@ -1655,6 +1655,16 @@ jobs:
             echo "ERROR: deployment/$d did not reach availableReplicas >= $expected" >&2
             kubectl -n default get deploy "$d" -o wide || true
             kubectl -n default get pods -l "app=$d" -o wide || true
+            echo "=== $d describe ==="
+            kubectl -n default describe "deployment/$d" || true
+            echo "=== $d current logs ==="
+            kubectl -n default logs -l "app=$d" --all-containers --tail=120 --prefix=true --max-log-requests=20 || true
+            echo "=== $d previous logs ==="
+            for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            done
+            echo "=== $d selected events ==="
             kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -80 || true
             return 1
           }
