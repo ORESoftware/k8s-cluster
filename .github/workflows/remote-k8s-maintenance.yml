@@ -1621,11 +1621,28 @@ jobs:
           before_revision="$(git rev-parse HEAD 2>/dev/null || true)"
           git status --short --branch
           git fetch origin "${TARGET_REVISION:-dev}"
-          git merge --ff-only "origin/${TARGET_REVISION:-dev}"
+          merge_ok=0
+          if git merge --ff-only "origin/${TARGET_REVISION:-dev}"; then
+            merge_ok=1
+          else
+            echo "WARNING: EC2 superproject fast-forward blocked by local dirty state; continuing with targeted GCS submodule refresh"
+            git status --short --branch
+          fi
           after_revision="$(git rev-parse HEAD)"
-          changed_paths="$(git diff --name-only "${before_revision:-$after_revision}" "$after_revision" 2>/dev/null || true)"
+          if [ "$merge_ok" -eq 1 ]; then
+            changed_paths="$(git diff --name-only "${before_revision:-$after_revision}" "$after_revision" 2>/dev/null || true)"
+          else
+            changed_paths="$(git diff --name-only "$after_revision" "origin/${TARGET_REVISION:-dev}" 2>/dev/null | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml|remote/deployments/ws-loadtest-rs/|remote/deployments/gleamlang-ws-loadtest/)' || true)"
+          fi
           git submodule sync --recursive
           git submodule update --init --recursive
+          target_gcs_sha="$(git ls-tree "origin/${TARGET_REVISION:-dev}" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
+          if [ -n "$target_gcs_sha" ]; then
+            echo "=== target gcs/chat-vibe submodule ==="
+            echo "$target_gcs_sha"
+            git -C remote/deployments/gcs/chat-vibe fetch origin
+            git -C remote/deployments/gcs/chat-vibe merge --ff-only "$target_gcs_sha"
+          fi
           git rev-parse --short HEAD
           git submodule status --recursive
           echo "=== changed paths pulled on EC2 ==="
