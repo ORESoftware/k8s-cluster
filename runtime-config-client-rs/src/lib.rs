@@ -27,7 +27,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Deserialize;
+use dd_shared_interfaces::{
+    RuntimeConfigApplyReason, RuntimeConfigApplyRequest, RuntimeConfigApplyResponse,
+    RuntimeConfigEnv, RuntimeConfigRegisterRequest,
+};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -135,6 +138,23 @@ fn read_bool_env(name: &str) -> bool {
     )
 }
 
+fn runtime_config_env_from_label(value: &str) -> RuntimeConfigEnv {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "prod" => RuntimeConfigEnv::Prod,
+        _ => RuntimeConfigEnv::Stage,
+    }
+}
+
+fn apply_reason_label(reason: &RuntimeConfigApplyReason) -> &'static str {
+    match reason {
+        RuntimeConfigApplyReason::Cron => "cron",
+        RuntimeConfigApplyReason::Admin => "admin",
+        RuntimeConfigApplyReason::Register => "register",
+        RuntimeConfigApplyReason::Manual => "manual",
+        RuntimeConfigApplyReason::Initial => "initial",
+    }
+}
+
 fn constant_time_eq(a: &str, b: &str) -> bool {
     let a = a.as_bytes();
     let b = b.as_bytes();
@@ -190,50 +210,18 @@ async fn handle_get(State(store): State<RuntimeConfigStore>) -> impl IntoRespons
     }))
 }
 
-#[derive(Deserialize)]
-struct ApplyEntryShape {
-    key: Option<String>,
-    value: Option<Value>,
-}
-
-#[derive(Deserialize)]
-struct ApplySnapshotShape {
-    #[serde(rename = "snapshotVersion", default)]
-    snapshot_version: Option<i64>,
-    #[serde(default)]
-    entries: Vec<ApplyEntryShape>,
-}
-
-#[derive(Deserialize)]
-struct ApplyRequestShape {
-    #[serde(rename = "pushId", default)]
-    push_id: Option<String>,
-    #[serde(default)]
-    reason: Option<String>,
-    #[serde(default)]
-    snapshot: Option<ApplySnapshotShape>,
-}
-
 async fn handle_apply(
     State(store): State<RuntimeConfigStore>,
     headers: HeaderMap,
-    Json(body): Json<ApplyRequestShape>,
+    Json(body): Json<RuntimeConfigApplyRequest>,
 ) -> Response {
     if let Err(response) = require_server_auth(&store, &headers) {
         return response;
     }
-    let Some(snapshot) = body.snapshot else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "ok": false, "error": "snapshot is required" })),
-        )
-            .into_response();
-    };
-    let new_version = snapshot.snapshot_version.unwrap_or(0);
+    let new_version = body.snapshot.snapshot_version;
     let mut entries: HashMap<String, Value> = HashMap::new();
-    for entry in snapshot.entries {
-        let Some(key) = entry.key else { continue };
-        entries.insert(key, entry.value.unwrap_or(Value::Null));
+    for entry in body.snapshot.entries {
+        entries.insert(entry.key, entry.value.unwrap_or(Value::Null));
     }
     let applied_at = iso_now();
     let previous_version;
@@ -241,30 +229,34 @@ async fn handle_apply(
         let mut state = store.inner.write().await;
         previous_version = state.snapshot_version;
         if new_version < previous_version {
-            return Json(json!({
-                "ok": true,
-                "service": read_env(ENV_SERVICE_NAME).unwrap_or_else(|| "unknown".to_string()),
-                "appliedAt": state.applied_at,
-                "appliedVersion": previous_version,
-                "previousVersion": previous_version,
-                "stale": true,
-                "ignoredVersion": new_version,
-            }))
+            return Json(RuntimeConfigApplyResponse {
+                ok: true,
+                service: read_env(ENV_SERVICE_NAME).unwrap_or_else(|| "unknown".to_string()),
+                applied_at: state.applied_at.clone().unwrap_or_else(iso_now),
+                applied_version: previous_version,
+                previous_version: Some(previous_version),
+                stale: Some(true),
+                ignored_version: Some(new_version),
+                errors: None,
+            })
             .into_response();
         }
         state.snapshot_version = new_version;
         state.applied_at = Some(applied_at.clone());
         state.entries = entries;
-        state.last_push_id = body.push_id.clone();
-        state.last_reason = body.reason.clone();
+        state.last_push_id = Some(body.push_id.clone());
+        state.last_reason = Some(apply_reason_label(&body.reason).to_string());
     }
-    Json(json!({
-        "ok": true,
-        "service": read_env(ENV_SERVICE_NAME).unwrap_or_else(|| "unknown".to_string()),
-        "appliedAt": applied_at,
-        "appliedVersion": new_version,
-        "previousVersion": previous_version,
-    }))
+    Json(RuntimeConfigApplyResponse {
+        ok: true,
+        service: read_env(ENV_SERVICE_NAME).unwrap_or_else(|| "unknown".to_string()),
+        applied_at,
+        applied_version: new_version,
+        previous_version: Some(previous_version),
+        stale: None,
+        ignored_version: None,
+        errors: None,
+    })
     .into_response()
 }
 
@@ -316,12 +308,13 @@ pub async fn register_with_control_plane() {
         }
     };
 
-    let body = json!({
-        "env": env_label,
-        "name": service_name,
-        "scope": scope,
-        "applyUrl": apply_url,
-    });
+    let body = RuntimeConfigRegisterRequest {
+        env: runtime_config_env_from_label(&env_label),
+        name: service_name,
+        scope,
+        apply_url,
+        labels: None,
+    };
     let secret = read_env(ENV_SERVER_SECRET);
 
     let mut delay = Duration::from_secs(REGISTER_BACKOFF_SECS);

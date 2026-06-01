@@ -1,6 +1,7 @@
 {
   "$comment": "Index of every JSON Schema file in this directory. The generator iterates this list (alphabetised) so adding a new schema is a one-line change.",
   "schemas": [
+    "agent-orchestration.schema.json",
     "runtime-config.schema.json"
   ]
 }

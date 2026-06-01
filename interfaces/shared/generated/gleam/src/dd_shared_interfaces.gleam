@@ -4,6 +4,30 @@
 import gleam/dynamic.{type Dynamic}
 import gleam/option.{type Option}
 
+/// JSON payload published to the per-thread NATS task subject and orchestrator wakeup subject when a remote-agent task is queued for async execution.
+pub type AgentTaskQueueMessage {
+  AgentTaskQueueMessage(
+    version: Option(Int),
+    message_kind: Option(String),
+    task_kind: Option(String),
+    shadow: Option(Bool),
+    direct_dispatch: Option(Bool),
+    dispatch_mode: Option(String),
+    container_pool_dispatch: Option(Bool),
+    thread_id: String,
+    task_id: String,
+    provider: Option(String),
+    repo: Option(String),
+    base_branch: Option(String),
+    feature_branch: Option(String),
+    prompt: Option(String),
+    thread_title: Option(String),
+    context_mode: Option(String),
+    context_ids: Option(List(String)),
+    created_at_ms: Option(Int)
+  )
+}
+
 /// Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
 pub type RuntimeConfigApplyReason {
   Cron

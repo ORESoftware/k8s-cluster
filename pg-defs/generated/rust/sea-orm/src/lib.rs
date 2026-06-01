@@ -5,6 +5,9 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub mod app_config {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "app_config")]
 pub struct Model {
@@ -34,6 +37,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use app_config::Entity as AppConfigEntity;
+pub use app_config::Model as AppConfigModel;
+
+pub mod container_pool_configs {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "container_pool_configs")]
@@ -85,6 +96,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use container_pool_configs::Entity as ContainerPoolConfigsEntity;
+pub use container_pool_configs::Model as ContainerPoolConfigsModel;
+
+pub mod known_git_repos {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "known_git_repos")]
 pub struct Model {
@@ -118,6 +137,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use known_git_repos::Entity as KnownGitRepoEntity;
+pub use known_git_repos::Model as KnownGitRepoModel;
+
+pub mod agent_context_blobs {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_context_blobs")]
@@ -155,6 +182,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use agent_context_blobs::Entity as AgentContextBlobsEntity;
+pub use agent_context_blobs::Model as AgentContextBlobsModel;
+
+pub mod agent_context_embeddings {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_context_embeddings")]
 pub struct Model {
@@ -177,6 +212,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use agent_context_embeddings::Entity as AgentContextEmbeddingsEntity;
+pub use agent_context_embeddings::Model as AgentContextEmbeddingsModel;
+
+pub mod agent_remote_dev_threads {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_threads")]
@@ -210,6 +253,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use agent_remote_dev_threads::Entity as AgentRemoteDevThreadEntity;
+pub use agent_remote_dev_threads::Model as AgentRemoteDevThreadModel;
+
+pub mod agent_remote_dev_tasks {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_tasks")]
@@ -257,6 +308,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use agent_remote_dev_tasks::Entity as AgentRemoteDevTaskEntity;
+pub use agent_remote_dev_tasks::Model as AgentRemoteDevTaskModel;
+
+pub mod agent_remote_dev_events {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_events")]
 pub struct Model {
@@ -278,6 +337,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use agent_remote_dev_events::Entity as AgentRemoteDevEventEntity;
+pub use agent_remote_dev_events::Model as AgentRemoteDevEventModel;
+
+pub mod agent_remote_dev_breadcrumbs {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_breadcrumbs")]
@@ -302,6 +369,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use agent_remote_dev_breadcrumbs::Entity as AgentRemoteDevBreadcrumbEntity;
+pub use agent_remote_dev_breadcrumbs::Model as AgentRemoteDevBreadcrumbModel;
+
+pub mod agent_remote_dev_artifacts {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_artifacts")]
@@ -337,6 +412,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use agent_remote_dev_artifacts::Entity as AgentRemoteDevArtifactEntity;
+pub use agent_remote_dev_artifacts::Model as AgentRemoteDevArtifactModel;
+
+pub mod agent_remote_dev_runtime_locks {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "agent_remote_dev_runtime_locks")]
 pub struct Model {
@@ -360,6 +443,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use agent_remote_dev_runtime_locks::Entity as AgentRemoteDevRuntimeLockEntity;
+pub use agent_remote_dev_runtime_locks::Model as AgentRemoteDevRuntimeLockModel;
+
+pub mod lambda_functions {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "lambda_functions")]
@@ -414,6 +505,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use lambda_functions::Entity as LambdaFunctionEntity;
+pub use lambda_functions::Model as LambdaFunctionModel;
+
+pub mod container_pool_image_revisions {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "container_pool_image_revisions")]
 pub struct Model {
@@ -452,6 +551,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use container_pool_image_revisions::Entity as ContainerPoolImageRevisionsEntity;
+pub use container_pool_image_revisions::Model as ContainerPoolImageRevisionsModel;
+
+pub mod container_pool_build_runs {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "container_pool_build_runs")]
@@ -505,6 +612,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use container_pool_build_runs::Entity as ContainerPoolBuildRunsEntity;
+pub use container_pool_build_runs::Model as ContainerPoolBuildRunsModel;
+
+pub mod presence_convs {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "presence_convs")]
 pub struct Model {
@@ -532,6 +647,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use presence_convs::Entity as PresenceConvsEntity;
+pub use presence_convs::Model as PresenceConvsModel;
+
+pub mod presence_conv_members {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "presence_conv_members")]
@@ -567,6 +690,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use presence_conv_members::Entity as PresenceConvMembersEntity;
+pub use presence_conv_members::Model as PresenceConvMembersModel;
+
+pub mod presence_users {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "presence_users")]
 pub struct Model {
@@ -581,6 +712,14 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use presence_users::Entity as PresenceUsersEntity;
+pub use presence_users::Model as PresenceUsersModel;
+
+pub mod presence_events {
+    use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "presence_events")]
@@ -611,6 +750,14 @@ pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
 
+}
+
+pub use presence_events::Entity as PresenceEventsEntity;
+pub use presence_events::Model as PresenceEventsModel;
+
+pub mod presence_consumer_checkpoints {
+    use super::*;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "presence_consumer_checkpoints")]
 pub struct Model {
@@ -626,3 +773,8 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use presence_consumer_checkpoints::Entity as PresenceConsumerCheckpointsEntity;
+pub use presence_consumer_checkpoints::Model as PresenceConsumerCheckpointsModel;
