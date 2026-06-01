@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - availability-pdbs.yaml
   - dd-remote-auth.deployment.yaml
   - dd-remote-auth.service.yaml
   - dd-dev-server-home.deployment.yaml

@@ -6,7 +6,9 @@ metadata:
   labels:
     app: dd-des-rs
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -162,7 +164,7 @@ spec:
             failureThreshold: 180
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /out/delivery-planner.html
               port: http
             periodSeconds: 5
             timeoutSeconds: 3

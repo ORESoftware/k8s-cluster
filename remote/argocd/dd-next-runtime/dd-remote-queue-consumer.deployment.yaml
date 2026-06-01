@@ -7,8 +7,13 @@ metadata:
     app: dd-remote-queue-consumer
 spec:
   replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-remote-queue-consumer

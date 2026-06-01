@@ -29,6 +29,7 @@
     "test:cli:gleam-websocket-nats-fanout": "pnpm exec tsx --test general/gleam-websocket-nats-fanout.test.ts",
     "test:cli:gleam-mcp-server-config": "pnpm exec tsx --test general/gleam-mcp-server-config.test.ts",
     "test:cli:gleam-pg-defs-wiring": "pnpm exec tsx --test general/gleam-pg-defs-wiring.test.ts",
+    "test:cli:local-k8s-cleanup": "pnpm exec tsx --test general/local-k8s-cleanup.test.ts",
     "test:cli:live-mutex-config": "pnpm exec tsx --test general/live-mutex-config.test.ts",
     "test:lmx:admin-public-smoke": "node lmx-admin-public-smoke.mjs",
     "test:cli:nats-config": "pnpm exec tsx --test general/nats-config.test.ts",
