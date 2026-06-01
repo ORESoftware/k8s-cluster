@@ -1669,6 +1669,22 @@ jobs:
             return 1
           }
 
+          diagnose_gcs_dependencies() {
+            echo "=== gcs dependency deployments ==="
+            kubectl -n default get deploy gcs-mongodb gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            echo "=== gcs dependency pods ==="
+            kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+            for d in gcs-mongodb gcs-rabbitmq gcs-kafka dd-redis-cache; do
+              echo "=== dependency $d logs ==="
+              kubectl -n default logs -l "app=$d" --all-containers --tail=100 --prefix=true --max-log-requests=10 || true
+              echo "=== dependency $d previous logs ==="
+              for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+                echo "--- previous logs for $pod ---"
+                kubectl -n default logs "$pod" --all-containers --previous --tail=80 --prefix=true || true
+              done
+            done
+          }
+
           if printf '%s\n' "$changed_paths" | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml)' >/dev/null; then
             echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
             kubectl -n default rollout restart deployment/gcs deployment/gcs-router
@@ -1676,6 +1692,7 @@ jobs:
             kubectl -n default rollout status deployment/gcs-router --timeout=600s
           else
             echo "=== verify existing gcs/chat.vibe deployment (no GCS source path changes) ==="
+            diagnose_gcs_dependencies
             wait_available gcs 3
             wait_available gcs-router 2
           fi
