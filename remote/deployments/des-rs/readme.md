@@ -47,9 +47,15 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
   a player; `?format=json` returns the artifact). Validated, panic-isolated, and
   serialized behind the same lock as the simulations.
 - `GET  /streaming` — the JSONL **streaming-solver** contracts (`lp`, `milp`,
-  `mdp`, `pomdp`): iterative solvers fed a JSONL command stream.
+  `mdp`, `pomdp`, `soccer-planner`): iterative solvers fed a JSONL command
+  stream.
 - `POST /streaming/<name>` — stream JSONL commands (one per line) to a solver;
   responds with a JSONL stream of result frames.
+- `GET  /soccer/planner` — interactive soccer rotation planner UI.
+- `POST /soccer/planner/solve` — re-solve the planner request with the Rust
+  IP/MIP solver.
+- `POST /soccer/planner/stream` — planner-specific JSONL stream alias for
+  adding roster variables/constraints and solving.
 - `GET  /out` → `/out/` — curated `index.html` if present, else a generated
   listing of every rendered artifact.
 - `GET  /out/<path>` — serve an individual artifact (path-traversal confined to
