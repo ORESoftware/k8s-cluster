@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-31-des-rs-soccer-rotation-anim'
+        dd.dev/telemetry-revision: '2026-05-31-des-rs-soccer-formation-pitch'
       labels:
         app: dd-des-rs
     spec:
