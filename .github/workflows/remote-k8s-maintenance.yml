@@ -1547,12 +1547,12 @@ jobs:
           import shlex
 
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
-          duration = os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180"
+          duration = os.environ.get("LOADTEST_DURATION_SECONDS", "90") or "90"
           script = r'''set -euo pipefail
           repo=/home/ec2-user/codes/dd/dd-next-1
-          duration="${LOADTEST_DURATION_SECONDS:-180}"
+          duration="${LOADTEST_DURATION_SECONDS:-90}"
           case "$duration" in
-            ''|*[!0-9]*) duration=180 ;;
+            ''|*[!0-9]*) duration=90 ;;
           esac
           loader_replicas="${LOADTEST_LOADER_REPLICAS:-8}"
           case "$loader_replicas" in
@@ -1686,17 +1686,17 @@ jobs:
             kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
           }
 
-          if printf '%s\n' "$changed_paths" | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml)' >/dev/null; then
-            echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
-            kubectl -n default rollout restart deployment/gcs deployment/gcs-router
-            kubectl -n default rollout status deployment/gcs --timeout=900s
-            kubectl -n default rollout status deployment/gcs-router --timeout=600s
-          else
-            echo "=== verify existing gcs/chat.vibe deployment (no GCS source path changes) ==="
-            diagnose_gcs_dependencies
-            wait_available gcs 3
-            wait_available gcs-router 2
-          fi
+          echo "=== clean restart gcs stack before correctness/perf validation ==="
+          kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+          kubectl -n default get statefulset gcs-mongodb -o wide || true
+          kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+          kubectl -n default rollout restart deployment/gcs-kafka
+          kubectl -n default rollout status deployment/gcs-kafka --timeout=600s
+          kubectl -n default rollout restart deployment/gcs deployment/gcs-router
+          kubectl -n default rollout status deployment/gcs --timeout=900s
+          kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          wait_available gcs 3
+          wait_available gcs-router 2
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
 
@@ -1709,6 +1709,37 @@ jobs:
             kubectl -n default exec "$pod" -- bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9100; printf "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3' 2>/dev/null \
               | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns|gcs_router_upstream_errors_total)' \
               | head -120 || true
+          }
+
+          run_correctness_job() {
+            echo "=== GCS correctness smoke: chat.vibe CLI scripts ==="
+            kubectl -n default delete job/gcs-loadtest --ignore-not-found=true || true
+            kubectl apply -f remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml
+            result="timeout"
+            for i in $(seq 1 300); do
+              succeeded="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
+              failed="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.failed}' 2>/dev/null || true)"
+              if [ "${succeeded:-0}" -ge 1 ]; then
+                result="passed"
+                break
+              fi
+              if [ "${failed:-0}" -ge 1 ]; then
+                result="failed"
+                break
+              fi
+              sleep 1
+            done
+            echo "correctness_result=$result"
+            kubectl -n default logs job/gcs-loadtest 2>/dev/null \
+              | grep -E '^(=== [0-9]/|=== summary|ALL TESTS PASSED|ONE OR MORE TESTS FAILED|>> .* exit=|FAIL|ERROR)' \
+              | tail -100 || true
+            if [ "$result" != "passed" ]; then
+              echo "ERROR: GCS correctness smoke did not pass" >&2
+              kubectl -n default get job/gcs-loadtest -o wide || true
+              kubectl -n default get pods -l app=gcs-loadtest -o wide || true
+              kubectl -n default logs job/gcs-loadtest --tail=200 || true
+              exit 1
+            fi
           }
 
           collect_loader() {
@@ -1808,6 +1839,8 @@ jobs:
             sleep 15
             kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas}{"\n"}' || true
           }
+
+          run_correctness_job
 
           run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
           run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"
