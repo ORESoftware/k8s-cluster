@@ -8,15 +8,18 @@ metadata:
 spec:
   replicas: 1
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-des-rs
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-delivery-planner-engine-6ccfdf6'
-        dd.dev/des-engine-revision: '6ccfdf6c91a6314c02d52b9fa1bed2a9b3762f03'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-delivery-planner-engine-d5e81ec'
+        dd.dev/des-engine-revision: 'd5e81ec76159c6667cb637295cb5a26471ed0447'
       labels:
         app: dd-des-rs
     spec:
@@ -103,7 +106,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 6ccfdf6c91a6314c02d52b9fa1bed2a9b3762f03
+              value: d5e81ec76159c6667cb637295cb5a26471ed0447
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -140,7 +143,7 @@ spec:
               containerPort: 8112
           resources:
             requests:
-              cpu: '1'
+              cpu: 50m
               memory: 2Gi
             limits:
               cpu: '2'
