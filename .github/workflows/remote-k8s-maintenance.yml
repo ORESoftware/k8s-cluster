@@ -1670,19 +1670,20 @@ jobs:
           }
 
           diagnose_gcs_dependencies() {
-            echo "=== gcs dependency deployments ==="
-            kubectl -n default get deploy gcs-mongodb gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            echo "=== gcs-kafka focused diagnostics ==="
+            kubectl -n default get deploy gcs-kafka -o wide || true
+            kubectl -n default get pods -l app=gcs-kafka -o wide || true
+            kubectl -n default describe deploy/gcs-kafka || true
+            kubectl -n default logs -l app=gcs-kafka --all-containers --tail=220 --prefix=true --max-log-requests=5 || true
+            for pod in $(kubectl -n default get pods -l app=gcs-kafka -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            done
+            echo "=== gcs dependency status ==="
+            kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            kubectl -n default get statefulset gcs-mongodb -o wide || true
             echo "=== gcs dependency pods ==="
             kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
-            for d in gcs-mongodb gcs-rabbitmq gcs-kafka dd-redis-cache; do
-              echo "=== dependency $d logs ==="
-              kubectl -n default logs -l "app=$d" --all-containers --tail=100 --prefix=true --max-log-requests=10 || true
-              echo "=== dependency $d previous logs ==="
-              for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
-                echo "--- previous logs for $pod ---"
-                kubectl -n default logs "$pod" --all-containers --previous --tail=80 --prefix=true || true
-              done
-            done
           }
 
           if printf '%s\n' "$changed_paths" | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml)' >/dev/null; then
