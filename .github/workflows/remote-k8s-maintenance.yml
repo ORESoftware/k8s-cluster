@@ -1556,6 +1556,7 @@ jobs:
           esac
 
           apps="gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
+          loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
 
           sync_app() {
@@ -1577,6 +1578,23 @@ jobs:
             kubectl -n argocd get "application/$app" -o wide || true
           }
 
+          restore_loadtest_apps() {
+            kubectl apply -f remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml || true
+            kubectl apply -f remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml || true
+            kubectl apply -f remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml || true
+            for app in $loadtest_apps; do
+              sync_app "$app"
+            done
+          }
+
+          disable_loadtest_autosync() {
+            echo "=== disable loadtest Argo auto-sync while live scaling ==="
+            for app in $loadtest_apps; do
+              kubectl -n argocd patch "application/$app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+              kubectl -n argocd get "application/$app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            done
+          }
+
           cleanup() {
             set +e
             echo "=== cleanup: scale GCS WSS loadtest deployments to 0 ==="
@@ -1585,9 +1603,7 @@ jobs:
             done
             kubectl -n default get deploy $loaders -o wide || true
             echo "=== cleanup: restore loadtest deployments from Argo desired state ==="
-            for app in dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs; do
-              sync_app "$app"
-            done
+            restore_loadtest_apps
           }
           trap cleanup EXIT
 
@@ -1610,6 +1626,7 @@ jobs:
           for app in $apps; do
             sync_app "$app"
           done
+          disable_loadtest_autosync
 
           echo "=== redeploy gcs/chat.vibe from refreshed hostPath source ==="
           kubectl -n default rollout restart deployment/gcs deployment/gcs-router
@@ -1658,6 +1675,12 @@ jobs:
               REPORT_INTERVAL_SECONDS=10
             kubectl -n default scale "deployment/$d" --replicas=10
             kubectl -n default rollout status "deployment/$d" --timeout=900s
+            actual_replicas="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+            if [ "$actual_replicas" != "10" ]; then
+              echo "ERROR: $d expected spec.replicas=10 after scale-up, got ${actual_replicas:-unset}" >&2
+              kubectl -n argocd get "application/$d" -o yaml | grep -E 'automated:|syncPolicy:|syncOptions:' || true
+              exit 1
+            fi
             collect_loader "$d"
             echo "=== router metrics before $label load window ==="
             router_metrics
