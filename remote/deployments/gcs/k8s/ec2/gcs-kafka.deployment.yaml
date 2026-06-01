@@ -103,6 +103,5 @@ spec:
               mountPath: /var/lib/kafka/data
       volumes:
         - name: data
-          hostPath:
-            path: /var/lib/dd/gcs/kafka
-            type: DirectoryOrCreate
+          emptyDir:
+            sizeLimit: 8Gi
