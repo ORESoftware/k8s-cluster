@@ -903,6 +903,20 @@ data:
         return 302 /des-rs/;
       }
 
+      location = /des-rs/delivery-planner.html {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /des-rs/out/delivery-planner.html;
+      }
+
+      location = /des-rs/deliver-planner.html {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
+        return 302 /des-rs/out/delivery-planner.html;
+      }
+
       location /des-rs/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
