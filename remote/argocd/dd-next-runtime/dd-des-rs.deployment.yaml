@@ -20,13 +20,44 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-delivery-locks-engine-6dd8b8f'
+        dd.dev/telemetry-revision: '2026-06-01-des-rs-ytdlp-tools-engine-6dd8b8f'
         dd.dev/des-engine-revision: '6dd8b8f43d373c7d5a4e5ce3950b8fed8aa850bf'
       labels:
         app: dd-des-rs
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: install-yt-dlp
+          image: docker.io/library/python:3.12-slim-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -eu
+              python -m venv /tools/yt-dlp-venv
+              /tools/yt-dlp-venv/bin/python -m pip install --no-cache-dir --upgrade pip yt-dlp
+              /tools/yt-dlp-venv/bin/yt-dlp --version
+          volumeMounts:
+            - name: tools
+              mountPath: /tools
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: des-rs
           image: docker.io/library/rust:1.90-bookworm
@@ -48,7 +79,7 @@ spec:
           args:
             - |
               set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export PATH=/tools/yt-dlp-venv/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               # Resolve the dd-des-rs server source. The mounted repo on the EC2
               # node can lag Git after an Argo-only sync, so prefer a fresh clone
               # of this k8s repo and fall back to the mount only if GitHub is
@@ -182,10 +213,15 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: tools
+              mountPath: /tools
+              readOnly: true
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
         - name: tmp
+          emptyDir: {}
+        - name: tools
           emptyDir: {}
