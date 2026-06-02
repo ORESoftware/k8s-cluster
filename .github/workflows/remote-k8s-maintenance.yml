@@ -97,6 +97,7 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Push-triggered maintenance is routed by marker tags in the head commit message.
           if [ "$OPERATION" = "inspect-gcs-ssm" ]; then
             if [[ "${SSM_COMMAND_ID:-}" =~ ssm:([0-9A-Fa-f-]{36}) ]]; then
               SSM_COMMAND_ID="${BASH_REMATCH[1]}"
