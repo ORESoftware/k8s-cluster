@@ -83,8 +83,10 @@ struct Config {
     api_base: String,
     api_key: Option<String>,
     server_secret: Option<String>,
+    server_credential_id: Option<String>,
     server_auth_secret: Option<String>,
     allow_unauthenticated: bool,
+    allow_unsigned_webhooks: bool,
 }
 
 #[derive(Clone)]
@@ -178,7 +180,9 @@ fn secret_eq(left: &str, right: &str) -> bool {
 fn normalize_e164(raw: &str) -> Result<String, String> {
     let trimmed = raw.trim();
     let Some(rest) = trimmed.strip_prefix('+') else {
-        return Err("phone number must be E.164 and start with '+' (e.g. +17372814824)".to_string());
+        return Err(
+            "phone number must be E.164 and start with '+' (e.g. +17372814824)".to_string(),
+        );
     };
     if !rest.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err("phone number must contain only digits after '+'".to_string());
@@ -190,6 +194,43 @@ fn normalize_e164(raw: &str) -> Result<String, String> {
         return Err("phone number country code must not start with 0".to_string());
     }
     Ok(format!("+{rest}"))
+}
+
+fn validate_vapi_path_id(label: &str, raw: &str) -> Result<(), String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+    if trimmed.len() > 128 {
+        return Err(format!("{label} must be 128 characters or fewer"));
+    }
+    if !trimmed
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return Err(format!(
+            "{label} may only contain ASCII letters, digits, '-' and '_'"
+        ));
+    }
+    Ok(())
+}
+
+fn env_vapi_path_id(key: &str) -> Result<Option<String>, String> {
+    let Some(value) = env_opt(key) else {
+        return Ok(None);
+    };
+    validate_vapi_path_id(key, &value)?;
+    Ok(Some(value))
+}
+
+fn vapi_object_path(prefix: &str, id: &str) -> Result<String, VapiError> {
+    validate_vapi_path_id("Vapi object id", id).map_err(|error| {
+        VapiError::new(
+            StatusCode::BAD_GATEWAY,
+            format!("Vapi returned an unsafe object id: {error}"),
+        )
+    })?;
+    Ok(format!("{prefix}/{id}"))
 }
 
 fn load_config() -> Result<Config, String> {
@@ -213,19 +254,27 @@ fn load_config() -> Result<Config, String> {
     };
 
     let number_provider = env_value("VAPI_NUMBER_PROVIDER", "vapi").to_ascii_lowercase();
-    if !matches!(number_provider.as_str(), "vapi" | "twilio" | "telnyx" | "vonage") {
+    if !matches!(
+        number_provider.as_str(),
+        "vapi" | "twilio" | "telnyx" | "vonage"
+    ) {
         return Err("VAPI_NUMBER_PROVIDER must be vapi, twilio, telnyx, or vonage".to_string());
     }
     let import_number = match env_opt("VAPI_PHONE_NUMBER") {
         Some(number) => Some(
-            normalize_e164(&number).map_err(|error| format!("VAPI_PHONE_NUMBER invalid: {error}"))?,
+            normalize_e164(&number)
+                .map_err(|error| format!("VAPI_PHONE_NUMBER invalid: {error}"))?,
         ),
         None => None,
     };
-    let phone_number_id = env_opt("VAPI_PHONE_NUMBER_ID");
+    let assistant_id = env_vapi_path_id("VAPI_ASSISTANT_ID")?;
+    let phone_number_id = env_vapi_path_id("VAPI_PHONE_NUMBER_ID")?;
     let twilio_account_sid = env_opt("TWILIO_ACCOUNT_SID");
     let twilio_auth_token = env_opt("TWILIO_AUTH_TOKEN");
     let credential_id = env_opt("VAPI_CREDENTIAL_ID");
+    let server_secret = env_opt("VAPI_SERVER_SECRET");
+    let server_credential_id = env_opt("VAPI_SERVER_CREDENTIAL_ID");
+    let allow_unsigned_webhooks = env_bool("VAPI_ALLOW_UNSIGNED_WEBHOOKS", false);
 
     // A BYO carrier import needs a concrete number to import (unless an
     // already-imported phone-number id is supplied) plus a way to authenticate
@@ -249,13 +298,19 @@ fn load_config() -> Result<Config, String> {
         }
     }
 
+    if webhook_url.is_some() && server_secret.is_none() && !allow_unsigned_webhooks {
+        return Err(
+            "VAPI_SERVER_SECRET is required when VAPI_WEBHOOK_URL is configured; set VAPI_ALLOW_UNSIGNED_WEBHOOKS=true only for local testing".to_string(),
+        );
+    }
+
     Ok(Config {
         owner_name: env_value("VAPI_OWNER_NAME", DEFAULT_OWNER_NAME),
         owner_title: env_value("VAPI_OWNER_TITLE", DEFAULT_OWNER_TITLE),
         forward_number,
         first_message: env_value("VAPI_FIRST_MESSAGE", DEFAULT_FIRST_MESSAGE),
         assistant_name: env_value("VAPI_ASSISTANT_NAME", DEFAULT_ASSISTANT_NAME),
-        assistant_id: env_opt("VAPI_ASSISTANT_ID"),
+        assistant_id,
         phone_number_id,
         desired_area_code,
         number_provider,
@@ -268,14 +323,39 @@ fn load_config() -> Result<Config, String> {
         voice_provider: env_value("VAPI_VOICE_PROVIDER", DEFAULT_VOICE_PROVIDER),
         voice_id: env_value("VAPI_VOICE_ID", DEFAULT_VOICE_ID),
         webhook_url,
-        api_base: env_value("VAPI_API_BASE", DEFAULT_VAPI_API_BASE)
-            .trim_end_matches('/')
-            .to_string(),
+        api_base: validate_api_base_url(&env_value("VAPI_API_BASE", DEFAULT_VAPI_API_BASE))?,
         api_key: env_opt("VAPI_API_KEY"),
-        server_secret: env_opt("VAPI_SERVER_SECRET"),
+        server_secret,
+        server_credential_id,
         server_auth_secret: env_opt("SERVER_AUTH_SECRET"),
         allow_unauthenticated: env_bool("VAPI_ALLOW_UNAUTHENTICATED", false),
+        allow_unsigned_webhooks,
     })
+}
+
+fn validate_api_base_url(raw: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(raw)
+        .map_err(|error| format!("VAPI_API_BASE must be an absolute URL: {error}"))?;
+    match parsed.scheme() {
+        "https" => {}
+        "http" if env_bool("VAPI_ALLOW_HTTP_API_BASE", false) => {}
+        _ => {
+            return Err(
+                "VAPI_API_BASE must use https (set VAPI_ALLOW_HTTP_API_BASE=true only for local testing)"
+                    .to_string(),
+            );
+        }
+    }
+    if parsed.host_str().is_none() {
+        return Err("VAPI_API_BASE must include a host".to_string());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("VAPI_API_BASE must not include credentials".to_string());
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("VAPI_API_BASE must not include a query string or fragment".to_string());
+    }
+    Ok(parsed.to_string().trim_end_matches('/').to_string())
 }
 
 fn validate_https_url(raw: &str) -> Result<String, String> {
@@ -375,7 +455,9 @@ fn build_assistant_config(config: &Config) -> Value {
 
     if let Some(url) = &config.webhook_url {
         let mut server = json!({ "url": url });
-        if let Some(secret) = &config.server_secret {
+        if let Some(credential_id) = &config.server_credential_id {
+            server["credentialId"] = json!(credential_id);
+        } else if let Some(secret) = &config.server_secret {
             server["secret"] = json!(secret);
         }
         assistant["server"] = server;
@@ -454,9 +536,9 @@ async fn vapi_request(
 }
 
 fn find_by_name<'a>(list: &'a Value, name: &str) -> Option<&'a Value> {
-    list.as_array()?.iter().find(|item| {
-        item.get("name").and_then(Value::as_str) == Some(name)
-    })
+    list.as_array()?
+        .iter()
+        .find(|item| item.get("name").and_then(Value::as_str) == Some(name))
 }
 
 /// Create or update the screening assistant. Idempotent by `VAPI_ASSISTANT_ID`
@@ -466,25 +548,15 @@ async fn upsert_assistant(state: &AppState) -> Result<Value, VapiError> {
     let assistant = build_assistant_config(&state.config);
 
     if let Some(id) = &state.config.assistant_id {
-        return vapi_request(
-            state,
-            reqwest::Method::PATCH,
-            &format!("/assistant/{id}"),
-            Some(&assistant),
-        )
-        .await;
+        let path = vapi_object_path("/assistant", id)?;
+        return vapi_request(state, reqwest::Method::PATCH, &path, Some(&assistant)).await;
     }
 
     let existing = vapi_request(state, reqwest::Method::GET, "/assistant?limit=100", None).await?;
     if let Some(found) = find_by_name(&existing, &state.config.assistant_name) {
         if let Some(id) = found.get("id").and_then(Value::as_str) {
-            return vapi_request(
-                state,
-                reqwest::Method::PATCH,
-                &format!("/assistant/{id}"),
-                Some(&assistant),
-            )
-            .await;
+            let path = vapi_object_path("/assistant", id)?;
+            return vapi_request(state, reqwest::Method::PATCH, &path, Some(&assistant)).await;
         }
     }
 
@@ -496,7 +568,9 @@ async fn upsert_assistant(state: &AppState) -> Result<Value, VapiError> {
 fn server_block(config: &Config) -> Option<Value> {
     let url = config.webhook_url.as_ref()?;
     let mut server = json!({ "url": url });
-    if let Some(secret) = &config.server_secret {
+    if let Some(credential_id) = &config.server_credential_id {
+        server["credentialId"] = json!(credential_id);
+    } else if let Some(secret) = &config.server_secret {
         server["secret"] = json!(secret);
     }
     Some(server)
@@ -540,16 +614,12 @@ async fn ensure_phone_number(state: &AppState, assistant_id: &str) -> Result<Val
     }
 
     if let Some(id) = &state.config.phone_number_id {
-        return vapi_request(
-            state,
-            reqwest::Method::PATCH,
-            &format!("/phone-number/{id}"),
-            Some(&patch),
-        )
-        .await;
+        let path = vapi_object_path("/phone-number", id)?;
+        return vapi_request(state, reqwest::Method::PATCH, &path, Some(&patch)).await;
     }
 
-    let existing = vapi_request(state, reqwest::Method::GET, "/phone-number?limit=100", None).await?;
+    let existing =
+        vapi_request(state, reqwest::Method::GET, "/phone-number?limit=100", None).await?;
     if let Some(found) = existing.as_array().and_then(|numbers| {
         numbers.iter().find(|number| {
             // Reuse a number already wired to our assistant, matching our
@@ -563,13 +633,8 @@ async fn ensure_phone_number(state: &AppState, assistant_id: &str) -> Result<Val
         })
     }) {
         if let Some(id) = found.get("id").and_then(Value::as_str) {
-            return vapi_request(
-                state,
-                reqwest::Method::PATCH,
-                &format!("/phone-number/{id}"),
-                Some(&patch),
-            )
-            .await;
+            let path = vapi_object_path("/phone-number", id)?;
+            return vapi_request(state, reqwest::Method::PATCH, &path, Some(&patch)).await;
         }
     }
 
@@ -592,7 +657,10 @@ async fn ensure_phone_number(state: &AppState, assistant_id: &str) -> Result<Val
     vapi_request(state, reqwest::Method::POST, "/phone-number", Some(&create)).await
 }
 
-fn authorize_admin(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, &'static str)> {
+fn authorize_admin(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<(), (StatusCode, &'static str)> {
     if state.config.allow_unauthenticated {
         return Ok(());
     }
@@ -619,7 +687,7 @@ fn authorize_admin(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusC
 /// before a secret is provisioned) but the caller should always configure one.
 fn webhook_authorized(headers: &HeaderMap, state: &AppState) -> bool {
     let Some(secret) = &state.config.server_secret else {
-        return true;
+        return state.config.allow_unsigned_webhooks;
     };
     headers
         .get(VAPI_SECRET_HEADER)
@@ -661,13 +729,12 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         "ok": true,
         "service": "dd-rust-vapi-phone",
         "runtime": "rust",
-        "owner": state.config.owner_name,
-        "forwardNumber": state.config.forward_number,
         "numberProvider": state.config.number_provider,
-        "importNumber": state.config.import_number,
         "vapiApiConfigured": state.config.api_key.is_some(),
         "webhookSecretConfigured": state.config.server_secret.is_some(),
-        "webhookUrl": state.config.webhook_url,
+        "serverCredentialConfigured": state.config.server_credential_id.is_some(),
+        "webhookUrlConfigured": state.config.webhook_url.is_some(),
+        "allowUnsignedWebhooks": state.config.allow_unsigned_webhooks,
     }))
 }
 
@@ -683,7 +750,15 @@ async fn config_http(State(state): State<AppState>) -> impl IntoResponse {
     if let Some(server) = assistant.get_mut("server") {
         if let Some(object) = server.as_object_mut() {
             object.remove("secret");
-            object.insert("secretConfigured".to_string(), json!(state.config.server_secret.is_some()));
+            object.remove("credentialId");
+            object.insert(
+                "secretConfigured".to_string(),
+                json!(state.config.server_secret.is_some()),
+            );
+            object.insert(
+                "credentialIdConfigured".to_string(),
+                json!(state.config.server_credential_id.is_some()),
+            );
         }
     }
     Json(json!({
@@ -708,11 +783,19 @@ async fn status_http(headers: HeaderMap, State(state): State<AppState>) -> Respo
         return json_response(status, json!({ "ok": false, "error": message }));
     }
 
-    let assistants = match vapi_request(&state, reqwest::Method::GET, "/assistant?limit=100", None).await {
-        Ok(value) => value,
-        Err(error) => return vapi_error_response(error),
-    };
-    let numbers = match vapi_request(&state, reqwest::Method::GET, "/phone-number?limit=100", None).await {
+    let assistants =
+        match vapi_request(&state, reqwest::Method::GET, "/assistant?limit=100", None).await {
+            Ok(value) => value,
+            Err(error) => return vapi_error_response(error),
+        };
+    let numbers = match vapi_request(
+        &state,
+        reqwest::Method::GET,
+        "/phone-number?limit=100",
+        None,
+    )
+    .await
+    {
         Ok(value) => value,
         Err(error) => return vapi_error_response(error),
     };
@@ -1109,8 +1192,10 @@ mod tests {
             api_base: DEFAULT_VAPI_API_BASE.to_string(),
             api_key: None,
             server_secret: Some("topsecret".to_string()),
+            server_credential_id: None,
             server_auth_secret: Some("server-secret".to_string()),
             allow_unauthenticated: false,
+            allow_unsigned_webhooks: false,
         }
     }
 
@@ -1177,6 +1262,61 @@ mod tests {
         assert!(webhook_authorized(&headers, &state));
         headers.insert(VAPI_SECRET_HEADER, "wrong".parse().unwrap());
         assert!(!webhook_authorized(&headers, &state));
+    }
+
+    #[test]
+    fn webhook_secret_fails_closed_when_missing() {
+        let mut config = test_config();
+        config.server_secret = None;
+        let state = AppState {
+            http: reqwest::Client::new(),
+            config: Arc::new(config),
+            metrics: Arc::new(Metrics::default()),
+        };
+
+        assert!(!webhook_authorized(&HeaderMap::new(), &state));
+    }
+
+    #[test]
+    fn unsigned_webhooks_require_explicit_opt_in() {
+        let mut config = test_config();
+        config.server_secret = None;
+        config.allow_unsigned_webhooks = true;
+        let state = AppState {
+            http: reqwest::Client::new(),
+            config: Arc::new(config),
+            metrics: Arc::new(Metrics::default()),
+        };
+
+        assert!(webhook_authorized(&HeaderMap::new(), &state));
+    }
+
+    #[test]
+    fn server_block_prefers_credential_id_without_exposing_secret() {
+        let mut config = test_config();
+        config.server_credential_id = Some("cred_123".to_string());
+        let server = server_block(&config).expect("server block");
+
+        assert_eq!(server["credentialId"], "cred_123");
+        assert!(server.get("secret").is_none());
+    }
+
+    #[test]
+    fn unsafe_vapi_path_ids_are_rejected() {
+        assert!(validate_vapi_path_id("id", "asst_123-ABC").is_ok());
+        assert!(validate_vapi_path_id("id", "../assistant").is_err());
+        assert!(validate_vapi_path_id("id", "asst_123?limit=100").is_err());
+    }
+
+    #[test]
+    fn api_base_requires_https_and_no_credentials() {
+        assert_eq!(
+            validate_api_base_url(DEFAULT_VAPI_API_BASE).unwrap(),
+            DEFAULT_VAPI_API_BASE
+        );
+        assert!(validate_api_base_url("http://api.vapi.ai").is_err());
+        assert!(validate_api_base_url("https://token@api.vapi.ai").is_err());
+        assert!(validate_api_base_url("https://api.vapi.ai?x=1").is_err());
     }
 
     #[test]

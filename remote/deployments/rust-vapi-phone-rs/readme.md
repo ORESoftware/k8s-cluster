@@ -51,8 +51,9 @@ for Vapi's `assistant-request` flow.
 | Var                        | Default                              | Purpose                                                                                  |
 | -------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------- |
 | `HOST` / `PORT`            | `0.0.0.0` / `8113`                   | Bind address.                                                                            |
-| `VAPI_API_KEY`             | _unset_                              | Vapi **private** API key. Required for `/setup` and `/status`; webhook works without it. |
-| `VAPI_SERVER_SECRET`       | _unset_                              | Shared secret. Sent to Vapi as the `server.secret` and verified on inbound `x-vapi-secret`. When unset the webhook accepts unverified requests — always set it in prod. |
+| `VAPI_API_KEY`             | _unset_                              | Vapi **private** API key. Required for `/setup` and `/status`; webhook receiving works without it. |
+| `VAPI_SERVER_SECRET`       | _unset_                              | Shared secret verified on inbound `x-vapi-secret`. Required when `VAPI_WEBHOOK_URL` is configured unless `VAPI_ALLOW_UNSIGNED_WEBHOOKS=true` is explicitly set for local testing. |
+| `VAPI_SERVER_CREDENTIAL_ID`| _unset_                              | Optional Vapi server credential id. When set, `/setup` sends `server.credentialId` instead of inline `server.secret`; `VAPI_SERVER_SECRET` is still required locally to verify inbound requests. |
 | `SERVER_AUTH_SECRET`       | _unset_                              | `x-server-auth` value required on `/setup` and `/status`. Supplied by the gateway. Fails closed when unset. |
 | `VAPI_WEBHOOK_URL`         | `https://54.91.17.58/vapi/webhook`   | Public URL Vapi posts events to. Must be https (Vapi rejects self-signed certs — use the Let's Encrypt gateway cert). |
 | `VAPI_FORWARD_NUMBER`      | `+17372814824`                       | E.164 number verified humans are transferred to.                                         |
@@ -71,14 +72,16 @@ for Vapi's `assistant-request` flow.
 | `VAPI_MODEL`               | `gpt-4o`                             | LLM model.                                                                               |
 | `VAPI_VOICE_PROVIDER`      | `vapi`                               | Voice provider.                                                                          |
 | `VAPI_VOICE_ID`            | `Elliot`                             | Voice id.                                                                                |
-| `VAPI_API_BASE`            | `https://api.vapi.ai`                | Vapi REST base URL.                                                                       |
+| `VAPI_API_BASE`            | `https://api.vapi.ai`                | Vapi REST base URL. Must be `https://` unless `VAPI_ALLOW_HTTP_API_BASE=true` is set for local testing. |
 | `VAPI_HTTP_TIMEOUT_SECONDS`| `20`                                 | Per-request Vapi API timeout.                                                            |
 | `VAPI_ALLOW_UNAUTHENTICATED` | `false`                            | Local-dev escape hatch: skip the `x-server-auth` check on admin routes.                  |
 | `VAPI_ALLOW_HTTP_WEBHOOK`  | `false`                              | Allow an `http://` webhook URL for local tunnels.                                        |
+| `VAPI_ALLOW_HTTP_API_BASE` | `false`                              | Allow an `http://` Vapi API base for local test doubles.                                 |
+| `VAPI_ALLOW_UNSIGNED_WEBHOOKS` | `false`                          | Local-dev escape hatch: accept webhook requests when `VAPI_SERVER_SECRET` is unset.      |
 
-`VAPI_API_KEY` and `VAPI_SERVER_SECRET` are pulled from the `dd-agent-secrets`
-Kubernetes secret (AWS Secrets Manager `dd/remote-dev/agent-secrets`). Add the
-JSON keys `VAPI_API_KEY` and `VAPI_SERVER_SECRET` there; do not commit them to
+`VAPI_SERVER_SECRET`, `VAPI_API_KEY`, and optional `VAPI_SERVER_CREDENTIAL_ID`
+are pulled from the `dd-agent-secrets` Kubernetes secret (AWS Secrets Manager
+`dd/remote-dev/agent-secrets`). Add the JSON keys there; do not commit them to
 Git. See [`remote/readme.md`](../../readme.md) "Secrets And Key Rotation".
 
 ## HTTP API
@@ -86,7 +89,7 @@ Git. See [`remote/readme.md`](../../readme.md) "Secrets And Key Rotation".
 | Method | Path           | Auth               | Purpose                                                            |
 | ------ | -------------- | ------------------ | ------------------------------------------------------------------ |
 | GET    | `/`            | gateway cookie     | HTML descriptor of the phone tree.                                 |
-| GET    | `/healthz`     | public             | Liveness + config booleans (no secrets).                           |
+| GET    | `/healthz`     | public             | Liveness + probe-safe config booleans (no phone numbers or secrets). |
 | GET    | `/metrics`     | public             | Prometheus metrics.                                                |
 | GET    | `/config`      | gateway cookie     | Secret-free view of the assistant the service will install.        |
 | GET    | `/status`      | `x-server-auth`    | Live Vapi assistants + phone numbers for the configured key.       |
@@ -103,7 +106,7 @@ cookie); it is authenticated by the `x-vapi-secret` shared secret instead.
 ```bash
 # Local
 cd remote/deployments/rust-vapi-phone-rs
-cargo run --release
+VAPI_ALLOW_UNSIGNED_WEBHOOKS=true cargo run --release
 
 # Image — repo root must be the build context so the shared client path dep
 # is included

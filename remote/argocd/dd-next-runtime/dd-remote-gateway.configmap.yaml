@@ -964,9 +964,9 @@ data:
       # /vapi/webhook — Vapi.ai server webhook. This is the one /vapi/* path
       # that is NOT behind the operator cookie, because Vapi (the external
       # caller) cannot send it. Instead the dd-rust-vapi-phone service verifies
-      # the `x-vapi-secret` shared secret on the body, the same signature model
-      # other webhook receivers use. POST only; the exact-match location wins
-      # over the /vapi/ prefix block below.
+      # the `x-vapi-secret` request header and fails closed when the secret is
+      # not configured. POST only; the exact-match location wins over the
+      # /vapi/ prefix block below.
       location = /vapi/webhook {
         if ($request_method != POST) {
           return 405;

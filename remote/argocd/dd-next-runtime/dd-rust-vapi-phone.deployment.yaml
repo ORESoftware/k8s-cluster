@@ -95,12 +95,12 @@ spec:
                   name: dd-agent-secrets
                   key: TWILIO_AUTH_TOKEN
                   optional: true
-            # Vapi private API key + the server webhook shared secret live in
-            # AWS Secrets Manager (dd/remote-dev/agent-secrets) and are synced
-            # into dd-agent-secrets by External Secrets. optional:true keeps
-            # bootstrap tolerant; /setup + /status return 503 until the key is
-            # present, and the webhook accepts unverified posts until the
-            # secret is set.
+            # Vapi private API key, server webhook shared secret, and optional
+            # server credential id live in AWS Secrets Manager
+            # (dd/remote-dev/agent-secrets) and are synced into
+            # dd-agent-secrets by External Secrets. /setup + /status return
+            # 503 until VAPI_API_KEY is present. VAPI_SERVER_SECRET is
+            # required because /vapi/webhook fails closed when it is unset.
             - name: VAPI_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -112,6 +112,11 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: VAPI_SERVER_SECRET
+            - name: VAPI_SERVER_CREDENTIAL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: VAPI_SERVER_CREDENTIAL_ID
                   optional: true
             # Gateway-injected x-server-auth value gating /setup and /status.
             - name: SERVER_AUTH_SECRET
