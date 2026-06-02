@@ -44,6 +44,7 @@ on:
           - deploy-bastion-live-containers
           - verify-bastion-live-containers
           - recover-gcs
+          - bisect-gcs-wss
           - loadtest-gcs-wss
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
@@ -74,7 +75,7 @@ jobs:
       - name: Run maintenance command through SSM
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
+          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
@@ -1537,6 +1538,247 @@ jobs:
               "commands": [
                   "set -euo pipefail",
                   f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            bisect-gcs-wss)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          duration = os.environ.get("GCS_BISECT_DURATION_SECONDS", "60") or "60"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          gcs_dir="$repo/remote/deployments/gcs/chat-vibe"
+          results=/tmp/gcs-bisect-results.txt
+          duration="${GCS_BISECT_DURATION_SECONDS:-60}"
+          case "$duration" in
+            ''|*[!0-9]*) duration=60 ;;
+          esac
+          : > "$results"
+
+          record() {
+            printf 'RESULT %s\n' "$*" | tee -a "$results"
+          }
+
+          stop_loaders() {
+            kubectl -n default scale deployment/dd-ws-loadtest-rs-gcs --replicas=0 >/dev/null 2>&1 || true
+            kubectl -n default scale deployment/dd-nodejs-ws-loadtest-gcs --replicas=0 >/dev/null 2>&1 || true
+            kubectl -n default scale deployment/dd-gleamlang-ws-loadtest-gcs --replicas=0 >/dev/null 2>&1 || true
+          }
+
+          availability() {
+            d="$1"
+            kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true
+          }
+
+          wait_available() {
+            d="$1"
+            expected="$2"
+            for i in $(seq 1 300); do
+              available="$(availability "$d")"
+              if [ "${available:-0}" -ge "$expected" ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          recover_stack() {
+            label="$1"
+            stop_loaders
+            kubectl -n default rollout restart deployment/gcs deployment/gcs-router >/dev/null
+            kubectl -n default rollout status deployment/gcs --timeout=900s
+            kubectl -n default rollout status deployment/gcs-router --timeout=600s
+            if ! wait_available gcs 3; then
+              kubectl -n default get deploy gcs -o wide || true
+              kubectl -n default get pods -l app=gcs -o wide || true
+              record "phase=recover label=$label status=failed component=gcs available=$(availability gcs)"
+              return 1
+            fi
+            if ! wait_available gcs-router 2; then
+              kubectl -n default get deploy gcs-router -o wide || true
+              kubectl -n default get pods -l app=gcs-router -o wide || true
+              record "phase=recover label=$label status=failed component=gcs-router available=$(availability gcs-router)"
+              return 1
+            fi
+            record "phase=recover label=$label status=passed gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/2"
+          }
+
+          restore_current() {
+            set +e
+            if [ -n "${current_sha:-}" ]; then
+              echo "=== restore recorded GCS submodule $current_sha ==="
+              git -C "$gcs_dir" switch --detach "$current_sha" >/dev/null 2>&1
+              recover_stack restore-current
+            fi
+          }
+          trap restore_current EXIT
+
+          collect_loader() {
+            d="$1"
+            kubectl -n default logs -l "app=$d" --all-containers --tail=500 --prefix=true --max-log-requests=20 2>/dev/null \
+              | awk '
+                /gcs-report/ {
+                  pod = $1
+                  sub(/^\[pod\//, "", pod)
+                  sub(/\/.*$/, "", pod)
+                  latest[pod] = $0
+                }
+                END {
+                  for (pod in latest) {
+                    pods++
+                    n = split(latest[pod], fields, " ")
+                    for (i = 1; i <= n; i++) {
+                      split(fields[i], kv, "=")
+                      key = kv[1]
+                      val = kv[2] + 0
+                      if (key == "attempted") attempted += val
+                      else if (key == "connected") connected += val
+                      else if (key == "failed") failed += val
+                      else if (key == "open") open += val
+                      else if (key == "sent") sent += val
+                      else if (key == "received") received += val
+                      else if (key == "receive_errors") receive_errors += val
+                      else if (key == "correlation_misses") correlation_misses += val
+                      else if (key == "p95_us" && val > max_p95_us) max_p95_us = val
+                      else if (key == "p99_us" && val > max_p99_us) max_p99_us = val
+                      else if (key == "max_us" && val > max_us) max_us = val
+                    }
+                  }
+                  if (pods == 0) {
+                    print "pods=0 attempted=0 connected=0 failed=0 open=0 sent=0 received=0 receive_errors=0 correlation_misses=0 max_p95_us=0 max_p99_us=0 max_us=0"
+                  } else {
+                    printf "pods=%d attempted=%d connected=%d failed=%d open=%d sent=%d received=%d receive_errors=%d correlation_misses=%d max_p95_us=%d max_p99_us=%d max_us=%d\n", pods, attempted, connected, failed, open, sent, received, receive_errors, correlation_misses, max_p95_us, max_p99_us, max_us
+                  }
+                }'
+          }
+
+          run_correctness_job() {
+            label="$1"
+            sha="$2"
+            kubectl -n default delete job/gcs-loadtest --ignore-not-found=true >/dev/null 2>&1 || true
+            git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml" | kubectl apply -f - >/dev/null
+            result=timeout
+            for i in $(seq 1 300); do
+              succeeded="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
+              failed="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.failed}' 2>/dev/null || true)"
+              if [ "${succeeded:-0}" -ge 1 ]; then
+                result=passed
+                break
+              fi
+              if [ "${failed:-0}" -ge 1 ]; then
+                result=failed
+                break
+              fi
+              sleep 1
+            done
+            kubectl -n default logs job/gcs-loadtest --tail=80 2>/dev/null \
+              | grep -E '^(=== [0-9]/|=== summary|ALL TESTS PASSED|ONE OR MORE TESTS FAILED|>> .* exit=|FAIL|ERROR)' || true
+            record "phase=correctness commit=$label sha=$sha status=$result gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/2"
+            test "$result" = "passed"
+          }
+
+          deploy_candidate() {
+            label="$1"
+            sha="$2"
+            echo "=== deploy candidate $label $sha ==="
+            git -C "$gcs_dir" fetch origin
+            git -C "$gcs_dir" switch --detach "$sha"
+            git -C "$gcs_dir" show -s --format='candidate=%H date=%ci subject=%s'
+            recover_stack "deploy-$label"
+          }
+
+          run_loader() {
+            commit_label="$1"
+            sha="$2"
+            size_label="$3"
+            replicas="$4"
+            clients="$5"
+            d="$6"
+            loader_label="$7"
+            total=$((replicas * clients))
+            echo "=== load commit=$commit_label size=$size_label loader=$loader_label total=$total duration=${duration}s ==="
+            recover_stack "pre-${commit_label}-${size_label}-${loader_label}" >/dev/null
+            kubectl -n default set resources "deployment/$d" \
+              --requests=cpu=1m,memory=512Mi \
+              --limits=cpu=4,memory=8Gi >/dev/null || true
+            kubectl -n default set env "deployment/$d" \
+              CLIENT_COUNT="$clients" \
+              GCS_CLIENTS_PER_CONV=5 \
+              GCS_SENDERS_PER_CONV=0 \
+              MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
+              RAMP_DELAY_MS=2 \
+              REPORT_INTERVAL_SECONDS=10 >/dev/null
+            kubectl -n default scale "deployment/$d" --replicas="$replicas" >/dev/null
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=240s; then
+              summary="$(collect_loader "$d")"
+              record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=rollout_failed total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/2"
+              kubectl -n default get deploy "$d" -o wide || true
+              kubectl -n default get pods -l "app=$d" -o wide || true
+              stop_loaders
+              recover_stack "post-rollout-failed-${commit_label}-${size_label}-${loader_label}" >/dev/null || true
+              return 0
+            fi
+            sleep "$duration"
+            summary="$(collect_loader "$d")"
+            gcs_available="$(availability gcs)"
+            router_available="$(availability gcs-router)"
+            status=completed
+            if [ "${gcs_available:-0}" -lt 3 ] || [ "${router_available:-0}" -lt 2 ]; then
+              status=degraded
+            fi
+            record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=$status total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=${gcs_available:-0}/3 router_available=${router_available:-0}/2"
+            stop_loaders
+            recover_stack "post-${commit_label}-${size_label}-${loader_label}" >/dev/null || true
+          }
+
+          echo "=== prepare repo/submodule ==="
+          cd "$repo"
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          current_sha="$(git ls-tree "origin/${TARGET_REVISION:-dev}" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
+          five_days_sha="${GCS_BISECT_OLD_SHA:-96d58c361b38c5c633d0f3d4389b2927c2ed66d3}"
+          echo "current_sha=$current_sha"
+          echo "five_days_sha=$five_days_sha"
+          git -C "$gcs_dir" fetch origin
+
+          for candidate in "today:$current_sha" "five_days_ago:$five_days_sha"; do
+            commit_label="${candidate%%:*}"
+            sha="${candidate##*:}"
+            if ! deploy_candidate "$commit_label" "$sha"; then
+              record "phase=deploy commit=$commit_label sha=$sha status=failed"
+              continue
+            fi
+            if ! run_correctness_job "$commit_label" "$sha"; then
+              continue
+            fi
+            for size_spec in "10k:4:2500" "20k:6:3335"; do
+              size_label="${size_spec%%:*}"
+              rest="${size_spec#*:}"
+              replicas="${rest%%:*}"
+              clients="${rest##*:}"
+              for loader_spec in "dd-ws-loadtest-rs-gcs:rust" "dd-nodejs-ws-loadtest-gcs:node" "dd-gleamlang-ws-loadtest-gcs:gleam"; do
+                d="${loader_spec%%:*}"
+                loader_label="${loader_spec##*:}"
+                run_loader "$commit_label" "$sha" "$size_label" "$replicas" "$clients" "$d" "$loader_label"
+              done
+            done
+          done
+
+          echo "=== compact GCS bisect results ==="
+          cat "$results"
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} GCS_BISECT_DURATION_SECONDS={shlex.quote(duration)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY
