@@ -98,6 +98,9 @@ but they should still come from source scanning and be checked with `--check` in
 Do not put raw AWS keys, model keys, GitHub tokens, or gateway secrets in Git. The
 preferred operator path is:
 
+- Local operator AWS access uses the shared credentials/config files in `~/.aws/credentials`
+  and `~/.aws/config`, not AWS SSO. Prefer `AWS_PROFILE` or the default profile from those
+  files, and verify access with `aws sts get-caller-identity` without printing secret values.
 - External Secrets reads AWS Secrets Manager and syncs Kubernetes secrets.
 - Agents receive only the strict env allowlist defined in `remote/deployments/dev-server/src/agents`.
 - Humans use the WireGuard VPN plus `dd-bastion` for private cluster access and read-only

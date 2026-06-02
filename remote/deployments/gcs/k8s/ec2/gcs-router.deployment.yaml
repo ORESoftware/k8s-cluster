@@ -47,6 +47,8 @@ spec:
       app: gcs-router
   template:
     metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-06-02-load-collapse-2"
       labels:
         app: gcs-router
     spec:

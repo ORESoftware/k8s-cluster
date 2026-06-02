@@ -30,6 +30,8 @@ spec:
       app: gcs
   template:
     metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-06-02-load-collapse-3"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
@@ -114,6 +116,23 @@ spec:
               value: info
             - name: GCS_DIAG_LOGS
               value: 'true'
+            - name: GCS_WS_SHED_ENABLED
+              value: 'true'
+            # Per-pod share of a 30k cluster-wide threshold for 3 replicas.
+            - name: GCS_WS_SHED_ACTIVE_CONN_THRESHOLD
+              value: '10000'
+            - name: GCS_WS_SHED_OLD_CONN_AGE
+              value: '3h'
+            - name: GCS_WS_SHED_INTERVAL
+              value: '10s'
+            - name: GCS_WS_SHED_BATCH_SIZE
+              value: '500'
+            - name: GCS_WS_SHED_WARN_GRACE
+              value: '5s'
+            - name: GCS_WS_SHED_HEAP_BYTES
+              value: '2621440000'
+            - name: GCS_WS_SHED_GOROUTINES
+              value: '120000'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
