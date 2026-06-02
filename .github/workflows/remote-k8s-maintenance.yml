@@ -44,12 +44,22 @@ on:
           - deploy-bastion-live-containers
           - verify-bastion-live-containers
           - recover-gcs
+          - inspect-gcs-ssm
           - bisect-gcs-wss
           - loadtest-gcs-wss
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
         required: false
         default: dev
+      ssm_command_id:
+        description: Existing SSM command id to inspect.
+        required: false
+        default: ""
+      cancel_ssm_command:
+        description: Cancel the provided SSM command before inspecting it.
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: remote-k8s-maintenance
@@ -77,6 +87,8 @@ jobs:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
           OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
+          SSM_COMMAND_ID: ${{ inputs.ssm_command_id || '' }}
+          CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || 'false' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
           REMOTE_DEV_DASHSCOPE_API_KEY: ${{ secrets.REMOTE_DEV_DASHSCOPE_API_KEY }}
@@ -84,6 +96,38 @@ jobs:
           THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS: ${{ vars.THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS || '4' }}
         run: |
           set -euo pipefail
+
+          if [ "$OPERATION" = "inspect-gcs-ssm" ]; then
+            if [ -z "${SSM_COMMAND_ID:-}" ]; then
+              echo "ssm_command_id is required for inspect-gcs-ssm" >&2
+              exit 64
+            fi
+            if [ "${CANCEL_SSM_COMMAND:-false}" = "true" ]; then
+              aws ssm cancel-command --command-id "$SSM_COMMAND_ID" --instance-ids "$INSTANCE_ID" || true
+              for attempt in {1..30}; do
+                status="$(
+                  aws ssm get-command-invocation \
+                    --command-id "$SSM_COMMAND_ID" \
+                    --instance-id "$INSTANCE_ID" \
+                    --query "Status" \
+                    --output text 2>/dev/null || true
+                )"
+                case "$status" in
+                  Cancelled|Failed|Success|TimedOut)
+                    break
+                    ;;
+                esac
+                echo "SSM command $SSM_COMMAND_ID cancellation status=${status:-pending} attempt=$attempt/30"
+                sleep 5
+              done
+            fi
+            aws ssm get-command-invocation \
+              --command-id "$SSM_COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
+              --output json
+            exit 0
+          fi
 
           case "$OPERATION" in
             free-thread-pod-slots)
