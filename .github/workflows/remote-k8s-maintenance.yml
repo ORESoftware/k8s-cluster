@@ -43,6 +43,7 @@ on:
           - verify-thread-go-services
           - deploy-bastion-live-containers
           - verify-bastion-live-containers
+          - recover-gcs
           - loadtest-gcs-wss
       target_revision:
         description: Git revision or branch to sync on the EC2 host.
@@ -73,7 +74,7 @@ jobs:
       - name: Run maintenance command through SSM
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
+          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
@@ -1536,6 +1537,87 @@ jobs:
               "commands": [
                   "set -euo pipefail",
                   f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            recover-gcs)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+          echo "=== recover GCS checkout context ==="
+          git status --short --branch
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          target_gcs_sha="$(git ls-tree "origin/${TARGET_REVISION:-dev}" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
+          if [ -n "$target_gcs_sha" ]; then
+            echo "=== target gcs/chat-vibe submodule ==="
+            echo "$target_gcs_sha"
+            git -C remote/deployments/gcs/chat-vibe fetch origin
+            git -C remote/deployments/gcs/chat-vibe merge --ff-only "$target_gcs_sha"
+          fi
+          git submodule status --recursive | grep 'remote/deployments/gcs/chat-vibe' || true
+
+          echo "=== recover GCS: force Argo sync ==="
+          kubectl -n argocd annotate application/gcs argocd.argoproj.io/refresh=hard --overwrite || true
+          kubectl -n argocd patch application/gcs --type merge -p '{"operation":{"initiatedBy":{"username":"gcs-recover"},"info":[{"name":"reason","value":"post-loadtest-recover"}],"sync":{"revision":"HEAD","prune":true}}}' || true
+          for i in $(seq 1 60); do
+            phase="$(kubectl -n argocd get application/gcs -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+            sync="$(kubectl -n argocd get application/gcs -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+            health="$(kubectl -n argocd get application/gcs -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+            echo "  gcs wait=$i phase=${phase:-none} sync=${sync:-unknown} health=${health:-unknown}"
+            case "$phase:$sync" in
+              Succeeded:Synced|:Synced) break ;;
+              Failed:*|Error:*) break ;;
+            esac
+            sleep 5
+          done
+          kubectl -n argocd get application/gcs -o wide || true
+
+          echo "=== recover GCS: stop any loaders ==="
+          kubectl -n default scale deployment/dd-ws-loadtest-rs-gcs --replicas=0 || true
+          kubectl -n default scale deployment/dd-nodejs-ws-loadtest-gcs --replicas=0 || true
+          kubectl -n default scale deployment/dd-gleamlang-ws-loadtest-gcs --replicas=0 || true
+
+          echo "=== recover GCS: restart gcs/router ==="
+          kubectl -n default rollout restart deployment/gcs deployment/gcs-router
+          kubectl -n default rollout status deployment/gcs --timeout=900s
+          kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          for spec in gcs:3 gcs-router:2; do
+            d="${spec%%:*}"
+            expected="${spec##*:}"
+            for i in $(seq 1 300); do
+              available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+              if [ "${available:-0}" -ge "$expected" ]; then
+                break
+              fi
+              sleep 1
+            done
+            available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+            if [ "${available:-0}" -lt "$expected" ]; then
+              echo "ERROR: deployment/$d available=${available:-0}, expected=$expected" >&2
+              kubectl -n default get deploy "$d" -o wide || true
+              kubectl -n default get pods -l "app=$d" -o wide || true
+              kubectl -n default logs -l "app=$d" --all-containers --tail=160 --prefix=true --max-log-requests=10 || true
+              exit 1
+            fi
+          done
+          echo "=== recovered GCS state ==="
+          kubectl -n default get deploy gcs gcs-router -o wide
+          kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY
