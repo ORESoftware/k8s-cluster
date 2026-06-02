@@ -1936,7 +1936,7 @@ jobs:
           esac
           total_connections=$((loader_replicas * clients_per_replica))
 
-          apps="gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
+          apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
 
@@ -2021,6 +2021,7 @@ jobs:
           printf '%s\n' "${changed_paths:-none}" | head -80
 
           echo "=== apply Argo CD Applications ==="
+          kubectl apply -f remote/argocd/apps/dd-observability.application.yaml
           kubectl apply -f remote/argocd/apps/gcs.application.yaml
           kubectl apply -f remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml
           kubectl apply -f remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml
@@ -2075,7 +2076,48 @@ jobs:
             kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
           }
 
+          wait_observability() {
+            echo "=== observability rollout ==="
+            kubectl -n observability rollout status deployment/dd-k8s-resource-exporter --timeout=300s || true
+            kubectl -n observability get deploy,pods -l app=dd-k8s-resource-exporter -o wide || true
+          }
+
+          prom_query() {
+            expr="$1"
+            kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python -c 'import json, sys, urllib.parse, urllib.request; expr = sys.argv[1]; url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr}); payload = json.load(urllib.request.urlopen(url, timeout=8)); print(json.dumps(payload.get("data", {}).get("result", [])[:25], separators=(",", ":")))' "$expr" 2>/dev/null || true
+          }
+
+          prom_snapshot() {
+            label="$1"
+            echo "=== prometheus snapshot: $label ==="
+            for expr in \
+              'gcs_ws_connections_active' \
+              'gcs_ws_connections_total' \
+              'gcs_ws_read_errors_total' \
+              'gcs_ws_writes_total' \
+              'gcs_ws_connection_maps' \
+              'gcs_runtime_gauge{name="goroutines"}' \
+              'gcs_process_resident_memory_bytes' \
+              'gcs_process_open_fds' \
+              'gcs_broker_fanout_deliveries_total' \
+              'gcs_kafka_read_errors_total' \
+              'gcs_router_active_conns' \
+              'gcs_router_upstream_errors_total' \
+              'dd_gcs_dependency_tcp_up' \
+              'dd_gcs_redis_info{name="connected_clients"}' \
+              'dd_gcs_rabbitmq_management_up' \
+              'dd_k8s_deployment_available_replicas{namespace="default",deployment=~"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|dd-redis-cache"}' \
+              'dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}' \
+              'dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}' \
+              'dd_k8s_pod_container_restarts_total{namespace="default",pod=~"gcs.*"}' \
+              'dd_k8s_pod_container_last_terminated{namespace="default",pod=~"gcs.*"}'; do
+              echo "--- query: $expr"
+              prom_query "$expr"
+            done
+          }
+
           echo "=== clean restart gcs stack before correctness/perf validation ==="
+          wait_observability
           git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.deployment.yaml" | kubectl apply -f -
           kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
           kubectl -n default get statefulset gcs-mongodb -o wide || true
@@ -2088,6 +2130,7 @@ jobs:
           wait_available gcs-router 2
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
+          prom_snapshot "after gcs rollout"
 
           router_metrics() {
             pod="$(kubectl -n default get pods -l app=gcs-router -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -2208,6 +2251,7 @@ jobs:
             collect_loader "$d"
             echo "=== router metrics before $label load window ==="
             router_metrics
+            prom_snapshot "before $label"
             remaining="$duration"
             while [ "$remaining" -gt 0 ]; do
               step=30
@@ -2220,9 +2264,11 @@ jobs:
               collect_loader "$d"
               echo "=== router metrics during $label ==="
               router_metrics
+              prom_snapshot "during $label remaining=${remaining}s"
             done
             echo "=== final $label loader summary ==="
             collect_loader "$d"
+            prom_snapshot "after $label"
             echo "=== stop $label ==="
             kubectl -n default scale "deployment/$d" --replicas=0
             sleep 15
