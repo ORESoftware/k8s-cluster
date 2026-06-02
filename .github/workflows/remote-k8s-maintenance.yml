@@ -1892,6 +1892,19 @@ jobs:
             kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|FailedScheduling|Insufficient|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM|Evicted' | tail -200 || true
           }
 
+          diagnose_recover_dependency() {
+            label="$1"
+            echo "=== recover GCS dependency diagnostics: $label ==="
+            kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            kubectl -n default get statefulset gcs-mongodb -o wide || true
+            kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+            kubectl -n default get endpoints gcs-mongodb gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            for app in gcs-kafka gcs-rabbitmq dd-redis-cache; do
+              echo "--- current logs for app=$app ---"
+              kubectl -n default logs -l "app=$app" --all-containers --tail=120 --prefix=true --max-log-requests=5 || true
+            done
+          }
+
           cd "$repo"
           echo "=== recover GCS checkout context ==="
           git status --short --branch
@@ -1928,6 +1941,22 @@ jobs:
           kubectl -n default scale deployment/dd-nodejs-ws-loadtest-gcs --replicas=0 || true
           kubectl -n default scale deployment/dd-gleamlang-ws-loadtest-gcs --replicas=0 || true
           free_recovery_capacity
+
+          echo "=== recover GCS: refresh and wait for dependencies ==="
+          git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.service.yaml" | kubectl apply -f -
+          git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.deployment.yaml" | kubectl apply -f -
+          kubectl -n default rollout restart deployment/gcs-kafka || true
+          if ! kubectl -n default rollout status statefulset/gcs-mongodb --timeout=300s; then
+            diagnose_recover_dependency "gcs-mongodb"
+            exit 1
+          fi
+          for d in gcs-rabbitmq dd-redis-cache gcs-kafka; do
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=600s; then
+              diagnose_recover_dependency "$d"
+              exit 1
+            fi
+          done
+          diagnose_recover_dependency "ready"
 
           echo "=== recover GCS: restart gcs/router ==="
           kubectl -n default rollout restart deployment/gcs deployment/gcs-router
