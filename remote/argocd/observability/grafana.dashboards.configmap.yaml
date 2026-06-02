@@ -812,3 +812,308 @@ data:
       "version": 2,
       "weekStart": ""
     }
+  gcs-wss-load-collapse.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(gcs_ws_connections_active)", "legendFormat": "wss", "refId": "A" } ],
+          "title": "Open WSS Connections",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "count(gcs_go_goroutines)", "legendFormat": "pods", "refId": "A" } ],
+          "title": "GCS Pods Exporting",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(rate(gcs_router_upstream_errors_total[1m]))", "legendFormat": "errors/s", "refId": "A" } ],
+          "title": "Router Upstream Errors/s",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [
+            { "expr": "sum(rate(gcs_broker_publish_total{result=~\"error|failed|timeout\"}[1m]))", "legendFormat": "broker publish failures/s", "refId": "A" },
+            { "expr": "sum(rate(gcs_kafka_read_errors_total[1m]))", "legendFormat": "kafka read errors/s", "refId": "B" }
+          ],
+          "title": "Broker/Kafka Errors/s",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "gcs_ws_connections_active", "legendFormat": "ws {{pod}}", "refId": "A" },
+            { "expr": "gcs_rest_connections_active", "legendFormat": "rest {{pod}}", "refId": "B" }
+          ],
+          "title": "GCS Active Connections by Pod",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "id": 6,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(gcs_ws_upgrades_total[1m])) by (status)", "legendFormat": "upgrade {{status}}", "refId": "A" },
+            { "expr": "sum(rate(gcs_ws_messages_total[1m])) by (outcome)", "legendFormat": "message {{outcome}}", "refId": "B" },
+            { "expr": "sum(rate(gcs_ws_connections_total[1m])) by (event)", "legendFormat": "connection {{event}}", "refId": "C" },
+            { "expr": "sum(rate(gcs_ws_read_errors_total[1m])) by (kind)", "legendFormat": "read error {{kind}}", "refId": "D" },
+            { "expr": "sum(rate(gcs_ws_writes_total[1m])) by (kind, outcome)", "legendFormat": "write {{kind}} {{outcome}}", "refId": "E" }
+          ],
+          "title": "WS Lifecycle, Messages, Read/Write Outcomes",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "cores" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "id": 7,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "rate(gcs_process_cpu_seconds_total[1m])", "legendFormat": "process {{pod}}", "refId": "A" },
+            { "expr": "rate(gcs_go_user_cpu_seconds_total[1m])", "legendFormat": "go-user {{pod}}", "refId": "B" },
+            { "expr": "rate(gcs_go_gc_cpu_seconds_total[1m])", "legendFormat": "go-gc {{pod}}", "refId": "C" }
+          ],
+          "title": "GCS CPU Seconds per Second",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "id": 8,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "gcs_process_resident_memory_bytes", "legendFormat": "rss {{pod}}", "refId": "A" },
+            { "expr": "gcs_go_heap_alloc_bytes", "legendFormat": "heap {{pod}}", "refId": "B" },
+            { "expr": "gcs_go_stack_inuse_bytes", "legendFormat": "stack {{pod}}", "refId": "C" }
+          ],
+          "title": "GCS Memory by Pod",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "id": 9,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "gcs_go_goroutines", "legendFormat": "goroutines {{pod}}", "refId": "A" },
+            { "expr": "gcs_process_open_fds", "legendFormat": "fds {{pod}}", "refId": "B" },
+            { "expr": "gcs_broker_subscriptions_active", "legendFormat": "broker subs {{pod}}", "refId": "C" },
+            { "expr": "gcs_ws_connection_maps", "legendFormat": "map {{map}} {{pod}}", "refId": "D" },
+            { "expr": "gcs_runtime_gauge", "legendFormat": "runtime {{name}} {{pod}}", "refId": "E" }
+          ],
+          "title": "Goroutines, FDs, Broker Subs, Connection Maps",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "id": 10,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(gcs_broker_publish_total[1m])) by (backend, result)", "legendFormat": "{{backend}} {{result}}", "refId": "A" },
+            { "expr": "sum(rate(gcs_kafka_read_errors_total[1m])) by (code)", "legendFormat": "kafka read {{code}}", "refId": "B" },
+            { "expr": "sum(rate(gcs_broker_fanout_deliveries_total[1m])) by (backend, result)", "legendFormat": "fanout {{backend}} {{result}}", "refId": "C" }
+          ],
+          "title": "Broker Publish, Fanout, Kafka Read Errors",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "id": 11,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(gcs_broker_publish_duration_seconds_sum[1m])) by (backend, result) / sum(rate(gcs_broker_publish_duration_seconds_count[1m])) by (backend, result)", "legendFormat": "{{backend}} {{result}}", "refId": "A" },
+            { "expr": "sum(rate(gcs_router_latency_seconds_sum[1m])) by (pool) / sum(rate(gcs_router_latency_seconds_count[1m])) by (pool)", "legendFormat": "router {{pool}}", "refId": "B" },
+            { "expr": "sum(rate(gcs_broker_fanout_delivery_duration_seconds_sum[1m])) by (backend, result) / sum(rate(gcs_broker_fanout_delivery_duration_seconds_count[1m])) by (backend, result)", "legendFormat": "fanout {{backend}} {{result}}", "refId": "C" },
+            { "expr": "sum(rate(gcs_ws_write_duration_seconds_sum[1m])) by (kind, outcome) / sum(rate(gcs_ws_write_duration_seconds_count[1m])) by (kind, outcome)", "legendFormat": "ws write {{kind}} {{outcome}}", "refId": "D" }
+          ],
+          "title": "Mean Publish, Fanout, Router, WS Write Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "id": 12,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "gcs_router_active_conns", "legendFormat": "active {{peer}}", "refId": "A" },
+            { "expr": "sum(rate(gcs_router_routed_total[1m])) by (pool, peer)", "legendFormat": "routed {{pool}} {{peer}}", "refId": "B" },
+            { "expr": "sum(rate(gcs_router_upstream_errors_total[1m])) by (pool, peer)", "legendFormat": "errors {{pool}} {{peer}}", "refId": "C" }
+          ],
+          "title": "Router Active Connections, Routes, Errors",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+          "id": 13,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "dd_k8s_deployment_available_replicas{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"}", "legendFormat": "available {{app}}", "refId": "A" },
+            { "expr": "dd_k8s_deployment_desired_replicas{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"}", "legendFormat": "desired {{app}}", "refId": "B" },
+            { "expr": "sum by (app, container) (dd_k8s_pod_container_restarts_total{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"})", "legendFormat": "restarts {{app}} {{container}}", "refId": "C" },
+            { "expr": "dd_k8s_pod_container_last_terminated{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"}", "legendFormat": "last terminated {{app}} {{container}} {{reason}}", "refId": "D" }
+          ],
+          "title": "Kubernetes Availability, Restarts, Terminations",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "cores" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+          "id": 14,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (app, container) (dd_k8s_pod_container_cpu_usage_cores{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"})", "legendFormat": "usage {{app}} {{container}}", "refId": "A" },
+            { "expr": "sum by (app, container) (dd_k8s_pod_container_cpu_limit_cores{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"})", "legendFormat": "limit {{app}} {{container}}", "refId": "B" }
+          ],
+          "title": "Kubernetes CPU Usage vs Limit",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "bytes" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+          "id": 15,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (app, container) (dd_k8s_pod_container_memory_usage_bytes{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"})", "legendFormat": "usage {{app}} {{container}}", "refId": "A" },
+            { "expr": "sum by (app, container) (dd_k8s_pod_container_memory_limit_bytes{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"})", "legendFormat": "limit {{app}} {{container}}", "refId": "B" }
+          ],
+          "title": "Kubernetes Memory Usage vs Limit",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+          "id": 16,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "dd_gcs_dependency_tcp_up", "legendFormat": "tcp up {{dependency}}", "refId": "A" },
+            { "expr": "dd_gcs_dependency_tcp_latency_seconds", "legendFormat": "tcp latency {{dependency}}", "refId": "B" },
+            { "expr": "dd_gcs_redis_info_up", "legendFormat": "redis info up", "refId": "C" },
+            { "expr": "dd_gcs_rabbitmq_management_up", "legendFormat": "rabbitmq management up", "refId": "D" }
+          ],
+          "title": "Dependency Connectivity Probes",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+          "id": 17,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "dd_gcs_redis_info", "legendFormat": "redis {{name}}", "refId": "A" },
+            { "expr": "dd_gcs_rabbitmq_object_total", "legendFormat": "rabbit object {{name}}", "refId": "B" },
+            { "expr": "dd_gcs_rabbitmq_queue_message_total", "legendFormat": "rabbit queue {{name}}", "refId": "C" },
+            { "expr": "rate(dd_gcs_rabbitmq_message_stat_total[1m])", "legendFormat": "rabbit stat/s {{name}}", "refId": "D" }
+          ],
+          "title": "Redis and RabbitMQ Internals",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+          "id": 18,
+          "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum by (app, type, reason) (dd_k8s_event_count{app=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache|dd-ws-loadtest-rs-gcs|dd-nodejs-ws-loadtest-gcs|dd-gleamlang-ws-loadtest-gcs\"})", "legendFormat": "events {{app}} {{type}} {{reason}}", "refId": "A" },
+            { "expr": "sum(dd_k8s_node_cpu_usage_cores) / sum(dd_k8s_node_allocatable_cpu_cores)", "legendFormat": "node cpu saturation", "refId": "B" },
+            { "expr": "sum(dd_k8s_node_memory_usage_bytes) / sum(dd_k8s_node_allocatable_memory_bytes)", "legendFormat": "node memory saturation", "refId": "C" }
+          ],
+          "title": "Kubernetes Events and Node Saturation",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 60 },
+          "id": 19,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [
+            { "expr": "{namespace=\"default\",deployment=~\"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|gcs-mongodb|dd-redis-cache\"} |~ \"(?i)(error|panic|fatal|oom|killed|timeout|refused|reset|closed|kafka|rabbit|mongo|redis)\"", "refId": "A" }
+          ],
+          "title": "GCS and Dependency Error Logs",
+          "type": "logs"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 69 },
+          "id": 20,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [
+            { "expr": "{namespace=\"default\",deployment=~\"dd-ws-loadtest-rs-gcs|dd-nodejs-ws-loadtest-gcs|dd-gleamlang-ws-loadtest-gcs\"}", "refId": "A" }
+          ],
+          "title": "GCS Load Test Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "tags": [ "gcs", "wss", "loadtest", "loki", "prometheus" ],
+      "templating": { "list": [] },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "GCS WSS Load Collapse",
+      "uid": "gcs-wss-load-collapse",
+      "version": 1,
+      "weekStart": ""
+    }

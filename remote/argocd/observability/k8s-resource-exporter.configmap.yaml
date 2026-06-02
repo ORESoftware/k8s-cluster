@@ -1,0 +1,467 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-k8s-resource-exporter
+  namespace: observability
+  labels:
+    app: dd-k8s-resource-exporter
+data:
+  exporter.py: |
+    import base64
+    import datetime
+    import json
+    import os
+    import re
+    import socket
+    import ssl
+    import time
+    import urllib.error
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    HOST = os.environ.get("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+    PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+    BASE_URL = "https://%s:%s" % (HOST, PORT)
+    SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
+    WATCH_NAMESPACES = [v.strip() for v in os.environ.get("WATCH_NAMESPACES", "default").split(",") if v.strip()]
+    WATCH_APPS = set(v.strip() for v in os.environ.get(
+        "WATCH_APPS",
+        "gcs,gcs-router,gcs-kafka,gcs-rabbitmq,gcs-mongodb,dd-redis-cache,"
+        "dd-ws-loadtest-rs-gcs,dd-nodejs-ws-loadtest-gcs,dd-gleamlang-ws-loadtest-gcs",
+    ).split(",") if v.strip())
+    DEPENDENCY_TCP_TARGETS = [v.strip() for v in os.environ.get(
+        "DEPENDENCY_TCP_TARGETS",
+        "kafka=gcs-kafka.default.svc.cluster.local:9092,"
+        "rabbitmq=gcs-rabbitmq.default.svc.cluster.local:5672,"
+        "mongodb=gcs-mongodb.default.svc.cluster.local:27017,"
+        "redis=dd-redis-cache.default.svc.cluster.local:6379",
+    ).split(",") if v.strip()]
+    REDIS_INFO_TARGET = os.environ.get("REDIS_INFO_TARGET", "dd-redis-cache.default.svc.cluster.local:6379")
+    RABBITMQ_MANAGEMENT_URL = os.environ.get("RABBITMQ_MANAGEMENT_URL", "http://gcs-rabbitmq.default.svc.cluster.local:15672/api/overview")
+    RABBITMQ_MANAGEMENT_USER = os.environ.get("RABBITMQ_MANAGEMENT_USER", "gcs")
+    RABBITMQ_MANAGEMENT_PASSWORD = os.environ.get("RABBITMQ_MANAGEMENT_PASSWORD", "gcs")
+    SAFE_LABEL_RE = re.compile(r"[^a-zA-Z0-9_:]")
+
+
+    def token():
+        with open(TOKEN_PATH, "r", encoding="utf-8") as f:
+            return f.read().strip()
+
+
+    def api_get(path):
+        req = urllib.request.Request(
+            BASE_URL + path,
+            headers={"Authorization": "Bearer " + token(), "Accept": "application/json"},
+        )
+        ctx = ssl.create_default_context(cafile=CA_PATH)
+        with urllib.request.urlopen(req, context=ctx, timeout=SCRAPE_TIMEOUT) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+
+    def prom_escape(v):
+        return str(v).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+    def labels(parts):
+        return "{" + ",".join('%s="%s"' % (k, prom_escape(v)) for k, v in parts.items()) + "}"
+
+
+    def emit(lines, name, help_text, metric_type, value, parts=None):
+        parts = parts or {}
+        if name not in emit.seen:
+            lines.append("# HELP %s %s" % (name, help_text))
+            lines.append("# TYPE %s %s" % (name, metric_type))
+            emit.seen.add(name)
+        suffix = labels(parts) if parts else ""
+        lines.append("%s%s %s" % (name, suffix, value))
+
+
+    emit.seen = set()
+
+
+    def app_for_pod(pod):
+        meta = pod.get("metadata", {})
+        pod_labels = meta.get("labels", {})
+        app = pod_labels.get("app") or pod_labels.get("app.kubernetes.io/name") or ""
+        if app:
+            return app
+        name = meta.get("name", "")
+        for candidate in sorted(WATCH_APPS, key=len, reverse=True):
+            if name == candidate or name.startswith(candidate + "-"):
+                return candidate
+        return ""
+
+
+    def is_watched_app(app):
+        return app in WATCH_APPS
+
+
+    def parse_cpu(v):
+        if not v:
+            return 0.0
+        if v.endswith("n"):
+            return float(v[:-1]) / 1_000_000_000.0
+        if v.endswith("u"):
+            return float(v[:-1]) / 1_000_000.0
+        if v.endswith("m"):
+            return float(v[:-1]) / 1000.0
+        return float(v)
+
+
+    def parse_bytes(v):
+        if not v:
+            return 0.0
+        units = {
+            "Ki": 1024,
+            "Mi": 1024**2,
+            "Gi": 1024**3,
+            "Ti": 1024**4,
+            "K": 1000,
+            "M": 1000**2,
+            "G": 1000**3,
+            "T": 1000**4,
+        }
+        for suffix, multiplier in units.items():
+            if v.endswith(suffix):
+                return float(v[: -len(suffix)]) * multiplier
+        return float(v)
+
+
+    def parse_time(value):
+        if not value:
+            return 0
+        text = value.replace("Z", "+00:00")
+        try:
+            return int(datetime.datetime.fromisoformat(text).timestamp())
+        except ValueError:
+            return 0
+
+
+    def safe_reason(value):
+        value = value or "none"
+        return SAFE_LABEL_RE.sub("_", value)
+
+
+    def split_dependency_target(raw):
+        dependency = "unknown"
+        target = raw
+        if "=" in raw:
+            dependency, target = raw.split("=", 1)
+        host, port = target.rsplit(":", 1)
+        return dependency.strip(), host.strip(), int(port)
+
+
+    def collect_dependency_tcp(lines):
+        for raw in DEPENDENCY_TCP_TARGETS:
+            dependency, host, port = split_dependency_target(raw)
+            parts = {"dependency": dependency, "host": host, "port": port}
+            start = time.monotonic()
+            up = 0
+            latency = 0.0
+            error = "none"
+            try:
+                with socket.create_connection((host, port), timeout=SCRAPE_TIMEOUT):
+                    up = 1
+                    latency = time.monotonic() - start
+            except Exception as exc:
+                error = safe_reason(type(exc).__name__)
+            emit(lines, "dd_gcs_dependency_tcp_up", "TCP connectivity from exporter pod to GCS dependencies.", "gauge", up, parts)
+            emit(lines, "dd_gcs_dependency_tcp_latency_seconds", "TCP connect latency from exporter pod to GCS dependencies.", "gauge", latency, parts)
+            if error != "none":
+                emit(lines, "dd_gcs_dependency_tcp_error_info", "TCP connectivity error type by GCS dependency.", "gauge", 1, {**parts, "error": error})
+
+
+    def redis_info_blob(host, port):
+        with socket.create_connection((host, port), timeout=SCRAPE_TIMEOUT) as conn:
+            conn.settimeout(SCRAPE_TIMEOUT)
+            conn.sendall(b"INFO\r\n")
+            chunks = []
+            while True:
+                try:
+                    chunk = conn.recv(65536)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if len(chunk) < 65536:
+                    break
+        return b"".join(chunks).decode("utf-8", "replace")
+
+
+    def parse_redis_info(blob):
+        out = {}
+        for line in blob.splitlines():
+            if not line or line.startswith("#") or line.startswith("$"):
+                continue
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            try:
+                out[key] = float(value)
+            except ValueError:
+                continue
+        return out
+
+
+    def collect_redis_info(lines):
+        dependency, host, port = split_dependency_target("redis=" + REDIS_INFO_TARGET)
+        base = {"dependency": dependency, "host": host, "port": port}
+        try:
+            values = parse_redis_info(redis_info_blob(host, port))
+            emit(lines, "dd_gcs_redis_info_up", "Redis INFO scrape success.", "gauge", 1, base)
+        except Exception as exc:
+            emit(lines, "dd_gcs_redis_info_up", "Redis INFO scrape success.", "gauge", 0, base)
+            emit(lines, "dd_gcs_redis_info_error_info", "Redis INFO scrape error type.", "gauge", 1, {**base, "error": safe_reason(type(exc).__name__)})
+            return
+        for key in [
+            "connected_clients",
+            "blocked_clients",
+            "used_memory",
+            "used_memory_rss",
+            "mem_fragmentation_ratio",
+            "rejected_connections",
+            "total_connections_received",
+            "instantaneous_ops_per_sec",
+            "evicted_keys",
+            "expired_keys",
+        ]:
+            if key in values:
+                emit(lines, "dd_gcs_redis_info", "Selected Redis INFO values for GCS Redis dependency.", "gauge", values[key], {**base, "name": key})
+
+
+    def rabbitmq_overview():
+        auth_raw = ("%s:%s" % (RABBITMQ_MANAGEMENT_USER, RABBITMQ_MANAGEMENT_PASSWORD)).encode("utf-8")
+        auth = base64.b64encode(auth_raw).decode("ascii")
+        req = urllib.request.Request(
+            RABBITMQ_MANAGEMENT_URL,
+            headers={"Accept": "application/json", "Authorization": "Basic " + auth},
+        )
+        with urllib.request.urlopen(req, timeout=SCRAPE_TIMEOUT) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+
+    def emit_rabbit_value(lines, name, help_text, metric_type, data, path, parts):
+        cur = data
+        for key in path:
+            if not isinstance(cur, dict) or key not in cur:
+                return
+            cur = cur[key]
+        if isinstance(cur, (int, float)):
+            emit(lines, name, help_text, metric_type, cur, parts)
+
+
+    def collect_rabbitmq_overview(lines):
+        parts = {"dependency": "rabbitmq"}
+        try:
+            data = rabbitmq_overview()
+            emit(lines, "dd_gcs_rabbitmq_management_up", "RabbitMQ management overview scrape success.", "gauge", 1, parts)
+        except Exception as exc:
+            emit(lines, "dd_gcs_rabbitmq_management_up", "RabbitMQ management overview scrape success.", "gauge", 0, parts)
+            emit(lines, "dd_gcs_rabbitmq_management_error_info", "RabbitMQ management scrape error type.", "gauge", 1, {**parts, "error": safe_reason(type(exc).__name__)})
+            return
+        for name in ["connections", "channels", "queues", "consumers", "exchanges"]:
+            emit_rabbit_value(lines, "dd_gcs_rabbitmq_object_total", "RabbitMQ object totals.", "gauge", data, ["object_totals", name], {**parts, "name": name})
+        for name in ["messages", "messages_ready", "messages_unacknowledged"]:
+            emit_rabbit_value(lines, "dd_gcs_rabbitmq_queue_message_total", "RabbitMQ queue message totals.", "gauge", data, ["queue_totals", name], {**parts, "name": name})
+        for name in ["publish", "deliver_get", "ack", "redeliver"]:
+            emit_rabbit_value(lines, "dd_gcs_rabbitmq_message_stat_total", "RabbitMQ message stat counters.", "counter", data, ["message_stats", name], {**parts, "name": name})
+
+
+    def collect_deployments(lines, ns):
+        data = api_get("/apis/apps/v1/namespaces/%s/deployments" % ns)
+        for dep in data.get("items", []):
+            name = dep.get("metadata", {}).get("name", "")
+            app = dep.get("metadata", {}).get("labels", {}).get("app", name)
+            if not is_watched_app(app) and name not in WATCH_APPS:
+                continue
+            status = dep.get("status", {})
+            spec = dep.get("spec", {})
+            base = {"namespace": ns, "deployment": name, "app": app}
+            for field, metric in [
+                ("replicas", "dd_k8s_deployment_desired_replicas"),
+                ("availableReplicas", "dd_k8s_deployment_available_replicas"),
+                ("readyReplicas", "dd_k8s_deployment_ready_replicas"),
+                ("updatedReplicas", "dd_k8s_deployment_updated_replicas"),
+                ("unavailableReplicas", "dd_k8s_deployment_unavailable_replicas"),
+            ]:
+                source = spec if field == "replicas" else status
+                emit(lines, metric, "Kubernetes deployment %s." % field, "gauge", source.get(field, 0), base)
+
+
+    def collect_pods(lines, ns):
+        data = api_get("/api/v1/namespaces/%s/pods" % ns)
+        watched = {}
+        for pod in data.get("items", []):
+            app = app_for_pod(pod)
+            if not is_watched_app(app):
+                continue
+            meta = pod.get("metadata", {})
+            status = pod.get("status", {})
+            pod_name = meta.get("name", "")
+            watched[pod_name] = app
+            base = {"namespace": ns, "pod": pod_name, "app": app}
+            phase = status.get("phase", "Unknown")
+            emit(lines, "dd_k8s_pod_phase", "Watched pod phase as a one-hot gauge.", "gauge", 1, {**base, "phase": phase})
+            for condition in status.get("conditions", []):
+                condition_type = condition.get("type", "Unknown")
+                condition_status = 1 if condition.get("status") == "True" else 0
+                emit(lines, "dd_k8s_pod_condition", "Watched pod condition status.", "gauge", condition_status, {**base, "condition": condition_type})
+            for container in pod.get("spec", {}).get("containers", []):
+                cname = container.get("name", "")
+                cbase = {**base, "container": cname}
+                resources = container.get("resources", {})
+                for key, metric in [("requests", "request"), ("limits", "limit")]:
+                    cpu = resources.get(key, {}).get("cpu")
+                    mem = resources.get(key, {}).get("memory")
+                    if cpu:
+                        emit(lines, "dd_k8s_pod_container_cpu_%s_cores" % metric, "Container CPU %s." % metric, "gauge", parse_cpu(cpu), cbase)
+                    if mem:
+                        emit(lines, "dd_k8s_pod_container_memory_%s_bytes" % metric, "Container memory %s." % metric, "gauge", parse_bytes(mem), cbase)
+            for cs in status.get("containerStatuses", []):
+                cname = cs.get("name", "")
+                cbase = {**base, "container": cname}
+                emit(lines, "dd_k8s_pod_container_ready", "Watched container ready state.", "gauge", 1 if cs.get("ready") else 0, cbase)
+                emit(lines, "dd_k8s_pod_container_restarts_total", "Watched container restart count.", "counter", cs.get("restartCount", 0), cbase)
+                state = cs.get("state", {})
+                waiting = state.get("waiting")
+                if waiting:
+                    emit(lines, "dd_k8s_pod_container_waiting", "Watched container waiting reason.", "gauge", 1, {**cbase, "reason": safe_reason(waiting.get("reason"))})
+                terminated = state.get("terminated")
+                if terminated:
+                    emit(lines, "dd_k8s_pod_container_terminated", "Watched container current termination reason.", "gauge", 1, {**cbase, "reason": safe_reason(terminated.get("reason")), "exit_code": terminated.get("exitCode", 0)})
+                last_terminated = cs.get("lastState", {}).get("terminated")
+                if last_terminated:
+                    parts = {**cbase, "reason": safe_reason(last_terminated.get("reason")), "exit_code": last_terminated.get("exitCode", 0)}
+                    emit(lines, "dd_k8s_pod_container_last_terminated", "Watched container last termination reason.", "gauge", 1, parts)
+                    emit(lines, "dd_k8s_pod_container_last_terminated_timestamp_seconds", "Watched container last termination finish time.", "gauge", parse_time(last_terminated.get("finishedAt")), parts)
+        return watched
+
+
+    def collect_pod_metrics(lines, ns, watched):
+        try:
+            data = api_get("/apis/metrics.k8s.io/v1beta1/namespaces/%s/pods" % ns)
+        except urllib.error.HTTPError:
+            return
+        for pod in data.get("items", []):
+            pod_name = pod.get("metadata", {}).get("name", "")
+            app = watched.get(pod_name)
+            if not app:
+                continue
+            for container in pod.get("containers", []):
+                usage = container.get("usage", {})
+                parts = {"namespace": ns, "pod": pod_name, "app": app, "container": container.get("name", "")}
+                emit(lines, "dd_k8s_pod_container_cpu_usage_cores", "Watched container CPU usage from metrics-server.", "gauge", parse_cpu(usage.get("cpu", "0")), parts)
+                emit(lines, "dd_k8s_pod_container_memory_usage_bytes", "Watched container memory usage from metrics-server.", "gauge", parse_bytes(usage.get("memory", "0")), parts)
+
+
+    def collect_events(lines, ns, watched):
+        data = api_get("/api/v1/namespaces/%s/events" % ns)
+        counts = {}
+        last_seen = {}
+        for event in data.get("items", []):
+            involved = event.get("involvedObject", {})
+            name = involved.get("name", "")
+            kind = involved.get("kind", "Unknown")
+            app = ""
+            if kind == "Pod":
+                app = watched.get(name, "")
+            if not app:
+                for candidate in WATCH_APPS:
+                    if name == candidate or name.startswith(candidate + "-"):
+                        app = candidate
+                        break
+            if not app:
+                continue
+            key = (ns, app, kind, event.get("type", "Normal"), safe_reason(event.get("reason")))
+            counts[key] = counts.get(key, 0) + int(event.get("count", 1))
+            stamp = parse_time(event.get("lastTimestamp") or event.get("eventTime") or event.get("firstTimestamp"))
+            last_seen[key] = max(last_seen.get(key, 0), stamp)
+        for key, value in counts.items():
+            ns_value, app, kind, event_type, reason = key
+            parts = {"namespace": ns_value, "app": app, "involved_kind": kind, "type": event_type, "reason": reason}
+            emit(lines, "dd_k8s_event_count", "Current watched Kubernetes event count by reason.", "gauge", value, parts)
+            emit(lines, "dd_k8s_event_last_timestamp_seconds", "Last watched Kubernetes event timestamp by reason.", "gauge", last_seen.get(key, 0), parts)
+
+
+    def collect_nodes(lines):
+        data = api_get("/api/v1/nodes")
+        metrics = {}
+        try:
+            metric_data = api_get("/apis/metrics.k8s.io/v1beta1/nodes")
+            for item in metric_data.get("items", []):
+                metrics[item.get("metadata", {}).get("name", "")] = item.get("usage", {})
+        except urllib.error.HTTPError:
+            metrics = {}
+        for node in data.get("items", []):
+            name = node.get("metadata", {}).get("name", "")
+            alloc = node.get("status", {}).get("allocatable", {})
+            capacity = node.get("status", {}).get("capacity", {})
+            parts = {"node": name}
+            emit(lines, "dd_k8s_node_allocatable_cpu_cores", "Node allocatable CPU cores.", "gauge", parse_cpu(alloc.get("cpu", "0")), parts)
+            emit(lines, "dd_k8s_node_allocatable_memory_bytes", "Node allocatable memory bytes.", "gauge", parse_bytes(alloc.get("memory", "0")), parts)
+            emit(lines, "dd_k8s_node_capacity_cpu_cores", "Node capacity CPU cores.", "gauge", parse_cpu(capacity.get("cpu", "0")), parts)
+            emit(lines, "dd_k8s_node_capacity_memory_bytes", "Node capacity memory bytes.", "gauge", parse_bytes(capacity.get("memory", "0")), parts)
+            usage = metrics.get(name, {})
+            if usage:
+                emit(lines, "dd_k8s_node_cpu_usage_cores", "Node CPU usage from metrics-server.", "gauge", parse_cpu(usage.get("cpu", "0")), parts)
+                emit(lines, "dd_k8s_node_memory_usage_bytes", "Node memory usage from metrics-server.", "gauge", parse_bytes(usage.get("memory", "0")), parts)
+
+
+    def collect():
+        emit.seen = set()
+        lines = []
+        emit(lines, "dd_k8s_resource_exporter_up", "Exporter scrape success.", "gauge", 1)
+        emit(lines, "dd_k8s_resource_exporter_scrape_timestamp_seconds", "Exporter scrape Unix timestamp.", "gauge", int(time.time()))
+        collect_dependency_tcp(lines)
+        collect_redis_info(lines)
+        collect_rabbitmq_overview(lines)
+        collect_nodes(lines)
+        for ns in WATCH_NAMESPACES:
+            collect_deployments(lines, ns)
+            watched = collect_pods(lines, ns)
+            collect_pod_metrics(lines, ns, watched)
+            collect_events(lines, ns, watched)
+        return "\n".join(lines) + "\n"
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok\n")
+                return
+            if self.path != "/metrics":
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                body = collect().encode("utf-8")
+                status = 200
+            except Exception as exc:
+                body = (
+                    "# HELP dd_k8s_resource_exporter_up Exporter scrape success.\n"
+                    "# TYPE dd_k8s_resource_exporter_up gauge\n"
+                    "dd_k8s_resource_exporter_up 0\n"
+                    "# HELP dd_k8s_resource_exporter_error_info Exporter scrape error.\n"
+                    "# TYPE dd_k8s_resource_exporter_error_info gauge\n"
+                    'dd_k8s_resource_exporter_error_info{error="%s"} 1\n'
+                    % prom_escape(exc)
+                ).encode("utf-8")
+                status = 500
+            self.send_response(status)
+            self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, fmt, *args):
+            return
+
+
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", "9102"))
+        ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()

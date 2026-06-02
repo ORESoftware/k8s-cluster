@@ -8,7 +8,13 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
   endpoints.
 - `dd-prometheus`: stores collector-exported metrics plus direct service
   scrapes for observability, messaging, and selected runtime endpoints.
+- `dd-k8s-resource-exporter`: exposes bounded Kubernetes deployment,
+  pod, container-resource, event, and node saturation metrics for the
+  GCS/dependency/load-test allowlist, plus GCS dependency TCP probes,
+  Redis INFO samples, and RabbitMQ management overview samples.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
+  Includes the `GCS WSS Load Collapse` dashboard for 10k/20k chat.vibe load
+  tests.
 - `dd-loki` + `dd-promtail`: collect Kubernetes container stdout/stderr logs
   from `/var/log/containers/*.log`.
 - `dd-tempo` and `dd-jaeger`: trace backends for collector-exported spans.
@@ -27,6 +33,15 @@ The runtimes are instrumented explicitly:
 - F# websocket server exposes its Rx live counters as Prometheus metrics.
 - Spark pipeline server, formal-methods server, and the GCS router are scraped
   directly by the collector from their `/metrics` endpoints.
+- GCS chat.vibe exports per-pod WSS/REST active connections, broker publish
+  rates/latencies, Kafka read errors, broker subscriptions, Go runtime state,
+  and Linux process CPU/RSS/fd gauges for load-collapse diagnosis.
+- The Kubernetes resource exporter adds the evidence the app cannot expose
+  after a pod dies: desired/available replicas, restart counts, last
+  termination reasons such as `OOMKilled`, metrics-server CPU/memory usage
+  versus container limits, warning events, node saturation, TCP reachability
+  to Kafka/RabbitMQ/MongoDB/Redis, selected Redis INFO values, and RabbitMQ
+  connection/channel/queue/message counters.
 - Auth, agent-worker broker, billing, formal-methods-service, and lock
   load-test trigger expose lightweight Prometheus health/work counters.
 - Rust MDP optimizer emits Prometheus metrics and accepts compact app/infra
@@ -65,6 +80,7 @@ Currently opted-in:
 - `dd-otel-collector` -> `dd-otel-collector-config`
 - `dd-prometheus`     -> `dd-prometheus-config`
 - `dd-promtail`       -> `dd-promtail-config`
+- `dd-k8s-resource-exporter` -> `dd-k8s-resource-exporter`
 
 ### Per-pod metrics + log labels
 
