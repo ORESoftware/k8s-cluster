@@ -2051,6 +2051,28 @@ jobs:
             done
           }
 
+          free_gcs_capacity() {
+            echo "=== free >=6Gi requested memory and CPU headroom for GCS loadtest ==="
+            targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest"
+            echo "scaling down comparison workloads: $targets"
+            kubectl -n default get deploy $targets -o wide || true
+            for d in $targets; do
+              kubectl -n default scale "deployment/$d" --replicas=0 || true
+            done
+            for d in $targets; do
+              for i in $(seq 1 90); do
+                pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+                if [ "${pods:-0}" -eq 0 ]; then
+                  echo "$d scaled down"
+                  break
+                fi
+                sleep 2
+              done
+            done
+            echo "=== post-free capacity workload state ==="
+            kubectl -n default get deploy $targets -o wide || true
+          }
+
           cleanup() {
             set +e
             echo "=== cleanup: scale GCS WSS loadtest deployments to 0 ==="
@@ -2105,6 +2127,7 @@ jobs:
           for app in $apps; do
             sync_app "$app"
           done
+          free_gcs_capacity
           disable_loadtest_autosync
 
           wait_available() {
