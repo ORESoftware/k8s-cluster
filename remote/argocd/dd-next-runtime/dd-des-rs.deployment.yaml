@@ -12,16 +12,16 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-des-rs
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-01-des-rs-ytdlp-tools-engine-6dd8b8f'
-        dd.dev/des-engine-revision: '6dd8b8f43d373c7d5a4e5ce3950b8fed8aa850bf'
+        dd.dev/telemetry-revision: '2026-06-02-des-rs-soccer-planner-engine-711588d'
+        dd.dev/des-engine-revision: '711588d434d149c9b70c434e98700534ada2909f'
       labels:
         app: dd-des-rs
     spec:
@@ -139,7 +139,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 6dd8b8f43d373c7d5a4e5ce3950b8fed8aa850bf
+              value: 711588d434d149c9b70c434e98700534ada2909f
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
