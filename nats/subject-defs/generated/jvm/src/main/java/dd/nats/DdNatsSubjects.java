@@ -109,6 +109,14 @@ public final class DdNatsSubjects {
     public static final String ORCHESTRATOR_WAKEUP_STREAM = "DD_REMOTE_CONTROL";
 
     /**
+     * Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.
+     * Service: shared
+     */
+    public static final String RUNTIME_CRITICAL_EVENTS_SUBJECT = "dd.remote.events.critical";
+    public static final String RUNTIME_CRITICAL_EVENTS_QUEUE_GROUP = "dd-runtime-critical-events";
+    public static final String RUNTIME_CRITICAL_EVENTS_STREAM = "DD_REMOTE_CRITICAL_EVENTS";
+
+    /**
      * Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.
      * Service: shared
      */
@@ -567,6 +575,12 @@ public final class DdNatsSubjects {
     }
 
     /**
+     * Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
+     * Service: shared
+     */
+    public static final String CRITICAL_EVENTS_LOGGER_QUEUE_GROUP = "dd-runtime-critical-events";
+
+    /**
      * Shared queue group used by lambda-runner replicas.
      * Service: dd-gleam-lambda-runner
      */
@@ -597,6 +611,16 @@ public final class DdNatsSubjects {
     public static final String DD_REMOTE_CONTROL_STREAM_RETENTION = "limits";
     public static final String DD_REMOTE_CONTROL_STREAM_STORAGE = "file";
     public static final String DD_REMOTE_CONTROL_STREAM_ACK = "explicit";
+
+    /**
+     * Durable file-backed stream for alert-worthy runtime failures. Consumers log and alert from this stream; payloads must stay compact and redacted.
+     * Service: shared
+     */
+    public static final String DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME = "DD_REMOTE_CRITICAL_EVENTS";
+    public static final List<String> DD_REMOTE_CRITICAL_EVENTS_STREAM_SUBJECTS = List.of("dd.remote.events.critical");
+    public static final String DD_REMOTE_CRITICAL_EVENTS_STREAM_RETENTION = "limits";
+    public static final String DD_REMOTE_CRITICAL_EVENTS_STREAM_STORAGE = "file";
+    public static final String DD_REMOTE_CRITICAL_EVENTS_STREAM_ACK = "explicit";
 
     /**
      * Cron-initiated jobs.
