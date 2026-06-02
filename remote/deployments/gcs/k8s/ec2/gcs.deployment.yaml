@@ -133,6 +133,8 @@ spec:
               value: '2621440000'
             - name: GCS_WS_SHED_GOROUTINES
               value: '120000'
+            - name: GCS_WS_SHED_MESSAGE_LATENCY
+              value: '2s'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
