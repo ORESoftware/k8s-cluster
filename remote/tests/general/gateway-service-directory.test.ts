@@ -476,7 +476,7 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(gateway, /location = \/cron[\s\S]*return 302 \/cron\//);
   assert.match(gateway, /location\s+\/cron\//);
   assert.match(gateway, /location @auth_required/);
-  assert.doesNotMatch(gateway, /requiredHeader":"Auth: all-dogs-go-to-heaven"/);
+  assert.doesNotMatch(gateway, /requiredHeader":"Auth: [^"]+"/);
   assert.match(gateway, /"errMessage":"missing required dd header"/);
   assert.match(gateway, /errMessage":"missing required dd header"/);
   assert.doesNotMatch(gateway, /requiredHeader/);

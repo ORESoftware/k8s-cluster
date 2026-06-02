@@ -23,6 +23,9 @@
     ml_features_subject/0,
     orchestrator_wakeup_subject/0,
     orchestrator_wakeup_stream/0,
+    runtime_critical_events_subject/0,
+    runtime_critical_events_queue_group/0,
+    runtime_critical_events_stream/0,
     runtime_events_subject/0,
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
@@ -88,6 +91,7 @@
     parse_thread_tasks_subject/1,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    critical_events_logger_queue_group/0,
     lambda_runner_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
@@ -100,6 +104,11 @@
     dd_remote_control_stream_retention/0,
     dd_remote_control_stream_storage/0,
     dd_remote_control_stream_ack/0,
+    dd_remote_critical_events_stream_name/0,
+    dd_remote_critical_events_stream_subjects/0,
+    dd_remote_critical_events_stream_retention/0,
+    dd_remote_critical_events_stream_storage/0,
+    dd_remote_critical_events_stream_ack/0,
     dd_remote_cron_stream_name/0,
     dd_remote_cron_stream_subjects/0,
     dd_remote_cron_stream_retention/0,
@@ -181,6 +190,12 @@ ml_features_subject() -> <<"dd.remote.ml.features"/utf8>>.
 %% Service: dd-remote-rest-api
 orchestrator_wakeup_subject() -> <<"dd.remote.orchestrator.wakeup"/utf8>>.
 orchestrator_wakeup_stream() -> <<"DD_REMOTE_CONTROL"/utf8>>.
+
+%% Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.
+%% Service: shared
+runtime_critical_events_subject() -> <<"dd.remote.events.critical"/utf8>>.
+runtime_critical_events_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
+runtime_critical_events_stream() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 
 %% Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.
 %% Service: shared
@@ -556,6 +571,10 @@ parse_thread_tasks_subject(Subject) ->
             end
     end.
 
+%% Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
+%% Service: shared
+critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
+
 %% Shared queue group used by lambda-runner replicas.
 %% Service: dd-gleam-lambda-runner
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
@@ -581,6 +600,15 @@ dd_remote_control_stream_subjects() ->
 dd_remote_control_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_control_stream_storage() -> <<"file"/utf8>>.
 dd_remote_control_stream_ack() -> <<"explicit"/utf8>>.
+
+%% Durable file-backed stream for alert-worthy runtime failures. Consumers log and alert from this stream; payloads must stay compact and redacted.
+%% Service: shared
+dd_remote_critical_events_stream_name() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
+dd_remote_critical_events_stream_subjects() ->
+    [<<"dd.remote.events.critical"/utf8>>].
+dd_remote_critical_events_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_critical_events_stream_storage() -> <<"file"/utf8>>.
+dd_remote_critical_events_stream_ack() -> <<"explicit"/utf8>>.
 
 %% Cron-initiated jobs.
 %% Service: dd-remote-rest-api

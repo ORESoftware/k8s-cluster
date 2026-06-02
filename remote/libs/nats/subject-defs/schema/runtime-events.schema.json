@@ -16,6 +16,15 @@
         "direction": "both"
       },
       {
+        "name": "RuntimeCriticalEvents",
+        "description": "Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.",
+        "kind": "static",
+        "subject": "dd.remote.events.critical",
+        "direction": "both",
+        "queueGroup": "dd-runtime-critical-events",
+        "stream": "DD_REMOTE_CRITICAL_EVENTS"
+      },
+      {
         "name": "WebsocketEvents",
         "description": "WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.",
         "kind": "static",
@@ -28,6 +37,23 @@
         "kind": "static",
         "subject": "dd.remote.git-repos.changes",
         "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "CriticalEventsLoggerQueueGroup",
+        "value": "dd-runtime-critical-events",
+        "description": "Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out."
+      }
+    ],
+    "streams": [
+      {
+        "name": "DD_REMOTE_CRITICAL_EVENTS",
+        "description": "Durable file-backed stream for alert-worthy runtime failures. Consumers log and alert from this stream; payloads must stay compact and redacted.",
+        "subjects": ["dd.remote.events.critical"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
       }
     ]
   }

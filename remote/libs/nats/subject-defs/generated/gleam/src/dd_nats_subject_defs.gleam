@@ -70,6 +70,12 @@ pub const ml_features_subject = "dd.remote.ml.features"
 pub const orchestrator_wakeup_subject = "dd.remote.orchestrator.wakeup"
 pub const orchestrator_wakeup_stream = "DD_REMOTE_CONTROL"
 
+/// Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.
+/// Service: shared
+pub const runtime_critical_events_subject = "dd.remote.events.critical"
+pub const runtime_critical_events_queue_group = "dd-runtime-critical-events"
+pub const runtime_critical_events_stream = "DD_REMOTE_CRITICAL_EVENTS"
+
 /// Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.
 /// Service: shared
 pub const runtime_events_subject = "dd.remote.events"
@@ -591,6 +597,10 @@ pub fn parse_thread_tasks_subject(subject: String) -> Option(ThreadTasksSubjectP
   }
 }
 
+/// Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
+/// Service: shared
+pub const critical_events_logger_queue_group = "dd-runtime-critical-events"
+
 /// Shared queue group used by lambda-runner replicas.
 /// Service: dd-gleam-lambda-runner
 pub const lambda_runner_queue_group = "dd-gleam-lambda-runner"
@@ -618,6 +628,16 @@ pub fn dd_remote_control_stream_subjects() -> List(String) {
 pub const dd_remote_control_stream_retention = "limits"
 pub const dd_remote_control_stream_storage = "file"
 pub const dd_remote_control_stream_ack = "explicit"
+
+/// Durable file-backed stream for alert-worthy runtime failures. Consumers log and alert from this stream; payloads must stay compact and redacted.
+/// Service: shared
+pub const dd_remote_critical_events_stream_name = "DD_REMOTE_CRITICAL_EVENTS"
+pub fn dd_remote_critical_events_stream_subjects() -> List(String) {
+  ["dd.remote.events.critical"]
+}
+pub const dd_remote_critical_events_stream_retention = "limits"
+pub const dd_remote_critical_events_stream_storage = "file"
+pub const dd_remote_critical_events_stream_ack = "explicit"
 
 /// Cron-initiated jobs.
 /// Service: dd-remote-rest-api

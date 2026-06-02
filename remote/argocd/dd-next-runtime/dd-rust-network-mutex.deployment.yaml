@@ -75,9 +75,7 @@ spec:
                   optional: true
             # `LMX_ADMIN_TOKEN` gates `/admin/otel` (and future `/admin/log`,
             # `/admin/tcp`) on the broker's HTTP listener. Without this set
-            # the broker falls back to the literal default
-            # `all-dogs-go-to-heaven` baked in at
-            # `remote/submodules/rust-network-mutex-rs/src/server.rs:562`,
+            # the broker falls back to its source-level literal default,
             # which is acceptable for the in-cluster ServiceIP traffic but
             # not for anything reachable through the public gateway. Sourced
             # from its own `dd-lmx-admin-token` secret so the admin-control

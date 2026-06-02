@@ -66,6 +66,20 @@ data:
               container:
               app: deployment
               deployment:
+          # First-party services may emit one JSON object per line using the
+          # shared dd.log.v1 envelope from docs/observability-stdio-contract.md.
+          # Parse it opportunistically; ordinary text logs remain untouched.
+          - json:
+              expressions:
+                dd_log_schema: schema
+                dd_log_severity: severity_text
+                dd_log_service: resource_service_name
+          # Keep labels low-cardinality. Request ids, task ids, trace ids,
+          # messages, paths, and error details must stay as log fields.
+          - labels:
+              log_schema: dd_log_schema
+              severity: dd_log_severity
+              log_service: dd_log_service
           - match:
               selector: '{deployment=~"dd-billing-server|dd-web-scraper|dd-browser-test-server|dd-selenium-server|dd-browser-job-runner"}'
               stages:

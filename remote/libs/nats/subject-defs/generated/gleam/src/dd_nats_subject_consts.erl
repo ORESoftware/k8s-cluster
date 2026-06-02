@@ -30,6 +30,9 @@
     ml_features_subject/0,
     orchestrator_wakeup_subject/0,
     orchestrator_wakeup_stream/0,
+    runtime_critical_events_subject/0,
+    runtime_critical_events_queue_group/0,
+    runtime_critical_events_stream/0,
     runtime_events_subject/0,
     telemetry_mdp_subject/0,
     telemetry_raw_subject/0,
@@ -71,10 +74,12 @@
     thread_tasks_wildcard/0,
     thread_tasks_queue_group/0,
     thread_tasks_stream/0,
+    critical_events_logger_queue_group/0,
     lambda_runner_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
     dd_remote_control_stream_name/0,
+    dd_remote_critical_events_stream_name/0,
     dd_remote_cron_stream_name/0,
     dd_remote_events_stream_name/0,
     dd_remote_tasks_stream_name/0
@@ -100,6 +105,9 @@ ml_dead_letter_subject() -> <<"dd.remote.ml.deadletter"/utf8>>.
 ml_features_subject() -> <<"dd.remote.ml.features"/utf8>>.
 orchestrator_wakeup_subject() -> <<"dd.remote.orchestrator.wakeup"/utf8>>.
 orchestrator_wakeup_stream() -> <<"DD_REMOTE_CONTROL"/utf8>>.
+runtime_critical_events_subject() -> <<"dd.remote.events.critical"/utf8>>.
+runtime_critical_events_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
+runtime_critical_events_stream() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 runtime_events_subject() -> <<"dd.remote.events"/utf8>>.
 telemetry_mdp_subject() -> <<"dd.remote.telemetry.mdp"/utf8>>.
 telemetry_raw_subject() -> <<"dd.remote.telemetry.raw"/utf8>>.
@@ -141,10 +149,12 @@ thread_tasks_pattern() -> <<"dd.remote.thread.{thread_id}.tasks"/utf8>>.
 thread_tasks_wildcard() -> <<"dd.remote.thread.*.tasks"/utf8>>.
 thread_tasks_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 thread_tasks_stream() -> <<"DD_REMOTE_TASKS"/utf8>>.
+critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
 cdc_stream_name() -> <<"CDC"/utf8>>.
 dd_remote_control_stream_name() -> <<"DD_REMOTE_CONTROL"/utf8>>.
+dd_remote_critical_events_stream_name() -> <<"DD_REMOTE_CRITICAL_EVENTS"/utf8>>.
 dd_remote_cron_stream_name() -> <<"DD_REMOTE_CRON"/utf8>>.
 dd_remote_events_stream_name() -> <<"DD_REMOTE_EVENTS"/utf8>>.
 dd_remote_tasks_stream_name() -> <<"DD_REMOTE_TASKS"/utf8>>.

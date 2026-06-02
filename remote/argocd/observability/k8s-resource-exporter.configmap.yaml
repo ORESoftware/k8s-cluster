@@ -25,12 +25,33 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    WATCH_NAMESPACES = [v.strip() for v in os.environ.get("WATCH_NAMESPACES", "default").split(",") if v.strip()]
-    WATCH_APPS = set(v.strip() for v in os.environ.get(
-        "WATCH_APPS",
-        "gcs,gcs-router,gcs-kafka,gcs-rabbitmq,gcs-mongodb,dd-redis-cache,"
-        "dd-ws-loadtest-rs-gcs,dd-nodejs-ws-loadtest-gcs,dd-gleamlang-ws-loadtest-gcs",
-    ).split(",") if v.strip())
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,default,headlamp,messaging,observability,presence,vpn"
+    DEFAULT_WATCH_APPS = (
+        "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-bastion,"
+        "dd-billing-server,dd-browser-job-runner,dd-browser-test-server,dd-build-server,"
+        "dd-container-pool,dd-contract-service,dd-dart-server,dd-des-rs,dd-des-simulator,"
+        "dd-dev-server-api,dd-formal-methods-server,dd-formal-methods-service,"
+        "dd-fsharp-ws-server,dd-gleam-lambda-runner,dd-gleam-mcp-server,"
+        "dd-gleamlang-server,dd-gleamlang-ws-loadtest,"
+        "dd-gleamlang-ws-loadtest-akkaws-akkastreams,"
+        "dd-gleamlang-ws-loadtest-akkaws-asyncjava,dd-gleamlang-ws-loadtest-dart,"
+        "dd-gleamlang-ws-loadtest-gcs,dd-gleamlang-ws-server,dd-go-wss-server,"
+        "dd-grafana,dd-idle-reaper,dd-jaeger,dd-k8s-resource-exporter,dd-live-mutex,"
+        "dd-live-mutex-submodule,dd-lock-loadtest-gleam,dd-lock-loadtest-rs,"
+        "dd-lock-loadtest-trigger,dd-loki,dd-mdp-optimizer,dd-nats,"
+        "dd-nodejs-ws-loadtest-gcs,dd-otel-collector,dd-prometheus,dd-promtail,"
+        "dd-redis-cache,dd-remote-auth,dd-remote-gateway,dd-remote-queue-consumer,"
+        "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,"
+        "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-spark-pipeline-server,"
+        "dd-tempo,dd-thread-fleet-exporter,dd-thread-operator,dd-trading-server,dd-vpn,"
+        "dd-web-scraper,dd-webrtc-signaling,dd-ws-loadtest-rs,"
+        "dd-ws-loadtest-rs-akkaws-akkastreams,dd-ws-loadtest-rs-akkaws-asyncjava,"
+        "dd-ws-loadtest-rs-dart,dd-ws-loadtest-rs-fsharp-rx,dd-ws-loadtest-rs-gcs,"
+        "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"
+        "gcs-mongodb,gcs-rabbitmq,gcs-router,headlamp,presence,reloader"
+    )
+    WATCH_NAMESPACES = [v.strip() for v in os.environ.get("WATCH_NAMESPACES", DEFAULT_WATCH_NAMESPACES).split(",") if v.strip()]
+    WATCH_APPS = set(v.strip() for v in os.environ.get("WATCH_APPS", DEFAULT_WATCH_APPS).split(",") if v.strip())
     DEPENDENCY_TCP_TARGETS = [v.strip() for v in os.environ.get(
         "DEPENDENCY_TCP_TARGETS",
         "kafka=gcs-kafka.default.svc.cluster.local:9092,"
@@ -270,25 +291,88 @@ data:
             emit_rabbit_value(lines, "dd_gcs_rabbitmq_message_stat_total", "RabbitMQ message stat counters.", "counter", data, ["message_stats", name], {**parts, "name": name})
 
 
+    def is_watched_workload(name, app):
+        return is_watched_app(app) or name in WATCH_APPS
+
+
+    def emit_workload_replicas(lines, ns, kind, name, app, values):
+        base = {"namespace": ns, "kind": kind, "workload": name, "app": app}
+        for state, value in values.items():
+            emit(
+                lines,
+                "dd_k8s_workload_%s_replicas" % state,
+                "Kubernetes workload %s replicas." % state,
+                "gauge",
+                value,
+                base,
+            )
+
+
     def collect_deployments(lines, ns):
         data = api_get("/apis/apps/v1/namespaces/%s/deployments" % ns)
         for dep in data.get("items", []):
             name = dep.get("metadata", {}).get("name", "")
             app = dep.get("metadata", {}).get("labels", {}).get("app", name)
-            if not is_watched_app(app) and name not in WATCH_APPS:
+            if not is_watched_workload(name, app):
                 continue
             status = dep.get("status", {})
             spec = dep.get("spec", {})
-            base = {"namespace": ns, "deployment": name, "app": app}
-            for field, metric in [
-                ("replicas", "dd_k8s_deployment_desired_replicas"),
-                ("availableReplicas", "dd_k8s_deployment_available_replicas"),
-                ("readyReplicas", "dd_k8s_deployment_ready_replicas"),
-                ("updatedReplicas", "dd_k8s_deployment_updated_replicas"),
-                ("unavailableReplicas", "dd_k8s_deployment_unavailable_replicas"),
+            values = {
+                "desired": spec.get("replicas", 0),
+                "available": status.get("availableReplicas", 0),
+                "ready": status.get("readyReplicas", 0),
+                "updated": status.get("updatedReplicas", 0),
+                "unavailable": status.get("unavailableReplicas", 0),
+            }
+            emit_workload_replicas(lines, ns, "Deployment", name, app, values)
+            legacy = {"namespace": ns, "deployment": name, "app": app}
+            for state, metric in [
+                ("desired", "dd_k8s_deployment_desired_replicas"),
+                ("available", "dd_k8s_deployment_available_replicas"),
+                ("ready", "dd_k8s_deployment_ready_replicas"),
+                ("updated", "dd_k8s_deployment_updated_replicas"),
+                ("unavailable", "dd_k8s_deployment_unavailable_replicas"),
             ]:
-                source = spec if field == "replicas" else status
-                emit(lines, metric, "Kubernetes deployment %s." % field, "gauge", source.get(field, 0), base)
+                emit(lines, metric, "Kubernetes deployment %s replicas." % state, "gauge", values[state], legacy)
+
+
+    def collect_statefulsets(lines, ns):
+        data = api_get("/apis/apps/v1/namespaces/%s/statefulsets" % ns)
+        for sts in data.get("items", []):
+            name = sts.get("metadata", {}).get("name", "")
+            app = sts.get("metadata", {}).get("labels", {}).get("app", name)
+            if not is_watched_workload(name, app):
+                continue
+            status = sts.get("status", {})
+            spec = sts.get("spec", {})
+            desired = spec.get("replicas", 0)
+            available = status.get("availableReplicas", status.get("readyReplicas", 0))
+            values = {
+                "desired": desired,
+                "available": available,
+                "ready": status.get("readyReplicas", 0),
+                "updated": status.get("updatedReplicas", 0),
+                "unavailable": max(desired - available, 0),
+            }
+            emit_workload_replicas(lines, ns, "StatefulSet", name, app, values)
+
+
+    def collect_daemonsets(lines, ns):
+        data = api_get("/apis/apps/v1/namespaces/%s/daemonsets" % ns)
+        for ds in data.get("items", []):
+            name = ds.get("metadata", {}).get("name", "")
+            app = ds.get("metadata", {}).get("labels", {}).get("app", name)
+            if not is_watched_workload(name, app):
+                continue
+            status = ds.get("status", {})
+            values = {
+                "desired": status.get("desiredNumberScheduled", 0),
+                "available": status.get("numberAvailable", 0),
+                "ready": status.get("numberReady", 0),
+                "updated": status.get("updatedNumberScheduled", 0),
+                "unavailable": status.get("numberUnavailable", 0),
+            }
+            emit_workload_replicas(lines, ns, "DaemonSet", name, app, values)
 
 
     def collect_pods(lines, ns):
@@ -421,6 +505,8 @@ data:
         collect_nodes(lines)
         for ns in WATCH_NAMESPACES:
             collect_deployments(lines, ns)
+            collect_statefulsets(lines, ns)
+            collect_daemonsets(lines, ns)
             watched = collect_pods(lines, ns)
             collect_pod_metrics(lines, ns, watched)
             collect_events(lines, ns, watched)

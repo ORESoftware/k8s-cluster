@@ -24,8 +24,8 @@ Required AWS secret names:
 
 `dd/remote-dev/lmx-admin-token` must include `LMX_ADMIN_TOKEN`. Both broker
 deployments (`dd-rust-network-mutex` and `dd-live-mutex`) consume it through
-explicit `secretKeyRef`s so `/admin/*` endpoints stop falling back to the
-literal default `all-dogs-go-to-heaven` baked into the broker source. Rotate
+explicit `secretKeyRef`s so `/admin/*` endpoints stop falling back to a
+literal default baked into the broker source. Rotate
 this value separately from `dd-agent-secrets` so admin-token changes do not
 force the wider Node coding-agent fleet to restart.
 

@@ -64,6 +64,7 @@ import {
   releaseUserChannel,
 } from './realtime.js';
 import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
+import { installProcessLogBridge } from './stdio-log.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
 import { RUNTIME_EVENTS_SUBJECT } from './nats-subject-defs.js';
@@ -268,6 +269,12 @@ const config = {
   taskGcAfterMs: 60 * 60 * 1000, // 1 hour
   taskGcIntervalMs: 5 * 60 * 1000, // 5 min sweep
 };
+
+const uninstallProcessLogBridge = installProcessLogBridge({
+  serviceName: process.env.OTEL_SERVICE_NAME ?? 'dd-dev-server-api',
+  serviceNamespace: 'remote-dev',
+  scopeName: 'dd-dev-server',
+});
 
 // ---------- Event types ----------
 
@@ -5140,6 +5147,7 @@ async function main(): Promise<void> {
 
 function shutdown(signal: string): void {
   fastify.log.info(`${signal} received — tearing down EventBus + channels`);
+  uninstallProcessLogBridge();
   workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();
@@ -5182,6 +5190,7 @@ process.on('unhandledRejection', (reason) => {
 
 main().catch((err) => {
   logCrash('uncaughtException', err);
+  uninstallProcessLogBridge();
   workerFanout.destroy();
   natsPublisher.destroy();
   eventBus.destroy();

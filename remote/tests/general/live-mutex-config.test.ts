@@ -43,9 +43,7 @@ test('live-mutex broker is deployed as a singleton cluster-local TCP service', a
   assert.match(deployment, /name:\s*LMX_HTTP_PORT[\s\S]*value:\s*'?6971'?/);
   assert.match(deployment, /name:\s*http[\s\S]*containerPort:\s*6971/);
   // /admin/* on both brokers must come from the dedicated lmx-admin-token
-  // secret, NOT the literal default `all-dogs-go-to-heaven` baked in at
-  // remote/submodules/live-mutex/src/http-server.ts and
-  // remote/submodules/rust-network-mutex-rs/src/server.rs.
+  // secret, not from a literal default baked into either lock broker.
   assert.match(
     deployment,
     /name:\s*LMX_ADMIN_TOKEN[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-lmx-admin-token[\s\S]*key:\s*LMX_ADMIN_TOKEN/,

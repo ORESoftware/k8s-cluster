@@ -23,6 +23,7 @@ test('typescript output exposes constants for known static subjects', async () =
   );
   for (const literal of [
     'export const RUNTIME_EVENTS_SUBJECT = "dd.remote.events";',
+    'export const RUNTIME_CRITICAL_EVENTS_SUBJECT = "dd.remote.events.critical";',
     'export const ORCHESTRATOR_WAKEUP_SUBJECT = "dd.remote.orchestrator.wakeup";',
     'export const CRON_PROMPTS_SUBJECT = "dd.remote.cron.prompts";',
     'export const TRADING_SIGNALS_SUBJECT = "dd.remote.trading.signals";',
@@ -86,6 +87,8 @@ test('typescript output exposes JetStream stream definitions', async () => {
     'export const DD_REMOTE_TASKS_STREAM_NAME = "DD_REMOTE_TASKS";',
     'export const DD_REMOTE_TASKS_STREAM_SUBJECTS: readonly string[] = ["dd.remote.thread.*.tasks"];',
     'export const DD_REMOTE_CONTROL_STREAM_NAME = "DD_REMOTE_CONTROL";',
+    'export const DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME = "DD_REMOTE_CRITICAL_EVENTS";',
+    'export const DD_REMOTE_CRITICAL_EVENTS_STREAM_SUBJECTS: readonly string[] = ["dd.remote.events.critical"];',
     'export const DD_REMOTE_EVENTS_STREAM_NAME = "DD_REMOTE_EVENTS";',
     'export const DD_REMOTE_CRON_STREAM_NAME = "DD_REMOTE_CRON";',
     'export const CDC_STREAM_NAME = "CDC";',
@@ -118,6 +121,7 @@ test('rust output exposes snake_case formatters + parsers + constants', async ()
   }
   for (const c of [
     'pub const RUNTIME_EVENTS_SUBJECT: &str = "dd.remote.events";',
+    'pub const RUNTIME_CRITICAL_EVENTS_SUBJECT: &str = "dd.remote.events.critical";',
     'pub const ORCHESTRATOR_WAKEUP_SUBJECT: &str = "dd.remote.orchestrator.wakeup";',
     'pub const THREAD_TASKS_WILDCARD: &str = "dd.remote.thread.*.tasks";',
     'pub const THREAD_TASKS_QUEUE_GROUP: &str = "dd-remote-thread-preparer";',

@@ -150,6 +150,7 @@ The same names appear in every language; only the casing convention changes.
 ```ts
 import {
   DD_REMOTE_EVENTS_SUBJECT,                 // static enum-style constant
+  RUNTIME_CRITICAL_EVENTS_SUBJECT,          // alert-worthy runtime failures
   threadTasksSubject,                       // formatter for publish
   parseThreadTasksSubject,                  // parser for subscriber
   THREAD_TASKS_WILDCARD,                    // subscribe target
@@ -174,12 +175,16 @@ dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
 
 ```rust
 use dd_nats_subject_defs::{
-    DD_REMOTE_EVENTS_SUBJECT,
+    DD_REMOTE_EVENTS_SUBJECT, RUNTIME_CRITICAL_EVENTS_SUBJECT,
+    DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME,
     thread_tasks_subject, parse_thread_tasks_subject,
     THREAD_TASKS_WILDCARD, THREAD_TASKS_QUEUE_GROUP,
     DD_REMOTE_TASKS_STREAM_NAME,
 };
 ```
+
+`RUNTIME_CRITICAL_EVENTS_SUBJECT` is backed by `DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME`; the
+queue-consumer deployment uses that durable stream to log/alert on compact critical runtime events.
 
 ### Python
 

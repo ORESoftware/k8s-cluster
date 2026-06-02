@@ -69,6 +69,12 @@ const String mlFeaturesSubject = "dd.remote.ml.features";
 const String orchestratorWakeupSubject = "dd.remote.orchestrator.wakeup";
 const String orchestratorWakeupStream = "DD_REMOTE_CONTROL";
 
+/// Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.
+/// Service: shared
+const String runtimeCriticalEventsSubject = "dd.remote.events.critical";
+const String runtimeCriticalEventsQueueGroup = "dd-runtime-critical-events";
+const String runtimeCriticalEventsStream = "DD_REMOTE_CRITICAL_EVENTS";
+
 /// Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.
 /// Service: shared
 const String runtimeEventsSubject = "dd.remote.events";
@@ -476,6 +482,10 @@ ThreadTasksSubjectParts? parseThreadTasksSubject(String subject) {
 
 // ---------- Standalone queue groups ----------
 
+/// Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out.
+/// Service: shared
+const String criticalEventsLoggerQueueGroup = "dd-runtime-critical-events";
+
 /// Shared queue group used by lambda-runner replicas.
 /// Service: dd-gleam-lambda-runner
 const String lambdaRunnerQueueGroup = "dd-gleam-lambda-runner";
@@ -501,6 +511,14 @@ const List<String> ddRemoteControlStreamSubjects = ["dd.remote.thread.*.control"
 const String ddRemoteControlStreamRetention = "limits";
 const String ddRemoteControlStreamStorage = "file";
 const String ddRemoteControlStreamAck = "explicit";
+
+/// Durable file-backed stream for alert-worthy runtime failures. Consumers log and alert from this stream; payloads must stay compact and redacted.
+/// Service: shared
+const String ddRemoteCriticalEventsStreamName = "DD_REMOTE_CRITICAL_EVENTS";
+const List<String> ddRemoteCriticalEventsStreamSubjects = ["dd.remote.events.critical"];
+const String ddRemoteCriticalEventsStreamRetention = "limits";
+const String ddRemoteCriticalEventsStreamStorage = "file";
+const String ddRemoteCriticalEventsStreamAck = "explicit";
 
 /// Cron-initiated jobs.
 /// Service: dd-remote-rest-api

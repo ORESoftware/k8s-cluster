@@ -34,6 +34,13 @@ path. The fallback is enabled by default through `QUEUE_CONSUMER_FALLBACK_REST_D
 | `NATS_TASK_STREAM` | `DD_REMOTE_TASKS` | JetStream stream created/read by the producer and consumer. |
 | `NATS_TASK_CONSUMER` | `dd-remote-thread-preparer` | Durable pull consumer watched by KEDA. |
 | `NATS_EVENT_SUBJECT` | `dd.remote.events` | Status-event subject bridged into telemetry and websocket fanout. The consumer also includes `threadId` in REST event ingest so the REST API can direct-fanout status over websocket if NATS event publishing is degraded. |
+| `NATS_CRITICAL_EVENT_SUBJECT` | `dd.remote.events.critical` | Redacted critical operational events for invalid task payloads, ack/NAK failures, dispatch failures, and receipt/idempotency failures. Each locally emitted critical event also writes a `dd.log.v1` JSONL line to stderr. |
+| `NATS_CRITICAL_EVENT_STREAM` | `DD_REMOTE_CRITICAL_EVENTS` | JetStream stream for durable critical runtime events. |
+| `NATS_CRITICAL_EVENT_CONSUMER` | `dd-runtime-critical-events` | Durable pull consumer used by the critical-event logger loop. |
+| `QUEUE_CONSUMER_CRITICAL_EVENT_LOGGER` | `true` | When true, the deployment also consumes `dd.remote.events.critical`, logs compact `dd.log.v1` stderr records, and acknowledges those critical events. |
+| `NATS_CRITICAL_EVENT_ACK_WAIT_SECONDS` | `60` | Redelivery window for unacked critical event messages. |
+| `NATS_CRITICAL_EVENT_MAX_ACK_PENDING` | `512` | Max in-flight unacked critical event messages. |
+| `NATS_CRITICAL_EVENT_MAX_DELIVER` | `5` | Max redeliveries before JetStream stops retrying a poison critical event. |
 | `NATS_TASK_ACK_WAIT_SECONDS` | `120` | Redelivery window for unacked messages. |
 | `NATS_TASK_MAX_ACK_PENDING` | `256` | Max in-flight unacked messages on the durable consumer. |
 | `NATS_TASK_MAX_DELIVER` | `5` | Max redeliveries before JetStream stops retrying a poison message. |

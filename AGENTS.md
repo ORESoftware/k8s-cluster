@@ -35,6 +35,25 @@ read-only by default; do not add write-capable AWS or Kubernetes tools without a
 short-lived human grant, auth, and audit design. Treat the EC2 Kubernetes manifests and live
 `dd_cluster` output as the runtime source of truth.
 
+## Observability Contract
+
+Prefer collection at the process and platform boundaries over runtime-wide instrumentation. Do not
+monkey-patch Node.js, Erlang, Rust, Java, framework internals, standard streams, module loaders,
+HTTP clients, fetch, timers, or logging APIs for OpenTelemetry or any other telemetry path.
+
+Container stdout/stderr is a first-class telemetry source. Services should emit either ordinary text
+logs or the shared structured JSON envelope documented in
+`docs/observability-stdio-contract.md`; Promtail/Loki collect those streams from Kubernetes CRI logs.
+Use explicit runtime logging/event APIs instead of patching: Node may bridge explicit
+`process.emit("info", payload)` / `process.emit("warning", payload)` producers with
+`process.on(...)`; Rust should prefer `tracing`/`tracing_subscriber`; Java/Scala should prefer
+Logback or Log4j appenders/config; Erlang/Gleam should use explicit `logger`/`io` calls or owned
+actors. OpenTelemetry spans and metrics are also explicit-only.
+
+For alert-worthy operational failures, prefer publishing compact, redacted events to the generated
+NATS subject `dd.remote.events.critical` (`NATS_CRITICAL_EVENT_SUBJECT`) in addition to writing the
+`dd.log.v1` stdout/stderr line. Keep routine lifecycle/status traffic on `dd.remote.events`.
+
 ## Command Safety
 
 The following commands are blacklisted for agents in this repo: `git checkout`, `git reset`,
@@ -85,5 +104,18 @@ preferred operator path is:
   kubeconfig retrieval.
 - Browser access to protected public gateway paths goes through `dd-remote-auth`; configure
   the optional TOTP seed there when a passphrase plus one-time code is required.
+- The legacy gateway auth header name is `Auth`; read its value from the operator secret or local
+  environment when a human grants it. Do not commit the literal value, print it in public docs, or
+  echo it into browser-visible pages.
 - Public gateway paths must stay authenticated; avoid exposing MCP or bastion routes as
   unauthenticated Internet services.
+
+## Local AWS Profiles
+
+For local operator work that needs permanent AWS credentials, use the named profile in the human's
+`~/.aws` files instead of copying key material into this checkout. The expected profile is
+`dd-codex`: verify it with `aws sts get-caller-identity --profile dd-codex`, or set
+`AWS_PROFILE=dd-codex` for commands that use the default AWS SDK/CLI credential chain. The profile
+data lives in `~/.aws/config` and `~/.aws/credentials`; treat those files as human-owned local
+state, not repo source. Never paste access keys, secret keys, session tokens, or derived kubeconfig
+secrets into Git, agent prompts, generated docs, or command output summaries.

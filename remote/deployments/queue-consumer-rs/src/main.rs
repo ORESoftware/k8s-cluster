@@ -8,14 +8,20 @@ use std::{
 };
 
 use dd_nats_subject_defs::{
-    DD_REMOTE_TASKS_STREAM_NAME, RUNTIME_EVENTS_SUBJECT, THREAD_PREPARER_QUEUE_GROUP,
-    THREAD_TASKS_WILDCARD,
+    DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME, DD_REMOTE_TASKS_STREAM_NAME,
+    RUNTIME_CRITICAL_EVENTS_QUEUE_GROUP, RUNTIME_CRITICAL_EVENTS_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+    THREAD_PREPARER_QUEUE_GROUP, THREAD_TASKS_WILDCARD,
 };
 use dd_shared_interfaces::AgentTaskQueueMessage;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 
 type QueueTaskMessage = AgentTaskQueueMessage;
+
+const SERVICE_NAME: &str = "dd-remote-queue-consumer";
+const SERVICE_NAMESPACE: &str = "remote-dev";
+const LOG_SCHEMA: &str = "dd.log.v1";
+const LOG_SCOPE: &str = "dd-remote-queue-consumer";
 
 fn env_value(key: &str, fallback: &str) -> String {
     env::var(key)
@@ -131,8 +137,125 @@ fn now_ms() -> u128 {
         .unwrap_or(0)
 }
 
+fn now_unix_nano() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos().min(u64::MAX as u128) as u64)
+        .unwrap_or(0)
+}
+
+fn severity_number(severity: &str) -> i32 {
+    match severity {
+        "FATAL" => 24,
+        "ERROR" => 17,
+        "WARN" => 13,
+        "INFO" => 9,
+        "DEBUG" => 5,
+        _ => 1,
+    }
+}
+
+fn structured_log_record(severity: &str, event_name: &str, body: &str, attributes: Value) -> Value {
+    json!({
+        "schema": LOG_SCHEMA,
+        "time_unix_nano": now_unix_nano().to_string(),
+        "severity_text": severity,
+        "severity_number": severity_number(severity),
+        "body": body,
+        "resource_service_name": SERVICE_NAME,
+        "resource_service_namespace": SERVICE_NAMESPACE,
+        "scope_name": LOG_SCOPE,
+        "event_name": event_name,
+        "attributes": attributes,
+    })
+}
+
+fn write_structured_log_to_stdout(severity: &str, event_name: &str, body: &str, attributes: Value) {
+    let record = structured_log_record(severity, event_name, body, attributes);
+    match serde_json::to_string(&record) {
+        Ok(line) => println!("{line}"),
+        Err(error) => println!(
+            "{{\"schema\":\"{LOG_SCHEMA}\",\"severity_text\":\"ERROR\",\"body\":\"structured log serialization failed\",\"resource_service_name\":\"{SERVICE_NAME}\",\"event_name\":\"structured-log-serialize-failed\",\"attributes\":{{\"error\":\"{error}\"}}}}"
+        ),
+    }
+}
+
+fn write_structured_log_to_stderr(severity: &str, event_name: &str, body: &str, attributes: Value) {
+    let record = structured_log_record(severity, event_name, body, attributes);
+    match serde_json::to_string(&record) {
+        Ok(line) => eprintln!("{line}"),
+        Err(error) => eprintln!(
+            "{{\"schema\":\"{LOG_SCHEMA}\",\"severity_text\":\"ERROR\",\"body\":\"structured log serialization failed\",\"resource_service_name\":\"{SERVICE_NAME}\",\"event_name\":\"structured-log-serialize-failed\",\"attributes\":{{\"error\":\"{error}\"}}}}"
+        ),
+    }
+}
+
+fn log_info(event_name: &str, body: &str, attributes: Value) {
+    write_structured_log_to_stdout("INFO", event_name, body, attributes);
+}
+
+fn log_warn(event_name: &str, body: &str, attributes: Value) {
+    write_structured_log_to_stderr("WARN", event_name, body, attributes);
+}
+
+fn log_error(event_name: &str, body: &str, attributes: Value) {
+    write_structured_log_to_stderr("ERROR", event_name, body, attributes);
+}
+
 fn nats_event_subject() -> String {
     env_value("NATS_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT)
+}
+
+fn critical_event_subject() -> String {
+    env_value(
+        "NATS_CRITICAL_EVENT_SUBJECT",
+        RUNTIME_CRITICAL_EVENTS_SUBJECT,
+    )
+}
+
+fn critical_event_stream_name() -> String {
+    env_value(
+        "NATS_CRITICAL_EVENT_STREAM",
+        DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME,
+    )
+}
+
+fn critical_event_consumer_name() -> String {
+    env_value(
+        "NATS_CRITICAL_EVENT_CONSUMER",
+        RUNTIME_CRITICAL_EVENTS_QUEUE_GROUP,
+    )
+}
+
+fn string_at<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
+    value.pointer(pointer).and_then(Value::as_str)
+}
+
+fn compact_critical_event_attributes(
+    subject: &str,
+    payload_bytes: usize,
+    payload: &Value,
+) -> Value {
+    let log = payload.get("log").unwrap_or(&Value::Null);
+    let log_attributes = log.get("attributes").unwrap_or(&Value::Null);
+    json!({
+        "criticalSubject": subject,
+        "payloadBytes": payload_bytes,
+        "upstreamSchema": string_at(payload, "/schema"),
+        "upstreamType": string_at(payload, "/type"),
+        "upstreamSource": string_at(payload, "/source")
+            .or_else(|| string_at(log, "/resource_service_name")),
+        "upstreamEventName": string_at(payload, "/eventName")
+            .or_else(|| string_at(log, "/event_name")),
+        "upstreamSeverity": string_at(payload, "/severity")
+            .or_else(|| string_at(log, "/severity_text")),
+        "threadId": string_at(log_attributes, "/threadId")
+            .or_else(|| string_at(log_attributes, "/dd.request.thread_id"))
+            .or_else(|| string_at(payload, "/threadId")),
+        "taskId": string_at(log_attributes, "/taskId")
+            .or_else(|| string_at(log_attributes, "/dd.request.task_id"))
+            .or_else(|| string_at(payload, "/taskId")),
+    })
 }
 
 fn task_message_id(task: &QueueTaskMessage, stage: &str) -> String {
@@ -215,6 +338,55 @@ async fn publish_queue_status_event(
     Ok(())
 }
 
+async fn publish_runtime_critical_event(
+    nats: &async_nats::Client,
+    critical_subject: &str,
+    event_name: &str,
+    body: &str,
+    attributes: Value,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let log = structured_log_record("ERROR", event_name, body, attributes);
+    let payload = json!({
+        "type": "runtime-critical-event",
+        "schema": "dd.runtime_critical_event.v1",
+        "source": SERVICE_NAME,
+        "eventName": event_name,
+        "severity": "ERROR",
+        "log": log,
+        "emittedAtMs": now_ms(),
+    });
+    nats.publish(
+        critical_subject.to_string(),
+        serde_json::to_vec(&payload)?.into(),
+    )
+    .await?;
+    nats.flush().await?;
+    Ok(())
+}
+
+async fn emit_runtime_critical_event(
+    nats: &async_nats::Client,
+    critical_subject: &str,
+    event_name: &str,
+    body: &str,
+    attributes: Value,
+) {
+    log_error(event_name, body, attributes.clone());
+    if let Err(error) =
+        publish_runtime_critical_event(nats, critical_subject, event_name, body, attributes).await
+    {
+        log_error(
+            "critical-event-publish-failed",
+            "Runtime critical event NATS publish failed.",
+            json!({
+                "criticalSubject": critical_subject,
+                "eventName": event_name,
+                "error": error.to_string(),
+            }),
+        );
+    }
+}
+
 async fn emit_queue_status_event(
     http: &reqwest::Client,
     nats: &async_nats::Client,
@@ -231,15 +403,27 @@ async fn emit_queue_status_event(
     if let Err(error) =
         persist_queue_status_event(http, rest_api_url, secret, task, seq, &event).await
     {
-        eprintln!(
-            "queue status event persist failed: thread={} task={} stage={stage} error={error}",
-            task.thread_id, task.task_id
+        log_warn(
+            "queue-status-event-persist-failed",
+            "Queue status event REST persist failed.",
+            json!({
+                "threadId": &task.thread_id,
+                "taskId": &task.task_id,
+                "stage": stage,
+                "error": error.to_string(),
+            }),
         );
     }
     if let Err(error) = publish_queue_status_event(nats, task, seq, stage, &event).await {
-        eprintln!(
-            "queue status event nats publish failed: thread={} task={} stage={stage} error={error}",
-            task.thread_id, task.task_id
+        log_warn(
+            "queue-status-event-nats-publish-failed",
+            "Queue status event NATS publish failed.",
+            json!({
+                "threadId": &task.thread_id,
+                "taskId": &task.task_id,
+                "stage": stage,
+                "error": error.to_string(),
+            }),
         );
     }
 }
@@ -416,6 +600,7 @@ async fn build_jetstream_consumer(
     stream_name: &str,
     subject: &str,
     consumer_name: &str,
+    retention: async_nats::jetstream::stream::RetentionPolicy,
     ack_wait: Duration,
     max_ack_pending: i64,
     max_deliver: i64,
@@ -425,7 +610,7 @@ async fn build_jetstream_consumer(
         .get_or_create_stream(async_nats::jetstream::stream::Config {
             name: stream_name.to_string(),
             subjects: vec![subject.to_string()],
-            retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+            retention,
             max_age: Duration::from_secs(60 * 60 * 24 * 14),
             max_message_size: 8 * 1024 * 1024,
             ..Default::default()
@@ -449,6 +634,103 @@ async fn build_jetstream_consumer(
     Ok(consumer)
 }
 
+async fn run_critical_event_logger(
+    client: async_nats::Client,
+    stream_name: String,
+    subject: String,
+    consumer_name: String,
+    ack_wait: Duration,
+    max_ack_pending: i64,
+    max_deliver: i64,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let consumer = build_jetstream_consumer(
+        client,
+        &stream_name,
+        &subject,
+        &consumer_name,
+        async_nats::jetstream::stream::RetentionPolicy::Limits,
+        ack_wait,
+        max_ack_pending,
+        max_deliver,
+    )
+    .await?;
+    let mut messages = consumer.messages().await?;
+    log_info(
+        "critical-event-logger-started",
+        "Critical runtime event logger started.",
+        json!({
+            "stream": &stream_name,
+            "subject": &subject,
+            "consumer": &consumer_name,
+        }),
+    );
+
+    while let Some(message) = messages.next().await {
+        let message = match message {
+            Ok(message) => message,
+            Err(error) => {
+                log_error(
+                    "critical-event-fetch-failed",
+                    "Critical runtime event fetch failed.",
+                    json!({
+                        "stream": &stream_name,
+                        "subject": &subject,
+                        "consumer": &consumer_name,
+                        "error": error.to_string(),
+                    }),
+                );
+                continue;
+            }
+        };
+
+        let message_subject = message.subject.to_string();
+        match serde_json::from_slice::<Value>(&message.payload) {
+            Ok(payload) => {
+                let log = payload.get("log").unwrap_or(&Value::Null);
+                let body = string_at(log, "/body")
+                    .or_else(|| string_at(&payload, "/message"))
+                    .unwrap_or("Runtime critical event received.");
+                log_error(
+                    "runtime-critical-event-received",
+                    body,
+                    compact_critical_event_attributes(
+                        &message_subject,
+                        message.payload.len(),
+                        &payload,
+                    ),
+                );
+            }
+            Err(error) => {
+                log_error(
+                    "critical-event-payload-invalid",
+                    "Critical runtime event payload was not valid JSON.",
+                    json!({
+                        "stream": &stream_name,
+                        "subject": &message_subject,
+                        "payloadBytes": message.payload.len(),
+                        "error": error.to_string(),
+                    }),
+                );
+            }
+        }
+
+        if let Err(error) = message.ack().await {
+            log_error(
+                "critical-event-ack-failed",
+                "Critical runtime event acknowledgement failed.",
+                json!({
+                    "stream": &stream_name,
+                    "subject": &subject,
+                    "consumer": &consumer_name,
+                    "error": error.to_string(),
+                }),
+            );
+        }
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let nats_url = env_value(
@@ -468,6 +750,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "http://dd-remote-rest-api.default.svc.cluster.local:8082",
     );
     let event_subject = nats_event_subject();
+    let critical_subject = critical_event_subject();
+    let critical_stream_name = critical_event_stream_name();
+    let critical_consumer_name = critical_event_consumer_name();
+    let critical_logger_enabled = env_bool("QUEUE_CONSUMER_CRITICAL_EVENT_LOGGER", true);
+    let critical_ack_wait_seconds = env_u64("NATS_CRITICAL_EVENT_ACK_WAIT_SECONDS", 60);
+    let critical_max_ack_pending = env_i64("NATS_CRITICAL_EVENT_MAX_ACK_PENDING", 512);
+    let critical_max_deliver = env_i64("NATS_CRITICAL_EVENT_MAX_DELIVER", 5);
     let container_pool_url = env_value(
         "CONTAINER_POOL_BASE_URL",
         "http://dd-container-pool.default.svc.cluster.local:8102",
@@ -483,15 +772,73 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .timeout(Duration::from_secs(http_timeout_seconds))
         .build()?;
 
-    println!(
-        "dd-remote-queue-consumer starting: nats_url={nats_url} stream={stream_name} subject={subject} event_subject={event_subject} consumer={consumer_name} rest_api_url={rest_api_url} container_pool_url={container_pool_url} http_timeout_seconds={http_timeout_seconds} fallback_rest_dispatch={fallback_rest_dispatch} receipts_dir={receipts_dir}"
+    log_info(
+        "queue-consumer-starting",
+        "Queue consumer starting.",
+        json!({
+            "natsUrl": &nats_url,
+            "stream": &stream_name,
+            "subject": &subject,
+            "eventSubject": &event_subject,
+            "criticalSubject": &critical_subject,
+            "criticalStream": &critical_stream_name,
+            "criticalConsumer": &critical_consumer_name,
+            "criticalLoggerEnabled": critical_logger_enabled,
+            "consumer": &consumer_name,
+            "restApiUrl": &rest_api_url,
+            "containerPoolUrl": &container_pool_url,
+            "httpTimeoutSeconds": http_timeout_seconds,
+            "fallbackRestDispatch": fallback_rest_dispatch,
+            "receiptsDir": &receipts_dir,
+        }),
     );
-    let nats_client = async_nats::connect(nats_url).await?;
+    let nats_client = async_nats::connect(nats_url.clone()).await?;
+    if critical_logger_enabled {
+        let critical_client = nats_client.clone();
+        let critical_stream_for_task = critical_stream_name.clone();
+        let critical_subject_for_task = critical_subject.clone();
+        let critical_consumer_for_task = critical_consumer_name.clone();
+        tokio::spawn(async move {
+            if let Err(error) = run_critical_event_logger(
+                critical_client,
+                critical_stream_for_task.clone(),
+                critical_subject_for_task.clone(),
+                critical_consumer_for_task.clone(),
+                Duration::from_secs(critical_ack_wait_seconds),
+                critical_max_ack_pending,
+                critical_max_deliver,
+            )
+            .await
+            {
+                log_error(
+                    "critical-event-logger-stopped",
+                    "Critical runtime event logger stopped.",
+                    json!({
+                        "stream": critical_stream_for_task,
+                        "subject": critical_subject_for_task,
+                        "consumer": critical_consumer_for_task,
+                        "error": error.to_string(),
+                    }),
+                );
+            }
+        });
+    } else {
+        log_warn(
+            "critical-event-logger-disabled",
+            "Critical runtime event logger is disabled.",
+            json!({
+                "stream": &critical_stream_name,
+                "subject": &critical_subject,
+                "consumer": &critical_consumer_name,
+            }),
+        );
+    }
     let consumer = build_jetstream_consumer(
         nats_client.clone(),
         &stream_name,
         &subject,
         &consumer_name,
+        async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
         Duration::from_secs(ack_wait_seconds),
         max_ack_pending,
         max_deliver,
@@ -504,38 +851,92 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let message = match message {
             Ok(message) => message,
             Err(error) => {
-                eprintln!("jetstream message fetch failed: {error}");
+                emit_runtime_critical_event(
+                    &nats_client,
+                    &critical_subject,
+                    "jetstream-message-fetch-failed",
+                    "JetStream message fetch failed.",
+                    json!({
+                        "stream": &stream_name,
+                        "subject": &subject,
+                        "consumer": &consumer_name,
+                        "error": error.to_string(),
+                    }),
+                )
+                .await;
                 continue;
             }
         };
         let task = match serde_json::from_slice::<QueueTaskMessage>(&message.payload) {
             Ok(task) => task,
             Err(error) => {
-                eprintln!("invalid queue task message: {error}");
+                emit_runtime_critical_event(
+                    &nats_client,
+                    &critical_subject,
+                    "invalid-queue-task-message",
+                    "Queue consumer received an invalid task payload.",
+                    json!({
+                        "stream": &stream_name,
+                        "subject": message.subject.to_string(),
+                        "payloadBytes": message.payload.len(),
+                        "error": error.to_string(),
+                    }),
+                )
+                .await;
                 if let Err(ack_error) = message.ack().await {
-                    eprintln!("invalid queue task ack failed: {ack_error}");
+                    emit_runtime_critical_event(
+                        &nats_client,
+                        &critical_subject,
+                        "invalid-queue-task-ack-failed",
+                        "Queue consumer could not acknowledge an invalid task payload.",
+                        json!({
+                            "stream": &stream_name,
+                            "subject": message.subject.to_string(),
+                            "error": ack_error.to_string(),
+                        }),
+                    )
+                    .await;
                 }
                 continue;
             }
         };
         if has_task_receipt(&mut receipts, &receipts_dir, &task.task_id) {
-            println!(
-                "queue task skipped duplicate: thread={} task={}",
-                task.thread_id, task.task_id
+            log_info(
+                "queue-task-skipped-duplicate",
+                "Queue task skipped because a receipt already exists.",
+                json!({
+                    "threadId": &task.thread_id,
+                    "taskId": &task.task_id,
+                    "receiptsDir": &receipts_dir,
+                }),
             );
             if let Err(error) = message.ack().await {
-                eprintln!("duplicate queue task ack failed: {error}");
+                emit_runtime_critical_event(
+                    &nats_client,
+                    &critical_subject,
+                    "duplicate-queue-task-ack-failed",
+                    "Queue consumer could not acknowledge a duplicate task message.",
+                    json!({
+                        "threadId": &task.thread_id,
+                        "taskId": &task.task_id,
+                        "error": error.to_string(),
+                    }),
+                )
+                .await;
             }
             continue;
         }
         let shadow = is_shadow_task(&task);
-        println!(
-            "queue task received: thread={} task={} kind={} shadow={} direct_dispatch={}",
-            task.thread_id,
-            task.task_id,
-            task.message_kind.as_deref().unwrap_or("unknown"),
-            shadow,
-            task.direct_dispatch.unwrap_or(false),
+        log_info(
+            "queue-task-received",
+            "Queue consumer received a task message.",
+            json!({
+                "threadId": &task.thread_id,
+                "taskId": &task.task_id,
+                "messageKind": task.message_kind.as_deref().unwrap_or("unknown"),
+                "shadow": shadow,
+                "directDispatch": task.direct_dispatch.unwrap_or(false),
+            }),
         );
         emit_queue_status_event(
             &http,
@@ -672,9 +1073,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                         pool_error.to_string().chars().take(300).collect::<String>();
                     let pool_error_message =
                         format!("Container-pool dispatch failed: {pool_error_summary}");
-                    eprintln!(
-                        "queue task container pool dispatch failed: thread={} task={} error={pool_error}",
-                        task.thread_id, task.task_id
+                    log_warn(
+                        "container-pool-dispatch-failed",
+                        "Container-pool dispatch failed; fallback may still recover the task.",
+                        json!({
+                            "threadId": &task.thread_id,
+                            "taskId": &task.task_id,
+                            "poolSlug": &pool,
+                            "error": pool_error.to_string(),
+                        }),
                     );
                     emit_queue_status_event(
                         &http,
@@ -755,10 +1162,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         };
         if let Err(error) = result {
             if shadow {
-                eprintln!(
-                    "queue task shadow prepare failed for non-executing handoff: thread={} task={} error={error}",
-                    task.thread_id, task.task_id
-                );
+                let error_text = error.to_string();
+                emit_runtime_critical_event(
+                    &nats_client,
+                    &critical_subject,
+                    "shadow-prepare-failed",
+                    "Queue consumer could not complete shadow worker warmup.",
+                    json!({
+                        "threadId": &task.thread_id,
+                        "taskId": &task.task_id,
+                        "shadow": true,
+                        "directDispatch": false,
+                        "error": &error_text,
+                    }),
+                )
+                .await;
                 emit_queue_status_event(
                     &http,
                     &nats_client,
@@ -769,21 +1187,38 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     "shadow-prepare-failed",
                     "shadow prepare failed",
                     "Queue consumer could not complete the shadow worker warmup; the original task dispatch already owns execution.",
-                    json!({ "error": error.to_string(), "shadow": true, "directDispatch": false }),
+                    json!({ "error": &error_text, "shadow": true, "directDispatch": false }),
                 )
                 .await;
                 receipts.insert(task.task_id.clone());
                 if let Err(error) = write_task_receipt(&receipts_dir, &task) {
-                    eprintln!(
-                        "queue task receipt write failed: thread={} task={} error={error}",
-                        task.thread_id, task.task_id
-                    );
+                    emit_runtime_critical_event(
+                        &nats_client,
+                        &critical_subject,
+                        "queue-task-receipt-write-failed",
+                        "Queue consumer could not write a duplicate-suppression receipt.",
+                        json!({
+                            "threadId": &task.thread_id,
+                            "taskId": &task.task_id,
+                            "receiptsDir": &receipts_dir,
+                            "error": error.to_string(),
+                        }),
+                    )
+                    .await;
                 }
                 if let Err(error) = message.ack().await {
-                    eprintln!(
-                        "queue task ack failed after non-executing prepare failure: thread={} task={} error={error}",
-                        task.thread_id, task.task_id
-                    );
+                    emit_runtime_critical_event(
+                        &nats_client,
+                        &critical_subject,
+                        "queue-task-ack-failed-after-shadow-prepare-failure",
+                        "Queue consumer could not acknowledge a shadow message after recording warmup failure.",
+                        json!({
+                            "threadId": &task.thread_id,
+                            "taskId": &task.task_id,
+                            "error": error.to_string(),
+                        }),
+                    )
+                    .await;
                 } else {
                     emit_queue_status_event(
                         &http,
@@ -801,10 +1236,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 }
                 continue;
             }
-            eprintln!(
-                "queue task handoff failed: thread={} task={} error={error}",
-                task.thread_id, task.task_id
-            );
+            let error_text = error.to_string();
+            emit_runtime_critical_event(
+                &nats_client,
+                &critical_subject,
+                "queue-task-handoff-failed",
+                "Queue consumer could not hand the task to a worker.",
+                json!({
+                    "threadId": &task.thread_id,
+                    "taskId": &task.task_id,
+                    "shadow": shadow,
+                    "directDispatch": direct_dispatch,
+                    "error": &error_text,
+                }),
+            )
+            .await;
             emit_queue_status_event(
                 &http,
                 &nats_client,
@@ -815,7 +1261,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 "queue-handoff-failed",
                 "queue handoff failed",
                 "Queue consumer could not hand the task to container-pool.",
-                json!({ "error": error.to_string() }),
+                json!({ "error": &error_text }),
             )
             .await;
             if let Err(nak_error) = message
@@ -824,7 +1270,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 )))
                 .await
             {
-                eprintln!("queue task negative ack failed: {nak_error}");
+                emit_runtime_critical_event(
+                    &nats_client,
+                    &critical_subject,
+                    "queue-task-negative-ack-failed",
+                    "Queue consumer could not NAK a failed task message.",
+                    json!({
+                        "threadId": &task.thread_id,
+                        "taskId": &task.task_id,
+                        "nakDelaySeconds": nak_delay_seconds,
+                        "error": nak_error.to_string(),
+                    }),
+                )
+                .await;
             }
             continue;
         }
@@ -843,16 +1301,33 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .await;
         receipts.insert(task.task_id.clone());
         if let Err(error) = write_task_receipt(&receipts_dir, &task) {
-            eprintln!(
-                "queue task receipt write failed: thread={} task={} error={error}",
-                task.thread_id, task.task_id
-            );
+            emit_runtime_critical_event(
+                &nats_client,
+                &critical_subject,
+                "queue-task-receipt-write-failed",
+                "Queue consumer could not write a duplicate-suppression receipt.",
+                json!({
+                    "threadId": &task.thread_id,
+                    "taskId": &task.task_id,
+                    "receiptsDir": &receipts_dir,
+                    "error": error.to_string(),
+                }),
+            )
+            .await;
         }
         if let Err(error) = message.ack().await {
-            eprintln!(
-                "queue task ack failed: thread={} task={} error={error}",
-                task.thread_id, task.task_id
-            );
+            emit_runtime_critical_event(
+                &nats_client,
+                &critical_subject,
+                "queue-task-ack-failed",
+                "Queue consumer could not acknowledge a successfully handed-off task.",
+                json!({
+                    "threadId": &task.thread_id,
+                    "taskId": &task.task_id,
+                    "error": error.to_string(),
+                }),
+            )
+            .await;
         } else {
             emit_queue_status_event(
                 &http,

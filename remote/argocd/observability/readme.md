@@ -8,10 +8,11 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
   endpoints.
 - `dd-prometheus`: stores collector-exported metrics plus direct service
   scrapes for observability, messaging, and selected runtime endpoints.
-- `dd-k8s-resource-exporter`: exposes bounded Kubernetes deployment,
-  pod, container-resource, event, and node saturation metrics for the
-  GCS/dependency/load-test allowlist, plus GCS dependency TCP probes,
-  Redis INFO samples, and RabbitMQ management overview samples.
+- `dd-k8s-resource-exporter`: exposes bounded Kubernetes Deployment,
+  StatefulSet, DaemonSet, pod, container-resource, event, and node
+  saturation metrics for the checked-in workload allowlist, plus GCS
+  dependency TCP probes, Redis INFO samples, and RabbitMQ management
+  overview samples.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
   Includes the `GCS WSS Load Collapse` dashboard for 10k/20k chat.vibe load
   tests.
@@ -96,6 +97,14 @@ Currently opted-in:
   Service VIP would hide half the signal behind round-robin scraping.
   Promtail's own `/metrics` is scraped the same way so empty-Loki
   incidents can be diagnosed from Prometheus.
+- The `Kubernetes Workload Fleet` Grafana dashboard (uid
+  `dd-kubernetes-workload-fleet`) is the generic dashboard for every
+  checked-in workload in the exporter allowlist. It is driven by
+  `dd_k8s_workload_*_replicas`, pod restart/resource metrics, Kubernetes
+  event metrics, and Loki deployment labels, with a repeatable `workload`
+  variable for per-workload panels. Keep `WATCH_NAMESPACES` and
+  `WATCH_APPS` aligned with checked-in Deployment, StatefulSet, and
+  DaemonSet manifests when adding or removing services.
 - `dd-promtail` tails the stable `/var/log/containers/*.log` symlink
   farm directly via `static_configs` (no Kubernetes API dependency): the
   service-discovery informer once found zero targets in this EC2 cluster
@@ -135,6 +144,12 @@ Currently opted-in:
   `promtail.configmap.yaml`. A genuinely separate future cluster would
   instead set a distinct literal `cluster` external label so a shared or
   proxied Loki can tell the two clusters apart.
+
+  Promtail also opportunistically parses the shared `dd.log.v1` JSON
+  stdout/stderr envelope from `docs/observability-stdio-contract.md`.
+  Only low-cardinality fields are promoted to labels (`log_schema`,
+  `severity`, and `log_service`); request ids, task ids, thread ids,
+  trace/span ids, paths, messages, and error details remain log fields.
 
 The OTEL collector keeps its own minimal RBAC
 (`otel-collector.rbac.yaml`) for `kubernetes_sd` pod discovery.

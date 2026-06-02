@@ -56,6 +56,20 @@ spec:
               value: dd-remote-thread-preparer
             - name: NATS_EVENT_SUBJECT
               value: dd.remote.events
+            - name: NATS_CRITICAL_EVENT_SUBJECT
+              value: dd.remote.events.critical
+            - name: NATS_CRITICAL_EVENT_STREAM
+              value: DD_REMOTE_CRITICAL_EVENTS
+            - name: NATS_CRITICAL_EVENT_CONSUMER
+              value: dd-runtime-critical-events
+            - name: QUEUE_CONSUMER_CRITICAL_EVENT_LOGGER
+              value: 'true'
+            - name: NATS_CRITICAL_EVENT_ACK_WAIT_SECONDS
+              value: '60'
+            - name: NATS_CRITICAL_EVENT_MAX_ACK_PENDING
+              value: '512'
+            - name: NATS_CRITICAL_EVENT_MAX_DELIVER
+              value: '5'
             - name: NATS_TASK_MAX_ACK_PENDING
               value: '256'
             - name: NATS_TASK_ACK_WAIT_SECONDS
