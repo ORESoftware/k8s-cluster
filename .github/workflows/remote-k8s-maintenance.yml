@@ -2194,6 +2194,7 @@ jobs:
               'gcs_ws_read_errors_total' \
               'gcs_ws_writes_total' \
               'gcs_ws_connection_maps' \
+              'gcs_ws_load_shed_total' \
               'gcs_runtime_gauge{name="goroutines"}' \
               'gcs_process_resident_memory_bytes' \
               'gcs_process_open_fds' \
