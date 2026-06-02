@@ -31,7 +31,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-06-02-load-collapse"
+        dd.dev/telemetry-revision: "2026-06-02-load-collapse-2"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
