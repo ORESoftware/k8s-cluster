@@ -85,9 +85,9 @@ jobs:
       - name: Run maintenance command through SSM
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
+          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-ssm]') && 'inspect-gcs-ssm') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
           TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
-          SSM_COMMAND_ID: ${{ inputs.ssm_command_id || '' }}
+          SSM_COMMAND_ID: ${{ inputs.ssm_command_id || github.event.head_commit.message || '' }}
           CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || 'false' }}
           REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
@@ -98,6 +98,9 @@ jobs:
           set -euo pipefail
 
           if [ "$OPERATION" = "inspect-gcs-ssm" ]; then
+            if [[ "${SSM_COMMAND_ID:-}" =~ ssm:([0-9A-Fa-f-]{36}) ]]; then
+              SSM_COMMAND_ID="${BASH_REMATCH[1]}"
+            fi
             if [ -z "${SSM_COMMAND_ID:-}" ]; then
               echo "ssm_command_id is required for inspect-gcs-ssm" >&2
               exit 64
