@@ -2002,7 +2002,7 @@ jobs:
             expr="$2"
             echo "--- prom $label"
             echo "$expr"
-            kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python - "$expr" <<'PROMPY' || true
+                      kubectl -n observability exec -i deploy/dd-k8s-resource-exporter -- python - "$expr" <<'PROMPY' || true
           import json
           import sys
           import urllib.parse
@@ -2028,7 +2028,7 @@ jobs:
           prom_query "router-upstream-errors" 'sum by (pool, peer) (increase(gcs_router_upstream_errors_total[60m]))'
 
           echo "=== Loki gcs-report summaries: last 60m ==="
-          kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python - <<'LOKIPY' || true
+                    kubectl -n observability exec -i deploy/dd-k8s-resource-exporter -- python - <<'LOKIPY' || true
           import json
           import re
           import time
