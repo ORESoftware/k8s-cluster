@@ -980,9 +980,10 @@ data:
             { "expr": "sum(rate(gcs_broker_publish_duration_seconds_sum[1m])) by (backend, result) / sum(rate(gcs_broker_publish_duration_seconds_count[1m])) by (backend, result)", "legendFormat": "{{backend}} {{result}}", "refId": "A" },
             { "expr": "sum(rate(gcs_router_latency_seconds_sum[1m])) by (pool) / sum(rate(gcs_router_latency_seconds_count[1m])) by (pool)", "legendFormat": "router {{pool}}", "refId": "B" },
             { "expr": "sum(rate(gcs_broker_fanout_delivery_duration_seconds_sum[1m])) by (backend, result) / sum(rate(gcs_broker_fanout_delivery_duration_seconds_count[1m])) by (backend, result)", "legendFormat": "fanout {{backend}} {{result}}", "refId": "C" },
-            { "expr": "sum(rate(gcs_ws_write_duration_seconds_sum[1m])) by (kind, outcome) / sum(rate(gcs_ws_write_duration_seconds_count[1m])) by (kind, outcome)", "legendFormat": "ws write {{kind}} {{outcome}}", "refId": "D" }
+            { "expr": "sum(rate(gcs_ws_write_duration_seconds_sum[1m])) by (kind, outcome) / sum(rate(gcs_ws_write_duration_seconds_count[1m])) by (kind, outcome)", "legendFormat": "ws write {{kind}} {{outcome}}", "refId": "D" },
+            { "expr": "sum(rate(gcs_ws_message_duration_seconds_sum[1m])) by (type, outcome) / sum(rate(gcs_ws_message_duration_seconds_count[1m])) by (type, outcome)", "legendFormat": "ws message {{type}} {{outcome}}", "refId": "E" }
           ],
-          "title": "Mean Publish, Fanout, Router, WS Write Latency",
+          "title": "Mean Publish, Fanout, Router, WS Latency",
           "type": "timeseries"
         },
         {

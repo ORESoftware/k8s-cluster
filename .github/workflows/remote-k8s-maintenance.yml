@@ -1842,6 +1842,56 @@ jobs:
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
           script = r'''set -euo pipefail
           repo=/home/ec2-user/codes/dd/dd-next-1
+          capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
+          capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
+
+          free_recovery_capacity() {
+            echo "=== recover GCS: free memory, CPU, and pod slots ==="
+            echo "temporarily disabling Argo auto-sync for capacity owners: $capacity_apps"
+            for app in $capacity_apps; do
+              kubectl -n argocd patch "application/$app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+              kubectl -n argocd get "application/$app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            done
+            kubectl -n default get deploy $capacity_targets -o wide || true
+            for d in $capacity_targets; do
+              kubectl -n default scale "deployment/$d" --replicas=0 || true
+            done
+            for d in $capacity_targets; do
+              for i in $(seq 1 120); do
+                desired="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
+                pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+                if [ "${desired:-missing}" = "0" ] && [ "${pods:-0}" -eq 0 ]; then
+                  echo "$d scaled down"
+                  break
+                fi
+                if [ "$i" -eq 120 ]; then
+                  echo "WARNING: $d not fully scaled down after wait desired=${desired:-unknown} pods=${pods:-0}"
+                fi
+                sleep 2
+              done
+            done
+            echo "=== recover GCS: post-free capacity workload state ==="
+            kubectl -n default get deploy $capacity_targets -o wide || true
+          }
+
+          diagnose_recover_rollout() {
+            label="$1"
+            echo "=== recover GCS rollout diagnostics: $label ==="
+            kubectl -n default get deploy gcs gcs-router -o wide || true
+            kubectl -n default get rs,pods -l 'app in (gcs,gcs-router)' -o wide || true
+            kubectl -n default describe deployment/gcs || true
+            kubectl -n default describe pods -l app=gcs || true
+            echo "=== current gcs logs ==="
+            kubectl -n default logs -l app=gcs --all-containers --tail=240 --prefix=true --max-log-requests=20 || true
+            echo "=== previous gcs logs ==="
+            for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=240 --prefix=true || true
+            done
+            echo "=== recover GCS events ==="
+            kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|FailedScheduling|Insufficient|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM|Evicted' | tail -200 || true
+          }
+
           cd "$repo"
           echo "=== recover GCS checkout context ==="
           git status --short --branch
@@ -1877,11 +1927,18 @@ jobs:
           kubectl -n default scale deployment/dd-ws-loadtest-rs-gcs --replicas=0 || true
           kubectl -n default scale deployment/dd-nodejs-ws-loadtest-gcs --replicas=0 || true
           kubectl -n default scale deployment/dd-gleamlang-ws-loadtest-gcs --replicas=0 || true
+          free_recovery_capacity
 
           echo "=== recover GCS: restart gcs/router ==="
           kubectl -n default rollout restart deployment/gcs deployment/gcs-router
-          kubectl -n default rollout status deployment/gcs --timeout=900s
-          kubectl -n default rollout status deployment/gcs-router --timeout=600s
+          if ! kubectl -n default rollout status deployment/gcs --timeout=900s; then
+            diagnose_recover_rollout "gcs"
+            exit 1
+          fi
+          if ! kubectl -n default rollout status deployment/gcs-router --timeout=600s; then
+            diagnose_recover_rollout "gcs-router"
+            exit 1
+          fi
           for spec in gcs:3 gcs-router:2; do
             d="${spec%%:*}"
             expected="${spec##*:}"
@@ -2020,6 +2077,7 @@ jobs:
           prom_query "ws-connection-events" 'sum by (event) (increase(gcs_ws_connections_total[60m]))'
           prom_query "ws-read-errors" 'sum by (kind) (increase(gcs_ws_read_errors_total[60m]))'
           prom_query "ws-load-shed" 'sum by (reason, phase) (increase(gcs_ws_load_shed_total[60m]))'
+          prom_query "ws-message-latency-mean" 'sum by (type, outcome) (rate(gcs_ws_message_duration_seconds_sum[5m])) / sum by (type, outcome) (rate(gcs_ws_message_duration_seconds_count[5m]))'
           prom_query "ws-write-errors" 'sum by (kind, outcome) (increase(gcs_ws_writes_total[60m]))'
           prom_query "gcs-heap-max" 'max by (pod) (max_over_time(gcs_go_heap_alloc_bytes[60m]))'
           prom_query "gcs-rss-max" 'max by (pod) (max_over_time(gcs_process_resident_memory_bytes[60m]))'
