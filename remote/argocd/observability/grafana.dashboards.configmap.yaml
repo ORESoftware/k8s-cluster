@@ -876,9 +876,10 @@ data:
           "pluginVersion": "11.3.0",
           "targets": [
             { "expr": "sum(rate(gcs_broker_publish_total{result=~\"error|failed|timeout\"}[1m]))", "legendFormat": "broker publish failures/s", "refId": "A" },
-            { "expr": "sum(rate(gcs_kafka_read_errors_total[1m]))", "legendFormat": "kafka read errors/s", "refId": "B" }
+            { "expr": "sum(rate(gcs_kafka_read_errors_total[1m]))", "legendFormat": "kafka read errors/s", "refId": "B" },
+            { "expr": "sum(rate(gcs_ws_load_shed_total[1m]))", "legendFormat": "load shed/s", "refId": "C" }
           ],
-          "title": "Broker/Kafka Errors/s",
+          "title": "Backend Errors and Load Shed/s",
           "type": "stat"
         },
         {
@@ -905,9 +906,10 @@ data:
             { "expr": "sum(rate(gcs_ws_messages_total[1m])) by (outcome)", "legendFormat": "message {{outcome}}", "refId": "B" },
             { "expr": "sum(rate(gcs_ws_connections_total[1m])) by (event)", "legendFormat": "connection {{event}}", "refId": "C" },
             { "expr": "sum(rate(gcs_ws_read_errors_total[1m])) by (kind)", "legendFormat": "read error {{kind}}", "refId": "D" },
-            { "expr": "sum(rate(gcs_ws_writes_total[1m])) by (kind, outcome)", "legendFormat": "write {{kind}} {{outcome}}", "refId": "E" }
+            { "expr": "sum(rate(gcs_ws_writes_total[1m])) by (kind, outcome)", "legendFormat": "write {{kind}} {{outcome}}", "refId": "E" },
+            { "expr": "sum(rate(gcs_ws_load_shed_total[1m])) by (reason, phase)", "legendFormat": "load shed {{reason}} {{phase}}", "refId": "F" }
           ],
-          "title": "WS Lifecycle, Messages, Read/Write Outcomes",
+          "title": "WS Lifecycle, Messages, Read/Write, Load Shedding",
           "type": "timeseries"
         },
         {
