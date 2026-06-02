@@ -30,6 +30,8 @@ spec:
       app: gcs
   template:
     metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-06-02-load-collapse"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
