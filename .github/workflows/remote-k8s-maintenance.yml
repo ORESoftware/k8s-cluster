@@ -1986,123 +1986,123 @@ jobs:
                   f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
               ],
           }))
-	          PY
-	              ;;
-	            snapshot-gcs-loadtest)
-	              python3 - <<'PY' > /tmp/remote-k8s-commands.json
-	          import json
-	          import shlex
-	          import textwrap
+            PY
+                ;;
+              snapshot-gcs-loadtest)
+                python3 - <<'PY' > /tmp/remote-k8s-commands.json
+            import json
+            import shlex
+            import textwrap
 
-	          script = textwrap.dedent(r'''
-	          set -euo pipefail
-	          echo "=== GCS loadtest snapshot: last 60m ==="
-	          prom_query() {
-	            label="$1"
-	            expr="$2"
-	            echo "--- prom $label"
-	            echo "$expr"
-	            kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python - "$expr" <<'PROMPY' || true
-	          import json
-	          import sys
-	          import urllib.parse
-	          import urllib.request
+            script = textwrap.dedent(r'''
+            set -euo pipefail
+            echo "=== GCS loadtest snapshot: last 60m ==="
+            prom_query() {
+              label="$1"
+              expr="$2"
+              echo "--- prom $label"
+              echo "$expr"
+              kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python - "$expr" <<'PROMPY' || true
+            import json
+            import sys
+            import urllib.parse
+            import urllib.request
 
-	          expr = sys.argv[1]
-	          url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr})
-	          payload = json.load(urllib.request.urlopen(url, timeout=10))
-	          result = payload.get("data", {}).get("result", [])
-	          print(json.dumps(result[:30], separators=(",", ":")))
-	          PROMPY
-	          }
+            expr = sys.argv[1]
+            url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr})
+            payload = json.load(urllib.request.urlopen(url, timeout=10))
+            result = payload.get("data", {}).get("result", [])
+            print(json.dumps(result[:30], separators=(",", ":")))
+            PROMPY
+            }
 
-	          prom_query "ws-active-max-by-pod" 'max by (pod) (max_over_time(gcs_ws_connections_active[60m]))'
-	          prom_query "ws-connection-events" 'sum by (event) (increase(gcs_ws_connections_total[60m]))'
-	          prom_query "ws-read-errors" 'sum by (kind) (increase(gcs_ws_read_errors_total[60m]))'
-	          prom_query "ws-load-shed" 'sum by (reason, phase) (increase(gcs_ws_load_shed_total[60m]))'
-	          prom_query "ws-write-errors" 'sum by (kind, outcome) (increase(gcs_ws_writes_total[60m]))'
-	          prom_query "gcs-heap-max" 'max by (pod) (max_over_time(gcs_go_heap_alloc_bytes[60m]))'
-	          prom_query "gcs-rss-max" 'max by (pod) (max_over_time(gcs_process_resident_memory_bytes[60m]))'
-	          prom_query "gcs-cpu-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[60m]))'
-	          prom_query "gcs-memory-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}[60m]))'
-	          prom_query "router-upstream-errors" 'sum by (pool, peer) (increase(gcs_router_upstream_errors_total[60m]))'
+            prom_query "ws-active-max-by-pod" 'max by (pod) (max_over_time(gcs_ws_connections_active[60m]))'
+            prom_query "ws-connection-events" 'sum by (event) (increase(gcs_ws_connections_total[60m]))'
+            prom_query "ws-read-errors" 'sum by (kind) (increase(gcs_ws_read_errors_total[60m]))'
+            prom_query "ws-load-shed" 'sum by (reason, phase) (increase(gcs_ws_load_shed_total[60m]))'
+            prom_query "ws-write-errors" 'sum by (kind, outcome) (increase(gcs_ws_writes_total[60m]))'
+            prom_query "gcs-heap-max" 'max by (pod) (max_over_time(gcs_go_heap_alloc_bytes[60m]))'
+            prom_query "gcs-rss-max" 'max by (pod) (max_over_time(gcs_process_resident_memory_bytes[60m]))'
+            prom_query "gcs-cpu-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[60m]))'
+            prom_query "gcs-memory-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}[60m]))'
+            prom_query "router-upstream-errors" 'sum by (pool, peer) (increase(gcs_router_upstream_errors_total[60m]))'
 
-	          echo "=== Loki gcs-report summaries: last 60m ==="
-	          kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python - <<'LOKIPY' || true
-	          import json
-	          import re
-	          import time
-	          import urllib.parse
-	          import urllib.request
+            echo "=== Loki gcs-report summaries: last 60m ==="
+            kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python - <<'LOKIPY' || true
+            import json
+            import re
+            import time
+            import urllib.parse
+            import urllib.request
 
-	          deployments = [
-	              "dd-ws-loadtest-rs-gcs",
-	              "dd-nodejs-ws-loadtest-gcs",
-	              "dd-gleamlang-ws-loadtest-gcs",
-	          ]
-	          end_ns = int(time.time() * 1_000_000_000)
-	          start_ns = end_ns - 60 * 60 * 1_000_000_000
-	          field_re = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=([0-9.]+)")
+            deployments = [
+                "dd-ws-loadtest-rs-gcs",
+                "dd-nodejs-ws-loadtest-gcs",
+                "dd-gleamlang-ws-loadtest-gcs",
+            ]
+            end_ns = int(time.time() * 1_000_000_000)
+            start_ns = end_ns - 60 * 60 * 1_000_000_000
+            field_re = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=([0-9.]+)")
 
-	          for deployment in deployments:
-	              query = '{namespace="default",deployment="' + deployment + '"} |= "gcs-report"'
-	              url = "http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/query_range?" + urllib.parse.urlencode({
-	                  "query": query,
-	                  "start": str(start_ns),
-	                  "end": str(end_ns),
-	                  "limit": "5000",
-	              })
-	              payload = json.load(urllib.request.urlopen(url, timeout=15))
-	              latest = {}
-	              for stream in payload.get("data", {}).get("result", []):
-	                  labels = stream.get("stream", {})
-	                  pod = labels.get("pod") or labels.get("filename") or "unknown"
-	                  for ts, line in stream.get("values", []):
-	                      ts_int = int(ts)
-	                      if pod not in latest or ts_int > latest[pod][0]:
-	                          latest[pod] = (ts_int, line)
-	              totals = {
-	                  "attempted": 0,
-	                  "connected": 0,
-	                  "failed": 0,
-	                  "open": 0,
-	                  "sent": 0,
-	                  "received": 0,
-	                  "in_flight": 0,
-	                  "correlation_misses": 0,
-	                  "receive_errors": 0,
-	              }
-	              maxes = {"p50_us": 0, "p95_us": 0, "p99_us": 0, "max_us": 0}
-	              for _, line in latest.values():
-	                  fields = {k: float(v) for k, v in field_re.findall(line)}
-	                  for key in totals:
-	                      totals[key] += int(fields.get(key, 0))
-	                  for key in maxes:
-	                      maxes[key] = max(maxes[key], int(fields.get(key, 0)))
-	              print(
-	                  "loki-summary deployment={deployment} pods={pods} attempted={attempted} connected={connected} failed={failed} open={open} sent={sent} received={received} in_flight={in_flight} correlation_misses={correlation_misses} receive_errors={receive_errors} max_p50_us={p50_us} max_p95_us={p95_us} max_p99_us={p99_us} max_us={max_us}".format(
-	                      deployment=deployment,
-	                      pods=len(latest),
-	                      **totals,
-	                      **maxes,
-	                  )
-	              )
-	          LOKIPY
+            for deployment in deployments:
+                query = '{namespace="default",deployment="' + deployment + '"} |= "gcs-report"'
+                url = "http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/query_range?" + urllib.parse.urlencode({
+                    "query": query,
+                    "start": str(start_ns),
+                    "end": str(end_ns),
+                    "limit": "5000",
+                })
+                payload = json.load(urllib.request.urlopen(url, timeout=15))
+                latest = {}
+                for stream in payload.get("data", {}).get("result", []):
+                    labels = stream.get("stream", {})
+                    pod = labels.get("pod") or labels.get("filename") or "unknown"
+                    for ts, line in stream.get("values", []):
+                        ts_int = int(ts)
+                        if pod not in latest or ts_int > latest[pod][0]:
+                            latest[pod] = (ts_int, line)
+                totals = {
+                    "attempted": 0,
+                    "connected": 0,
+                    "failed": 0,
+                    "open": 0,
+                    "sent": 0,
+                    "received": 0,
+                    "in_flight": 0,
+                    "correlation_misses": 0,
+                    "receive_errors": 0,
+                }
+                maxes = {"p50_us": 0, "p95_us": 0, "p99_us": 0, "max_us": 0}
+                for _, line in latest.values():
+                    fields = {k: float(v) for k, v in field_re.findall(line)}
+                    for key in totals:
+                        totals[key] += int(fields.get(key, 0))
+                    for key in maxes:
+                        maxes[key] = max(maxes[key], int(fields.get(key, 0)))
+                print(
+                    "loki-summary deployment={deployment} pods={pods} attempted={attempted} connected={connected} failed={failed} open={open} sent={sent} received={received} in_flight={in_flight} correlation_misses={correlation_misses} receive_errors={receive_errors} max_p50_us={p50_us} max_p95_us={p95_us} max_p99_us={p99_us} max_us={max_us}".format(
+                        deployment=deployment,
+                        pods=len(latest),
+                        **totals,
+                        **maxes,
+                    )
+                )
+            LOKIPY
 
-	          echo "=== current GCS/loadtest deployments ==="
-	          kubectl -n default get deploy gcs gcs-router dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs -o wide || true
-	          ''').strip()
+            echo "=== current GCS/loadtest deployments ==="
+            kubectl -n default get deploy gcs gcs-router dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs -o wide || true
+            ''').strip()
 
-	          print(json.dumps({
-	              "commands": [
-	                  "set -euo pipefail",
-	                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
-	              ],
-	          }))
-	          PY
-	              ;;
-	            loadtest-gcs-wss)
-	              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+            print(json.dumps({
+                "commands": [
+                    "set -euo pipefail",
+                    f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+                ],
+            }))
+            PY
+                ;;
+              loadtest-gcs-wss)
+                python3 - <<'PY' > /tmp/remote-k8s-commands.json
           import json
           import os
           import shlex
