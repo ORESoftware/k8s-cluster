@@ -20,9 +20,14 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), "utf8");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 test("runtime kustomization includes split web/api/gateway resources", async () => {
   const kustomization = await readRepoFile("remote/argocd/dd-next-runtime/kustomization.yaml");
 
+  assert.match(kustomization, /availability-pdbs\.yaml/);
   assert.match(kustomization, /dd-dev-server-home\.deployment\.yaml/);
   assert.match(kustomization, /dd-dev-server-api\.service\.yaml/);
   assert.match(kustomization, /dd-remote-web-home\.deployment\.yaml/);
@@ -130,6 +135,7 @@ test("web home route has rollout and gateway guards against transient 502s", asy
 
   assert.match(deployment, /replicas:\s*2/);
   assert.match(deployment, /minReadySeconds:\s*5/);
+  assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
   assert.match(deployment, /maxSurge:\s*1/);
   assert.match(deployment, /maxUnavailable:\s*0/);
@@ -146,4 +152,91 @@ test("web home route has rollout and gateway guards against transient 502s", asy
   );
   assert.match(gatewayConfig, /proxy_next_upstream_tries\s+3;/);
   assert.match(gatewayConfig, /proxy_connect_timeout\s+5s;/);
+});
+
+test("gateway-backed stateless services use HA rolling deployment profile", async () => {
+  const haDeployments = [
+    "dd-remote-auth",
+    "dd-remote-rest-api",
+    "dd-agent-worker-broker",
+    "dd-des-rs",
+    "dd-contract-service",
+    "dd-mdp-optimizer",
+    "dd-trading-server",
+    "dd-web-scraper",
+    "dd-browser-test-server",
+    "dd-selenium-server",
+    "dd-rust-vapi-phone",
+  ];
+  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+
+  for (const name of haDeployments) {
+    const deployment = await readRepoFile(
+      `remote/argocd/dd-next-runtime/${name}.deployment.yaml`,
+    );
+    const escapedName = escapeRegExp(name);
+
+    assert.match(deployment, new RegExp(`name:\\s*${escapedName}`));
+    assert.match(deployment, /replicas:\s*2/);
+    assert.match(deployment, /minReadySeconds:\s*5/);
+    assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
+    assert.match(deployment, /type:\s*RollingUpdate/);
+    assert.match(deployment, /maxSurge:\s*1/);
+    assert.match(deployment, /maxUnavailable:\s*0/);
+    assert.match(deployment, /readinessProbe:[\s\S]*httpGet:/);
+    assert.match(
+      pdbs,
+      new RegExp(
+        `kind:\\s*PodDisruptionBudget[\\s\\S]*name:\\s*${escapedName}[\\s\\S]*minAvailable:\\s*1[\\s\\S]*app:\\s*${escapedName}`,
+      ),
+    );
+  }
+
+  const desRs = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml");
+  assert.match(
+    desRs,
+    /readinessProbe:[\s\S]*path:\s*\/out\/delivery-planner\.html[\s\S]*port:\s*http/,
+  );
+});
+
+test("single-owner runtime workloads stay intentionally recreate", async () => {
+  const singleOwnerDeployments = [
+    { name: "dd-browser-job-runner", file: "dd-browser-job-runner.deployment.yaml" },
+    { name: "dd-build-server", file: "dd-build-server.deployment.yaml" },
+    { name: "dd-container-pool", file: "dd-container-pool.deployment.yaml" },
+    { name: "dd-des-simulator", file: "dd-des-simulator.deployment.yaml" },
+    { name: "dd-dev-server-api", file: "dd-dev-server-home.deployment.yaml" },
+    { name: "dd-go-wss-server", file: "dd-go-wss-server.deployment.yaml" },
+    { name: "dd-idle-reaper", file: "dd-idle-reaper.deployment.yaml" },
+    { name: "dd-live-mutex", file: "dd-live-mutex.deployment.yaml" },
+    { name: "dd-live-mutex-submodule", file: "dd-live-mutex-submodule.deployment.yaml" },
+    { name: "dd-redis-cache", file: "dd-redis-cache.deployment.yaml" },
+    { name: "dd-remote-gateway", file: "dd-remote-gateway.deployment.yaml" },
+    { name: "dd-runtime-config", file: "dd-runtime-config.deployment.yaml" },
+    { name: "dd-rust-network-mutex", file: "dd-rust-network-mutex.deployment.yaml" },
+    { name: "dd-rust-wss-server", file: "dd-rust-wss-server.deployment.yaml" },
+    { name: "dd-webrtc-signaling", file: "dd-webrtc-signaling.deployment.yaml" },
+  ];
+
+  for (const { name, file } of singleOwnerDeployments) {
+    const deployment = await readRepoFile(`remote/argocd/dd-next-runtime/${file}`);
+    const escapedName = escapeRegExp(name);
+
+    assert.match(deployment, new RegExp(`name:\\s*${escapedName}`));
+    assert.match(deployment, /replicas:\s*1/);
+    assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
+  }
+});
+
+test("queue consumer rolls replacement before terminating the old consumer", async () => {
+  const deployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml",
+  );
+
+  assert.match(deployment, /replicas:\s*1/);
+  assert.match(deployment, /minReadySeconds:\s*5/);
+  assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
+  assert.match(deployment, /type:\s*RollingUpdate/);
+  assert.match(deployment, /maxSurge:\s*1/);
+  assert.match(deployment, /maxUnavailable:\s*0/);
 });

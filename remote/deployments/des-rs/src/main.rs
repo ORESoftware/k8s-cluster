@@ -98,6 +98,7 @@ const MAX_MUSIC_SOURCE_URL_CHARS: usize = 4096;
 const MAX_MUSIC_TITLE_CHARS: usize = 160;
 const MAX_MUSIC_PROMPT_CHARS: usize = 12_000;
 const MAX_MUSIC_AUTH_CHARS: usize = 32_000;
+const MAX_MUSIC_AUTH_HEADER_NAME_CHARS: usize = 64;
 const MAX_MUSIC_COOKIE_BYTES: usize = 512 * 1024;
 const MUSIC_DOWNLOAD_TIMEOUT_SECS: u64 = 180;
 const MAX_FILTER_LEN: usize = 96;
@@ -455,8 +456,10 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;background:#080d14;borde
 	        </div>
 	      </div>
 	      <div id="authPanel" class="auth-panel" hidden>
-	        <label for="authHeader">Authorization header</label>
-	        <input id="authHeader" type="password" autocomplete="off" spellcheck="false" placeholder="Bearer ...">
+	        <label for="authHeaderName">Source auth header name</label>
+	        <input id="authHeaderName" autocomplete="off" spellcheck="false" value="Auth">
+	        <label for="authHeader">Source auth header value</label>
+	        <input id="authHeader" type="password" autocomplete="off" spellcheck="false" placeholder="shared secret or bearer token">
 	        <label for="cookieHeader">Cookie header</label>
 	        <textarea id="cookieHeader" autocomplete="off" spellcheck="false" placeholder="name=value; name2=value2"></textarea>
 	        <label for="sourceCookies">yt-dlp cookies.txt</label>
@@ -532,10 +535,12 @@ function sourceAccess(){return $("sourceAccess").value;}
 function sourcePlatform(){return $("sourcePlatform").value;}
 function authCredentials(){
   const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
+  const authHeaderName=($("authHeaderName").value.trim()||"Auth");
   const authHeader=$("authHeader").value.trim();
   const cookieHeader=$("cookieHeader").value.trim();
   return {
-    authorization_header: Boolean(authHeader),
+    auth_header_name: authHeaderName,
+    auth_header: Boolean(authHeader),
     cookie_header: Boolean(cookieHeader),
     cookies_file: cookieFile ? cookieFile.name : null,
     has: Boolean(authHeader||cookieHeader||cookieFile)
@@ -554,9 +559,12 @@ function command(){
     const prompt=promptText();
     const access=sourceAccess();
     const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
+    const authHeaderName=($("authHeaderName").value.trim()||"Auth");
+    const authHeader=$("authHeader").value.trim();
     const promptPath="out/music-sample-seed-prompt.txt";
     const cookieFlag=access==="authenticated"?` --cookies "${cookieFile?cookieFile.name:"/absolute/path/to/cookies.txt"}"`:"";
-    const urlPrefix=url?`mkdir -p out\nyt-dlp --no-playlist --force-overwrites --merge-output-format mp4${cookieFlag} -o ${source} ${shellQuote(url)}\n`:"";
+    const headerFlag=access==="authenticated"&&authHeader?` --add-header ${shellQuote(authHeaderName+": "+authHeader)}`:"";
+    const urlPrefix=url?`mkdir -p out\nyt-dlp --no-playlist --force-overwrites --merge-output-format mp4${cookieFlag}${headerFlag} -o ${source} ${shellQuote(url)}\n`:"";
     const promptPrefix=prompt?`mkdir -p out\nprintf %s ${shellQuote(prompt)} > ${promptPath}\n`:"";
     const promptFlag=prompt?` --prompt-file ${promptPath}`:"";
     return `${urlPrefix}${promptPrefix}cargo run --bin main_music_production -- --sample-seed "${source}" out/music-sample-seed-variation.wav ${duration}${promptFlag}`;
@@ -597,7 +605,8 @@ function update(){
       access,
       authenticated: access==="authenticated",
       auth: access==="authenticated" ? {
-        authorization_header: auth.authorization_header,
+        auth_header_name: auth.auth_header_name,
+        auth_header: auth.auth_header,
         cookie_header: auth.cookie_header,
         cookies_file: auth.cookies_file
       } : null
@@ -624,7 +633,7 @@ $("sample").addEventListener("change", function(){
   video.onerror=function(){URL.revokeObjectURL(url);status.className="seed-status err";status.textContent="could not read MP4 metadata";update();};
   video.src=url;
 });
-["mode","seed","duration","percussion","variation","prompt","sourceUrl","sourceAccess","sourcePlatform","authHeader","cookieHeader"].forEach(id=>$(id).addEventListener("input",update));
+["mode","seed","duration","percussion","variation","prompt","sourceUrl","sourceAccess","sourcePlatform","authHeaderName","authHeader","cookieHeader"].forEach(id=>$(id).addEventListener("input",update));
 $("sourceCookies").addEventListener("change",update);
 async function copyCommand(){
   const text=command();
@@ -658,9 +667,11 @@ async function renderSampleSeed(){
   if(url) fd.append("source_url",url);
   fd.append("source_auth_mode",access);
   fd.append("source_platform",sourcePlatform());
+  const authHeaderName=($("authHeaderName").value.trim()||"Auth");
   const authHeader=$("authHeader").value.trim();
   const cookieHeader=$("cookieHeader").value.trim();
   const cookieFile=$("sourceCookies").files&&$("sourceCookies").files[0];
+  if(authHeaderName) fd.append("source_auth_header_name",authHeaderName);
   if(authHeader) fd.append("source_auth_header",authHeader);
   if(cookieHeader) fd.append("source_cookie_header",cookieHeader);
   if(cookieFile) fd.append("source_cookies",cookieFile,cookieFile.name);
@@ -670,7 +681,9 @@ async function renderSampleSeed(){
   result.className="result";
   result.textContent="rendering on des-rs...";
   try{
-    const r=await fetch("music/sample-seed",{method:"POST",body:fd});
+    const headers={};
+    if(authHeader&&authHeaderName.toLowerCase()==="auth") headers.Auth=authHeader;
+    const r=await fetch("music/sample-seed",{method:"POST",body:fd,headers});
     const d=await r.json();
     if(!r.ok||!d.ok){throw new Error(d.error||("HTTP "+r.status));}
     result.className="result ok";
@@ -821,16 +834,15 @@ impl MusicSourceAuthMode {
 #[derive(Clone, Debug)]
 struct MusicSourceAuth {
     mode: MusicSourceAuthMode,
-    authorization_header: Option<String>,
+    auth_header_name: Option<HeaderName>,
+    auth_header: Option<String>,
     cookie_header: Option<String>,
     cookies_file: Option<PathBuf>,
 }
 
 impl MusicSourceAuth {
     fn has_credentials(&self) -> bool {
-        self.authorization_header.is_some()
-            || self.cookie_header.is_some()
-            || self.cookies_file.is_some()
+        self.auth_header.is_some() || self.cookie_header.is_some() || self.cookies_file.is_some()
     }
 
     fn effective_mode(&self) -> MusicSourceAuthMode {
@@ -844,7 +856,12 @@ impl MusicSourceAuth {
     fn summary_json(&self) -> Value {
         json!({
             "mode": self.effective_mode().as_str(),
-            "authorization_header": self.authorization_header.is_some(),
+            "auth_header": self.auth_header.as_ref().map(|_| {
+                self.auth_header_name
+                    .as_ref()
+                    .map(|name| name.as_str())
+                    .unwrap_or(header::AUTHORIZATION.as_str())
+            }),
             "cookie_header": self.cookie_header.is_some(),
             "cookies_file": self.cookies_file.is_some(),
         })
@@ -875,6 +892,21 @@ fn clean_music_auth_field(raw: String, label: &str) -> Result<Option<String>, St
         return Err(format!("{label} must be a single HTTP header value"));
     }
     Ok(Some(value))
+}
+
+fn clean_music_auth_header_name_field(raw: String) -> Result<Option<HeaderName>, String> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.chars().count() > MAX_MUSIC_AUTH_HEADER_NAME_CHARS {
+        return Err(format!(
+            "source_auth_header_name must be at most {MAX_MUSIC_AUTH_HEADER_NAME_CHARS} characters"
+        ));
+    }
+    HeaderName::from_bytes(value.as_bytes())
+        .map(Some)
+        .map_err(|e| format!("invalid source_auth_header_name: {e}"))
 }
 
 fn clean_music_source_url_field(raw: String) -> Result<Option<String>, String> {
@@ -918,11 +950,13 @@ fn sanitize_url_in_error(value: &str, raw_url: &str, redacted_url: &str) -> Stri
 
 async fn music_sample_seed_render(
     State(state): State<AppState>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
     let mut sample_bytes: Option<Vec<u8>> = None;
     let mut source_url: Option<String> = None;
     let mut source_auth_mode = MusicSourceAuthMode::Public;
+    let mut source_auth_header_name: Option<HeaderName> = None;
     let mut source_auth_header: Option<String> = None;
     let mut source_cookie_header: Option<String> = None;
     let mut source_cookies: Option<Vec<u8>> = None;
@@ -986,6 +1020,20 @@ async fn music_sample_seed_render(
                     )
                 }
             },
+            "source_auth_header_name" | "auth_header_name" | "authorization_header_name" => {
+                match field.text().await {
+                    Ok(text) => match clean_music_auth_header_name_field(text) {
+                        Ok(value) => source_auth_header_name = value,
+                        Err(e) => return json_error(StatusCode::BAD_REQUEST, e),
+                    },
+                    Err(e) => {
+                        return json_error(
+                            StatusCode::BAD_REQUEST,
+                            format!("failed to read source_auth_header_name: {e}"),
+                        )
+                    }
+                }
+            }
             "source_cookie_header" | "cookie_header" => match field.text().await {
                 Ok(text) => match clean_music_auth_field(text, "source_cookie_header") {
                     Ok(value) => source_cookie_header = value,
@@ -1078,6 +1126,29 @@ async fn music_sample_seed_render(
         );
     }
 
+    if source_auth_header.is_none() {
+        let auth_header_name = HeaderName::from_static("auth");
+        if let Some(value) = headers.get(&auth_header_name) {
+            let value = match value.to_str() {
+                Ok(value) => value.to_string(),
+                Err(e) => {
+                    return json_error(
+                        StatusCode::BAD_REQUEST,
+                        format!("invalid Auth request header: {e}"),
+                    )
+                }
+            };
+            match clean_music_auth_field(value, "Auth request header") {
+                Ok(Some(value)) => {
+                    source_auth_header = Some(value);
+                    source_auth_header_name = Some(auth_header_name);
+                }
+                Ok(None) => {}
+                Err(e) => return json_error(StatusCode::BAD_REQUEST, e),
+            }
+        }
+    }
+
     let now = now_ms();
     let upload_dir = env::temp_dir().join("dd-des-rs-music-uploads");
     if let Err(e) = fs::create_dir_all(&upload_dir) {
@@ -1101,7 +1172,8 @@ async fn music_sample_seed_render(
     };
     let source_auth = MusicSourceAuth {
         mode: source_auth_mode,
-        authorization_header: source_auth_header,
+        auth_header_name: source_auth_header_name,
+        auth_header: source_auth_header,
         cookie_header: source_cookie_header,
         cookies_file: auth_cookie_path,
     };
@@ -1462,10 +1534,14 @@ async fn download_direct_media(
         .build()
         .map_err(|e| format!("failed to build HTTP client: {e}"))?;
     let mut request = client.get(url.clone());
-    if let Some(value) = &auth.authorization_header {
+    if let Some(value) = &auth.auth_header {
         let header_value =
             HeaderValue::from_str(value).map_err(|e| format!("invalid source_auth_header: {e}"))?;
-        request = request.header(header::AUTHORIZATION, header_value);
+        let header_name = auth
+            .auth_header_name
+            .clone()
+            .unwrap_or(header::AUTHORIZATION);
+        request = request.header(header_name, header_value);
     }
     if let Some(value) = &auth.cookie_header {
         let header_value = HeaderValue::from_str(value)
@@ -1540,15 +1616,27 @@ async fn download_with_ytdlp(
     auth: &MusicSourceAuth,
 ) -> Result<String, String> {
     let cookies_file = auth.cookies_file.clone();
-    tokio::task::spawn_blocking(move || run_ytdlp_download(&url, &path, cookies_file.as_deref()))
-        .await
-        .unwrap_or_else(|e| Err(format!("yt-dlp task failed: {e}")))
+    let auth_header_name = auth.auth_header_name.clone();
+    let auth_header = auth.auth_header.clone();
+    tokio::task::spawn_blocking(move || {
+        run_ytdlp_download(
+            &url,
+            &path,
+            cookies_file.as_deref(),
+            auth_header_name.as_ref(),
+            auth_header.as_deref(),
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("yt-dlp task failed: {e}")))
 }
 
 fn run_ytdlp_download(
     url: &str,
     path: &StdPath,
     cookies_file: Option<&StdPath>,
+    auth_header_name: Option<&HeaderName>,
+    auth_header: Option<&str>,
 ) -> Result<String, String> {
     let mut attempts = Vec::new();
     if let Ok(bin) = env::var("DES_YTDLP_BIN") {
@@ -1573,12 +1661,17 @@ fn run_ytdlp_download(
         "b[ext=mp4]/bv*[ext=mp4]+ba[ext=m4a]/best".to_string(),
         "-o".to_string(),
         path.display().to_string(),
-        url.to_string(),
     ];
     if let Some(cookies_file) = cookies_file {
-        args.insert(args.len() - 1, cookies_file.display().to_string());
-        args.insert(args.len() - 2, "--cookies".to_string());
+        args.extend(["--cookies".to_string(), cookies_file.display().to_string()]);
     }
+    if let Some(value) = auth_header {
+        let name = auth_header_name
+            .map(|name| name.as_str())
+            .unwrap_or(header::AUTHORIZATION.as_str());
+        args.extend(["--add-header".to_string(), format!("{name}: {value}")]);
+    }
+    args.push(url.to_string());
 
     let mut errors = Vec::new();
     let redacted_url = redacted_source_url_value(url);
@@ -2893,6 +2986,16 @@ mod tests {
             ),
             "failed for https://example.com/watch?redacted=1"
         );
+    }
+
+    #[test]
+    fn music_auth_header_name_validation_accepts_auth_and_rejects_bad_names() {
+        let header = clean_music_auth_header_name_field(" Auth ".to_string())
+            .unwrap()
+            .unwrap();
+        assert_eq!(header.as_str(), "auth");
+        assert!(clean_music_auth_header_name_field("Bad Header".to_string()).is_err());
+        assert!(clean_music_auth_header_name_field("Auth:\nsecret".to_string()).is_err());
     }
 
     #[test]

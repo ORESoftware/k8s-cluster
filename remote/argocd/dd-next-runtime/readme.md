@@ -112,14 +112,28 @@ Gateway path map:
   direct worker WebSocket for replay/live task events; both routes require gateway auth before the
   gateway injects the worker `X-Server-Auth` header.
 
-Availability guardrail for `/agents/tasks`: the HTML route is owned by
-`dd-remote-web-home`, so it should keep `replicas: 2`, rolling updates with
-`maxUnavailable: 0`, readiness probes, and the `dd-remote-web-home` PodDisruptionBudget. That keeps
-at least one ready web pod behind the Service during normal rollouts and voluntary disruptions. The
-gateway also retries transient upstream `502`/`503`/`504` failures before surfacing them to the
-browser. Do not scale `dd-remote-gateway` above one pod on the current single-node `hostPort`
-deployment; gateway HA needs either multiple nodes with a DaemonSet/load balancer shape or an
-external load balancer in front of multiple gateway instances.
+Availability guardrail for gateway-backed HTTP services: request-serving deployments that are safe
+to run in parallel should keep `replicas: 2`, `minReadySeconds: 5`, `progressDeadlineSeconds: 1800`,
+rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and a
+`PodDisruptionBudget` with `minAvailable: 1`. This covers the public/auth/API surface where normal
+rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
+`dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
+`dd-mdp-optimizer`, `dd-trading-server`, `dd-web-scraper`, `dd-browser-test-server`,
+`dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` uses `/out/delivery-planner.html` as
+its readiness path so the Service does not route delivery-planner traffic to a pod before the
+startup render has produced the artifact.
+
+Single-owner workloads stay intentionally one-replica/`Recreate`: the host-port gateway, Redis,
+mutex brokers, the bootstrap workspace worker, containerd/build managers, the runtime-config push
+controller, benchmark WebSocket pods, and in-memory signaling/job-state services. The
+`dd-remote-queue-consumer` remains one replica at rest because KEDA owns burst scaling, but it uses
+rolling updates with `maxUnavailable: 0` so a rollout brings up the replacement consumer before
+terminating the old one. The gateway also retries transient upstream `502`/`503`/`504` failures
+before surfacing them to the browser. Do not scale `dd-remote-gateway` above one pod on the current
+single-node `hostPort` deployment; gateway HA needs either multiple nodes with a DaemonSet/load
+balancer shape or an external load balancer in front of multiple gateway instances. Canary or
+blue/green rollout policy should be added through Argo Rollouts or an equivalent controller; this
+overlay currently uses native Kubernetes Deployment rolling updates only.
 
 The Node.js worker image is built as `docker.io/library/dd-dev-server:dev` on the EC2 containerd
 node. It contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
