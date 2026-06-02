@@ -20,8 +20,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-02-des-rs-soccer-planner-engine-711588d'
-        dd.dev/des-engine-revision: '711588d434d149c9b70c434e98700534ada2909f'
+        dd.dev/telemetry-revision: '2026-06-02-des-rs-soccer-planner-engine-c77044d'
+        dd.dev/des-engine-revision: 'c77044d1e17c929fe2a773c41be169c1421af81c'
       labels:
         app: dd-des-rs
     spec:
@@ -139,7 +139,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 711588d434d149c9b70c434e98700534ada2909f
+              value: c77044d1e17c929fe2a773c41be169c1421af81c
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
