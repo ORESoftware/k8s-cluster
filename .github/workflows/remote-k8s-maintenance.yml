@@ -2097,6 +2097,7 @@ jobs:
           script = textwrap.dedent(r'''
           set -euo pipefail
           echo "=== GCS loadtest snapshot: last 60m ==="
+          echo "Snapshot generated after the latest GCS WSS load-test run."
           prom_query() {
             label="$1"
             expr="$2"
