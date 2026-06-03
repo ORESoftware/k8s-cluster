@@ -2486,6 +2486,27 @@ jobs:
             done
           }
 
+          prom_compact_snapshot() {
+            local snapshot_label="$1"
+            local query_spec query_label query_expr
+            echo "=== prometheus compact snapshot: $snapshot_label ==="
+            for query_spec in \
+              'router-active-total-max|max(max_over_time(gcs_router_active_total[30m]))' \
+              'router-rejections-sum|sum(increase(gcs_router_rejected_total[30m]))' \
+              'router-upstream-errors-sum|sum(increase(gcs_router_upstream_errors_total[30m]))' \
+              'ws-read-errors-sum|sum(increase(gcs_ws_read_errors_total[30m]))' \
+              'ws-load-shed-sum|sum(increase(gcs_ws_load_shed_total[30m]))' \
+              'gcs-kafka-read-errors-sum|sum(increase(gcs_kafka_read_errors_total[30m]))' \
+              'gcs-rss-max|max(max_over_time(gcs_process_resident_memory_bytes[30m]))' \
+              'gcs-cpu-max|max(max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[30m]))' \
+              'gcs-memory-max|max(max_over_time(dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}[30m]))'; do
+              query_label="${query_spec%%|*}"
+              query_expr="${query_spec#*|}"
+              echo "--- query: $query_label"
+              prom_query "$query_expr"
+            done
+          }
+
           diagnose_gcs_rollout() {
             local rollout_label="$1"
             echo "=== diagnose GCS rollout failure: $rollout_label ==="
@@ -2747,6 +2768,28 @@ jobs:
             wait_available gcs-router 3
           }
 
+          diagnose_load_failure() {
+            local d="$1"
+            local loader_name="$2"
+            {
+              echo "=== load failure diagnostics: $loader_name ==="
+              collect_loader "$d"
+              echo "=== router metrics at $loader_name failure ==="
+              router_metrics
+              echo "=== gcs/router/loadtest deployments ==="
+              kubectl -n default get deploy gcs gcs-router "$d" -o wide || true
+              echo "=== gcs/router/loadtest pods ==="
+              kubectl -n default get pods -l "app in (gcs,gcs-router,$d)" -o wide || true
+              echo "=== gcs dependency pods ==="
+              kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+              echo "=== top pods: gcs/loadtest/dependencies ==="
+              kubectl -n default top pods --containers | grep -E 'gcs|loadtest|kafka|rabbit|redis|mongo' || true
+              echo "=== recent gcs/loadtest events ==="
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|loadtest|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM|Evicted' | tail -100 || true
+              prom_compact_snapshot "load failure $loader_name"
+            } >&2
+          }
+
           run_loader() {
             local d="$1"
             local loader_name="$2"
@@ -2786,7 +2829,7 @@ jobs:
             fi
             echo "=== router metrics before $loader_name load window ==="
             router_metrics
-            prom_snapshot "before $loader_name"
+            prom_compact_snapshot "before $loader_name"
             remaining="$duration"
             while [ "$remaining" -gt 0 ]; do
               step=30
@@ -2799,12 +2842,15 @@ jobs:
               collect_loader "$d"
               echo "=== router metrics during $loader_name ==="
               router_metrics
-              prom_snapshot "during $loader_name remaining=${remaining}s"
+              prom_compact_snapshot "during $loader_name remaining=${remaining}s"
             done
             echo "=== final $loader_name loader summary ==="
             collect_loader "$d"
-            assert_loader_healthy "$d" "$loader_name"
-            prom_snapshot "after $loader_name"
+            if ! assert_loader_healthy "$d" "$loader_name"; then
+              diagnose_load_failure "$d" "$loader_name"
+              exit 1
+            fi
+            prom_compact_snapshot "after $loader_name"
             echo "=== stop $loader_name ==="
             kubectl -n default scale "deployment/$d" --replicas=0
             sleep 15
