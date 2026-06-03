@@ -134,12 +134,12 @@ spec:
             - name: GCS_WS_SHED_WARN_GRACE
               value: '500ms'
             - name: GCS_WS_SHED_HEAP_BYTES
-              value: '671088640'
+              value: '1342177280'
             # RSS pressure is the cgroup OOM guard; heap telemetry can miss spikes.
             - name: GCS_WS_SHED_RSS_BYTES
-              value: '1610612736'
+              value: '2684354560'
             - name: GCS_WS_SHED_GOROUTINES
-              value: '60000'
+              value: '500000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
               value: '10s'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
