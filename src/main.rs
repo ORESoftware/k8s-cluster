@@ -1569,6 +1569,52 @@ async fn publish_control(state: &AppState, command_name: &str, payload: Value) {
     }
 }
 
+fn mip_stream_config() -> async_nats::jetstream::stream::Config {
+    async_nats::jetstream::stream::Config {
+        name: DD_REMOTE_MIP_SOLVER_STREAM_NAME.to_string(),
+        subjects: DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS
+            .iter()
+            .map(|subject| subject.to_string())
+            .collect(),
+        retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+        max_age: Duration::from_secs(60 * 60 * 24 * 7),
+        max_message_size: 8 * 1024 * 1024,
+        ..Default::default()
+    }
+}
+
+async fn ensure_mip_stream(
+    client: async_nats::Client,
+) -> Result<async_nats::jetstream::stream::Stream, Box<dyn Error + Send + Sync>> {
+    let jetstream = async_nats::jetstream::new(client);
+    Ok(jetstream.get_or_create_stream(mip_stream_config()).await?)
+}
+
+async fn jetstream_publish_ack(
+    client: &async_nats::Client,
+    subject: &str,
+    payload: Vec<u8>,
+) -> Result<u64, String> {
+    let jetstream = async_nats::jetstream::new(client.clone());
+    jetstream
+        .get_or_create_stream(mip_stream_config())
+        .await
+        .map_err(|err| format!("ensure JetStream stream: {err}"))?;
+    let ack = jetstream
+        .publish(subject.to_string(), payload.into())
+        .await
+        .map_err(|err| format!("JetStream publish {subject}: {err}"))?
+        .await
+        .map_err(|err| format!("JetStream publish ack {subject}: {err}"))?;
+    if ack.stream != DD_REMOTE_MIP_SOLVER_STREAM_NAME {
+        return Err(format!(
+            "JetStream ack for {subject} landed in stream {}, expected {}",
+            ack.stream, DD_REMOTE_MIP_SOLVER_STREAM_NAME
+        ));
+    }
+    Ok(ack.sequence)
+}
+
 async fn solve_problem_distributed(
     state: AppState,
     request_id: String,
@@ -1638,9 +1684,7 @@ async fn solve_problem_distributed(
 
     for job in &jobs {
         let payload = serde_json::to_vec(job).map_err(|err| format!("serialize job: {err}"))?;
-        nats.publish(state.jobs_subject.clone(), payload.into())
-            .await
-            .map_err(|err| format!("publish subproblem job: {err}"))?;
+        jetstream_publish_ack(&nats, &state.jobs_subject, payload).await?;
         state
             .metrics
             .subproblem_jobs_published_total
@@ -1956,20 +2000,7 @@ async fn build_jetstream_consumer(
     ack_wait: Duration,
     max_ack_pending: i64,
 ) -> Result<async_nats::jetstream::consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
-    let jetstream = async_nats::jetstream::new(client);
-    let stream = jetstream
-        .get_or_create_stream(async_nats::jetstream::stream::Config {
-            name: DD_REMOTE_MIP_SOLVER_STREAM_NAME.to_string(),
-            subjects: DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS
-                .iter()
-                .map(|subject| subject.to_string())
-                .collect(),
-            retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
-            max_age: Duration::from_secs(60 * 60 * 24 * 7),
-            max_message_size: 8 * 1024 * 1024,
-            ..Default::default()
-        })
-        .await?;
+    let stream = ensure_mip_stream(client).await?;
     let consumer = stream
         .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
             consumer_name,
@@ -2051,8 +2082,14 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }
             };
         let payload = serde_json::to_vec(&result)?;
-        nats.publish(state.results_subject.clone(), payload.into())
-            .await?;
+        jetstream_publish_ack(&nats, &state.results_subject, payload)
+            .await
+            .map_err(|err| -> Box<dyn Error + Send + Sync> {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("publish subproblem result: {err}"),
+                ))
+            })?;
         publish_control(
             &state,
             "worker-completed",
@@ -2289,6 +2326,23 @@ mod tests {
         assert_eq!(
             MIP_SOLVER_WORKERS_QUEUE_GROUP,
             "dd-in-house-mip-solver-node-workers"
+        );
+    }
+
+    #[test]
+    fn jetstream_stream_config_contains_generated_subjects() {
+        let config = mip_stream_config();
+
+        assert_eq!(config.name, DD_REMOTE_MIP_SOLVER_STREAM_NAME);
+        for subject in DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS {
+            assert!(config
+                .subjects
+                .iter()
+                .any(|configured| configured == subject));
+        }
+        assert_eq!(
+            config.subjects.len(),
+            DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS.len()
         );
     }
 }
