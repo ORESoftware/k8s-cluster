@@ -511,6 +511,161 @@ export class AgentRemoteDevRuntimeLockEntity {
 
 }
 
+// mip_solver_sessions_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "mip_solver_sessions" })
+export class MipSolverSessionsEntity {
+  @PrimaryColumn({ name: "session_id", type: "varchar", length: 200 })
+  sessionId!: string;
+
+  @Column({ name: "revision", type: "bigint", default: () => "0" })
+  revision!: number;
+
+  @Column({ name: "problem", type: "jsonb", default: () => "'{}'::jsonb" })
+  problem!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// mip_solver_solves_request_id_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// mip_solver_solves_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "mip_solver_solves" })
+export class MipSolverSolvesEntity {
+  @PrimaryColumn({ name: "solve_id", type: "varchar", length: 160 })
+  solveId!: string;
+
+  @Column({ name: "request_id", type: "varchar", length: 200 })
+  requestId!: string;
+
+  @Column({ name: "revision", type: "bigint", default: () => "0" })
+  revision!: number;
+
+  @Column({ name: "status", type: "varchar", length: 64, default: () => "'running'" })
+  status!: string;
+
+  @Column({ name: "node_id", type: "varchar", length: 253 })
+  nodeId!: string;
+
+  @Column({ name: "node_role", type: "varchar", length: 32 })
+  nodeRole!: string;
+
+  @Column({ name: "problem", type: "jsonb", default: () => "'{}'::jsonb" })
+  problem!: Record<string, unknown>;
+
+  @Column({ name: "options", type: "jsonb", default: () => "'{}'::jsonb" })
+  options!: Record<string, unknown>;
+
+  @Column({ name: "response", type: "jsonb", default: () => "'{}'::jsonb" })
+  response!: Record<string, unknown>;
+
+  @Column({ name: "jobs_expected", type: "integer", default: () => "0" })
+  jobsExpected!: number;
+
+  @Column({ name: "jobs_published", type: "integer", default: () => "0" })
+  jobsPublished!: number;
+
+  @Column({ name: "jobs_completed", type: "integer", default: () => "0" })
+  jobsCompleted!: number;
+
+  @Column({ name: "jobs_redelegated", type: "integer", default: () => "0" })
+  jobsRedelegated!: number;
+
+  @Column({ name: "jobs_split", type: "integer", default: () => "0" })
+  jobsSplit!: number;
+
+  @Column({ name: "timed_out", type: "boolean", default: () => "false" })
+  timedOut!: boolean;
+
+  @Column({ name: "distributed", type: "boolean", default: () => "false" })
+  distributed!: boolean;
+
+  @Column({ name: "warnings", type: "jsonb", default: () => "'[]'::jsonb" })
+  warnings!: unknown[];
+
+  @Column({ name: "started_at", type: "timestamptz", default: () => "now()" })
+  startedAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+}
+
+// mip_solver_jobs_solve_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("mip_solver_jobs_root_idx", ["solveId", "rootJobId", "retryIndex"])
+@Entity({ name: "mip_solver_jobs" })
+export class MipSolverJobsEntity {
+  @PrimaryColumn({ name: "job_id", type: "varchar", length: 240 })
+  jobId!: string;
+
+  @Column({ name: "solve_id", type: "varchar", length: 160 })
+  solveId!: string;
+
+  @Column({ name: "root_job_id", type: "varchar", length: 240 })
+  rootJobId!: string;
+
+  @Column({ name: "retry_index", type: "integer", default: () => "0" })
+  retryIndex!: number;
+
+  @Column({ name: "depth", type: "integer", default: () => "0" })
+  depth!: number;
+
+  @Column({ name: "status", type: "varchar", length: 64, default: () => "'submitted'" })
+  status!: string;
+
+  @Column({ name: "worker_node", type: "varchar", length: 253, nullable: true })
+  workerNode!: string | null;
+
+  @Column({ name: "job_payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  jobPayload!: Record<string, unknown>;
+
+  @Column({ name: "result_payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  resultPayload!: Record<string, unknown>;
+
+  @Column({ name: "submitted_at", type: "timestamptz", default: () => "now()" })
+  submittedAt!: Date;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// mip_solver_events_solve_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// mip_solver_events_session_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "mip_solver_events" })
+export class MipSolverEventsEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "solve_id", type: "varchar", length: 160, nullable: true })
+  solveId!: string | null;
+
+  @Column({ name: "session_id", type: "varchar", length: 200, nullable: true })
+  sessionId!: string | null;
+
+  @Column({ name: "job_id", type: "varchar", length: 240, nullable: true })
+  jobId!: string | null;
+
+  @Column({ name: "event_kind", type: "varchar", length: 80 })
+  eventKind!: string;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
 @Index("lambda_functions_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
 @Index("lambda_functions_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // lambda_functions_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

@@ -449,6 +449,154 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use agent_remote_dev_runtime_locks::Entity as AgentRemoteDevRuntimeLockEntity;
 pub use agent_remote_dev_runtime_locks::Model as AgentRemoteDevRuntimeLockModel;
 
+pub mod mip_solver_sessions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "mip_solver_sessions")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "session_id")]
+    pub session_id: String,
+    pub revision: i64,
+    pub problem: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use mip_solver_sessions::Entity as MipSolverSessionsEntity;
+pub use mip_solver_sessions::Model as MipSolverSessionsModel;
+
+pub mod mip_solver_solves {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "mip_solver_solves")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "solve_id")]
+    pub solve_id: String,
+    #[sea_orm(column_name = "request_id")]
+    pub request_id: String,
+    pub revision: i64,
+    pub status: String,
+    #[sea_orm(column_name = "node_id")]
+    pub node_id: String,
+    #[sea_orm(column_name = "node_role")]
+    pub node_role: String,
+    pub problem: Json,
+    pub options: Json,
+    pub response: Json,
+    #[sea_orm(column_name = "jobs_expected")]
+    pub jobs_expected: i32,
+    #[sea_orm(column_name = "jobs_published")]
+    pub jobs_published: i32,
+    #[sea_orm(column_name = "jobs_completed")]
+    pub jobs_completed: i32,
+    #[sea_orm(column_name = "jobs_redelegated")]
+    pub jobs_redelegated: i32,
+    #[sea_orm(column_name = "jobs_split")]
+    pub jobs_split: i32,
+    #[sea_orm(column_name = "timed_out")]
+    pub timed_out: bool,
+    pub distributed: bool,
+    pub warnings: Json,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "finished_at")]
+    pub finished_at: Option<DateTimeWithTimeZone>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use mip_solver_solves::Entity as MipSolverSolvesEntity;
+pub use mip_solver_solves::Model as MipSolverSolvesModel;
+
+pub mod mip_solver_jobs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "mip_solver_jobs")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "job_id")]
+    pub job_id: String,
+    #[sea_orm(column_name = "solve_id")]
+    pub solve_id: String,
+    #[sea_orm(column_name = "root_job_id")]
+    pub root_job_id: String,
+    #[sea_orm(column_name = "retry_index")]
+    pub retry_index: i32,
+    pub depth: i32,
+    pub status: String,
+    #[sea_orm(column_name = "worker_node")]
+    pub worker_node: Option<String>,
+    #[sea_orm(column_name = "job_payload")]
+    pub job_payload: Json,
+    #[sea_orm(column_name = "result_payload")]
+    pub result_payload: Json,
+    #[sea_orm(column_name = "submitted_at")]
+    pub submitted_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "finished_at")]
+    pub finished_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use mip_solver_jobs::Entity as MipSolverJobsEntity;
+pub use mip_solver_jobs::Model as MipSolverJobsModel;
+
+pub mod mip_solver_events {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "mip_solver_events")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
+    #[sea_orm(column_name = "solve_id")]
+    pub solve_id: Option<String>,
+    #[sea_orm(column_name = "session_id")]
+    pub session_id: Option<String>,
+    #[sea_orm(column_name = "job_id")]
+    pub job_id: Option<String>,
+    #[sea_orm(column_name = "event_kind")]
+    pub event_kind: String,
+    pub payload: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use mip_solver_events::Entity as MipSolverEventsEntity;
+pub use mip_solver_events::Model as MipSolverEventsModel;
+
 pub mod lambda_functions {
     use super::*;
 
