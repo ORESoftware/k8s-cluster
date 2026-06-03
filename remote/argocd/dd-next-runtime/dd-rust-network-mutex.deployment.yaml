@@ -7,6 +7,7 @@ metadata:
     app: dd-rust-network-mutex
 spec:
   replicas: 1
+  progressDeadlineSeconds: 1800
   strategy:
     type: Recreate
   selector:
@@ -15,37 +16,74 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-24-rust-network-mutex-0.1.125-real-binary'
+        dd.dev/telemetry-revision: '2026-06-03-rust-network-mutex-0.1.127-jsonl-hardening'
+        dd.dev/live-mutex-rs-revision: '033fe5a304ed39c8b9c1dac1283f5451b8e8bfdc'
       labels:
         app: dd-rust-network-mutex
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: rust-network-mutex
-          # Published image from Docker Hub. The Dockerfile in the
-          # submodule (remote/submodules/rust-network-mutex-rs/Dockerfile)
-          # is the source of truth; tags follow the submodule's
-          # Cargo.toml version. To roll out a new build, push a new
-          # tag and bump this `image:` field — ArgoCD will reconcile.
-          #
-          # (Earlier revisions of this manifest source-built at pod
-          # start from a hostPath mount of the workspace at
-          # /opt/dd-next-1; that pattern is preserved in
-          # `dd-live-mutex-submodule.deployment.yaml` for the Node.js
-          # broker but isn't needed here once the Rust binary ships
-          # in a published image.)
-          image: docker.io/oresoftware/live-mutex-rs:0.1.125
+          # Build the broker from the exact upstream live-mutex-rs commit at
+          # pod start. Docker Hub does not yet have a 0.1.127 image tag, so
+          # this mirrors the source-fetch pattern used by dd-des-rs: clone the
+          # pinned source into writable /tmp and fall back to the hostPath
+          # submodule only if GitHub is unavailable.
+          image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             seccompProfile:
               type: RuntimeDefault
             capabilities:
               drop:
                 - ALL
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              source_src="/opt/dd-next-1/remote/submodules/rust-network-mutex-rs"
+              if [ -n "${LMX_RS_GIT_URL:-}" ]; then
+                rm -rf /tmp/live-mutex-rs-source
+                if git clone --depth 1 --no-checkout "${LMX_RS_GIT_URL}" /tmp/live-mutex-rs-source \
+                  && git -C /tmp/live-mutex-rs-source fetch --depth 1 origin "${LMX_RS_GIT_REF:-dev}" \
+                  && git -C /tmp/live-mutex-rs-source switch --detach FETCH_HEAD; then
+                  source_src=/tmp/live-mutex-rs-source
+                  echo "[dd-rust-network-mutex] cloned ${LMX_RS_GIT_URL}@${LMX_RS_GIT_REF:-dev} ($(git -C /tmp/live-mutex-rs-source rev-parse --short HEAD))"
+                else
+                  echo "[dd-rust-network-mutex] source clone failed; using mounted source at ${source_src}" >&2
+                fi
+              fi
+              rm -rf /tmp/live-mutex-rs-build
+              mkdir -p /tmp/live-mutex-rs-build
+              cp -a "${source_src}/." /tmp/live-mutex-rs-build/
+              rm -rf /tmp/live-mutex-rs-build/target
+              cd /tmp/live-mutex-rs-build
+              exec /usr/local/cargo/bin/cargo run --release --bin dd-rust-network-mutex
           env:
+            - name: LMX_RS_GIT_URL
+              value: https://github.com/ORESoftware/live-mutex-rs.git
+            - name: LMX_RS_GIT_REF
+              value: 033fe5a304ed39c8b9c1dac1283f5451b8e8bfdc
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/live-mutex-rs-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
             - name: LMX_BIND_HOST
               value: 0.0.0.0
             - name: LMX_TCP_PORT
@@ -96,16 +134,17 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 96Mi
-            limits:
-              cpu: '1'
               memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            # Cold release build from /tmp can take several minutes.
+            failureThreshold: 180
           readinessProbe:
             httpGet:
               path: /healthz
@@ -120,3 +159,16 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}
