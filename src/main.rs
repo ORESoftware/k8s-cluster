@@ -92,6 +92,7 @@ struct Metrics {
     solve_requests_total: AtomicU64,
     subproblem_jobs_published_total: AtomicU64,
     subproblem_jobs_completed_total: AtomicU64,
+    subproblem_jobs_redelegated_total: AtomicU64,
     slave_jobs_processed_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -127,7 +128,7 @@ struct MipProblemSpec {
     con_names: Option<Vec<String>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BranchConstraint {
     coefs: Vec<f64>,
@@ -144,6 +145,7 @@ struct SolveOptions {
     int_tol: Option<f64>,
     split_depth: Option<usize>,
     max_subproblems: Option<usize>,
+    max_job_retries: Option<usize>,
     timeout_ms: Option<u64>,
     emit_trace: Option<bool>,
 }
@@ -157,6 +159,7 @@ impl Default for SolveOptions {
             int_tol: Some(1e-6),
             split_depth: Some(1),
             max_subproblems: Some(256),
+            max_job_retries: Some(2),
             timeout_ms: Some(120_000),
             emit_trace: Some(false),
         }
@@ -179,6 +182,7 @@ impl SolveOptions {
             int_tol: input.int_tol.or(defaults.int_tol),
             split_depth: input.split_depth.or(defaults.split_depth),
             max_subproblems: input.max_subproblems.or(defaults.max_subproblems),
+            max_job_retries: input.max_job_retries.or(defaults.max_job_retries),
             timeout_ms: input.timeout_ms.or(defaults.timeout_ms),
             emit_trace: input.emit_trace.or(defaults.emit_trace),
         }
@@ -210,6 +214,10 @@ impl SolveOptions {
             max_subproblems: Some(env_usize(
                 "MIP_SOLVER_MAX_SUBPROBLEMS",
                 defaults.max_subproblems.unwrap_or(256),
+            )),
+            max_job_retries: Some(env_usize_allow_zero(
+                "MIP_SOLVER_MAX_JOB_RETRIES",
+                defaults.max_job_retries.unwrap_or(2),
             )),
             timeout_ms: Some(env_u64(
                 "MIP_SOLVER_TIMEOUT_MS",
@@ -342,8 +350,10 @@ struct SolveResponse {
     best_bound: Option<f64>,
     gap: Option<f64>,
     lp: Option<LpSolveReport>,
+    jobs_expected: usize,
     jobs_published: usize,
     jobs_completed: usize,
+    jobs_redelegated: usize,
     timed_out: bool,
     distributed: bool,
     node_id: String,
@@ -412,6 +422,13 @@ fn env_u64(key: &str, fallback: u64) -> u64 {
 
 fn env_usize(key: &str, fallback: usize) -> usize {
     env_u64(key, fallback as u64) as usize
+}
+
+fn env_usize_allow_zero(key: &str, fallback: usize) -> usize {
+    env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(fallback)
 }
 
 fn env_f64(key: &str, fallback: f64) -> f64 {
@@ -1702,12 +1719,35 @@ fn infeasible_subproblem(
     }
 }
 
+fn job_retry_root(job_id: &str) -> &str {
+    job_id
+        .split_once("-retry-")
+        .map_or(job_id, |(root, _)| root)
+}
+
+fn redelegated_job(original: &SubproblemJob, retry_index: usize) -> SubproblemJob {
+    let mut job = original.clone();
+    job.job_id = format!("{}-retry-{retry_index}", job_retry_root(&original.job_id));
+    job.submitted_at_ms = now_ms();
+    job
+}
+
+fn should_redelegate_result(
+    result: &SubproblemResult,
+    retry_index: usize,
+    max_retries: usize,
+) -> bool {
+    result.status == "error" && retry_index < max_retries
+}
+
 fn aggregate_results(
     solve_id: String,
     request_id: String,
     revision: u64,
     problem: &MipProblemSpec,
+    jobs_expected: usize,
     jobs_published: usize,
+    jobs_redelegated: usize,
     results: Vec<SubproblemResult>,
     timed_out: bool,
     distributed: bool,
@@ -1742,7 +1782,7 @@ fn aggregate_results(
     if timed_out {
         warnings.push("solve timed out before every subproblem result returned".to_string());
     }
-    let all_finished = results.len() == jobs_published && !timed_out;
+    let all_finished = results.len() == jobs_expected && !timed_out;
     let all_terminal = all_finished
         && results
             .iter()
@@ -1778,8 +1818,10 @@ fn aggregate_results(
         best_bound,
         gap,
         lp: best.and_then(|r| r.lp.clone()),
+        jobs_expected,
         jobs_published,
         jobs_completed: results.len(),
+        jobs_redelegated,
         timed_out,
         distributed,
         node_id: state.node_id.clone(),
@@ -1897,6 +1939,15 @@ async fn jetstream_publish_ack(
     Ok(ack.sequence)
 }
 
+async fn publish_subproblem_job(
+    client: &async_nats::Client,
+    jobs_subject: &str,
+    job: &SubproblemJob,
+) -> Result<u64, String> {
+    let payload = serde_json::to_vec(job).map_err(|err| format!("serialize job: {err}"))?;
+    jetstream_publish_ack(client, jobs_subject, payload).await
+}
+
 fn result_consumer_name(solve_id: &str) -> String {
     format!("{solve_id}-results")
 }
@@ -1977,6 +2028,8 @@ async fn solve_problem_distributed(
             revision,
             &problem,
             0,
+            0,
+            0,
             Vec::new(),
             false,
             false,
@@ -1987,19 +2040,43 @@ async fn solve_problem_distributed(
 
     let Some(nats) = state.nats.clone() else {
         let mut results = Vec::new();
-        for job in jobs {
-            let node = state.node_id.clone();
-            let result = tokio::task::spawn_blocking(move || solve_subproblem(job, node))
-                .await
-                .map_err(|err| format!("local solve task failed: {err}"))?;
-            results.push(result);
+        let mut jobs_published = 0usize;
+        let mut jobs_redelegated = 0usize;
+        let max_retries = options.max_job_retries.unwrap_or(2);
+        for initial_job in &jobs {
+            let mut job = initial_job.clone();
+            let mut retry_index = 0usize;
+            loop {
+                jobs_published += 1;
+                let node = state.node_id.clone();
+                let result = tokio::task::spawn_blocking(move || solve_subproblem(job, node))
+                    .await
+                    .map_err(|err| format!("local solve task failed: {err}"))?;
+                if should_redelegate_result(&result, retry_index, max_retries) {
+                    warnings.push(format!(
+                        "local job {} failed; re-delegating retry {} of {}",
+                        result.job_id,
+                        retry_index + 1,
+                        max_retries
+                    ));
+                    let original = initial_job.clone();
+                    retry_index += 1;
+                    job = redelegated_job(&original, retry_index);
+                    jobs_redelegated += 1;
+                    continue;
+                }
+                results.push(result);
+                break;
+            }
         }
         return Ok(aggregate_results(
             solve_id,
             request_id,
             revision,
             &problem,
-            results.len(),
+            jobs.len(),
+            jobs_published,
+            jobs_redelegated,
             results,
             false,
             false,
@@ -2017,8 +2094,7 @@ async fn solve_problem_distributed(
 
     let mut first_job_sequence = None;
     for job in &jobs {
-        let payload = serde_json::to_vec(job).map_err(|err| format!("serialize job: {err}"))?;
-        let sequence = jetstream_publish_ack(&nats, &state.jobs_subject, payload).await?;
+        let sequence = publish_subproblem_job(&nats, &state.jobs_subject, job).await?;
         first_job_sequence.get_or_insert(sequence);
         state
             .metrics
@@ -2042,10 +2118,21 @@ async fn solve_problem_distributed(
     let timeout = Duration::from_millis(options.timeout_ms.unwrap_or(120_000));
     let deadline = Instant::now() + timeout;
     let mut results = Vec::new();
-    let expected_job_ids: HashSet<String> = jobs.iter().map(|job| job.job_id.clone()).collect();
+    let jobs_expected = jobs.len();
+    let mut jobs_published = jobs.len();
+    let mut jobs_redelegated = 0usize;
+    let max_retries = options.max_job_retries.unwrap_or(2);
+    let mut jobs_by_id: HashMap<String, SubproblemJob> = jobs
+        .iter()
+        .cloned()
+        .map(|job| (job.job_id.clone(), job))
+        .collect();
+    let mut retry_index_by_job_id: HashMap<String, usize> =
+        jobs.iter().map(|job| (job.job_id.clone(), 0)).collect();
+    let mut expected_job_ids: HashSet<String> = jobs.iter().map(|job| job.job_id.clone()).collect();
     let mut completed_job_ids = HashSet::new();
     let mut timed_out = false;
-    while results.len() < jobs.len() {
+    while results.len() < jobs_expected {
         let now = Instant::now();
         if now >= deadline {
             timed_out = true;
@@ -2062,11 +2149,71 @@ async fn solve_problem_distributed(
                         &mut completed_job_ids,
                     ) {
                         Ok(Some(result)) => {
-                            results.push(result);
                             state
                                 .metrics
                                 .subproblem_jobs_completed_total
                                 .fetch_add(1, Ordering::Relaxed);
+                            let retry_index = retry_index_by_job_id
+                                .get(&result.job_id)
+                                .copied()
+                                .unwrap_or(0);
+                            if should_redelegate_result(&result, retry_index, max_retries) {
+                                let Some(original_job) = jobs_by_id.get(&result.job_id).cloned()
+                                else {
+                                    warnings.push(format!(
+                                        "cannot re-delegate {}; original job payload not found",
+                                        result.job_id
+                                    ));
+                                    results.push(result);
+                                    continue;
+                                };
+                                let next_retry_index = retry_index + 1;
+                                let retry_job = redelegated_job(&original_job, next_retry_index);
+                                match publish_subproblem_job(&nats, &state.jobs_subject, &retry_job)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        publish_event(
+                                            &state,
+                                            "subproblem-redelegated",
+                                            json!({
+                                                "solveId": &solve_id,
+                                                "requestId": &request_id,
+                                                "failedJobId": &result.job_id,
+                                                "retryJobId": &retry_job.job_id,
+                                                "retryIndex": next_retry_index,
+                                                "maxRetries": max_retries,
+                                                "workerNode": &result.worker_node,
+                                                "error": &result.error,
+                                            }),
+                                        )
+                                        .await;
+                                        expected_job_ids.insert(retry_job.job_id.clone());
+                                        retry_index_by_job_id
+                                            .insert(retry_job.job_id.clone(), next_retry_index);
+                                        jobs_by_id.insert(retry_job.job_id.clone(), retry_job);
+                                        jobs_published += 1;
+                                        jobs_redelegated += 1;
+                                        state
+                                            .metrics
+                                            .subproblem_jobs_published_total
+                                            .fetch_add(1, Ordering::Relaxed);
+                                        state
+                                            .metrics
+                                            .subproblem_jobs_redelegated_total
+                                            .fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    Err(error) => {
+                                        warnings.push(format!(
+                                            "failed to re-delegate job {}: {error}",
+                                            result.job_id
+                                        ));
+                                        results.push(result);
+                                    }
+                                }
+                            } else {
+                                results.push(result);
+                            }
                         }
                         Ok(None) => {}
                         Err(warning) => warnings.push(warning),
@@ -2095,6 +2242,8 @@ async fn solve_problem_distributed(
         revision,
         &problem,
         jobs.len(),
+        jobs_published,
+        jobs_redelegated,
         results,
         timed_out,
         true,
@@ -2110,6 +2259,7 @@ async fn solve_problem_distributed(
             "status": &response.status,
             "jobsPublished": response.jobs_published,
             "jobsCompleted": response.jobs_completed,
+            "jobsRedelegated": response.jobs_redelegated,
             "timedOut": response.timed_out,
         }),
     )
@@ -2197,6 +2347,9 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
             "# HELP dd_mip_solver_subproblem_jobs_in_flight Current master-observed subproblem jobs awaiting accepted results.\n",
             "# TYPE dd_mip_solver_subproblem_jobs_in_flight gauge\n",
             "dd_mip_solver_subproblem_jobs_in_flight {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_redelegated_total Total errored subproblem jobs re-published by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter\n",
+            "dd_mip_solver_subproblem_jobs_redelegated_total {}\n",
             "# HELP dd_mip_solver_slave_jobs_processed_total Total subproblem jobs processed by slave nodes.\n",
             "# TYPE dd_mip_solver_slave_jobs_processed_total counter\n",
             "dd_mip_solver_slave_jobs_processed_total {}\n",
@@ -2212,6 +2365,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         published,
         completed,
         in_flight,
+        m.subproblem_jobs_redelegated_total.load(Ordering::Relaxed),
         m.slave_jobs_processed_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
     );
@@ -2818,6 +2972,7 @@ mod tests {
             int_tol: Some(1e-4),
             split_depth: Some(2),
             max_subproblems: Some(12),
+            max_job_retries: Some(4),
             timeout_ms: Some(444),
             emit_trace: Some(false),
         };
@@ -2828,6 +2983,7 @@ mod tests {
             int_tol: None,
             split_depth: Some(5),
             max_subproblems: Some(3),
+            max_job_retries: Some(9),
             timeout_ms: None,
             emit_trace: Some(true),
         };
@@ -2840,6 +2996,7 @@ mod tests {
         assert_eq!(merged.int_tol, Some(1e-4));
         assert_eq!(merged.split_depth, Some(5));
         assert_eq!(merged.max_subproblems, Some(3));
+        assert_eq!(merged.max_job_retries, Some(9));
         assert_eq!(merged.timeout_ms, Some(444));
         assert_eq!(merged.emit_trace, Some(true));
     }
@@ -3170,6 +3327,8 @@ mod tests {
         assert_eq!(response.revision, 3);
         assert_eq!(response.z, Some(90.0));
         assert!(!response.distributed);
+        assert_eq!(response.jobs_expected, response.jobs_completed);
+        assert_eq!(response.jobs_redelegated, 0);
         assert_eq!(response.jobs_completed, response.jobs_published);
         assert!(response.jobs_published > 0);
     }
@@ -3207,6 +3366,10 @@ mod tests {
             .metrics
             .subproblem_jobs_completed_total
             .store(3, Ordering::Relaxed);
+        state
+            .metrics
+            .subproblem_jobs_redelegated_total
+            .store(2, Ordering::Relaxed);
         let app = app_router(state);
 
         let (status, body) = get_text(app, "/metrics").await;
@@ -3216,6 +3379,8 @@ mod tests {
         assert!(body.contains("dd_mip_solver_node_info{role=\"master\",node_id=\"test-node\"} 1"));
         assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_in_flight gauge"));
         assert!(body.contains("dd_mip_solver_subproblem_jobs_in_flight 4"));
+        assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter"));
+        assert!(body.contains("dd_mip_solver_subproblem_jobs_redelegated_total 2"));
     }
 
     #[tokio::test]
@@ -3423,6 +3588,8 @@ mod tests {
             0,
             &problem,
             2,
+            2,
+            0,
             vec![optimal, infeasible],
             false,
             true,
@@ -3433,6 +3600,78 @@ mod tests {
         assert!(response.ok);
         assert_eq!(response.status, "optimal");
         assert_eq!(response.jobs_completed, 2);
+        assert_eq!(response.jobs_expected, 2);
+        assert_eq!(response.jobs_redelegated, 0);
+        assert_eq!(response.z, Some(90.0));
+    }
+
+    #[test]
+    fn redelegated_job_preserves_payload_and_advances_retry_id() {
+        let mut job = test_job(binary_knapsack_problem());
+        job.job_id = "solve-test-0".to_string();
+        job.extra_constraints.push(BranchConstraint {
+            coefs: vec![1.0, 0.0, 0.0, 0.0],
+            rhs: 0.0,
+            name: "branch_x0_le_0".to_string(),
+        });
+
+        let retry = redelegated_job(&job, 2);
+
+        assert_eq!(retry.job_id, "solve-test-0-retry-2");
+        assert_eq!(retry.solve_id, job.solve_id);
+        assert_eq!(retry.request_id, job.request_id);
+        assert_eq!(retry.revision, job.revision);
+        assert_eq!(retry.problem.c, job.problem.c);
+        assert_eq!(retry.extra_constraints, job.extra_constraints);
+        assert!(retry.submitted_at_ms >= job.submitted_at_ms);
+    }
+
+    #[test]
+    fn aggregate_results_treats_redelegated_attempt_as_complete() {
+        let problem = binary_knapsack_problem();
+        let state = test_state(NodeRole::Master);
+        let optimal_retry = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-0-retry-1".to_string(),
+            revision: 0,
+            worker_node: "worker-b".to_string(),
+            ok: true,
+            status: "optimal".to_string(),
+            z: Some(90.0),
+            x: vec![0.0, 1.0, 0.0, 1.0],
+            best_bound: Some(90.0),
+            gap: Some(0.0),
+            lp: None,
+            nodes_explored: 1,
+            lp_solves: 1,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: None,
+            finished_at_ms: now_ms(),
+        };
+
+        let response = aggregate_results(
+            "solve-test".to_string(),
+            "request-test".to_string(),
+            0,
+            &problem,
+            1,
+            2,
+            1,
+            vec![optimal_retry],
+            false,
+            true,
+            &state,
+            Vec::new(),
+        );
+
+        assert!(response.ok);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.jobs_expected, 1);
+        assert_eq!(response.jobs_published, 2);
+        assert_eq!(response.jobs_completed, 1);
+        assert_eq!(response.jobs_redelegated, 1);
         assert_eq!(response.z, Some(90.0));
     }
 
