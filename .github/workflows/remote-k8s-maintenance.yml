@@ -576,13 +576,15 @@ jobs:
           cd /home/ec2-user/codes/dd/dd-next-1
           echo "=== sync EC2 checkout ==="
           git status --short || true
-          if ! git diff --quiet || ! git diff --cached --quiet; then
-            stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
-            echo "stashing local tracked changes before merge: $stash_name"
-            git stash push -m "$stash_name"
-          fi
+          stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "stashing top-level tracked/untracked changes before merge: $stash_name"
+          git stash push --include-untracked -m "$stash_name" || true
+          echo "stashing submodule worktrees before merge"
+          git submodule foreach --recursive 'git stash push --include-untracked -m remote-k8s-maintenance-pre-merge-submodule || true' || true
+          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs || true
           git fetch origin {rev}
           git merge --ff-only origin/{rev}
+          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs
           git rev-parse --short HEAD
           '''
           commands = [
