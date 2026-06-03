@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: dd-des-rs
   namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
   labels:
     app: dd-des-rs
 spec:
