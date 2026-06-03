@@ -1654,3 +1654,679 @@ class PresenceConsumerCheckpointsInsert(BaseModel):
     consumerId: str
     lastSeq: int | None = 0
     updatedAt: datetime | None = None
+
+DesSoccerLearningExperimentsStatus = Literal["active", "paused", "archived"]
+
+class DesSoccerLearningExperiments(Base):
+    __tablename__ = "des_soccer_learning_experiments"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'", name="des_soccer_learning_experiments_slug_format_chk"),
+        CheckConstraint("octet_length(display_name) between 1 and 240", name="des_soccer_learning_experiments_display_name_size_chk"),
+        CheckConstraint("octet_length(description) <= 8192", name="des_soccer_learning_experiments_description_size_chk"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="des_soccer_learning_experiments_config_object_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="des_soccer_learning_experiments_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="des_soccer_learning_experiments_meta_object_chk"),
+        CheckConstraint("status in ('active', 'paused', 'archived')", name="des_soccer_learning_experiments_status_chk"),
+        Index("des_soccer_learning_experiments_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("des_soccer_learning_experiments_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
+        Index("des_soccer_learning_experiments_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class DesSoccerLearningExperimentsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=160, pattern="^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")
+    displayName: str = Field(..., max_length=240)
+    description: str
+    status: DesSoccerLearningExperimentsStatus
+    config: dict[str, Any]
+    labels: list[Any]
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("des_soccer_learning_experiments.display_name exceeds 240 bytes")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("des_soccer_learning_experiments.description exceeds 8192 bytes")
+        return value
+
+class DesSoccerLearningExperimentsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=160, pattern="^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")
+    displayName: str = Field(..., max_length=240)
+    description: str | None = ""
+    status: DesSoccerLearningExperimentsStatus | None = "active"
+    config: dict[str, Any] | None = Field(default_factory=dict)
+    labels: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("des_soccer_learning_experiments.display_name exceeds 240 bytes")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("des_soccer_learning_experiments.description exceeds 8192 bytes")
+        return value
+
+DesSoccerLearningPolicyVersionsSourceKind = Literal["seed", "merge", "mutation", "crossover", "import", "replay"]
+DesSoccerLearningPolicyVersionsStatus = Literal["candidate", "active", "archived", "rejected"]
+
+class DesSoccerLearningPolicyVersions(Base):
+    __tablename__ = "des_soccer_learning_policy_versions"
+    __table_args__ = (
+        CheckConstraint("generation >= 0", name="des_soccer_learning_policy_versions_generation_chk"),
+        CheckConstraint("version_label ~ '^[A-Za-z0-9._:/-]{1,160}$'", name="des_soccer_learning_policy_versions_label_format_chk"),
+        CheckConstraint("source_kind in ('seed', 'merge', 'mutation', 'crossover', 'import', 'replay')", name="des_soccer_learning_policy_versions_source_chk"),
+        CheckConstraint("status in ('candidate', 'active', 'archived', 'rejected')", name="des_soccer_learning_policy_versions_status_chk"),
+        CheckConstraint("jsonb_typeof(options) = 'object'", name="des_soccer_learning_policy_versions_options_object_chk"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="des_soccer_learning_policy_versions_config_object_chk"),
+        CheckConstraint("jsonb_typeof(lineage) = 'array'", name="des_soccer_learning_policy_versions_lineage_array_chk"),
+        CheckConstraint("jsonb_typeof(metrics) = 'object'", name="des_soccer_learning_policy_versions_metrics_object_chk"),
+        CheckConstraint("entry_count >= 0", name="des_soccer_learning_policy_versions_entry_count_chk"),
+        CheckConstraint("target_entry_count >= 0", name="des_soccer_learning_policy_versions_target_entry_count_chk"),
+        CheckConstraint("visit_count >= 0", name="des_soccer_learning_policy_versions_visit_count_chk"),
+        Index("des_soccer_learning_policy_versions_label_uq", "experiment_id", "version_label", unique=True),
+        Index("des_soccer_learning_policy_versions_active_idx", "experiment_id", text("generation desc"), text("updated_at desc"), postgresql_where=text("status = 'active'")),
+        Index("des_soccer_learning_policy_versions_fitness_idx", "experiment_id", text("fitness_micros desc"), text("updated_at desc"), postgresql_where=text("status in ('active', 'candidate')")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    parent_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    generation: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    version_label: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'seed'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'candidate'"))
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    lineage: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    entry_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    target_entry_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    visit_count: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    fitness_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class DesSoccerLearningPolicyVersionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    experimentId: UUID
+    parentPolicyVersionId: UUID | None = None
+    generation: int = Field(..., ge=0)
+    versionLabel: str = Field(..., max_length=160, pattern="^[A-Za-z0-9._:/-]{1,160}$")
+    sourceKind: DesSoccerLearningPolicyVersionsSourceKind
+    status: DesSoccerLearningPolicyVersionsStatus
+    options: dict[str, Any]
+    config: dict[str, Any]
+    lineage: list[Any]
+    metrics: dict[str, Any]
+    entryCount: int = Field(..., ge=0)
+    targetEntryCount: int = Field(..., ge=0)
+    visitCount: int
+    fitnessMicros: int
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class DesSoccerLearningPolicyVersionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    experimentId: UUID
+    parentPolicyVersionId: UUID | None = None
+    generation: int | None = Field(0, ge=0)
+    versionLabel: str = Field(..., max_length=160, pattern="^[A-Za-z0-9._:/-]{1,160}$")
+    sourceKind: DesSoccerLearningPolicyVersionsSourceKind | None = "seed"
+    status: DesSoccerLearningPolicyVersionsStatus | None = "candidate"
+    options: dict[str, Any] | None = Field(default_factory=dict)
+    config: dict[str, Any] | None = Field(default_factory=dict)
+    lineage: list[Any] | None = Field(default_factory=list)
+    metrics: dict[str, Any] | None = Field(default_factory=dict)
+    entryCount: int | None = Field(0, ge=0)
+    targetEntryCount: int | None = Field(0, ge=0)
+    visitCount: int | None = 0
+    fitnessMicros: int | None = 0
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+DesSoccerLearningPolicyEntriesTeam = Literal["home", "away"]
+DesSoccerLearningPolicyEntriesEntryKind = Literal["action", "target"]
+
+class DesSoccerLearningPolicyEntries(Base):
+    __tablename__ = "des_soccer_learning_policy_entries"
+    __table_args__ = (
+        CheckConstraint("team in ('home', 'away')", name="des_soccer_learning_policy_entries_team_chk"),
+        CheckConstraint("entry_kind in ('action', 'target')", name="des_soccer_learning_policy_entries_kind_chk"),
+        CheckConstraint("state_hash ~ '^[a-f0-9]{16,32}$'", name="des_soccer_learning_policy_entries_state_hash_chk"),
+        CheckConstraint("jsonb_typeof(state_key) = 'object'", name="des_soccer_learning_policy_entries_state_object_chk"),
+        CheckConstraint("octet_length(action) between 1 and 80", name="des_soccer_learning_policy_entries_action_size_chk"),
+        CheckConstraint("target_fine_cell_id >= -1", name="des_soccer_learning_policy_entries_target_fine_chk"),
+        CheckConstraint("target_tactical_cell_id >= -1", name="des_soccer_learning_policy_entries_target_tactical_chk"),
+        CheckConstraint("target_macro_cell_id >= -1", name="des_soccer_learning_policy_entries_target_macro_chk"),
+        CheckConstraint("target_root_cell_id >= -1", name="des_soccer_learning_policy_entries_target_root_chk"),
+        CheckConstraint("visits >= 0", name="des_soccer_learning_policy_entries_visits_chk"),
+        Index("des_soccer_learning_policy_entries_key_uq", "policy_version_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", unique=True),
+        Index("des_soccer_learning_policy_entries_lookup_idx", "policy_version_id", "team", "entry_kind", "state_hash"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    policy_version_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    team: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    state_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    state_key: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_fine_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_tactical_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_macro_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_root_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    visits: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    source_run_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningPolicyEntriesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    policyVersionId: UUID
+    team: DesSoccerLearningPolicyEntriesTeam
+    entryKind: DesSoccerLearningPolicyEntriesEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int = Field(..., ge=-1)
+    targetTacticalCellId: int = Field(..., ge=-1)
+    targetMacroCellId: int = Field(..., ge=-1)
+    targetRootCellId: int = Field(..., ge=-1)
+    valueMicros: int
+    visits: int = Field(..., ge=0)
+    sourceRunId: UUID | None = None
+    createdAt: datetime
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_policy_entries.action exceeds 80 bytes")
+        return value
+
+class DesSoccerLearningPolicyEntriesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    policyVersionId: UUID
+    team: DesSoccerLearningPolicyEntriesTeam
+    entryKind: DesSoccerLearningPolicyEntriesEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int | None = Field(-1, ge=-1)
+    targetTacticalCellId: int | None = Field(-1, ge=-1)
+    targetMacroCellId: int | None = Field(-1, ge=-1)
+    targetRootCellId: int | None = Field(-1, ge=-1)
+    valueMicros: int
+    visits: int | None = Field(0, ge=0)
+    sourceRunId: UUID | None = None
+    createdAt: datetime | None = None
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_policy_entries.action exceeds 80 bytes")
+        return value
+
+DesSoccerLearningJobsSpawnStrategy = Literal["latest", "elite", "mutation", "crossover", "random", "replay"]
+DesSoccerLearningJobsStatus = Literal["queued", "running", "completed", "failed", "canceled"]
+
+class DesSoccerLearningJobs(Base):
+    __tablename__ = "des_soccer_learning_jobs"
+    __table_args__ = (
+        CheckConstraint("spawn_strategy in ('latest', 'elite', 'mutation', 'crossover', 'random', 'replay')", name="des_soccer_learning_jobs_spawn_strategy_chk"),
+        CheckConstraint("status in ('queued', 'running', 'completed', 'failed', 'canceled')", name="des_soccer_learning_jobs_status_chk"),
+        CheckConstraint("seed >= 0", name="des_soccer_learning_jobs_seed_chk"),
+        CheckConstraint("attempt >= 0", name="des_soccer_learning_jobs_attempt_chk"),
+        CheckConstraint("max_attempts between 1 and 100", name="des_soccer_learning_jobs_max_attempts_chk"),
+        CheckConstraint("lease_owner is null or octet_length(lease_owner) <= 200", name="des_soccer_learning_jobs_lease_owner_size_chk"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="des_soccer_learning_jobs_config_object_chk"),
+        CheckConstraint("jsonb_typeof(runner_config) = 'object'", name="des_soccer_learning_jobs_runner_config_object_chk"),
+        CheckConstraint("error is null or octet_length(error) <= 16384", name="des_soccer_learning_jobs_error_size_chk"),
+        Index("des_soccer_learning_jobs_claim_idx", "experiment_id", "status", text("priority desc"), "created_at", postgresql_where=text("status in ('queued', 'running')")),
+        Index("des_soccer_learning_jobs_base_policy_idx", "base_policy_version_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    base_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    spawn_strategy: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'latest'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    priority: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    lease_owner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    runner_config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    result_run_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningJobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    spawnStrategy: DesSoccerLearningJobsSpawnStrategy
+    status: DesSoccerLearningJobsStatus
+    priority: int
+    seed: int
+    attempt: int = Field(..., ge=0)
+    maxAttempts: int = Field(..., ge=1, le=100)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseExpiresAt: datetime | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    config: dict[str, Any]
+    runnerConfig: dict[str, Any]
+    resultRunId: UUID | None = None
+    error: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_jobs.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_jobs.error exceeds 16384 bytes")
+        return value
+
+class DesSoccerLearningJobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    spawnStrategy: DesSoccerLearningJobsSpawnStrategy | None = "latest"
+    status: DesSoccerLearningJobsStatus | None = "queued"
+    priority: int | None = 0
+    seed: int
+    attempt: int | None = Field(0, ge=0)
+    maxAttempts: int | None = Field(1, ge=1, le=100)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseExpiresAt: datetime | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    config: dict[str, Any] | None = Field(default_factory=dict)
+    runnerConfig: dict[str, Any] | None = Field(default_factory=dict)
+    resultRunId: UUID | None = None
+    error: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_jobs.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_jobs.error exceeds 16384 bytes")
+        return value
+
+DesSoccerLearningRunsStatus = Literal["completed", "failed"]
+DesSoccerLearningRunsHomeOutcome = Literal["win", "draw", "loss"]
+DesSoccerLearningRunsAwayOutcome = Literal["win", "draw", "loss"]
+
+class DesSoccerLearningRuns(Base):
+    __tablename__ = "des_soccer_learning_runs"
+    __table_args__ = (
+        CheckConstraint("octet_length(runner_id) between 1 and 200", name="des_soccer_learning_runs_runner_id_size_chk"),
+        CheckConstraint("seed >= 0", name="des_soccer_learning_runs_seed_chk"),
+        CheckConstraint("episode_index >= 0", name="des_soccer_learning_runs_episode_index_chk"),
+        CheckConstraint("status in ('completed', 'failed')", name="des_soccer_learning_runs_status_chk"),
+        CheckConstraint("score_home >= 0 and score_away >= 0", name="des_soccer_learning_runs_scores_chk"),
+        CheckConstraint("home_outcome in ('win', 'draw', 'loss')", name="des_soccer_learning_runs_home_outcome_chk"),
+        CheckConstraint("away_outcome in ('win', 'draw', 'loss')", name="des_soccer_learning_runs_away_outcome_chk"),
+        CheckConstraint("duration_ticks >= 0", name="des_soccer_learning_runs_duration_ticks_chk"),
+        CheckConstraint("simulated_seconds_micros >= 0", name="des_soccer_learning_runs_simulated_seconds_chk"),
+        CheckConstraint("elapsed_millis >= 0", name="des_soccer_learning_runs_elapsed_millis_chk"),
+        CheckConstraint("transitions >= 0", name="des_soccer_learning_runs_transitions_chk"),
+        CheckConstraint("jsonb_typeof(summary) = 'object'", name="des_soccer_learning_runs_summary_object_chk"),
+        CheckConstraint("jsonb_typeof(stats) = 'object'", name="des_soccer_learning_runs_stats_object_chk"),
+        CheckConstraint("error is null or octet_length(error) <= 16384", name="des_soccer_learning_runs_error_size_chk"),
+        Index("des_soccer_learning_runs_experiment_idx", "experiment_id", text("created_at desc")),
+        Index("des_soccer_learning_runs_policy_fitness_idx", "base_policy_version_id", text("fitness_micros desc"), text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    job_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    base_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    output_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    runner_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    episode_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'completed'"))
+    score_home: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    score_away: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    home_goal_diff: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    away_goal_diff: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    home_outcome: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'draw'"))
+    away_outcome: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'draw'"))
+    home_merge_weight_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    away_merge_weight_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    fitness_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    duration_ticks: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    simulated_seconds_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    elapsed_millis: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    transitions: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    stats: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    jobId: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID | None = None
+    runnerId: str = Field(..., max_length=200)
+    seed: int
+    episodeIndex: int = Field(..., ge=0)
+    status: DesSoccerLearningRunsStatus
+    scoreHome: int = Field(..., ge=0)
+    scoreAway: int = Field(..., ge=0)
+    homeGoalDiff: int
+    awayGoalDiff: int
+    homeOutcome: DesSoccerLearningRunsHomeOutcome
+    awayOutcome: DesSoccerLearningRunsAwayOutcome
+    homeMergeWeightMicros: int
+    awayMergeWeightMicros: int
+    fitnessMicros: int
+    durationTicks: int
+    simulatedSecondsMicros: int
+    elapsedMillis: int
+    transitions: int = Field(..., ge=0)
+    summary: dict[str, Any]
+    stats: dict[str, Any]
+    error: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("runnerId")
+    @classmethod
+    def validate_runner_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_runs.runner_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_runs.error exceeds 16384 bytes")
+        return value
+
+class DesSoccerLearningRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    jobId: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID | None = None
+    runnerId: str = Field(..., max_length=200)
+    seed: int
+    episodeIndex: int | None = Field(0, ge=0)
+    status: DesSoccerLearningRunsStatus | None = "completed"
+    scoreHome: int | None = Field(0, ge=0)
+    scoreAway: int | None = Field(0, ge=0)
+    homeGoalDiff: int | None = 0
+    awayGoalDiff: int | None = 0
+    homeOutcome: DesSoccerLearningRunsHomeOutcome | None = "draw"
+    awayOutcome: DesSoccerLearningRunsAwayOutcome | None = "draw"
+    homeMergeWeightMicros: int | None = 0
+    awayMergeWeightMicros: int | None = 0
+    fitnessMicros: int | None = 0
+    durationTicks: int | None = 0
+    simulatedSecondsMicros: int | None = 0
+    elapsedMillis: int | None = 0
+    transitions: int | None = Field(0, ge=0)
+    summary: dict[str, Any] | None = Field(default_factory=dict)
+    stats: dict[str, Any] | None = Field(default_factory=dict)
+    error: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("runnerId")
+    @classmethod
+    def validate_runner_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_runs.runner_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_runs.error exceeds 16384 bytes")
+        return value
+
+DesSoccerLearningRunDeltasTeam = Literal["home", "away"]
+DesSoccerLearningRunDeltasEntryKind = Literal["action", "target"]
+
+class DesSoccerLearningRunDeltas(Base):
+    __tablename__ = "des_soccer_learning_run_deltas"
+    __table_args__ = (
+        CheckConstraint("team in ('home', 'away')", name="des_soccer_learning_run_deltas_team_chk"),
+        CheckConstraint("entry_kind in ('action', 'target')", name="des_soccer_learning_run_deltas_kind_chk"),
+        CheckConstraint("state_hash ~ '^[a-f0-9]{16,32}$'", name="des_soccer_learning_run_deltas_state_hash_chk"),
+        CheckConstraint("jsonb_typeof(state_key) = 'object'", name="des_soccer_learning_run_deltas_state_object_chk"),
+        CheckConstraint("octet_length(action) between 1 and 80", name="des_soccer_learning_run_deltas_action_size_chk"),
+        CheckConstraint("target_fine_cell_id >= -1", name="des_soccer_learning_run_deltas_target_fine_chk"),
+        CheckConstraint("target_tactical_cell_id >= -1", name="des_soccer_learning_run_deltas_target_tactical_chk"),
+        CheckConstraint("target_macro_cell_id >= -1", name="des_soccer_learning_run_deltas_target_macro_chk"),
+        CheckConstraint("target_root_cell_id >= -1", name="des_soccer_learning_run_deltas_target_root_chk"),
+        CheckConstraint("visit_delta > 0", name="des_soccer_learning_run_deltas_visit_delta_chk"),
+        CheckConstraint("merge_weight_micros >= 0", name="des_soccer_learning_run_deltas_merge_weight_chk"),
+        CheckConstraint("effective_visit_micros >= 0", name="des_soccer_learning_run_deltas_effective_visit_chk"),
+        Index("des_soccer_learning_run_deltas_key_uq", "run_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", unique=True),
+        Index("des_soccer_learning_run_deltas_merge_idx", "team", "entry_kind", "state_hash", "action"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    team: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    state_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    state_key: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_fine_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_tactical_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_macro_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_root_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    before_value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    after_value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    value_delta_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    visit_delta: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    merge_weight_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    effective_visit_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningRunDeltasRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    runId: UUID
+    team: DesSoccerLearningRunDeltasTeam
+    entryKind: DesSoccerLearningRunDeltasEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int = Field(..., ge=-1)
+    targetTacticalCellId: int = Field(..., ge=-1)
+    targetMacroCellId: int = Field(..., ge=-1)
+    targetRootCellId: int = Field(..., ge=-1)
+    beforeValueMicros: int
+    afterValueMicros: int
+    valueDeltaMicros: int
+    visitDelta: int = Field(..., ge=1)
+    mergeWeightMicros: int
+    effectiveVisitMicros: int
+    createdAt: datetime
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_run_deltas.action exceeds 80 bytes")
+        return value
+
+class DesSoccerLearningRunDeltasInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    runId: UUID
+    team: DesSoccerLearningRunDeltasTeam
+    entryKind: DesSoccerLearningRunDeltasEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int | None = Field(-1, ge=-1)
+    targetTacticalCellId: int | None = Field(-1, ge=-1)
+    targetMacroCellId: int | None = Field(-1, ge=-1)
+    targetRootCellId: int | None = Field(-1, ge=-1)
+    beforeValueMicros: int | None = 0
+    afterValueMicros: int | None = 0
+    valueDeltaMicros: int | None = 0
+    visitDelta: int | None = Field(0, ge=1)
+    mergeWeightMicros: int | None = 0
+    effectiveVisitMicros: int | None = 0
+    createdAt: datetime | None = None
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_run_deltas.action exceeds 80 bytes")
+        return value
+
+DesSoccerLearningMergeEventsStrategy = Literal["outcome_weighted_average", "elite", "mutation", "crossover"]
+
+class DesSoccerLearningMergeEvents(Base):
+    __tablename__ = "des_soccer_learning_merge_events"
+    __table_args__ = (
+        CheckConstraint("strategy in ('outcome_weighted_average', 'elite', 'mutation', 'crossover')", name="des_soccer_learning_merge_events_strategy_chk"),
+        CheckConstraint("input_run_count >= 0", name="des_soccer_learning_merge_events_input_run_count_chk"),
+        CheckConstraint("input_delta_count >= 0", name="des_soccer_learning_merge_events_input_delta_count_chk"),
+        CheckConstraint("decay_micros between 0 and 1000000", name="des_soccer_learning_merge_events_decay_chk"),
+        CheckConstraint("jsonb_typeof(metrics) = 'object'", name="des_soccer_learning_merge_events_metrics_object_chk"),
+        Index("des_soccer_learning_merge_events_experiment_idx", "experiment_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    base_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    output_policy_version_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'outcome_weighted_average'"))
+    input_run_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    input_delta_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    decay_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1000000"))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningMergeEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID
+    strategy: DesSoccerLearningMergeEventsStrategy
+    inputRunCount: int = Field(..., ge=0)
+    inputDeltaCount: int = Field(..., ge=0)
+    decayMicros: int
+    metrics: dict[str, Any]
+    createdAt: datetime
+
+class DesSoccerLearningMergeEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID
+    strategy: DesSoccerLearningMergeEventsStrategy | None = "outcome_weighted_average"
+    inputRunCount: int | None = Field(0, ge=0)
+    inputDeltaCount: int | None = Field(0, ge=0)
+    decayMicros: int | None = 1000000
+    metrics: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None

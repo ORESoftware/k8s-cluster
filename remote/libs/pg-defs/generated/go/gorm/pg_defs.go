@@ -34,6 +34,10 @@ var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 var containerPoolBuildRunsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var presenceConvsSlugPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var desSoccerLearningExperimentsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$`)
+var desSoccerLearningPolicyVersionsVersionLabelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,160}$`)
+var desSoccerLearningPolicyEntriesStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
+var desSoccerLearningRunDeltasStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -941,6 +945,440 @@ type PresenceConsumerCheckpointsGorm struct {
 func (PresenceConsumerCheckpointsGorm) TableName() string { return PresenceConsumerCheckpointsTable }
 
 func (value PresenceConsumerCheckpointsGorm) Validate() error {
+	return nil
+}
+
+const DesSoccerLearningExperimentsTable = "des_soccer_learning_experiments"
+const DesSoccerLearningExperimentsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      status,
+      config,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_experiments`
+
+var DesSoccerLearningExperimentsStatusValues = []string{"active", "paused", "archived"}
+
+type DesSoccerLearningExperimentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(160);not null" json:"slug"`
+	DisplayName string `gorm:"column:display_name;type:varchar(240);not null" json:"displayName"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	Config datatypes.JSON `gorm:"column:config;type:jsonb;default:'{}'::jsonb;not null" json:"config"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;default:'[]'::jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (DesSoccerLearningExperimentsGorm) TableName() string { return DesSoccerLearningExperimentsTable }
+
+func (value DesSoccerLearningExperimentsGorm) Validate() error {
+	if !desSoccerLearningExperimentsSlugPattern.MatchString(value.Slug) { return errors.New("des_soccer_learning_experiments.slug does not match the required pattern") }
+	if len([]byte(value.DisplayName)) > 240 { return errors.New("des_soccer_learning_experiments.display_name exceeds 240 bytes") }
+	if len([]byte(value.DisplayName)) < 1 { return errors.New("des_soccer_learning_experiments.display_name is below 1 bytes") }
+	if len([]byte(value.Description)) > 8192 { return errors.New("des_soccer_learning_experiments.description exceeds 8192 bytes") }
+	if !containsString(DesSoccerLearningExperimentsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_experiments.status") }
+	if !validateJSONString(value.Config) { return errors.New("des_soccer_learning_experiments.config must be valid JSON") }
+	if !validateJSONString(value.Labels) { return errors.New("des_soccer_learning_experiments.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("des_soccer_learning_experiments.meta_data must be valid JSON") }
+	return nil
+}
+
+const DesSoccerLearningPolicyVersionsTable = "des_soccer_learning_policy_versions"
+const DesSoccerLearningPolicyVersionsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      parent_policy_version_id::text as parent_policy_version_id,
+      generation,
+      version_label,
+      source_kind,
+      status,
+      options,
+      config,
+      lineage,
+      metrics,
+      entry_count,
+      target_entry_count,
+      visit_count,
+      fitness_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_policy_versions`
+
+var DesSoccerLearningPolicyVersionsSourceKindValues = []string{"seed", "merge", "mutation", "crossover", "import", "replay"}
+var DesSoccerLearningPolicyVersionsStatusValues = []string{"candidate", "active", "archived", "rejected"}
+
+type DesSoccerLearningPolicyVersionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	ParentPolicyVersionId *uuid.UUID `gorm:"column:parent_policy_version_id;type:uuid" json:"parentPolicyVersionId,omitempty"`
+	Generation int32 `gorm:"column:generation;type:integer;default:0;not null" json:"generation"`
+	VersionLabel string `gorm:"column:version_label;type:varchar(160);not null" json:"versionLabel"`
+	SourceKind string `gorm:"column:source_kind;type:varchar(40);default:'seed';not null" json:"sourceKind"`
+	Status string `gorm:"column:status;type:varchar(32);default:'candidate';not null" json:"status"`
+	Options datatypes.JSON `gorm:"column:options;type:jsonb;default:'{}'::jsonb;not null" json:"options"`
+	Config datatypes.JSON `gorm:"column:config;type:jsonb;default:'{}'::jsonb;not null" json:"config"`
+	Lineage datatypes.JSON `gorm:"column:lineage;type:jsonb;default:'[]'::jsonb;not null" json:"lineage"`
+	Metrics datatypes.JSON `gorm:"column:metrics;type:jsonb;default:'{}'::jsonb;not null" json:"metrics"`
+	EntryCount int32 `gorm:"column:entry_count;type:integer;default:0;not null" json:"entryCount"`
+	TargetEntryCount int32 `gorm:"column:target_entry_count;type:integer;default:0;not null" json:"targetEntryCount"`
+	VisitCount int64 `gorm:"column:visit_count;type:bigint;default:0;not null" json:"visitCount"`
+	FitnessMicros int64 `gorm:"column:fitness_micros;type:bigint;default:0;not null" json:"fitnessMicros"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (DesSoccerLearningPolicyVersionsGorm) TableName() string { return DesSoccerLearningPolicyVersionsTable }
+
+func (value DesSoccerLearningPolicyVersionsGorm) Validate() error {
+	if value.Generation < 0 { return errors.New("des_soccer_learning_policy_versions.generation is below the minimum") }
+	if !desSoccerLearningPolicyVersionsVersionLabelPattern.MatchString(value.VersionLabel) { return errors.New("des_soccer_learning_policy_versions.version_label does not match the required pattern") }
+	if !containsString(DesSoccerLearningPolicyVersionsSourceKindValues, value.SourceKind) { return errors.New("unsupported des_soccer_learning_policy_versions.source_kind") }
+	if !containsString(DesSoccerLearningPolicyVersionsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_policy_versions.status") }
+	if !validateJSONString(value.Options) { return errors.New("des_soccer_learning_policy_versions.options must be valid JSON") }
+	if !validateJSONString(value.Config) { return errors.New("des_soccer_learning_policy_versions.config must be valid JSON") }
+	if !validateJSONString(value.Lineage) { return errors.New("des_soccer_learning_policy_versions.lineage must be valid JSON") }
+	if !validateJSONString(value.Metrics) { return errors.New("des_soccer_learning_policy_versions.metrics must be valid JSON") }
+	if value.EntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.entry_count is below the minimum") }
+	if value.TargetEntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.target_entry_count is below the minimum") }
+	if value.VisitCount < 0 { return errors.New("des_soccer_learning_policy_versions.visit_count is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries"
+const DesSoccerLearningPolicyEntriesSelectSQL = `select
+      id::text as id,
+      policy_version_id::text as policy_version_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      value_micros,
+      visits,
+      source_run_id::text as source_run_id,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_policy_entries`
+
+var DesSoccerLearningPolicyEntriesTeamValues = []string{"home", "away"}
+var DesSoccerLearningPolicyEntriesEntryKindValues = []string{"action", "target"}
+
+type DesSoccerLearningPolicyEntriesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	PolicyVersionId uuid.UUID `gorm:"column:policy_version_id;type:uuid;not null" json:"policyVersionId"`
+	Team string `gorm:"column:team;type:varchar(8);not null" json:"team"`
+	EntryKind string `gorm:"column:entry_kind;type:varchar(16);not null" json:"entryKind"`
+	StateHash string `gorm:"column:state_hash;type:varchar(32);not null" json:"stateHash"`
+	StateKey datatypes.JSON `gorm:"column:state_key;type:jsonb;not null" json:"stateKey"`
+	Action string `gorm:"column:action;type:varchar(80);not null" json:"action"`
+	TargetFineCellId int32 `gorm:"column:target_fine_cell_id;type:integer;default:-1;not null" json:"targetFineCellId"`
+	TargetTacticalCellId int32 `gorm:"column:target_tactical_cell_id;type:integer;default:-1;not null" json:"targetTacticalCellId"`
+	TargetMacroCellId int32 `gorm:"column:target_macro_cell_id;type:integer;default:-1;not null" json:"targetMacroCellId"`
+	TargetRootCellId int32 `gorm:"column:target_root_cell_id;type:integer;default:-1;not null" json:"targetRootCellId"`
+	ValueMicros int64 `gorm:"column:value_micros;type:bigint;not null" json:"valueMicros"`
+	Visits int32 `gorm:"column:visits;type:integer;default:0;not null" json:"visits"`
+	SourceRunId *uuid.UUID `gorm:"column:source_run_id;type:uuid" json:"sourceRunId,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesSoccerLearningPolicyEntriesGorm) TableName() string { return DesSoccerLearningPolicyEntriesTable }
+
+func (value DesSoccerLearningPolicyEntriesGorm) Validate() error {
+	if !containsString(DesSoccerLearningPolicyEntriesTeamValues, value.Team) { return errors.New("unsupported des_soccer_learning_policy_entries.team") }
+	if !containsString(DesSoccerLearningPolicyEntriesEntryKindValues, value.EntryKind) { return errors.New("unsupported des_soccer_learning_policy_entries.entry_kind") }
+	if !desSoccerLearningPolicyEntriesStateHashPattern.MatchString(value.StateHash) { return errors.New("des_soccer_learning_policy_entries.state_hash does not match the required pattern") }
+	if !validateJSONString(value.StateKey) { return errors.New("des_soccer_learning_policy_entries.state_key must be valid JSON") }
+	if len([]byte(value.Action)) > 80 { return errors.New("des_soccer_learning_policy_entries.action exceeds 80 bytes") }
+	if len([]byte(value.Action)) < 1 { return errors.New("des_soccer_learning_policy_entries.action is below 1 bytes") }
+	if value.TargetFineCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum") }
+	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum") }
+	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum") }
+	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum") }
+	if value.Visits < 0 { return errors.New("des_soccer_learning_policy_entries.visits is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningJobsTable = "des_soccer_learning_jobs"
+const DesSoccerLearningJobsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      spawn_strategy,
+      status,
+      priority,
+      seed,
+      attempt,
+      max_attempts,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      config,
+      runner_config,
+      result_run_id::text as result_run_id,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_jobs`
+
+var DesSoccerLearningJobsSpawnStrategyValues = []string{"latest", "elite", "mutation", "crossover", "random", "replay"}
+var DesSoccerLearningJobsStatusValues = []string{"queued", "running", "completed", "failed", "canceled"}
+
+type DesSoccerLearningJobsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `gorm:"column:base_policy_version_id;type:uuid" json:"basePolicyVersionId,omitempty"`
+	SpawnStrategy string `gorm:"column:spawn_strategy;type:varchar(32);default:'latest';not null" json:"spawnStrategy"`
+	Status string `gorm:"column:status;type:varchar(32);default:'queued';not null" json:"status"`
+	Priority int32 `gorm:"column:priority;type:integer;default:0;not null" json:"priority"`
+	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
+	Attempt int32 `gorm:"column:attempt;type:integer;default:0;not null" json:"attempt"`
+	MaxAttempts int32 `gorm:"column:max_attempts;type:integer;default:1;not null" json:"maxAttempts"`
+	LeaseOwner *string `gorm:"column:lease_owner;type:varchar(200)" json:"leaseOwner,omitempty"`
+	LeaseExpiresAt *time.Time `gorm:"column:lease_expires_at;type:timestamptz" json:"leaseExpiresAt,omitempty"`
+	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+	Config datatypes.JSON `gorm:"column:config;type:jsonb;default:'{}'::jsonb;not null" json:"config"`
+	RunnerConfig datatypes.JSON `gorm:"column:runner_config;type:jsonb;default:'{}'::jsonb;not null" json:"runnerConfig"`
+	ResultRunId *uuid.UUID `gorm:"column:result_run_id;type:uuid" json:"resultRunId,omitempty"`
+	Error *string `gorm:"column:error;type:text" json:"error,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (DesSoccerLearningJobsGorm) TableName() string { return DesSoccerLearningJobsTable }
+
+func (value DesSoccerLearningJobsGorm) Validate() error {
+	if !containsString(DesSoccerLearningJobsSpawnStrategyValues, value.SpawnStrategy) { return errors.New("unsupported des_soccer_learning_jobs.spawn_strategy") }
+	if !containsString(DesSoccerLearningJobsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_jobs.status") }
+	if value.Seed < 0 { return errors.New("des_soccer_learning_jobs.seed is below the minimum") }
+	if value.Attempt < 0 { return errors.New("des_soccer_learning_jobs.attempt is below the minimum") }
+	if value.MaxAttempts < 1 { return errors.New("des_soccer_learning_jobs.max_attempts is below the minimum") }
+	if value.MaxAttempts > 100 { return errors.New("des_soccer_learning_jobs.max_attempts is above the maximum") }
+	if value.LeaseOwner != nil {
+		if len([]byte(*value.LeaseOwner)) > 200 { return errors.New("des_soccer_learning_jobs.lease_owner exceeds 200 bytes") }
+	}
+	if !validateJSONString(value.Config) { return errors.New("des_soccer_learning_jobs.config must be valid JSON") }
+	if !validateJSONString(value.RunnerConfig) { return errors.New("des_soccer_learning_jobs.runner_config must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 16384 { return errors.New("des_soccer_learning_jobs.error exceeds 16384 bytes") }
+	}
+	return nil
+}
+
+const DesSoccerLearningRunsTable = "des_soccer_learning_runs"
+const DesSoccerLearningRunsSelectSQL = `select
+      id::text as id,
+      job_id::text as job_id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      runner_id,
+      seed,
+      episode_index,
+      status,
+      score_home,
+      score_away,
+      home_goal_diff,
+      away_goal_diff,
+      home_outcome,
+      away_outcome,
+      home_merge_weight_micros,
+      away_merge_weight_micros,
+      fitness_micros,
+      duration_ticks,
+      simulated_seconds_micros,
+      elapsed_millis,
+      transitions,
+      summary,
+      stats,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_runs`
+
+var DesSoccerLearningRunsStatusValues = []string{"completed", "failed"}
+var DesSoccerLearningRunsHomeOutcomeValues = []string{"win", "draw", "loss"}
+var DesSoccerLearningRunsAwayOutcomeValues = []string{"win", "draw", "loss"}
+
+type DesSoccerLearningRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	JobId *uuid.UUID `gorm:"column:job_id;type:uuid" json:"jobId,omitempty"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `gorm:"column:base_policy_version_id;type:uuid" json:"basePolicyVersionId,omitempty"`
+	OutputPolicyVersionId *uuid.UUID `gorm:"column:output_policy_version_id;type:uuid" json:"outputPolicyVersionId,omitempty"`
+	RunnerId string `gorm:"column:runner_id;type:varchar(200);not null" json:"runnerId"`
+	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
+	EpisodeIndex int32 `gorm:"column:episode_index;type:integer;default:0;not null" json:"episodeIndex"`
+	Status string `gorm:"column:status;type:varchar(32);default:'completed';not null" json:"status"`
+	ScoreHome int32 `gorm:"column:score_home;type:integer;default:0;not null" json:"scoreHome"`
+	ScoreAway int32 `gorm:"column:score_away;type:integer;default:0;not null" json:"scoreAway"`
+	HomeGoalDiff int32 `gorm:"column:home_goal_diff;type:integer;default:0;not null" json:"homeGoalDiff"`
+	AwayGoalDiff int32 `gorm:"column:away_goal_diff;type:integer;default:0;not null" json:"awayGoalDiff"`
+	HomeOutcome string `gorm:"column:home_outcome;type:varchar(16);default:'draw';not null" json:"homeOutcome"`
+	AwayOutcome string `gorm:"column:away_outcome;type:varchar(16);default:'draw';not null" json:"awayOutcome"`
+	HomeMergeWeightMicros int64 `gorm:"column:home_merge_weight_micros;type:bigint;default:0;not null" json:"homeMergeWeightMicros"`
+	AwayMergeWeightMicros int64 `gorm:"column:away_merge_weight_micros;type:bigint;default:0;not null" json:"awayMergeWeightMicros"`
+	FitnessMicros int64 `gorm:"column:fitness_micros;type:bigint;default:0;not null" json:"fitnessMicros"`
+	DurationTicks int64 `gorm:"column:duration_ticks;type:bigint;default:0;not null" json:"durationTicks"`
+	SimulatedSecondsMicros int64 `gorm:"column:simulated_seconds_micros;type:bigint;default:0;not null" json:"simulatedSecondsMicros"`
+	ElapsedMillis int64 `gorm:"column:elapsed_millis;type:bigint;default:0;not null" json:"elapsedMillis"`
+	Transitions int32 `gorm:"column:transitions;type:integer;default:0;not null" json:"transitions"`
+	Summary datatypes.JSON `gorm:"column:summary;type:jsonb;default:'{}'::jsonb;not null" json:"summary"`
+	Stats datatypes.JSON `gorm:"column:stats;type:jsonb;default:'{}'::jsonb;not null" json:"stats"`
+	Error *string `gorm:"column:error;type:text" json:"error,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (DesSoccerLearningRunsGorm) TableName() string { return DesSoccerLearningRunsTable }
+
+func (value DesSoccerLearningRunsGorm) Validate() error {
+	if len([]byte(value.RunnerId)) > 200 { return errors.New("des_soccer_learning_runs.runner_id exceeds 200 bytes") }
+	if len([]byte(value.RunnerId)) < 1 { return errors.New("des_soccer_learning_runs.runner_id is below 1 bytes") }
+	if value.Seed < 0 { return errors.New("des_soccer_learning_runs.seed is below the minimum") }
+	if value.EpisodeIndex < 0 { return errors.New("des_soccer_learning_runs.episode_index is below the minimum") }
+	if !containsString(DesSoccerLearningRunsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_runs.status") }
+	if value.ScoreHome < 0 { return errors.New("des_soccer_learning_runs.score_home is below the minimum") }
+	if value.ScoreAway < 0 { return errors.New("des_soccer_learning_runs.score_away is below the minimum") }
+	if !containsString(DesSoccerLearningRunsHomeOutcomeValues, value.HomeOutcome) { return errors.New("unsupported des_soccer_learning_runs.home_outcome") }
+	if !containsString(DesSoccerLearningRunsAwayOutcomeValues, value.AwayOutcome) { return errors.New("unsupported des_soccer_learning_runs.away_outcome") }
+	if value.DurationTicks < 0 { return errors.New("des_soccer_learning_runs.duration_ticks is below the minimum") }
+	if value.SimulatedSecondsMicros < 0 { return errors.New("des_soccer_learning_runs.simulated_seconds_micros is below the minimum") }
+	if value.ElapsedMillis < 0 { return errors.New("des_soccer_learning_runs.elapsed_millis is below the minimum") }
+	if value.Transitions < 0 { return errors.New("des_soccer_learning_runs.transitions is below the minimum") }
+	if !validateJSONString(value.Summary) { return errors.New("des_soccer_learning_runs.summary must be valid JSON") }
+	if !validateJSONString(value.Stats) { return errors.New("des_soccer_learning_runs.stats must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 16384 { return errors.New("des_soccer_learning_runs.error exceeds 16384 bytes") }
+	}
+	return nil
+}
+
+const DesSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas"
+const DesSoccerLearningRunDeltasSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      before_value_micros,
+      after_value_micros,
+      value_delta_micros,
+      visit_delta,
+      merge_weight_micros,
+      effective_visit_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_run_deltas`
+
+var DesSoccerLearningRunDeltasTeamValues = []string{"home", "away"}
+var DesSoccerLearningRunDeltasEntryKindValues = []string{"action", "target"}
+
+type DesSoccerLearningRunDeltasGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
+	Team string `gorm:"column:team;type:varchar(8);not null" json:"team"`
+	EntryKind string `gorm:"column:entry_kind;type:varchar(16);not null" json:"entryKind"`
+	StateHash string `gorm:"column:state_hash;type:varchar(32);not null" json:"stateHash"`
+	StateKey datatypes.JSON `gorm:"column:state_key;type:jsonb;not null" json:"stateKey"`
+	Action string `gorm:"column:action;type:varchar(80);not null" json:"action"`
+	TargetFineCellId int32 `gorm:"column:target_fine_cell_id;type:integer;default:-1;not null" json:"targetFineCellId"`
+	TargetTacticalCellId int32 `gorm:"column:target_tactical_cell_id;type:integer;default:-1;not null" json:"targetTacticalCellId"`
+	TargetMacroCellId int32 `gorm:"column:target_macro_cell_id;type:integer;default:-1;not null" json:"targetMacroCellId"`
+	TargetRootCellId int32 `gorm:"column:target_root_cell_id;type:integer;default:-1;not null" json:"targetRootCellId"`
+	BeforeValueMicros int64 `gorm:"column:before_value_micros;type:bigint;default:0;not null" json:"beforeValueMicros"`
+	AfterValueMicros int64 `gorm:"column:after_value_micros;type:bigint;default:0;not null" json:"afterValueMicros"`
+	ValueDeltaMicros int64 `gorm:"column:value_delta_micros;type:bigint;default:0;not null" json:"valueDeltaMicros"`
+	VisitDelta int32 `gorm:"column:visit_delta;type:integer;default:0;not null" json:"visitDelta"`
+	MergeWeightMicros int64 `gorm:"column:merge_weight_micros;type:bigint;default:0;not null" json:"mergeWeightMicros"`
+	EffectiveVisitMicros int64 `gorm:"column:effective_visit_micros;type:bigint;default:0;not null" json:"effectiveVisitMicros"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesSoccerLearningRunDeltasGorm) TableName() string { return DesSoccerLearningRunDeltasTable }
+
+func (value DesSoccerLearningRunDeltasGorm) Validate() error {
+	if !containsString(DesSoccerLearningRunDeltasTeamValues, value.Team) { return errors.New("unsupported des_soccer_learning_run_deltas.team") }
+	if !containsString(DesSoccerLearningRunDeltasEntryKindValues, value.EntryKind) { return errors.New("unsupported des_soccer_learning_run_deltas.entry_kind") }
+	if !desSoccerLearningRunDeltasStateHashPattern.MatchString(value.StateHash) { return errors.New("des_soccer_learning_run_deltas.state_hash does not match the required pattern") }
+	if !validateJSONString(value.StateKey) { return errors.New("des_soccer_learning_run_deltas.state_key must be valid JSON") }
+	if len([]byte(value.Action)) > 80 { return errors.New("des_soccer_learning_run_deltas.action exceeds 80 bytes") }
+	if len([]byte(value.Action)) < 1 { return errors.New("des_soccer_learning_run_deltas.action is below 1 bytes") }
+	if value.TargetFineCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum") }
+	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum") }
+	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum") }
+	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum") }
+	if value.VisitDelta < 1 { return errors.New("des_soccer_learning_run_deltas.visit_delta is below the minimum") }
+	if value.MergeWeightMicros < 0 { return errors.New("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum") }
+	if value.EffectiveVisitMicros < 0 { return errors.New("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningMergeEventsTable = "des_soccer_learning_merge_events"
+const DesSoccerLearningMergeEventsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      strategy,
+      input_run_count,
+      input_delta_count,
+      decay_micros,
+      metrics,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_merge_events`
+
+var DesSoccerLearningMergeEventsStrategyValues = []string{"outcome_weighted_average", "elite", "mutation", "crossover"}
+
+type DesSoccerLearningMergeEventsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `gorm:"column:base_policy_version_id;type:uuid" json:"basePolicyVersionId,omitempty"`
+	OutputPolicyVersionId uuid.UUID `gorm:"column:output_policy_version_id;type:uuid;not null" json:"outputPolicyVersionId"`
+	Strategy string `gorm:"column:strategy;type:varchar(40);default:'outcome_weighted_average';not null" json:"strategy"`
+	InputRunCount int32 `gorm:"column:input_run_count;type:integer;default:0;not null" json:"inputRunCount"`
+	InputDeltaCount int32 `gorm:"column:input_delta_count;type:integer;default:0;not null" json:"inputDeltaCount"`
+	DecayMicros int64 `gorm:"column:decay_micros;type:bigint;default:1000000;not null" json:"decayMicros"`
+	Metrics datatypes.JSON `gorm:"column:metrics;type:jsonb;default:'{}'::jsonb;not null" json:"metrics"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesSoccerLearningMergeEventsGorm) TableName() string { return DesSoccerLearningMergeEventsTable }
+
+func (value DesSoccerLearningMergeEventsGorm) Validate() error {
+	if !containsString(DesSoccerLearningMergeEventsStrategyValues, value.Strategy) { return errors.New("unsupported des_soccer_learning_merge_events.strategy") }
+	if value.InputRunCount < 0 { return errors.New("des_soccer_learning_merge_events.input_run_count is below the minimum") }
+	if value.InputDeltaCount < 0 { return errors.New("des_soccer_learning_merge_events.input_delta_count is below the minimum") }
+	if value.DecayMicros < 0 { return errors.New("des_soccer_learning_merge_events.decay_micros is below the minimum") }
+	if value.DecayMicros > 1000000 { return errors.New("des_soccer_learning_merge_events.decay_micros is above the maximum") }
+	if !validateJSONString(value.Metrics) { return errors.New("des_soccer_learning_merge_events.metrics must be valid JSON") }
 	return nil
 }
 

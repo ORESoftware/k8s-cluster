@@ -1732,6 +1732,817 @@ class PresenceConsumerCheckpointsRow {
   }
 }
 
+const desSoccerLearningExperimentsTable = "des_soccer_learning_experiments";
+const desSoccerLearningExperimentsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      status,\n      config::text as config_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_experiments";
+
+const desSoccerLearningExperimentsStatusValues = <String>["active", "paused", "archived"];
+
+class DesSoccerLearningExperimentsRow {
+  const DesSoccerLearningExperimentsRow({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.description,
+    required this.status,
+    required this.config,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String displayName;
+  final String description;
+  final String status;
+  final Map<String, Object?> config;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory DesSoccerLearningExperimentsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningExperimentsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      displayName: _readRequiredString(json, "displayName"),
+      description: _readRequiredString(json, "description"),
+      status: _readRequiredString(json, "status"),
+      config: _readRequiredObject(json, "config"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "description": description,
+    "status": status,
+    "config": config,
+    "labels": labels,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$').hasMatch(slug)) {
+      errors.add("des_soccer_learning_experiments.slug must be a lowercase slug");
+    }
+    if (utf8.encode(displayName).length > 240) {
+      errors.add("des_soccer_learning_experiments.display_name exceeds 240 bytes");
+    }
+    if (utf8.encode(displayName).length < 1) {
+      errors.add("des_soccer_learning_experiments.display_name is below 1 bytes");
+    }
+    if (utf8.encode(description).length > 8192) {
+      errors.add("des_soccer_learning_experiments.description exceeds 8192 bytes");
+    }
+    if (!desSoccerLearningExperimentsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_experiments.status");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningPolicyVersionsTable = "des_soccer_learning_policy_versions";
+const desSoccerLearningPolicyVersionsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      parent_policy_version_id::text as parent_policy_version_id,\n      generation,\n      version_label,\n      source_kind,\n      status,\n      options::text as options_json,\n      config::text as config_json,\n      lineage::text as lineage_json,\n      metrics::text as metrics_json,\n      entry_count,\n      target_entry_count,\n      visit_count,\n      fitness_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_policy_versions";
+
+const desSoccerLearningPolicyVersionsSourceKindValues = <String>["seed", "merge", "mutation", "crossover", "import", "replay"];
+const desSoccerLearningPolicyVersionsStatusValues = <String>["candidate", "active", "archived", "rejected"];
+
+class DesSoccerLearningPolicyVersionsRow {
+  const DesSoccerLearningPolicyVersionsRow({
+    required this.id,
+    required this.experimentId,
+    this.parentPolicyVersionId,
+    required this.generation,
+    required this.versionLabel,
+    required this.sourceKind,
+    required this.status,
+    required this.options,
+    required this.config,
+    required this.lineage,
+    required this.metrics,
+    required this.entryCount,
+    required this.targetEntryCount,
+    required this.visitCount,
+    required this.fitnessMicros,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String experimentId;
+  final String? parentPolicyVersionId;
+  final int generation;
+  final String versionLabel;
+  final String sourceKind;
+  final String status;
+  final Map<String, Object?> options;
+  final Map<String, Object?> config;
+  final List<Object?> lineage;
+  final Map<String, Object?> metrics;
+  final int entryCount;
+  final int targetEntryCount;
+  final int visitCount;
+  final int fitnessMicros;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory DesSoccerLearningPolicyVersionsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningPolicyVersionsRow(
+      id: _readRequiredString(json, "id"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      parentPolicyVersionId: _readOptionalString(json, "parentPolicyVersionId"),
+      generation: _readRequiredInt(json, "generation"),
+      versionLabel: _readRequiredString(json, "versionLabel"),
+      sourceKind: _readRequiredString(json, "sourceKind"),
+      status: _readRequiredString(json, "status"),
+      options: _readRequiredObject(json, "options"),
+      config: _readRequiredObject(json, "config"),
+      lineage: _readRequiredArray(json, "lineage"),
+      metrics: _readRequiredObject(json, "metrics"),
+      entryCount: _readRequiredInt(json, "entryCount"),
+      targetEntryCount: _readRequiredInt(json, "targetEntryCount"),
+      visitCount: _readRequiredInt(json, "visitCount"),
+      fitnessMicros: _readRequiredInt(json, "fitnessMicros"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "parentPolicyVersionId": parentPolicyVersionId,
+    "generation": generation,
+    "versionLabel": versionLabel,
+    "sourceKind": sourceKind,
+    "status": status,
+    "options": options,
+    "config": config,
+    "lineage": lineage,
+    "metrics": metrics,
+    "entryCount": entryCount,
+    "targetEntryCount": targetEntryCount,
+    "visitCount": visitCount,
+    "fitnessMicros": fitnessMicros,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (generation < 0) {
+      errors.add("des_soccer_learning_policy_versions.generation is below the minimum");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,160}$').hasMatch(versionLabel)) {
+      errors.add("des_soccer_learning_policy_versions.version_label does not match the required pattern");
+    }
+    if (!desSoccerLearningPolicyVersionsSourceKindValues.contains(sourceKind)) {
+      errors.add("unsupported des_soccer_learning_policy_versions.source_kind");
+    }
+    if (!desSoccerLearningPolicyVersionsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_policy_versions.status");
+    }
+    if (entryCount < 0) {
+      errors.add("des_soccer_learning_policy_versions.entry_count is below the minimum");
+    }
+    if (targetEntryCount < 0) {
+      errors.add("des_soccer_learning_policy_versions.target_entry_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries";
+const desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
+
+const desSoccerLearningPolicyEntriesTeamValues = <String>["home", "away"];
+const desSoccerLearningPolicyEntriesEntryKindValues = <String>["action", "target"];
+
+class DesSoccerLearningPolicyEntriesRow {
+  const DesSoccerLearningPolicyEntriesRow({
+    required this.id,
+    required this.policyVersionId,
+    required this.team,
+    required this.entryKind,
+    required this.stateHash,
+    required this.stateKey,
+    required this.action,
+    required this.targetFineCellId,
+    required this.targetTacticalCellId,
+    required this.targetMacroCellId,
+    required this.targetRootCellId,
+    required this.valueMicros,
+    required this.visits,
+    this.sourceRunId,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String policyVersionId;
+  final String team;
+  final String entryKind;
+  final String stateHash;
+  final Map<String, Object?> stateKey;
+  final String action;
+  final int targetFineCellId;
+  final int targetTacticalCellId;
+  final int targetMacroCellId;
+  final int targetRootCellId;
+  final int valueMicros;
+  final int visits;
+  final String? sourceRunId;
+  final String createdAt;
+
+  factory DesSoccerLearningPolicyEntriesRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningPolicyEntriesRow(
+      id: _readRequiredString(json, "id"),
+      policyVersionId: _readRequiredString(json, "policyVersionId"),
+      team: _readRequiredString(json, "team"),
+      entryKind: _readRequiredString(json, "entryKind"),
+      stateHash: _readRequiredString(json, "stateHash"),
+      stateKey: _readRequiredObject(json, "stateKey"),
+      action: _readRequiredString(json, "action"),
+      targetFineCellId: _readRequiredInt(json, "targetFineCellId"),
+      targetTacticalCellId: _readRequiredInt(json, "targetTacticalCellId"),
+      targetMacroCellId: _readRequiredInt(json, "targetMacroCellId"),
+      targetRootCellId: _readRequiredInt(json, "targetRootCellId"),
+      valueMicros: _readRequiredInt(json, "valueMicros"),
+      visits: _readRequiredInt(json, "visits"),
+      sourceRunId: _readOptionalString(json, "sourceRunId"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "policyVersionId": policyVersionId,
+    "team": team,
+    "entryKind": entryKind,
+    "stateHash": stateHash,
+    "stateKey": stateKey,
+    "action": action,
+    "targetFineCellId": targetFineCellId,
+    "targetTacticalCellId": targetTacticalCellId,
+    "targetMacroCellId": targetMacroCellId,
+    "targetRootCellId": targetRootCellId,
+    "valueMicros": valueMicros,
+    "visits": visits,
+    "sourceRunId": sourceRunId,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningPolicyEntriesTeamValues.contains(team)) {
+      errors.add("unsupported des_soccer_learning_policy_entries.team");
+    }
+    if (!desSoccerLearningPolicyEntriesEntryKindValues.contains(entryKind)) {
+      errors.add("unsupported des_soccer_learning_policy_entries.entry_kind");
+    }
+    if (!RegExp(r'^[a-f0-9]{16,32}$').hasMatch(stateHash)) {
+      errors.add("des_soccer_learning_policy_entries.state_hash does not match the required pattern");
+    }
+    if (utf8.encode(action).length > 80) {
+      errors.add("des_soccer_learning_policy_entries.action exceeds 80 bytes");
+    }
+    if (utf8.encode(action).length < 1) {
+      errors.add("des_soccer_learning_policy_entries.action is below 1 bytes");
+    }
+    if (targetFineCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum");
+    }
+    if (targetTacticalCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum");
+    }
+    if (targetMacroCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum");
+    }
+    if (targetRootCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum");
+    }
+    if (visits < 0) {
+      errors.add("des_soccer_learning_policy_entries.visits is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningJobsTable = "des_soccer_learning_jobs";
+const desSoccerLearningJobsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      spawn_strategy,\n      status,\n      priority,\n      seed,\n      attempt,\n      max_attempts,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      config::text as config_json,\n      runner_config::text as runner_config_json,\n      result_run_id::text as result_run_id,\n      error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_jobs";
+
+const desSoccerLearningJobsSpawnStrategyValues = <String>["latest", "elite", "mutation", "crossover", "random", "replay"];
+const desSoccerLearningJobsStatusValues = <String>["queued", "running", "completed", "failed", "canceled"];
+
+class DesSoccerLearningJobsRow {
+  const DesSoccerLearningJobsRow({
+    required this.id,
+    required this.experimentId,
+    this.basePolicyVersionId,
+    required this.spawnStrategy,
+    required this.status,
+    required this.priority,
+    required this.seed,
+    required this.attempt,
+    required this.maxAttempts,
+    this.leaseOwner,
+    this.leaseExpiresAt,
+    this.startedAt,
+    this.finishedAt,
+    required this.config,
+    required this.runnerConfig,
+    this.resultRunId,
+    this.error,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String experimentId;
+  final String? basePolicyVersionId;
+  final String spawnStrategy;
+  final String status;
+  final int priority;
+  final int seed;
+  final int attempt;
+  final int maxAttempts;
+  final String? leaseOwner;
+  final String? leaseExpiresAt;
+  final String? startedAt;
+  final String? finishedAt;
+  final Map<String, Object?> config;
+  final Map<String, Object?> runnerConfig;
+  final String? resultRunId;
+  final String? error;
+  final String createdAt;
+  final String updatedAt;
+
+  factory DesSoccerLearningJobsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningJobsRow(
+      id: _readRequiredString(json, "id"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      basePolicyVersionId: _readOptionalString(json, "basePolicyVersionId"),
+      spawnStrategy: _readRequiredString(json, "spawnStrategy"),
+      status: _readRequiredString(json, "status"),
+      priority: _readRequiredInt(json, "priority"),
+      seed: _readRequiredInt(json, "seed"),
+      attempt: _readRequiredInt(json, "attempt"),
+      maxAttempts: _readRequiredInt(json, "maxAttempts"),
+      leaseOwner: _readOptionalString(json, "leaseOwner"),
+      leaseExpiresAt: _readOptionalString(json, "leaseExpiresAt"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      config: _readRequiredObject(json, "config"),
+      runnerConfig: _readRequiredObject(json, "runnerConfig"),
+      resultRunId: _readOptionalString(json, "resultRunId"),
+      error: _readOptionalString(json, "error"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "basePolicyVersionId": basePolicyVersionId,
+    "spawnStrategy": spawnStrategy,
+    "status": status,
+    "priority": priority,
+    "seed": seed,
+    "attempt": attempt,
+    "maxAttempts": maxAttempts,
+    "leaseOwner": leaseOwner,
+    "leaseExpiresAt": leaseExpiresAt,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "config": config,
+    "runnerConfig": runnerConfig,
+    "resultRunId": resultRunId,
+    "error": error,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningJobsSpawnStrategyValues.contains(spawnStrategy)) {
+      errors.add("unsupported des_soccer_learning_jobs.spawn_strategy");
+    }
+    if (!desSoccerLearningJobsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_jobs.status");
+    }
+    if (attempt < 0) {
+      errors.add("des_soccer_learning_jobs.attempt is below the minimum");
+    }
+    if (maxAttempts < 1) {
+      errors.add("des_soccer_learning_jobs.max_attempts is below the minimum");
+    }
+    if (maxAttempts > 100) {
+      errors.add("des_soccer_learning_jobs.max_attempts is above the maximum");
+    }
+    if (leaseOwner != null && utf8.encode(leaseOwner!).length > 200) {
+      errors.add("des_soccer_learning_jobs.lease_owner exceeds 200 bytes");
+    }
+    if (error != null && utf8.encode(error!).length > 16384) {
+      errors.add("des_soccer_learning_jobs.error exceeds 16384 bytes");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningRunsTable = "des_soccer_learning_runs";
+const desSoccerLearningRunsSelectSql = "select\n      id::text as id,\n      job_id::text as job_id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      output_policy_version_id::text as output_policy_version_id,\n      runner_id,\n      seed,\n      episode_index,\n      status,\n      score_home,\n      score_away,\n      home_goal_diff,\n      away_goal_diff,\n      home_outcome,\n      away_outcome,\n      home_merge_weight_micros,\n      away_merge_weight_micros,\n      fitness_micros,\n      duration_ticks,\n      simulated_seconds_micros,\n      elapsed_millis,\n      transitions,\n      summary::text as summary_json,\n      stats::text as stats_json,\n      error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_runs";
+
+const desSoccerLearningRunsStatusValues = <String>["completed", "failed"];
+const desSoccerLearningRunsHomeOutcomeValues = <String>["win", "draw", "loss"];
+const desSoccerLearningRunsAwayOutcomeValues = <String>["win", "draw", "loss"];
+
+class DesSoccerLearningRunsRow {
+  const DesSoccerLearningRunsRow({
+    required this.id,
+    this.jobId,
+    required this.experimentId,
+    this.basePolicyVersionId,
+    this.outputPolicyVersionId,
+    required this.runnerId,
+    required this.seed,
+    required this.episodeIndex,
+    required this.status,
+    required this.scoreHome,
+    required this.scoreAway,
+    required this.homeGoalDiff,
+    required this.awayGoalDiff,
+    required this.homeOutcome,
+    required this.awayOutcome,
+    required this.homeMergeWeightMicros,
+    required this.awayMergeWeightMicros,
+    required this.fitnessMicros,
+    required this.durationTicks,
+    required this.simulatedSecondsMicros,
+    required this.elapsedMillis,
+    required this.transitions,
+    required this.summary,
+    required this.stats,
+    this.error,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? jobId;
+  final String experimentId;
+  final String? basePolicyVersionId;
+  final String? outputPolicyVersionId;
+  final String runnerId;
+  final int seed;
+  final int episodeIndex;
+  final String status;
+  final int scoreHome;
+  final int scoreAway;
+  final int homeGoalDiff;
+  final int awayGoalDiff;
+  final String homeOutcome;
+  final String awayOutcome;
+  final int homeMergeWeightMicros;
+  final int awayMergeWeightMicros;
+  final int fitnessMicros;
+  final int durationTicks;
+  final int simulatedSecondsMicros;
+  final int elapsedMillis;
+  final int transitions;
+  final Map<String, Object?> summary;
+  final Map<String, Object?> stats;
+  final String? error;
+  final String createdAt;
+  final String updatedAt;
+
+  factory DesSoccerLearningRunsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningRunsRow(
+      id: _readRequiredString(json, "id"),
+      jobId: _readOptionalString(json, "jobId"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      basePolicyVersionId: _readOptionalString(json, "basePolicyVersionId"),
+      outputPolicyVersionId: _readOptionalString(json, "outputPolicyVersionId"),
+      runnerId: _readRequiredString(json, "runnerId"),
+      seed: _readRequiredInt(json, "seed"),
+      episodeIndex: _readRequiredInt(json, "episodeIndex"),
+      status: _readRequiredString(json, "status"),
+      scoreHome: _readRequiredInt(json, "scoreHome"),
+      scoreAway: _readRequiredInt(json, "scoreAway"),
+      homeGoalDiff: _readRequiredInt(json, "homeGoalDiff"),
+      awayGoalDiff: _readRequiredInt(json, "awayGoalDiff"),
+      homeOutcome: _readRequiredString(json, "homeOutcome"),
+      awayOutcome: _readRequiredString(json, "awayOutcome"),
+      homeMergeWeightMicros: _readRequiredInt(json, "homeMergeWeightMicros"),
+      awayMergeWeightMicros: _readRequiredInt(json, "awayMergeWeightMicros"),
+      fitnessMicros: _readRequiredInt(json, "fitnessMicros"),
+      durationTicks: _readRequiredInt(json, "durationTicks"),
+      simulatedSecondsMicros: _readRequiredInt(json, "simulatedSecondsMicros"),
+      elapsedMillis: _readRequiredInt(json, "elapsedMillis"),
+      transitions: _readRequiredInt(json, "transitions"),
+      summary: _readRequiredObject(json, "summary"),
+      stats: _readRequiredObject(json, "stats"),
+      error: _readOptionalString(json, "error"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "jobId": jobId,
+    "experimentId": experimentId,
+    "basePolicyVersionId": basePolicyVersionId,
+    "outputPolicyVersionId": outputPolicyVersionId,
+    "runnerId": runnerId,
+    "seed": seed,
+    "episodeIndex": episodeIndex,
+    "status": status,
+    "scoreHome": scoreHome,
+    "scoreAway": scoreAway,
+    "homeGoalDiff": homeGoalDiff,
+    "awayGoalDiff": awayGoalDiff,
+    "homeOutcome": homeOutcome,
+    "awayOutcome": awayOutcome,
+    "homeMergeWeightMicros": homeMergeWeightMicros,
+    "awayMergeWeightMicros": awayMergeWeightMicros,
+    "fitnessMicros": fitnessMicros,
+    "durationTicks": durationTicks,
+    "simulatedSecondsMicros": simulatedSecondsMicros,
+    "elapsedMillis": elapsedMillis,
+    "transitions": transitions,
+    "summary": summary,
+    "stats": stats,
+    "error": error,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(runnerId).length > 200) {
+      errors.add("des_soccer_learning_runs.runner_id exceeds 200 bytes");
+    }
+    if (utf8.encode(runnerId).length < 1) {
+      errors.add("des_soccer_learning_runs.runner_id is below 1 bytes");
+    }
+    if (episodeIndex < 0) {
+      errors.add("des_soccer_learning_runs.episode_index is below the minimum");
+    }
+    if (!desSoccerLearningRunsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_runs.status");
+    }
+    if (scoreHome < 0) {
+      errors.add("des_soccer_learning_runs.score_home is below the minimum");
+    }
+    if (scoreAway < 0) {
+      errors.add("des_soccer_learning_runs.score_away is below the minimum");
+    }
+    if (!desSoccerLearningRunsHomeOutcomeValues.contains(homeOutcome)) {
+      errors.add("unsupported des_soccer_learning_runs.home_outcome");
+    }
+    if (!desSoccerLearningRunsAwayOutcomeValues.contains(awayOutcome)) {
+      errors.add("unsupported des_soccer_learning_runs.away_outcome");
+    }
+    if (transitions < 0) {
+      errors.add("des_soccer_learning_runs.transitions is below the minimum");
+    }
+    if (error != null && utf8.encode(error!).length > 16384) {
+      errors.add("des_soccer_learning_runs.error exceeds 16384 bytes");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas";
+const desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
+
+const desSoccerLearningRunDeltasTeamValues = <String>["home", "away"];
+const desSoccerLearningRunDeltasEntryKindValues = <String>["action", "target"];
+
+class DesSoccerLearningRunDeltasRow {
+  const DesSoccerLearningRunDeltasRow({
+    required this.id,
+    required this.runId,
+    required this.team,
+    required this.entryKind,
+    required this.stateHash,
+    required this.stateKey,
+    required this.action,
+    required this.targetFineCellId,
+    required this.targetTacticalCellId,
+    required this.targetMacroCellId,
+    required this.targetRootCellId,
+    required this.beforeValueMicros,
+    required this.afterValueMicros,
+    required this.valueDeltaMicros,
+    required this.visitDelta,
+    required this.mergeWeightMicros,
+    required this.effectiveVisitMicros,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String runId;
+  final String team;
+  final String entryKind;
+  final String stateHash;
+  final Map<String, Object?> stateKey;
+  final String action;
+  final int targetFineCellId;
+  final int targetTacticalCellId;
+  final int targetMacroCellId;
+  final int targetRootCellId;
+  final int beforeValueMicros;
+  final int afterValueMicros;
+  final int valueDeltaMicros;
+  final int visitDelta;
+  final int mergeWeightMicros;
+  final int effectiveVisitMicros;
+  final String createdAt;
+
+  factory DesSoccerLearningRunDeltasRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningRunDeltasRow(
+      id: _readRequiredString(json, "id"),
+      runId: _readRequiredString(json, "runId"),
+      team: _readRequiredString(json, "team"),
+      entryKind: _readRequiredString(json, "entryKind"),
+      stateHash: _readRequiredString(json, "stateHash"),
+      stateKey: _readRequiredObject(json, "stateKey"),
+      action: _readRequiredString(json, "action"),
+      targetFineCellId: _readRequiredInt(json, "targetFineCellId"),
+      targetTacticalCellId: _readRequiredInt(json, "targetTacticalCellId"),
+      targetMacroCellId: _readRequiredInt(json, "targetMacroCellId"),
+      targetRootCellId: _readRequiredInt(json, "targetRootCellId"),
+      beforeValueMicros: _readRequiredInt(json, "beforeValueMicros"),
+      afterValueMicros: _readRequiredInt(json, "afterValueMicros"),
+      valueDeltaMicros: _readRequiredInt(json, "valueDeltaMicros"),
+      visitDelta: _readRequiredInt(json, "visitDelta"),
+      mergeWeightMicros: _readRequiredInt(json, "mergeWeightMicros"),
+      effectiveVisitMicros: _readRequiredInt(json, "effectiveVisitMicros"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "team": team,
+    "entryKind": entryKind,
+    "stateHash": stateHash,
+    "stateKey": stateKey,
+    "action": action,
+    "targetFineCellId": targetFineCellId,
+    "targetTacticalCellId": targetTacticalCellId,
+    "targetMacroCellId": targetMacroCellId,
+    "targetRootCellId": targetRootCellId,
+    "beforeValueMicros": beforeValueMicros,
+    "afterValueMicros": afterValueMicros,
+    "valueDeltaMicros": valueDeltaMicros,
+    "visitDelta": visitDelta,
+    "mergeWeightMicros": mergeWeightMicros,
+    "effectiveVisitMicros": effectiveVisitMicros,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningRunDeltasTeamValues.contains(team)) {
+      errors.add("unsupported des_soccer_learning_run_deltas.team");
+    }
+    if (!desSoccerLearningRunDeltasEntryKindValues.contains(entryKind)) {
+      errors.add("unsupported des_soccer_learning_run_deltas.entry_kind");
+    }
+    if (!RegExp(r'^[a-f0-9]{16,32}$').hasMatch(stateHash)) {
+      errors.add("des_soccer_learning_run_deltas.state_hash does not match the required pattern");
+    }
+    if (utf8.encode(action).length > 80) {
+      errors.add("des_soccer_learning_run_deltas.action exceeds 80 bytes");
+    }
+    if (utf8.encode(action).length < 1) {
+      errors.add("des_soccer_learning_run_deltas.action is below 1 bytes");
+    }
+    if (targetFineCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum");
+    }
+    if (targetTacticalCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum");
+    }
+    if (targetMacroCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum");
+    }
+    if (targetRootCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum");
+    }
+    if (visitDelta < 1) {
+      errors.add("des_soccer_learning_run_deltas.visit_delta is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningMergeEventsTable = "des_soccer_learning_merge_events";
+const desSoccerLearningMergeEventsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      output_policy_version_id::text as output_policy_version_id,\n      strategy,\n      input_run_count,\n      input_delta_count,\n      decay_micros,\n      metrics::text as metrics_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_merge_events";
+
+const desSoccerLearningMergeEventsStrategyValues = <String>["outcome_weighted_average", "elite", "mutation", "crossover"];
+
+class DesSoccerLearningMergeEventsRow {
+  const DesSoccerLearningMergeEventsRow({
+    required this.id,
+    required this.experimentId,
+    this.basePolicyVersionId,
+    required this.outputPolicyVersionId,
+    required this.strategy,
+    required this.inputRunCount,
+    required this.inputDeltaCount,
+    required this.decayMicros,
+    required this.metrics,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String experimentId;
+  final String? basePolicyVersionId;
+  final String outputPolicyVersionId;
+  final String strategy;
+  final int inputRunCount;
+  final int inputDeltaCount;
+  final int decayMicros;
+  final Map<String, Object?> metrics;
+  final String createdAt;
+
+  factory DesSoccerLearningMergeEventsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningMergeEventsRow(
+      id: _readRequiredString(json, "id"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      basePolicyVersionId: _readOptionalString(json, "basePolicyVersionId"),
+      outputPolicyVersionId: _readRequiredString(json, "outputPolicyVersionId"),
+      strategy: _readRequiredString(json, "strategy"),
+      inputRunCount: _readRequiredInt(json, "inputRunCount"),
+      inputDeltaCount: _readRequiredInt(json, "inputDeltaCount"),
+      decayMicros: _readRequiredInt(json, "decayMicros"),
+      metrics: _readRequiredObject(json, "metrics"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "basePolicyVersionId": basePolicyVersionId,
+    "outputPolicyVersionId": outputPolicyVersionId,
+    "strategy": strategy,
+    "inputRunCount": inputRunCount,
+    "inputDeltaCount": inputDeltaCount,
+    "decayMicros": decayMicros,
+    "metrics": metrics,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningMergeEventsStrategyValues.contains(strategy)) {
+      errors.add("unsupported des_soccer_learning_merge_events.strategy");
+    }
+    if (inputRunCount < 0) {
+      errors.add("des_soccer_learning_merge_events.input_run_count is below the minimum");
+    }
+    if (inputDeltaCount < 0) {
+      errors.add("des_soccer_learning_merge_events.input_delta_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

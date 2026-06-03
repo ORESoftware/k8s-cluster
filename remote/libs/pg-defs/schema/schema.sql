@@ -1094,6 +1094,364 @@ as $$
 $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- DES soccer self-play learning.
+--
+-- Immutable policy versions plus per-simulation deltas are the durable learning
+-- authority. JSONB stores high-dimensional state/config payloads, while merge
+-- math uses fixed-point integer columns so generated adapters stay portable.
+-- Values and weights use a 1e6 scale.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists des_soccer_learning_experiments (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(160) not null,
+  display_name varchar(240) not null,
+  description text default '' not null,
+  status varchar(32) default 'active' not null,
+  config jsonb default '{}'::jsonb not null,
+  labels jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint des_soccer_learning_experiments_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'),
+  constraint des_soccer_learning_experiments_display_name_size_chk
+    check (octet_length(display_name) between 1 and 240),
+  constraint des_soccer_learning_experiments_description_size_chk
+    check (octet_length(description) <= 8192),
+  constraint des_soccer_learning_experiments_config_object_chk
+    check (jsonb_typeof(config) = 'object'),
+  constraint des_soccer_learning_experiments_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint des_soccer_learning_experiments_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint des_soccer_learning_experiments_status_chk
+    check (status in ('active', 'paused', 'archived'))
+);
+
+create unique index if not exists des_soccer_learning_experiments_slug_active_uq
+  on des_soccer_learning_experiments (slug)
+  where is_soft_deleted = false;
+
+create index if not exists des_soccer_learning_experiments_status_idx
+  on des_soccer_learning_experiments (status)
+  where is_soft_deleted = false;
+
+create index if not exists des_soccer_learning_experiments_updated_at_idx
+  on des_soccer_learning_experiments (updated_at desc)
+  where is_soft_deleted = false;
+
+create table if not exists des_soccer_learning_policy_versions (
+  id uuid primary key default gen_random_uuid(),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  parent_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  generation integer default 0 not null,
+  version_label varchar(160) not null,
+  source_kind varchar(40) default 'seed' not null,
+  status varchar(32) default 'candidate' not null,
+  options jsonb default '{}'::jsonb not null,
+  config jsonb default '{}'::jsonb not null,
+  lineage jsonb default '[]'::jsonb not null,
+  metrics jsonb default '{}'::jsonb not null,
+  entry_count integer default 0 not null,
+  target_entry_count integer default 0 not null,
+  visit_count bigint default 0 not null,
+  fitness_micros bigint default 0 not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint des_soccer_learning_policy_versions_generation_chk
+    check (generation >= 0),
+  constraint des_soccer_learning_policy_versions_label_format_chk
+    check (version_label ~ '^[A-Za-z0-9._:/-]{1,160}$'),
+  constraint des_soccer_learning_policy_versions_source_chk
+    check (source_kind in ('seed', 'merge', 'mutation', 'crossover', 'import', 'replay')),
+  constraint des_soccer_learning_policy_versions_status_chk
+    check (status in ('candidate', 'active', 'archived', 'rejected')),
+  constraint des_soccer_learning_policy_versions_options_object_chk
+    check (jsonb_typeof(options) = 'object'),
+  constraint des_soccer_learning_policy_versions_config_object_chk
+    check (jsonb_typeof(config) = 'object'),
+  constraint des_soccer_learning_policy_versions_lineage_array_chk
+    check (jsonb_typeof(lineage) = 'array'),
+  constraint des_soccer_learning_policy_versions_metrics_object_chk
+    check (jsonb_typeof(metrics) = 'object'),
+  constraint des_soccer_learning_policy_versions_entry_count_chk
+    check (entry_count >= 0),
+  constraint des_soccer_learning_policy_versions_target_entry_count_chk
+    check (target_entry_count >= 0),
+  constraint des_soccer_learning_policy_versions_visit_count_chk
+    check (visit_count >= 0)
+);
+
+create unique index if not exists des_soccer_learning_policy_versions_label_uq
+  on des_soccer_learning_policy_versions (experiment_id, version_label);
+
+create index if not exists des_soccer_learning_policy_versions_active_idx
+  on des_soccer_learning_policy_versions (experiment_id, generation desc, updated_at desc)
+  where status = 'active';
+
+create index if not exists des_soccer_learning_policy_versions_fitness_idx
+  on des_soccer_learning_policy_versions (experiment_id, fitness_micros desc, updated_at desc)
+  where status in ('active', 'candidate');
+
+create table if not exists des_soccer_learning_policy_entries (
+  id uuid primary key default gen_random_uuid(),
+  policy_version_id uuid not null references des_soccer_learning_policy_versions(id),
+  team varchar(8) not null,
+  entry_kind varchar(16) not null,
+  state_hash varchar(32) not null,
+  state_key jsonb not null,
+  action varchar(80) not null,
+  target_fine_cell_id integer default -1 not null,
+  target_tactical_cell_id integer default -1 not null,
+  target_macro_cell_id integer default -1 not null,
+  target_root_cell_id integer default -1 not null,
+  value_micros bigint not null,
+  visits integer default 0 not null,
+  source_run_id uuid,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_policy_entries_team_chk
+    check (team in ('home', 'away')),
+  constraint des_soccer_learning_policy_entries_kind_chk
+    check (entry_kind in ('action', 'target')),
+  constraint des_soccer_learning_policy_entries_state_hash_chk
+    check (state_hash ~ '^[a-f0-9]{16,32}$'),
+  constraint des_soccer_learning_policy_entries_state_object_chk
+    check (jsonb_typeof(state_key) = 'object'),
+  constraint des_soccer_learning_policy_entries_action_size_chk
+    check (octet_length(action) between 1 and 80),
+  constraint des_soccer_learning_policy_entries_target_fine_chk
+    check (target_fine_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_target_tactical_chk
+    check (target_tactical_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_target_macro_chk
+    check (target_macro_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_target_root_chk
+    check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_visits_chk
+    check (visits >= 0)
+);
+
+create unique index if not exists des_soccer_learning_policy_entries_key_uq
+  on des_soccer_learning_policy_entries (
+    policy_version_id,
+    team,
+    entry_kind,
+    state_hash,
+    action,
+    target_fine_cell_id,
+    target_tactical_cell_id,
+    target_macro_cell_id,
+    target_root_cell_id
+  );
+
+create index if not exists des_soccer_learning_policy_entries_lookup_idx
+  on des_soccer_learning_policy_entries (policy_version_id, team, entry_kind, state_hash);
+
+create table if not exists des_soccer_learning_jobs (
+  id uuid primary key default gen_random_uuid(),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  base_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  spawn_strategy varchar(32) default 'latest' not null,
+  status varchar(32) default 'queued' not null,
+  priority integer default 0 not null,
+  seed bigint not null,
+  attempt integer default 0 not null,
+  max_attempts integer default 1 not null,
+  lease_owner varchar(200),
+  lease_expires_at timestamptz,
+  started_at timestamptz,
+  finished_at timestamptz,
+  config jsonb default '{}'::jsonb not null,
+  runner_config jsonb default '{}'::jsonb not null,
+  result_run_id uuid,
+  error text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint des_soccer_learning_jobs_spawn_strategy_chk
+    check (spawn_strategy in ('latest', 'elite', 'mutation', 'crossover', 'random', 'replay')),
+  constraint des_soccer_learning_jobs_status_chk
+    check (status in ('queued', 'running', 'completed', 'failed', 'canceled')),
+  constraint des_soccer_learning_jobs_seed_chk
+    check (seed >= 0),
+  constraint des_soccer_learning_jobs_attempt_chk
+    check (attempt >= 0),
+  constraint des_soccer_learning_jobs_max_attempts_chk
+    check (max_attempts between 1 and 100),
+  constraint des_soccer_learning_jobs_lease_owner_size_chk
+    check (lease_owner is null or octet_length(lease_owner) <= 200),
+  constraint des_soccer_learning_jobs_config_object_chk
+    check (jsonb_typeof(config) = 'object'),
+  constraint des_soccer_learning_jobs_runner_config_object_chk
+    check (jsonb_typeof(runner_config) = 'object'),
+  constraint des_soccer_learning_jobs_error_size_chk
+    check (error is null or octet_length(error) <= 16384)
+);
+
+create index if not exists des_soccer_learning_jobs_claim_idx
+  on des_soccer_learning_jobs (experiment_id, status, priority desc, created_at)
+  where status in ('queued', 'running');
+
+create index if not exists des_soccer_learning_jobs_base_policy_idx
+  on des_soccer_learning_jobs (base_policy_version_id, created_at desc);
+
+create table if not exists des_soccer_learning_runs (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid references des_soccer_learning_jobs(id),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  base_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  output_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  runner_id varchar(200) not null,
+  seed bigint not null,
+  episode_index integer default 0 not null,
+  status varchar(32) default 'completed' not null,
+  score_home integer default 0 not null,
+  score_away integer default 0 not null,
+  home_goal_diff integer default 0 not null,
+  away_goal_diff integer default 0 not null,
+  home_outcome varchar(16) default 'draw' not null,
+  away_outcome varchar(16) default 'draw' not null,
+  home_merge_weight_micros bigint default 0 not null,
+  away_merge_weight_micros bigint default 0 not null,
+  fitness_micros bigint default 0 not null,
+  duration_ticks bigint default 0 not null,
+  simulated_seconds_micros bigint default 0 not null,
+  elapsed_millis bigint default 0 not null,
+  transitions integer default 0 not null,
+  summary jsonb default '{}'::jsonb not null,
+  stats jsonb default '{}'::jsonb not null,
+  error text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint des_soccer_learning_runs_runner_id_size_chk
+    check (octet_length(runner_id) between 1 and 200),
+  constraint des_soccer_learning_runs_seed_chk
+    check (seed >= 0),
+  constraint des_soccer_learning_runs_episode_index_chk
+    check (episode_index >= 0),
+  constraint des_soccer_learning_runs_status_chk
+    check (status in ('completed', 'failed')),
+  constraint des_soccer_learning_runs_scores_chk
+    check (score_home >= 0 and score_away >= 0),
+  constraint des_soccer_learning_runs_home_outcome_chk
+    check (home_outcome in ('win', 'draw', 'loss')),
+  constraint des_soccer_learning_runs_away_outcome_chk
+    check (away_outcome in ('win', 'draw', 'loss')),
+  constraint des_soccer_learning_runs_duration_ticks_chk
+    check (duration_ticks >= 0),
+  constraint des_soccer_learning_runs_simulated_seconds_chk
+    check (simulated_seconds_micros >= 0),
+  constraint des_soccer_learning_runs_elapsed_millis_chk
+    check (elapsed_millis >= 0),
+  constraint des_soccer_learning_runs_transitions_chk
+    check (transitions >= 0),
+  constraint des_soccer_learning_runs_summary_object_chk
+    check (jsonb_typeof(summary) = 'object'),
+  constraint des_soccer_learning_runs_stats_object_chk
+    check (jsonb_typeof(stats) = 'object'),
+  constraint des_soccer_learning_runs_error_size_chk
+    check (error is null or octet_length(error) <= 16384)
+);
+
+create index if not exists des_soccer_learning_runs_experiment_idx
+  on des_soccer_learning_runs (experiment_id, created_at desc);
+
+create index if not exists des_soccer_learning_runs_policy_fitness_idx
+  on des_soccer_learning_runs (base_policy_version_id, fitness_micros desc, created_at desc);
+
+create table if not exists des_soccer_learning_run_deltas (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references des_soccer_learning_runs(id),
+  team varchar(8) not null,
+  entry_kind varchar(16) not null,
+  state_hash varchar(32) not null,
+  state_key jsonb not null,
+  action varchar(80) not null,
+  target_fine_cell_id integer default -1 not null,
+  target_tactical_cell_id integer default -1 not null,
+  target_macro_cell_id integer default -1 not null,
+  target_root_cell_id integer default -1 not null,
+  before_value_micros bigint default 0 not null,
+  after_value_micros bigint default 0 not null,
+  value_delta_micros bigint default 0 not null,
+  visit_delta integer default 0 not null,
+  merge_weight_micros bigint default 0 not null,
+  effective_visit_micros bigint default 0 not null,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_run_deltas_team_chk
+    check (team in ('home', 'away')),
+  constraint des_soccer_learning_run_deltas_kind_chk
+    check (entry_kind in ('action', 'target')),
+  constraint des_soccer_learning_run_deltas_state_hash_chk
+    check (state_hash ~ '^[a-f0-9]{16,32}$'),
+  constraint des_soccer_learning_run_deltas_state_object_chk
+    check (jsonb_typeof(state_key) = 'object'),
+  constraint des_soccer_learning_run_deltas_action_size_chk
+    check (octet_length(action) between 1 and 80),
+  constraint des_soccer_learning_run_deltas_target_fine_chk
+    check (target_fine_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_target_tactical_chk
+    check (target_tactical_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_target_macro_chk
+    check (target_macro_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_target_root_chk
+    check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_visit_delta_chk
+    check (visit_delta > 0),
+  constraint des_soccer_learning_run_deltas_merge_weight_chk
+    check (merge_weight_micros >= 0),
+  constraint des_soccer_learning_run_deltas_effective_visit_chk
+    check (effective_visit_micros >= 0)
+);
+
+create unique index if not exists des_soccer_learning_run_deltas_key_uq
+  on des_soccer_learning_run_deltas (
+    run_id,
+    team,
+    entry_kind,
+    state_hash,
+    action,
+    target_fine_cell_id,
+    target_tactical_cell_id,
+    target_macro_cell_id,
+    target_root_cell_id
+  );
+
+create index if not exists des_soccer_learning_run_deltas_merge_idx
+  on des_soccer_learning_run_deltas (team, entry_kind, state_hash, action);
+
+create table if not exists des_soccer_learning_merge_events (
+  id uuid primary key default gen_random_uuid(),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  base_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  output_policy_version_id uuid not null references des_soccer_learning_policy_versions(id),
+  strategy varchar(40) default 'outcome_weighted_average' not null,
+  input_run_count integer default 0 not null,
+  input_delta_count integer default 0 not null,
+  decay_micros bigint default 1000000 not null,
+  metrics jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_merge_events_strategy_chk
+    check (strategy in ('outcome_weighted_average', 'elite', 'mutation', 'crossover')),
+  constraint des_soccer_learning_merge_events_input_run_count_chk
+    check (input_run_count >= 0),
+  constraint des_soccer_learning_merge_events_input_delta_count_chk
+    check (input_delta_count >= 0),
+  constraint des_soccer_learning_merge_events_decay_chk
+    check (decay_micros between 0 and 1000000),
+  constraint des_soccer_learning_merge_events_metrics_object_chk
+    check (jsonb_typeof(metrics) = 'object')
+);
+
+create index if not exists des_soccer_learning_merge_events_experiment_idx
+  on des_soccer_learning_merge_events (experiment_id, created_at desc);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Generic CDC gateway publication.
 --
 -- The `wal-gateway-rs` service runs ONE logical replication slot per cluster

@@ -66,6 +66,61 @@
         "kind": "static",
         "subject": "dd.remote.des.results",
         "direction": "both"
+      },
+      {
+        "name": "MipSolverJobs",
+        "description": "Distributed in-house LP/MIP/IP subproblem jobs. Masters publish branch-and-bound relaxation/subtree work; slave pods consume through the worker queue group.",
+        "kind": "static",
+        "subject": "dd.remote.mip_solver.jobs",
+        "queueGroup": "dd-in-house-mip-solver-node-workers",
+        "direction": "both",
+        "stream": "DD_REMOTE_MIP_SOLVER"
+      },
+      {
+        "name": "MipSolverResults",
+        "description": "Distributed in-house LP/MIP/IP subproblem results. Slaves publish solved LP relaxation/subtree summaries and masters aggregate them by solveId.",
+        "kind": "static",
+        "subject": "dd.remote.mip_solver.results",
+        "direction": "both",
+        "stream": "DD_REMOTE_MIP_SOLVER"
+      },
+      {
+        "name": "MipSolverControl",
+        "description": "Control-plane commands for distributed in-house MIP solves, including solve cancellation and revision invalidation.",
+        "kind": "static",
+        "subject": "dd.remote.mip_solver.control",
+        "direction": "both",
+        "stream": "DD_REMOTE_MIP_SOLVER"
+      },
+      {
+        "name": "MipSolverEvents",
+        "description": "Lifecycle and progress events from distributed in-house LP/MIP/IP solver nodes.",
+        "kind": "static",
+        "subject": "dd.remote.mip_solver.events",
+        "direction": "both",
+        "stream": "DD_REMOTE_MIP_SOLVER"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "MipSolverWorkersQueueGroup",
+        "value": "dd-in-house-mip-solver-node-workers",
+        "description": "Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once."
+      }
+    ],
+    "streams": [
+      {
+        "name": "DD_REMOTE_MIP_SOLVER",
+        "description": "JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.",
+        "subjects": [
+          "dd.remote.mip_solver.jobs",
+          "dd.remote.mip_solver.results",
+          "dd.remote.mip_solver.control",
+          "dd.remote.mip_solver.events"
+        ],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
       }
     ]
   }

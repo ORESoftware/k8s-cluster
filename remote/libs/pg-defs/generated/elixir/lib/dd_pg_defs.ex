@@ -30,6 +30,13 @@ defmodule DdPgDefs do
     DdPgDefs.PresenceUsers,
     DdPgDefs.PresenceEvents,
     DdPgDefs.PresenceConsumerCheckpoints,
+    DdPgDefs.DesSoccerLearningExperiments,
+    DdPgDefs.DesSoccerLearningPolicyVersions,
+    DdPgDefs.DesSoccerLearningPolicyEntries,
+    DdPgDefs.DesSoccerLearningJobs,
+    DdPgDefs.DesSoccerLearningRuns,
+    DdPgDefs.DesSoccerLearningRunDeltas,
+    DdPgDefs.DesSoccerLearningMergeEvents,
   ]
 
   @spec tables() :: [module()]

@@ -1348,3 +1348,634 @@ export const presenceConsumerCheckpointsUpdateSchema = presenceConsumerCheckpoin
 export type PresenceConsumerCheckpointsRow = z.infer<typeof presenceConsumerCheckpointsRowSchema>;
 export type PresenceConsumerCheckpointsInsert = z.infer<typeof presenceConsumerCheckpointsInsertSchema>;
 export type PresenceConsumerCheckpointsUpdate = z.infer<typeof presenceConsumerCheckpointsUpdateSchema>;
+
+export const desSoccerLearningExperimentsStatusValues = ["active","paused","archived"] as const;
+export const desSoccerLearningExperimentsStatusSchema = z.enum(desSoccerLearningExperimentsStatusValues);
+export type DesSoccerLearningExperimentsStatus = z.infer<typeof desSoccerLearningExperimentsStatusSchema>;
+
+export const desSoccerLearningExperiments = pgTable(
+  "des_soccer_learning_experiments",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 160 }).notNull(),
+    displayName: varchar("display_name", { length: 240 }).notNull(),
+    description: text("description").default(sql`''`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    config: jsonb("config").default(sql`'{}'::jsonb`).notNull(),
+    labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    desSoccerLearningExperimentsSlugFormatChk: check("des_soccer_learning_experiments_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'")),
+    desSoccerLearningExperimentsDisplayNameSizeChk: check("des_soccer_learning_experiments_display_name_size_chk", sql.raw("octet_length(display_name) between 1 and 240")),
+    desSoccerLearningExperimentsDescriptionSizeChk: check("des_soccer_learning_experiments_description_size_chk", sql.raw("octet_length(description) <= 8192")),
+    desSoccerLearningExperimentsConfigObjectChk: check("des_soccer_learning_experiments_config_object_chk", sql.raw("jsonb_typeof(config) = 'object'")),
+    desSoccerLearningExperimentsLabelsArrayChk: check("des_soccer_learning_experiments_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    desSoccerLearningExperimentsMetaObjectChk: check("des_soccer_learning_experiments_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    desSoccerLearningExperimentsStatusChk: check("des_soccer_learning_experiments_status_chk", sql.raw("status in ('active', 'paused', 'archived')")),
+    desSoccerLearningExperimentsSlugActiveUq: uniqueIndex("des_soccer_learning_experiments_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
+    desSoccerLearningExperimentsStatusIdx: index("des_soccer_learning_experiments_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
+    desSoccerLearningExperimentsUpdatedAtIdx: index("des_soccer_learning_experiments_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const desSoccerLearningExperimentsRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(160).regex(new RegExp("^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")),
+  displayName: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  description: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes"),
+  status: desSoccerLearningExperimentsStatusSchema,
+  config: jsonObjectSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const desSoccerLearningExperimentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(160).regex(new RegExp("^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")),
+  displayName: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  description: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").optional().default(""),
+  status: desSoccerLearningExperimentsStatusSchema.optional().default("active"),
+  config: jsonObjectSchema.optional().default({}),
+  labels: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const desSoccerLearningExperimentsUpdateSchema = desSoccerLearningExperimentsInsertSchema.partial();
+export type DesSoccerLearningExperimentsRow = z.infer<typeof desSoccerLearningExperimentsRowSchema>;
+export type DesSoccerLearningExperimentsInsert = z.infer<typeof desSoccerLearningExperimentsInsertSchema>;
+export type DesSoccerLearningExperimentsUpdate = z.infer<typeof desSoccerLearningExperimentsUpdateSchema>;
+
+export const desSoccerLearningPolicyVersionsSourceKindValues = ["seed","merge","mutation","crossover","import","replay"] as const;
+export const desSoccerLearningPolicyVersionsSourceKindSchema = z.enum(desSoccerLearningPolicyVersionsSourceKindValues);
+export type DesSoccerLearningPolicyVersionsSourceKind = z.infer<typeof desSoccerLearningPolicyVersionsSourceKindSchema>;
+
+export const desSoccerLearningPolicyVersionsStatusValues = ["candidate","active","archived","rejected"] as const;
+export const desSoccerLearningPolicyVersionsStatusSchema = z.enum(desSoccerLearningPolicyVersionsStatusValues);
+export type DesSoccerLearningPolicyVersionsStatus = z.infer<typeof desSoccerLearningPolicyVersionsStatusSchema>;
+
+export const desSoccerLearningPolicyVersions = pgTable(
+  "des_soccer_learning_policy_versions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    experimentId: uuid("experiment_id").notNull(),
+    parentPolicyVersionId: uuid("parent_policy_version_id"),
+    generation: integer("generation").default(sql`0`).notNull(),
+    versionLabel: varchar("version_label", { length: 160 }).notNull(),
+    sourceKind: varchar("source_kind", { length: 40 }).default(sql`'seed'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'candidate'`).notNull(),
+    options: jsonb("options").default(sql`'{}'::jsonb`).notNull(),
+    config: jsonb("config").default(sql`'{}'::jsonb`).notNull(),
+    lineage: jsonb("lineage").default(sql`'[]'::jsonb`).notNull(),
+    metrics: jsonb("metrics").default(sql`'{}'::jsonb`).notNull(),
+    entryCount: integer("entry_count").default(sql`0`).notNull(),
+    targetEntryCount: integer("target_entry_count").default(sql`0`).notNull(),
+    visitCount: bigint("visit_count", { mode: "number" }).default(sql`0`).notNull(),
+    fitnessMicros: bigint("fitness_micros", { mode: "number" }).default(sql`0`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    desSoccerLearningPolicyVersionsGenerationChk: check("des_soccer_learning_policy_versions_generation_chk", sql.raw("generation >= 0")),
+    desSoccerLearningPolicyVersionsLabelFormatChk: check("des_soccer_learning_policy_versions_label_format_chk", sql.raw("version_label ~ '^[A-Za-z0-9._:/-]{1,160}$'")),
+    desSoccerLearningPolicyVersionsSourceChk: check("des_soccer_learning_policy_versions_source_chk", sql.raw("source_kind in ('seed', 'merge', 'mutation', 'crossover', 'import', 'replay')")),
+    desSoccerLearningPolicyVersionsStatusChk: check("des_soccer_learning_policy_versions_status_chk", sql.raw("status in ('candidate', 'active', 'archived', 'rejected')")),
+    desSoccerLearningPolicyVersionsOptionsObjectChk: check("des_soccer_learning_policy_versions_options_object_chk", sql.raw("jsonb_typeof(options) = 'object'")),
+    desSoccerLearningPolicyVersionsConfigObjectChk: check("des_soccer_learning_policy_versions_config_object_chk", sql.raw("jsonb_typeof(config) = 'object'")),
+    desSoccerLearningPolicyVersionsLineageArrayChk: check("des_soccer_learning_policy_versions_lineage_array_chk", sql.raw("jsonb_typeof(lineage) = 'array'")),
+    desSoccerLearningPolicyVersionsMetricsObjectChk: check("des_soccer_learning_policy_versions_metrics_object_chk", sql.raw("jsonb_typeof(metrics) = 'object'")),
+    desSoccerLearningPolicyVersionsEntryCountChk: check("des_soccer_learning_policy_versions_entry_count_chk", sql.raw("entry_count >= 0")),
+    desSoccerLearningPolicyVersionsTargetEntryCountChk: check("des_soccer_learning_policy_versions_target_entry_count_chk", sql.raw("target_entry_count >= 0")),
+    desSoccerLearningPolicyVersionsVisitCountChk: check("des_soccer_learning_policy_versions_visit_count_chk", sql.raw("visit_count >= 0")),
+    desSoccerLearningPolicyVersionsLabelUq: uniqueIndex("des_soccer_learning_policy_versions_label_uq").on(table.experimentId, table.versionLabel),
+    desSoccerLearningPolicyVersionsActiveIdx: index("des_soccer_learning_policy_versions_active_idx").on(table.experimentId, table.generation.desc(), table.updatedAt.desc()).where(sql.raw("status = 'active'")),
+    desSoccerLearningPolicyVersionsFitnessIdx: index("des_soccer_learning_policy_versions_fitness_idx").on(table.experimentId, table.fitnessMicros.desc(), table.updatedAt.desc()).where(sql.raw("status in ('active', 'candidate')")),
+  }),
+);
+
+export const desSoccerLearningPolicyVersionsRowSchema = z.object({
+  id: z.string().uuid(),
+  experimentId: z.string().uuid(),
+  parentPolicyVersionId: z.string().uuid().nullable(),
+  generation: z.number().int().min(0),
+  versionLabel: z.string().max(160).regex(new RegExp("^[A-Za-z0-9._:/-]{1,160}$")),
+  sourceKind: desSoccerLearningPolicyVersionsSourceKindSchema,
+  status: desSoccerLearningPolicyVersionsStatusSchema,
+  options: jsonObjectSchema,
+  config: jsonObjectSchema,
+  lineage: jsonArraySchema,
+  metrics: jsonObjectSchema,
+  entryCount: z.number().int().min(0),
+  targetEntryCount: z.number().int().min(0),
+  visitCount: z.number().int().min(0),
+  fitnessMicros: z.number().int(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const desSoccerLearningPolicyVersionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  experimentId: z.string().uuid(),
+  parentPolicyVersionId: z.string().uuid().nullable().optional(),
+  generation: z.number().int().min(0).optional().default(0),
+  versionLabel: z.string().max(160).regex(new RegExp("^[A-Za-z0-9._:/-]{1,160}$")),
+  sourceKind: desSoccerLearningPolicyVersionsSourceKindSchema.optional().default("seed"),
+  status: desSoccerLearningPolicyVersionsStatusSchema.optional().default("candidate"),
+  options: jsonObjectSchema.optional().default({}),
+  config: jsonObjectSchema.optional().default({}),
+  lineage: jsonArraySchema.optional().default([]),
+  metrics: jsonObjectSchema.optional().default({}),
+  entryCount: z.number().int().min(0).optional().default(0),
+  targetEntryCount: z.number().int().min(0).optional().default(0),
+  visitCount: z.number().int().min(0).optional().default(0),
+  fitnessMicros: z.number().int().optional().default(0),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const desSoccerLearningPolicyVersionsUpdateSchema = desSoccerLearningPolicyVersionsInsertSchema.partial();
+export type DesSoccerLearningPolicyVersionsRow = z.infer<typeof desSoccerLearningPolicyVersionsRowSchema>;
+export type DesSoccerLearningPolicyVersionsInsert = z.infer<typeof desSoccerLearningPolicyVersionsInsertSchema>;
+export type DesSoccerLearningPolicyVersionsUpdate = z.infer<typeof desSoccerLearningPolicyVersionsUpdateSchema>;
+
+export const desSoccerLearningPolicyEntriesTeamValues = ["home","away"] as const;
+export const desSoccerLearningPolicyEntriesTeamSchema = z.enum(desSoccerLearningPolicyEntriesTeamValues);
+export type DesSoccerLearningPolicyEntriesTeam = z.infer<typeof desSoccerLearningPolicyEntriesTeamSchema>;
+
+export const desSoccerLearningPolicyEntriesEntryKindValues = ["action","target"] as const;
+export const desSoccerLearningPolicyEntriesEntryKindSchema = z.enum(desSoccerLearningPolicyEntriesEntryKindValues);
+export type DesSoccerLearningPolicyEntriesEntryKind = z.infer<typeof desSoccerLearningPolicyEntriesEntryKindSchema>;
+
+export const desSoccerLearningPolicyEntries = pgTable(
+  "des_soccer_learning_policy_entries",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    policyVersionId: uuid("policy_version_id").notNull(),
+    team: varchar("team", { length: 8 }).notNull(),
+    entryKind: varchar("entry_kind", { length: 16 }).notNull(),
+    stateHash: varchar("state_hash", { length: 32 }).notNull(),
+    stateKey: jsonb("state_key").notNull(),
+    action: varchar("action", { length: 80 }).notNull(),
+    targetFineCellId: integer("target_fine_cell_id").default(sql`-1`).notNull(),
+    targetTacticalCellId: integer("target_tactical_cell_id").default(sql`-1`).notNull(),
+    targetMacroCellId: integer("target_macro_cell_id").default(sql`-1`).notNull(),
+    targetRootCellId: integer("target_root_cell_id").default(sql`-1`).notNull(),
+    valueMicros: bigint("value_micros", { mode: "number" }).notNull(),
+    visits: integer("visits").default(sql`0`).notNull(),
+    sourceRunId: uuid("source_run_id"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningPolicyEntriesTeamChk: check("des_soccer_learning_policy_entries_team_chk", sql.raw("team in ('home', 'away')")),
+    desSoccerLearningPolicyEntriesKindChk: check("des_soccer_learning_policy_entries_kind_chk", sql.raw("entry_kind in ('action', 'target')")),
+    desSoccerLearningPolicyEntriesStateHashChk: check("des_soccer_learning_policy_entries_state_hash_chk", sql.raw("state_hash ~ '^[a-f0-9]{16,32}$'")),
+    desSoccerLearningPolicyEntriesStateObjectChk: check("des_soccer_learning_policy_entries_state_object_chk", sql.raw("jsonb_typeof(state_key) = 'object'")),
+    desSoccerLearningPolicyEntriesActionSizeChk: check("des_soccer_learning_policy_entries_action_size_chk", sql.raw("octet_length(action) between 1 and 80")),
+    desSoccerLearningPolicyEntriesTargetFineChk: check("des_soccer_learning_policy_entries_target_fine_chk", sql.raw("target_fine_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesTargetTacticalChk: check("des_soccer_learning_policy_entries_target_tactical_chk", sql.raw("target_tactical_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesTargetMacroChk: check("des_soccer_learning_policy_entries_target_macro_chk", sql.raw("target_macro_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesTargetRootChk: check("des_soccer_learning_policy_entries_target_root_chk", sql.raw("target_root_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesVisitsChk: check("des_soccer_learning_policy_entries_visits_chk", sql.raw("visits >= 0")),
+    desSoccerLearningPolicyEntriesKeyUq: uniqueIndex("des_soccer_learning_policy_entries_key_uq").on(table.policyVersionId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId),
+    desSoccerLearningPolicyEntriesLookupIdx: index("des_soccer_learning_policy_entries_lookup_idx").on(table.policyVersionId, table.team, table.entryKind, table.stateHash),
+  }),
+);
+
+export const desSoccerLearningPolicyEntriesRowSchema = z.object({
+  id: z.string().uuid(),
+  policyVersionId: z.string().uuid(),
+  team: desSoccerLearningPolicyEntriesTeamSchema,
+  entryKind: desSoccerLearningPolicyEntriesEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1),
+  targetTacticalCellId: z.number().int().min(-1),
+  targetMacroCellId: z.number().int().min(-1),
+  targetRootCellId: z.number().int().min(-1),
+  valueMicros: z.number().int(),
+  visits: z.number().int().min(0),
+  sourceRunId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningPolicyEntriesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  policyVersionId: z.string().uuid(),
+  team: desSoccerLearningPolicyEntriesTeamSchema,
+  entryKind: desSoccerLearningPolicyEntriesEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1).optional().default(-1),
+  targetTacticalCellId: z.number().int().min(-1).optional().default(-1),
+  targetMacroCellId: z.number().int().min(-1).optional().default(-1),
+  targetRootCellId: z.number().int().min(-1).optional().default(-1),
+  valueMicros: z.number().int(),
+  visits: z.number().int().min(0).optional().default(0),
+  sourceRunId: z.string().uuid().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningPolicyEntriesUpdateSchema = desSoccerLearningPolicyEntriesInsertSchema.partial();
+export type DesSoccerLearningPolicyEntriesRow = z.infer<typeof desSoccerLearningPolicyEntriesRowSchema>;
+export type DesSoccerLearningPolicyEntriesInsert = z.infer<typeof desSoccerLearningPolicyEntriesInsertSchema>;
+export type DesSoccerLearningPolicyEntriesUpdate = z.infer<typeof desSoccerLearningPolicyEntriesUpdateSchema>;
+
+export const desSoccerLearningJobsSpawnStrategyValues = ["latest","elite","mutation","crossover","random","replay"] as const;
+export const desSoccerLearningJobsSpawnStrategySchema = z.enum(desSoccerLearningJobsSpawnStrategyValues);
+export type DesSoccerLearningJobsSpawnStrategy = z.infer<typeof desSoccerLearningJobsSpawnStrategySchema>;
+
+export const desSoccerLearningJobsStatusValues = ["queued","running","completed","failed","canceled"] as const;
+export const desSoccerLearningJobsStatusSchema = z.enum(desSoccerLearningJobsStatusValues);
+export type DesSoccerLearningJobsStatus = z.infer<typeof desSoccerLearningJobsStatusSchema>;
+
+export const desSoccerLearningJobs = pgTable(
+  "des_soccer_learning_jobs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    experimentId: uuid("experiment_id").notNull(),
+    basePolicyVersionId: uuid("base_policy_version_id"),
+    spawnStrategy: varchar("spawn_strategy", { length: 32 }).default(sql`'latest'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'queued'`).notNull(),
+    priority: integer("priority").default(sql`0`).notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    attempt: integer("attempt").default(sql`0`).notNull(),
+    maxAttempts: integer("max_attempts").default(sql`1`).notNull(),
+    leaseOwner: varchar("lease_owner", { length: 200 }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "string" }),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    config: jsonb("config").default(sql`'{}'::jsonb`).notNull(),
+    runnerConfig: jsonb("runner_config").default(sql`'{}'::jsonb`).notNull(),
+    resultRunId: uuid("result_run_id"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningJobsSpawnStrategyChk: check("des_soccer_learning_jobs_spawn_strategy_chk", sql.raw("spawn_strategy in ('latest', 'elite', 'mutation', 'crossover', 'random', 'replay')")),
+    desSoccerLearningJobsStatusChk: check("des_soccer_learning_jobs_status_chk", sql.raw("status in ('queued', 'running', 'completed', 'failed', 'canceled')")),
+    desSoccerLearningJobsSeedChk: check("des_soccer_learning_jobs_seed_chk", sql.raw("seed >= 0")),
+    desSoccerLearningJobsAttemptChk: check("des_soccer_learning_jobs_attempt_chk", sql.raw("attempt >= 0")),
+    desSoccerLearningJobsMaxAttemptsChk: check("des_soccer_learning_jobs_max_attempts_chk", sql.raw("max_attempts between 1 and 100")),
+    desSoccerLearningJobsLeaseOwnerSizeChk: check("des_soccer_learning_jobs_lease_owner_size_chk", sql.raw("lease_owner is null or octet_length(lease_owner) <= 200")),
+    desSoccerLearningJobsConfigObjectChk: check("des_soccer_learning_jobs_config_object_chk", sql.raw("jsonb_typeof(config) = 'object'")),
+    desSoccerLearningJobsRunnerConfigObjectChk: check("des_soccer_learning_jobs_runner_config_object_chk", sql.raw("jsonb_typeof(runner_config) = 'object'")),
+    desSoccerLearningJobsErrorSizeChk: check("des_soccer_learning_jobs_error_size_chk", sql.raw("error is null or octet_length(error) <= 16384")),
+    desSoccerLearningJobsClaimIdx: index("des_soccer_learning_jobs_claim_idx").on(table.experimentId, table.status, table.priority.desc(), table.createdAt).where(sql.raw("status in ('queued', 'running')")),
+    desSoccerLearningJobsBasePolicyIdx: index("des_soccer_learning_jobs_base_policy_idx").on(table.basePolicyVersionId, table.createdAt.desc()),
+  }),
+);
+
+export const desSoccerLearningJobsRowSchema = z.object({
+  id: z.string().uuid(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable(),
+  spawnStrategy: desSoccerLearningJobsSpawnStrategySchema,
+  status: desSoccerLearningJobsStatusSchema,
+  priority: z.number().int(),
+  seed: z.number().int().min(0),
+  attempt: z.number().int().min(0),
+  maxAttempts: z.number().int().min(1).max(100),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  leaseExpiresAt: z.string().datetime().nullable(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  config: jsonObjectSchema,
+  runnerConfig: jsonObjectSchema,
+  resultRunId: z.string().uuid().nullable(),
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const desSoccerLearningJobsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable().optional(),
+  spawnStrategy: desSoccerLearningJobsSpawnStrategySchema.optional().default("latest"),
+  status: desSoccerLearningJobsStatusSchema.optional().default("queued"),
+  priority: z.number().int().optional().default(0),
+  seed: z.number().int().min(0),
+  attempt: z.number().int().min(0).optional().default(0),
+  maxAttempts: z.number().int().min(1).max(100).optional().default(1),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  leaseExpiresAt: z.string().datetime().nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  config: jsonObjectSchema.optional().default({}),
+  runnerConfig: jsonObjectSchema.optional().default({}),
+  resultRunId: z.string().uuid().nullable().optional(),
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningJobsUpdateSchema = desSoccerLearningJobsInsertSchema.partial();
+export type DesSoccerLearningJobsRow = z.infer<typeof desSoccerLearningJobsRowSchema>;
+export type DesSoccerLearningJobsInsert = z.infer<typeof desSoccerLearningJobsInsertSchema>;
+export type DesSoccerLearningJobsUpdate = z.infer<typeof desSoccerLearningJobsUpdateSchema>;
+
+export const desSoccerLearningRunsStatusValues = ["completed","failed"] as const;
+export const desSoccerLearningRunsStatusSchema = z.enum(desSoccerLearningRunsStatusValues);
+export type DesSoccerLearningRunsStatus = z.infer<typeof desSoccerLearningRunsStatusSchema>;
+
+export const desSoccerLearningRunsHomeOutcomeValues = ["win","draw","loss"] as const;
+export const desSoccerLearningRunsHomeOutcomeSchema = z.enum(desSoccerLearningRunsHomeOutcomeValues);
+export type DesSoccerLearningRunsHomeOutcome = z.infer<typeof desSoccerLearningRunsHomeOutcomeSchema>;
+
+export const desSoccerLearningRunsAwayOutcomeValues = ["win","draw","loss"] as const;
+export const desSoccerLearningRunsAwayOutcomeSchema = z.enum(desSoccerLearningRunsAwayOutcomeValues);
+export type DesSoccerLearningRunsAwayOutcome = z.infer<typeof desSoccerLearningRunsAwayOutcomeSchema>;
+
+export const desSoccerLearningRuns = pgTable(
+  "des_soccer_learning_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    jobId: uuid("job_id"),
+    experimentId: uuid("experiment_id").notNull(),
+    basePolicyVersionId: uuid("base_policy_version_id"),
+    outputPolicyVersionId: uuid("output_policy_version_id"),
+    runnerId: varchar("runner_id", { length: 200 }).notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    episodeIndex: integer("episode_index").default(sql`0`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'completed'`).notNull(),
+    scoreHome: integer("score_home").default(sql`0`).notNull(),
+    scoreAway: integer("score_away").default(sql`0`).notNull(),
+    homeGoalDiff: integer("home_goal_diff").default(sql`0`).notNull(),
+    awayGoalDiff: integer("away_goal_diff").default(sql`0`).notNull(),
+    homeOutcome: varchar("home_outcome", { length: 16 }).default(sql`'draw'`).notNull(),
+    awayOutcome: varchar("away_outcome", { length: 16 }).default(sql`'draw'`).notNull(),
+    homeMergeWeightMicros: bigint("home_merge_weight_micros", { mode: "number" }).default(sql`0`).notNull(),
+    awayMergeWeightMicros: bigint("away_merge_weight_micros", { mode: "number" }).default(sql`0`).notNull(),
+    fitnessMicros: bigint("fitness_micros", { mode: "number" }).default(sql`0`).notNull(),
+    durationTicks: bigint("duration_ticks", { mode: "number" }).default(sql`0`).notNull(),
+    simulatedSecondsMicros: bigint("simulated_seconds_micros", { mode: "number" }).default(sql`0`).notNull(),
+    elapsedMillis: bigint("elapsed_millis", { mode: "number" }).default(sql`0`).notNull(),
+    transitions: integer("transitions").default(sql`0`).notNull(),
+    summary: jsonb("summary").default(sql`'{}'::jsonb`).notNull(),
+    stats: jsonb("stats").default(sql`'{}'::jsonb`).notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningRunsRunnerIdSizeChk: check("des_soccer_learning_runs_runner_id_size_chk", sql.raw("octet_length(runner_id) between 1 and 200")),
+    desSoccerLearningRunsSeedChk: check("des_soccer_learning_runs_seed_chk", sql.raw("seed >= 0")),
+    desSoccerLearningRunsEpisodeIndexChk: check("des_soccer_learning_runs_episode_index_chk", sql.raw("episode_index >= 0")),
+    desSoccerLearningRunsStatusChk: check("des_soccer_learning_runs_status_chk", sql.raw("status in ('completed', 'failed')")),
+    desSoccerLearningRunsScoresChk: check("des_soccer_learning_runs_scores_chk", sql.raw("score_home >= 0 and score_away >= 0")),
+    desSoccerLearningRunsHomeOutcomeChk: check("des_soccer_learning_runs_home_outcome_chk", sql.raw("home_outcome in ('win', 'draw', 'loss')")),
+    desSoccerLearningRunsAwayOutcomeChk: check("des_soccer_learning_runs_away_outcome_chk", sql.raw("away_outcome in ('win', 'draw', 'loss')")),
+    desSoccerLearningRunsDurationTicksChk: check("des_soccer_learning_runs_duration_ticks_chk", sql.raw("duration_ticks >= 0")),
+    desSoccerLearningRunsSimulatedSecondsChk: check("des_soccer_learning_runs_simulated_seconds_chk", sql.raw("simulated_seconds_micros >= 0")),
+    desSoccerLearningRunsElapsedMillisChk: check("des_soccer_learning_runs_elapsed_millis_chk", sql.raw("elapsed_millis >= 0")),
+    desSoccerLearningRunsTransitionsChk: check("des_soccer_learning_runs_transitions_chk", sql.raw("transitions >= 0")),
+    desSoccerLearningRunsSummaryObjectChk: check("des_soccer_learning_runs_summary_object_chk", sql.raw("jsonb_typeof(summary) = 'object'")),
+    desSoccerLearningRunsStatsObjectChk: check("des_soccer_learning_runs_stats_object_chk", sql.raw("jsonb_typeof(stats) = 'object'")),
+    desSoccerLearningRunsErrorSizeChk: check("des_soccer_learning_runs_error_size_chk", sql.raw("error is null or octet_length(error) <= 16384")),
+    desSoccerLearningRunsExperimentIdx: index("des_soccer_learning_runs_experiment_idx").on(table.experimentId, table.createdAt.desc()),
+    desSoccerLearningRunsPolicyFitnessIdx: index("des_soccer_learning_runs_policy_fitness_idx").on(table.basePolicyVersionId, table.fitnessMicros.desc(), table.createdAt.desc()),
+  }),
+);
+
+export const desSoccerLearningRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  jobId: z.string().uuid().nullable(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable(),
+  outputPolicyVersionId: z.string().uuid().nullable(),
+  runnerId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  seed: z.number().int().min(0),
+  episodeIndex: z.number().int().min(0),
+  status: desSoccerLearningRunsStatusSchema,
+  scoreHome: z.number().int().min(0),
+  scoreAway: z.number().int().min(0),
+  homeGoalDiff: z.number().int(),
+  awayGoalDiff: z.number().int(),
+  homeOutcome: desSoccerLearningRunsHomeOutcomeSchema,
+  awayOutcome: desSoccerLearningRunsAwayOutcomeSchema,
+  homeMergeWeightMicros: z.number().int(),
+  awayMergeWeightMicros: z.number().int(),
+  fitnessMicros: z.number().int(),
+  durationTicks: z.number().int().min(0),
+  simulatedSecondsMicros: z.number().int().min(0),
+  elapsedMillis: z.number().int().min(0),
+  transitions: z.number().int().min(0),
+  summary: jsonObjectSchema,
+  stats: jsonObjectSchema,
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const desSoccerLearningRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  jobId: z.string().uuid().nullable().optional(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable().optional(),
+  outputPolicyVersionId: z.string().uuid().nullable().optional(),
+  runnerId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  seed: z.number().int().min(0),
+  episodeIndex: z.number().int().min(0).optional().default(0),
+  status: desSoccerLearningRunsStatusSchema.optional().default("completed"),
+  scoreHome: z.number().int().min(0).optional().default(0),
+  scoreAway: z.number().int().min(0).optional().default(0),
+  homeGoalDiff: z.number().int().optional().default(0),
+  awayGoalDiff: z.number().int().optional().default(0),
+  homeOutcome: desSoccerLearningRunsHomeOutcomeSchema.optional().default("draw"),
+  awayOutcome: desSoccerLearningRunsAwayOutcomeSchema.optional().default("draw"),
+  homeMergeWeightMicros: z.number().int().optional().default(0),
+  awayMergeWeightMicros: z.number().int().optional().default(0),
+  fitnessMicros: z.number().int().optional().default(0),
+  durationTicks: z.number().int().min(0).optional().default(0),
+  simulatedSecondsMicros: z.number().int().min(0).optional().default(0),
+  elapsedMillis: z.number().int().min(0).optional().default(0),
+  transitions: z.number().int().min(0).optional().default(0),
+  summary: jsonObjectSchema.optional().default({}),
+  stats: jsonObjectSchema.optional().default({}),
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningRunsUpdateSchema = desSoccerLearningRunsInsertSchema.partial();
+export type DesSoccerLearningRunsRow = z.infer<typeof desSoccerLearningRunsRowSchema>;
+export type DesSoccerLearningRunsInsert = z.infer<typeof desSoccerLearningRunsInsertSchema>;
+export type DesSoccerLearningRunsUpdate = z.infer<typeof desSoccerLearningRunsUpdateSchema>;
+
+export const desSoccerLearningRunDeltasTeamValues = ["home","away"] as const;
+export const desSoccerLearningRunDeltasTeamSchema = z.enum(desSoccerLearningRunDeltasTeamValues);
+export type DesSoccerLearningRunDeltasTeam = z.infer<typeof desSoccerLearningRunDeltasTeamSchema>;
+
+export const desSoccerLearningRunDeltasEntryKindValues = ["action","target"] as const;
+export const desSoccerLearningRunDeltasEntryKindSchema = z.enum(desSoccerLearningRunDeltasEntryKindValues);
+export type DesSoccerLearningRunDeltasEntryKind = z.infer<typeof desSoccerLearningRunDeltasEntryKindSchema>;
+
+export const desSoccerLearningRunDeltas = pgTable(
+  "des_soccer_learning_run_deltas",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    runId: uuid("run_id").notNull(),
+    team: varchar("team", { length: 8 }).notNull(),
+    entryKind: varchar("entry_kind", { length: 16 }).notNull(),
+    stateHash: varchar("state_hash", { length: 32 }).notNull(),
+    stateKey: jsonb("state_key").notNull(),
+    action: varchar("action", { length: 80 }).notNull(),
+    targetFineCellId: integer("target_fine_cell_id").default(sql`-1`).notNull(),
+    targetTacticalCellId: integer("target_tactical_cell_id").default(sql`-1`).notNull(),
+    targetMacroCellId: integer("target_macro_cell_id").default(sql`-1`).notNull(),
+    targetRootCellId: integer("target_root_cell_id").default(sql`-1`).notNull(),
+    beforeValueMicros: bigint("before_value_micros", { mode: "number" }).default(sql`0`).notNull(),
+    afterValueMicros: bigint("after_value_micros", { mode: "number" }).default(sql`0`).notNull(),
+    valueDeltaMicros: bigint("value_delta_micros", { mode: "number" }).default(sql`0`).notNull(),
+    visitDelta: integer("visit_delta").default(sql`0`).notNull(),
+    mergeWeightMicros: bigint("merge_weight_micros", { mode: "number" }).default(sql`0`).notNull(),
+    effectiveVisitMicros: bigint("effective_visit_micros", { mode: "number" }).default(sql`0`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningRunDeltasTeamChk: check("des_soccer_learning_run_deltas_team_chk", sql.raw("team in ('home', 'away')")),
+    desSoccerLearningRunDeltasKindChk: check("des_soccer_learning_run_deltas_kind_chk", sql.raw("entry_kind in ('action', 'target')")),
+    desSoccerLearningRunDeltasStateHashChk: check("des_soccer_learning_run_deltas_state_hash_chk", sql.raw("state_hash ~ '^[a-f0-9]{16,32}$'")),
+    desSoccerLearningRunDeltasStateObjectChk: check("des_soccer_learning_run_deltas_state_object_chk", sql.raw("jsonb_typeof(state_key) = 'object'")),
+    desSoccerLearningRunDeltasActionSizeChk: check("des_soccer_learning_run_deltas_action_size_chk", sql.raw("octet_length(action) between 1 and 80")),
+    desSoccerLearningRunDeltasTargetFineChk: check("des_soccer_learning_run_deltas_target_fine_chk", sql.raw("target_fine_cell_id >= -1")),
+    desSoccerLearningRunDeltasTargetTacticalChk: check("des_soccer_learning_run_deltas_target_tactical_chk", sql.raw("target_tactical_cell_id >= -1")),
+    desSoccerLearningRunDeltasTargetMacroChk: check("des_soccer_learning_run_deltas_target_macro_chk", sql.raw("target_macro_cell_id >= -1")),
+    desSoccerLearningRunDeltasTargetRootChk: check("des_soccer_learning_run_deltas_target_root_chk", sql.raw("target_root_cell_id >= -1")),
+    desSoccerLearningRunDeltasVisitDeltaChk: check("des_soccer_learning_run_deltas_visit_delta_chk", sql.raw("visit_delta > 0")),
+    desSoccerLearningRunDeltasMergeWeightChk: check("des_soccer_learning_run_deltas_merge_weight_chk", sql.raw("merge_weight_micros >= 0")),
+    desSoccerLearningRunDeltasEffectiveVisitChk: check("des_soccer_learning_run_deltas_effective_visit_chk", sql.raw("effective_visit_micros >= 0")),
+    desSoccerLearningRunDeltasKeyUq: uniqueIndex("des_soccer_learning_run_deltas_key_uq").on(table.runId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId),
+    desSoccerLearningRunDeltasMergeIdx: index("des_soccer_learning_run_deltas_merge_idx").on(table.team, table.entryKind, table.stateHash, table.action),
+  }),
+);
+
+export const desSoccerLearningRunDeltasRowSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  team: desSoccerLearningRunDeltasTeamSchema,
+  entryKind: desSoccerLearningRunDeltasEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1),
+  targetTacticalCellId: z.number().int().min(-1),
+  targetMacroCellId: z.number().int().min(-1),
+  targetRootCellId: z.number().int().min(-1),
+  beforeValueMicros: z.number().int(),
+  afterValueMicros: z.number().int(),
+  valueDeltaMicros: z.number().int(),
+  visitDelta: z.number().int().min(1),
+  mergeWeightMicros: z.number().int().min(0),
+  effectiveVisitMicros: z.number().int().min(0),
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningRunDeltasInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  runId: z.string().uuid(),
+  team: desSoccerLearningRunDeltasTeamSchema,
+  entryKind: desSoccerLearningRunDeltasEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1).optional().default(-1),
+  targetTacticalCellId: z.number().int().min(-1).optional().default(-1),
+  targetMacroCellId: z.number().int().min(-1).optional().default(-1),
+  targetRootCellId: z.number().int().min(-1).optional().default(-1),
+  beforeValueMicros: z.number().int().optional().default(0),
+  afterValueMicros: z.number().int().optional().default(0),
+  valueDeltaMicros: z.number().int().optional().default(0),
+  visitDelta: z.number().int().min(1).optional().default(0),
+  mergeWeightMicros: z.number().int().min(0).optional().default(0),
+  effectiveVisitMicros: z.number().int().min(0).optional().default(0),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningRunDeltasUpdateSchema = desSoccerLearningRunDeltasInsertSchema.partial();
+export type DesSoccerLearningRunDeltasRow = z.infer<typeof desSoccerLearningRunDeltasRowSchema>;
+export type DesSoccerLearningRunDeltasInsert = z.infer<typeof desSoccerLearningRunDeltasInsertSchema>;
+export type DesSoccerLearningRunDeltasUpdate = z.infer<typeof desSoccerLearningRunDeltasUpdateSchema>;
+
+export const desSoccerLearningMergeEventsStrategyValues = ["outcome_weighted_average","elite","mutation","crossover"] as const;
+export const desSoccerLearningMergeEventsStrategySchema = z.enum(desSoccerLearningMergeEventsStrategyValues);
+export type DesSoccerLearningMergeEventsStrategy = z.infer<typeof desSoccerLearningMergeEventsStrategySchema>;
+
+export const desSoccerLearningMergeEvents = pgTable(
+  "des_soccer_learning_merge_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    experimentId: uuid("experiment_id").notNull(),
+    basePolicyVersionId: uuid("base_policy_version_id"),
+    outputPolicyVersionId: uuid("output_policy_version_id").notNull(),
+    strategy: varchar("strategy", { length: 40 }).default(sql`'outcome_weighted_average'`).notNull(),
+    inputRunCount: integer("input_run_count").default(sql`0`).notNull(),
+    inputDeltaCount: integer("input_delta_count").default(sql`0`).notNull(),
+    decayMicros: bigint("decay_micros", { mode: "number" }).default(sql`1000000`).notNull(),
+    metrics: jsonb("metrics").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningMergeEventsStrategyChk: check("des_soccer_learning_merge_events_strategy_chk", sql.raw("strategy in ('outcome_weighted_average', 'elite', 'mutation', 'crossover')")),
+    desSoccerLearningMergeEventsInputRunCountChk: check("des_soccer_learning_merge_events_input_run_count_chk", sql.raw("input_run_count >= 0")),
+    desSoccerLearningMergeEventsInputDeltaCountChk: check("des_soccer_learning_merge_events_input_delta_count_chk", sql.raw("input_delta_count >= 0")),
+    desSoccerLearningMergeEventsDecayChk: check("des_soccer_learning_merge_events_decay_chk", sql.raw("decay_micros between 0 and 1000000")),
+    desSoccerLearningMergeEventsMetricsObjectChk: check("des_soccer_learning_merge_events_metrics_object_chk", sql.raw("jsonb_typeof(metrics) = 'object'")),
+    desSoccerLearningMergeEventsExperimentIdx: index("des_soccer_learning_merge_events_experiment_idx").on(table.experimentId, table.createdAt.desc()),
+  }),
+);
+
+export const desSoccerLearningMergeEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable(),
+  outputPolicyVersionId: z.string().uuid(),
+  strategy: desSoccerLearningMergeEventsStrategySchema,
+  inputRunCount: z.number().int().min(0),
+  inputDeltaCount: z.number().int().min(0),
+  decayMicros: z.number().int().min(0).max(1000000),
+  metrics: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningMergeEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable().optional(),
+  outputPolicyVersionId: z.string().uuid(),
+  strategy: desSoccerLearningMergeEventsStrategySchema.optional().default("outcome_weighted_average"),
+  inputRunCount: z.number().int().min(0).optional().default(0),
+  inputDeltaCount: z.number().int().min(0).optional().default(0),
+  decayMicros: z.number().int().min(0).max(1000000).optional().default(1000000),
+  metrics: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningMergeEventsUpdateSchema = desSoccerLearningMergeEventsInsertSchema.partial();
+export type DesSoccerLearningMergeEventsRow = z.infer<typeof desSoccerLearningMergeEventsRowSchema>;
+export type DesSoccerLearningMergeEventsInsert = z.infer<typeof desSoccerLearningMergeEventsInsertSchema>;
+export type DesSoccerLearningMergeEventsUpdate = z.infer<typeof desSoccerLearningMergeEventsUpdateSchema>;

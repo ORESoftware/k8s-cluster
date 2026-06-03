@@ -90,6 +90,35 @@ public final class DdNatsSubjects {
     public static final String MDP_RESULTS_SUBJECT = "dd.remote.mdp.results";
 
     /**
+     * Control-plane commands for distributed in-house MIP solves, including solve cancellation and revision invalidation.
+     * Service: dd-ai-ml-pipeline
+     */
+    public static final String MIP_SOLVER_CONTROL_SUBJECT = "dd.remote.mip_solver.control";
+    public static final String MIP_SOLVER_CONTROL_STREAM = "DD_REMOTE_MIP_SOLVER";
+
+    /**
+     * Lifecycle and progress events from distributed in-house LP/MIP/IP solver nodes.
+     * Service: dd-ai-ml-pipeline
+     */
+    public static final String MIP_SOLVER_EVENTS_SUBJECT = "dd.remote.mip_solver.events";
+    public static final String MIP_SOLVER_EVENTS_STREAM = "DD_REMOTE_MIP_SOLVER";
+
+    /**
+     * Distributed in-house LP/MIP/IP subproblem jobs. Masters publish branch-and-bound relaxation/subtree work; slave pods consume through the worker queue group.
+     * Service: dd-ai-ml-pipeline
+     */
+    public static final String MIP_SOLVER_JOBS_SUBJECT = "dd.remote.mip_solver.jobs";
+    public static final String MIP_SOLVER_JOBS_QUEUE_GROUP = "dd-in-house-mip-solver-node-workers";
+    public static final String MIP_SOLVER_JOBS_STREAM = "DD_REMOTE_MIP_SOLVER";
+
+    /**
+     * Distributed in-house LP/MIP/IP subproblem results. Slaves publish solved LP relaxation/subtree summaries and masters aggregate them by solveId.
+     * Service: dd-ai-ml-pipeline
+     */
+    public static final String MIP_SOLVER_RESULTS_SUBJECT = "dd.remote.mip_solver.results";
+    public static final String MIP_SOLVER_RESULTS_STREAM = "DD_REMOTE_MIP_SOLVER";
+
+    /**
      * Dead-letter target for ai-ml-pipeline messages that failed validation/processing. Default for ML_DEAD_LETTER_SUBJECT.
      * Service: dd-ai-ml-pipeline
      */
@@ -587,6 +616,12 @@ public final class DdNatsSubjects {
     public static final String LAMBDA_RUNNER_QUEUE_GROUP = "dd-gleam-lambda-runner";
 
     /**
+     * Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once.
+     * Service: dd-ai-ml-pipeline
+     */
+    public static final String MIP_SOLVER_WORKERS_QUEUE_GROUP = "dd-in-house-mip-solver-node-workers";
+
+    /**
      * Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
      * Service: dd-remote-rest-api
      */
@@ -641,6 +676,16 @@ public final class DdNatsSubjects {
     public static final String DD_REMOTE_EVENTS_STREAM_RETENTION = "limits";
     public static final String DD_REMOTE_EVENTS_STREAM_STORAGE = "file";
     public static final String DD_REMOTE_EVENTS_STREAM_ACK = "explicit";
+
+    /**
+     * JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
+     * Service: dd-ai-ml-pipeline
+     */
+    public static final String DD_REMOTE_MIP_SOLVER_STREAM_NAME = "DD_REMOTE_MIP_SOLVER";
+    public static final List<String> DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS = List.of("dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events");
+    public static final String DD_REMOTE_MIP_SOLVER_STREAM_RETENTION = "limits";
+    public static final String DD_REMOTE_MIP_SOLVER_STREAM_STORAGE = "file";
+    public static final String DD_REMOTE_MIP_SOLVER_STREAM_ACK = "explicit";
 
     /**
      * JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
