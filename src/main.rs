@@ -83,6 +83,7 @@ struct AppState {
     events_subject: String,
     sessions: Arc<Mutex<HashMap<String, LiveSession>>>,
     workers: Arc<Mutex<HashMap<String, WorkerNodeStatus>>>,
+    solves: Arc<Mutex<HashMap<String, SolveRegistryEntry>>>,
     metrics: Arc<Metrics>,
 }
 
@@ -120,6 +121,40 @@ struct WorkerNodeStatus {
     last_seen_ms: u128,
     request_count: u64,
     completed_count: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct JobRegistryEntry {
+    job_id: String,
+    root_job_id: String,
+    retry_index: usize,
+    depth: usize,
+    status: String,
+    worker_node: Option<String>,
+    submitted_at_ms: u128,
+    finished_at_ms: Option<u128>,
+    error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SolveRegistryEntry {
+    solve_id: String,
+    request_id: String,
+    revision: u64,
+    status: String,
+    jobs_expected: usize,
+    jobs_published: usize,
+    jobs_completed: usize,
+    jobs_redelegated: usize,
+    timed_out: bool,
+    distributed: bool,
+    started_at_ms: u128,
+    updated_at_ms: u128,
+    finished_at_ms: Option<u128>,
+    warnings: Vec<String>,
+    jobs: HashMap<String, JobRegistryEntry>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1744,6 +1779,13 @@ fn job_retry_root(job_id: &str) -> &str {
         .map_or(job_id, |(root, _)| root)
 }
 
+fn job_retry_index(job_id: &str) -> usize {
+    job_id
+        .rsplit_once("-retry-")
+        .and_then(|(_, index)| index.parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
 fn redelegated_job(original: &SubproblemJob, retry_index: usize) -> SubproblemJob {
     let mut job = original.clone();
     job.job_id = format!("{}-retry-{retry_index}", job_retry_root(&original.job_id));
@@ -1757,6 +1799,106 @@ fn should_redelegate_result(
     max_retries: usize,
 ) -> bool {
     result.status == "error" && retry_index < max_retries
+}
+
+fn track_solve_started(
+    state: &AppState,
+    solve_id: &str,
+    request_id: &str,
+    revision: u64,
+    jobs_expected: usize,
+    distributed: bool,
+) {
+    let now = now_ms();
+    state.solves.lock().expect("solves mutex poisoned").insert(
+        solve_id.to_string(),
+        SolveRegistryEntry {
+            solve_id: solve_id.to_string(),
+            request_id: request_id.to_string(),
+            revision,
+            status: "running".to_string(),
+            jobs_expected,
+            distributed,
+            started_at_ms: now,
+            updated_at_ms: now,
+            ..SolveRegistryEntry::default()
+        },
+    );
+}
+
+fn track_job_submitted(state: &AppState, job: &SubproblemJob) {
+    let retry_index = job_retry_index(&job.job_id);
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(&job.solve_id) else {
+        return;
+    };
+    solve.jobs_published = solve.jobs_published.saturating_add(1);
+    solve.updated_at_ms = now_ms();
+    solve.jobs.insert(
+        job.job_id.clone(),
+        JobRegistryEntry {
+            job_id: job.job_id.clone(),
+            root_job_id: job_retry_root(&job.job_id).to_string(),
+            retry_index,
+            depth: job.depth,
+            status: "submitted".to_string(),
+            submitted_at_ms: job.submitted_at_ms,
+            ..JobRegistryEntry::default()
+        },
+    );
+}
+
+fn track_job_result(state: &AppState, result: &SubproblemResult, terminal: bool) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(&result.solve_id) else {
+        return;
+    };
+    let job = solve
+        .jobs
+        .entry(result.job_id.clone())
+        .or_insert_with(|| JobRegistryEntry {
+            job_id: result.job_id.clone(),
+            root_job_id: job_retry_root(&result.job_id).to_string(),
+            retry_index: job_retry_index(&result.job_id),
+            ..JobRegistryEntry::default()
+        });
+    job.status = if terminal {
+        result.status.clone()
+    } else {
+        "retrying".to_string()
+    };
+    job.worker_node = Some(result.worker_node.clone());
+    job.finished_at_ms = Some(result.finished_at_ms);
+    job.error = result.error.clone();
+    solve.updated_at_ms = now_ms();
+    if terminal {
+        solve.jobs_completed = solve.jobs_completed.saturating_add(1);
+    }
+}
+
+fn track_job_redelegated(state: &AppState, solve_id: &str) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(solve_id) else {
+        return;
+    };
+    solve.jobs_redelegated = solve.jobs_redelegated.saturating_add(1);
+    solve.updated_at_ms = now_ms();
+}
+
+fn track_solve_finished(state: &AppState, response: &SolveResponse) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(&response.solve_id) else {
+        return;
+    };
+    solve.status = response.status.clone();
+    solve.jobs_expected = response.jobs_expected;
+    solve.jobs_published = response.jobs_published;
+    solve.jobs_completed = response.jobs_completed;
+    solve.jobs_redelegated = response.jobs_redelegated;
+    solve.timed_out = response.timed_out;
+    solve.warnings = response.warnings.clone();
+    solve.updated_at_ms = response.generated_at_ms;
+    solve.finished_at_ms = Some(response.generated_at_ms);
 }
 
 fn aggregate_results(
@@ -2100,8 +2242,16 @@ async fn solve_problem_distributed(
         &state.node_id,
         &options,
     )?;
+    track_solve_started(
+        &state,
+        &solve_id,
+        &request_id,
+        revision,
+        jobs.len(),
+        state.nats.is_some(),
+    );
     if jobs.is_empty() {
-        return Ok(aggregate_results(
+        let response = aggregate_results(
             solve_id,
             request_id,
             revision,
@@ -2114,7 +2264,9 @@ async fn solve_problem_distributed(
             false,
             &state,
             warnings,
-        ));
+        );
+        track_solve_finished(&state, &response);
+        return Ok(response);
     }
 
     let Some(nats) = state.nats.clone() else {
@@ -2127,11 +2279,13 @@ async fn solve_problem_distributed(
             let mut retry_index = 0usize;
             loop {
                 jobs_published += 1;
+                track_job_submitted(&state, &job);
                 let node = state.node_id.clone();
                 let result = tokio::task::spawn_blocking(move || solve_subproblem(job, node))
                     .await
                     .map_err(|err| format!("local solve task failed: {err}"))?;
                 if should_redelegate_result(&result, retry_index, max_retries) {
+                    track_job_result(&state, &result, false);
                     warnings.push(format!(
                         "local job {} failed; re-delegating retry {} of {}",
                         result.job_id,
@@ -2142,13 +2296,15 @@ async fn solve_problem_distributed(
                     retry_index += 1;
                     job = redelegated_job(&original, retry_index);
                     jobs_redelegated += 1;
+                    track_job_redelegated(&state, &solve_id);
                     continue;
                 }
+                track_job_result(&state, &result, true);
                 results.push(result);
                 break;
             }
         }
-        return Ok(aggregate_results(
+        let response = aggregate_results(
             solve_id,
             request_id,
             revision,
@@ -2161,7 +2317,9 @@ async fn solve_problem_distributed(
             false,
             &state,
             warnings,
-        ));
+        );
+        track_solve_finished(&state, &response);
+        return Ok(response);
     };
 
     publish_event(
@@ -2175,6 +2333,7 @@ async fn solve_problem_distributed(
     for job in &jobs {
         let sequence = publish_subproblem_job(&nats, &state.jobs_subject, job).await?;
         first_job_sequence.get_or_insert(sequence);
+        track_job_submitted(&state, job);
         state
             .metrics
             .subproblem_jobs_published_total
@@ -2237,6 +2396,7 @@ async fn solve_problem_distributed(
                                 .copied()
                                 .unwrap_or(0);
                             if should_redelegate_result(&result, retry_index, max_retries) {
+                                track_job_result(&state, &result, false);
                                 let Some(original_job) = jobs_by_id.get(&result.job_id).cloned()
                                 else {
                                     warnings.push(format!(
@@ -2252,6 +2412,8 @@ async fn solve_problem_distributed(
                                     .await
                                 {
                                     Ok(_) => {
+                                        track_job_submitted(&state, &retry_job);
+                                        track_job_redelegated(&state, &solve_id);
                                         publish_event(
                                             &state,
                                             "subproblem-redelegated",
@@ -2287,10 +2449,12 @@ async fn solve_problem_distributed(
                                             "failed to re-delegate job {}: {error}",
                                             result.job_id
                                         ));
+                                        track_job_result(&state, &result, true);
                                         results.push(result);
                                     }
                                 }
                             } else {
+                                track_job_result(&state, &result, true);
                                 results.push(result);
                             }
                         }
@@ -2329,6 +2493,7 @@ async fn solve_problem_distributed(
         &state,
         warnings,
     );
+    track_solve_finished(&state, &response);
     publish_event(
         &state,
         "solve-finished",
@@ -2364,6 +2529,7 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
         "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
         "queueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
         "workersKnown": state.workers.lock().expect("workers mutex poisoned").len(),
+        "solvesTracked": state.solves.lock().expect("solves mutex poisoned").len(),
         "gpu": gpu_status(),
     }))
 }
@@ -2402,6 +2568,13 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let published = m.subproblem_jobs_published_total.load(Ordering::Relaxed);
     let completed = m.subproblem_jobs_completed_total.load(Ordering::Relaxed);
     let in_flight = published.saturating_sub(completed);
+    let solves = state.solves.lock().expect("solves mutex poisoned");
+    let solves_tracked = solves.len();
+    let active_solves = solves
+        .values()
+        .filter(|solve| solve.finished_at_ms.is_none())
+        .count();
+    drop(solves);
     let node_id = prometheus_label_value(&state.node_id);
     let role = prometheus_label_value(state.role.as_str());
     let body = format!(
@@ -2436,6 +2609,12 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
             "# HELP dd_mip_solver_worker_control_messages_total Total worker control messages received by master nodes.\n",
             "# TYPE dd_mip_solver_worker_control_messages_total counter\n",
             "dd_mip_solver_worker_control_messages_total {}\n",
+            "# HELP dd_mip_solver_solves_tracked Current solve records retained in master memory.\n",
+            "# TYPE dd_mip_solver_solves_tracked gauge\n",
+            "dd_mip_solver_solves_tracked {}\n",
+            "# HELP dd_mip_solver_active_solves Current solves without a terminal aggregate response.\n",
+            "# TYPE dd_mip_solver_active_solves gauge\n",
+            "dd_mip_solver_active_solves {}\n",
             "# HELP dd_mip_solver_slave_jobs_processed_total Total subproblem jobs processed by slave nodes.\n",
             "# TYPE dd_mip_solver_slave_jobs_processed_total counter\n",
             "dd_mip_solver_slave_jobs_processed_total {}\n",
@@ -2454,6 +2633,8 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         m.subproblem_jobs_redelegated_total.load(Ordering::Relaxed),
         state.workers.lock().expect("workers mutex poisoned").len(),
         m.worker_control_messages_total.load(Ordering::Relaxed),
+        solves_tracked,
+        active_solves,
         m.slave_jobs_processed_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
     );
@@ -2616,6 +2797,36 @@ async fn workers(State(state): State<AppState>) -> Response {
             "role": state.role.as_str(),
             "count": workers.len(),
             "workers": workers,
+        }),
+    )
+}
+
+async fn cluster_solves(State(state): State<AppState>) -> Response {
+    let mut solves: Vec<SolveRegistryEntry> = state
+        .solves
+        .lock()
+        .expect("solves mutex poisoned")
+        .values()
+        .cloned()
+        .collect();
+    solves.sort_by(|left, right| {
+        right
+            .started_at_ms
+            .cmp(&left.started_at_ms)
+            .then_with(|| left.solve_id.cmp(&right.solve_id))
+    });
+    let active = solves
+        .iter()
+        .filter(|solve| solve.finished_at_ms.is_none())
+        .count();
+    response_json(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "role": state.role.as_str(),
+            "count": solves.len(),
+            "active": active,
+            "solves": solves,
         }),
     )
 }
@@ -2846,6 +3057,7 @@ fn app_router(state: AppState) -> Router {
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .route("/mip-solver-cluster/workers", get(workers))
+        .route("/mip-solver-cluster/solves", get(cluster_solves))
         .route("/workers", get(workers))
         .route("/model/example", get(example))
         .route("/solve", post(solve_http))
@@ -2905,6 +3117,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         events_subject: env_value("MIP_SOLVER_EVENTS_SUBJECT", MIP_SOLVER_EVENTS_SUBJECT),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         workers: Arc::new(Mutex::new(HashMap::new())),
+        solves: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Metrics::default()),
     };
 
@@ -2958,6 +3171,7 @@ mod tests {
             events_subject: MIP_SOLVER_EVENTS_SUBJECT.to_string(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             workers: Arc::new(Mutex::new(HashMap::new())),
+            solves: Arc::new(Mutex::new(HashMap::new())),
             metrics: Arc::new(Metrics::default()),
         }
     }
@@ -3605,6 +3819,18 @@ mod tests {
                     ..WorkerNodeStatus::default()
                 },
             );
+        state.solves.lock().expect("solves mutex poisoned").insert(
+            "solve-a".to_string(),
+            SolveRegistryEntry {
+                solve_id: "solve-a".to_string(),
+                request_id: "request-a".to_string(),
+                status: "running".to_string(),
+                jobs_expected: 2,
+                started_at_ms: 1000,
+                updated_at_ms: 1000,
+                ..SolveRegistryEntry::default()
+            },
+        );
         let app = app_router(state);
 
         let (status, body) = get_text(app, "/metrics").await;
@@ -3620,6 +3846,10 @@ mod tests {
         assert!(body.contains("dd_mip_solver_workers_known 1"));
         assert!(body.contains("# TYPE dd_mip_solver_worker_control_messages_total counter"));
         assert!(body.contains("dd_mip_solver_worker_control_messages_total 5"));
+        assert!(body.contains("# TYPE dd_mip_solver_solves_tracked gauge"));
+        assert!(body.contains("dd_mip_solver_solves_tracked 1"));
+        assert!(body.contains("# TYPE dd_mip_solver_active_solves gauge"));
+        assert!(body.contains("dd_mip_solver_active_solves 1"));
     }
 
     #[tokio::test]
@@ -3654,6 +3884,43 @@ mod tests {
             body.pointer("/workers/0/consumer"),
             Some(&json!("dd-in-house-mip-solver-node-workers"))
         );
+    }
+
+    #[tokio::test]
+    async fn mip_solver_cluster_solves_endpoint_reports_tracked_jobs() {
+        let state = test_state(NodeRole::Master);
+        let app = app_router(state.clone());
+        let response = solve_problem_distributed(
+            state.clone(),
+            "tracked-solve".to_string(),
+            9,
+            pure_lp_problem(),
+            SolveOptions::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response.status, "optimal");
+        let (status, body) = get_json(app, "/mip-solver-cluster/solves").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("ok"), Some(&json!(true)));
+        assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(body.get("active"), Some(&json!(0)));
+        assert_eq!(
+            body.pointer("/solves/0/requestId"),
+            Some(&json!("tracked-solve"))
+        );
+        assert_eq!(body.pointer("/solves/0/status"), Some(&json!("optimal")));
+        assert_eq!(body.pointer("/solves/0/jobsExpected"), Some(&json!(1)));
+        assert_eq!(body.pointer("/solves/0/jobsCompleted"), Some(&json!(1)));
+        let jobs = body
+            .pointer("/solves/0/jobs")
+            .and_then(Value::as_object)
+            .expect("jobs object");
+        assert_eq!(jobs.len(), 1);
+        let job = jobs.values().next().expect("one job");
+        assert_eq!(job.get("status"), Some(&json!("optimal")));
     }
 
     #[tokio::test]

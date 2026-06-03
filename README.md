@@ -54,7 +54,9 @@ The Kubernetes startup command runs Cargo from `remote/deployments/mip-solver-no
 
 `/healthz` reports process liveness. `/readyz` requires a live NATS connection so Kubernetes does not route traffic to masters or count slaves as ready while they cannot publish or consume distributed work.
 
-Masters subscribe to the generated MIP solver control subject and track live slave control frames (`worker-ready`, `request-work`, `worker-completed`) in memory. `GET /mip-solver-cluster/workers` reports the workers a master has observed (`/workers` is kept as a short compatibility alias), and `/metrics` exposes worker-control and re-delegation counters for operational debugging.
+Masters subscribe to the generated MIP solver control subject and track live slave control frames (`worker-ready`, `request-work`, `worker-completed`) in memory. `GET /mip-solver-cluster/workers` reports the workers a master has observed (`/workers` is kept as a short compatibility alias).
+
+Masters also keep an in-memory solve registry. `GET /mip-solver-cluster/solves` reports tracked solves, expected/published/completed/re-delegated job counts, and per-attempt job status. `/metrics` exposes worker-control, solve-registry, active-solve, and re-delegation counters for operational debugging.
 
 The server handles both Ctrl-C and Kubernetes SIGTERM for graceful HTTP shutdown during rolling updates and KEDA scale-down.
 
