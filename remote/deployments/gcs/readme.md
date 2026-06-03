@@ -12,13 +12,10 @@ chat server happens in that repo as usual. Bumping the deployed
 version is a two-step:
 
 ```bash
-# 1. inside the submodule
-cd remote/deployments/gcs/chat-vibe
-git fetch origin dev4
-git reset --hard origin/dev4   # or any specific commit
+# 1. refresh the tracked submodule branch
+git submodule update --init --remote remote/deployments/gcs/chat-vibe
 
-# 2. back in k8s-cluster — record the new pointer
-cd -
+# 2. record the new pointer
 git add remote/deployments/gcs/chat-vibe
 git commit -m "bump chat.vibe -> $(git -C remote/deployments/gcs/chat-vibe rev-parse --short HEAD)"
 git push origin dev

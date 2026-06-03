@@ -1,7 +1,7 @@
 [submodule "remote/deployments/gcs/chat-vibe"]
 	path = remote/deployments/gcs/chat-vibe
 	url = git@github.com:ORESoftware/chat.vibe.git
-	branch = dev4
+	branch = master
 [submodule "remote/libs/async-java"]
 	path = remote/libs/async-java
 	url = git@github.com:async-java/async.java.git
