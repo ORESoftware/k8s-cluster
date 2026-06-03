@@ -2385,6 +2385,32 @@ mod tests {
         }
     }
 
+    fn pure_lp_problem() -> MipProblemSpec {
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![3.0, 2.0],
+            a: vec![vec![1.0, 1.0], vec![1.0, 0.0], vec![0.0, 1.0]],
+            b: vec![4.0, 2.0, 3.0],
+            integer_vars: vec![false, false],
+            ub: None,
+            var_names: None,
+            con_names: None,
+        }
+    }
+
+    fn general_integer_problem() -> MipProblemSpec {
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0, 1.0],
+            a: vec![vec![1.0, 1.0]],
+            b: vec![3.5],
+            integer_vars: vec![true, true],
+            ub: Some(vec![10.0, 10.0]),
+            var_names: None,
+            con_names: None,
+        }
+    }
+
     fn test_job(problem: MipProblemSpec) -> SubproblemJob {
         SubproblemJob {
             solve_id: "solve-test".to_string(),
@@ -2666,6 +2692,36 @@ mod tests {
         assert_eq!(result.x.len(), 4);
         assert!((result.x[1] - 1.0).abs() < 1e-6);
         assert!((result.x[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn solve_subproblem_solves_lp_with_in_house_solver() {
+        let result = solve_subproblem(test_job(pure_lp_problem()), "worker-test".to_string());
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert_eq!(result.x.len(), 2);
+        assert!(result.z.is_some_and(|z| (z - 10.0).abs() < 1e-6));
+        assert!((result.x[0] - 2.0).abs() < 1e-6);
+        assert!((result.x[1] - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn solve_subproblem_solves_general_integer_program_with_in_house_solver() {
+        let result = solve_subproblem(
+            test_job(general_integer_problem()),
+            "worker-test".to_string(),
+        );
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert_eq!(result.x.len(), 2);
+        assert!(result.z.is_some_and(|z| (z - 3.0).abs() < 1e-6));
+        assert!(result
+            .x
+            .iter()
+            .all(|value| { *value >= -1e-6 && (*value - value.round()).abs() < 1e-6 }));
+        assert!(result.x.iter().sum::<f64>() <= 3.0 + 1e-6);
     }
 
     #[test]
