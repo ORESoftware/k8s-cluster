@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: dd-remote-web-home
   namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
   labels:
     app: dd-remote-web-home
 spec:
