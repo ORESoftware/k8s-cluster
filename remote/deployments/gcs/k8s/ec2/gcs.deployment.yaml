@@ -135,6 +135,7 @@ spec:
               value: '1s'
             - name: GCS_WS_SHED_HEAP_BYTES
               value: '2147483648'
+            # RSS pressure is the OOM guard; heap telemetry can miss cgroup spikes.
             - name: GCS_WS_SHED_RSS_BYTES
               value: '2415919104'
             - name: GCS_WS_SHED_GOROUTINES
