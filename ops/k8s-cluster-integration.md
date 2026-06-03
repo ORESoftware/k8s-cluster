@@ -37,3 +37,13 @@ spec:
 ```
 
 Argo CD supports git submodules automatically unless `ARGOCD_GIT_MODULES_ENABLED=false` is set on repo-server.
+
+## Helper script
+
+From this repository checkout, a writable shell can run:
+
+```sh
+./ops/install-into-k8s-cluster.sh ~/codes/ores/k8s-cluster
+```
+
+The script adds or updates the submodule, copies the Argo CD Application manifest into `remote/argocd/apps/`, and validates the submodule's `k8s/` bundle with `kubectl kustomize`.
