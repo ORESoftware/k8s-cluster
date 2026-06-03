@@ -27,13 +27,9 @@ metadata:
   labels:
     app: gcs-router
 spec:
-  # gcs-router is stateless; the readme calls for >=2 router replicas
-  # once gcs itself is >=2 so a router pod restart / rollout doesn't
-  # drop all in-flight WS upgrades. With gcs at 3 we keep router at 2:
-  # round-robin between routers at the gateway, consistent-hash inside
-  # each router across the same gcs endpoint set, no router-level
-  # stickiness needed.
-  replicas: 2
+  # gcs-router is stateless; keep one router per gcs pod during load
+  # tests so 20k upgrades do not bottleneck on two half-core proxies.
+  replicas: 3
   strategy:
     # Single-node CPU-bound cluster: surge=0 to avoid Pending pods
     # blocking the rollout. Brief downtime is acceptable for the
@@ -48,7 +44,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-06-02-load-collapse-2"
+        dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
       labels:
         app: gcs-router
     spec:
@@ -100,7 +96,10 @@ spec:
                 --namespace=default \
                 --service=gcs-headless \
                 --upstream-port=3001 \
-                --vnodes=160
+                --vnodes=160 \
+                --connect-timeout=15s \
+                --ws-idle-timeout=4h \
+                --max-active-conns=12000
           ports:
             - name: ws
               containerPort: 3001
@@ -110,13 +109,13 @@ spec:
               protocol: TCP
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
-              # 1Gi covers the initial `go build` (heavy peak), then steady
+              # 2Gi covers the initial `go build` (heavy peak), then steady
               # state is well under 64Mi. 256Mi was OOMKilled mid-build.
-              cpu: 500m
-              memory: 1Gi
+              cpu: "2"
+              memory: 2Gi
           startupProbe:
             httpGet:
               path: /healthz
@@ -128,14 +127,16 @@ spec:
               path: /healthz
               port: ws
             periodSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 3
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /healthz
               port: ws
-            initialDelaySeconds: 10
+            initialDelaySeconds: 60
             periodSeconds: 30
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           lifecycle:
             preStop:
               exec:

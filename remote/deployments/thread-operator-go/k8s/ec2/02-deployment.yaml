@@ -86,7 +86,11 @@ spec:
               exec "$BIN" \
                 --metrics-bind-address=:9101 \
                 --health-probe-bind-address=:9102 \
-                --leader-elect=true
+                --leader-elect=true \
+                --namespace="${WATCH_NAMESPACE:-dd-dev}"
+          env:
+            - name: WATCH_NAMESPACE
+              value: dd-dev
           ports:
             - name: metrics
               containerPort: 9101

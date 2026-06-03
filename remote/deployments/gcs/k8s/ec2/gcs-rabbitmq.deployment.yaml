@@ -51,11 +51,11 @@ spec:
               containerPort: 15672
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
               cpu: '1'
               memory: 1Gi
+            limits:
+              cpu: '4'
+              memory: 4Gi
           startupProbe:
             exec:
               command:
@@ -63,6 +63,7 @@ spec:
                 - -q
                 - ping
             periodSeconds: 5
+            timeoutSeconds: 10
             failureThreshold: 60
           readinessProbe:
             exec:
@@ -71,8 +72,8 @@ spec:
                 - -q
                 - check_running
             periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           livenessProbe:
             exec:
               command:
@@ -81,8 +82,8 @@ spec:
                 - ping
             initialDelaySeconds: 30
             periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
