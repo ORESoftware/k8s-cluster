@@ -1621,6 +1621,45 @@ async fn jetstream_publish_ack(
     Ok(ack.sequence)
 }
 
+fn result_consumer_name(solve_id: &str) -> String {
+    format!("{solve_id}-results")
+}
+
+fn result_consumer_config(
+    consumer_name: &str,
+    result_subject: &str,
+    start_sequence: u64,
+) -> async_nats::jetstream::consumer::pull::Config {
+    async_nats::jetstream::consumer::pull::Config {
+        name: Some(consumer_name.to_string()),
+        deliver_policy: async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence {
+            start_sequence,
+        },
+        filter_subject: result_subject.to_string(),
+        ack_wait: Duration::from_secs(60),
+        max_deliver: 1,
+        max_ack_pending: 1024,
+        inactive_threshold: Duration::from_secs(120),
+        ..Default::default()
+    }
+}
+
+async fn build_result_consumer(
+    client: async_nats::Client,
+    consumer_name: &str,
+    result_subject: &str,
+    start_sequence: u64,
+) -> Result<async_nats::jetstream::consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
+    let stream = ensure_mip_stream(client).await?;
+    let config = result_consumer_config(consumer_name, result_subject, start_sequence);
+    Ok(stream
+        .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
+            consumer_name,
+            config,
+        )
+        .await?)
+}
+
 async fn solve_problem_distributed(
     state: AppState,
     request_id: String,
@@ -1676,11 +1715,6 @@ async fn solve_problem_distributed(
         ));
     };
 
-    let mut result_sub = nats
-        .subscribe(state.results_subject.clone())
-        .await
-        .map_err(|err| format!("subscribe results: {err}"))?;
-
     publish_event(
         &state,
         "solve-frontier-built",
@@ -1688,14 +1722,29 @@ async fn solve_problem_distributed(
     )
     .await;
 
+    let mut first_job_sequence = None;
     for job in &jobs {
         let payload = serde_json::to_vec(job).map_err(|err| format!("serialize job: {err}"))?;
-        jetstream_publish_ack(&nats, &state.jobs_subject, payload).await?;
+        let sequence = jetstream_publish_ack(&nats, &state.jobs_subject, payload).await?;
+        first_job_sequence.get_or_insert(sequence);
         state
             .metrics
             .subproblem_jobs_published_total
             .fetch_add(1, Ordering::Relaxed);
     }
+
+    let result_consumer = build_result_consumer(
+        nats.clone(),
+        &result_consumer_name(&solve_id),
+        &state.results_subject,
+        first_job_sequence.unwrap_or(1),
+    )
+    .await
+    .map_err(|err| format!("create result consumer: {err}"))?;
+    let mut result_sub = result_consumer
+        .messages()
+        .await
+        .map_err(|err| format!("open result consumer: {err}"))?;
 
     let timeout = Duration::from_millis(options.timeout_ms.unwrap_or(120_000));
     let deadline = Instant::now() + timeout;
@@ -1708,7 +1757,7 @@ async fn solve_problem_distributed(
             break;
         }
         match tokio::time::timeout(deadline - now, result_sub.next()).await {
-            Ok(Some(message)) => {
+            Ok(Some(Ok(message))) => {
                 let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
                 if let Some(result) = parsed.filter(|result| result.solve_id == solve_id) {
                     results.push(result);
@@ -1717,9 +1766,13 @@ async fn solve_problem_distributed(
                         .subproblem_jobs_completed_total
                         .fetch_add(1, Ordering::Relaxed);
                 }
+                let _ = message.ack().await;
+            }
+            Ok(Some(Err(error))) => {
+                warnings.push(format!("JetStream result consumer error: {error}"));
             }
             Ok(None) => {
-                warnings.push("NATS result subscription closed".to_string());
+                warnings.push("JetStream result consumer closed".to_string());
                 timed_out = true;
                 break;
             }
@@ -2417,6 +2470,22 @@ mod tests {
             config.subjects.len(),
             DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS.len()
         );
+    }
+
+    #[test]
+    fn result_consumer_config_reads_persisted_results_from_job_sequence() {
+        let name = result_consumer_name("solve-test");
+        let config = result_consumer_config(&name, MIP_SOLVER_RESULTS_SUBJECT, 42);
+
+        assert_eq!(config.name.as_deref(), Some(name.as_str()));
+        assert_eq!(config.filter_subject, MIP_SOLVER_RESULTS_SUBJECT);
+        assert_eq!(config.durable_name, None);
+        assert_eq!(config.max_deliver, 1);
+        assert_eq!(config.inactive_threshold, Duration::from_secs(120));
+        assert!(matches!(
+            config.deliver_policy,
+            async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence { start_sequence: 42 }
+        ));
     }
 
     #[test]
