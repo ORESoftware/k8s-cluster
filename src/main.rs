@@ -24,8 +24,8 @@ use axum::{
 };
 use dd_nats_subject_defs::{
     DD_REMOTE_MIP_SOLVER_STREAM_NAME, DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS,
-    MIP_SOLVER_EVENTS_SUBJECT, MIP_SOLVER_JOBS_SUBJECT, MIP_SOLVER_RESULTS_SUBJECT,
-    MIP_SOLVER_WORKERS_QUEUE_GROUP,
+    MIP_SOLVER_CONTROL_SUBJECT, MIP_SOLVER_EVENTS_SUBJECT, MIP_SOLVER_JOBS_SUBJECT,
+    MIP_SOLVER_RESULTS_SUBJECT, MIP_SOLVER_WORKERS_QUEUE_GROUP,
 };
 use des_engine::des::general::{
     ip_mip_des::{
@@ -79,6 +79,7 @@ struct AppState {
     nats: Option<async_nats::Client>,
     jobs_subject: String,
     results_subject: String,
+    control_subject: String,
     events_subject: String,
     sessions: Arc<Mutex<HashMap<String, LiveSession>>>,
     metrics: Arc<Metrics>,
@@ -1548,6 +1549,26 @@ async fn publish_event(state: &AppState, event_name: &str, payload: Value) {
     }
 }
 
+async fn publish_control(state: &AppState, command_name: &str, payload: Value) {
+    let Some(nats) = &state.nats else {
+        return;
+    };
+    let command = json!({
+        "schema":"dd.mip-solver.control.v1",
+        "service": SERVICE_NAME,
+        "nodeId": state.node_id,
+        "role": state.role.as_str(),
+        "commandName": command_name,
+        "payload": payload,
+        "timeMs": now_ms(),
+    });
+    if let Ok(bytes) = serde_json::to_vec(&command) {
+        let _ = nats
+            .publish(state.control_subject.clone(), bytes.into())
+            .await;
+    }
+}
+
 async fn solve_problem_distributed(
     state: AppState,
     request_id: String,
@@ -1699,6 +1720,7 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
         "subjects": {
             "jobs": state.jobs_subject,
             "results": state.results_subject,
+            "control": state.control_subject,
             "events": state.events_subject,
         },
         "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
@@ -1978,11 +2000,27 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
     publish_event(
         &state,
         "slave-started",
-        json!({"consumer": consumer_name, "jobsSubject": state.jobs_subject}),
+        json!({"consumer": &consumer_name, "jobsSubject": &state.jobs_subject}),
+    )
+    .await;
+    publish_control(
+        &state,
+        "worker-ready",
+        json!({
+            "consumer": &consumer_name,
+            "jobsSubject": &state.jobs_subject,
+            "resultsSubject": &state.results_subject,
+        }),
     )
     .await;
 
     while let Some(message) = messages.next().await {
+        publish_control(
+            &state,
+            "request-work",
+            json!({"consumer": &consumer_name, "jobsSubject": &state.jobs_subject}),
+        )
+        .await;
         let message = match message {
             Ok(message) => message,
             Err(error) => {
@@ -2015,6 +2053,18 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
         let payload = serde_json::to_vec(&result)?;
         nats.publish(state.results_subject.clone(), payload.into())
             .await?;
+        publish_control(
+            &state,
+            "worker-completed",
+            json!({
+                "consumer": &consumer_name,
+                "jobId": &result.job_id,
+                "solveId": &result.solve_id,
+                "status": &result.status,
+                "resultsSubject": &state.results_subject,
+            }),
+        )
+        .await;
         state
             .metrics
             .slave_jobs_processed_total
@@ -2050,6 +2100,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         nats,
         jobs_subject: env_value("MIP_SOLVER_JOBS_SUBJECT", MIP_SOLVER_JOBS_SUBJECT),
         results_subject: env_value("MIP_SOLVER_RESULTS_SUBJECT", MIP_SOLVER_RESULTS_SUBJECT),
+        control_subject: env_value("MIP_SOLVER_CONTROL_SUBJECT", MIP_SOLVER_CONTROL_SUBJECT),
         events_subject: env_value("MIP_SOLVER_EVENTS_SUBJECT", MIP_SOLVER_EVENTS_SUBJECT),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Metrics::default()),
@@ -2198,5 +2249,46 @@ mod tests {
             .notes
             .iter()
             .any(|note| note.contains("rows always satisfied by variable bounds")));
+    }
+
+    #[test]
+    fn solve_options_force_in_house_lp_and_mip_engines() {
+        let options = SolveOptions::default().to_ipmip_options();
+
+        assert_eq!(options.allow_external_solvers, Some(false));
+        assert!(matches!(
+            options.lp_algorithm,
+            Some(LpRelaxationAlgorithm::Concrete(
+                ConcreteLpRelaxationAlgorithm::InternalSimplex
+            ))
+        ));
+        assert!(matches!(
+            options.branch_rule,
+            Some(BranchRule::MostFractional)
+        ));
+    }
+
+    #[test]
+    fn nats_subjects_are_generated_mip_solver_namespace() {
+        let subjects = [
+            MIP_SOLVER_JOBS_SUBJECT,
+            MIP_SOLVER_RESULTS_SUBJECT,
+            MIP_SOLVER_CONTROL_SUBJECT,
+            MIP_SOLVER_EVENTS_SUBJECT,
+        ];
+        for subject in subjects {
+            assert!(subject.starts_with("dd.remote.mip_solver."));
+            assert!(DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS.contains(&subject));
+        }
+
+        let mut unique = subjects.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), subjects.len());
+        assert_eq!(DD_REMOTE_MIP_SOLVER_STREAM_NAME, "DD_REMOTE_MIP_SOLVER");
+        assert_eq!(
+            MIP_SOLVER_WORKERS_QUEUE_GROUP,
+            "dd-in-house-mip-solver-node-workers"
+        );
     }
 }
