@@ -144,6 +144,8 @@ spec:
               value: '10s'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
+            - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
+              value: '2048'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host
