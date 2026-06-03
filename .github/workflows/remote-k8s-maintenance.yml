@@ -564,6 +564,14 @@ jobs:
           kubectl -n default logs -l app=dd-des-rs --tail=15 --all-containers 2>/dev/null | tail -15 || true
           echo "=== gateway ConfigMap des-rs line count: $(kubectl -n default get configmap dd-remote-gateway-config -o jsonpath='{.data}' 2>/dev/null | grep -c des-rs) ==="
           '''
+          mutex_proof = r'''set -euo pipefail
+          echo "=== dd-rust-network-mutex rollout proof ==="
+          kubectl -n default get deploy/dd-rust-network-mutex -o wide
+          echo "template.live-mutex-rs-revision: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.metadata.annotations.dd\.dev/live-mutex-rs-revision}')"
+          echo "template.LMX_RS_GIT_REF: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LMX_RS_GIT_REF")].value}')"
+          kubectl -n default rollout status deploy/dd-rust-network-mutex --timeout=1800s
+          kubectl -n default get pods -l app=dd-rust-network-mutex -o wide
+          '''
           sync_checkout = f'''set -euo pipefail
           cd /home/ec2-user/codes/dd/dd-next-1
           echo "=== sync EC2 checkout ==="
@@ -588,6 +596,7 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-gleam-mcp-server.application.yaml'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n argocd annotate application/dd-secrets application/dd-next-runtime application/dd-fsharp-ws-server application/dd-gleam-mcp-server argocd.argoproj.io/refresh=hard --overwrite || true'",
               f"sudo -u ec2-user -H bash -lc {shlex.quote(argocd_sync)}",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(mutex_proof)}",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-remote-gateway --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-webrtc-signaling --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-fsharp-ws-server --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
@@ -598,7 +607,7 @@ jobs:
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-fsharp-ws-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-gleam-mcp-server || true'",
               "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
-              f"sudo -u ec2-user -H bash -lc {shlex.quote(diag)}",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(diag)} || true",
           ]
           print(json.dumps({"commands": commands}))
           PY
