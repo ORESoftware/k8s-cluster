@@ -569,13 +569,44 @@ jobs:
           kubectl -n default get deploy/dd-rust-network-mutex -o wide
           echo "template.live-mutex-rs-revision: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.metadata.annotations.dd\.dev/live-mutex-rs-revision}')"
           echo "template.LMX_RS_GIT_REF: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LMX_RS_GIT_REF")].value}')"
-          kubectl -n default rollout status deploy/dd-rust-network-mutex --timeout=1800s
+          deadline=$((SECONDS + 1800))
+          jsonpath() {
+            kubectl -n default get deploy/dd-rust-network-mutex -o "jsonpath={$1}" 2>/dev/null || true
+          }
+          num() {
+            case "${1:-}" in
+              ''|*[!0-9]*) echo 0 ;;
+              *) echo "$1" ;;
+            esac
+          }
+          while true; do
+            generation="$(num "$(jsonpath '.metadata.generation')")"
+            observed="$(num "$(jsonpath '.status.observedGeneration')")"
+            desired="$(num "$(jsonpath '.spec.replicas')")"
+            updated="$(num "$(jsonpath '.status.updatedReplicas')")"
+            ready="$(num "$(jsonpath '.status.readyReplicas')")"
+            available="$(num "$(jsonpath '.status.availableReplicas')")"
+            echo "rollout observed=${observed}/${generation} desired=${desired} updated=${updated} ready=${ready} available=${available}"
+            if (( generation > 0 && observed >= generation && desired > 0 && updated >= desired && ready >= desired && available >= desired )); then
+              break
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "dd-rust-network-mutex rollout timed out" >&2
+              kubectl -n default get deploy/dd-rust-network-mutex -o wide || true
+              kubectl -n default describe deploy/dd-rust-network-mutex || true
+              kubectl -n default get rs,pods -l app=dd-rust-network-mutex -o wide || true
+              kubectl -n default logs -l app=dd-rust-network-mutex --all-containers --tail=120 || true
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "dd-rust-network-mutex rollout healthy"
           kubectl -n default get pods -l app=dd-rust-network-mutex -o wide
           '''
           sync_checkout = f'''set -euo pipefail
           cd /home/ec2-user/codes/dd/dd-next-1
           echo "=== sync EC2 checkout ==="
-          git status --short || true
+          git -c status.showUntrackedFiles=no status --short || true
           stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
           echo "stashing tracked/untracked repo content before merge: $stash_name"
           # Scope the stash to repository content that this workflow mutates.
