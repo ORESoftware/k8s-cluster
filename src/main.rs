@@ -2,13 +2,16 @@ use std::{
     collections::{HashMap, VecDeque},
     env,
     error::Error,
+    ffi::{c_int, c_void},
     net::SocketAddr,
     panic::{catch_unwind, AssertUnwindSafe},
     path::Path as FsPath,
+    ptr,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
+    thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -32,6 +35,7 @@ use des_engine::des::general::{
     lp::{solve_lp_internal, InternalSimplexOptions, LPProblem, LPStatus, Sense},
 };
 use futures_util::StreamExt;
+use libloading::Library;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -225,8 +229,21 @@ struct SubproblemResult {
     nodes_explored: usize,
     lp_solves: usize,
     elapsed_ms: f64,
+    #[serde(default)]
+    accelerator: AcceleratorReport,
     error: Option<String>,
     finished_at_ms: u128,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcceleratorReport {
+    mode: String,
+    backend: String,
+    gpu_available: bool,
+    used_gpu: bool,
+    used_cpu_parallel: bool,
+    notes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -258,6 +275,14 @@ struct GpuStatus {
     available: bool,
     backend: String,
     used: bool,
+    mode: String,
+    note: Option<String>,
+}
+
+#[derive(Debug)]
+struct BoundPreprocess {
+    infeasible_reason: Option<String>,
+    accelerator: AcceleratorReport,
 }
 
 #[derive(Debug)]
@@ -306,22 +331,499 @@ fn request_id(input: Option<String>) -> String {
         .unwrap_or_else(|| format!("mip-{}", Uuid::new_v4()))
 }
 
-fn gpu_status() -> GpuStatus {
+fn gpu_mode() -> String {
+    env_value("MIP_SOLVER_GPU_MODE", "auto").to_ascii_lowercase()
+}
+
+fn gpu_available() -> bool {
     let visible = env::var("NVIDIA_VISIBLE_DEVICES")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty() && value != "void" && value != "none");
     let device = FsPath::new("/dev/nvidia0").exists();
-    let available = visible.is_some() || device;
+    visible.is_some() || device
+}
+
+fn gpu_status() -> GpuStatus {
+    gpu_status_from_report(&AcceleratorReport::runtime())
+}
+
+fn gpu_status_from_report(report: &AcceleratorReport) -> GpuStatus {
+    let note = report.notes.first().cloned();
     GpuStatus {
-        available,
-        backend: if available {
-            "cuda-visible".to_string()
-        } else {
-            "cpu".to_string()
-        },
-        used: false,
+        available: report.gpu_available,
+        backend: report.backend.clone(),
+        used: report.used_gpu,
+        mode: report.mode.clone(),
+        note,
     }
+}
+
+fn aggregate_gpu_status(results: &[SubproblemResult]) -> GpuStatus {
+    let mut report = AcceleratorReport::runtime();
+    for result in results {
+        report.merge(&result.accelerator);
+    }
+    gpu_status_from_report(&report)
+}
+
+impl AcceleratorReport {
+    fn runtime() -> Self {
+        let mode = gpu_mode();
+        let gpu_available = gpu_available();
+        AcceleratorReport {
+            mode,
+            backend: if gpu_available {
+                "cuda-visible".to_string()
+            } else {
+                "cpu".to_string()
+            },
+            gpu_available,
+            used_gpu: false,
+            used_cpu_parallel: false,
+            notes: Vec::new(),
+        }
+    }
+
+    fn for_mode(mode: &str) -> Self {
+        let gpu_available = gpu_available();
+        AcceleratorReport {
+            mode: mode.to_ascii_lowercase(),
+            backend: if gpu_available {
+                "cuda-visible".to_string()
+            } else {
+                "cpu".to_string()
+            },
+            gpu_available,
+            used_gpu: false,
+            used_cpu_parallel: false,
+            notes: Vec::new(),
+        }
+    }
+
+    fn merge(&mut self, other: &AcceleratorReport) {
+        self.gpu_available |= other.gpu_available;
+        self.used_gpu |= other.used_gpu;
+        self.used_cpu_parallel |= other.used_cpu_parallel;
+        if other.used_gpu || other.backend != "cpu" {
+            self.backend = other.backend.clone();
+        }
+        for note in &other.notes {
+            if !self.notes.iter().any(|existing| existing == note) {
+                self.notes.push(note.clone());
+            }
+        }
+    }
+}
+
+fn gpu_disabled(mode: &str) -> bool {
+    matches!(mode, "off" | "false" | "0" | "disabled" | "none")
+}
+
+fn gpu_required(mode: &str) -> bool {
+    matches!(mode, "require" | "required" | "must")
+}
+
+fn dense_matvec_cpu(a: &[Vec<f64>], x: &[f64]) -> (Vec<f64>, bool) {
+    let rows = a.len();
+    if rows == 0 {
+        return (Vec::new(), false);
+    }
+    let workers = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(rows);
+    if workers <= 1 || rows < 256 {
+        let values = a
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .zip(x.iter())
+                    .map(|(coef, value)| coef * value)
+                    .sum()
+            })
+            .collect();
+        return (values, false);
+    }
+
+    let chunk_len = rows.div_ceil(workers);
+    let mut values = vec![0.0; rows];
+    thread::scope(|scope| {
+        for (chunk_index, out) in values.chunks_mut(chunk_len).enumerate() {
+            let start = chunk_index * chunk_len;
+            let input = &a[start..start + out.len()];
+            scope.spawn(move || {
+                for (slot, row) in out.iter_mut().zip(input.iter()) {
+                    *slot = row
+                        .iter()
+                        .zip(x.iter())
+                        .map(|(coef, value)| coef * value)
+                        .sum();
+                }
+            });
+        }
+    });
+    (values, true)
+}
+
+fn dense_matvec_accelerated_with_mode(
+    a: &[Vec<f64>],
+    x: &[f64],
+    mode: &str,
+) -> Result<(Vec<f64>, AcceleratorReport), String> {
+    let mut report = AcceleratorReport::for_mode(mode);
+    if a.is_empty() {
+        return Ok((Vec::new(), report));
+    }
+    if a.iter().any(|row| row.len() != x.len()) {
+        return Err("accelerated matvec received a non-rectangular matrix".to_string());
+    }
+
+    if !gpu_disabled(&report.mode) {
+        if report.gpu_available {
+            match dense_matvec_cuda_row_major(a, x) {
+                Ok(values) => {
+                    report.backend = "cuda-cublas-dgemv".to_string();
+                    report.used_gpu = true;
+                    return Ok((values, report));
+                }
+                Err(error) if gpu_required(&report.mode) => return Err(error),
+                Err(error) => report.notes.push(format!(
+                    "CUDA/cuBLAS unavailable; used CPU fallback: {error}"
+                )),
+            }
+        } else {
+            let note = "GPU requested but no NVIDIA device is visible".to_string();
+            if gpu_required(&report.mode) {
+                return Err(note);
+            }
+            report.notes.push(note);
+        }
+    }
+
+    let (values, used_parallel) = dense_matvec_cpu(a, x);
+    report.backend = if used_parallel {
+        "in-house-cpu-threaded".to_string()
+    } else {
+        "in-house-cpu".to_string()
+    };
+    report.used_cpu_parallel = used_parallel;
+    Ok((values, report))
+}
+
+type CudaResult = c_int;
+type CublasResult = c_int;
+type CublasHandle = *mut c_void;
+
+const CUDA_SUCCESS: CudaResult = 0;
+const CUBLAS_STATUS_SUCCESS: CublasResult = 0;
+const CUDA_MEMCPY_HOST_TO_DEVICE: c_int = 1;
+const CUDA_MEMCPY_DEVICE_TO_HOST: c_int = 2;
+const CUBLAS_OP_T: c_int = 1;
+
+struct CudaLibraries {
+    _cudart: Library,
+    _cublas: Library,
+    cuda_malloc: unsafe extern "C" fn(*mut *mut c_void, usize) -> CudaResult,
+    cuda_free: unsafe extern "C" fn(*mut c_void) -> CudaResult,
+    cuda_memcpy: unsafe extern "C" fn(*mut c_void, *const c_void, usize, c_int) -> CudaResult,
+    cuda_device_synchronize: unsafe extern "C" fn() -> CudaResult,
+    cublas_create: unsafe extern "C" fn(*mut CublasHandle) -> CublasResult,
+    cublas_destroy: unsafe extern "C" fn(CublasHandle) -> CublasResult,
+    cublas_dgemv: unsafe extern "C" fn(
+        CublasHandle,
+        c_int,
+        c_int,
+        c_int,
+        *const f64,
+        *const f64,
+        c_int,
+        *const f64,
+        c_int,
+        *const f64,
+        *mut f64,
+        c_int,
+    ) -> CublasResult,
+}
+
+impl CudaLibraries {
+    fn load() -> Result<Self, String> {
+        let cudart = open_first_library(&["libcudart.so", "libcudart.so.12", "libcudart.so.11.0"])?;
+        let cublas = open_first_library(&["libcublas.so", "libcublas.so.12", "libcublas.so.11"])?;
+        unsafe {
+            Ok(CudaLibraries {
+                cuda_malloc: load_symbol(&cudart, b"cudaMalloc\0")?,
+                cuda_free: load_symbol(&cudart, b"cudaFree\0")?,
+                cuda_memcpy: load_symbol(&cudart, b"cudaMemcpy\0")?,
+                cuda_device_synchronize: load_symbol(&cudart, b"cudaDeviceSynchronize\0")?,
+                cublas_create: load_symbol(&cublas, b"cublasCreate_v2\0")?,
+                cublas_destroy: load_symbol(&cublas, b"cublasDestroy_v2\0")?,
+                cublas_dgemv: load_symbol(&cublas, b"cublasDgemv_v2\0")?,
+                _cudart: cudart,
+                _cublas: cublas,
+            })
+        }
+    }
+}
+
+fn open_first_library(candidates: &[&str]) -> Result<Library, String> {
+    let mut errors = Vec::new();
+    for candidate in candidates {
+        match unsafe { Library::new(candidate) } {
+            Ok(library) => return Ok(library),
+            Err(error) => errors.push(format!("{candidate}: {error}")),
+        }
+    }
+    Err(errors.join("; "))
+}
+
+unsafe fn load_symbol<T: Copy>(library: &Library, name: &[u8]) -> Result<T, String> {
+    library
+        .get::<T>(name)
+        .map(|symbol| *symbol)
+        .map_err(|error| {
+            let label_bytes = name.strip_suffix(&[0]).unwrap_or(name);
+            let label = String::from_utf8_lossy(label_bytes);
+            format!("missing CUDA symbol {label}: {error}")
+        })
+}
+
+struct CudaAllocation<'a> {
+    libs: &'a CudaLibraries,
+    ptr: *mut c_void,
+}
+
+impl<'a> CudaAllocation<'a> {
+    fn new(libs: &'a CudaLibraries, bytes: usize) -> Result<Self, String> {
+        let mut ptr = ptr::null_mut();
+        check_cuda(unsafe { (libs.cuda_malloc)(&mut ptr, bytes) }, "cudaMalloc")?;
+        Ok(CudaAllocation { libs, ptr })
+    }
+
+    fn copy_from_host<T>(&self, input: &[T]) -> Result<(), String> {
+        check_cuda(
+            unsafe {
+                (self.libs.cuda_memcpy)(
+                    self.ptr,
+                    input.as_ptr() as *const c_void,
+                    std::mem::size_of_val(input),
+                    CUDA_MEMCPY_HOST_TO_DEVICE,
+                )
+            },
+            "cudaMemcpy host-to-device",
+        )
+    }
+
+    fn copy_to_host<T>(&self, output: &mut [T]) -> Result<(), String> {
+        check_cuda(
+            unsafe {
+                (self.libs.cuda_memcpy)(
+                    output.as_mut_ptr() as *mut c_void,
+                    self.ptr,
+                    std::mem::size_of_val(output),
+                    CUDA_MEMCPY_DEVICE_TO_HOST,
+                )
+            },
+            "cudaMemcpy device-to-host",
+        )
+    }
+}
+
+impl Drop for CudaAllocation<'_> {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            let _ = unsafe { (self.libs.cuda_free)(self.ptr) };
+        }
+    }
+}
+
+struct CublasContext<'a> {
+    libs: &'a CudaLibraries,
+    handle: CublasHandle,
+}
+
+impl<'a> CublasContext<'a> {
+    fn new(libs: &'a CudaLibraries) -> Result<Self, String> {
+        let mut handle = ptr::null_mut();
+        check_cublas(
+            unsafe { (libs.cublas_create)(&mut handle) },
+            "cublasCreate_v2",
+        )?;
+        Ok(CublasContext { libs, handle })
+    }
+}
+
+impl Drop for CublasContext<'_> {
+    fn drop(&mut self) {
+        if !self.handle.is_null() {
+            let _ = unsafe { (self.libs.cublas_destroy)(self.handle) };
+        }
+    }
+}
+
+fn check_cuda(code: CudaResult, op: &str) -> Result<(), String> {
+    if code == CUDA_SUCCESS {
+        Ok(())
+    } else {
+        Err(format!("{op} failed with CUDA status {code}"))
+    }
+}
+
+fn check_cublas(code: CublasResult, op: &str) -> Result<(), String> {
+    if code == CUBLAS_STATUS_SUCCESS {
+        Ok(())
+    } else {
+        Err(format!("{op} failed with cuBLAS status {code}"))
+    }
+}
+
+fn dense_matvec_cuda_row_major(a: &[Vec<f64>], x: &[f64]) -> Result<Vec<f64>, String> {
+    let rows = a.len();
+    let cols = x.len();
+    if rows == 0 {
+        return Ok(Vec::new());
+    }
+    if rows > c_int::MAX as usize || cols > c_int::MAX as usize {
+        return Err("matrix is too large for cuBLAS int dimensions".to_string());
+    }
+    let libs = CudaLibraries::load()?;
+    let cublas = CublasContext::new(&libs)?;
+    let flat: Vec<f64> = a.iter().flat_map(|row| row.iter().copied()).collect();
+    let mut output = vec![0.0; rows];
+
+    let d_a = CudaAllocation::new(&libs, std::mem::size_of_val(flat.as_slice()))?;
+    let d_x = CudaAllocation::new(&libs, std::mem::size_of_val(x))?;
+    let d_y = CudaAllocation::new(&libs, std::mem::size_of_val(output.as_slice()))?;
+    d_a.copy_from_host(&flat)?;
+    d_x.copy_from_host(x)?;
+
+    let alpha = 1.0;
+    let beta = 0.0;
+    check_cublas(
+        unsafe {
+            (libs.cublas_dgemv)(
+                cublas.handle,
+                CUBLAS_OP_T,
+                cols as c_int,
+                rows as c_int,
+                &alpha,
+                d_a.ptr as *const f64,
+                cols as c_int,
+                d_x.ptr as *const f64,
+                1,
+                &beta,
+                d_y.ptr as *mut f64,
+                1,
+            )
+        },
+        "cublasDgemv_v2",
+    )?;
+    check_cuda(
+        unsafe { (libs.cuda_device_synchronize)() },
+        "cudaDeviceSynchronize",
+    )?;
+    d_y.copy_to_host(&mut output)?;
+    Ok(output)
+}
+
+fn preprocess_bounds(
+    problem: &MipProblemSpec,
+    extra_constraints: &[BranchConstraint],
+) -> Result<BoundPreprocess, String> {
+    preprocess_bounds_with_mode(problem, extra_constraints, &gpu_mode())
+}
+
+fn preprocess_bounds_with_mode(
+    problem: &MipProblemSpec,
+    extra_constraints: &[BranchConstraint],
+    mode: &str,
+) -> Result<BoundPreprocess, String> {
+    let problem = normalized_problem(problem.clone())?;
+    let n = problem.c.len();
+    let mut rows = problem.a.clone();
+    let mut rhs = problem.b.clone();
+    for constraint in extra_constraints {
+        if constraint.coefs.len() != n {
+            return Err(format!(
+                "branch constraint {} has length {}, expected {}",
+                constraint.name,
+                constraint.coefs.len(),
+                n
+            ));
+        }
+        rows.push(constraint.coefs.clone());
+        rhs.push(constraint.rhs);
+    }
+
+    let upper_bounds = problem.ub.clone().unwrap_or_else(|| vec![f64::INFINITY; n]);
+    let finite_ub: Vec<f64> = upper_bounds
+        .iter()
+        .map(|ub| if ub.is_finite() { *ub } else { 0.0 })
+        .collect();
+    let mut positive = vec![vec![0.0; n]; rows.len()];
+    let mut negative = vec![vec![0.0; n]; rows.len()];
+    let mut positive_infinite = vec![false; rows.len()];
+    let mut negative_infinite = vec![false; rows.len()];
+
+    for (row_index, row) in rows.iter().enumerate() {
+        for (col, coef) in row.iter().enumerate() {
+            if *coef > 0.0 {
+                if upper_bounds[col].is_finite() {
+                    positive[row_index][col] = *coef;
+                } else {
+                    positive_infinite[row_index] = true;
+                }
+            } else if *coef < 0.0 {
+                if upper_bounds[col].is_finite() {
+                    negative[row_index][col] = *coef;
+                } else {
+                    negative_infinite[row_index] = true;
+                }
+            }
+        }
+    }
+
+    let (max_finite, mut accelerator) =
+        dense_matvec_accelerated_with_mode(&positive, &finite_ub, mode)?;
+    let (min_finite, negative_report) =
+        dense_matvec_accelerated_with_mode(&negative, &finite_ub, mode)?;
+    accelerator.merge(&negative_report);
+
+    let mut always_satisfied_rows = 0usize;
+    for row_index in 0..rows.len() {
+        let min_activity = if negative_infinite[row_index] {
+            f64::NEG_INFINITY
+        } else {
+            min_finite[row_index]
+        };
+        let max_activity = if positive_infinite[row_index] {
+            f64::INFINITY
+        } else {
+            max_finite[row_index]
+        };
+        if min_activity > rhs[row_index] + 1e-9 {
+            return Ok(BoundPreprocess {
+                infeasible_reason: Some(format!(
+                    "bound preprocessing proved row {row_index} infeasible: min activity {min_activity:.6} > rhs {:.6}",
+                    rhs[row_index]
+                )),
+                accelerator,
+            });
+        }
+        if max_activity.is_finite() && max_activity <= rhs[row_index] + 1e-9 {
+            always_satisfied_rows += 1;
+        }
+    }
+    if always_satisfied_rows > 0 {
+        accelerator.notes.push(format!(
+            "bound preprocessing found {always_satisfied_rows} rows always satisfied by variable bounds"
+        ));
+    }
+
+    Ok(BoundPreprocess {
+        infeasible_reason: None,
+        accelerator,
+    })
 }
 
 fn sense_of(raw: &str) -> Sense {
@@ -839,14 +1341,22 @@ fn build_frontier_jobs(
 
 fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult {
     let started = Instant::now();
+    let mut accelerator = AcceleratorReport::runtime();
+    let mut pruned_reason = None;
     let result = catch_unwind(AssertUnwindSafe(|| {
+        let preprocess = preprocess_bounds(&job.problem, &job.extra_constraints)?;
+        accelerator = preprocess.accelerator;
+        if let Some(reason) = preprocess.infeasible_reason {
+            pruned_reason = Some(reason);
+            return Ok(None);
+        }
         let problem = to_ipmip_problem(&job.problem, &job.extra_constraints)?;
         let solution = solve_ipmip_with_des(problem, job.options.to_ipmip_options());
-        Ok::<_, String>(solution)
+        Ok::<_, String>(Some(solution))
     }));
 
     match result {
-        Ok(Ok(solution)) => SubproblemResult {
+        Ok(Ok(Some(solution))) => SubproblemResult {
             solve_id: job.solve_id,
             request_id: job.request_id,
             job_id: job.job_id,
@@ -864,17 +1374,32 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
             nodes_explored: solution.nodes_explored,
             lp_solves: solution.lp_solves,
             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+            accelerator,
             error: None,
             finished_at_ms: now_ms(),
         },
-        Ok(Err(error)) => failed_subproblem(job, worker_node, error, started),
-        Err(_) => failed_subproblem(job, worker_node, "solver panicked".to_string(), started),
+        Ok(Ok(None)) => infeasible_subproblem(
+            job,
+            worker_node,
+            accelerator,
+            pruned_reason.unwrap_or_else(|| "bound preprocessing proved infeasible".to_string()),
+            started,
+        ),
+        Ok(Err(error)) => failed_subproblem(job, worker_node, accelerator, error, started),
+        Err(_) => failed_subproblem(
+            job,
+            worker_node,
+            accelerator,
+            "solver panicked".to_string(),
+            started,
+        ),
     }
 }
 
 fn failed_subproblem(
     job: SubproblemJob,
     worker_node: String,
+    accelerator: AcceleratorReport,
     error: String,
     started: Instant,
 ) -> SubproblemResult {
@@ -893,7 +1418,36 @@ fn failed_subproblem(
         nodes_explored: 0,
         lp_solves: 0,
         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+        accelerator,
         error: Some(error),
+        finished_at_ms: now_ms(),
+    }
+}
+
+fn infeasible_subproblem(
+    job: SubproblemJob,
+    worker_node: String,
+    accelerator: AcceleratorReport,
+    reason: String,
+    started: Instant,
+) -> SubproblemResult {
+    SubproblemResult {
+        solve_id: job.solve_id,
+        request_id: job.request_id,
+        job_id: job.job_id,
+        revision: job.revision,
+        worker_node,
+        ok: false,
+        status: "infeasible".to_string(),
+        z: None,
+        x: Vec::new(),
+        best_bound: None,
+        gap: None,
+        nodes_explored: 0,
+        lp_solves: 0,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+        accelerator,
+        error: Some(reason),
         finished_at_ms: now_ms(),
     }
 }
@@ -968,7 +1522,7 @@ fn aggregate_results(
         distributed,
         node_id: state.node_id.clone(),
         role: state.role,
-        gpu: gpu_status(),
+        gpu: aggregate_gpu_status(&results),
         warnings,
         generated_at_ms: now_ms(),
     }
@@ -1597,5 +2151,52 @@ mod tests {
         assert_eq!(jobs[0].extra_constraints[0].coefs, vec![1.0]);
         assert_eq!(jobs[0].extra_constraints[0].rhs, 1.0);
         assert_eq!(jobs[0].depth, 1);
+    }
+
+    #[test]
+    fn bound_preprocess_prunes_rows_impossible_under_lower_bounds() {
+        let problem = MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![-1.0],
+            integer_vars: vec![false],
+            ub: Some(vec![10.0]),
+            var_names: None,
+            con_names: None,
+        };
+
+        let report = preprocess_bounds_with_mode(&problem, &[], "off").unwrap();
+
+        assert!(report
+            .infeasible_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("bound preprocessing proved row 0 infeasible"));
+        assert_eq!(report.accelerator.backend, "in-house-cpu");
+        assert!(!report.accelerator.used_gpu);
+    }
+
+    #[test]
+    fn bound_preprocess_reports_rows_always_satisfied_by_bounds() {
+        let problem = MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![5.0],
+            integer_vars: vec![false],
+            ub: Some(vec![3.0]),
+            var_names: None,
+            con_names: None,
+        };
+
+        let report = preprocess_bounds_with_mode(&problem, &[], "off").unwrap();
+
+        assert!(report.infeasible_reason.is_none());
+        assert!(report
+            .accelerator
+            .notes
+            .iter()
+            .any(|note| note.contains("rows always satisfied by variable bounds")));
     }
 }

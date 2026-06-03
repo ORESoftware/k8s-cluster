@@ -47,3 +47,22 @@ From this repository checkout, a writable shell can run:
 ```
 
 The script adds or updates the submodule, copies the Argo CD Application manifest into `remote/argocd/apps/`, and validates the submodule's `k8s/` bundle with `kubectl kustomize`.
+
+## GPU worker overlay
+
+The default `k8s/` bundle is CPU-safe and sets slave pods to
+`MIP_SOLVER_GPU_MODE=auto`. A worker uses CUDA/cuBLAS only when an NVIDIA
+device is visible and the CUDA runtime libraries are present; otherwise it
+falls back to in-house CPU matrix preprocessing.
+
+For a GPU-backed worker pool, point Argo CD at:
+
+```yaml
+path: remote/deployments/mip-solver-node.rs/k8s-gpu
+```
+
+That overlay requests one `nvidia.com/gpu` for each slave pod and sets
+`MIP_SOLVER_GPU_MODE=require`, so missing CUDA support fails fast instead of
+silently running as CPU-only. It expects the cluster to have the NVIDIA device
+plugin/container runtime installed and an image/runtime that provides
+`libcudart` and `libcublas`.
