@@ -2428,6 +2428,38 @@ fn app_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            eprintln!("failed to install Ctrl-C signal handler: {error}");
+        }
+    };
+
+    #[cfg(unix)]
+    {
+        let terminate = async {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(mut signal) => {
+                    signal.recv().await;
+                }
+                Err(error) => {
+                    eprintln!("failed to install SIGTERM signal handler: {error}");
+                    std::future::pending::<()>().await;
+                }
+            }
+        };
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await;
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let role = NodeRole::from_env();
@@ -2464,9 +2496,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("{SERVICE_NAME} listening on {addr}");
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
+        .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
 }

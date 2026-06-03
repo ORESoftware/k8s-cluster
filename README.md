@@ -51,4 +51,6 @@ The Kubernetes startup command runs Cargo from `remote/deployments/mip-solver-no
 
 `/healthz` reports process liveness. `/readyz` requires a live NATS connection so Kubernetes does not route traffic to masters or count slaves as ready while they cannot publish or consume distributed work.
 
+The server handles both Ctrl-C and Kubernetes SIGTERM for graceful HTTP shutdown during rolling updates and KEDA scale-down.
+
 GPU resources are intentionally not requested in the base manifest. Add an overlay with `nvidia.com/gpu` limits for GPU-backed node pools; the server reports GPU availability when devices are present.
