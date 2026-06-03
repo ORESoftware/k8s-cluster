@@ -31,3 +31,6 @@
 	path = remote/submodules/discrete-event-system.rs
 	url = https://github.com/ORESoftware/discrete-event-system.rs.git
 	branch = main
+[submodule "remote/deployments/mip-solver-node.rs"]
+	path = remote/deployments/mip-solver-node.rs
+	url = git@github.com:ORESoftware/mip-solver-node.rs.git
