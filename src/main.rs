@@ -30,9 +30,9 @@ use dd_nats_subject_defs::{
 use des_engine::des::general::{
     ip_mip_des::{
         solve_ipmip_with_des, BranchRule, ConcreteLpRelaxationAlgorithm, IPMIPProblem,
-        IPMIPSolveOptions, IPMIPStatus, LpRelaxationAlgorithm,
+        IPMIPSolution, IPMIPSolveOptions, IPMIPStatus, LpRelaxationAlgorithm,
     },
-    lp::{solve_lp_internal, InternalSimplexOptions, LPProblem, LPStatus, Sense},
+    lp::{solve_lp_internal, InternalSimplexOptions, LPProblem, LPSolution, LPStatus, Sense},
 };
 use futures_util::StreamExt;
 use libloading::Library;
@@ -271,6 +271,7 @@ struct SubproblemResult {
     x: Vec<f64>,
     best_bound: Option<f64>,
     gap: Option<f64>,
+    lp: Option<LpSolveReport>,
     nodes_explored: usize,
     lp_solves: usize,
     elapsed_ms: f64,
@@ -278,6 +279,43 @@ struct SubproblemResult {
     accelerator: AcceleratorReport,
     error: Option<String>,
     finished_at_ms: u128,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpSolveReport {
+    primal: LpPrimalReport,
+    dual: LpDualReport,
+    basis: LpBasisReport,
+    iterations: Option<usize>,
+    solver: String,
+    elapsed_ms: f64,
+    message: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpPrimalReport {
+    objective: Option<f64>,
+    x: Vec<f64>,
+    var_names: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpDualReport {
+    inequality: Option<Vec<f64>>,
+    equality: Option<Vec<f64>>,
+    reduced_costs: Option<Vec<f64>>,
+    row_names: Option<Vec<String>>,
+    var_names: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LpBasisReport {
+    variables: Option<Vec<String>>,
+    rows: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -303,6 +341,7 @@ struct SolveResponse {
     x: Vec<f64>,
     best_bound: Option<f64>,
     gap: Option<f64>,
+    lp: Option<LpSolveReport>,
     jobs_published: usize,
     jobs_completed: usize,
     timed_out: bool,
@@ -340,6 +379,15 @@ struct FrontierNode {
 struct LpRelaxation {
     status: LPStatus,
     x: Vec<f64>,
+}
+
+enum SubproblemSolveOutcome {
+    IpMip(IPMIPSolution),
+    Lp {
+        problem: LPProblem,
+        solution: LPSolution,
+    },
+    Pruned(String),
 }
 
 fn default_sense() -> String {
@@ -1098,7 +1146,10 @@ fn apply_stream_command(
                 );
             }
         }
-        "set_constraint" | "modify_constraint" => {
+        "set_constraint"
+        | "modify_constraint"
+        | "change_constraint_weights"
+        | "set_constraint_weights" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
             if index >= p.a.len() {
                 return Err("constraint index out of range".to_string());
@@ -1120,7 +1171,7 @@ fn apply_stream_command(
                 names[index] = name;
             }
         }
-        "remove_constraint" => {
+        "remove_constraint" | "rm_constraint" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
             if index >= p.a.len() {
                 return Err("constraint index out of range".to_string());
@@ -1142,7 +1193,7 @@ fn apply_stream_command(
             }
             p.b[index] = rhs;
         }
-        "set_coefficient" => {
+        "set_coefficient" | "set_constraint_weight" | "change_constraint_weight" => {
             let row = usize_at(command, "row").ok_or("row is required")?;
             let col = usize_at(command, "col").ok_or("col is required")?;
             if row >= p.a.len() || col >= p.c.len() {
@@ -1197,7 +1248,7 @@ fn apply_stream_command(
                 names[index] = name;
             }
         }
-        "remove_variable" => {
+        "remove_variable" | "rm_variable" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
             if index >= p.c.len() {
                 return Err("variable index out of range".to_string());
@@ -1348,6 +1399,36 @@ fn solve_lp_relaxation(
     })
 }
 
+fn is_pure_lp(problem: &MipProblemSpec) -> Result<bool, String> {
+    let problem = normalized_problem(problem.clone())?;
+    Ok(!problem.integer_vars.iter().any(|integer| *integer))
+}
+
+fn lp_report_from_solution(lp: &LPProblem, solution: &LPSolution) -> LpSolveReport {
+    LpSolveReport {
+        primal: LpPrimalReport {
+            objective: solution.objective.is_finite().then_some(solution.objective),
+            x: solution.x.clone(),
+            var_names: lp.var_names.clone(),
+        },
+        dual: LpDualReport {
+            inequality: solution.dual_ub.clone(),
+            equality: solution.dual_eq.clone(),
+            reduced_costs: solution.reduced_costs.clone(),
+            row_names: lp.con_names.clone(),
+            var_names: lp.var_names.clone(),
+        },
+        basis: LpBasisReport {
+            variables: solution.var_basis.clone(),
+            rows: solution.row_basis.clone(),
+        },
+        iterations: solution.iters,
+        solver: solution.solver.clone(),
+        elapsed_ms: solution.elapsed_ms,
+        message: solution.message.clone(),
+    }
+}
+
 fn first_fractional(problem: &MipProblemSpec, x: &[f64], int_tol: f64) -> Option<(usize, f64)> {
     problem
         .integer_vars
@@ -1467,21 +1548,33 @@ fn build_frontier_jobs(
 fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult {
     let started = Instant::now();
     let mut accelerator = AcceleratorReport::runtime();
-    let mut pruned_reason = None;
     let result = catch_unwind(AssertUnwindSafe(|| {
         let preprocess = preprocess_bounds(&job.problem, &job.extra_constraints)?;
         accelerator = preprocess.accelerator;
         if let Some(reason) = preprocess.infeasible_reason {
-            pruned_reason = Some(reason);
-            return Ok(None);
+            return Ok(SubproblemSolveOutcome::Pruned(reason));
+        }
+        if is_pure_lp(&job.problem)? {
+            let lp = to_lp_problem(&job.problem, &job.extra_constraints)?;
+            let solution = solve_lp_internal(
+                &lp,
+                &InternalSimplexOptions {
+                    max_iter: job.options.lp_max_iters,
+                    tol: Some(1e-9),
+                },
+            );
+            return Ok(SubproblemSolveOutcome::Lp {
+                problem: lp,
+                solution,
+            });
         }
         let problem = to_ipmip_problem(&job.problem, &job.extra_constraints)?;
         let solution = solve_ipmip_with_des(problem, job.options.to_ipmip_options());
-        Ok::<_, String>(Some(solution))
+        Ok::<_, String>(SubproblemSolveOutcome::IpMip(solution))
     }));
 
     match result {
-        Ok(Ok(Some(solution))) => SubproblemResult {
+        Ok(Ok(SubproblemSolveOutcome::IpMip(solution))) => SubproblemResult {
             solve_id: job.solve_id,
             request_id: job.request_id,
             job_id: job.job_id,
@@ -1496,6 +1589,7 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
                 .is_finite()
                 .then_some(solution.best_bound),
             gap: solution.gap.is_finite().then_some(solution.gap),
+            lp: None,
             nodes_explored: solution.nodes_explored,
             lp_solves: solution.lp_solves,
             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1503,13 +1597,42 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
             error: None,
             finished_at_ms: now_ms(),
         },
-        Ok(Ok(None)) => infeasible_subproblem(
-            job,
-            worker_node,
-            accelerator,
-            pruned_reason.unwrap_or_else(|| "bound preprocessing proved infeasible".to_string()),
-            started,
-        ),
+        Ok(Ok(SubproblemSolveOutcome::Lp { problem, solution })) => {
+            let optimal = solution.status == LPStatus::Optimal;
+            let objective = solution.objective.is_finite().then_some(solution.objective);
+            let error = if optimal {
+                None
+            } else {
+                solution
+                    .message
+                    .clone()
+                    .or_else(|| Some(format!("LP solve returned {}", solution.status.as_str())))
+            };
+            let lp = lp_report_from_solution(&problem, &solution);
+            SubproblemResult {
+                solve_id: job.solve_id,
+                request_id: job.request_id,
+                job_id: job.job_id,
+                revision: job.revision,
+                worker_node,
+                ok: optimal,
+                status: solution.status.as_str().to_string(),
+                z: objective,
+                x: solution.x,
+                best_bound: if optimal { objective } else { None },
+                gap: if optimal { Some(0.0) } else { None },
+                lp: Some(lp),
+                nodes_explored: 1,
+                lp_solves: 1,
+                elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                accelerator,
+                error,
+                finished_at_ms: now_ms(),
+            }
+        }
+        Ok(Ok(SubproblemSolveOutcome::Pruned(reason))) => {
+            infeasible_subproblem(job, worker_node, accelerator, reason, started)
+        }
         Ok(Err(error)) => failed_subproblem(job, worker_node, accelerator, error, started),
         Err(_) => failed_subproblem(
             job,
@@ -1540,6 +1663,7 @@ fn failed_subproblem(
         x: Vec::new(),
         best_bound: None,
         gap: None,
+        lp: None,
         nodes_explored: 0,
         lp_solves: 0,
         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1568,6 +1692,7 @@ fn infeasible_subproblem(
         x: Vec::new(),
         best_bound: None,
         gap: None,
+        lp: None,
         nodes_explored: 0,
         lp_solves: 0,
         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1622,7 +1747,12 @@ fn aggregate_results(
         && results
             .iter()
             .all(|result| matches!(result.status.as_str(), "optimal" | "infeasible"));
-    let has_error = results.iter().any(|result| result.status == "error");
+    let has_error = results.iter().any(|result| {
+        matches!(
+            result.status.as_str(),
+            "error" | "iter-limit" | "numerical-error"
+        )
+    });
     let status = if best.is_some() && all_terminal {
         "optimal"
     } else if best.is_some() {
@@ -1647,6 +1777,7 @@ fn aggregate_results(
         x: best.map(|r| r.x.clone()).unwrap_or_default(),
         best_bound,
         gap,
+        lp: best.and_then(|r| r.lp.clone()),
         jobs_published,
         jobs_completed: results.len(),
         timed_out,
@@ -2546,8 +2677,12 @@ mod tests {
             b: vec![4.0, 2.0, 3.0],
             integer_vars: vec![false, false],
             ub: None,
-            var_names: None,
-            con_names: None,
+            var_names: Some(vec!["x0".to_string(), "x1".to_string()]),
+            con_names: Some(vec![
+                "shared".to_string(),
+                "x0_cap".to_string(),
+                "x1_cap".to_string(),
+            ]),
         }
     }
 
@@ -2950,6 +3085,24 @@ mod tests {
         assert!(result.z.is_some_and(|z| (z - 10.0).abs() < 1e-6));
         assert!((result.x[0] - 2.0).abs() < 1e-6);
         assert!((result.x[1] - 2.0).abs() < 1e-6);
+        let lp = result.lp.as_ref().expect("LP solve report");
+        assert_eq!(
+            lp.dual.row_names.as_ref().unwrap(),
+            &vec![
+                "shared".to_string(),
+                "x0_cap".to_string(),
+                "x1_cap".to_string()
+            ]
+        );
+        let dual = lp.dual.inequality.as_ref().expect("row duals");
+        assert_eq!(dual.len(), 3);
+        assert!((dual[0] - 2.0).abs() < 1e-6, "dual = {dual:?}");
+        assert!((dual[1] - 1.0).abs() < 1e-6, "dual = {dual:?}");
+        assert!(dual[2].abs() < 1e-6, "dual = {dual:?}");
+        assert_eq!(
+            lp.basis.variables.as_ref().unwrap(),
+            &vec!["basic".to_string(), "basic".to_string()]
+        );
     }
 
     #[test]
@@ -3152,6 +3305,73 @@ mod tests {
         assert_eq!(solve_body.get("z"), Some(&json!(90.0)));
     }
 
+    #[tokio::test]
+    async fn http_session_streams_lp_edits_and_returns_primal_dual_certificate() {
+        let app = app_router(test_state(NodeRole::Master));
+        let commands = json!([
+            {
+                "op": "init",
+                "sense": "max",
+                "c": [3.0, 2.0],
+                "a": [[1.0, 1.0], [1.0, 0.0]],
+                "b": [4.0, 2.0],
+                "integerVars": [false, false],
+                "varNames": ["x0", "x1"],
+                "conNames": ["shared", "x0_cap"]
+            },
+            {
+                "op": "add_constraint",
+                "coefs": [0.0, 1.0],
+                "rhs": 3.0,
+                "name": "x1_cap"
+            },
+            {
+                "op": "change_constraint_weight",
+                "row": 2,
+                "col": 1,
+                "value": 1.0
+            },
+            {
+                "op": "snapshot"
+            }
+        ]);
+
+        let (events_status, events_body) =
+            post_json(app.clone(), "/sessions/live-lp/events", commands).await;
+        assert_eq!(events_status, StatusCode::OK);
+        assert_eq!(events_body.get("ok"), Some(&json!(true)));
+        assert_eq!(events_body.get("revision"), Some(&json!(3)));
+
+        let (solve_status, solve_body) = post_json(
+            app,
+            "/sessions/live-lp/solve",
+            json!({"requestId":"live-lp"}),
+        )
+        .await;
+
+        assert_eq!(solve_status, StatusCode::OK);
+        assert_eq!(solve_body.get("ok"), Some(&json!(true)));
+        assert_eq!(solve_body.get("status"), Some(&json!("optimal")));
+        assert_eq!(solve_body.get("distributed"), Some(&json!(false)));
+        assert_eq!(
+            solve_body.pointer("/lp/primal/objective"),
+            Some(&json!(10.0))
+        );
+        assert_eq!(solve_body.pointer("/lp/primal/x"), Some(&json!([2.0, 2.0])));
+        let dual = solve_body
+            .pointer("/lp/dual/inequality")
+            .and_then(Value::as_array)
+            .expect("LP inequality duals");
+        assert_eq!(dual.len(), 3);
+        assert!((dual[0].as_f64().unwrap() - 2.0).abs() < 1e-6);
+        assert!((dual[1].as_f64().unwrap() - 1.0).abs() < 1e-6);
+        assert!(dual[2].as_f64().unwrap().abs() < 1e-6);
+        assert_eq!(
+            solve_body.pointer("/lp/dual/rowNames"),
+            Some(&json!(["shared", "x0_cap", "x1_cap"]))
+        );
+    }
+
     #[test]
     fn aggregate_results_counts_infeasible_subtrees_as_complete() {
         let problem = binary_knapsack_problem();
@@ -3168,6 +3388,7 @@ mod tests {
             x: vec![0.0, 1.0, 0.0, 1.0],
             best_bound: Some(90.0),
             gap: Some(0.0),
+            lp: None,
             nodes_explored: 1,
             lp_solves: 1,
             elapsed_ms: 1.0,
@@ -3187,6 +3408,7 @@ mod tests {
             x: Vec::new(),
             best_bound: None,
             gap: None,
+            lp: None,
             nodes_explored: 0,
             lp_solves: 0,
             elapsed_ms: 1.0,
@@ -3232,6 +3454,7 @@ mod tests {
             x: vec![0.0, 1.0],
             best_bound: Some(90.0),
             gap: Some(0.0),
+            lp: None,
             nodes_explored: 1,
             lp_solves: 1,
             elapsed_ms: 1.0,
