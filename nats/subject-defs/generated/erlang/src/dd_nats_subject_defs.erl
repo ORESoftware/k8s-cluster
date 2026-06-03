@@ -19,6 +19,15 @@
     mdp_optimize_subject/0,
     mdp_optimize_queue_group/0,
     mdp_results_subject/0,
+    mip_solver_control_subject/0,
+    mip_solver_control_stream/0,
+    mip_solver_events_subject/0,
+    mip_solver_events_stream/0,
+    mip_solver_jobs_subject/0,
+    mip_solver_jobs_queue_group/0,
+    mip_solver_jobs_stream/0,
+    mip_solver_results_subject/0,
+    mip_solver_results_stream/0,
     ml_dead_letter_subject/0,
     ml_features_subject/0,
     orchestrator_wakeup_subject/0,
@@ -93,6 +102,7 @@
     thread_tasks_stream/0,
     critical_events_logger_queue_group/0,
     lambda_runner_queue_group/0,
+    mip_solver_workers_queue_group/0,
     thread_preparer_queue_group/0,
     cdc_stream_name/0,
     cdc_stream_subjects/0,
@@ -119,6 +129,11 @@
     dd_remote_events_stream_retention/0,
     dd_remote_events_stream_storage/0,
     dd_remote_events_stream_ack/0,
+    dd_remote_mip_solver_stream_name/0,
+    dd_remote_mip_solver_stream_subjects/0,
+    dd_remote_mip_solver_stream_retention/0,
+    dd_remote_mip_solver_stream_storage/0,
+    dd_remote_mip_solver_stream_ack/0,
     dd_remote_tasks_stream_name/0,
     dd_remote_tasks_stream_subjects/0,
     dd_remote_tasks_stream_retention/0,
@@ -177,6 +192,27 @@ mdp_optimize_queue_group() -> <<"dd-mdp-optimizer"/utf8>>.
 %% MDP optimization results published by the optimizer. Default for MDP_RESULT_SUBJECT.
 %% Service: dd-ai-ml-pipeline
 mdp_results_subject() -> <<"dd.remote.mdp.results"/utf8>>.
+
+%% Control-plane commands for distributed in-house MIP solves, including solve cancellation and revision invalidation.
+%% Service: dd-ai-ml-pipeline
+mip_solver_control_subject() -> <<"dd.remote.mip_solver.control"/utf8>>.
+mip_solver_control_stream() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
+
+%% Lifecycle and progress events from distributed in-house LP/MIP/IP solver nodes.
+%% Service: dd-ai-ml-pipeline
+mip_solver_events_subject() -> <<"dd.remote.mip_solver.events"/utf8>>.
+mip_solver_events_stream() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
+
+%% Distributed in-house LP/MIP/IP subproblem jobs. Masters publish branch-and-bound relaxation/subtree work; slave pods consume through the worker queue group.
+%% Service: dd-ai-ml-pipeline
+mip_solver_jobs_subject() -> <<"dd.remote.mip_solver.jobs"/utf8>>.
+mip_solver_jobs_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
+mip_solver_jobs_stream() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
+
+%% Distributed in-house LP/MIP/IP subproblem results. Slaves publish solved LP relaxation/subtree summaries and masters aggregate them by solveId.
+%% Service: dd-ai-ml-pipeline
+mip_solver_results_subject() -> <<"dd.remote.mip_solver.results"/utf8>>.
+mip_solver_results_stream() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
 
 %% Dead-letter target for ai-ml-pipeline messages that failed validation/processing. Default for ML_DEAD_LETTER_SUBJECT.
 %% Service: dd-ai-ml-pipeline
@@ -579,6 +615,10 @@ critical_events_logger_queue_group() -> <<"dd-runtime-critical-events"/utf8>>.
 %% Service: dd-gleam-lambda-runner
 lambda_runner_queue_group() -> <<"dd-gleam-lambda-runner"/utf8>>.
 
+%% Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once.
+%% Service: dd-ai-ml-pipeline
+mip_solver_workers_queue_group() -> <<"dd-in-house-mip-solver-node-workers"/utf8>>.
+
 %% Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 %% Service: dd-remote-rest-api
 thread_preparer_queue_group() -> <<"dd-remote-thread-preparer"/utf8>>.
@@ -627,6 +667,15 @@ dd_remote_events_stream_subjects() ->
 dd_remote_events_stream_retention() -> <<"limits"/utf8>>.
 dd_remote_events_stream_storage() -> <<"file"/utf8>>.
 dd_remote_events_stream_ack() -> <<"explicit"/utf8>>.
+
+%% JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
+%% Service: dd-ai-ml-pipeline
+dd_remote_mip_solver_stream_name() -> <<"DD_REMOTE_MIP_SOLVER"/utf8>>.
+dd_remote_mip_solver_stream_subjects() ->
+    [<<"dd.remote.mip_solver.jobs"/utf8>>, <<"dd.remote.mip_solver.results"/utf8>>, <<"dd.remote.mip_solver.control"/utf8>>, <<"dd.remote.mip_solver.events"/utf8>>].
+dd_remote_mip_solver_stream_retention() -> <<"limits"/utf8>>.
+dd_remote_mip_solver_stream_storage() -> <<"file"/utf8>>.
+dd_remote_mip_solver_stream_ack() -> <<"explicit"/utf8>>.
 
 %% JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 %% Service: dd-remote-rest-api

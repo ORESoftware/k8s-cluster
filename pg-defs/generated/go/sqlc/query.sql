@@ -285,3 +285,108 @@ update presence_consumer_checkpoints set last_seq = $2, updated_at = $3 where co
 
 -- name: DeletePresenceConsumerCheckpoints :exec
 delete from presence_consumer_checkpoints where consumer_id = $1;
+
+-- name: ListDesSoccerLearningExperiments :many
+select id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from des_soccer_learning_experiments;
+
+-- name: GetDesSoccerLearningExperiments :one
+select id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from des_soccer_learning_experiments where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningExperiments :one
+insert into des_soccer_learning_experiments (id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateDesSoccerLearningExperiments :one
+update des_soccer_learning_experiments set slug = $2, display_name = $3, description = $4, status = $5, config = $6, labels = $7, meta_data = $8, is_soft_deleted = $9, updated_at = $10, created_by = $11, updated_by = $12 where id = $1 returning id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteDesSoccerLearningExperiments :exec
+delete from des_soccer_learning_experiments where id = $1;
+
+-- name: ListDesSoccerLearningPolicyVersions :many
+select id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by from des_soccer_learning_policy_versions;
+
+-- name: GetDesSoccerLearningPolicyVersions :one
+select id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by from des_soccer_learning_policy_versions where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningPolicyVersions :one
+insert into des_soccer_learning_policy_versions (id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateDesSoccerLearningPolicyVersions :one
+update des_soccer_learning_policy_versions set experiment_id = $2, parent_policy_version_id = $3, generation = $4, version_label = $5, source_kind = $6, status = $7, options = $8, config = $9, lineage = $10, metrics = $11, entry_count = $12, target_entry_count = $13, visit_count = $14, fitness_micros = $15, updated_at = $16, created_by = $17, updated_by = $18 where id = $1 returning id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteDesSoccerLearningPolicyVersions :exec
+delete from des_soccer_learning_policy_versions where id = $1;
+
+-- name: ListDesSoccerLearningPolicyEntries :many
+select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries;
+
+-- name: GetDesSoccerLearningPolicyEntries :one
+select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningPolicyEntries :one
+insert into des_soccer_learning_policy_entries (id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at;
+
+-- name: UpdateDesSoccerLearningPolicyEntries :one
+update des_soccer_learning_policy_entries set policy_version_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, value_micros = $12, visits = $13, source_run_id = $14 where id = $1 returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at;
+
+-- name: DeleteDesSoccerLearningPolicyEntries :exec
+delete from des_soccer_learning_policy_entries where id = $1;
+
+-- name: ListDesSoccerLearningJobs :many
+select id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at from des_soccer_learning_jobs;
+
+-- name: GetDesSoccerLearningJobs :one
+select id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at from des_soccer_learning_jobs where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningJobs :one
+insert into des_soccer_learning_jobs (id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at;
+
+-- name: UpdateDesSoccerLearningJobs :one
+update des_soccer_learning_jobs set experiment_id = $2, base_policy_version_id = $3, spawn_strategy = $4, status = $5, priority = $6, seed = $7, attempt = $8, max_attempts = $9, lease_owner = $10, lease_expires_at = $11, started_at = $12, finished_at = $13, config = $14, runner_config = $15, result_run_id = $16, error = $17, updated_at = $18 where id = $1 returning id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at;
+
+-- name: DeleteDesSoccerLearningJobs :exec
+delete from des_soccer_learning_jobs where id = $1;
+
+-- name: ListDesSoccerLearningRuns :many
+select id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at from des_soccer_learning_runs;
+
+-- name: GetDesSoccerLearningRuns :one
+select id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at from des_soccer_learning_runs where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningRuns :one
+insert into des_soccer_learning_runs (id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27) returning id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at;
+
+-- name: UpdateDesSoccerLearningRuns :one
+update des_soccer_learning_runs set job_id = $2, experiment_id = $3, base_policy_version_id = $4, output_policy_version_id = $5, runner_id = $6, seed = $7, episode_index = $8, status = $9, score_home = $10, score_away = $11, home_goal_diff = $12, away_goal_diff = $13, home_outcome = $14, away_outcome = $15, home_merge_weight_micros = $16, away_merge_weight_micros = $17, fitness_micros = $18, duration_ticks = $19, simulated_seconds_micros = $20, elapsed_millis = $21, transitions = $22, summary = $23, stats = $24, error = $25, updated_at = $26 where id = $1 returning id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at;
+
+-- name: DeleteDesSoccerLearningRuns :exec
+delete from des_soccer_learning_runs where id = $1;
+
+-- name: ListDesSoccerLearningRunDeltas :many
+select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas;
+
+-- name: GetDesSoccerLearningRunDeltas :one
+select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningRunDeltas :one
+insert into des_soccer_learning_run_deltas (id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
+
+-- name: UpdateDesSoccerLearningRunDeltas :one
+update des_soccer_learning_run_deltas set run_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, before_value_micros = $12, after_value_micros = $13, value_delta_micros = $14, visit_delta = $15, merge_weight_micros = $16, effective_visit_micros = $17 where id = $1 returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
+
+-- name: DeleteDesSoccerLearningRunDeltas :exec
+delete from des_soccer_learning_run_deltas where id = $1;
+
+-- name: ListDesSoccerLearningMergeEvents :many
+select id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at from des_soccer_learning_merge_events;
+
+-- name: GetDesSoccerLearningMergeEvents :one
+select id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at from des_soccer_learning_merge_events where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningMergeEvents :one
+insert into des_soccer_learning_merge_events (id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at;
+
+-- name: UpdateDesSoccerLearningMergeEvents :one
+update des_soccer_learning_merge_events set experiment_id = $2, base_policy_version_id = $3, output_policy_version_id = $4, strategy = $5, input_run_count = $6, input_delta_count = $7, decay_micros = $8, metrics = $9 where id = $1 returning id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at;
+
+-- name: DeleteDesSoccerLearningMergeEvents :exec
+delete from des_soccer_learning_merge_events where id = $1;

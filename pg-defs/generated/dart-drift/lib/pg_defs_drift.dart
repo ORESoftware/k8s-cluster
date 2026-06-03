@@ -488,6 +488,218 @@ class PresenceConsumerCheckpointsTable extends Table {
   };
 }
 
+@DataClassName("DesSoccerLearningExperimentsData")
+class DesSoccerLearningExperimentsTable extends Table {
+  @override String get tableName => "des_soccer_learning_experiments";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 160)();
+  TextColumn get displayName => text().named("display_name").withLength(max: 240)();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get labels => text().named("labels").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningPolicyVersionsData")
+class DesSoccerLearningPolicyVersionsTable extends Table {
+  @override String get tableName => "des_soccer_learning_policy_versions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get parentPolicyVersionId => text().named("parent_policy_version_id").nullable().customConstraint("UUID")();
+  IntColumn get generation => integer().named("generation").clientDefault(() => 0)();
+  TextColumn get versionLabel => text().named("version_label").withLength(max: 160)();
+  TextColumn get sourceKind => text().named("source_kind").clientDefault(() => 'seed')();
+  TextColumn get status => text().named("status").clientDefault(() => 'candidate')();
+  TextColumn get options => text().named("options").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get lineage => text().named("lineage").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metrics => text().named("metrics").clientDefault(() => '{}').customConstraint("JSONB")();
+  IntColumn get entryCount => integer().named("entry_count").clientDefault(() => 0)();
+  IntColumn get targetEntryCount => integer().named("target_entry_count").clientDefault(() => 0)();
+  Int64Column get visitCount => int64().named("visit_count").clientDefault(() => 0)();
+  Int64Column get fitnessMicros => int64().named("fitness_micros").clientDefault(() => 0)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningPolicyEntriesData")
+class DesSoccerLearningPolicyEntriesTable extends Table {
+  @override String get tableName => "des_soccer_learning_policy_entries";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get policyVersionId => text().named("policy_version_id").customConstraint("UUID")();
+  TextColumn get team => text().named("team")();
+  TextColumn get entryKind => text().named("entry_kind")();
+  TextColumn get stateHash => text().named("state_hash").withLength(max: 32)();
+  TextColumn get stateKey => text().named("state_key").customConstraint("JSONB")();
+  TextColumn get action => text().named("action").withLength(max: 80)();
+  IntColumn get targetFineCellId => integer().named("target_fine_cell_id").clientDefault(() => -1)();
+  IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
+  IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
+  IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  Int64Column get valueMicros => int64().named("value_micros")();
+  IntColumn get visits => integer().named("visits").clientDefault(() => 0)();
+  TextColumn get sourceRunId => text().named("source_run_id").nullable().customConstraint("UUID")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningJobsData")
+class DesSoccerLearningJobsTable extends Table {
+  @override String get tableName => "des_soccer_learning_jobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get basePolicyVersionId => text().named("base_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get spawnStrategy => text().named("spawn_strategy").clientDefault(() => 'latest')();
+  TextColumn get status => text().named("status").clientDefault(() => 'queued')();
+  IntColumn get priority => integer().named("priority").clientDefault(() => 0)();
+  Int64Column get seed => int64().named("seed")();
+  IntColumn get attempt => integer().named("attempt").clientDefault(() => 0)();
+  IntColumn get maxAttempts => integer().named("max_attempts").clientDefault(() => 1)();
+  TextColumn get leaseOwner => text().named("lease_owner").withLength(max: 200).nullable()();
+  DateTimeColumn get leaseExpiresAt => dateTime().named("lease_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get runnerConfig => text().named("runner_config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get resultRunId => text().named("result_run_id").nullable().customConstraint("UUID")();
+  TextColumn get error => text().named("error").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningRunsData")
+class DesSoccerLearningRunsTable extends Table {
+  @override String get tableName => "des_soccer_learning_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get jobId => text().named("job_id").nullable().customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get basePolicyVersionId => text().named("base_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get outputPolicyVersionId => text().named("output_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get runnerId => text().named("runner_id").withLength(max: 200)();
+  Int64Column get seed => int64().named("seed")();
+  IntColumn get episodeIndex => integer().named("episode_index").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").clientDefault(() => 'completed')();
+  IntColumn get scoreHome => integer().named("score_home").clientDefault(() => 0)();
+  IntColumn get scoreAway => integer().named("score_away").clientDefault(() => 0)();
+  IntColumn get homeGoalDiff => integer().named("home_goal_diff").clientDefault(() => 0)();
+  IntColumn get awayGoalDiff => integer().named("away_goal_diff").clientDefault(() => 0)();
+  TextColumn get homeOutcome => text().named("home_outcome").clientDefault(() => 'draw')();
+  TextColumn get awayOutcome => text().named("away_outcome").clientDefault(() => 'draw')();
+  Int64Column get homeMergeWeightMicros => int64().named("home_merge_weight_micros").clientDefault(() => 0)();
+  Int64Column get awayMergeWeightMicros => int64().named("away_merge_weight_micros").clientDefault(() => 0)();
+  Int64Column get fitnessMicros => int64().named("fitness_micros").clientDefault(() => 0)();
+  Int64Column get durationTicks => int64().named("duration_ticks").clientDefault(() => 0)();
+  Int64Column get simulatedSecondsMicros => int64().named("simulated_seconds_micros").clientDefault(() => 0)();
+  Int64Column get elapsedMillis => int64().named("elapsed_millis").clientDefault(() => 0)();
+  IntColumn get transitions => integer().named("transitions").clientDefault(() => 0)();
+  TextColumn get summary => text().named("summary").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get stats => text().named("stats").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get error => text().named("error").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningRunDeltasData")
+class DesSoccerLearningRunDeltasTable extends Table {
+  @override String get tableName => "des_soccer_learning_run_deltas";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  TextColumn get team => text().named("team")();
+  TextColumn get entryKind => text().named("entry_kind")();
+  TextColumn get stateHash => text().named("state_hash").withLength(max: 32)();
+  TextColumn get stateKey => text().named("state_key").customConstraint("JSONB")();
+  TextColumn get action => text().named("action").withLength(max: 80)();
+  IntColumn get targetFineCellId => integer().named("target_fine_cell_id").clientDefault(() => -1)();
+  IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
+  IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
+  IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  Int64Column get beforeValueMicros => int64().named("before_value_micros").clientDefault(() => 0)();
+  Int64Column get afterValueMicros => int64().named("after_value_micros").clientDefault(() => 0)();
+  Int64Column get valueDeltaMicros => int64().named("value_delta_micros").clientDefault(() => 0)();
+  IntColumn get visitDelta => integer().named("visit_delta").clientDefault(() => 0)();
+  Int64Column get mergeWeightMicros => int64().named("merge_weight_micros").clientDefault(() => 0)();
+  Int64Column get effectiveVisitMicros => int64().named("effective_visit_micros").clientDefault(() => 0)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningMergeEventsData")
+class DesSoccerLearningMergeEventsTable extends Table {
+  @override String get tableName => "des_soccer_learning_merge_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get basePolicyVersionId => text().named("base_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get outputPolicyVersionId => text().named("output_policy_version_id").customConstraint("UUID")();
+  TextColumn get strategy => text().named("strategy").clientDefault(() => 'outcome_weighted_average')();
+  IntColumn get inputRunCount => integer().named("input_run_count").clientDefault(() => 0)();
+  IntColumn get inputDeltaCount => integer().named("input_delta_count").clientDefault(() => 0)();
+  Int64Column get decayMicros => int64().named("decay_micros").clientDefault(() => 1000000)();
+  TextColumn get metrics => text().named("metrics").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -510,4 +722,11 @@ const List<Type> registeredDriftTables = <Type>[
   PresenceUsersTable,
   PresenceEventsTable,
   PresenceConsumerCheckpointsTable,
+  DesSoccerLearningExperimentsTable,
+  DesSoccerLearningPolicyVersionsTable,
+  DesSoccerLearningPolicyEntriesTable,
+  DesSoccerLearningJobsTable,
+  DesSoccerLearningRunsTable,
+  DesSoccerLearningRunDeltasTable,
+  DesSoccerLearningMergeEventsTable,
 ];

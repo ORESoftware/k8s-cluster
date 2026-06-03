@@ -56,6 +56,27 @@ const String mdpOptimizeQueueGroup = "dd-mdp-optimizer";
 /// Service: dd-ai-ml-pipeline
 const String mdpResultsSubject = "dd.remote.mdp.results";
 
+/// Control-plane commands for distributed in-house MIP solves, including solve cancellation and revision invalidation.
+/// Service: dd-ai-ml-pipeline
+const String mipSolverControlSubject = "dd.remote.mip_solver.control";
+const String mipSolverControlStream = "DD_REMOTE_MIP_SOLVER";
+
+/// Lifecycle and progress events from distributed in-house LP/MIP/IP solver nodes.
+/// Service: dd-ai-ml-pipeline
+const String mipSolverEventsSubject = "dd.remote.mip_solver.events";
+const String mipSolverEventsStream = "DD_REMOTE_MIP_SOLVER";
+
+/// Distributed in-house LP/MIP/IP subproblem jobs. Masters publish branch-and-bound relaxation/subtree work; slave pods consume through the worker queue group.
+/// Service: dd-ai-ml-pipeline
+const String mipSolverJobsSubject = "dd.remote.mip_solver.jobs";
+const String mipSolverJobsQueueGroup = "dd-in-house-mip-solver-node-workers";
+const String mipSolverJobsStream = "DD_REMOTE_MIP_SOLVER";
+
+/// Distributed in-house LP/MIP/IP subproblem results. Slaves publish solved LP relaxation/subtree summaries and masters aggregate them by solveId.
+/// Service: dd-ai-ml-pipeline
+const String mipSolverResultsSubject = "dd.remote.mip_solver.results";
+const String mipSolverResultsStream = "DD_REMOTE_MIP_SOLVER";
+
 /// Dead-letter target for ai-ml-pipeline messages that failed validation/processing. Default for ML_DEAD_LETTER_SUBJECT.
 /// Service: dd-ai-ml-pipeline
 const String mlDeadLetterSubject = "dd.remote.ml.deadletter";
@@ -490,6 +511,10 @@ const String criticalEventsLoggerQueueGroup = "dd-runtime-critical-events";
 /// Service: dd-gleam-lambda-runner
 const String lambdaRunnerQueueGroup = "dd-gleam-lambda-runner";
 
+/// Shared queue group used by slave solver pods so each branch-and-bound subproblem is solved once.
+/// Service: dd-ai-ml-pipeline
+const String mipSolverWorkersQueueGroup = "dd-in-house-mip-solver-node-workers";
+
 /// Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once.
 /// Service: dd-remote-rest-api
 const String threadPreparerQueueGroup = "dd-remote-thread-preparer";
@@ -535,6 +560,14 @@ const List<String> ddRemoteEventsStreamSubjects = ["dd.remote.thread.*.events", 
 const String ddRemoteEventsStreamRetention = "limits";
 const String ddRemoteEventsStreamStorage = "file";
 const String ddRemoteEventsStreamAck = "explicit";
+
+/// JetStream stream for distributed in-house LP/MIP/IP solver work, results, control, and progress events.
+/// Service: dd-ai-ml-pipeline
+const String ddRemoteMipSolverStreamName = "DD_REMOTE_MIP_SOLVER";
+const List<String> ddRemoteMipSolverStreamSubjects = ["dd.remote.mip_solver.jobs", "dd.remote.mip_solver.results", "dd.remote.mip_solver.control", "dd.remote.mip_solver.events"];
+const String ddRemoteMipSolverStreamRetention = "limits";
+const String ddRemoteMipSolverStreamStorage = "file";
+const String ddRemoteMipSolverStreamAck = "explicit";
 
 /// JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.
 /// Service: dd-remote-rest-api

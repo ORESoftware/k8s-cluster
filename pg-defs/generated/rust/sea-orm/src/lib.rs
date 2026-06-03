@@ -778,3 +778,341 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use presence_consumer_checkpoints::Entity as PresenceConsumerCheckpointsEntity;
 pub use presence_consumer_checkpoints::Model as PresenceConsumerCheckpointsModel;
+
+pub mod des_soccer_learning_experiments {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_experiments")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    pub slug: String,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: String,
+    pub description: String,
+    pub status: String,
+    pub config: Json,
+    pub labels: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "is_soft_deleted")]
+    pub is_soft_deleted: bool,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_experiments::Entity as DesSoccerLearningExperimentsEntity;
+pub use des_soccer_learning_experiments::Model as DesSoccerLearningExperimentsModel;
+
+pub mod des_soccer_learning_policy_versions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_policy_versions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "experiment_id")]
+    pub experiment_id: Uuid,
+    #[sea_orm(column_name = "parent_policy_version_id")]
+    pub parent_policy_version_id: Option<Uuid>,
+    pub generation: i32,
+    #[sea_orm(column_name = "version_label")]
+    pub version_label: String,
+    #[sea_orm(column_name = "source_kind")]
+    pub source_kind: String,
+    pub status: String,
+    pub options: Json,
+    pub config: Json,
+    pub lineage: Json,
+    pub metrics: Json,
+    #[sea_orm(column_name = "entry_count")]
+    pub entry_count: i32,
+    #[sea_orm(column_name = "target_entry_count")]
+    pub target_entry_count: i32,
+    #[sea_orm(column_name = "visit_count")]
+    pub visit_count: i64,
+    #[sea_orm(column_name = "fitness_micros")]
+    pub fitness_micros: i64,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_policy_versions::Entity as DesSoccerLearningPolicyVersionsEntity;
+pub use des_soccer_learning_policy_versions::Model as DesSoccerLearningPolicyVersionsModel;
+
+pub mod des_soccer_learning_policy_entries {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_policy_entries")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "policy_version_id")]
+    pub policy_version_id: Uuid,
+    pub team: String,
+    #[sea_orm(column_name = "entry_kind")]
+    pub entry_kind: String,
+    #[sea_orm(column_name = "state_hash")]
+    pub state_hash: String,
+    #[sea_orm(column_name = "state_key")]
+    pub state_key: Json,
+    pub action: String,
+    #[sea_orm(column_name = "target_fine_cell_id")]
+    pub target_fine_cell_id: i32,
+    #[sea_orm(column_name = "target_tactical_cell_id")]
+    pub target_tactical_cell_id: i32,
+    #[sea_orm(column_name = "target_macro_cell_id")]
+    pub target_macro_cell_id: i32,
+    #[sea_orm(column_name = "target_root_cell_id")]
+    pub target_root_cell_id: i32,
+    #[sea_orm(column_name = "value_micros")]
+    pub value_micros: i64,
+    pub visits: i32,
+    #[sea_orm(column_name = "source_run_id")]
+    pub source_run_id: Option<Uuid>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_policy_entries::Entity as DesSoccerLearningPolicyEntriesEntity;
+pub use des_soccer_learning_policy_entries::Model as DesSoccerLearningPolicyEntriesModel;
+
+pub mod des_soccer_learning_jobs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_jobs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "experiment_id")]
+    pub experiment_id: Uuid,
+    #[sea_orm(column_name = "base_policy_version_id")]
+    pub base_policy_version_id: Option<Uuid>,
+    #[sea_orm(column_name = "spawn_strategy")]
+    pub spawn_strategy: String,
+    pub status: String,
+    pub priority: i32,
+    pub seed: i64,
+    pub attempt: i32,
+    #[sea_orm(column_name = "max_attempts")]
+    pub max_attempts: i32,
+    #[sea_orm(column_name = "lease_owner")]
+    pub lease_owner: Option<String>,
+    #[sea_orm(column_name = "lease_expires_at")]
+    pub lease_expires_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "finished_at")]
+    pub finished_at: Option<DateTimeWithTimeZone>,
+    pub config: Json,
+    #[sea_orm(column_name = "runner_config")]
+    pub runner_config: Json,
+    #[sea_orm(column_name = "result_run_id")]
+    pub result_run_id: Option<Uuid>,
+    pub error: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_jobs::Entity as DesSoccerLearningJobsEntity;
+pub use des_soccer_learning_jobs::Model as DesSoccerLearningJobsModel;
+
+pub mod des_soccer_learning_runs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_runs")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "job_id")]
+    pub job_id: Option<Uuid>,
+    #[sea_orm(column_name = "experiment_id")]
+    pub experiment_id: Uuid,
+    #[sea_orm(column_name = "base_policy_version_id")]
+    pub base_policy_version_id: Option<Uuid>,
+    #[sea_orm(column_name = "output_policy_version_id")]
+    pub output_policy_version_id: Option<Uuid>,
+    #[sea_orm(column_name = "runner_id")]
+    pub runner_id: String,
+    pub seed: i64,
+    #[sea_orm(column_name = "episode_index")]
+    pub episode_index: i32,
+    pub status: String,
+    #[sea_orm(column_name = "score_home")]
+    pub score_home: i32,
+    #[sea_orm(column_name = "score_away")]
+    pub score_away: i32,
+    #[sea_orm(column_name = "home_goal_diff")]
+    pub home_goal_diff: i32,
+    #[sea_orm(column_name = "away_goal_diff")]
+    pub away_goal_diff: i32,
+    #[sea_orm(column_name = "home_outcome")]
+    pub home_outcome: String,
+    #[sea_orm(column_name = "away_outcome")]
+    pub away_outcome: String,
+    #[sea_orm(column_name = "home_merge_weight_micros")]
+    pub home_merge_weight_micros: i64,
+    #[sea_orm(column_name = "away_merge_weight_micros")]
+    pub away_merge_weight_micros: i64,
+    #[sea_orm(column_name = "fitness_micros")]
+    pub fitness_micros: i64,
+    #[sea_orm(column_name = "duration_ticks")]
+    pub duration_ticks: i64,
+    #[sea_orm(column_name = "simulated_seconds_micros")]
+    pub simulated_seconds_micros: i64,
+    #[sea_orm(column_name = "elapsed_millis")]
+    pub elapsed_millis: i64,
+    pub transitions: i32,
+    pub summary: Json,
+    pub stats: Json,
+    pub error: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_runs::Entity as DesSoccerLearningRunsEntity;
+pub use des_soccer_learning_runs::Model as DesSoccerLearningRunsModel;
+
+pub mod des_soccer_learning_run_deltas {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_run_deltas")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "run_id")]
+    pub run_id: Uuid,
+    pub team: String,
+    #[sea_orm(column_name = "entry_kind")]
+    pub entry_kind: String,
+    #[sea_orm(column_name = "state_hash")]
+    pub state_hash: String,
+    #[sea_orm(column_name = "state_key")]
+    pub state_key: Json,
+    pub action: String,
+    #[sea_orm(column_name = "target_fine_cell_id")]
+    pub target_fine_cell_id: i32,
+    #[sea_orm(column_name = "target_tactical_cell_id")]
+    pub target_tactical_cell_id: i32,
+    #[sea_orm(column_name = "target_macro_cell_id")]
+    pub target_macro_cell_id: i32,
+    #[sea_orm(column_name = "target_root_cell_id")]
+    pub target_root_cell_id: i32,
+    #[sea_orm(column_name = "before_value_micros")]
+    pub before_value_micros: i64,
+    #[sea_orm(column_name = "after_value_micros")]
+    pub after_value_micros: i64,
+    #[sea_orm(column_name = "value_delta_micros")]
+    pub value_delta_micros: i64,
+    #[sea_orm(column_name = "visit_delta")]
+    pub visit_delta: i32,
+    #[sea_orm(column_name = "merge_weight_micros")]
+    pub merge_weight_micros: i64,
+    #[sea_orm(column_name = "effective_visit_micros")]
+    pub effective_visit_micros: i64,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_run_deltas::Entity as DesSoccerLearningRunDeltasEntity;
+pub use des_soccer_learning_run_deltas::Model as DesSoccerLearningRunDeltasModel;
+
+pub mod des_soccer_learning_merge_events {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "des_soccer_learning_merge_events")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "experiment_id")]
+    pub experiment_id: Uuid,
+    #[sea_orm(column_name = "base_policy_version_id")]
+    pub base_policy_version_id: Option<Uuid>,
+    #[sea_orm(column_name = "output_policy_version_id")]
+    pub output_policy_version_id: Uuid,
+    pub strategy: String,
+    #[sea_orm(column_name = "input_run_count")]
+    pub input_run_count: i32,
+    #[sea_orm(column_name = "input_delta_count")]
+    pub input_delta_count: i32,
+    #[sea_orm(column_name = "decay_micros")]
+    pub decay_micros: i64,
+    pub metrics: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use des_soccer_learning_merge_events::Entity as DesSoccerLearningMergeEventsEntity;
+pub use des_soccer_learning_merge_events::Model as DesSoccerLearningMergeEventsModel;

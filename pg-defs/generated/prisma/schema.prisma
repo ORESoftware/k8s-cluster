@@ -405,3 +405,174 @@ model PresenceConsumerCheckpoints {
   updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
   @@map("presence_consumer_checkpoints")
 }
+
+model DesSoccerLearningExperiments {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug String @db.VarChar(160)
+  displayName String @map("display_name") @db.VarChar(240)
+  description String @default("") @db.Text
+  status String @default("active") @db.VarChar(32)
+  config Json @default("{}")
+  labels Json @default("[]")
+  metaData Json @map("meta_data") @default("{}")
+  isSoftDeleted Boolean @map("is_soft_deleted") @default(false)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  // des_soccer_learning_experiments_slug_active_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // des_soccer_learning_experiments_status_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // des_soccer_learning_experiments_updated_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_experiments")
+}
+
+model DesSoccerLearningPolicyVersions {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  experimentId String @map("experiment_id") @db.Uuid
+  parentPolicyVersionId String? @map("parent_policy_version_id") @db.Uuid
+  generation Int @default(0)
+  versionLabel String @map("version_label") @db.VarChar(160)
+  sourceKind String @map("source_kind") @default("seed") @db.VarChar(40)
+  status String @default("candidate") @db.VarChar(32)
+  options Json @default("{}")
+  config Json @default("{}")
+  lineage Json @default("[]")
+  metrics Json @default("{}")
+  entryCount Int @map("entry_count") @default(0)
+  targetEntryCount Int @map("target_entry_count") @default(0)
+  visitCount BigInt @map("visit_count") @default(0) @db.BigInt
+  fitnessMicros BigInt @map("fitness_micros") @default(0) @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([experimentId, versionLabel], map: "des_soccer_learning_policy_versions_label_uq")
+  // des_soccer_learning_policy_versions_active_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // des_soccer_learning_policy_versions_fitness_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_policy_versions")
+}
+
+model DesSoccerLearningPolicyEntries {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyVersionId String @map("policy_version_id") @db.Uuid
+  team String @db.VarChar(8)
+  entryKind String @map("entry_kind") @db.VarChar(16)
+  stateHash String @map("state_hash") @db.VarChar(32)
+  stateKey Json @map("state_key")
+  action String @db.VarChar(80)
+  targetFineCellId Int @map("target_fine_cell_id") @default(-1)
+  targetTacticalCellId Int @map("target_tactical_cell_id") @default(-1)
+  targetMacroCellId Int @map("target_macro_cell_id") @default(-1)
+  targetRootCellId Int @map("target_root_cell_id") @default(-1)
+  valueMicros BigInt @map("value_micros") @db.BigInt
+  visits Int @default(0)
+  sourceRunId String? @map("source_run_id") @db.Uuid
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([policyVersionId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId], map: "des_soccer_learning_policy_entries_key_uq")
+  @@index([policyVersionId, team, entryKind, stateHash], map: "des_soccer_learning_policy_entries_lookup_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_policy_entries")
+}
+
+model DesSoccerLearningJobs {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  experimentId String @map("experiment_id") @db.Uuid
+  basePolicyVersionId String? @map("base_policy_version_id") @db.Uuid
+  spawnStrategy String @map("spawn_strategy") @default("latest") @db.VarChar(32)
+  status String @default("queued") @db.VarChar(32)
+  priority Int @default(0)
+  seed BigInt @db.BigInt
+  attempt Int @default(0)
+  maxAttempts Int @map("max_attempts") @default(1)
+  leaseOwner String? @map("lease_owner") @db.VarChar(200)
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  config Json @default("{}")
+  runnerConfig Json @map("runner_config") @default("{}")
+  resultRunId String? @map("result_run_id") @db.Uuid
+  error String? @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // des_soccer_learning_jobs_claim_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([basePolicyVersionId, createdAt], map: "des_soccer_learning_jobs_base_policy_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_jobs")
+}
+
+model DesSoccerLearningRuns {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jobId String? @map("job_id") @db.Uuid
+  experimentId String @map("experiment_id") @db.Uuid
+  basePolicyVersionId String? @map("base_policy_version_id") @db.Uuid
+  outputPolicyVersionId String? @map("output_policy_version_id") @db.Uuid
+  runnerId String @map("runner_id") @db.VarChar(200)
+  seed BigInt @db.BigInt
+  episodeIndex Int @map("episode_index") @default(0)
+  status String @default("completed") @db.VarChar(32)
+  scoreHome Int @map("score_home") @default(0)
+  scoreAway Int @map("score_away") @default(0)
+  homeGoalDiff Int @map("home_goal_diff") @default(0)
+  awayGoalDiff Int @map("away_goal_diff") @default(0)
+  homeOutcome String @map("home_outcome") @default("draw") @db.VarChar(16)
+  awayOutcome String @map("away_outcome") @default("draw") @db.VarChar(16)
+  homeMergeWeightMicros BigInt @map("home_merge_weight_micros") @default(0) @db.BigInt
+  awayMergeWeightMicros BigInt @map("away_merge_weight_micros") @default(0) @db.BigInt
+  fitnessMicros BigInt @map("fitness_micros") @default(0) @db.BigInt
+  durationTicks BigInt @map("duration_ticks") @default(0) @db.BigInt
+  simulatedSecondsMicros BigInt @map("simulated_seconds_micros") @default(0) @db.BigInt
+  elapsedMillis BigInt @map("elapsed_millis") @default(0) @db.BigInt
+  transitions Int @default(0)
+  summary Json @default("{}")
+  stats Json @default("{}")
+  error String? @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([experimentId, createdAt], map: "des_soccer_learning_runs_experiment_idx")
+  @@index([basePolicyVersionId, fitnessMicros, createdAt], map: "des_soccer_learning_runs_policy_fitness_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_runs")
+}
+
+model DesSoccerLearningRunDeltas {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId String @map("run_id") @db.Uuid
+  team String @db.VarChar(8)
+  entryKind String @map("entry_kind") @db.VarChar(16)
+  stateHash String @map("state_hash") @db.VarChar(32)
+  stateKey Json @map("state_key")
+  action String @db.VarChar(80)
+  targetFineCellId Int @map("target_fine_cell_id") @default(-1)
+  targetTacticalCellId Int @map("target_tactical_cell_id") @default(-1)
+  targetMacroCellId Int @map("target_macro_cell_id") @default(-1)
+  targetRootCellId Int @map("target_root_cell_id") @default(-1)
+  beforeValueMicros BigInt @map("before_value_micros") @default(0) @db.BigInt
+  afterValueMicros BigInt @map("after_value_micros") @default(0) @db.BigInt
+  valueDeltaMicros BigInt @map("value_delta_micros") @default(0) @db.BigInt
+  visitDelta Int @map("visit_delta") @default(0)
+  mergeWeightMicros BigInt @map("merge_weight_micros") @default(0) @db.BigInt
+  effectiveVisitMicros BigInt @map("effective_visit_micros") @default(0) @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@unique([runId, team, entryKind, stateHash, action, targetFineCellId, targetTacticalCellId, targetMacroCellId, targetRootCellId], map: "des_soccer_learning_run_deltas_key_uq")
+  @@index([team, entryKind, stateHash, action], map: "des_soccer_learning_run_deltas_merge_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_run_deltas")
+}
+
+model DesSoccerLearningMergeEvents {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  experimentId String @map("experiment_id") @db.Uuid
+  basePolicyVersionId String? @map("base_policy_version_id") @db.Uuid
+  outputPolicyVersionId String @map("output_policy_version_id") @db.Uuid
+  strategy String @default("outcome_weighted_average") @db.VarChar(40)
+  inputRunCount Int @map("input_run_count") @default(0)
+  inputDeltaCount Int @map("input_delta_count") @default(0)
+  decayMicros BigInt @map("decay_micros") @default(1000000) @db.BigInt
+  metrics Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  @@index([experimentId, createdAt], map: "des_soccer_learning_merge_events_experiment_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("des_soccer_learning_merge_events")
+}
