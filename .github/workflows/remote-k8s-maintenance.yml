@@ -2524,6 +2524,28 @@ jobs:
             done
           }
 
+          prom_load_failure_snapshot() {
+            local snapshot_label="$1"
+            local query_spec query_label query_expr
+            echo "=== prometheus load-failure snapshot: $snapshot_label ==="
+            for query_spec in \
+              'ws-active-max-by-pod|max by (pod) (max_over_time(gcs_ws_connections_active[30m]))' \
+              'ws-upgrade-status|sum by (status) (increase(gcs_ws_upgrades_total[30m]))' \
+              'ws-connection-events|sum by (event) (increase(gcs_ws_connections_total[30m]))' \
+              'ws-write-results|sum by (kind, outcome) (increase(gcs_ws_writes_total[30m]))' \
+              'ws-message-results|sum by (type, outcome) (increase(gcs_ws_messages_total[30m]))' \
+              'broker-publish-results|sum by (backend, result) (increase(gcs_broker_publish_total[30m]))' \
+              'broker-fanout-results|sum by (backend, result) (increase(gcs_broker_fanout_deliveries_total[30m]))' \
+              'in-memory-fanout-results|sum by (result) (increase(gcs_in_memory_fanout_total[30m]))' \
+              'broker-subs-active-max|max(max_over_time(gcs_broker_subscriptions_active[30m]))' \
+              'runtime-gauges|max by (name) (max_over_time(gcs_runtime_gauge[30m]))'; do
+              query_label="${query_spec%%|*}"
+              query_expr="${query_spec#*|}"
+              echo "--- query: $query_label"
+              prom_query "$query_expr"
+            done
+          }
+
           diagnose_gcs_rollout() {
             local rollout_label="$1"
             echo "=== diagnose GCS rollout failure: $rollout_label ==="
@@ -2795,10 +2817,15 @@ jobs:
               echo "=== router metrics at $loader_name failure ==="
               router_metrics
               prom_compact_snapshot "load failure $loader_name"
+              prom_load_failure_snapshot "load failure $loader_name"
               echo "=== gcs/router/loadtest deployments ==="
               kubectl -n default get deploy gcs gcs-router "$d" || true
               echo "=== gcs/router/loadtest pods ==="
               kubectl -n default get pods -l "app in (gcs,gcs-router,$d)" || true
+              echo "=== recent gcs websocket logs ==="
+              kubectl -n default logs -l app=gcs --all-containers --since=20m --tail=1200 --prefix=true --max-log-requests=20 2>/dev/null \
+                | grep -E 'websocket|ws connection|EOF for ws conn|unexpected close|closed|rejected|Panic|WriteJSON|WriteMessage|client connection|vid/a4295d402f9b|vid/6e0bc91e57e6|vid/28ab6154d3bb|vid/73b3c13a1f48|vid/f1e0fb06755b|vid/9d157baaa874' \
+                | tail -200 || true
               echo "=== gcs dependency pods ==="
               kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' || true
               echo "=== top pods: gcs/loadtest/dependencies ==="
