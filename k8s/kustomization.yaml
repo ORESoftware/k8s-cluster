@@ -5,6 +5,7 @@ resources:
   - master-deployment.yaml
   - master-service.yaml
   - slave-deployment.yaml
+  - slave-service.yaml
   - slave-scaledobject.yaml
 
 labels:

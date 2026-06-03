@@ -42,7 +42,7 @@ Request `options` override environment defaults. When an option is omitted, the 
 `k8s/` contains:
 
 - master Deployment + Service in namespace `ai-ml`
-- slave Deployment in namespace `ai-ml`
+- slave Deployment + metrics Service in namespace `ai-ml`
 - KEDA `ScaledObject` watching JetStream stream `DD_REMOTE_MIP_SOLVER` and durable consumer `dd-in-house-mip-solver-node-workers`
 
 KEDA scales slave pods from NATS JetStream consumer lag. New pods boot with `MIP_SOLVER_NODE_ROLE=slave`, attach to the same durable pull consumer, and start draining pending subproblems.

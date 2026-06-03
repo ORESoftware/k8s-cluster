@@ -2019,23 +2019,58 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
     }))
 }
 
+fn prometheus_label_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
 async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
     let m = &state.metrics;
+    let published = m.subproblem_jobs_published_total.load(Ordering::Relaxed);
+    let completed = m.subproblem_jobs_completed_total.load(Ordering::Relaxed);
+    let in_flight = published.saturating_sub(completed);
+    let node_id = prometheus_label_value(&state.node_id);
+    let role = prometheus_label_value(state.role.as_str());
     let body = format!(
         concat!(
+            "# HELP dd_mip_solver_node_info Static solver node metadata.\n",
+            "# TYPE dd_mip_solver_node_info gauge\n",
+            "dd_mip_solver_node_info{{role=\"{}\",node_id=\"{}\"}} 1\n",
+            "# HELP dd_mip_solver_http_requests_total Total HTTP requests handled by this node.\n",
+            "# TYPE dd_mip_solver_http_requests_total counter\n",
             "dd_mip_solver_http_requests_total {}\n",
+            "# HELP dd_mip_solver_stream_events_total Total live model stream events applied by this node.\n",
+            "# TYPE dd_mip_solver_stream_events_total counter\n",
             "dd_mip_solver_stream_events_total {}\n",
+            "# HELP dd_mip_solver_solve_requests_total Total solve requests handled by this node.\n",
+            "# TYPE dd_mip_solver_solve_requests_total counter\n",
             "dd_mip_solver_solve_requests_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_published_total Total NATS subproblem jobs published by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_published_total counter\n",
             "dd_mip_solver_subproblem_jobs_published_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_completed_total Total expected NATS subproblem results accepted by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_completed_total counter\n",
             "dd_mip_solver_subproblem_jobs_completed_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_in_flight Current master-observed subproblem jobs awaiting accepted results.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_in_flight gauge\n",
+            "dd_mip_solver_subproblem_jobs_in_flight {}\n",
+            "# HELP dd_mip_solver_slave_jobs_processed_total Total subproblem jobs processed by slave nodes.\n",
+            "# TYPE dd_mip_solver_slave_jobs_processed_total counter\n",
             "dd_mip_solver_slave_jobs_processed_total {}\n",
+            "# HELP dd_mip_solver_errors_total Total errors observed by this node.\n",
+            "# TYPE dd_mip_solver_errors_total counter\n",
             "dd_mip_solver_errors_total {}\n"
         ),
+        role,
+        node_id,
         m.http_requests_total.load(Ordering::Relaxed),
         m.stream_events_total.load(Ordering::Relaxed),
         m.solve_requests_total.load(Ordering::Relaxed),
-        m.subproblem_jobs_published_total.load(Ordering::Relaxed),
-        m.subproblem_jobs_completed_total.load(Ordering::Relaxed),
+        published,
+        completed,
+        in_flight,
         m.slave_jobs_processed_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
     );
@@ -2520,6 +2555,21 @@ mod tests {
         (status, value)
     }
 
+    async fn get_text(app: Router, path: &str) -> (StatusCode, String) {
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), MAX_HTTP_BODY_BYTES)
+            .await
+            .unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        (status, text)
+    }
+
     #[test]
     fn streaming_edits_update_live_problem_revision() {
         let commands = vec![
@@ -2945,6 +2995,28 @@ mod tests {
         assert_eq!(body.get("z"), Some(&json!(90.0)));
         assert_eq!(body.get("distributed"), Some(&json!(false)));
         assert_eq!(body.pointer("/role"), Some(&json!("master")));
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_exposes_prometheus_node_and_inflight_metrics() {
+        let state = test_state(NodeRole::Master);
+        state
+            .metrics
+            .subproblem_jobs_published_total
+            .store(7, Ordering::Relaxed);
+        state
+            .metrics
+            .subproblem_jobs_completed_total
+            .store(3, Ordering::Relaxed);
+        let app = app_router(state);
+
+        let (status, body) = get_text(app, "/metrics").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("# TYPE dd_mip_solver_node_info gauge"));
+        assert!(body.contains("dd_mip_solver_node_info{role=\"master\",node_id=\"test-node\"} 1"));
+        assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_in_flight gauge"));
+        assert!(body.contains("dd_mip_solver_subproblem_jobs_in_flight 4"));
     }
 
     #[tokio::test]
