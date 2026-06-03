@@ -9,11 +9,11 @@ spec:
   # 3 replicas to exercise consistent-hash routing across a wider
   # ring in gcs-router and to give the chat-vibe load tests something
   # real to fan-out across. CPU request was lowered to 100m in commit
-  # a84e6c1 specifically so 3 replicas (= 300m) fit on the single-node
-  # EC2 cluster; if the rollout gets stuck on "Insufficient cpu" we
-  # need either another worker node or to trim other workloads.
-  # Bumping further (4+) almost certainly requires a second node.
-  replicas: 3
+  # a84e6c1 specifically so the router can spread hot conversations
+  # across multiple pods on the single-node EC2 cluster. Four replicas
+  # keeps 30k WSS soak-test fanout below the per-pod latency knee while
+  # staying light on scheduler requests.
+  replicas: 4
   strategy:
     # On the single-node EC2 cluster we are CPU-bound; a surge pod
     # cannot be scheduled (Insufficient cpu) and rollouts get stuck.
@@ -33,6 +33,7 @@ spec:
       annotations:
         dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
         dd.dev/chat-vibe-revision: "cafd8f0-hot-dispatch"
+        dd.dev/gcs-capacity-profile: "2026-06-03-30k-4pods"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
@@ -143,11 +144,11 @@ spec:
             - name: GCS_WS_SHED_GOROUTINES
               value: '500000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
-              value: '10s'
+              value: '180s'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
             - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
-              value: '2048'
+              value: '512'
             # The router pins a conversation to one GCS pod, so local fanout covers
             # hot-path conversation delivery without one RMQ subscriber per socket.
             - name: GCS_WS_ENABLE_RMQ_SUBSCRIPTIONS

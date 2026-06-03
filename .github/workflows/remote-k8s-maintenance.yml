@@ -2652,7 +2652,7 @@ jobs:
             diagnose_gcs_rollout "gcs-router"
             exit 1
           fi
-          wait_available gcs 3
+          wait_available gcs 4
           wait_available gcs-router 3
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
@@ -2911,8 +2911,9 @@ jobs:
               echo "ERROR: $loader_name did not observe any GCS response/fanout messages" >&2
               return 1
             fi
-            wait_available gcs 3
+            wait_available gcs 4
             wait_available gcs-router 3
+            echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
             echo "PROOF loader_pass loader=$loader_name total_connections=$total_connections open=$open failed=$failed receive_errors=$receive_errors sent=$sent received=$received"
           }
 
@@ -3023,6 +3024,7 @@ jobs:
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
           echo "=== final router metrics ==="
           router_metrics
+          echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
           report_dependency_health
           echo "PROOF loadtest_all_passed total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica loaders=rust,nodejs,gleam"
           '''
