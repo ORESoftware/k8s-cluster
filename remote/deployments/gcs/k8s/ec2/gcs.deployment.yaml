@@ -31,7 +31,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-06-03-load-collapse-5"
+        dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
@@ -214,16 +214,16 @@ spec:
               path: /chat/v1/health/3000
               port: rest
             periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+            timeoutSeconds: 8
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /chat/v1/health/3000
               port: rest
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
             periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           volumeMounts:
             - name: chat-vibe-src
               mountPath: /opt/chat-vibe-src
