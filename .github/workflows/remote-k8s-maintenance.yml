@@ -2238,8 +2238,13 @@ jobs:
           capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
           capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
 
+          apply_target_manifest() {
+            local path="$1"
+            git show "origin/${TARGET_REVISION:-dev}:$path" | kubectl apply -f -
+          }
+
           sync_app() {
-            app="$1"
+            local app="$1"
             echo "=== Argo CD sync request: $app ==="
             kubectl -n argocd annotate "application/$app" argocd.argoproj.io/refresh=hard --overwrite || true
             kubectl -n argocd patch "application/$app" --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"gcs-wss-loadtest\"}],\"sync\":{\"revision\":\"HEAD\",\"prune\":true}}}" || true
@@ -2258,9 +2263,9 @@ jobs:
           }
 
           restore_loadtest_apps() {
-            kubectl apply -f remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml || true
-            kubectl apply -f remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml || true
-            kubectl apply -f remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml || true
             for app in $loadtest_apps; do
               sync_app "$app"
             done
@@ -2268,11 +2273,11 @@ jobs:
 
           restore_capacity_apps() {
             echo "=== cleanup: restore capacity owner Argo apps ==="
-            kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml || true
-            kubectl apply -f remote/argocd/apps/dd-akka-ws-server.application.yaml || true
-            kubectl apply -f remote/argocd/apps/dd-dart-server.application.yaml || true
-            kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml || true
-            kubectl apply -f remote/argocd/apps/dd-gleamlang-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-next-runtime.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-akka-ws-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-dart-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-fsharp-ws-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-gleamlang-server.application.yaml || true
             for app in $capacity_apps; do
               sync_app "$app"
             done
@@ -2340,6 +2345,13 @@ jobs:
           else
             echo "WARNING: EC2 superproject fast-forward blocked by local dirty state; continuing with targeted GCS submodule refresh"
             git status --short --branch
+            echo "=== targeted refresh of loadtest/GCS operator paths from origin/${TARGET_REVISION:-dev} ==="
+            git archive "origin/${TARGET_REVISION:-dev}" \
+              remote/argocd/apps \
+              remote/deployments/gcs/k8s \
+              remote/deployments/ws-loadtest-rs \
+              remote/deployments/gleamlang-ws-loadtest \
+              | tar -x -C "$repo"
           fi
           after_revision="$(git rev-parse HEAD)"
           if [ "$merge_ok" -eq 1 ]; then
@@ -2362,11 +2374,11 @@ jobs:
           printf '%s\n' "${changed_paths:-none}" | head -80
 
           echo "=== apply Argo CD Applications ==="
-          kubectl apply -f remote/argocd/apps/dd-observability.application.yaml
-          kubectl apply -f remote/argocd/apps/gcs.application.yaml
-          kubectl apply -f remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml
-          kubectl apply -f remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml
-          kubectl apply -f remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml
+          apply_target_manifest remote/argocd/apps/dd-observability.application.yaml
+          apply_target_manifest remote/argocd/apps/gcs.application.yaml
+          apply_target_manifest remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml
+          apply_target_manifest remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml
+          apply_target_manifest remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml
 
           for app in $apps; do
             sync_app "$app"
@@ -2375,8 +2387,8 @@ jobs:
           disable_loadtest_autosync
 
           wait_available() {
-            d="$1"
-            expected="$2"
+            local d="$1"
+            local expected="$2"
             for i in $(seq 1 300); do
               available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
               if [ "${available:-0}" -ge "$expected" ]; then
@@ -2425,13 +2437,13 @@ jobs:
           }
 
           prom_query() {
-            expr="$1"
+            local expr="$1"
             kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python -c 'import json, sys, urllib.parse, urllib.request; expr = sys.argv[1]; url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr}); payload = json.load(urllib.request.urlopen(url, timeout=8)); print(json.dumps(payload.get("data", {}).get("result", [])[:25], separators=(",", ":")))' "$expr" 2>/dev/null || true
           }
 
           prom_snapshot() {
-            label="$1"
-            echo "=== prometheus snapshot: $label ==="
+            local snapshot_label="$1"
+            echo "=== prometheus snapshot: $snapshot_label ==="
             for expr in \
               'gcs_ws_connections_active' \
               'gcs_ws_connections_total' \
@@ -2462,8 +2474,8 @@ jobs:
           }
 
           diagnose_gcs_rollout() {
-            label="$1"
-            echo "=== diagnose GCS rollout failure: $label ==="
+            local rollout_label="$1"
+            echo "=== diagnose GCS rollout failure: $rollout_label ==="
             kubectl -n argocd get application/gcs -o wide || true
             kubectl -n default get deploy,rs,pods -l 'app in (gcs,gcs-router)' -o wide || true
             echo "=== describe deployment/gcs ==="
@@ -2482,7 +2494,7 @@ jobs:
             echo "=== gcs/router events ==="
             kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM' | tail -160 || true
             diagnose_gcs_dependencies
-            prom_snapshot "rollout failure $label"
+            prom_snapshot "rollout failure $rollout_label"
           }
 
           echo "=== clean restart gcs stack before correctness/perf validation ==="
@@ -2508,6 +2520,7 @@ jobs:
           prom_snapshot "after gcs rollout"
 
           router_metrics() {
+            local pod
             pod="$(kubectl -n default get pods -l app=gcs-router -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
             if [ -z "$pod" ]; then
               echo "(no gcs-router pod found)"
@@ -2550,7 +2563,7 @@ jobs:
           }
 
           collect_loader() {
-            d="$1"
+            local d="$1"
             echo "=== $d compact state ==="
             kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas} updated={.status.updatedReplicas}{"\n"}' || true
             kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null \
@@ -2577,7 +2590,7 @@ jobs:
                       else if (key == "open") open += val
                       else if (key == "sent") sent += val
                       else if (key == "received") received += val
-                      else if (key == "in_flight") in_flight += val
+                      else if (key == "in_flight" || key == "in_flight_peak") in_flight += val
                       else if (key == "correlation_misses") correlation_misses += val
                       else if (key == "receive_errors") receive_errors += val
                       else if (key == "p50_us" && val > max_p50_us) max_p50_us = val
@@ -2595,7 +2608,7 @@ jobs:
           }
 
           loader_summary() {
-            d="$1"
+            local d="$1"
             kubectl -n default logs -l "app=$d" --all-containers --tail=500 --prefix=true --max-log-requests=20 2>/dev/null \
               | awk '
                 /gcs-report/ {
@@ -2618,7 +2631,7 @@ jobs:
                       else if (key == "open") open += val
                       else if (key == "sent") sent += val
                       else if (key == "received") received += val
-                      else if (key == "in_flight") in_flight += val
+                      else if (key == "in_flight" || key == "in_flight_peak") in_flight += val
                       else if (key == "correlation_misses") correlation_misses += val
                       else if (key == "receive_errors") receive_errors += val
                     }
@@ -2627,48 +2640,77 @@ jobs:
                 }' || printf '0 0 0 0 0 0 0 0 0 0\n'
           }
 
+          wait_loader_reports() {
+            local d="$1"
+            local loader_name="$2"
+            local expected="$3"
+            local timeout_seconds="${4:-600}"
+            local deadline=$((SECONDS + timeout_seconds))
+            local summary reported k8s_pods ready available
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              summary="$(loader_summary "$d")"
+              set -- $summary
+              reported="${1:-0}"
+              k8s_pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+              ready="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)"
+              available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+              echo "loader-warmup loader=$loader_name reports=$reported/$expected k8s_pods=${k8s_pods:-0} ready=${ready:-0} available=${available:-0}"
+              if [ "${reported:-0}" -ge "$expected" ]; then
+                return 0
+              fi
+              sleep 15
+            done
+            echo "ERROR: $loader_name did not emit gcs-report from all pods before load window" >&2
+            collect_loader "$d"
+            kubectl -n default describe "deployment/$d" || true
+            kubectl -n default describe pods -l "app=$d" || true
+            kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM" | tail -160 || true
+            return 1
+          }
+
           assert_loader_healthy() {
-            d="$1"
-            label="$2"
+            local d="$1"
+            local loader_name="$2"
+            local summary
             summary="$(loader_summary "$d")"
             set -- $summary
-            pods="${1:-0}"
-            attempted="${2:-0}"
-            connected="${3:-0}"
-            failed="${4:-0}"
-            open="${5:-0}"
-            sent="${6:-0}"
-            received="${7:-0}"
-            in_flight="${8:-0}"
-            correlation_misses="${9:-0}"
-            receive_errors="${10:-0}"
-            min_open=$((total_connections * 90 / 100))
-            max_failed=$((total_connections / 10))
-            max_receive_errors=$((total_connections / 10))
-            min_sent=$((total_connections * 20))
-            echo "proof-summary loader=$label pods=$pods attempted=$attempted connected=$connected failed=$failed open=$open sent=$sent received=$received in_flight=$in_flight correlation_misses=$correlation_misses receive_errors=$receive_errors min_open=$min_open max_failed=$max_failed"
+            local pods="${1:-0}"
+            local attempted="${2:-0}"
+            local connected="${3:-0}"
+            local failed="${4:-0}"
+            local open="${5:-0}"
+            local sent="${6:-0}"
+            local received="${7:-0}"
+            local in_flight="${8:-0}"
+            local correlation_misses="${9:-0}"
+            local receive_errors="${10:-0}"
+            local min_open=$((total_connections * 90 / 100))
+            local max_failed=$((total_connections / 10))
+            local max_receive_errors=$((total_connections / 10))
+            local min_sent=$((total_connections * 20))
+            echo "proof-summary loader=$loader_name pods=$pods attempted=$attempted connected=$connected failed=$failed open=$open sent=$sent received=$received in_flight=$in_flight correlation_misses=$correlation_misses receive_errors=$receive_errors min_open=$min_open max_failed=$max_failed"
             if [ "$pods" -lt "$loader_replicas" ]; then
-              echo "ERROR: $label only reported $pods/$loader_replicas load pods" >&2
+              echo "ERROR: $loader_name only reported $pods/$loader_replicas metric-emitting load pods" >&2
               return 1
             fi
             if [ "$open" -lt "$min_open" ]; then
-              echo "ERROR: $label did not sustain enough open connections: open=$open min=$min_open" >&2
+              echo "ERROR: $loader_name did not sustain enough open connections: open=$open min=$min_open" >&2
               return 1
             fi
             if [ "$failed" -gt "$max_failed" ]; then
-              echo "ERROR: $label had too many connection failures: failed=$failed max=$max_failed" >&2
+              echo "ERROR: $loader_name had too many connection failures: failed=$failed max=$max_failed" >&2
               return 1
             fi
             if [ "$receive_errors" -gt "$max_receive_errors" ]; then
-              echo "ERROR: $label had too many receive errors: receive_errors=$receive_errors max=$max_receive_errors" >&2
+              echo "ERROR: $loader_name had too many receive errors: receive_errors=$receive_errors max=$max_receive_errors" >&2
               return 1
             fi
             if [ "$sent" -lt "$min_sent" ]; then
-              echo "ERROR: $label did not generate enough client-originated messages: sent=$sent min=$min_sent" >&2
+              echo "ERROR: $loader_name did not generate enough client-originated messages: sent=$sent min=$min_sent" >&2
               return 1
             fi
             if [ "$received" -le 0 ]; then
-              echo "ERROR: $label did not observe any GCS response/fanout messages" >&2
+              echo "ERROR: $loader_name did not observe any GCS response/fanout messages" >&2
               return 1
             fi
             wait_available gcs 3
@@ -2676,9 +2718,9 @@ jobs:
           }
 
           run_loader() {
-            d="$1"
-            label="$2"
-            echo "=== start $label: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), 2.5 msg/(conn*second), duration=${duration}s ==="
+            local d="$1"
+            local loader_name="$2"
+            echo "=== start $loader_name: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), 2.5 msg/(conn*second), duration=${duration}s ==="
             kubectl -n default set resources "deployment/$d" \
               --requests=cpu=1m,memory=512Mi \
               --limits=cpu=4,memory=8Gi || true
@@ -2708,9 +2750,12 @@ jobs:
               exit 1
             fi
             collect_loader "$d"
-            echo "=== router metrics before $label load window ==="
+            if ! wait_loader_reports "$d" "$loader_name" "$loader_replicas" "${LOADTEST_LOADER_READY_TIMEOUT_SECONDS:-600}"; then
+              exit 1
+            fi
+            echo "=== router metrics before $loader_name load window ==="
             router_metrics
-            prom_snapshot "before $label"
+            prom_snapshot "before $loader_name"
             remaining="$duration"
             while [ "$remaining" -gt 0 ]; do
               step=30
@@ -2719,17 +2764,17 @@ jobs:
               fi
               sleep "$step"
               remaining=$((remaining - step))
-              echo "=== $label sample: ${remaining}s remaining ==="
+              echo "=== $loader_name sample: ${remaining}s remaining ==="
               collect_loader "$d"
-              echo "=== router metrics during $label ==="
+              echo "=== router metrics during $loader_name ==="
               router_metrics
-              prom_snapshot "during $label remaining=${remaining}s"
+              prom_snapshot "during $loader_name remaining=${remaining}s"
             done
-            echo "=== final $label loader summary ==="
+            echo "=== final $loader_name loader summary ==="
             collect_loader "$d"
-            assert_loader_healthy "$d" "$label"
-            prom_snapshot "after $label"
-            echo "=== stop $label ==="
+            assert_loader_healthy "$d" "$loader_name"
+            prom_snapshot "after $loader_name"
+            echo "=== stop $loader_name ==="
             kubectl -n default scale "deployment/$d" --replicas=0
             sleep 15
             kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas}{"\n"}' || true
