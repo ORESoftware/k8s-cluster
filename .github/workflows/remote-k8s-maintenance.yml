@@ -1846,7 +1846,7 @@ jobs:
           capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
 
           free_recovery_capacity() {
-            echo "=== recover GCS: free memory, CPU, and pod slots ==="
+            echo "=== recover GCS: free memory, CPU, and pod slots after load testing ==="
             echo "temporarily disabling Argo auto-sync for capacity owners: $capacity_apps"
             for app in $capacity_apps; do
               kubectl -n argocd patch "application/$app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
