@@ -43,7 +43,17 @@ spec:
               export CARGO_TARGET_DIR=/tmp/dd-build-server-target
               export HOME=/tmp
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
-              cd /opt/dd-next-1/remote/deployments/build-server-rs
+              source_root=/opt/dd-next-1
+              if [ -n "${BUILD_SERVER_GIT_URL:-}" ]; then
+                clone_root="$(mktemp -d /tmp/dd-build-server-source.XXXXXX)"
+                if git clone --depth 1 --branch "${BUILD_SERVER_GIT_REF:-dev}" "${BUILD_SERVER_GIT_URL}" "$clone_root"; then
+                  source_root="$clone_root"
+                  echo "[dd-build-server] source: cloned ${BUILD_SERVER_GIT_URL}@${BUILD_SERVER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
+                else
+                  echo "[dd-build-server] source clone failed; using mounted source at ${source_root}" >&2
+                fi
+              fi
+              cd "$source_root/remote/deployments/build-server-rs"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOME
@@ -72,6 +82,10 @@ spec:
               value: 710156900967.dkr.ecr.us-east-1.amazonaws.com/
             - name: BUILD_SERVER_ALLOWED_NAMESPACES
               value: default
+            - name: BUILD_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: BUILD_SERVER_GIT_REF
+              value: dev
             - name: BUILD_SERVER_DEPLOY_ENABLED
               value: 'true'
             - name: BUILD_SERVER_PUSH_ENABLED
