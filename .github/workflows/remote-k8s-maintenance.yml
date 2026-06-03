@@ -2307,17 +2307,18 @@ jobs:
           }
 
           free_gcs_capacity() {
+            local capacity_app capacity_target attempt
             echo "=== free memory, CPU, and pod slots for GCS loadtest ==="
             echo "temporarily disabling Argo auto-sync for capacity owners: $capacity_apps"
-            for app in $capacity_apps; do
-              kubectl -n argocd patch "application/$app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
-              kubectl -n argocd get "application/$app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            for capacity_app in $capacity_apps; do
+              kubectl -n argocd patch "application/$capacity_app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+              kubectl -n argocd get "application/$capacity_app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
             done
             echo "scaling down comparison workloads: $capacity_targets"
             kubectl -n default get deploy $capacity_targets -o wide || true
             for attempt in $(seq 1 24); do
-              for d in $capacity_targets; do
-                kubectl -n default scale "deployment/$d" --replicas=0 || true
+              for capacity_target in $capacity_targets; do
+                kubectl -n default scale "deployment/$capacity_target" --replicas=0 || true
               done
               sleep 5
               if assert_capacity_free; then
