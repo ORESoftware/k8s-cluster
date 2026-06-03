@@ -27,6 +27,13 @@ use dd_nats_subject_defs::{
     MIP_SOLVER_CONTROL_SUBJECT, MIP_SOLVER_EVENTS_SUBJECT, MIP_SOLVER_JOBS_SUBJECT,
     MIP_SOLVER_RESULTS_SUBJECT, MIP_SOLVER_WORKERS_QUEUE_GROUP,
 };
+use dd_pg_defs::{
+    AGENT_REMOTE_DEV_BREADCRUMBS_TABLE, AGENT_REMOTE_DEV_EVENTS_TABLE,
+    AGENT_REMOTE_DEV_RUNTIME_LOCKS_TABLE,
+};
+use dd_redis_interfaces::{
+    container_pool_affinity_lock_key, CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX,
+};
 use des_engine::des::general::{
     ip_mip_des::{
         solve_ipmip_with_des, BranchRule, ConcreteLpRelaxationAlgorithm, IPMIPProblem,
@@ -45,6 +52,7 @@ const MAX_HTTP_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_VARS: usize = 10_000;
 const MAX_CONSTRAINTS: usize = 50_000;
 const MAX_STREAM_COMMANDS: usize = 2_000;
+const MIP_SOLVER_REDIS_PREFIX: &str = "dd:mip-solver";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -77,6 +85,7 @@ struct AppState {
     role: NodeRole,
     node_id: String,
     nats: Option<async_nats::Client>,
+    redis: Option<redis::Client>,
     jobs_subject: String,
     results_subject: String,
     control_subject: String,
@@ -95,6 +104,7 @@ struct Metrics {
     subproblem_jobs_published_total: AtomicU64,
     subproblem_jobs_completed_total: AtomicU64,
     subproblem_jobs_redelegated_total: AtomicU64,
+    subproblem_jobs_split_total: AtomicU64,
     worker_control_messages_total: AtomicU64,
     slave_jobs_processed_total: AtomicU64,
     errors_total: AtomicU64,
@@ -148,6 +158,7 @@ struct SolveRegistryEntry {
     jobs_published: usize,
     jobs_completed: usize,
     jobs_redelegated: usize,
+    jobs_split: usize,
     timed_out: bool,
     distributed: bool,
     started_at_ms: u128,
@@ -334,6 +345,8 @@ struct SubproblemResult {
     best_bound: Option<f64>,
     gap: Option<f64>,
     lp: Option<LpSolveReport>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    child_jobs: Vec<SubproblemJob>,
     nodes_explored: usize,
     lp_solves: usize,
     elapsed_ms: f64,
@@ -408,6 +421,7 @@ struct SolveResponse {
     jobs_published: usize,
     jobs_completed: usize,
     jobs_redelegated: usize,
+    jobs_split: usize,
     timed_out: bool,
     distributed: bool,
     node_id: String,
@@ -425,6 +439,39 @@ struct GpuStatus {
     used: bool,
     mode: String,
     note: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistenceContract {
+    mode: String,
+    postgres: PostgresPersistenceContract,
+    redis: RedisPersistenceContract,
+    in_memory: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PostgresPersistenceContract {
+    enabled: bool,
+    url_env: Option<String>,
+    event_table: &'static str,
+    breadcrumb_table: &'static str,
+    runtime_lock_table: &'static str,
+    journal_kinds: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RedisPersistenceContract {
+    enabled: bool,
+    url_env: Option<String>,
+    key_prefix: String,
+    solve_snapshot_key: String,
+    solve_frontier_key: String,
+    session_model_key: String,
+    session_revision_lock_key: String,
+    generated_mutex_key: String,
 }
 
 #[derive(Debug)]
@@ -450,6 +497,10 @@ enum SubproblemSolveOutcome {
     Lp {
         problem: LPProblem,
         solution: LPSolution,
+    },
+    Split {
+        children: Vec<SubproblemJob>,
+        reason: String,
     },
     Pruned(String),
 }
@@ -534,6 +585,91 @@ fn gpu_available() -> bool {
 
 fn gpu_status() -> GpuStatus {
     gpu_status_from_report(&AcceleratorReport::runtime())
+}
+
+fn first_configured_env(keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find(|key| {
+            env::var(key)
+                .ok()
+                .is_some_and(|value| !value.trim().is_empty())
+        })
+        .map(|key| (*key).to_string())
+}
+
+fn redis_key_prefix() -> String {
+    env_value("MIP_SOLVER_REDIS_KEY_PREFIX", MIP_SOLVER_REDIS_PREFIX)
+}
+
+fn mip_solver_solve_snapshot_key(prefix: &str, solve_id: &str) -> String {
+    format!("{prefix}:solve:{solve_id}:snapshot")
+}
+
+fn mip_solver_solve_frontier_key(prefix: &str, solve_id: &str) -> String {
+    format!("{prefix}:solve:{solve_id}:frontier")
+}
+
+fn mip_solver_session_model_key(prefix: &str, session_id: &str) -> String {
+    format!("{prefix}:session:{session_id}:model")
+}
+
+fn mip_solver_session_revision_lock_key(prefix: &str, session_id: &str) -> String {
+    format!("{prefix}:session:{session_id}:revision-lock")
+}
+
+fn persistence_contract() -> PersistenceContract {
+    let pg_url_env = first_configured_env(&[
+        "MIP_SOLVER_DATABASE_URL",
+        "AGENT_TASKS_RDS_DATABASE_URL",
+        "RDS_DATABASE_URL",
+        "DATABASE_URL",
+        "PG_DATABASE_URL",
+    ]);
+    let redis_url_env = first_configured_env(&["MIP_SOLVER_REDIS_URL", "REDIS_URL"]);
+    let prefix = redis_key_prefix();
+
+    PersistenceContract {
+        mode: if pg_url_env.is_some() || redis_url_env.is_some() {
+            "durable-plus-hot-cache".to_string()
+        } else {
+            "in-memory-only".to_string()
+        },
+        postgres: PostgresPersistenceContract {
+            enabled: pg_url_env.is_some(),
+            url_env: pg_url_env,
+            event_table: AGENT_REMOTE_DEV_EVENTS_TABLE,
+            breadcrumb_table: AGENT_REMOTE_DEV_BREADCRUMBS_TABLE,
+            runtime_lock_table: AGENT_REMOTE_DEV_RUNTIME_LOCKS_TABLE,
+            journal_kinds: vec![
+                "mip-solver.solve-started",
+                "mip-solver.model-revision",
+                "mip-solver.subproblem-submitted",
+                "mip-solver.subproblem-finished",
+                "mip-solver.subproblem-split",
+                "mip-solver.solve-finished",
+            ],
+        },
+        redis: RedisPersistenceContract {
+            enabled: redis_url_env.is_some(),
+            url_env: redis_url_env,
+            key_prefix: prefix.clone(),
+            solve_snapshot_key: mip_solver_solve_snapshot_key(&prefix, "{solveId}"),
+            solve_frontier_key: mip_solver_solve_frontier_key(&prefix, "{solveId}"),
+            session_model_key: mip_solver_session_model_key(&prefix, "{sessionId}"),
+            session_revision_lock_key: mip_solver_session_revision_lock_key(&prefix, "{sessionId}"),
+            generated_mutex_key: container_pool_affinity_lock_key(
+                CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX,
+                "mip-solver",
+                "{solveId}",
+            ),
+        },
+        in_memory: vec![
+            "active solve registry".to_string(),
+            "live session problem snapshot".to_string(),
+            "current master-owned frontier".to_string(),
+            "observed worker registry".to_string(),
+        ],
+    }
 }
 
 fn gpu_status_from_report(report: &AcceleratorReport) -> GpuStatus {
@@ -1531,6 +1667,66 @@ fn branch_constraints(var: usize, value: f64, n: usize, depth: usize) -> [Branch
     ]
 }
 
+fn split_subproblem_children(
+    job: &SubproblemJob,
+) -> Result<Option<(Vec<SubproblemJob>, String)>, String> {
+    let split_depth = job.options.split_depth.unwrap_or(1).min(8);
+    if job.depth >= split_depth {
+        return Ok(None);
+    }
+    let lp_max_iters = job.options.lp_max_iters.unwrap_or(5_000);
+    let int_tol = job.options.int_tol.unwrap_or(1e-6);
+    let relaxation = solve_lp_relaxation(&job.problem, &job.extra_constraints, lp_max_iters)?;
+    if relaxation.status != LPStatus::Optimal {
+        return Ok(None);
+    }
+    let Some((var, value)) = first_fractional(&job.problem, &relaxation.x, int_tol) else {
+        return Ok(None);
+    };
+
+    let [left, right] = branch_constraints(var, value, job.problem.c.len(), job.depth);
+    let next_depth = job.depth + 1;
+    let mut left_constraints = job.extra_constraints.clone();
+    left_constraints.push(left);
+    let mut right_constraints = job.extra_constraints.clone();
+    right_constraints.push(right);
+    let now = now_ms();
+    let root = job_retry_root(&job.job_id);
+    let children = vec![
+        SubproblemJob {
+            solve_id: job.solve_id.clone(),
+            request_id: job.request_id.clone(),
+            job_id: format!("{root}-split-d{next_depth}-left"),
+            revision: job.revision,
+            depth: next_depth,
+            master_node: job.master_node.clone(),
+            problem: job.problem.clone(),
+            extra_constraints: left_constraints,
+            options: job.options.clone(),
+            submitted_at_ms: now,
+        },
+        SubproblemJob {
+            solve_id: job.solve_id.clone(),
+            request_id: job.request_id.clone(),
+            job_id: format!("{root}-split-d{next_depth}-right"),
+            revision: job.revision,
+            depth: next_depth,
+            master_node: job.master_node.clone(),
+            problem: job.problem.clone(),
+            extra_constraints: right_constraints,
+            options: job.options.clone(),
+            submitted_at_ms: now,
+        },
+    ];
+    Ok(Some((
+        children,
+        format!(
+            "subproblem {} split at depth {} on x{}={value:.6}",
+            job.job_id, job.depth, var
+        ),
+    )))
+}
+
 fn build_frontier_jobs(
     problem: &MipProblemSpec,
     solve_id: &str,
@@ -1625,6 +1821,11 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
         if let Some(reason) = preprocess.infeasible_reason {
             return Ok(SubproblemSolveOutcome::Pruned(reason));
         }
+        if !is_pure_lp(&job.problem)? {
+            if let Some((children, reason)) = split_subproblem_children(&job)? {
+                return Ok(SubproblemSolveOutcome::Split { children, reason });
+            }
+        }
         if is_pure_lp(&job.problem)? {
             let lp = to_lp_problem(&job.problem, &job.extra_constraints)?;
             let solution = solve_lp_internal(
@@ -1661,6 +1862,7 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
                 .then_some(solution.best_bound),
             gap: solution.gap.is_finite().then_some(solution.gap),
             lp: None,
+            child_jobs: Vec::new(),
             nodes_explored: solution.nodes_explored,
             lp_solves: solution.lp_solves,
             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1668,6 +1870,9 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
             error: None,
             finished_at_ms: now_ms(),
         },
+        Ok(Ok(SubproblemSolveOutcome::Split { children, reason })) => {
+            split_subproblem(job, worker_node, accelerator, children, reason, started)
+        }
         Ok(Ok(SubproblemSolveOutcome::Lp { problem, solution })) => {
             let optimal = solution.status == LPStatus::Optimal;
             let objective = solution.objective.is_finite().then_some(solution.objective);
@@ -1693,6 +1898,7 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
                 best_bound: if optimal { objective } else { None },
                 gap: if optimal { Some(0.0) } else { None },
                 lp: Some(lp),
+                child_jobs: Vec::new(),
                 nodes_explored: 1,
                 lp_solves: 1,
                 elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1735,11 +1941,43 @@ fn failed_subproblem(
         best_bound: None,
         gap: None,
         lp: None,
+        child_jobs: Vec::new(),
         nodes_explored: 0,
         lp_solves: 0,
         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
         accelerator,
         error: Some(error),
+        finished_at_ms: now_ms(),
+    }
+}
+
+fn split_subproblem(
+    job: SubproblemJob,
+    worker_node: String,
+    accelerator: AcceleratorReport,
+    children: Vec<SubproblemJob>,
+    reason: String,
+    started: Instant,
+) -> SubproblemResult {
+    SubproblemResult {
+        solve_id: job.solve_id,
+        request_id: job.request_id,
+        job_id: job.job_id,
+        revision: job.revision,
+        worker_node,
+        ok: false,
+        status: "split".to_string(),
+        z: None,
+        x: Vec::new(),
+        best_bound: None,
+        gap: None,
+        lp: None,
+        child_jobs: children,
+        nodes_explored: 0,
+        lp_solves: 1,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+        accelerator,
+        error: Some(reason),
         finished_at_ms: now_ms(),
     }
 }
@@ -1764,6 +2002,7 @@ fn infeasible_subproblem(
         best_bound: None,
         gap: None,
         lp: None,
+        child_jobs: Vec::new(),
         nodes_explored: 0,
         lp_solves: 0,
         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
@@ -1862,7 +2101,7 @@ fn track_job_result(state: &AppState, result: &SubproblemResult, terminal: bool)
             retry_index: job_retry_index(&result.job_id),
             ..JobRegistryEntry::default()
         });
-    job.status = if terminal {
+    job.status = if terminal || result.status == "split" {
         result.status.clone()
     } else {
         "retrying".to_string()
@@ -1885,6 +2124,18 @@ fn track_job_redelegated(state: &AppState, solve_id: &str) {
     solve.updated_at_ms = now_ms();
 }
 
+fn track_job_split(state: &AppState, solve_id: &str, child_count: usize) {
+    let mut solves = state.solves.lock().expect("solves mutex poisoned");
+    let Some(solve) = solves.get_mut(solve_id) else {
+        return;
+    };
+    solve.jobs_split = solve.jobs_split.saturating_add(1);
+    solve.jobs_expected = solve
+        .jobs_expected
+        .saturating_add(child_count.saturating_sub(1));
+    solve.updated_at_ms = now_ms();
+}
+
 fn track_solve_finished(state: &AppState, response: &SolveResponse) {
     let mut solves = state.solves.lock().expect("solves mutex poisoned");
     let Some(solve) = solves.get_mut(&response.solve_id) else {
@@ -1895,6 +2146,7 @@ fn track_solve_finished(state: &AppState, response: &SolveResponse) {
     solve.jobs_published = response.jobs_published;
     solve.jobs_completed = response.jobs_completed;
     solve.jobs_redelegated = response.jobs_redelegated;
+    solve.jobs_split = response.jobs_split;
     solve.timed_out = response.timed_out;
     solve.warnings = response.warnings.clone();
     solve.updated_at_ms = response.generated_at_ms;
@@ -1909,6 +2161,7 @@ fn aggregate_results(
     jobs_expected: usize,
     jobs_published: usize,
     jobs_redelegated: usize,
+    jobs_split: usize,
     results: Vec<SubproblemResult>,
     timed_out: bool,
     distributed: bool,
@@ -1983,6 +2236,7 @@ fn aggregate_results(
         jobs_published,
         jobs_completed: results.len(),
         jobs_redelegated,
+        jobs_split,
         timed_out,
         distributed,
         node_id: state.node_id.clone(),
@@ -2012,6 +2266,97 @@ fn accept_subproblem_result(
         ));
     }
     Ok(Some(result))
+}
+
+async fn redis_set_json(state: &AppState, key: String, value: Value) {
+    let Some(client) = &state.redis else {
+        return;
+    };
+    let ttl_seconds = env_u64("MIP_SOLVER_REDIS_TTL_SECONDS", 86_400);
+    let payload = match serde_json::to_string(&value) {
+        Ok(payload) => payload,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver redis payload serialization failed for {key}: {error}");
+            return;
+        }
+    };
+    let mut connection = match client.get_multiplexed_async_connection().await {
+        Ok(connection) => connection,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver redis connection failed for {key}: {error}");
+            return;
+        }
+    };
+    let result: redis::RedisResult<()> = redis::cmd("SET")
+        .arg(&key)
+        .arg(payload)
+        .arg("EX")
+        .arg(ttl_seconds)
+        .query_async(&mut connection)
+        .await;
+    if let Err(error) = result {
+        state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+        eprintln!("mip solver redis SET failed for {key}: {error}");
+    }
+}
+
+async fn cache_solve_registry_entry(state: &AppState, solve_id: &str) {
+    let entry = state
+        .solves
+        .lock()
+        .expect("solves mutex poisoned")
+        .get(solve_id)
+        .cloned();
+    let Some(entry) = entry else {
+        return;
+    };
+    let prefix = redis_key_prefix();
+    redis_set_json(
+        state,
+        mip_solver_solve_snapshot_key(&prefix, solve_id),
+        json!({
+            "schema": "dd.mip-solver.solve-snapshot.v1",
+            "service": SERVICE_NAME,
+            "solve": entry,
+            "generatedAtMs": now_ms(),
+        }),
+    )
+    .await;
+}
+
+async fn cache_solve_frontier(state: &AppState, solve_id: &str, jobs: &[SubproblemJob]) {
+    let prefix = redis_key_prefix();
+    redis_set_json(
+        state,
+        mip_solver_solve_frontier_key(&prefix, solve_id),
+        json!({
+            "schema": "dd.mip-solver.frontier.v1",
+            "service": SERVICE_NAME,
+            "solveId": solve_id,
+            "jobs": jobs,
+            "generatedAtMs": now_ms(),
+        }),
+    )
+    .await;
+}
+
+async fn cache_session_model(state: &AppState, session_id: &str, session: LiveSession) {
+    let prefix = redis_key_prefix();
+    redis_set_json(
+        state,
+        mip_solver_session_model_key(&prefix, session_id),
+        json!({
+            "schema": "dd.mip-solver.session-model.v1",
+            "service": SERVICE_NAME,
+            "sessionId": session_id,
+            "revision": session.revision,
+            "problem": session.problem,
+            "generatedAtMs": now_ms(),
+        }),
+    )
+    .await;
 }
 
 async fn publish_event(state: &AppState, event_name: &str, payload: Value) {
@@ -2250,12 +2595,15 @@ async fn solve_problem_distributed(
         jobs.len(),
         state.nats.is_some(),
     );
+    cache_solve_registry_entry(&state, &solve_id).await;
+    cache_solve_frontier(&state, &solve_id, &jobs).await;
     if jobs.is_empty() {
         let response = aggregate_results(
             solve_id,
             request_id,
             revision,
             &problem,
+            0,
             0,
             0,
             0,
@@ -2266,6 +2614,7 @@ async fn solve_problem_distributed(
             warnings,
         );
         track_solve_finished(&state, &response);
+        cache_solve_registry_entry(&state, &response.solve_id).await;
         return Ok(response);
     }
 
@@ -2273,17 +2622,44 @@ async fn solve_problem_distributed(
         let mut results = Vec::new();
         let mut jobs_published = 0usize;
         let mut jobs_redelegated = 0usize;
+        let mut jobs_split = 0usize;
+        let mut jobs_expected = jobs.len();
         let max_retries = options.max_job_retries.unwrap_or(2);
-        for initial_job in &jobs {
-            let mut job = initial_job.clone();
-            let mut retry_index = 0usize;
+        let mut pending: VecDeque<SubproblemJob> = jobs.iter().cloned().collect();
+        while let Some(initial_job) = pending.pop_front() {
+            let mut job = initial_job;
+            let mut retry_index = job_retry_index(&job.job_id);
             loop {
                 jobs_published += 1;
                 track_job_submitted(&state, &job);
                 let node = state.node_id.clone();
-                let result = tokio::task::spawn_blocking(move || solve_subproblem(job, node))
-                    .await
-                    .map_err(|err| format!("local solve task failed: {err}"))?;
+                let attempt_job = job.clone();
+                let result =
+                    tokio::task::spawn_blocking(move || solve_subproblem(attempt_job, node))
+                        .await
+                        .map_err(|err| format!("local solve task failed: {err}"))?;
+                if result.status == "split" && !result.child_jobs.is_empty() {
+                    let child_count = result.child_jobs.len();
+                    let child_jobs = result.child_jobs.clone();
+                    track_job_result(&state, &result, false);
+                    track_job_split(&state, &solve_id, child_count);
+                    state
+                        .metrics
+                        .subproblem_jobs_split_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    jobs_split += 1;
+                    jobs_expected = jobs_expected.saturating_add(child_count.saturating_sub(1));
+                    cache_solve_registry_entry(&state, &solve_id).await;
+                    cache_solve_frontier(&state, &solve_id, &child_jobs).await;
+                    warnings.push(format!(
+                        "local job {} split into {} child subproblems",
+                        result.job_id, child_count
+                    ));
+                    for child in child_jobs {
+                        pending.push_back(child);
+                    }
+                    break;
+                }
                 if should_redelegate_result(&result, retry_index, max_retries) {
                     track_job_result(&state, &result, false);
                     warnings.push(format!(
@@ -2292,9 +2668,8 @@ async fn solve_problem_distributed(
                         retry_index + 1,
                         max_retries
                     ));
-                    let original = initial_job.clone();
                     retry_index += 1;
-                    job = redelegated_job(&original, retry_index);
+                    job = redelegated_job(&job, retry_index);
                     jobs_redelegated += 1;
                     track_job_redelegated(&state, &solve_id);
                     continue;
@@ -2309,9 +2684,10 @@ async fn solve_problem_distributed(
             request_id,
             revision,
             &problem,
-            jobs.len(),
+            jobs_expected,
             jobs_published,
             jobs_redelegated,
+            jobs_split,
             results,
             false,
             false,
@@ -2319,6 +2695,7 @@ async fn solve_problem_distributed(
             warnings,
         );
         track_solve_finished(&state, &response);
+        cache_solve_registry_entry(&state, &response.solve_id).await;
         return Ok(response);
     };
 
@@ -2356,9 +2733,10 @@ async fn solve_problem_distributed(
     let timeout = Duration::from_millis(options.timeout_ms.unwrap_or(120_000));
     let deadline = Instant::now() + timeout;
     let mut results = Vec::new();
-    let jobs_expected = jobs.len();
+    let mut jobs_expected = jobs.len();
     let mut jobs_published = jobs.len();
     let mut jobs_redelegated = 0usize;
+    let mut jobs_split = 0usize;
     let max_retries = options.max_job_retries.unwrap_or(2);
     let mut jobs_by_id: HashMap<String, SubproblemJob> = jobs
         .iter()
@@ -2395,6 +2773,75 @@ async fn solve_problem_distributed(
                                 .get(&result.job_id)
                                 .copied()
                                 .unwrap_or(0);
+                            if result.status == "split" && !result.child_jobs.is_empty() {
+                                let child_count = result.child_jobs.len();
+                                let child_jobs = result.child_jobs.clone();
+                                let mut published_children = Vec::with_capacity(child_count);
+                                let mut publish_error = None;
+                                for child in child_jobs {
+                                    match publish_subproblem_job(&nats, &state.jobs_subject, &child)
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            track_job_submitted(&state, &child);
+                                            expected_job_ids.insert(child.job_id.clone());
+                                            retry_index_by_job_id.insert(child.job_id.clone(), 0);
+                                            jobs_by_id.insert(child.job_id.clone(), child.clone());
+                                            published_children.push(child.job_id);
+                                            jobs_published += 1;
+                                            state
+                                                .metrics
+                                                .subproblem_jobs_published_total
+                                                .fetch_add(1, Ordering::Relaxed);
+                                        }
+                                        Err(error) => {
+                                            publish_error = Some(error);
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if let Some(error) = publish_error {
+                                    warnings.push(format!(
+                                        "failed to publish split children for job {}: {error}",
+                                        result.job_id
+                                    ));
+                                    let mut terminal_error = result.clone();
+                                    terminal_error.status = "error".to_string();
+                                    terminal_error.error =
+                                        Some(format!("failed to publish split children: {error}"));
+                                    track_job_result(&state, &terminal_error, true);
+                                    results.push(terminal_error);
+                                    continue;
+                                }
+
+                                track_job_result(&state, &result, false);
+                                track_job_split(&state, &solve_id, child_count);
+                                jobs_expected =
+                                    jobs_expected.saturating_add(child_count.saturating_sub(1));
+                                jobs_split += 1;
+                                cache_solve_registry_entry(&state, &solve_id).await;
+                                cache_solve_frontier(&state, &solve_id, &result.child_jobs).await;
+                                state
+                                    .metrics
+                                    .subproblem_jobs_split_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                publish_event(
+                                    &state,
+                                    "subproblem-split",
+                                    json!({
+                                        "solveId": &solve_id,
+                                        "requestId": &request_id,
+                                        "parentJobId": &result.job_id,
+                                        "childJobIds": published_children,
+                                        "childCount": child_count,
+                                        "workerNode": &result.worker_node,
+                                        "reason": &result.error,
+                                    }),
+                                )
+                                .await;
+                                continue;
+                            }
                             if should_redelegate_result(&result, retry_index, max_retries) {
                                 track_job_result(&state, &result, false);
                                 let Some(original_job) = jobs_by_id.get(&result.job_id).cloned()
@@ -2484,9 +2931,10 @@ async fn solve_problem_distributed(
         request_id,
         revision,
         &problem,
-        jobs.len(),
+        jobs_expected,
         jobs_published,
         jobs_redelegated,
+        jobs_split,
         results,
         timed_out,
         true,
@@ -2494,6 +2942,7 @@ async fn solve_problem_distributed(
         warnings,
     );
     track_solve_finished(&state, &response);
+    cache_solve_registry_entry(&state, &response.solve_id).await;
     publish_event(
         &state,
         "solve-finished",
@@ -2504,6 +2953,7 @@ async fn solve_problem_distributed(
             "jobsPublished": response.jobs_published,
             "jobsCompleted": response.jobs_completed,
             "jobsRedelegated": response.jobs_redelegated,
+            "jobsSplit": response.jobs_split,
             "timedOut": response.timed_out,
         }),
     )
@@ -2530,6 +2980,7 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
         "queueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
         "workersKnown": state.workers.lock().expect("workers mutex poisoned").len(),
         "solvesTracked": state.solves.lock().expect("solves mutex poisoned").len(),
+        "persistence": persistence_contract(),
         "gpu": gpu_status(),
     }))
 }
@@ -2603,6 +3054,9 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
             "# HELP dd_mip_solver_subproblem_jobs_redelegated_total Total errored subproblem jobs re-published by masters.\n",
             "# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter\n",
             "dd_mip_solver_subproblem_jobs_redelegated_total {}\n",
+            "# HELP dd_mip_solver_subproblem_jobs_split_total Total accepted subproblem attempts split into child jobs by masters.\n",
+            "# TYPE dd_mip_solver_subproblem_jobs_split_total counter\n",
+            "dd_mip_solver_subproblem_jobs_split_total {}\n",
             "# HELP dd_mip_solver_workers_known Current worker nodes observed through NATS control messages.\n",
             "# TYPE dd_mip_solver_workers_known gauge\n",
             "dd_mip_solver_workers_known {}\n",
@@ -2631,6 +3085,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         completed,
         in_flight,
         m.subproblem_jobs_redelegated_total.load(Ordering::Relaxed),
+        m.subproblem_jobs_split_total.load(Ordering::Relaxed),
         state.workers.lock().expect("workers mutex poisoned").len(),
         m.worker_control_messages_total.load(Ordering::Relaxed),
         solves_tracked,
@@ -2726,34 +3181,38 @@ async fn stream_session(
             json!({"ok":false,"error":"too many stream commands"}),
         );
     }
-    let mut sessions = state.sessions.lock().expect("sessions mutex poisoned");
-    let session = sessions.entry(session_id.clone()).or_insert(LiveSession {
-        problem: None,
-        revision: 0,
-    });
     let mut frames = Vec::new();
-    for command in &commands {
-        if let Err(error) = apply_stream_command(
-            &mut session.problem,
-            &mut session.revision,
-            command,
-            &mut frames,
-        ) {
-            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            frames.push(json!({"event":"error","message":error,"revision":session.revision}));
-        } else {
-            state
-                .metrics
-                .stream_events_total
-                .fetch_add(1, Ordering::Relaxed);
+    let (revision, session_snapshot) = {
+        let mut sessions = state.sessions.lock().expect("sessions mutex poisoned");
+        let session = sessions.entry(session_id.clone()).or_insert(LiveSession {
+            problem: None,
+            revision: 0,
+        });
+        for command in &commands {
+            if let Err(error) = apply_stream_command(
+                &mut session.problem,
+                &mut session.revision,
+                command,
+                &mut frames,
+            ) {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                frames.push(json!({"event":"error","message":error,"revision":session.revision}));
+            } else {
+                state
+                    .metrics
+                    .stream_events_total
+                    .fetch_add(1, Ordering::Relaxed);
+            }
         }
-    }
+        (session.revision, session.clone())
+    };
+    cache_session_model(&state, &session_id, session_snapshot).await;
     response_json(
         StatusCode::OK,
         json!({
             "ok": true,
             "sessionId": session_id,
-            "revision": session.revision,
+            "revision": revision,
             "frames": frames,
         }),
     )
@@ -3050,6 +3509,18 @@ async fn connect_nats() -> Option<async_nats::Client> {
     }
 }
 
+fn connect_redis() -> Option<redis::Client> {
+    let env_key = first_configured_env(&["MIP_SOLVER_REDIS_URL", "REDIS_URL"])?;
+    let url = env::var(&env_key).ok()?;
+    match redis::Client::open(url.clone()) {
+        Ok(client) => Some(client),
+        Err(error) => {
+            eprintln!("failed to configure Redis client from {env_key}: {error}");
+            None
+        }
+    }
+}
+
 fn app_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
@@ -3107,10 +3578,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .or_else(|_| env::var("HOSTNAME"))
         .unwrap_or_else(|_| format!("{}-{}", SERVICE_NAME, Uuid::new_v4()));
     let nats = connect_nats().await;
+    let redis = connect_redis();
     let state = AppState {
         role,
         node_id,
         nats,
+        redis,
         jobs_subject: env_value("MIP_SOLVER_JOBS_SUBJECT", MIP_SOLVER_JOBS_SUBJECT),
         results_subject: env_value("MIP_SOLVER_RESULTS_SUBJECT", MIP_SOLVER_RESULTS_SUBJECT),
         control_subject: env_value("MIP_SOLVER_CONTROL_SUBJECT", MIP_SOLVER_CONTROL_SUBJECT),
@@ -3165,6 +3638,7 @@ mod tests {
             role,
             node_id: "test-node".to_string(),
             nats: None,
+            redis: None,
             jobs_subject: MIP_SOLVER_JOBS_SUBJECT.to_string(),
             results_subject: MIP_SOLVER_RESULTS_SUBJECT.to_string(),
             control_subject: MIP_SOLVER_CONTROL_SUBJECT.to_string(),
@@ -3229,7 +3703,10 @@ mod tests {
             master_node: "master-test".to_string(),
             problem,
             extra_constraints: Vec::new(),
-            options: SolveOptions::default(),
+            options: SolveOptions {
+                split_depth: Some(0),
+                ..SolveOptions::default()
+            },
             submitted_at_ms: now_ms(),
         }
     }
@@ -3665,6 +4142,39 @@ mod tests {
     }
 
     #[test]
+    fn solve_subproblem_can_split_fractional_delegated_subtree() {
+        let problem = normalized_problem(MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![1.5],
+            integer_vars: vec![true],
+            ub: None,
+            var_names: None,
+            con_names: None,
+        })
+        .unwrap();
+        let mut job = test_job(problem);
+        job.options.split_depth = Some(1);
+
+        let result = solve_subproblem(job, "worker-test".to_string());
+
+        assert!(!result.ok);
+        assert_eq!(result.status, "split");
+        assert_eq!(result.child_jobs.len(), 2);
+        assert_eq!(result.lp_solves, 1);
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("split"));
+        assert!(result
+            .child_jobs
+            .iter()
+            .all(|child| child.depth == 1 && child.extra_constraints.len() == 1));
+    }
+
+    #[test]
     fn solve_subproblem_solves_lp_with_in_house_solver() {
         let result = solve_subproblem(test_job(pure_lp_problem()), "worker-test".to_string());
 
@@ -3761,7 +4271,7 @@ mod tests {
         assert!(!response.distributed);
         assert_eq!(response.jobs_expected, response.jobs_completed);
         assert_eq!(response.jobs_redelegated, 0);
-        assert_eq!(response.jobs_completed, response.jobs_published);
+        assert!(response.jobs_published >= response.jobs_completed);
         assert!(response.jobs_published > 0);
     }
 
@@ -3804,6 +4314,10 @@ mod tests {
             .store(2, Ordering::Relaxed);
         state
             .metrics
+            .subproblem_jobs_split_total
+            .store(4, Ordering::Relaxed);
+        state
+            .metrics
             .worker_control_messages_total
             .store(5, Ordering::Relaxed);
         state
@@ -3842,6 +4356,8 @@ mod tests {
         assert!(body.contains("dd_mip_solver_subproblem_jobs_in_flight 4"));
         assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter"));
         assert!(body.contains("dd_mip_solver_subproblem_jobs_redelegated_total 2"));
+        assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_split_total counter"));
+        assert!(body.contains("dd_mip_solver_subproblem_jobs_split_total 4"));
         assert!(body.contains("# TYPE dd_mip_solver_workers_known gauge"));
         assert!(body.contains("dd_mip_solver_workers_known 1"));
         assert!(body.contains("# TYPE dd_mip_solver_worker_control_messages_total counter"));
@@ -4094,6 +4610,7 @@ mod tests {
             best_bound: Some(90.0),
             gap: Some(0.0),
             lp: None,
+            child_jobs: Vec::new(),
             nodes_explored: 1,
             lp_solves: 1,
             elapsed_ms: 1.0,
@@ -4114,6 +4631,7 @@ mod tests {
             best_bound: None,
             gap: None,
             lp: None,
+            child_jobs: Vec::new(),
             nodes_explored: 0,
             lp_solves: 0,
             elapsed_ms: 1.0,
@@ -4130,6 +4648,7 @@ mod tests {
             2,
             2,
             0,
+            0,
             vec![optimal, infeasible],
             false,
             true,
@@ -4142,6 +4661,7 @@ mod tests {
         assert_eq!(response.jobs_completed, 2);
         assert_eq!(response.jobs_expected, 2);
         assert_eq!(response.jobs_redelegated, 0);
+        assert_eq!(response.jobs_split, 0);
         assert_eq!(response.z, Some(90.0));
     }
 
@@ -4183,6 +4703,7 @@ mod tests {
             best_bound: Some(90.0),
             gap: Some(0.0),
             lp: None,
+            child_jobs: Vec::new(),
             nodes_explored: 1,
             lp_solves: 1,
             elapsed_ms: 1.0,
@@ -4199,6 +4720,7 @@ mod tests {
             1,
             2,
             1,
+            0,
             vec![optimal_retry],
             false,
             true,
@@ -4212,6 +4734,7 @@ mod tests {
         assert_eq!(response.jobs_published, 2);
         assert_eq!(response.jobs_completed, 1);
         assert_eq!(response.jobs_redelegated, 1);
+        assert_eq!(response.jobs_split, 0);
         assert_eq!(response.z, Some(90.0));
     }
 
@@ -4234,6 +4757,7 @@ mod tests {
             best_bound: Some(90.0),
             gap: Some(0.0),
             lp: None,
+            child_jobs: Vec::new(),
             nodes_explored: 1,
             lp_solves: 1,
             elapsed_ms: 1.0,
