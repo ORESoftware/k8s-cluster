@@ -2198,6 +2198,17 @@ jobs:
 
           echo "=== current GCS/loadtest deployments ==="
           kubectl -n default get deploy gcs gcs-router dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs -o wide || true
+
+          echo "=== current GCS/loadtest pods ==="
+          kubectl -n default get pods -l 'app in (gcs,gcs-router,dd-ws-loadtest-rs-gcs,dd-nodejs-ws-loadtest-gcs,dd-gleamlang-ws-loadtest-gcs)' -o wide || true
+          for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- gcs pod $pod state ---"
+            kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} {range .status.containerStatuses[*]}container={.name} ready={.ready} restarts={.restartCount} waiting={.state.waiting.reason} terminated={.state.terminated.reason}:{.state.terminated.exitCode}:{.state.terminated.signal} last={.lastState.terminated.reason}:{.lastState.terminated.exitCode}:{.lastState.terminated.signal} {end}{"\n"}' || true
+            echo "--- gcs pod $pod current logs ---"
+            kubectl -n default logs "$pod" --all-containers --tail=120 --prefix=true 2>/dev/null || true
+            echo "--- gcs pod $pod previous logs ---"
+            kubectl -n default logs "$pod" --all-containers --previous --tail=200 --prefix=true 2>/dev/null || true
+          done
           ''').strip()
 
           print(json.dumps({
