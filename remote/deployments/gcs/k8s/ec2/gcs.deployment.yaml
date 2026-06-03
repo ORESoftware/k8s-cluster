@@ -130,9 +130,9 @@ spec:
             - name: GCS_WS_SHED_INTERVAL
               value: '250ms'
             - name: GCS_WS_SHED_BATCH_SIZE
-              value: '5000'
+              value: '500'
             - name: GCS_WS_SHED_WARN_GRACE
-              value: '100ms'
+              value: '500ms'
             - name: GCS_WS_SHED_HEAP_BYTES
               value: '671088640'
             # RSS pressure is the cgroup OOM guard; heap telemetry can miss spikes.
@@ -141,7 +141,9 @@ spec:
             - name: GCS_WS_SHED_GOROUTINES
               value: '60000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
-              value: '2s'
+              value: '10s'
+            - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
+              value: '30s'
             - name: vibe_api_server_protocol
               value: http
             - name: vibe_api_server_host

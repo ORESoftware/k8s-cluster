@@ -2725,15 +2725,14 @@ jobs:
           dump_loader_logs() {
             local d="$1"
             local pod
-            echo "=== raw loader pod logs: $d ==="
+            echo "=== loader pod failure excerpts: $d ==="
             for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
               echo "--- loader pod $pod state ---"
               kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} ready={range .status.containerStatuses[*]}{.name}:{.ready}:{.restartCount}:{.state.waiting.reason}:{.state.terminated.reason} {end}{"\n"}' || true
-              echo "--- loader pod $pod recent gcs-report lines ---"
+              echo "--- loader pod $pod recent report/connect lines ---"
               kubectl -n default logs "$pod" --all-containers --since=30m --tail=2000 --prefix=true 2>/dev/null \
-                | grep 'gcs-report' | tail -20 || true
-              echo "--- loader pod $pod recent raw logs ---"
-              kubectl -n default logs "$pod" --all-containers --tail=120 --prefix=true 2>/dev/null || true
+                | grep -E 'gcs-report|gcs connect failed|gcs connect timeout|HTTP error: 503|HTTP error: 502|HTTP error: 504' \
+                | tail -80 || true
             done
           }
 
@@ -2840,12 +2839,12 @@ jobs:
             {
               echo "=== load failure diagnostics: $loader_name ==="
               collect_loader "$d"
+              direct_gcs_metrics
               dump_loader_logs "$d"
               echo "=== router metrics at $loader_name failure ==="
               router_metrics
               prom_compact_snapshot "load failure $loader_name"
               prom_load_failure_snapshot "load failure $loader_name"
-              direct_gcs_metrics
               echo "=== gcs/router/loadtest deployments ==="
               kubectl -n default get deploy gcs gcs-router "$d" || true
               echo "=== gcs/router/loadtest pods ==="
