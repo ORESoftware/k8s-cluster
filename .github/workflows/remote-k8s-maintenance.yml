@@ -2294,9 +2294,10 @@ jobs:
 
           sync_app() {
             local app="$1"
+            local sync_revision="${ARGO_SYNC_REVISION:-HEAD}"
             echo "=== Argo CD sync request: $app ==="
             kubectl -n argocd annotate "application/$app" argocd.argoproj.io/refresh=hard --overwrite || true
-            kubectl -n argocd patch "application/$app" --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"gcs-wss-loadtest\"}],\"sync\":{\"revision\":\"HEAD\",\"prune\":true}}}" || true
+            kubectl -n argocd patch "application/$app" --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"gcs-wss-loadtest\"}],\"sync\":{\"revision\":\"$sync_revision\",\"prune\":true}}}" || true
             for i in $(seq 1 60); do
               phase="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
               sync="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
@@ -2402,6 +2403,9 @@ jobs:
           before_revision="$(git rev-parse HEAD 2>/dev/null || true)"
           git status --short --branch
           git fetch origin "${TARGET_REVISION:-dev}"
+          ARGO_SYNC_REVISION="$(git rev-parse "origin/${TARGET_REVISION:-dev}")"
+          export ARGO_SYNC_REVISION
+          echo "argo_sync_revision=$ARGO_SYNC_REVISION"
           merge_ok=0
           if git merge --ff-only "origin/${TARGET_REVISION:-dev}"; then
             merge_ok=1
