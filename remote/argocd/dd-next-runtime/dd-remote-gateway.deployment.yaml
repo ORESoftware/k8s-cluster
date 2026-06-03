@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: dd-remote-gateway
   namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
   labels:
     app: dd-remote-gateway
 spec:
