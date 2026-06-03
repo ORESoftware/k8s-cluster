@@ -2011,12 +2011,22 @@ async fn healthz() -> impl IntoResponse {
     Json(json!({"ok": true, "service": SERVICE_NAME}))
 }
 
-async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    Json(json!({
-        "ok": true,
-        "role": state.role.as_str(),
-        "nats": state.nats.is_some(),
-    }))
+async fn readyz(State(state): State<AppState>) -> Response {
+    let nats_ready = state.nats.is_some();
+    let status = if nats_ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    response_json(
+        status,
+        json!({
+            "ok": nats_ready,
+            "role": state.role.as_str(),
+            "nats": nats_ready,
+            "reason": if nats_ready { Value::Null } else { json!("NATS connection is required for distributed solver readiness") },
+        }),
+    )
 }
 
 fn prometheus_label_value(value: &str) -> String {
@@ -2570,6 +2580,12 @@ mod tests {
         (status, text)
     }
 
+    async fn get_json(app: Router, path: &str) -> (StatusCode, Value) {
+        let (status, text) = get_text(app, path).await;
+        let value = serde_json::from_str(&text).unwrap();
+        (status, value)
+    }
+
     #[test]
     fn streaming_edits_update_live_problem_revision() {
         let commands = vec![
@@ -3017,6 +3033,22 @@ mod tests {
         assert!(body.contains("dd_mip_solver_node_info{role=\"master\",node_id=\"test-node\"} 1"));
         assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_in_flight gauge"));
         assert!(body.contains("dd_mip_solver_subproblem_jobs_in_flight 4"));
+    }
+
+    #[tokio::test]
+    async fn readyz_requires_nats_connection_for_cluster_readiness() {
+        let app = app_router(test_state(NodeRole::Slave));
+
+        let (status, body) = get_json(app, "/readyz").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body.get("ok"), Some(&json!(false)));
+        assert_eq!(body.get("nats"), Some(&json!(false)));
+        assert!(body
+            .get("reason")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .contains("NATS connection is required"));
     }
 
     #[tokio::test]
