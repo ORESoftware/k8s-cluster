@@ -4126,6 +4126,56 @@ mod tests {
         }
     }
 
+    fn hundred_variable_two_hundred_constraint_mip() -> MipProblemSpec {
+        let mut c = vec![0.0; 100];
+        c[0] = 1.0;
+        c[1] = 1.0;
+        c[2] = 1.0;
+
+        let mut a = Vec::with_capacity(200);
+        let mut b = Vec::with_capacity(200);
+        let mut con_names = Vec::with_capacity(200);
+
+        let mut knapsack = vec![0.0; 100];
+        knapsack[0] = 2.0;
+        knapsack[1] = 2.0;
+        knapsack[2] = 2.0;
+        a.push(knapsack);
+        b.push(5.0);
+        con_names.push("three_item_capacity".to_string());
+
+        for var in 0..99 {
+            let mut row = vec![0.0; 100];
+            row[var] = 1.0;
+            a.push(row);
+            b.push(1.0);
+            con_names.push(format!("x{var}_upper"));
+        }
+
+        for var in 0..100 {
+            let mut row = vec![0.0; 100];
+            row[var] = -1.0;
+            a.push(row);
+            b.push(0.0);
+            con_names.push(format!("x{var}_lower"));
+        }
+
+        assert_eq!(a.len(), 200);
+        assert_eq!(b.len(), 200);
+        assert_eq!(con_names.len(), 200);
+
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c,
+            a,
+            b,
+            integer_vars: vec![true; 100],
+            ub: Some(vec![1.0; 100]),
+            var_names: Some((0..100).map(|index| format!("x{index}")).collect()),
+            con_names: Some(con_names),
+        }
+    }
+
     fn test_job(problem: MipProblemSpec) -> SubproblemJob {
         SubproblemJob {
             solve_id: "solve-test".to_string(),
@@ -4732,6 +4782,99 @@ mod tests {
         assert_eq!(response.jobs_redelegated, 0);
         assert!(response.jobs_published >= response.jobs_completed);
         assert!(response.jobs_published > 0);
+    }
+
+    #[test]
+    fn simulated_three_slave_delegation_solves_100_by_200_mip() {
+        let state = test_state(NodeRole::Master);
+        let problem = normalized_problem(hundred_variable_two_hundred_constraint_mip()).unwrap();
+        let options = SolveOptions {
+            split_depth: Some(2),
+            max_subproblems: Some(8),
+            max_nodes: Some(10_000),
+            max_ticks: Some(10_000),
+            ..SolveOptions::default()
+        };
+        assert_eq!(problem.c.len(), 100);
+        assert_eq!(problem.a.len(), 200);
+
+        let (jobs, warnings) = build_frontier_jobs(
+            &problem,
+            "solve-large-test",
+            "request-large-test",
+            11,
+            "master-test",
+            &options,
+        )
+        .unwrap();
+        assert!(
+            jobs.len() >= 3,
+            "expected at least three delegated subproblems, got {} with warnings {:?}",
+            jobs.len(),
+            warnings
+        );
+
+        let workers = ["slave-a", "slave-b", "slave-c"];
+        let mut pending: VecDeque<SubproblemJob> = jobs.into_iter().collect();
+        let mut results = Vec::new();
+        let mut used_workers = HashSet::new();
+        let mut jobs_expected = pending.len();
+        let mut jobs_published = pending.len();
+        let mut jobs_split = 0usize;
+        let mut next_worker = 0usize;
+
+        while let Some(job) = pending.pop_front() {
+            let worker = workers[next_worker % workers.len()].to_string();
+            next_worker += 1;
+            used_workers.insert(worker.clone());
+            let result = solve_subproblem(job, worker);
+            if result.status == "split" && !result.child_jobs.is_empty() {
+                jobs_split += 1;
+                jobs_expected =
+                    jobs_expected.saturating_add(result.child_jobs.len().saturating_sub(1));
+                jobs_published = jobs_published.saturating_add(result.child_jobs.len());
+                for child in result.child_jobs {
+                    pending.push_back(child);
+                }
+            } else {
+                results.push(result);
+            }
+        }
+
+        let response = aggregate_results(
+            "solve-large-test".to_string(),
+            "request-large-test".to_string(),
+            11,
+            &problem,
+            jobs_expected,
+            jobs_published,
+            0,
+            jobs_split,
+            results,
+            false,
+            true,
+            &state,
+            warnings,
+        );
+
+        assert_eq!(used_workers.len(), 3, "used workers: {used_workers:?}");
+        assert!(response.ok, "response warnings: {:?}", response.warnings);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.revision, 11);
+        assert_eq!(response.jobs_expected, response.jobs_completed);
+        assert!(response.jobs_published >= 3);
+        assert!(response.distributed);
+        assert_eq!(response.z, Some(2.0));
+        assert_eq!(response.x.len(), 100);
+        assert_eq!(
+            response
+                .x
+                .iter()
+                .take(3)
+                .filter(|value| **value > 0.5)
+                .count(),
+            2
+        );
     }
 
     #[tokio::test]
