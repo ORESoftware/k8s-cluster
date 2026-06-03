@@ -102,6 +102,8 @@ spec:
                   name: dd-mip-solver-node-secrets
                   key: AGENT_TASKS_RDS_DATABASE_URL
                   optional: true
+            - name: MIP_SOLVER_PG_POOL_SIZE
+              value: '4'
             - name: MIP_SOLVER_CLUSTER_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: MIP_SOLVER_CLUSTER_GIT_REF

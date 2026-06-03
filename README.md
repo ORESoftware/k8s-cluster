@@ -46,7 +46,7 @@ Delegated subtree jobs can split again on a slave when their LP relaxation is fr
 
 Active solves are kept in memory on the master for low-latency frontier mutation, worker tracking, and aggregation. NATS JetStream carries persisted job/result messages between pods.
 
-Postgres is the intended durable journal for solve starts, model revisions, subproblem submissions/completions/splits, and solve finishes. The Rust binary imports table names from `remote/libs/pg-defs/generated/rust` and advertises the current contract from `/` under `persistence.postgres`; when `MIP_SOLVER_DATABASE_URL`, `AGENT_TASKS_RDS_DATABASE_URL`, `RDS_DATABASE_URL`, `DATABASE_URL`, or `PG_DATABASE_URL` is configured, the node reports the Postgres journal path as enabled.
+Postgres is the durable journal for solve starts, model revisions, subproblem submissions/completions/splits, and solve finishes. The Rust binary imports MIP-specific table names from `remote/libs/pg-defs/generated/rust` (`mip_solver_sessions`, `mip_solver_solves`, `mip_solver_jobs`, `mip_solver_events`) and writes best-effort upserts/events when `MIP_SOLVER_DATABASE_URL`, `AGENT_TASKS_RDS_DATABASE_URL`, `RDS_DATABASE_URL`, `DATABASE_URL`, or `PG_DATABASE_URL` is configured.
 
 Redis is the hot cache and coordination layer for solve snapshots, frontier snapshots, live session model snapshots, and revision locks. Configure `MIP_SOLVER_REDIS_URL` or `REDIS_URL`; key names are under `MIP_SOLVER_REDIS_KEY_PREFIX` (default `dd:mip-solver`) and `/` reports the concrete key templates. Network-wide ownership locks can use Redis `SET NX PX` or the in-cluster live-mutex service if ownership migration is added later.
 

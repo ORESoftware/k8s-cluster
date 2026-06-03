@@ -28,8 +28,8 @@ use dd_nats_subject_defs::{
     MIP_SOLVER_RESULTS_SUBJECT, MIP_SOLVER_WORKERS_QUEUE_GROUP,
 };
 use dd_pg_defs::{
-    AGENT_REMOTE_DEV_BREADCRUMBS_TABLE, AGENT_REMOTE_DEV_EVENTS_TABLE,
-    AGENT_REMOTE_DEV_RUNTIME_LOCKS_TABLE,
+    MIP_SOLVER_EVENTS_TABLE, MIP_SOLVER_JOBS_TABLE, MIP_SOLVER_SESSIONS_TABLE,
+    MIP_SOLVER_SOLVES_TABLE,
 };
 use dd_redis_interfaces::{
     container_pool_affinity_lock_key, CONTAINER_POOL_AFFINITY_LOCK_KEY_DEFAULT_PREFIX,
@@ -45,6 +45,7 @@ use futures_util::StreamExt;
 use libloading::Library;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-in-house-mip-solver-node";
@@ -86,6 +87,7 @@ struct AppState {
     node_id: String,
     nats: Option<async_nats::Client>,
     redis: Option<redis::Client>,
+    pg: Option<PgPool>,
     jobs_subject: String,
     results_subject: String,
     control_subject: String,
@@ -455,9 +457,10 @@ struct PersistenceContract {
 struct PostgresPersistenceContract {
     enabled: bool,
     url_env: Option<String>,
+    session_table: &'static str,
+    solve_table: &'static str,
+    job_table: &'static str,
     event_table: &'static str,
-    breadcrumb_table: &'static str,
-    runtime_lock_table: &'static str,
     journal_kinds: Vec<&'static str>,
 }
 
@@ -637,9 +640,10 @@ fn persistence_contract() -> PersistenceContract {
         postgres: PostgresPersistenceContract {
             enabled: pg_url_env.is_some(),
             url_env: pg_url_env,
-            event_table: AGENT_REMOTE_DEV_EVENTS_TABLE,
-            breadcrumb_table: AGENT_REMOTE_DEV_BREADCRUMBS_TABLE,
-            runtime_lock_table: AGENT_REMOTE_DEV_RUNTIME_LOCKS_TABLE,
+            session_table: MIP_SOLVER_SESSIONS_TABLE,
+            solve_table: MIP_SOLVER_SOLVES_TABLE,
+            job_table: MIP_SOLVER_JOBS_TABLE,
+            event_table: MIP_SOLVER_EVENTS_TABLE,
             journal_kinds: vec![
                 "mip-solver.solve-started",
                 "mip-solver.model-revision",
@@ -2268,6 +2272,364 @@ fn accept_subproblem_result(
     Ok(Some(result))
 }
 
+fn i32_count(value: usize) -> i32 {
+    value.min(i32::MAX as usize) as i32
+}
+
+fn json_value<T: Serialize>(value: &T) -> Value {
+    serde_json::to_value(value).unwrap_or_else(|_| json!({}))
+}
+
+async fn record_pg_result(
+    state: &AppState,
+    label: &str,
+    result: Result<sqlx::postgres::PgQueryResult, sqlx::Error>,
+) -> bool {
+    match result {
+        Ok(_) => true,
+        Err(error) => {
+            state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            eprintln!("mip solver postgres {label} failed: {error}");
+            false
+        }
+    }
+}
+
+async fn persist_event(
+    state: &AppState,
+    event_kind: &str,
+    solve_id: Option<&str>,
+    session_id: Option<&str>,
+    job_id: Option<&str>,
+    payload: Value,
+) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let sql = format!(
+        "insert into {} (solve_id, session_id, job_id, event_kind, payload) values ($1, $2, $3, $4, $5)",
+        MIP_SOLVER_EVENTS_TABLE
+    );
+    record_pg_result(
+        state,
+        "insert event",
+        sqlx::query(&sql)
+            .bind(solve_id.map(str::to_string))
+            .bind(session_id.map(str::to_string))
+            .bind(job_id.map(str::to_string))
+            .bind(event_kind)
+            .bind(payload)
+            .execute(pool)
+            .await,
+    )
+    .await;
+}
+
+async fn persist_solve_started(
+    state: &AppState,
+    solve_id: &str,
+    request_id: &str,
+    revision: u64,
+    problem: &MipProblemSpec,
+    options: &SolveOptions,
+    jobs_expected: usize,
+    distributed: bool,
+) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let problem_json = json_value(problem);
+    let options_json = json_value(options);
+    let sql = format!(
+        concat!(
+            "insert into {} (solve_id, request_id, revision, status, node_id, node_role, problem, options, ",
+            "jobs_expected, distributed, updated_at) values ($1, $2, $3, 'running', $4, $5, $6, $7, $8, $9, now()) ",
+            "on conflict (solve_id) do update set request_id = excluded.request_id, revision = excluded.revision, ",
+            "status = excluded.status, node_id = excluded.node_id, node_role = excluded.node_role, problem = excluded.problem, ",
+            "options = excluded.options, jobs_expected = excluded.jobs_expected, distributed = excluded.distributed, updated_at = now()"
+        ),
+        MIP_SOLVER_SOLVES_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert solve start",
+        sqlx::query(&sql)
+            .bind(solve_id)
+            .bind(request_id)
+            .bind(revision as i64)
+            .bind(&state.node_id)
+            .bind(state.role.as_str())
+            .bind(problem_json)
+            .bind(options_json)
+            .bind(i32_count(jobs_expected))
+            .bind(distributed)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.solve-started",
+            Some(solve_id),
+            None,
+            None,
+            json!({
+                "requestId": request_id,
+                "revision": revision,
+                "jobsExpected": jobs_expected,
+                "distributed": distributed,
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_solve_registry_entry(state: &AppState, solve_id: &str) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let entry = state
+        .solves
+        .lock()
+        .expect("solves mutex poisoned")
+        .get(solve_id)
+        .cloned();
+    let Some(entry) = entry else {
+        return;
+    };
+    let warnings = json_value(&entry.warnings);
+    let sql = format!(
+        concat!(
+            "update {} set status = $2, jobs_expected = $3, jobs_published = $4, jobs_completed = $5, ",
+            "jobs_redelegated = $6, jobs_split = $7, timed_out = $8, distributed = $9, warnings = $10, ",
+            "updated_at = now(), finished_at = case when $11 then coalesce(finished_at, now()) else finished_at end ",
+            "where solve_id = $1"
+        ),
+        MIP_SOLVER_SOLVES_TABLE
+    );
+    record_pg_result(
+        state,
+        "update solve registry",
+        sqlx::query(&sql)
+            .bind(&entry.solve_id)
+            .bind(&entry.status)
+            .bind(i32_count(entry.jobs_expected))
+            .bind(i32_count(entry.jobs_published))
+            .bind(i32_count(entry.jobs_completed))
+            .bind(i32_count(entry.jobs_redelegated))
+            .bind(i32_count(entry.jobs_split))
+            .bind(entry.timed_out)
+            .bind(entry.distributed)
+            .bind(warnings)
+            .bind(entry.finished_at_ms.is_some())
+            .execute(pool)
+            .await,
+    )
+    .await;
+}
+
+async fn persist_solve_response(state: &AppState, response: &SolveResponse) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let response_json = json_value(response);
+    let warnings = json_value(&response.warnings);
+    let sql = format!(
+        concat!(
+            "update {} set status = $2, response = $3, jobs_expected = $4, jobs_published = $5, ",
+            "jobs_completed = $6, jobs_redelegated = $7, jobs_split = $8, timed_out = $9, distributed = $10, ",
+            "warnings = $11, updated_at = now(), finished_at = now() where solve_id = $1"
+        ),
+        MIP_SOLVER_SOLVES_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "update solve response",
+        sqlx::query(&sql)
+            .bind(&response.solve_id)
+            .bind(&response.status)
+            .bind(response_json)
+            .bind(i32_count(response.jobs_expected))
+            .bind(i32_count(response.jobs_published))
+            .bind(i32_count(response.jobs_completed))
+            .bind(i32_count(response.jobs_redelegated))
+            .bind(i32_count(response.jobs_split))
+            .bind(response.timed_out)
+            .bind(response.distributed)
+            .bind(warnings)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.solve-finished",
+            Some(&response.solve_id),
+            None,
+            None,
+            json!({
+                "requestId": response.request_id,
+                "status": response.status,
+                "jobsExpected": response.jobs_expected,
+                "jobsCompleted": response.jobs_completed,
+                "jobsRedelegated": response.jobs_redelegated,
+                "jobsSplit": response.jobs_split,
+                "timedOut": response.timed_out,
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_job_submitted(state: &AppState, job: &SubproblemJob) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let job_payload = json_value(job);
+    let sql = format!(
+        concat!(
+            "insert into {} (job_id, solve_id, root_job_id, retry_index, depth, status, job_payload, updated_at) ",
+            "values ($1, $2, $3, $4, $5, 'submitted', $6, now()) ",
+            "on conflict (job_id) do update set status = excluded.status, job_payload = excluded.job_payload, ",
+            "updated_at = now()"
+        ),
+        MIP_SOLVER_JOBS_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert job submitted",
+        sqlx::query(&sql)
+            .bind(&job.job_id)
+            .bind(&job.solve_id)
+            .bind(job_retry_root(&job.job_id))
+            .bind(i32_count(job_retry_index(&job.job_id)))
+            .bind(i32_count(job.depth))
+            .bind(job_payload)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.subproblem-submitted",
+            Some(&job.solve_id),
+            None,
+            Some(&job.job_id),
+            json!({
+                "requestId": job.request_id,
+                "depth": job.depth,
+                "retryIndex": job_retry_index(&job.job_id),
+                "rootJobId": job_retry_root(&job.job_id),
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_job_result(state: &AppState, result: &SubproblemResult, terminal: bool) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let status = if terminal || result.status == "split" {
+        result.status.clone()
+    } else {
+        "retrying".to_string()
+    };
+    let result_payload = json_value(result);
+    let sql = format!(
+        concat!(
+            "insert into {} (job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, result_payload, finished_at, updated_at) ",
+            "values ($1, $2, $3, $4, 0, $5, $6, $7, now(), now()) ",
+            "on conflict (job_id) do update set status = excluded.status, worker_node = excluded.worker_node, ",
+            "result_payload = excluded.result_payload, finished_at = excluded.finished_at, updated_at = now()"
+        ),
+        MIP_SOLVER_JOBS_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert job result",
+        sqlx::query(&sql)
+            .bind(&result.job_id)
+            .bind(&result.solve_id)
+            .bind(job_retry_root(&result.job_id))
+            .bind(i32_count(job_retry_index(&result.job_id)))
+            .bind(&status)
+            .bind(&result.worker_node)
+            .bind(result_payload)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        let event_kind = if result.status == "split" {
+            "mip-solver.subproblem-split"
+        } else if terminal {
+            "mip-solver.subproblem-finished"
+        } else {
+            "mip-solver.subproblem-retrying"
+        };
+        persist_event(
+            state,
+            event_kind,
+            Some(&result.solve_id),
+            None,
+            Some(&result.job_id),
+            json!({
+                "requestId": result.request_id,
+                "status": result.status,
+                "terminal": terminal,
+                "workerNode": result.worker_node,
+                "error": result.error,
+                "childJobCount": result.child_jobs.len(),
+            }),
+        )
+        .await;
+    }
+}
+
+async fn persist_session_model(state: &AppState, session_id: &str, session: &LiveSession) {
+    let Some(pool) = &state.pg else {
+        return;
+    };
+    let problem = session
+        .problem
+        .as_ref()
+        .map(json_value)
+        .unwrap_or_else(|| json!({}));
+    let sql = format!(
+        concat!(
+            "insert into {} (session_id, revision, problem, updated_at) values ($1, $2, $3, now()) ",
+            "on conflict (session_id) do update set revision = excluded.revision, problem = excluded.problem, updated_at = now()"
+        ),
+        MIP_SOLVER_SESSIONS_TABLE
+    );
+    let wrote = record_pg_result(
+        state,
+        "upsert session model",
+        sqlx::query(&sql)
+            .bind(session_id)
+            .bind(session.revision as i64)
+            .bind(problem)
+            .execute(pool)
+            .await,
+    )
+    .await;
+    if wrote {
+        persist_event(
+            state,
+            "mip-solver.model-revision",
+            None,
+            Some(session_id),
+            None,
+            json!({"revision": session.revision}),
+        )
+        .await;
+    }
+}
+
 async fn redis_set_json(state: &AppState, key: String, value: Value) {
     let Some(client) = &state.redis else {
         return;
@@ -2342,6 +2704,20 @@ async fn cache_solve_frontier(state: &AppState, solve_id: &str, jobs: &[Subprobl
     .await;
 }
 
+async fn snapshot_solve_state(state: &AppState, solve_id: &str) {
+    cache_solve_registry_entry(state, solve_id).await;
+    persist_solve_registry_entry(state, solve_id).await;
+}
+
+async fn snapshot_solve_frontier(state: &AppState, solve_id: &str, jobs: &[SubproblemJob]) {
+    cache_solve_frontier(state, solve_id, jobs).await;
+}
+
+async fn finalize_solve_state(state: &AppState, response: &SolveResponse) {
+    cache_solve_registry_entry(state, &response.solve_id).await;
+    persist_solve_response(state, response).await;
+}
+
 async fn cache_session_model(state: &AppState, session_id: &str, session: LiveSession) {
     let prefix = redis_key_prefix();
     redis_set_json(
@@ -2357,6 +2733,23 @@ async fn cache_session_model(state: &AppState, session_id: &str, session: LiveSe
         }),
     )
     .await;
+}
+
+async fn snapshot_session_model(state: &AppState, session_id: &str, session: LiveSession) {
+    cache_session_model(state, session_id, session.clone()).await;
+    persist_session_model(state, session_id, &session).await;
+}
+
+async fn record_job_submitted(state: &AppState, job: &SubproblemJob) {
+    track_job_submitted(state, job);
+    persist_job_submitted(state, job).await;
+    persist_solve_registry_entry(state, &job.solve_id).await;
+}
+
+async fn record_job_result(state: &AppState, result: &SubproblemResult, terminal: bool) {
+    track_job_result(state, result, terminal);
+    persist_job_result(state, result, terminal).await;
+    persist_solve_registry_entry(state, &result.solve_id).await;
 }
 
 async fn publish_event(state: &AppState, event_name: &str, payload: Value) {
@@ -2595,8 +2988,19 @@ async fn solve_problem_distributed(
         jobs.len(),
         state.nats.is_some(),
     );
-    cache_solve_registry_entry(&state, &solve_id).await;
-    cache_solve_frontier(&state, &solve_id, &jobs).await;
+    persist_solve_started(
+        &state,
+        &solve_id,
+        &request_id,
+        revision,
+        &problem,
+        &options,
+        jobs.len(),
+        state.nats.is_some(),
+    )
+    .await;
+    snapshot_solve_state(&state, &solve_id).await;
+    snapshot_solve_frontier(&state, &solve_id, &jobs).await;
     if jobs.is_empty() {
         let response = aggregate_results(
             solve_id,
@@ -2614,7 +3018,7 @@ async fn solve_problem_distributed(
             warnings,
         );
         track_solve_finished(&state, &response);
-        cache_solve_registry_entry(&state, &response.solve_id).await;
+        finalize_solve_state(&state, &response).await;
         return Ok(response);
     }
 
@@ -2631,7 +3035,7 @@ async fn solve_problem_distributed(
             let mut retry_index = job_retry_index(&job.job_id);
             loop {
                 jobs_published += 1;
-                track_job_submitted(&state, &job);
+                record_job_submitted(&state, &job).await;
                 let node = state.node_id.clone();
                 let attempt_job = job.clone();
                 let result =
@@ -2641,7 +3045,7 @@ async fn solve_problem_distributed(
                 if result.status == "split" && !result.child_jobs.is_empty() {
                     let child_count = result.child_jobs.len();
                     let child_jobs = result.child_jobs.clone();
-                    track_job_result(&state, &result, false);
+                    record_job_result(&state, &result, false).await;
                     track_job_split(&state, &solve_id, child_count);
                     state
                         .metrics
@@ -2649,8 +3053,8 @@ async fn solve_problem_distributed(
                         .fetch_add(1, Ordering::Relaxed);
                     jobs_split += 1;
                     jobs_expected = jobs_expected.saturating_add(child_count.saturating_sub(1));
-                    cache_solve_registry_entry(&state, &solve_id).await;
-                    cache_solve_frontier(&state, &solve_id, &child_jobs).await;
+                    snapshot_solve_state(&state, &solve_id).await;
+                    snapshot_solve_frontier(&state, &solve_id, &child_jobs).await;
                     warnings.push(format!(
                         "local job {} split into {} child subproblems",
                         result.job_id, child_count
@@ -2661,7 +3065,7 @@ async fn solve_problem_distributed(
                     break;
                 }
                 if should_redelegate_result(&result, retry_index, max_retries) {
-                    track_job_result(&state, &result, false);
+                    record_job_result(&state, &result, false).await;
                     warnings.push(format!(
                         "local job {} failed; re-delegating retry {} of {}",
                         result.job_id,
@@ -2672,9 +3076,10 @@ async fn solve_problem_distributed(
                     job = redelegated_job(&job, retry_index);
                     jobs_redelegated += 1;
                     track_job_redelegated(&state, &solve_id);
+                    snapshot_solve_state(&state, &solve_id).await;
                     continue;
                 }
-                track_job_result(&state, &result, true);
+                record_job_result(&state, &result, true).await;
                 results.push(result);
                 break;
             }
@@ -2695,7 +3100,7 @@ async fn solve_problem_distributed(
             warnings,
         );
         track_solve_finished(&state, &response);
-        cache_solve_registry_entry(&state, &response.solve_id).await;
+        finalize_solve_state(&state, &response).await;
         return Ok(response);
     };
 
@@ -2710,7 +3115,7 @@ async fn solve_problem_distributed(
     for job in &jobs {
         let sequence = publish_subproblem_job(&nats, &state.jobs_subject, job).await?;
         first_job_sequence.get_or_insert(sequence);
-        track_job_submitted(&state, job);
+        record_job_submitted(&state, job).await;
         state
             .metrics
             .subproblem_jobs_published_total
@@ -2783,7 +3188,7 @@ async fn solve_problem_distributed(
                                         .await
                                     {
                                         Ok(_) => {
-                                            track_job_submitted(&state, &child);
+                                            record_job_submitted(&state, &child).await;
                                             expected_job_ids.insert(child.job_id.clone());
                                             retry_index_by_job_id.insert(child.job_id.clone(), 0);
                                             jobs_by_id.insert(child.job_id.clone(), child.clone());
@@ -2810,18 +3215,19 @@ async fn solve_problem_distributed(
                                     terminal_error.status = "error".to_string();
                                     terminal_error.error =
                                         Some(format!("failed to publish split children: {error}"));
-                                    track_job_result(&state, &terminal_error, true);
+                                    record_job_result(&state, &terminal_error, true).await;
                                     results.push(terminal_error);
                                     continue;
                                 }
 
-                                track_job_result(&state, &result, false);
+                                record_job_result(&state, &result, false).await;
                                 track_job_split(&state, &solve_id, child_count);
                                 jobs_expected =
                                     jobs_expected.saturating_add(child_count.saturating_sub(1));
                                 jobs_split += 1;
-                                cache_solve_registry_entry(&state, &solve_id).await;
-                                cache_solve_frontier(&state, &solve_id, &result.child_jobs).await;
+                                snapshot_solve_state(&state, &solve_id).await;
+                                snapshot_solve_frontier(&state, &solve_id, &result.child_jobs)
+                                    .await;
                                 state
                                     .metrics
                                     .subproblem_jobs_split_total
@@ -2843,7 +3249,7 @@ async fn solve_problem_distributed(
                                 continue;
                             }
                             if should_redelegate_result(&result, retry_index, max_retries) {
-                                track_job_result(&state, &result, false);
+                                record_job_result(&state, &result, false).await;
                                 let Some(original_job) = jobs_by_id.get(&result.job_id).cloned()
                                 else {
                                     warnings.push(format!(
@@ -2859,8 +3265,9 @@ async fn solve_problem_distributed(
                                     .await
                                 {
                                     Ok(_) => {
-                                        track_job_submitted(&state, &retry_job);
+                                        record_job_submitted(&state, &retry_job).await;
                                         track_job_redelegated(&state, &solve_id);
+                                        snapshot_solve_state(&state, &solve_id).await;
                                         publish_event(
                                             &state,
                                             "subproblem-redelegated",
@@ -2896,12 +3303,12 @@ async fn solve_problem_distributed(
                                             "failed to re-delegate job {}: {error}",
                                             result.job_id
                                         ));
-                                        track_job_result(&state, &result, true);
+                                        record_job_result(&state, &result, true).await;
                                         results.push(result);
                                     }
                                 }
                             } else {
-                                track_job_result(&state, &result, true);
+                                record_job_result(&state, &result, true).await;
                                 results.push(result);
                             }
                         }
@@ -2942,7 +3349,7 @@ async fn solve_problem_distributed(
         warnings,
     );
     track_solve_finished(&state, &response);
-    cache_solve_registry_entry(&state, &response.solve_id).await;
+    finalize_solve_state(&state, &response).await;
     publish_event(
         &state,
         "solve-finished",
@@ -3206,7 +3613,7 @@ async fn stream_session(
         }
         (session.revision, session.clone())
     };
-    cache_session_model(&state, &session_id, session_snapshot).await;
+    snapshot_session_model(&state, &session_id, session_snapshot).await;
     response_json(
         StatusCode::OK,
         json!({
@@ -3521,6 +3928,29 @@ fn connect_redis() -> Option<redis::Client> {
     }
 }
 
+async fn connect_postgres() -> Option<PgPool> {
+    let env_key = first_configured_env(&[
+        "MIP_SOLVER_DATABASE_URL",
+        "AGENT_TASKS_RDS_DATABASE_URL",
+        "RDS_DATABASE_URL",
+        "DATABASE_URL",
+        "PG_DATABASE_URL",
+    ])?;
+    let url = env::var(&env_key).ok()?;
+    let max_connections = env_usize("MIP_SOLVER_PG_POOL_SIZE", 4).clamp(1, 32) as u32;
+    match PgPoolOptions::new()
+        .max_connections(max_connections)
+        .connect(&url)
+        .await
+    {
+        Ok(pool) => Some(pool),
+        Err(error) => {
+            eprintln!("failed to connect to Postgres from {env_key}: {error}");
+            None
+        }
+    }
+}
+
 fn app_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
@@ -3579,11 +4009,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .unwrap_or_else(|_| format!("{}-{}", SERVICE_NAME, Uuid::new_v4()));
     let nats = connect_nats().await;
     let redis = connect_redis();
+    let pg = connect_postgres().await;
     let state = AppState {
         role,
         node_id,
         nats,
         redis,
+        pg,
         jobs_subject: env_value("MIP_SOLVER_JOBS_SUBJECT", MIP_SOLVER_JOBS_SUBJECT),
         results_subject: env_value("MIP_SOLVER_RESULTS_SUBJECT", MIP_SOLVER_RESULTS_SUBJECT),
         control_subject: env_value("MIP_SOLVER_CONTROL_SUBJECT", MIP_SOLVER_CONTROL_SUBJECT),
@@ -3639,6 +4071,7 @@ mod tests {
             node_id: "test-node".to_string(),
             nats: None,
             redis: None,
+            pg: None,
             jobs_subject: MIP_SOLVER_JOBS_SUBJECT.to_string(),
             results_subject: MIP_SOLVER_RESULTS_SUBJECT.to_string(),
             control_subject: MIP_SOLVER_CONTROL_SUBJECT.to_string(),
@@ -4005,6 +4438,32 @@ mod tests {
             MIP_SOLVER_WORKERS_QUEUE_GROUP,
             "dd-in-house-mip-solver-node-workers"
         );
+    }
+
+    #[test]
+    fn persistence_contract_uses_generated_mip_pg_defs_and_redis_namespace() {
+        let contract = persistence_contract();
+
+        assert_eq!(contract.postgres.session_table, MIP_SOLVER_SESSIONS_TABLE);
+        assert_eq!(contract.postgres.solve_table, MIP_SOLVER_SOLVES_TABLE);
+        assert_eq!(contract.postgres.job_table, MIP_SOLVER_JOBS_TABLE);
+        assert_eq!(contract.postgres.event_table, MIP_SOLVER_EVENTS_TABLE);
+        assert!(contract
+            .postgres
+            .journal_kinds
+            .contains(&"mip-solver.subproblem-split"));
+        assert_eq!(
+            mip_solver_solve_snapshot_key("dd:mip-solver", "solve-a"),
+            "dd:mip-solver:solve:solve-a:snapshot"
+        );
+        assert_eq!(
+            mip_solver_session_model_key("dd:mip-solver", "session-a"),
+            "dd:mip-solver:session:session-a:model"
+        );
+        assert!(contract
+            .redis
+            .generated_mutex_key
+            .contains("dd:container-pool:affinity:mip-solver"));
     }
 
     #[test]
