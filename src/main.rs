@@ -2130,6 +2130,21 @@ async fn connect_nats() -> Option<async_nats::Client> {
     }
 }
 
+fn app_router(state: AppState) -> Router {
+    Router::new()
+        .route("/", get(root))
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics))
+        .route("/model/example", get(example))
+        .route("/solve", post(solve_http))
+        .route("/sessions/:session_id", get(get_session))
+        .route("/sessions/:session_id/events", post(stream_session))
+        .route("/sessions/:session_id/solve", post(solve_session))
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .with_state(state)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let role = NodeRole::from_env();
@@ -2158,18 +2173,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         });
     }
 
-    let app = Router::new()
-        .route("/", get(root))
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/metrics", get(metrics))
-        .route("/model/example", get(example))
-        .route("/solve", post(solve_http))
-        .route("/sessions/:session_id", get(get_session))
-        .route("/sessions/:session_id/events", post(stream_session))
-        .route("/sessions/:session_id/solve", post(solve_session))
-        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
-        .with_state(state);
+    let app = app_router(state);
 
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8097");
@@ -2187,7 +2191,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Method, Request},
+    };
     use serde_json::json;
+    use tower::ServiceExt;
 
     fn test_state(role: NodeRole) -> AppState {
         AppState {
@@ -2229,6 +2238,22 @@ mod tests {
             options: SolveOptions::default(),
             submitted_at_ms: now_ms(),
         }
+    }
+
+    async fn post_json(app: Router, path: &str, payload: Value) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(path)
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), MAX_HTTP_BODY_BYTES)
+            .await
+            .unwrap();
+        let value = serde_json::from_slice(&body).unwrap();
+        (status, value)
     }
 
     #[test]
@@ -2435,6 +2460,47 @@ mod tests {
         assert!(!response.distributed);
         assert_eq!(response.jobs_completed, response.jobs_published);
         assert!(response.jobs_published > 0);
+    }
+
+    #[tokio::test]
+    async fn http_solve_endpoint_solves_binary_mip() {
+        let app = app_router(test_state(NodeRole::Master));
+        let payload = json!({
+            "requestId": "http-test",
+            "problem": binary_knapsack_problem(),
+            "options": {
+                "splitDepth": 2,
+                "maxNodes": 10000
+            }
+        });
+
+        let (status, body) = post_json(app, "/solve", payload).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("ok"), Some(&json!(true)));
+        assert_eq!(body.get("status"), Some(&json!("optimal")));
+        assert_eq!(body.get("z"), Some(&json!(90.0)));
+        assert_eq!(body.get("distributed"), Some(&json!(false)));
+        assert_eq!(body.pointer("/role"), Some(&json!("master")));
+    }
+
+    #[tokio::test]
+    async fn http_slave_rejects_master_solve_endpoint() {
+        let app = app_router(test_state(NodeRole::Slave));
+        let payload = json!({
+            "requestId": "slave-test",
+            "problem": binary_knapsack_problem()
+        });
+
+        let (status, body) = post_json(app, "/solve", payload).await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body.get("ok"), Some(&json!(false)));
+        assert!(body
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .contains("booted as slave"));
     }
 
     #[test]
