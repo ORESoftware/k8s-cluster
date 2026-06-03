@@ -2574,6 +2574,11 @@ jobs:
               'broker-fanout-results|sum by (backend, result) (increase(gcs_broker_fanout_deliveries_total[30m]))' \
               'in-memory-fanout-results|sum by (result) (increase(gcs_in_memory_fanout_total[30m]))' \
               'broker-subs-active-max|max(max_over_time(gcs_broker_subscriptions_active[30m]))' \
+              'ws-active-now|gcs_ws_connections_active' \
+              'gcs-rss-now|gcs_process_resident_memory_bytes' \
+              'runtime-gauges-now|gcs_runtime_gauge' \
+              'ws-load-shed-recent|sum by (reason, phase) (increase(gcs_ws_load_shed_total[3m]))' \
+              'broker-publish-recent|sum by (backend, result) (increase(gcs_broker_publish_total[3m]))' \
               'runtime-gauges|max by (name) (max_over_time(gcs_runtime_gauge[30m]))'; do
               query_label="${query_spec%%|*}"
               query_expr="${query_spec#*|}"

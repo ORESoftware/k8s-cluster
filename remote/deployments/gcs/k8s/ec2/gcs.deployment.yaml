@@ -32,7 +32,7 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
-        dd.dev/chat-vibe-revision: "9c26eba-prepared-fanout"
+        dd.dev/chat-vibe-revision: "cafd8f0-hot-dispatch"
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
@@ -151,6 +151,8 @@ spec:
             # The router pins a conversation to one GCS pod, so local fanout covers
             # hot-path conversation delivery without one RMQ subscriber per socket.
             - name: GCS_WS_ENABLE_RMQ_SUBSCRIPTIONS
+              value: 'false'
+            - name: GCS_WS_ENABLE_CHAT_MAP_SIDE_EFFECT
               value: 'false'
             - name: vibe_api_server_protocol
               value: http
