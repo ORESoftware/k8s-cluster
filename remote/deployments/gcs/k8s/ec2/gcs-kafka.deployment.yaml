@@ -14,6 +14,8 @@ spec:
       app: gcs-kafka
   template:
     metadata:
+      annotations:
+        dd.dev/kafka-clean-restart: "2026-06-03-cafd8f0"
       labels:
         app: gcs-kafka
     spec:
