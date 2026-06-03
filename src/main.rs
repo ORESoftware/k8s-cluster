@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     env,
     error::Error,
     ffi::{c_int, c_void},
@@ -1535,6 +1535,27 @@ fn aggregate_results(
     }
 }
 
+fn accept_subproblem_result(
+    result: SubproblemResult,
+    solve_id: &str,
+    expected_job_ids: &HashSet<String>,
+    completed_job_ids: &mut HashSet<String>,
+) -> Result<Option<SubproblemResult>, String> {
+    if result.solve_id != solve_id {
+        return Ok(None);
+    }
+    if !expected_job_ids.contains(&result.job_id) {
+        return Err(format!("ignored result for unknown job {}", result.job_id));
+    }
+    if !completed_job_ids.insert(result.job_id.clone()) {
+        return Err(format!(
+            "ignored duplicate result for job {}",
+            result.job_id
+        ));
+    }
+    Ok(Some(result))
+}
+
 async fn publish_event(state: &AppState, event_name: &str, payload: Value) {
     let Some(nats) = &state.nats else {
         return;
@@ -1766,6 +1787,8 @@ async fn solve_problem_distributed(
     let timeout = Duration::from_millis(options.timeout_ms.unwrap_or(120_000));
     let deadline = Instant::now() + timeout;
     let mut results = Vec::new();
+    let expected_job_ids: HashSet<String> = jobs.iter().map(|job| job.job_id.clone()).collect();
+    let mut completed_job_ids = HashSet::new();
     let mut timed_out = false;
     while results.len() < jobs.len() {
         let now = Instant::now();
@@ -1776,12 +1799,23 @@ async fn solve_problem_distributed(
         match tokio::time::timeout(deadline - now, result_sub.next()).await {
             Ok(Some(Ok(message))) => {
                 let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
-                if let Some(result) = parsed.filter(|result| result.solve_id == solve_id) {
-                    results.push(result);
-                    state
-                        .metrics
-                        .subproblem_jobs_completed_total
-                        .fetch_add(1, Ordering::Relaxed);
+                if let Some(result) = parsed {
+                    match accept_subproblem_result(
+                        result,
+                        &solve_id,
+                        &expected_job_ids,
+                        &mut completed_job_ids,
+                    ) {
+                        Ok(Some(result)) => {
+                            results.push(result);
+                            state
+                                .metrics
+                                .subproblem_jobs_completed_total
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                        Ok(None) => {}
+                        Err(warning) => warnings.push(warning),
+                    }
                 }
                 let _ = message.ack().await;
             }
@@ -2731,5 +2765,61 @@ mod tests {
         assert_eq!(response.status, "optimal");
         assert_eq!(response.jobs_completed, 2);
         assert_eq!(response.z, Some(90.0));
+    }
+
+    #[test]
+    fn result_acceptance_ignores_duplicate_and_unknown_jobs() {
+        let mut expected = HashSet::new();
+        expected.insert("job-0".to_string());
+        expected.insert("job-1".to_string());
+        let mut completed = HashSet::new();
+        let result = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-0".to_string(),
+            revision: 0,
+            worker_node: "worker-a".to_string(),
+            ok: true,
+            status: "optimal".to_string(),
+            z: Some(90.0),
+            x: vec![0.0, 1.0],
+            best_bound: Some(90.0),
+            gap: Some(0.0),
+            nodes_explored: 1,
+            lp_solves: 1,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: None,
+            finished_at_ms: now_ms(),
+        };
+
+        assert!(
+            accept_subproblem_result(result.clone(), "solve-test", &expected, &mut completed)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(completed.len(), 1);
+
+        let duplicate =
+            accept_subproblem_result(result.clone(), "solve-test", &expected, &mut completed)
+                .unwrap_err();
+        assert!(duplicate.contains("duplicate"));
+        assert_eq!(completed.len(), 1);
+
+        let mut unknown = result.clone();
+        unknown.job_id = "job-missing".to_string();
+        let warning =
+            accept_subproblem_result(unknown, "solve-test", &expected, &mut completed).unwrap_err();
+        assert!(warning.contains("unknown job"));
+        assert_eq!(completed.len(), 1);
+
+        let mut other_solve = result;
+        other_solve.solve_id = "solve-other".to_string();
+        assert!(
+            accept_subproblem_result(other_solve, "solve-test", &expected, &mut completed)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(completed.len(), 1);
     }
 }
