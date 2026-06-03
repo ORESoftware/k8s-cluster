@@ -1650,13 +1650,13 @@ jobs:
               record "phase=recover label=$label status=failed component=gcs available=$(availability gcs)"
               return 1
             fi
-            if ! wait_available gcs-router 2; then
+            if ! wait_available gcs-router 3; then
               kubectl -n default get deploy gcs-router -o wide || true
               kubectl -n default get pods -l app=gcs-router -o wide || true
               record "phase=recover label=$label status=failed component=gcs-router available=$(availability gcs-router)"
               return 1
             fi
-            record "phase=recover label=$label status=passed gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/2"
+            record "phase=recover label=$label status=passed gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/3"
           }
 
           restore_current() {
@@ -1729,7 +1729,7 @@ jobs:
             done
             kubectl -n default logs job/gcs-loadtest --tail=80 2>/dev/null \
               | grep -E '^(=== [0-9]/|=== summary|ALL TESTS PASSED|ONE OR MORE TESTS FAILED|>> .* exit=|FAIL|ERROR)' || true
-            record "phase=correctness commit=$label sha=$sha status=$result gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/2"
+            record "phase=correctness commit=$label sha=$sha status=$result gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/3"
             test "$result" = "passed"
           }
 
@@ -1760,14 +1760,17 @@ jobs:
             kubectl -n default set env "deployment/$d" \
               CLIENT_COUNT="$clients" \
               GCS_CLIENTS_PER_CONV=5 \
-              GCS_SENDERS_PER_CONV=0 \
+              GCS_SENDERS_PER_CONV=5 \
               MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
-              RAMP_DELAY_MS=2 \
+              RAMP_DELAY_MS=20 \
+              CONNECT_TIMEOUT_SECONDS=60 \
+              CONNECT_TIMEOUT_MS=60000 \
+              RECONNECT_DELAY_MS=10000 \
               REPORT_INTERVAL_SECONDS=10 >/dev/null
             kubectl -n default scale "deployment/$d" --replicas="$replicas" >/dev/null
             if ! kubectl -n default rollout status "deployment/$d" --timeout=240s; then
               summary="$(collect_loader "$d")"
-              record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=rollout_failed total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/2"
+              record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=rollout_failed total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/3"
               kubectl -n default get deploy "$d" -o wide || true
               kubectl -n default get pods -l "app=$d" -o wide || true
               stop_loaders
@@ -1779,10 +1782,10 @@ jobs:
             gcs_available="$(availability gcs)"
             router_available="$(availability gcs-router)"
             status=completed
-            if [ "${gcs_available:-0}" -lt 3 ] || [ "${router_available:-0}" -lt 2 ]; then
+            if [ "${gcs_available:-0}" -lt 3 ] || [ "${router_available:-0}" -lt 3 ]; then
               status=degraded
             fi
-            record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=$status total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=${gcs_available:-0}/3 router_available=${router_available:-0}/2"
+            record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=$status total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=${gcs_available:-0}/3 router_available=${router_available:-0}/3"
             stop_loaders
             recover_stack "post-${commit_label}-${size_label}-${loader_label}" >/dev/null || true
           }
@@ -2123,6 +2126,8 @@ jobs:
           prom_query "ws-load-shed" 'sum by (reason, phase) (increase(gcs_ws_load_shed_total[60m]))'
           prom_query "ws-message-latency-mean" 'sum by (type, outcome) (rate(gcs_ws_message_duration_seconds_sum[5m])) / sum by (type, outcome) (rate(gcs_ws_message_duration_seconds_count[5m]))'
           prom_query "ws-write-errors" 'sum by (kind, outcome) (increase(gcs_ws_writes_total[60m]))'
+          prom_query "router-active-total-max" 'max_over_time(gcs_router_active_total[60m])'
+          prom_query "router-rejections" 'sum by (pool, reason) (increase(gcs_router_rejected_total[60m]))'
           prom_query "gcs-heap-max" 'max by (pod) (max_over_time(gcs_go_heap_alloc_bytes[60m]))'
           prom_query "gcs-rss-max" 'max by (pod) (max_over_time(gcs_process_resident_memory_bytes[60m]))'
           prom_query "gcs-cpu-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[60m]))'
@@ -2210,12 +2215,12 @@ jobs:
           import shlex
 
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
-          duration = os.environ.get("LOADTEST_DURATION_SECONDS", "90") or "90"
+          duration = os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180"
           script = r'''set -euo pipefail
           repo=/home/ec2-user/codes/dd/dd-next-1
-          duration="${LOADTEST_DURATION_SECONDS:-90}"
+          duration="${LOADTEST_DURATION_SECONDS:-180}"
           case "$duration" in
-            ''|*[!0-9]*) duration=90 ;;
+            ''|*[!0-9]*) duration=180 ;;
           esac
           loader_replicas="${LOADTEST_LOADER_REPLICAS:-6}"
           case "$loader_replicas" in
@@ -2440,6 +2445,8 @@ jobs:
               'gcs_broker_fanout_deliveries_total' \
               'gcs_kafka_read_errors_total' \
               'gcs_router_active_conns' \
+              'gcs_router_active_total' \
+              'gcs_router_rejected_total' \
               'gcs_router_upstream_errors_total' \
               'dd_gcs_dependency_tcp_up' \
               'dd_gcs_redis_info{name="connected_clients"}' \
@@ -2495,7 +2502,7 @@ jobs:
             exit 1
           fi
           wait_available gcs 3
-          wait_available gcs-router 2
+          wait_available gcs-router 3
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
           prom_snapshot "after gcs rollout"
@@ -2507,7 +2514,7 @@ jobs:
               return
             fi
             kubectl -n default exec "$pod" -- bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9100; printf "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3' 2>/dev/null \
-              | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns|gcs_router_upstream_errors_total)' \
+              | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns|gcs_router_active_total|gcs_router_rejected_total|gcs_router_upstream_errors_total)' \
               | head -120 || true
           }
 
@@ -2587,6 +2594,87 @@ jobs:
                 }' || true
           }
 
+          loader_summary() {
+            d="$1"
+            kubectl -n default logs -l "app=$d" --all-containers --tail=500 --prefix=true --max-log-requests=20 2>/dev/null \
+              | awk '
+                /gcs-report/ {
+                  pod = $1
+                  sub(/^\[pod\//, "", pod)
+                  sub(/\/.*$/, "", pod)
+                  latest[pod] = $0
+                }
+                END {
+                  for (pod in latest) {
+                    pods++
+                    n = split(latest[pod], fields, " ")
+                    for (i = 1; i <= n; i++) {
+                      split(fields[i], kv, "=")
+                      key = kv[1]
+                      val = kv[2] + 0
+                      if (key == "attempted") attempted += val
+                      else if (key == "connected") connected += val
+                      else if (key == "failed") failed += val
+                      else if (key == "open") open += val
+                      else if (key == "sent") sent += val
+                      else if (key == "received") received += val
+                      else if (key == "in_flight") in_flight += val
+                      else if (key == "correlation_misses") correlation_misses += val
+                      else if (key == "receive_errors") receive_errors += val
+                    }
+                  }
+                  printf "%d %d %d %d %d %d %d %d %d %d\n", pods, attempted, connected, failed, open, sent, received, in_flight, correlation_misses, receive_errors
+                }' || printf '0 0 0 0 0 0 0 0 0 0\n'
+          }
+
+          assert_loader_healthy() {
+            d="$1"
+            label="$2"
+            summary="$(loader_summary "$d")"
+            set -- $summary
+            pods="${1:-0}"
+            attempted="${2:-0}"
+            connected="${3:-0}"
+            failed="${4:-0}"
+            open="${5:-0}"
+            sent="${6:-0}"
+            received="${7:-0}"
+            in_flight="${8:-0}"
+            correlation_misses="${9:-0}"
+            receive_errors="${10:-0}"
+            min_open=$((total_connections * 90 / 100))
+            max_failed=$((total_connections / 10))
+            max_receive_errors=$((total_connections / 10))
+            min_sent=$((total_connections * 20))
+            echo "proof-summary loader=$label pods=$pods attempted=$attempted connected=$connected failed=$failed open=$open sent=$sent received=$received in_flight=$in_flight correlation_misses=$correlation_misses receive_errors=$receive_errors min_open=$min_open max_failed=$max_failed"
+            if [ "$pods" -lt "$loader_replicas" ]; then
+              echo "ERROR: $label only reported $pods/$loader_replicas load pods" >&2
+              return 1
+            fi
+            if [ "$open" -lt "$min_open" ]; then
+              echo "ERROR: $label did not sustain enough open connections: open=$open min=$min_open" >&2
+              return 1
+            fi
+            if [ "$failed" -gt "$max_failed" ]; then
+              echo "ERROR: $label had too many connection failures: failed=$failed max=$max_failed" >&2
+              return 1
+            fi
+            if [ "$receive_errors" -gt "$max_receive_errors" ]; then
+              echo "ERROR: $label had too many receive errors: receive_errors=$receive_errors max=$max_receive_errors" >&2
+              return 1
+            fi
+            if [ "$sent" -lt "$min_sent" ]; then
+              echo "ERROR: $label did not generate enough client-originated messages: sent=$sent min=$min_sent" >&2
+              return 1
+            fi
+            if [ "$received" -le 0 ]; then
+              echo "ERROR: $label did not observe any GCS response/fanout messages" >&2
+              return 1
+            fi
+            wait_available gcs 3
+            wait_available gcs-router 3
+          }
+
           run_loader() {
             d="$1"
             label="$2"
@@ -2597,9 +2685,12 @@ jobs:
             kubectl -n default set env "deployment/$d" \
               CLIENT_COUNT="$clients_per_replica" \
               GCS_CLIENTS_PER_CONV=5 \
-              GCS_SENDERS_PER_CONV=0 \
+              GCS_SENDERS_PER_CONV=5 \
               MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
-              RAMP_DELAY_MS=2 \
+              RAMP_DELAY_MS=20 \
+              CONNECT_TIMEOUT_SECONDS=60 \
+              CONNECT_TIMEOUT_MS=60000 \
+              RECONNECT_DELAY_MS=10000 \
               REPORT_INTERVAL_SECONDS=10
             kubectl -n default scale "deployment/$d" --replicas="$loader_replicas"
             if ! kubectl -n default rollout status "deployment/$d" --timeout=240s; then
@@ -2636,6 +2727,7 @@ jobs:
             done
             echo "=== final $label loader summary ==="
             collect_loader "$d"
+            assert_loader_healthy "$d" "$label"
             prom_snapshot "after $label"
             echo "=== stop $label ==="
             kubectl -n default scale "deployment/$d" --replicas=0
