@@ -2120,6 +2120,33 @@ jobs:
           PROMPY
           }
 
+          direct_gcs_metrics() {
+            local metrics_file pf_log pf_pid pod port
+            echo "=== direct current GCS pod metrics ==="
+            port=19130
+            for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- gcs pod $pod metrics ---"
+              port=$((port + 1))
+              metrics_file="/tmp/gcs-snapshot-metrics-${pod}.txt"
+              pf_log="/tmp/gcs-snapshot-port-forward-${pod}.log"
+              kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
+              pf_pid="$!"
+              for _ in $(seq 1 20); do
+                if curl -fsS "http://127.0.0.1:${port}/metrics" >"$metrics_file" 2>/dev/null; then
+                  grep -E '^(gcs_ws_|gcs_broker_|gcs_in_memory_|gcs_kafka_|gcs_runtime_|gcs_process_|gcs_go_)' "$metrics_file" \
+                    | head -220 || true
+                  break
+                fi
+                sleep 0.25
+              done
+              kill "$pf_pid" 2>/dev/null || true
+              wait "$pf_pid" 2>/dev/null || true
+              if [ -s "$pf_log" ]; then
+                grep -v 'Handling connection' "$pf_log" | tail -5 || true
+              fi
+            done
+          }
+
           prom_query "ws-active-max-by-pod" 'max by (pod) (max_over_time(gcs_ws_connections_active[60m]))'
           prom_query "ws-connection-events" 'sum by (event) (increase(gcs_ws_connections_total[60m]))'
           prom_query "ws-read-errors" 'sum by (kind) (increase(gcs_ws_read_errors_total[60m]))'
@@ -2133,6 +2160,11 @@ jobs:
           prom_query "gcs-cpu-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[60m]))'
           prom_query "gcs-memory-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}[60m]))'
           prom_query "router-upstream-errors" 'sum by (pool, peer) (increase(gcs_router_upstream_errors_total[60m]))'
+
+          echo "=== current top pods: gcs/loadtest/dependencies ==="
+          kubectl -n default top pods --containers | grep -E 'gcs|loadtest|kafka|rabbit|redis|mongo' || true
+
+          direct_gcs_metrics
 
           echo "=== Loki gcs-report summaries: last 60m ==="
                     kubectl -n observability exec -i deploy/dd-k8s-resource-exporter -- python - <<'LOKIPY' || true
@@ -2732,18 +2764,34 @@ jobs:
               echo "--- loader pod $pod recent report/connect lines ---"
               kubectl -n default logs "$pod" --all-containers --since=30m --tail=2000 --prefix=true 2>/dev/null \
                 | grep -E 'gcs-report|gcs connect failed|gcs connect timeout|HTTP error: 503|HTTP error: 502|HTTP error: 504' \
-                | tail -80 || true
+                | tail -20 || true
             done
           }
 
           direct_gcs_metrics() {
-            local pod
+            local metrics_file pf_log pf_pid pod port
             echo "=== direct current GCS pod metrics ==="
+            port=19030
             for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
               echo "--- gcs pod $pod metrics ---"
-              kubectl -n default exec "$pod" -- bash -lc 'exec 3<>/dev/tcp/127.0.0.1/3000; printf "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3' 2>/dev/null \
-                | grep -E '^(gcs_ws_|gcs_broker_|gcs_in_memory_|gcs_kafka_|gcs_runtime_|gcs_process_|gcs_go_)' \
-                | head -220 || true
+              port=$((port + 1))
+              metrics_file="/tmp/gcs-metrics-${pod}.txt"
+              pf_log="/tmp/gcs-port-forward-${pod}.log"
+              kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
+              pf_pid="$!"
+              for _ in $(seq 1 20); do
+                if curl -fsS "http://127.0.0.1:${port}/metrics" >"$metrics_file" 2>/dev/null; then
+                  grep -E '^(gcs_ws_|gcs_broker_|gcs_in_memory_|gcs_kafka_|gcs_runtime_|gcs_process_|gcs_go_)' "$metrics_file" \
+                    | head -220 || true
+                  break
+                fi
+                sleep 0.25
+              done
+              kill "$pf_pid" 2>/dev/null || true
+              wait "$pf_pid" 2>/dev/null || true
+              if [ -s "$pf_log" ]; then
+                grep -v 'Handling connection' "$pf_log" | tail -5 || true
+              fi
             done
           }
 
@@ -2839,12 +2887,16 @@ jobs:
             {
               echo "=== load failure diagnostics: $loader_name ==="
               collect_loader "$d"
+              echo "=== top pods: gcs/loadtest/dependencies ==="
+              kubectl -n default top pods --containers | grep -E 'gcs|loadtest|kafka|rabbit|redis|mongo' || true
+              echo "=== gcs dependency pods ==="
+              kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' || true
               direct_gcs_metrics
-              dump_loader_logs "$d"
               echo "=== router metrics at $loader_name failure ==="
               router_metrics
               prom_compact_snapshot "load failure $loader_name"
               prom_load_failure_snapshot "load failure $loader_name"
+              dump_loader_logs "$d"
               echo "=== gcs/router/loadtest deployments ==="
               kubectl -n default get deploy gcs gcs-router "$d" || true
               echo "=== gcs/router/loadtest pods ==="
@@ -2853,10 +2905,6 @@ jobs:
               kubectl -n default logs -l app=gcs --all-containers --since=20m --tail=1200 --prefix=true --max-log-requests=20 2>/dev/null \
                 | grep -E 'websocket|ws connection|EOF for ws conn|unexpected close|closed|rejected|Panic|WriteJSON|WriteMessage|client connection|vid/a4295d402f9b|vid/6e0bc91e57e6|vid/28ab6154d3bb|vid/73b3c13a1f48|vid/f1e0fb06755b|vid/9d157baaa874' \
                 | tail -200 || true
-              echo "=== gcs dependency pods ==="
-              kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' || true
-              echo "=== top pods: gcs/loadtest/dependencies ==="
-              kubectl -n default top pods --containers | grep -E 'gcs|loadtest|kafka|rabbit|redis|mongo' || true
               echo "=== recent gcs/loadtest events ==="
               kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|loadtest|FailedScheduling|BackOff|Failed|Killing|Unhealthy|OOM|Evicted' | tail -40 || true
             } >&2
