@@ -210,8 +210,14 @@ h2::before{content:"";width:4px;height:16px;border-radius:3px;background:linear-
     <div class="row"><a class="open" href="elevator-pomdp" target="_blank" rel="noopener">Open player &#8599;</a></div>
   </div>
 </div>
-<h2>Soccer rotation planner <span class="muted">— 11-a-side IP/MIP, roster constraints, pitch + solver</span></h2>
+<h2>Soccer <span class="muted">— videogame, learning sim, rotation planner</span></h2>
 <div class="grid">
+  <div class="sim feat">
+    <div class="label">Soccer videogame</div>
+    <div class="name">out/soccer-sim.html</div>
+    <div class="desc">Playable 2D 11v11 match artifact with MDP/POMDP player learning, ball physics, possession chains, shots, officials, and controller slots.</div>
+    <div class="row"><a class="open" href="out/soccer-sim.html" target="_blank" rel="noopener">Open game &#8599;</a></div>
+  </div>
   <div class="sim feat">
     <div class="label">Interactive planner</div>
     <div class="name">soccer/planner</div>
@@ -1798,6 +1804,7 @@ async fn info(State(state): State<AppState>) -> Response {
             "streaming": "GET /streaming",
             "streamModel": "POST /streaming/:name  (JSONL in -> JSONL out)",
             "elevatorFel": "GET /elevator-fel  (new next-event elevator sim, animated)",
+            "soccerVideogame": "GET /out/soccer-sim.html  (2D 11v11 soccer videogame / learning sim artifact)",
             "soccerPlanner": "GET /soccer/planner  (11-a-side rotation planner UI)",
             "soccerPlannerSolve": "POST /soccer/planner/solve  (re-solve with constraints)",
             "soccerPlannerStream": "POST /soccer/planner/stream  (planner JSONL command stream)",
@@ -2532,6 +2539,12 @@ fn build_descriptor() -> ServiceDescriptor {
             "GET",
             "/elevator-pomdp",
             "Elevator-dispatch POMDP player (noisy hall-call button; belief-tracked).",
+            EndpointKind::Service,
+        )
+        .endpoint(
+            "GET",
+            "/out/soccer-sim.html",
+            "Rendered 2D 11v11 soccer videogame / learning simulation artifact.",
             EndpointKind::Service,
         )
         .endpoint(

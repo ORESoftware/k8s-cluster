@@ -51,6 +51,8 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
   stream.
 - `POST /streaming/<name>` — stream JSONL commands (one per line) to a solver;
   responds with a JSONL stream of result frames.
+- `GET  /out/soccer-sim.html` — rendered 2D 11v11 soccer videogame / learning
+  simulation artifact.
 - `GET  /soccer/planner` — interactive soccer rotation planner UI.
 - `POST /soccer/planner/solve` — re-solve the planner request with the Rust
   IP/MIP solver.
@@ -94,7 +96,7 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
 | `DES_SERVER_GIT_URL` | k8s repo HTTPS URL | *(deployment startup script, not the server)* clone this repo at pod start and copy `remote/deployments/des-rs` from it; set empty to use the mounted repo |
 | `DES_SERVER_GIT_REF` | `dev` | *(deployment startup script)* branch/tag/sha to clone for the server crate |
 | `DES_ENGINE_GIT_URL` | engine repo HTTPS URL | *(deployment startup script, not the server)* clone this engine repo at pod start and build against it; set empty to use the pinned submodule instead |
-| `DES_ENGINE_GIT_REF` | `0c77c0560fb804080de284681885c75a2398606c` | *(deployment startup script)* branch/tag/sha to clone for the engine |
+| `DES_ENGINE_GIT_REF` | `0f96996384feeb3d5ac16f1494948e6d58799aab` | *(deployment startup script)* branch/tag/sha to clone for the engine |
 
 ## Run locally
 
@@ -118,7 +120,7 @@ and `dd-des-rs.service.yaml` (registered in that overlay's `kustomization.yaml`)
 `DES_ENGINE_GIT_REF` from `DES_ENGINE_GIT_URL` into `/tmp/engine`, copies this
 crate into the writable `/tmp/des-rs`, repoints its `des_engine` path dependency
 at the clone, and builds. The deployment currently pins the engine at
-`0c77c0560fb804080de284681885c75a2398606c`, so it does **not** depend on the
+`0f96996384feeb3d5ac16f1494948e6d58799aab`, so it does **not** depend on the
 node having the git submodule checked out (the push-time `reconcile-runtime`
 only fast-forwards the repo; it does not `git submodule update --init`). If the
 clone fails — or `DES_ENGINE_GIT_URL` is set empty — it falls back to the pinned
