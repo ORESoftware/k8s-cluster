@@ -82,6 +82,7 @@ struct AppState {
     control_subject: String,
     events_subject: String,
     sessions: Arc<Mutex<HashMap<String, LiveSession>>>,
+    workers: Arc<Mutex<HashMap<String, WorkerNodeStatus>>>,
     metrics: Arc<Metrics>,
 }
 
@@ -93,6 +94,7 @@ struct Metrics {
     subproblem_jobs_published_total: AtomicU64,
     subproblem_jobs_completed_total: AtomicU64,
     subproblem_jobs_redelegated_total: AtomicU64,
+    worker_control_messages_total: AtomicU64,
     slave_jobs_processed_total: AtomicU64,
     errors_total: AtomicU64,
 }
@@ -101,6 +103,23 @@ struct Metrics {
 struct LiveSession {
     problem: Option<MipProblemSpec>,
     revision: u64,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkerNodeStatus {
+    node_id: String,
+    last_command: String,
+    consumer: Option<String>,
+    jobs_subject: Option<String>,
+    results_subject: Option<String>,
+    last_job_id: Option<String>,
+    last_solve_id: Option<String>,
+    last_status: Option<String>,
+    ready_at_ms: Option<u128>,
+    last_seen_ms: u128,
+    request_count: u64,
+    completed_count: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1893,6 +1912,66 @@ async fn publish_control(state: &AppState, command_name: &str, payload: Value) {
     }
 }
 
+fn value_str(value: &Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(|s| s.to_string())
+}
+
+fn record_worker_control_frame(state: &AppState, frame: &Value) -> Result<(), String> {
+    if frame.get("service").and_then(Value::as_str) != Some(SERVICE_NAME) {
+        return Ok(());
+    }
+    let node_id =
+        value_str(frame, "nodeId").ok_or_else(|| "control frame missing nodeId".to_string())?;
+    let command = value_str(frame, "commandName")
+        .ok_or_else(|| "control frame missing commandName".to_string())?;
+    let payload = frame.get("payload").unwrap_or(&Value::Null);
+    let seen_at = frame
+        .get("timeMs")
+        .and_then(Value::as_u64)
+        .map(u128::from)
+        .unwrap_or_else(now_ms);
+
+    let mut workers = state.workers.lock().expect("workers mutex poisoned");
+    let worker = workers
+        .entry(node_id.clone())
+        .or_insert_with(|| WorkerNodeStatus {
+            node_id: node_id.clone(),
+            ..WorkerNodeStatus::default()
+        });
+    worker.last_command = command.clone();
+    worker.last_seen_ms = seen_at;
+
+    if let Some(consumer) = value_str(payload, "consumer") {
+        worker.consumer = Some(consumer);
+    }
+    if let Some(jobs_subject) = value_str(payload, "jobsSubject") {
+        worker.jobs_subject = Some(jobs_subject);
+    }
+    if let Some(results_subject) = value_str(payload, "resultsSubject") {
+        worker.results_subject = Some(results_subject);
+    }
+
+    match command.as_str() {
+        "worker-ready" => {
+            worker.ready_at_ms.get_or_insert(seen_at);
+        }
+        "request-work" => {
+            worker.request_count = worker.request_count.saturating_add(1);
+        }
+        "worker-completed" => {
+            worker.completed_count = worker.completed_count.saturating_add(1);
+            worker.last_job_id = value_str(payload, "jobId");
+            worker.last_solve_id = value_str(payload, "solveId");
+            worker.last_status = value_str(payload, "status");
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn mip_stream_config() -> async_nats::jetstream::stream::Config {
     async_nats::jetstream::stream::Config {
         name: DD_REMOTE_MIP_SOLVER_STREAM_NAME.to_string(),
@@ -2284,6 +2363,7 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
         },
         "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
         "queueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
+        "workersKnown": state.workers.lock().expect("workers mutex poisoned").len(),
         "gpu": gpu_status(),
     }))
 }
@@ -2350,6 +2430,12 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
             "# HELP dd_mip_solver_subproblem_jobs_redelegated_total Total errored subproblem jobs re-published by masters.\n",
             "# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter\n",
             "dd_mip_solver_subproblem_jobs_redelegated_total {}\n",
+            "# HELP dd_mip_solver_workers_known Current worker nodes observed through NATS control messages.\n",
+            "# TYPE dd_mip_solver_workers_known gauge\n",
+            "dd_mip_solver_workers_known {}\n",
+            "# HELP dd_mip_solver_worker_control_messages_total Total worker control messages received by master nodes.\n",
+            "# TYPE dd_mip_solver_worker_control_messages_total counter\n",
+            "dd_mip_solver_worker_control_messages_total {}\n",
             "# HELP dd_mip_solver_slave_jobs_processed_total Total subproblem jobs processed by slave nodes.\n",
             "# TYPE dd_mip_solver_slave_jobs_processed_total counter\n",
             "dd_mip_solver_slave_jobs_processed_total {}\n",
@@ -2366,6 +2452,8 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         completed,
         in_flight,
         m.subproblem_jobs_redelegated_total.load(Ordering::Relaxed),
+        state.workers.lock().expect("workers mutex poisoned").len(),
+        m.worker_control_messages_total.load(Ordering::Relaxed),
         m.slave_jobs_processed_total.load(Ordering::Relaxed),
         m.errors_total.load(Ordering::Relaxed),
     );
@@ -2510,6 +2598,26 @@ async fn get_session(
             json!({"ok":false,"error":"session not found"}),
         ),
     }
+}
+
+async fn workers(State(state): State<AppState>) -> Response {
+    let mut workers: Vec<WorkerNodeStatus> = state
+        .workers
+        .lock()
+        .expect("workers mutex poisoned")
+        .values()
+        .cloned()
+        .collect();
+    workers.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+    response_json(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "role": state.role.as_str(),
+            "count": workers.len(),
+            "workers": workers,
+        }),
+    )
 }
 
 async fn solve_session(
@@ -2687,6 +2795,39 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
     Ok(())
 }
 
+async fn run_master_control_listener(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let Some(nats) = state.nats.clone() else {
+        return Ok(());
+    };
+    let mut messages = nats.subscribe(state.control_subject.clone()).await?;
+    publish_event(
+        &state,
+        "master-control-listener-started",
+        json!({"controlSubject": &state.control_subject}),
+    )
+    .await;
+    while let Some(message) = messages.next().await {
+        match serde_json::from_slice::<Value>(&message.payload) {
+            Ok(frame) => {
+                if let Err(error) = record_worker_control_frame(&state, &frame) {
+                    state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                    eprintln!("mip solver control frame ignored: {error}");
+                } else {
+                    state
+                        .metrics
+                        .worker_control_messages_total
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            Err(error) => {
+                state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+                eprintln!("invalid mip solver control payload: {error}");
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn connect_nats() -> Option<async_nats::Client> {
     let url = env::var("NATS_URL").ok()?;
     match async_nats::connect(url.clone()).await {
@@ -2704,6 +2845,8 @@ fn app_router(state: AppState) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
+        .route("/mip-solver-cluster/workers", get(workers))
+        .route("/workers", get(workers))
         .route("/model/example", get(example))
         .route("/solve", post(solve_http))
         .route("/sessions/:session_id", get(get_session))
@@ -2761,6 +2904,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         control_subject: env_value("MIP_SOLVER_CONTROL_SUBJECT", MIP_SOLVER_CONTROL_SUBJECT),
         events_subject: env_value("MIP_SOLVER_EVENTS_SUBJECT", MIP_SOLVER_EVENTS_SUBJECT),
         sessions: Arc::new(Mutex::new(HashMap::new())),
+        workers: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Metrics::default()),
     };
 
@@ -2769,6 +2913,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         tokio::spawn(async move {
             if let Err(error) = run_slave(worker_state).await {
                 eprintln!("mip solver slave loop stopped: {error}");
+            }
+        });
+    } else {
+        let control_state = state.clone();
+        tokio::spawn(async move {
+            if let Err(error) = run_master_control_listener(control_state).await {
+                eprintln!("mip solver master control listener stopped: {error}");
             }
         });
     }
@@ -2806,6 +2957,7 @@ mod tests {
             control_subject: MIP_SOLVER_CONTROL_SUBJECT.to_string(),
             events_subject: MIP_SOLVER_EVENTS_SUBJECT.to_string(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            workers: Arc::new(Mutex::new(HashMap::new())),
             metrics: Arc::new(Metrics::default()),
         }
     }
@@ -3218,6 +3370,72 @@ mod tests {
     }
 
     #[test]
+    fn worker_control_frames_update_master_registry() {
+        let state = test_state(NodeRole::Master);
+
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-a",
+                "role":"slave",
+                "commandName":"worker-ready",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": 1000
+            }),
+        )
+        .unwrap();
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-a",
+                "role":"slave",
+                "commandName":"request-work",
+                "payload":{"consumer":"dd-in-house-mip-solver-node-workers"},
+                "timeMs": 1100
+            }),
+        )
+        .unwrap();
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-a",
+                "role":"slave",
+                "commandName":"worker-completed",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobId":"solve-test-0",
+                    "solveId":"solve-test",
+                    "status":"optimal",
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": 1200
+            }),
+        )
+        .unwrap();
+
+        let workers = state.workers.lock().expect("workers mutex poisoned");
+        let worker = workers.get("worker-a").expect("worker-a");
+        assert_eq!(worker.ready_at_ms, Some(1000));
+        assert_eq!(worker.last_seen_ms, 1200);
+        assert_eq!(worker.request_count, 1);
+        assert_eq!(worker.completed_count, 1);
+        assert_eq!(worker.last_command, "worker-completed");
+        assert_eq!(worker.last_job_id.as_deref(), Some("solve-test-0"));
+        assert_eq!(worker.last_solve_id.as_deref(), Some("solve-test"));
+        assert_eq!(worker.last_status.as_deref(), Some("optimal"));
+    }
+
+    #[test]
     fn solve_subproblem_solves_binary_mip_with_in_house_solver() {
         let result = solve_subproblem(
             test_job(binary_knapsack_problem()),
@@ -3370,6 +3588,23 @@ mod tests {
             .metrics
             .subproblem_jobs_redelegated_total
             .store(2, Ordering::Relaxed);
+        state
+            .metrics
+            .worker_control_messages_total
+            .store(5, Ordering::Relaxed);
+        state
+            .workers
+            .lock()
+            .expect("workers mutex poisoned")
+            .insert(
+                "worker-a".to_string(),
+                WorkerNodeStatus {
+                    node_id: "worker-a".to_string(),
+                    last_command: "worker-ready".to_string(),
+                    last_seen_ms: 1000,
+                    ..WorkerNodeStatus::default()
+                },
+            );
         let app = app_router(state);
 
         let (status, body) = get_text(app, "/metrics").await;
@@ -3381,6 +3616,44 @@ mod tests {
         assert!(body.contains("dd_mip_solver_subproblem_jobs_in_flight 4"));
         assert!(body.contains("# TYPE dd_mip_solver_subproblem_jobs_redelegated_total counter"));
         assert!(body.contains("dd_mip_solver_subproblem_jobs_redelegated_total 2"));
+        assert!(body.contains("# TYPE dd_mip_solver_workers_known gauge"));
+        assert!(body.contains("dd_mip_solver_workers_known 1"));
+        assert!(body.contains("# TYPE dd_mip_solver_worker_control_messages_total counter"));
+        assert!(body.contains("dd_mip_solver_worker_control_messages_total 5"));
+    }
+
+    #[tokio::test]
+    async fn mip_solver_cluster_workers_endpoint_reports_master_observed_slaves() {
+        let state = test_state(NodeRole::Master);
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-b",
+                "role":"slave",
+                "commandName":"worker-ready",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": 2000
+            }),
+        )
+        .unwrap();
+        let app = app_router(state);
+
+        let (status, body) = get_json(app, "/mip-solver-cluster/workers").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("ok"), Some(&json!(true)));
+        assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(body.pointer("/workers/0/nodeId"), Some(&json!("worker-b")));
+        assert_eq!(
+            body.pointer("/workers/0/consumer"),
+            Some(&json!("dd-in-house-mip-solver-node-workers"))
+        );
     }
 
     #[tokio::test]

@@ -32,10 +32,13 @@ Request `options` override environment defaults. When an option is omitted, the 
 - `MIP_SOLVER_INT_TOL`
 - `MIP_SOLVER_SPLIT_DEPTH`
 - `MIP_SOLVER_MAX_SUBPROBLEMS`
+- `MIP_SOLVER_MAX_JOB_RETRIES`
 - `MIP_SOLVER_TIMEOUT_MS`
 - `MIP_SOLVER_EMIT_TRACE`
 
 `MIP_SOLVER_MAX_SUBPROBLEMS` caps the master's pre-split branch-and-bound frontier. When the cap is reached, remaining fractional nodes are delegated as subtree jobs instead of being split further by the master.
+
+`MIP_SOLVER_MAX_JOB_RETRIES` caps master-side re-delegation for errored subproblem attempts. Failed attempts are re-published as retry jobs while the solve still counts completion by original subproblem.
 
 ## Kubernetes
 
@@ -50,6 +53,8 @@ KEDA scales slave pods from NATS JetStream consumer lag. New pods boot with `MIP
 The Kubernetes startup command runs Cargo from `remote/deployments/mip-solver-node.rs` inside a full `k8s-cluster` source tree, with `CARGO_TARGET_DIR` pointed at `/tmp`. Keep that relative layout intact: the normal manifest depends on generated NATS definitions under `remote/libs/nats/...` and the in-house DES solver under `remote/submodules/discrete-event-system.rs`.
 
 `/healthz` reports process liveness. `/readyz` requires a live NATS connection so Kubernetes does not route traffic to masters or count slaves as ready while they cannot publish or consume distributed work.
+
+Masters subscribe to the generated MIP solver control subject and track live slave control frames (`worker-ready`, `request-work`, `worker-completed`) in memory. `GET /mip-solver-cluster/workers` reports the workers a master has observed (`/workers` is kept as a short compatibility alias), and `/metrics` exposes worker-control and re-delegation counters for operational debugging.
 
 The server handles both Ctrl-C and Kubernetes SIGTERM for graceful HTTP shutdown during rolling updates and KEDA scale-down.
 
