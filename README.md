@@ -22,6 +22,21 @@ For the k8s-cluster submodule layout, use the normal manifest:
 
 `cargo check --locked`
 
+## Runtime solve defaults
+
+Request `options` override environment defaults. When an option is omitted, the service reads:
+
+- `MIP_SOLVER_MAX_NODES`
+- `MIP_SOLVER_MAX_TICKS`
+- `MIP_SOLVER_LP_MAX_ITERS`
+- `MIP_SOLVER_INT_TOL`
+- `MIP_SOLVER_SPLIT_DEPTH`
+- `MIP_SOLVER_MAX_SUBPROBLEMS`
+- `MIP_SOLVER_TIMEOUT_MS`
+- `MIP_SOLVER_EMIT_TRACE`
+
+`MIP_SOLVER_MAX_SUBPROBLEMS` caps the master's pre-split branch-and-bound frontier. When the cap is reached, remaining fractional nodes are delegated as subtree jobs instead of being split further by the master.
+
 ## Kubernetes
 
 `k8s/` contains:

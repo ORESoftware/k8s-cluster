@@ -143,6 +143,7 @@ struct SolveOptions {
     lp_max_iters: Option<usize>,
     int_tol: Option<f64>,
     split_depth: Option<usize>,
+    max_subproblems: Option<usize>,
     timeout_ms: Option<u64>,
     emit_trace: Option<bool>,
 }
@@ -155,6 +156,7 @@ impl Default for SolveOptions {
             lp_max_iters: Some(5_000),
             int_tol: Some(1e-6),
             split_depth: Some(1),
+            max_subproblems: Some(256),
             timeout_ms: Some(120_000),
             emit_trace: Some(false),
         }
@@ -163,7 +165,10 @@ impl Default for SolveOptions {
 
 impl SolveOptions {
     fn merged(input: Option<SolveOptions>) -> Self {
-        let defaults = SolveOptions::default();
+        Self::merged_with_defaults(input, Self::runtime_defaults())
+    }
+
+    fn merged_with_defaults(input: Option<SolveOptions>, defaults: SolveOptions) -> Self {
         let Some(input) = input else {
             return defaults;
         };
@@ -173,8 +178,47 @@ impl SolveOptions {
             lp_max_iters: input.lp_max_iters.or(defaults.lp_max_iters),
             int_tol: input.int_tol.or(defaults.int_tol),
             split_depth: input.split_depth.or(defaults.split_depth),
+            max_subproblems: input.max_subproblems.or(defaults.max_subproblems),
             timeout_ms: input.timeout_ms.or(defaults.timeout_ms),
             emit_trace: input.emit_trace.or(defaults.emit_trace),
+        }
+    }
+
+    fn runtime_defaults() -> Self {
+        let defaults = Self::default();
+        SolveOptions {
+            max_nodes: Some(env_usize(
+                "MIP_SOLVER_MAX_NODES",
+                defaults.max_nodes.unwrap_or(20_000),
+            )),
+            max_ticks: Some(env_usize(
+                "MIP_SOLVER_MAX_TICKS",
+                defaults.max_ticks.unwrap_or(200_000),
+            )),
+            lp_max_iters: Some(env_usize(
+                "MIP_SOLVER_LP_MAX_ITERS",
+                defaults.lp_max_iters.unwrap_or(5_000),
+            )),
+            int_tol: Some(env_f64(
+                "MIP_SOLVER_INT_TOL",
+                defaults.int_tol.unwrap_or(1e-6),
+            )),
+            split_depth: Some(env_usize(
+                "MIP_SOLVER_SPLIT_DEPTH",
+                defaults.split_depth.unwrap_or(1),
+            )),
+            max_subproblems: Some(env_usize(
+                "MIP_SOLVER_MAX_SUBPROBLEMS",
+                defaults.max_subproblems.unwrap_or(256),
+            )),
+            timeout_ms: Some(env_u64(
+                "MIP_SOLVER_TIMEOUT_MS",
+                defaults.timeout_ms.unwrap_or(120_000),
+            )),
+            emit_trace: Some(env_bool(
+                "MIP_SOLVER_EMIT_TRACE",
+                defaults.emit_trace.unwrap_or(false),
+            )),
         }
     }
 
@@ -315,6 +359,30 @@ fn env_u64(key: &str, fallback: u64) -> u64 {
         .ok()
         .and_then(|value| value.trim().parse::<u64>().ok())
         .filter(|value| *value > 0)
+        .unwrap_or(fallback)
+}
+
+fn env_usize(key: &str, fallback: usize) -> usize {
+    env_u64(key, fallback as u64) as usize
+}
+
+fn env_f64(key: &str, fallback: f64) -> f64 {
+    env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(fallback)
+}
+
+fn env_bool(key: &str, fallback: bool) -> bool {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .and_then(|value| match value.as_str() {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        })
         .unwrap_or(fallback)
 }
 
@@ -1322,7 +1390,9 @@ fn build_frontier_jobs(
     let split_depth = options.split_depth.unwrap_or(1).min(8);
     let lp_max_iters = options.lp_max_iters.unwrap_or(5_000);
     let int_tol = options.int_tol.unwrap_or(1e-6);
+    let max_subproblems = options.max_subproblems.unwrap_or(256).clamp(1, 100_000);
     let mut warnings = Vec::new();
+    let mut warned_frontier_cap = false;
     let mut queue = VecDeque::from([FrontierNode {
         depth: 0,
         extra_constraints: Vec::new(),
@@ -1351,20 +1421,28 @@ fn build_frontier_jobs(
 
         if relaxation.status == LPStatus::Optimal && node.depth < split_depth {
             if let Some((var, value)) = first_fractional(problem, &relaxation.x, int_tol) {
-                let [left, right] = branch_constraints(var, value, problem.c.len(), node.depth);
-                let mut left_constraints = node.extra_constraints.clone();
-                left_constraints.push(left);
-                queue.push_back(FrontierNode {
-                    depth: node.depth + 1,
-                    extra_constraints: left_constraints,
-                });
-                let mut right_constraints = node.extra_constraints;
-                right_constraints.push(right);
-                queue.push_back(FrontierNode {
-                    depth: node.depth + 1,
-                    extra_constraints: right_constraints,
-                });
-                continue;
+                if jobs.len() + queue.len() + 2 <= max_subproblems {
+                    let [left, right] = branch_constraints(var, value, problem.c.len(), node.depth);
+                    let mut left_constraints = node.extra_constraints.clone();
+                    left_constraints.push(left);
+                    queue.push_back(FrontierNode {
+                        depth: node.depth + 1,
+                        extra_constraints: left_constraints,
+                    });
+                    let mut right_constraints = node.extra_constraints;
+                    right_constraints.push(right);
+                    queue.push_back(FrontierNode {
+                        depth: node.depth + 1,
+                        extra_constraints: right_constraints,
+                    });
+                    continue;
+                }
+                if !warned_frontier_cap {
+                    warnings.push(format!(
+                        "frontier split capped at {max_subproblems} subproblems; remaining fractional nodes will be delegated as subtree jobs"
+                    ));
+                    warned_frontier_cap = true;
+                }
             }
         }
 
@@ -2498,6 +2576,78 @@ mod tests {
         assert_eq!(jobs[0].extra_constraints[0].coefs, vec![1.0]);
         assert_eq!(jobs[0].extra_constraints[0].rhs, 1.0);
         assert_eq!(jobs[0].depth, 1);
+    }
+
+    #[test]
+    fn solve_options_merge_request_values_over_runtime_defaults() {
+        let defaults = SolveOptions {
+            max_nodes: Some(111),
+            max_ticks: Some(222),
+            lp_max_iters: Some(333),
+            int_tol: Some(1e-4),
+            split_depth: Some(2),
+            max_subproblems: Some(12),
+            timeout_ms: Some(444),
+            emit_trace: Some(false),
+        };
+        let input = SolveOptions {
+            max_nodes: Some(999),
+            max_ticks: None,
+            lp_max_iters: Some(777),
+            int_tol: None,
+            split_depth: Some(5),
+            max_subproblems: Some(3),
+            timeout_ms: None,
+            emit_trace: Some(true),
+        };
+
+        let merged = SolveOptions::merged_with_defaults(Some(input), defaults);
+
+        assert_eq!(merged.max_nodes, Some(999));
+        assert_eq!(merged.max_ticks, Some(222));
+        assert_eq!(merged.lp_max_iters, Some(777));
+        assert_eq!(merged.int_tol, Some(1e-4));
+        assert_eq!(merged.split_depth, Some(5));
+        assert_eq!(merged.max_subproblems, Some(3));
+        assert_eq!(merged.timeout_ms, Some(444));
+        assert_eq!(merged.emit_trace, Some(true));
+    }
+
+    #[test]
+    fn frontier_builder_caps_presplit_subproblem_count() {
+        let problem = normalized_problem(MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![1.5],
+            integer_vars: vec![true],
+            ub: None,
+            var_names: None,
+            con_names: None,
+        })
+        .unwrap();
+        let options = SolveOptions {
+            split_depth: Some(4),
+            max_subproblems: Some(1),
+            ..SolveOptions::default()
+        };
+
+        let (jobs, warnings) = build_frontier_jobs(
+            &problem,
+            "solve-test",
+            "request-test",
+            7,
+            "master-a",
+            &options,
+        )
+        .unwrap();
+
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].depth, 0);
+        assert!(jobs[0].extra_constraints.is_empty());
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("frontier split capped at 1 subproblems")));
     }
 
     #[test]
