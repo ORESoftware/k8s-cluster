@@ -269,7 +269,6 @@ struct FrontierNode {
 #[derive(Debug)]
 struct LpRelaxation {
     status: LPStatus,
-    objective: f64,
     x: Vec<f64>,
 }
 
@@ -728,7 +727,6 @@ fn solve_lp_relaxation(
     );
     Ok(LpRelaxation {
         status: sol.status,
-        objective: sol.objective,
         x: sol.x,
     })
 }
@@ -1536,4 +1534,68 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         })
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn streaming_edits_update_live_problem_revision() {
+        let commands = vec![
+            json!({"op":"init","sense":"max","c":[3.0,2.0],"a":[[1.0,1.0]],"b":[4.0],"integerVars":[true,false]}),
+            json!({"op":"set_rhs","index":0,"rhs":5.0}),
+            json!({"op":"add_constraint","coefs":[2.0,1.0],"rhs":8.0}),
+            json!({"op":"add_variable","c":4.0,"column":[0.0,1.0],"integer":true,"ub":3.0}),
+            json!({"op":"set_variable","index":2,"c":5.0,"integer":true}),
+            json!({"op":"remove_constraint","index":0}),
+            json!({"op":"snapshot"}),
+        ];
+        let (problem, revision, frames) = parse_problem_from_commands(&commands).unwrap();
+        assert_eq!(revision, 6);
+        assert_eq!(problem.c, vec![3.0, 2.0, 5.0]);
+        assert_eq!(problem.a, vec![vec![2.0, 1.0, 1.0]]);
+        assert_eq!(problem.b, vec![8.0]);
+        assert_eq!(problem.integer_vars, vec![true, false, true]);
+        assert_eq!(problem.ub.as_ref().unwrap()[2], 3.0);
+        assert!(frames
+            .iter()
+            .any(|frame| frame.get("event") == Some(&json!("model"))));
+    }
+
+    #[test]
+    fn frontier_builder_splits_fractional_lp_relaxation() {
+        let problem = normalized_problem(MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![1.5],
+            integer_vars: vec![true],
+            ub: None,
+            var_names: None,
+            con_names: None,
+        })
+        .unwrap();
+        let options = SolveOptions {
+            split_depth: Some(1),
+            ..SolveOptions::default()
+        };
+        let (jobs, warnings) = build_frontier_jobs(
+            &problem,
+            "solve-test",
+            "request-test",
+            7,
+            "master-a",
+            &options,
+        )
+        .unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(jobs.len(), 1);
+        assert!(jobs.iter().all(|job| job.revision == 7));
+        assert!(jobs.iter().all(|job| job.extra_constraints.len() == 1));
+        assert_eq!(jobs[0].extra_constraints[0].coefs, vec![1.0]);
+        assert_eq!(jobs[0].extra_constraints[0].rhs, 1.0);
+        assert_eq!(jobs[0].depth, 1);
+    }
 }
