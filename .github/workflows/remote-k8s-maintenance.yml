@@ -1919,7 +1919,7 @@ jobs:
             echo "=== target gcs/chat-vibe submodule ==="
             echo "$target_gcs_sha"
             git -C remote/deployments/gcs/chat-vibe fetch origin
-            git -C remote/deployments/gcs/chat-vibe merge --ff-only "$target_gcs_sha"
+            git -C remote/deployments/gcs/chat-vibe merge --ff-only --quiet "$target_gcs_sha"
           fi
           git submodule status --recursive | grep 'remote/deployments/gcs/chat-vibe' || true
 
@@ -2379,7 +2379,7 @@ jobs:
             echo "=== target gcs/chat-vibe submodule ==="
             echo "$target_gcs_sha"
             git -C remote/deployments/gcs/chat-vibe fetch origin
-            git -C remote/deployments/gcs/chat-vibe merge --ff-only "$target_gcs_sha"
+            git -C remote/deployments/gcs/chat-vibe merge --ff-only --quiet "$target_gcs_sha"
           fi
           git rev-parse --short HEAD
           git submodule status --recursive
@@ -2529,7 +2529,7 @@ jobs:
           wait_available gcs-router 3
           kubectl -n default get deploy gcs gcs-router -o wide
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
-          prom_snapshot "after gcs rollout"
+          echo "=== prometheus snapshot: after gcs rollout skipped to preserve SSM diagnostic output ==="
 
           router_metrics() {
             local pod
@@ -2681,10 +2681,19 @@ jobs:
               sleep 15
             done
             echo "ERROR: $loader_name did not emit gcs-report from all pods before load window" >&2
-            collect_loader "$d"
-            kubectl -n default describe "deployment/$d" || true
-            kubectl -n default describe pods -l "app=$d" || true
-            kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM" | tail -160 || true
+            {
+              echo "=== loader warmup failure diagnostics: $loader_name ==="
+              kubectl -n default get deploy "$d" -o wide || true
+              kubectl -n default get pods -l "app=$d" -o wide || true
+              for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+                echo "--- pod $pod state ---"
+                kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} ready={range .status.containerStatuses[*]}{.name}:{.ready}:{.state.waiting.reason}:{.state.running.startedAt}:{.state.terminated.reason} {end}{"\n"}' || true
+                echo "--- pod $pod recent logs ---"
+                kubectl -n default logs "$pod" --all-containers --tail=80 --prefix=true 2>/dev/null || true
+              done
+              echo "--- recent loader events ---"
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM" | tail -80 || true
+            } >&2
             return 1
           }
 
