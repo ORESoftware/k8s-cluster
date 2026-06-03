@@ -401,7 +401,12 @@ fn vec_vec_f64(command: &Value, key: &str) -> Option<Vec<Vec<f64>>> {
         rows.iter()
             .map(|row| {
                 row.as_array()
-                    .map(|cells| cells.iter().map(|value| value.as_f64().unwrap_or(0.0)).collect())
+                    .map(|cells| {
+                        cells
+                            .iter()
+                            .map(|value| value.as_f64().unwrap_or(0.0))
+                            .collect()
+                    })
                     .unwrap_or_default()
             })
             .collect()
@@ -417,14 +422,19 @@ fn f64_at(command: &Value, key: &str, fallback: f64) -> f64 {
 }
 
 fn bool_at(command: &Value, key: &str, fallback: bool) -> bool {
-    command.get(key).and_then(Value::as_bool).unwrap_or(fallback)
+    command
+        .get(key)
+        .and_then(Value::as_bool)
+        .unwrap_or(fallback)
 }
 
 fn str_at(command: &Value, key: &str) -> Option<String> {
     command.get(key).and_then(Value::as_str).map(String::from)
 }
 
-fn parse_problem_from_commands(commands: &[Value]) -> Result<(MipProblemSpec, u64, Vec<Value>), String> {
+fn parse_problem_from_commands(
+    commands: &[Value],
+) -> Result<(MipProblemSpec, u64, Vec<Value>), String> {
     if commands.len() > MAX_STREAM_COMMANDS {
         return Err(format!(
             "stream command count {} exceeds limit {MAX_STREAM_COMMANDS}",
@@ -849,7 +859,10 @@ fn solve_subproblem(job: SubproblemJob, worker_node: String) -> SubproblemResult
             status: solution.status.as_str().to_string(),
             z: solution.z.is_finite().then_some(solution.z),
             x: solution.x,
-            best_bound: solution.best_bound.is_finite().then_some(solution.best_bound),
+            best_bound: solution
+                .best_bound
+                .is_finite()
+                .then_some(solution.best_bound),
             gap: solution.gap.is_finite().then_some(solution.gap),
             nodes_explored: solution.nodes_explored,
             lp_solves: solution.lp_solves,
@@ -978,7 +991,9 @@ async fn publish_event(state: &AppState, event_name: &str, payload: Value) {
         "timeMs": now_ms(),
     });
     if let Ok(bytes) = serde_json::to_vec(&event) {
-        let _ = nats.publish(state.events_subject.clone(), bytes.into()).await;
+        let _ = nats
+            .publish(state.events_subject.clone(), bytes.into())
+            .await;
     }
 }
 
@@ -1073,8 +1088,7 @@ async fn solve_problem_distributed(
         match tokio::time::timeout(deadline - now, result_sub.next()).await {
             Ok(Some(message)) => match message {
                 Ok(message) => {
-                    let parsed =
-                        serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
+                    let parsed = serde_json::from_slice::<SubproblemResult>(&message.payload).ok();
                     if let Some(result) = parsed.filter(|result| result.solve_id == solve_id) {
                         results.push(result);
                         state
@@ -1204,7 +1218,10 @@ async fn example() -> impl IntoResponse {
     }))
 }
 
-async fn solve_http(State(state): State<AppState>, Json(input): Json<SolveHttpRequest>) -> Response {
+async fn solve_http(
+    State(state): State<AppState>,
+    Json(input): Json<SolveHttpRequest>,
+) -> Response {
     state
         .metrics
         .http_requests_total
@@ -1273,9 +1290,12 @@ async fn stream_session(
     });
     let mut frames = Vec::new();
     for command in &commands {
-        if let Err(error) =
-            apply_stream_command(&mut session.problem, &mut session.revision, command, &mut frames)
-        {
+        if let Err(error) = apply_stream_command(
+            &mut session.problem,
+            &mut session.revision,
+            command,
+            &mut frames,
+        ) {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             frames.push(json!({"event":"error","message":error,"revision":session.revision}));
         } else {
@@ -1296,7 +1316,10 @@ async fn stream_session(
     )
 }
 
-async fn get_session(State(state): State<AppState>, AxumPath(session_id): AxumPath<String>) -> Response {
+async fn get_session(
+    State(state): State<AppState>,
+    AxumPath(session_id): AxumPath<String>,
+) -> Response {
     let sessions = state.sessions.lock().expect("sessions mutex poisoned");
     match sessions.get(&session_id) {
         Some(session) => response_json(
@@ -1405,8 +1428,8 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
     let consumer_name = env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP);
     let ack_wait = Duration::from_secs(env_u64("MIP_SOLVER_ACK_WAIT_SECONDS", 600));
     let max_ack_pending = env_u64("MIP_SOLVER_MAX_ACK_PENDING", 32) as i64;
-    let consumer = build_jetstream_consumer(nats.clone(), &consumer_name, ack_wait, max_ack_pending)
-        .await?;
+    let consumer =
+        build_jetstream_consumer(nats.clone(), &consumer_name, ack_wait, max_ack_pending).await?;
     let mut messages = consumer.messages().await?;
     publish_event(
         &state,
@@ -1432,18 +1455,22 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
             }
         };
         let worker_node = state.node_id.clone();
-        let result = match tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node)).await {
-            Ok(result) => result,
-            Err(error) => {
-                eprintln!("mip solver worker task failed: {error}");
-                let _ = message
-                    .ack_with(async_nats::jetstream::AckKind::Nak(Some(Duration::from_secs(5))))
-                    .await;
-                continue;
-            }
-        };
+        let result =
+            match tokio::task::spawn_blocking(move || solve_subproblem(job, worker_node)).await {
+                Ok(result) => result,
+                Err(error) => {
+                    eprintln!("mip solver worker task failed: {error}");
+                    let _ = message
+                        .ack_with(async_nats::jetstream::AckKind::Nak(Some(
+                            Duration::from_secs(5),
+                        )))
+                        .await;
+                    continue;
+                }
+            };
         let payload = serde_json::to_vec(&result)?;
-        nats.publish(state.results_subject.clone(), payload.into()).await?;
+        nats.publish(state.results_subject.clone(), payload.into())
+            .await?;
         state
             .metrics
             .slave_jobs_processed_total
