@@ -1494,8 +1494,12 @@ fn aggregate_results(
         warnings.push("solve timed out before every subproblem result returned".to_string());
     }
     let all_finished = results.len() == jobs_published && !timed_out;
-    let all_optimal = all_finished && results.iter().all(|result| result.status == "optimal");
-    let status = if best.is_some() && all_optimal {
+    let all_terminal = all_finished
+        && results
+            .iter()
+            .all(|result| matches!(result.status.as_str(), "optimal" | "infeasible"));
+    let has_error = results.iter().any(|result| result.status == "error");
+    let status = if best.is_some() && all_terminal {
         "optimal"
     } else if best.is_some() {
         "feasible-partial"
@@ -1503,6 +1507,8 @@ fn aggregate_results(
         "unbounded"
     } else if timed_out {
         "timeout"
+    } else if has_error {
+        "error"
     } else {
         "infeasible"
     };
@@ -2183,6 +2189,48 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn test_state(role: NodeRole) -> AppState {
+        AppState {
+            role,
+            node_id: "test-node".to_string(),
+            nats: None,
+            jobs_subject: MIP_SOLVER_JOBS_SUBJECT.to_string(),
+            results_subject: MIP_SOLVER_RESULTS_SUBJECT.to_string(),
+            control_subject: MIP_SOLVER_CONTROL_SUBJECT.to_string(),
+            events_subject: MIP_SOLVER_EVENTS_SUBJECT.to_string(),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            metrics: Arc::new(Metrics::default()),
+        }
+    }
+
+    fn binary_knapsack_problem() -> MipProblemSpec {
+        MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![10.0, 40.0, 30.0, 50.0],
+            a: vec![vec![5.0, 4.0, 6.0, 3.0]],
+            b: vec![10.0],
+            integer_vars: vec![true, true, true, true],
+            ub: Some(vec![1.0, 1.0, 1.0, 1.0]),
+            var_names: None,
+            con_names: None,
+        }
+    }
+
+    fn test_job(problem: MipProblemSpec) -> SubproblemJob {
+        SubproblemJob {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-test".to_string(),
+            revision: 0,
+            depth: 0,
+            master_node: "master-test".to_string(),
+            problem,
+            extra_constraints: Vec::new(),
+            options: SolveOptions::default(),
+            submitted_at_ms: now_ms(),
+        }
+    }
+
     #[test]
     fn streaming_edits_update_live_problem_revision() {
         let commands = vec![
@@ -2344,5 +2392,110 @@ mod tests {
             config.subjects.len(),
             DD_REMOTE_MIP_SOLVER_STREAM_SUBJECTS.len()
         );
+    }
+
+    #[test]
+    fn solve_subproblem_solves_binary_mip_with_in_house_solver() {
+        let result = solve_subproblem(
+            test_job(binary_knapsack_problem()),
+            "worker-test".to_string(),
+        );
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
+        assert_eq!(result.z, Some(90.0));
+        assert_eq!(result.x.len(), 4);
+        assert!((result.x[1] - 1.0).abs() < 1e-6);
+        assert!((result.x[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[tokio::test]
+    async fn master_local_fallback_solves_binary_mip() {
+        let state = test_state(NodeRole::Master);
+        let options = SolveOptions {
+            split_depth: Some(2),
+            max_nodes: Some(10_000),
+            ..SolveOptions::default()
+        };
+
+        let response = solve_problem_distributed(
+            state,
+            "request-test".to_string(),
+            3,
+            binary_knapsack_problem(),
+            options,
+        )
+        .await
+        .unwrap();
+
+        assert!(response.ok, "warnings: {:?}", response.warnings);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.revision, 3);
+        assert_eq!(response.z, Some(90.0));
+        assert!(!response.distributed);
+        assert_eq!(response.jobs_completed, response.jobs_published);
+        assert!(response.jobs_published > 0);
+    }
+
+    #[test]
+    fn aggregate_results_counts_infeasible_subtrees_as_complete() {
+        let problem = binary_knapsack_problem();
+        let state = test_state(NodeRole::Master);
+        let optimal = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-0".to_string(),
+            revision: 0,
+            worker_node: "worker-a".to_string(),
+            ok: true,
+            status: "optimal".to_string(),
+            z: Some(90.0),
+            x: vec![0.0, 1.0, 0.0, 1.0],
+            best_bound: Some(90.0),
+            gap: Some(0.0),
+            nodes_explored: 1,
+            lp_solves: 1,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: None,
+            finished_at_ms: now_ms(),
+        };
+        let infeasible = SubproblemResult {
+            solve_id: "solve-test".to_string(),
+            request_id: "request-test".to_string(),
+            job_id: "job-1".to_string(),
+            revision: 0,
+            worker_node: "worker-b".to_string(),
+            ok: false,
+            status: "infeasible".to_string(),
+            z: None,
+            x: Vec::new(),
+            best_bound: None,
+            gap: None,
+            nodes_explored: 0,
+            lp_solves: 0,
+            elapsed_ms: 1.0,
+            accelerator: AcceleratorReport::default(),
+            error: Some("pruned".to_string()),
+            finished_at_ms: now_ms(),
+        };
+
+        let response = aggregate_results(
+            "solve-test".to_string(),
+            "request-test".to_string(),
+            0,
+            &problem,
+            2,
+            vec![optimal, infeasible],
+            false,
+            true,
+            &state,
+            Vec::new(),
+        );
+
+        assert!(response.ok);
+        assert_eq!(response.status, "optimal");
+        assert_eq!(response.jobs_completed, 2);
+        assert_eq!(response.z, Some(90.0));
     }
 }
