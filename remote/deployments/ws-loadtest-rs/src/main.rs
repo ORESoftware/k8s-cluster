@@ -35,6 +35,7 @@ struct Stats {
     in_flight: AtomicUsize,
     // Total micros to track simple mean without scanning the histogram on every report.
     total_latency_us: AtomicU64,
+    connect_error_logs: AtomicUsize,
 }
 
 impl Stats {
@@ -45,6 +46,11 @@ impl Stats {
         if let Ok(mut hist) = latencies.lock() {
             let _ = hist.record(latency_us);
         }
+    }
+
+    fn should_log_connect_error(&self) -> bool {
+        let n = self.connect_error_logs.fetch_add(1, Ordering::Relaxed) + 1;
+        n <= 20 || n % 10_000 == 0
     }
 }
 
@@ -224,9 +230,8 @@ async fn run_pipeline_client(
     let reconnect_delay = Duration::from_millis(config.reconnect_delay_ms);
     let correlation_timeout = Duration::from_secs(config.correlation_timeout_seconds);
     // 1 / rate => seconds between sends; convert to nanoseconds for tokio's interval.
-    let send_interval = Duration::from_nanos(
-        (1_000_000_000.0 / config.messages_per_second_per_client) as u64,
-    );
+    let send_interval =
+        Duration::from_nanos((1_000_000_000.0 / config.messages_per_second_per_client) as u64);
 
     let payload = config.message_payload.clone();
 
@@ -312,11 +317,15 @@ async fn run_pipeline_client(
             }
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
-                eprintln!("connect failed client={} error={}", client_id, error);
+                if stats.should_log_connect_error() {
+                    eprintln!("connect failed client={} error={}", client_id, error);
+                }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
-                eprintln!("connect timeout client={}", client_id);
+                if stats.should_log_connect_error() {
+                    eprintln!("connect timeout client={}", client_id);
+                }
             }
         }
 
@@ -613,11 +622,15 @@ async fn run_gcs_client(
             }
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
-                eprintln!("gcs connect failed client={} error={}", client_id, error);
+                if stats.should_log_connect_error() {
+                    eprintln!("gcs connect failed client={} error={}", client_id, error);
+                }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
-                eprintln!("gcs connect timeout client={}", client_id);
+                if stats.should_log_connect_error() {
+                    eprintln!("gcs connect timeout client={}", client_id);
+                }
             }
         }
         sleep(reconnect_delay).await;
@@ -663,11 +676,15 @@ async fn run_client(client_id: usize, config: Arc<Config>, stats: Arc<Stats>) ->
             }
             Ok(Err(error)) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
-                eprintln!("connect failed client={} error={}", client_id, error);
+                if stats.should_log_connect_error() {
+                    eprintln!("connect failed client={} error={}", client_id, error);
+                }
             }
             Err(_elapsed) => {
                 stats.failed.fetch_add(1, Ordering::Relaxed);
-                eprintln!("connect timeout client={}", client_id);
+                if stats.should_log_connect_error() {
+                    eprintln!("connect timeout client={}", client_id);
+                }
             }
         }
 
@@ -820,8 +837,14 @@ async fn main() {
         tokio::spawn(async move {
             if mode == LOAD_MODE_GCS {
                 let assignment = assignment.expect("gcs assignment for every client");
-                run_gcs_client(client_id, assignment, client_config, client_stats, client_latencies)
-                    .await;
+                run_gcs_client(
+                    client_id,
+                    assignment,
+                    client_config,
+                    client_stats,
+                    client_latencies,
+                )
+                .await;
             } else if mode == LOAD_MODE_PIPELINE {
                 run_pipeline_client(client_id, client_config, client_stats, client_latencies).await;
             } else {

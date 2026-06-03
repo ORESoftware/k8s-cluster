@@ -2717,8 +2717,34 @@ jobs:
             local d="$1"
             local pod
             for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
-              kubectl -n default logs "$pod" --all-containers --since=30m --tail="${LOADTEST_LOADER_LOG_TAIL:-800}" --prefix=true 2>/dev/null \
+              kubectl -n default logs "$pod" --all-containers --since=30m --tail="${LOADTEST_LOADER_LOG_TAIL:-2000}" --prefix=true 2>/dev/null \
                 | grep 'gcs-report' || true
+            done
+          }
+
+          dump_loader_logs() {
+            local d="$1"
+            local pod
+            echo "=== raw loader pod logs: $d ==="
+            for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- loader pod $pod state ---"
+              kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} ready={range .status.containerStatuses[*]}{.name}:{.ready}:{.restartCount}:{.state.waiting.reason}:{.state.terminated.reason} {end}{"\n"}' || true
+              echo "--- loader pod $pod recent gcs-report lines ---"
+              kubectl -n default logs "$pod" --all-containers --since=30m --tail=2000 --prefix=true 2>/dev/null \
+                | grep 'gcs-report' | tail -20 || true
+              echo "--- loader pod $pod recent raw logs ---"
+              kubectl -n default logs "$pod" --all-containers --tail=120 --prefix=true 2>/dev/null || true
+            done
+          }
+
+          direct_gcs_metrics() {
+            local pod
+            echo "=== direct current GCS pod metrics ==="
+            for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- gcs pod $pod metrics ---"
+              kubectl -n default exec "$pod" -- bash -lc 'exec 3<>/dev/tcp/127.0.0.1/3000; printf "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3' 2>/dev/null \
+                | grep -E '^(gcs_ws_|gcs_broker_|gcs_in_memory_|gcs_kafka_|gcs_runtime_|gcs_process_|gcs_go_)' \
+                | head -220 || true
             done
           }
 
@@ -2814,10 +2840,12 @@ jobs:
             {
               echo "=== load failure diagnostics: $loader_name ==="
               collect_loader "$d"
+              dump_loader_logs "$d"
               echo "=== router metrics at $loader_name failure ==="
               router_metrics
               prom_compact_snapshot "load failure $loader_name"
               prom_load_failure_snapshot "load failure $loader_name"
+              direct_gcs_metrics
               echo "=== gcs/router/loadtest deployments ==="
               kubectl -n default get deploy gcs gcs-router "$d" || true
               echo "=== gcs/router/loadtest pods ==="
