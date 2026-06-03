@@ -1381,6 +1381,416 @@ pub fn validate_agent_remote_dev_runtime_locks_insert(value: &AgentRemoteDevRunt
     Ok(())
 }
 
+pub const MIP_SOLVER_SESSIONS_TABLE: &str = "mip_solver_sessions";
+pub const MIP_SOLVER_SESSIONS_COLUMNS: &[&str] = &["session_id", "revision", "problem", "created_at", "updated_at"];
+pub const MIP_SOLVER_SESSIONS_SELECT_SQL: &str = r###"select
+      session_id,
+      revision,
+      problem,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_sessions"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSessionsRow {
+    pub session_id: String,
+    pub revision: i64,
+    pub problem: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSessionsInsert {
+    pub session_id: Option<String>,
+    pub revision: Option<i64>,
+    pub problem: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_mip_solver_sessions_row(value: &MipSolverSessionsRow) -> Result<(), String> {
+    validate_string_length("mip_solver_sessions.session_id", &value.session_id, None, Some(200))?;
+    if (&value.session_id).as_bytes().len() > 200 { return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string()); }
+    if *(&value.revision) < 0 { return Err("mip_solver_sessions.revision is below the minimum".to_string()); }
+    if !(&value.problem).is_object() { return Err("mip_solver_sessions.problem must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_sessions_insert(value: &MipSolverSessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.session_id {
+        validate_string_length("mip_solver_sessions.session_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.revision {
+        if *(value) < 0 { return Err("mip_solver_sessions.revision is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.problem {
+        if !(value).is_object() { return Err("mip_solver_sessions.problem must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MIP_SOLVER_SOLVES_TABLE: &str = "mip_solver_solves";
+pub const MIP_SOLVER_SOLVES_COLUMNS: &[&str] = &["solve_id", "request_id", "revision", "status", "node_id", "node_role", "problem", "options", "response", "jobs_expected", "jobs_published", "jobs_completed", "jobs_redelegated", "jobs_split", "timed_out", "distributed", "warnings", "started_at", "updated_at", "finished_at"];
+pub const MIP_SOLVER_SOLVES_SELECT_SQL: &str = r###"select
+      solve_id,
+      request_id,
+      revision,
+      status,
+      node_id,
+      node_role,
+      problem,
+      options,
+      response,
+      jobs_expected,
+      jobs_published,
+      jobs_completed,
+      jobs_redelegated,
+      jobs_split,
+      timed_out,
+      distributed,
+      warnings,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from mip_solver_solves"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MipSolverSolvesNodeRole {
+    Master,
+    Slave,
+}
+
+impl MipSolverSolvesNodeRole {
+    pub const VALUES: &'static [&'static str] = &["master", "slave"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Master => "master",
+            Self::Slave => "slave",
+        }
+    }
+}
+
+impl TryFrom<&str> for MipSolverSolvesNodeRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "master" => Ok(Self::Master),
+            "slave" => Ok(Self::Slave),
+            _ => Err(format!("unsupported node_role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSolvesRow {
+    pub solve_id: String,
+    pub request_id: String,
+    pub revision: i64,
+    pub status: String,
+    pub node_id: String,
+    pub node_role: String,
+    pub problem: Value,
+    pub options: Value,
+    pub response: Value,
+    pub jobs_expected: i32,
+    pub jobs_published: i32,
+    pub jobs_completed: i32,
+    pub jobs_redelegated: i32,
+    pub jobs_split: i32,
+    pub timed_out: bool,
+    pub distributed: bool,
+    pub warnings: Value,
+    pub started_at: String,
+    pub updated_at: String,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSolvesInsert {
+    pub solve_id: Option<String>,
+    pub request_id: Option<String>,
+    pub revision: Option<i64>,
+    pub status: Option<String>,
+    pub node_id: Option<String>,
+    pub node_role: Option<String>,
+    pub problem: Option<Value>,
+    pub options: Option<Value>,
+    pub response: Option<Value>,
+    pub jobs_expected: Option<i32>,
+    pub jobs_published: Option<i32>,
+    pub jobs_completed: Option<i32>,
+    pub jobs_redelegated: Option<i32>,
+    pub jobs_split: Option<i32>,
+    pub timed_out: Option<bool>,
+    pub distributed: Option<bool>,
+    pub warnings: Option<Value>,
+    pub started_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
+pub fn validate_mip_solver_solves_row(value: &MipSolverSolvesRow) -> Result<(), String> {
+    validate_string_length("mip_solver_solves.solve_id", &value.solve_id, None, Some(160))?;
+    if (&value.solve_id).as_bytes().len() > 160 { return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string()); }
+    validate_string_length("mip_solver_solves.request_id", &value.request_id, None, Some(200))?;
+    if (&value.request_id).as_bytes().len() > 200 { return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string()); }
+    if *(&value.revision) < 0 { return Err("mip_solver_solves.revision is below the minimum".to_string()); }
+    validate_string_length("mip_solver_solves.status", &value.status, None, Some(64))?;
+    if (&value.status).as_bytes().len() > 64 { return Err("mip_solver_solves.status exceeds 64 bytes".to_string()); }
+    validate_string_length("mip_solver_solves.node_id", &value.node_id, None, Some(253))?;
+    if (&value.node_id).as_bytes().len() > 253 { return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string()); }
+    if !["master", "slave"].contains(&(&value.node_role).as_str()) { return Err(format!("unsupported mip_solver_solves.node_role: {}", &value.node_role)); }
+    if !(&value.problem).is_object() { return Err("mip_solver_solves.problem must be a JSON object".to_string()); }
+    if !(&value.options).is_object() { return Err("mip_solver_solves.options must be a JSON object".to_string()); }
+    if !(&value.response).is_object() { return Err("mip_solver_solves.response must be a JSON object".to_string()); }
+    if *(&value.jobs_expected) < 0 { return Err("mip_solver_solves.jobs_expected is below the minimum".to_string()); }
+    if *(&value.jobs_published) < 0 { return Err("mip_solver_solves.jobs_published is below the minimum".to_string()); }
+    if *(&value.jobs_completed) < 0 { return Err("mip_solver_solves.jobs_completed is below the minimum".to_string()); }
+    if *(&value.jobs_redelegated) < 0 { return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string()); }
+    if *(&value.jobs_split) < 0 { return Err("mip_solver_solves.jobs_split is below the minimum".to_string()); }
+    if !(&value.warnings).is_array() { return Err("mip_solver_solves.warnings must be a JSON array".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_solves_insert(value: &MipSolverSolvesInsert) -> Result<(), String> {
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_solves.solve_id", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.request_id {
+        validate_string_length("mip_solver_solves.request_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.revision {
+        if *(value) < 0 { return Err("mip_solver_solves.revision is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        validate_string_length("mip_solver_solves.status", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("mip_solver_solves.status exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.node_id {
+        validate_string_length("mip_solver_solves.node_id", value, None, Some(253))?;
+        if (value).as_bytes().len() > 253 { return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string()); }
+    }
+    if let Some(value) = &value.node_role {
+        if !["master", "slave"].contains(&(value).as_str()) { return Err(format!("unsupported mip_solver_solves.node_role: {}", value)); }
+    }
+    if let Some(value) = &value.problem {
+        if !(value).is_object() { return Err("mip_solver_solves.problem must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.options {
+        if !(value).is_object() { return Err("mip_solver_solves.options must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.response {
+        if !(value).is_object() { return Err("mip_solver_solves.response must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.jobs_expected {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_expected is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_published {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_published is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_completed {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_completed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_redelegated {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_split {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_split is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.warnings {
+        if !(value).is_array() { return Err("mip_solver_solves.warnings must be a JSON array".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MIP_SOLVER_JOBS_TABLE: &str = "mip_solver_jobs";
+pub const MIP_SOLVER_JOBS_COLUMNS: &[&str] = &["job_id", "solve_id", "root_job_id", "retry_index", "depth", "status", "worker_node", "job_payload", "result_payload", "submitted_at", "finished_at", "updated_at"];
+pub const MIP_SOLVER_JOBS_SELECT_SQL: &str = r###"select
+      job_id,
+      solve_id,
+      root_job_id,
+      retry_index,
+      depth,
+      status,
+      worker_node,
+      job_payload,
+      result_payload,
+      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as submitted_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_jobs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverJobsRow {
+    pub job_id: String,
+    pub solve_id: String,
+    pub root_job_id: String,
+    pub retry_index: i32,
+    pub depth: i32,
+    pub status: String,
+    pub worker_node: Option<String>,
+    pub job_payload: Value,
+    pub result_payload: Value,
+    pub submitted_at: String,
+    pub finished_at: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverJobsInsert {
+    pub job_id: Option<String>,
+    pub solve_id: Option<String>,
+    pub root_job_id: Option<String>,
+    pub retry_index: Option<i32>,
+    pub depth: Option<i32>,
+    pub status: Option<String>,
+    pub worker_node: Option<String>,
+    pub job_payload: Option<Value>,
+    pub result_payload: Option<Value>,
+    pub submitted_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_mip_solver_jobs_row(value: &MipSolverJobsRow) -> Result<(), String> {
+    validate_string_length("mip_solver_jobs.job_id", &value.job_id, None, Some(240))?;
+    if (&value.job_id).as_bytes().len() > 240 { return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string()); }
+    validate_string_length("mip_solver_jobs.solve_id", &value.solve_id, None, Some(160))?;
+    validate_string_length("mip_solver_jobs.root_job_id", &value.root_job_id, None, Some(240))?;
+    if (&value.root_job_id).as_bytes().len() > 240 { return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string()); }
+    if *(&value.retry_index) < 0 { return Err("mip_solver_jobs.retry_index is below the minimum".to_string()); }
+    if *(&value.depth) < 0 { return Err("mip_solver_jobs.depth is below the minimum".to_string()); }
+    validate_string_length("mip_solver_jobs.status", &value.status, None, Some(64))?;
+    if (&value.status).as_bytes().len() > 64 { return Err("mip_solver_jobs.status exceeds 64 bytes".to_string()); }
+    if let Some(value) = &value.worker_node {
+        validate_string_length("mip_solver_jobs.worker_node", value, None, Some(253))?;
+    }
+    if !(&value.job_payload).is_object() { return Err("mip_solver_jobs.job_payload must be a JSON object".to_string()); }
+    if !(&value.result_payload).is_object() { return Err("mip_solver_jobs.result_payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_jobs_insert(value: &MipSolverJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.job_id {
+        validate_string_length("mip_solver_jobs.job_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_jobs.solve_id", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.root_job_id {
+        validate_string_length("mip_solver_jobs.root_job_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.retry_index {
+        if *(value) < 0 { return Err("mip_solver_jobs.retry_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.depth {
+        if *(value) < 0 { return Err("mip_solver_jobs.depth is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        validate_string_length("mip_solver_jobs.status", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("mip_solver_jobs.status exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.worker_node {
+        validate_string_length("mip_solver_jobs.worker_node", value, None, Some(253))?;
+    }
+    if let Some(value) = &value.job_payload {
+        if !(value).is_object() { return Err("mip_solver_jobs.job_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.result_payload {
+        if !(value).is_object() { return Err("mip_solver_jobs.result_payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MIP_SOLVER_EVENTS_TABLE: &str = "mip_solver_events";
+pub const MIP_SOLVER_EVENTS_COLUMNS: &[&str] = &["id", "solve_id", "session_id", "job_id", "event_kind", "payload", "created_at"];
+pub const MIP_SOLVER_EVENTS_SELECT_SQL: &str = r###"select
+      id,
+      solve_id,
+      session_id,
+      job_id,
+      event_kind,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from mip_solver_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverEventsRow {
+    pub id: i64,
+    pub solve_id: Option<String>,
+    pub session_id: Option<String>,
+    pub job_id: Option<String>,
+    pub event_kind: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverEventsInsert {
+    pub id: Option<i64>,
+    pub solve_id: Option<String>,
+    pub session_id: Option<String>,
+    pub job_id: Option<String>,
+    pub event_kind: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_mip_solver_events_row(value: &MipSolverEventsRow) -> Result<(), String> {
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_events.solve_id", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.session_id {
+        validate_string_length("mip_solver_events.session_id", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.job_id {
+        validate_string_length("mip_solver_events.job_id", value, None, Some(240))?;
+    }
+    validate_string_length("mip_solver_events.event_kind", &value.event_kind, None, Some(80))?;
+    if !(&value.payload).is_object() { return Err("mip_solver_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_events_insert(value: &MipSolverEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_events.solve_id", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.session_id {
+        validate_string_length("mip_solver_events.session_id", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.job_id {
+        validate_string_length("mip_solver_events.job_id", value, None, Some(240))?;
+    }
+    if let Some(value) = &value.event_kind {
+        validate_string_length("mip_solver_events.event_kind", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("mip_solver_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const LAMBDA_FUNCTIONS_TABLE: &str = "lambda_functions";
 pub const LAMBDA_FUNCTIONS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "status", "env", "labels", "meta_data", "last_invoked_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const LAMBDA_FUNCTIONS_SELECT_SQL: &str = r###"select

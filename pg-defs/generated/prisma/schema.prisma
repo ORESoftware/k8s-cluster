@@ -248,6 +248,77 @@ model AgentRemoteDevRuntimeLock {
   @@map("agent_remote_dev_runtime_locks")
 }
 
+model MipSolverSessions {
+  sessionId String @map("session_id") @id @db.VarChar(200)
+  revision BigInt @default(0) @db.BigInt
+  problem Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([updatedAt], map: "mip_solver_sessions_updated_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("mip_solver_sessions")
+}
+
+model MipSolverSolves {
+  solveId String @map("solve_id") @id @db.VarChar(160)
+  requestId String @map("request_id") @db.VarChar(200)
+  revision BigInt @default(0) @db.BigInt
+  status String @default("running") @db.VarChar(64)
+  nodeId String @map("node_id") @db.VarChar(253)
+  nodeRole String @map("node_role") @db.VarChar(32)
+  problem Json @default("{}")
+  options Json @default("{}")
+  response Json @default("{}")
+  jobsExpected Int @map("jobs_expected") @default(0)
+  jobsPublished Int @map("jobs_published") @default(0)
+  jobsCompleted Int @map("jobs_completed") @default(0)
+  jobsRedelegated Int @map("jobs_redelegated") @default(0)
+  jobsSplit Int @map("jobs_split") @default(0)
+  timedOut Boolean @map("timed_out") @default(false)
+  distributed Boolean @default(false)
+  warnings Json @default("[]")
+  startedAt DateTime @map("started_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  @@index([requestId, updatedAt], map: "mip_solver_solves_request_id_idx")
+  @@index([status, updatedAt], map: "mip_solver_solves_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("mip_solver_solves")
+}
+
+model MipSolverJobs {
+  jobId String @map("job_id") @id @db.VarChar(240)
+  solveId String @map("solve_id") @db.VarChar(160)
+  rootJobId String @map("root_job_id") @db.VarChar(240)
+  retryIndex Int @map("retry_index") @default(0)
+  depth Int @default(0)
+  status String @default("submitted") @db.VarChar(64)
+  workerNode String? @map("worker_node") @db.VarChar(253)
+  jobPayload Json @map("job_payload") @default("{}")
+  resultPayload Json @map("result_payload") @default("{}")
+  submittedAt DateTime @map("submitted_at") @default(now()) @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@index([solveId, status, updatedAt], map: "mip_solver_jobs_solve_status_idx")
+  @@index([solveId, rootJobId, retryIndex], map: "mip_solver_jobs_root_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("mip_solver_jobs")
+}
+
+model MipSolverEvents {
+  id BigInt @id @default(autoincrement()) @db.BigInt
+  solveId String? @map("solve_id") @db.VarChar(160)
+  sessionId String? @map("session_id") @db.VarChar(200)
+  jobId String? @map("job_id") @db.VarChar(240)
+  eventKind String @map("event_kind") @db.VarChar(80)
+  payload Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  // mip_solver_events_solve_created_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // mip_solver_events_session_created_at_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("mip_solver_events")
+}
+
 model LambdaFunction {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug String @db.VarChar(120)

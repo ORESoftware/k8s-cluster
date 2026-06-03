@@ -29,6 +29,7 @@ var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -564,6 +565,183 @@ func (AgentRemoteDevRuntimeLockGorm) TableName() string { return AgentRemoteDevR
 func (value AgentRemoteDevRuntimeLockGorm) Validate() error {
 	if len([]byte(value.Owner)) > 200 { return errors.New("agent_remote_dev_runtime_locks.owner exceeds 200 bytes") }
 	if !containsString(AgentRemoteDevRuntimeLockStatusValues, value.Status) { return errors.New("unsupported agent_remote_dev_runtime_locks.status") }
+	return nil
+}
+
+const MipSolverSessionsTable = "mip_solver_sessions"
+const MipSolverSessionsSelectSQL = `select
+      session_id,
+      revision,
+      problem,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_sessions`
+
+type MipSolverSessionsGorm struct {
+	SessionId string `gorm:"column:session_id;type:varchar(200);primaryKey" json:"sessionId"`
+	Revision int64 `gorm:"column:revision;type:bigint;default:0;not null" json:"revision"`
+	Problem datatypes.JSON `gorm:"column:problem;type:jsonb;default:'{}'::jsonb;not null" json:"problem"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (MipSolverSessionsGorm) TableName() string { return MipSolverSessionsTable }
+
+func (value MipSolverSessionsGorm) Validate() error {
+	if len([]byte(value.SessionId)) > 200 { return errors.New("mip_solver_sessions.session_id exceeds 200 bytes") }
+	if len([]byte(value.SessionId)) < 1 { return errors.New("mip_solver_sessions.session_id is below 1 bytes") }
+	if value.Revision < 0 { return errors.New("mip_solver_sessions.revision is below the minimum") }
+	if !validateJSONString(value.Problem) { return errors.New("mip_solver_sessions.problem must be valid JSON") }
+	return nil
+}
+
+const MipSolverSolvesTable = "mip_solver_solves"
+const MipSolverSolvesSelectSQL = `select
+      solve_id,
+      request_id,
+      revision,
+      status,
+      node_id,
+      node_role,
+      problem,
+      options,
+      response,
+      jobs_expected,
+      jobs_published,
+      jobs_completed,
+      jobs_redelegated,
+      jobs_split,
+      timed_out,
+      distributed,
+      warnings,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from mip_solver_solves`
+
+var MipSolverSolvesNodeRoleValues = []string{"master", "slave"}
+
+type MipSolverSolvesGorm struct {
+	SolveId string `gorm:"column:solve_id;type:varchar(160);primaryKey" json:"solveId"`
+	RequestId string `gorm:"column:request_id;type:varchar(200);not null" json:"requestId"`
+	Revision int64 `gorm:"column:revision;type:bigint;default:0;not null" json:"revision"`
+	Status string `gorm:"column:status;type:varchar(64);default:'running';not null" json:"status"`
+	NodeId string `gorm:"column:node_id;type:varchar(253);not null" json:"nodeId"`
+	NodeRole string `gorm:"column:node_role;type:varchar(32);not null" json:"nodeRole"`
+	Problem datatypes.JSON `gorm:"column:problem;type:jsonb;default:'{}'::jsonb;not null" json:"problem"`
+	Options datatypes.JSON `gorm:"column:options;type:jsonb;default:'{}'::jsonb;not null" json:"options"`
+	Response datatypes.JSON `gorm:"column:response;type:jsonb;default:'{}'::jsonb;not null" json:"response"`
+	JobsExpected int32 `gorm:"column:jobs_expected;type:integer;default:0;not null" json:"jobsExpected"`
+	JobsPublished int32 `gorm:"column:jobs_published;type:integer;default:0;not null" json:"jobsPublished"`
+	JobsCompleted int32 `gorm:"column:jobs_completed;type:integer;default:0;not null" json:"jobsCompleted"`
+	JobsRedelegated int32 `gorm:"column:jobs_redelegated;type:integer;default:0;not null" json:"jobsRedelegated"`
+	JobsSplit int32 `gorm:"column:jobs_split;type:integer;default:0;not null" json:"jobsSplit"`
+	TimedOut bool `gorm:"column:timed_out;type:boolean;default:false;not null" json:"timedOut"`
+	Distributed bool `gorm:"column:distributed;type:boolean;default:false;not null" json:"distributed"`
+	Warnings datatypes.JSON `gorm:"column:warnings;type:jsonb;default:'[]'::jsonb;not null" json:"warnings"`
+	StartedAt time.Time `gorm:"column:started_at;type:timestamptz;default:now();not null" json:"startedAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+}
+
+func (MipSolverSolvesGorm) TableName() string { return MipSolverSolvesTable }
+
+func (value MipSolverSolvesGorm) Validate() error {
+	if len([]byte(value.SolveId)) > 160 { return errors.New("mip_solver_solves.solve_id exceeds 160 bytes") }
+	if len([]byte(value.SolveId)) < 1 { return errors.New("mip_solver_solves.solve_id is below 1 bytes") }
+	if len([]byte(value.RequestId)) > 200 { return errors.New("mip_solver_solves.request_id exceeds 200 bytes") }
+	if len([]byte(value.RequestId)) < 1 { return errors.New("mip_solver_solves.request_id is below 1 bytes") }
+	if value.Revision < 0 { return errors.New("mip_solver_solves.revision is below the minimum") }
+	if len([]byte(value.Status)) > 64 { return errors.New("mip_solver_solves.status exceeds 64 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("mip_solver_solves.status is below 1 bytes") }
+	if len([]byte(value.NodeId)) > 253 { return errors.New("mip_solver_solves.node_id exceeds 253 bytes") }
+	if len([]byte(value.NodeId)) < 1 { return errors.New("mip_solver_solves.node_id is below 1 bytes") }
+	if !containsString(MipSolverSolvesNodeRoleValues, value.NodeRole) { return errors.New("unsupported mip_solver_solves.node_role") }
+	if !validateJSONString(value.Problem) { return errors.New("mip_solver_solves.problem must be valid JSON") }
+	if !validateJSONString(value.Options) { return errors.New("mip_solver_solves.options must be valid JSON") }
+	if !validateJSONString(value.Response) { return errors.New("mip_solver_solves.response must be valid JSON") }
+	if value.JobsExpected < 0 { return errors.New("mip_solver_solves.jobs_expected is below the minimum") }
+	if value.JobsPublished < 0 { return errors.New("mip_solver_solves.jobs_published is below the minimum") }
+	if value.JobsCompleted < 0 { return errors.New("mip_solver_solves.jobs_completed is below the minimum") }
+	if value.JobsRedelegated < 0 { return errors.New("mip_solver_solves.jobs_redelegated is below the minimum") }
+	if value.JobsSplit < 0 { return errors.New("mip_solver_solves.jobs_split is below the minimum") }
+	if !validateJSONString(value.Warnings) { return errors.New("mip_solver_solves.warnings must be valid JSON") }
+	return nil
+}
+
+const MipSolverJobsTable = "mip_solver_jobs"
+const MipSolverJobsSelectSQL = `select
+      job_id,
+      solve_id,
+      root_job_id,
+      retry_index,
+      depth,
+      status,
+      worker_node,
+      job_payload,
+      result_payload,
+      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as submitted_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_jobs`
+
+type MipSolverJobsGorm struct {
+	JobId string `gorm:"column:job_id;type:varchar(240);primaryKey" json:"jobId"`
+	SolveId string `gorm:"column:solve_id;type:varchar(160);not null" json:"solveId"`
+	RootJobId string `gorm:"column:root_job_id;type:varchar(240);not null" json:"rootJobId"`
+	RetryIndex int32 `gorm:"column:retry_index;type:integer;default:0;not null" json:"retryIndex"`
+	Depth int32 `gorm:"column:depth;type:integer;default:0;not null" json:"depth"`
+	Status string `gorm:"column:status;type:varchar(64);default:'submitted';not null" json:"status"`
+	WorkerNode *string `gorm:"column:worker_node;type:varchar(253)" json:"workerNode,omitempty"`
+	JobPayload datatypes.JSON `gorm:"column:job_payload;type:jsonb;default:'{}'::jsonb;not null" json:"jobPayload"`
+	ResultPayload datatypes.JSON `gorm:"column:result_payload;type:jsonb;default:'{}'::jsonb;not null" json:"resultPayload"`
+	SubmittedAt time.Time `gorm:"column:submitted_at;type:timestamptz;default:now();not null" json:"submittedAt"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (MipSolverJobsGorm) TableName() string { return MipSolverJobsTable }
+
+func (value MipSolverJobsGorm) Validate() error {
+	if len([]byte(value.JobId)) > 240 { return errors.New("mip_solver_jobs.job_id exceeds 240 bytes") }
+	if len([]byte(value.JobId)) < 1 { return errors.New("mip_solver_jobs.job_id is below 1 bytes") }
+	if len([]byte(value.RootJobId)) > 240 { return errors.New("mip_solver_jobs.root_job_id exceeds 240 bytes") }
+	if len([]byte(value.RootJobId)) < 1 { return errors.New("mip_solver_jobs.root_job_id is below 1 bytes") }
+	if value.RetryIndex < 0 { return errors.New("mip_solver_jobs.retry_index is below the minimum") }
+	if value.Depth < 0 { return errors.New("mip_solver_jobs.depth is below the minimum") }
+	if len([]byte(value.Status)) > 64 { return errors.New("mip_solver_jobs.status exceeds 64 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("mip_solver_jobs.status is below 1 bytes") }
+	if !validateJSONString(value.JobPayload) { return errors.New("mip_solver_jobs.job_payload must be valid JSON") }
+	if !validateJSONString(value.ResultPayload) { return errors.New("mip_solver_jobs.result_payload must be valid JSON") }
+	return nil
+}
+
+const MipSolverEventsTable = "mip_solver_events"
+const MipSolverEventsSelectSQL = `select
+      id,
+      solve_id,
+      session_id,
+      job_id,
+      event_kind,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from mip_solver_events`
+
+type MipSolverEventsGorm struct {
+	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
+	SolveId *string `gorm:"column:solve_id;type:varchar(160)" json:"solveId,omitempty"`
+	SessionId *string `gorm:"column:session_id;type:varchar(200)" json:"sessionId,omitempty"`
+	JobId *string `gorm:"column:job_id;type:varchar(240)" json:"jobId,omitempty"`
+	EventKind string `gorm:"column:event_kind;type:varchar(80);not null" json:"eventKind"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (MipSolverEventsGorm) TableName() string { return MipSolverEventsTable }
+
+func (value MipSolverEventsGorm) Validate() error {
+	if !mipSolverEventsEventKindPattern.MatchString(value.EventKind) { return errors.New("mip_solver_events.event_kind does not match the required pattern") }
+	if !validateJSONString(value.Payload) { return errors.New("mip_solver_events.payload must be valid JSON") }
 	return nil
 }
 

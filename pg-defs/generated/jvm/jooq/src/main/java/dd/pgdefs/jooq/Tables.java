@@ -198,6 +198,62 @@ public final class Tables {
     public static final Field<OffsetDateTime> AGENT_REMOTE_DEV_RUNTIME_LOCKS_CREATED_AT = DSL.field(DSL.name("agent_remote_dev_runtime_locks", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> AGENT_REMOTE_DEV_RUNTIME_LOCKS_UPDATED_AT = DSL.field(DSL.name("agent_remote_dev_runtime_locks", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name MIP_SOLVER_SESSIONS_NAME = DSL.name("mip_solver_sessions");
+    public static final Table<org.jooq.Record> MIP_SOLVER_SESSIONS = DSL.table(MIP_SOLVER_SESSIONS_NAME);
+    public static final Field<String> MIP_SOLVER_SESSIONS_SESSION_ID = DSL.field(DSL.name("mip_solver_sessions", "session_id"), SQLDataType.VARCHAR(200));
+    public static final Field<Long> MIP_SOLVER_SESSIONS_REVISION = DSL.field(DSL.name("mip_solver_sessions", "revision"), SQLDataType.BIGINT);
+    public static final Field<JSONB> MIP_SOLVER_SESSIONS_PROBLEM = DSL.field(DSL.name("mip_solver_sessions", "problem"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> MIP_SOLVER_SESSIONS_CREATED_AT = DSL.field(DSL.name("mip_solver_sessions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MIP_SOLVER_SESSIONS_UPDATED_AT = DSL.field(DSL.name("mip_solver_sessions", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name MIP_SOLVER_SOLVES_NAME = DSL.name("mip_solver_solves");
+    public static final Table<org.jooq.Record> MIP_SOLVER_SOLVES = DSL.table(MIP_SOLVER_SOLVES_NAME);
+    public static final Field<String> MIP_SOLVER_SOLVES_SOLVE_ID = DSL.field(DSL.name("mip_solver_solves", "solve_id"), SQLDataType.VARCHAR(160));
+    public static final Field<String> MIP_SOLVER_SOLVES_REQUEST_ID = DSL.field(DSL.name("mip_solver_solves", "request_id"), SQLDataType.VARCHAR(200));
+    public static final Field<Long> MIP_SOLVER_SOLVES_REVISION = DSL.field(DSL.name("mip_solver_solves", "revision"), SQLDataType.BIGINT);
+    public static final Field<String> MIP_SOLVER_SOLVES_STATUS = DSL.field(DSL.name("mip_solver_solves", "status"), SQLDataType.VARCHAR(64));
+    public static final Field<String> MIP_SOLVER_SOLVES_NODE_ID = DSL.field(DSL.name("mip_solver_solves", "node_id"), SQLDataType.VARCHAR(253));
+    public static final Field<String> MIP_SOLVER_SOLVES_NODE_ROLE = DSL.field(DSL.name("mip_solver_solves", "node_role"), SQLDataType.VARCHAR(32));
+    public static final Field<JSONB> MIP_SOLVER_SOLVES_PROBLEM = DSL.field(DSL.name("mip_solver_solves", "problem"), SQLDataType.JSONB);
+    public static final Field<JSONB> MIP_SOLVER_SOLVES_OPTIONS = DSL.field(DSL.name("mip_solver_solves", "options"), SQLDataType.JSONB);
+    public static final Field<JSONB> MIP_SOLVER_SOLVES_RESPONSE = DSL.field(DSL.name("mip_solver_solves", "response"), SQLDataType.JSONB);
+    public static final Field<Integer> MIP_SOLVER_SOLVES_JOBS_EXPECTED = DSL.field(DSL.name("mip_solver_solves", "jobs_expected"), SQLDataType.INTEGER);
+    public static final Field<Integer> MIP_SOLVER_SOLVES_JOBS_PUBLISHED = DSL.field(DSL.name("mip_solver_solves", "jobs_published"), SQLDataType.INTEGER);
+    public static final Field<Integer> MIP_SOLVER_SOLVES_JOBS_COMPLETED = DSL.field(DSL.name("mip_solver_solves", "jobs_completed"), SQLDataType.INTEGER);
+    public static final Field<Integer> MIP_SOLVER_SOLVES_JOBS_REDELEGATED = DSL.field(DSL.name("mip_solver_solves", "jobs_redelegated"), SQLDataType.INTEGER);
+    public static final Field<Integer> MIP_SOLVER_SOLVES_JOBS_SPLIT = DSL.field(DSL.name("mip_solver_solves", "jobs_split"), SQLDataType.INTEGER);
+    public static final Field<Boolean> MIP_SOLVER_SOLVES_TIMED_OUT = DSL.field(DSL.name("mip_solver_solves", "timed_out"), SQLDataType.BOOLEAN);
+    public static final Field<Boolean> MIP_SOLVER_SOLVES_DISTRIBUTED = DSL.field(DSL.name("mip_solver_solves", "distributed"), SQLDataType.BOOLEAN);
+    public static final Field<JSONB> MIP_SOLVER_SOLVES_WARNINGS = DSL.field(DSL.name("mip_solver_solves", "warnings"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> MIP_SOLVER_SOLVES_STARTED_AT = DSL.field(DSL.name("mip_solver_solves", "started_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MIP_SOLVER_SOLVES_UPDATED_AT = DSL.field(DSL.name("mip_solver_solves", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MIP_SOLVER_SOLVES_FINISHED_AT = DSL.field(DSL.name("mip_solver_solves", "finished_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name MIP_SOLVER_JOBS_NAME = DSL.name("mip_solver_jobs");
+    public static final Table<org.jooq.Record> MIP_SOLVER_JOBS = DSL.table(MIP_SOLVER_JOBS_NAME);
+    public static final Field<String> MIP_SOLVER_JOBS_JOB_ID = DSL.field(DSL.name("mip_solver_jobs", "job_id"), SQLDataType.VARCHAR(240));
+    public static final Field<String> MIP_SOLVER_JOBS_SOLVE_ID = DSL.field(DSL.name("mip_solver_jobs", "solve_id"), SQLDataType.VARCHAR(160));
+    public static final Field<String> MIP_SOLVER_JOBS_ROOT_JOB_ID = DSL.field(DSL.name("mip_solver_jobs", "root_job_id"), SQLDataType.VARCHAR(240));
+    public static final Field<Integer> MIP_SOLVER_JOBS_RETRY_INDEX = DSL.field(DSL.name("mip_solver_jobs", "retry_index"), SQLDataType.INTEGER);
+    public static final Field<Integer> MIP_SOLVER_JOBS_DEPTH = DSL.field(DSL.name("mip_solver_jobs", "depth"), SQLDataType.INTEGER);
+    public static final Field<String> MIP_SOLVER_JOBS_STATUS = DSL.field(DSL.name("mip_solver_jobs", "status"), SQLDataType.VARCHAR(64));
+    public static final Field<String> MIP_SOLVER_JOBS_WORKER_NODE = DSL.field(DSL.name("mip_solver_jobs", "worker_node"), SQLDataType.VARCHAR(253));
+    public static final Field<JSONB> MIP_SOLVER_JOBS_JOB_PAYLOAD = DSL.field(DSL.name("mip_solver_jobs", "job_payload"), SQLDataType.JSONB);
+    public static final Field<JSONB> MIP_SOLVER_JOBS_RESULT_PAYLOAD = DSL.field(DSL.name("mip_solver_jobs", "result_payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> MIP_SOLVER_JOBS_SUBMITTED_AT = DSL.field(DSL.name("mip_solver_jobs", "submitted_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MIP_SOLVER_JOBS_FINISHED_AT = DSL.field(DSL.name("mip_solver_jobs", "finished_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MIP_SOLVER_JOBS_UPDATED_AT = DSL.field(DSL.name("mip_solver_jobs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name MIP_SOLVER_EVENTS_NAME = DSL.name("mip_solver_events");
+    public static final Table<org.jooq.Record> MIP_SOLVER_EVENTS = DSL.table(MIP_SOLVER_EVENTS_NAME);
+    public static final Field<Long> MIP_SOLVER_EVENTS_ID = DSL.field(DSL.name("mip_solver_events", "id"), SQLDataType.BIGINT);
+    public static final Field<String> MIP_SOLVER_EVENTS_SOLVE_ID = DSL.field(DSL.name("mip_solver_events", "solve_id"), SQLDataType.VARCHAR(160));
+    public static final Field<String> MIP_SOLVER_EVENTS_SESSION_ID = DSL.field(DSL.name("mip_solver_events", "session_id"), SQLDataType.VARCHAR(200));
+    public static final Field<String> MIP_SOLVER_EVENTS_JOB_ID = DSL.field(DSL.name("mip_solver_events", "job_id"), SQLDataType.VARCHAR(240));
+    public static final Field<String> MIP_SOLVER_EVENTS_EVENT_KIND = DSL.field(DSL.name("mip_solver_events", "event_kind"), SQLDataType.VARCHAR(80));
+    public static final Field<JSONB> MIP_SOLVER_EVENTS_PAYLOAD = DSL.field(DSL.name("mip_solver_events", "payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> MIP_SOLVER_EVENTS_CREATED_AT = DSL.field(DSL.name("mip_solver_events", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name LAMBDA_FUNCTIONS_NAME = DSL.name("lambda_functions");
     public static final Table<org.jooq.Record> LAMBDA_FUNCTIONS = DSL.table(LAMBDA_FUNCTIONS_NAME);
     public static final Field<UUID> LAMBDA_FUNCTIONS_ID = DSL.field(DSL.name("lambda_functions", "id"), SQLDataType.UUID);

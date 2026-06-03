@@ -940,6 +940,336 @@ class AgentRemoteDevRuntimeLockInsert(BaseModel):
             raise ValueError("agent_remote_dev_runtime_locks.owner exceeds 200 bytes")
         return value
 
+class MipSolverSessions(Base):
+    __tablename__ = "mip_solver_sessions"
+    __table_args__ = (
+        CheckConstraint("octet_length(session_id) between 1 and 200", name="mip_solver_sessions_session_id_size_chk"),
+        CheckConstraint("revision >= 0", name="mip_solver_sessions_revision_chk"),
+        CheckConstraint("jsonb_typeof(problem) = 'object'", name="mip_solver_sessions_problem_json_chk"),
+        Index("mip_solver_sessions_updated_at_idx", text("updated_at desc")),
+    )
+
+    session_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    problem: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MipSolverSessionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sessionId: str = Field(..., max_length=200)
+    revision: int
+    problem: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("sessionId")
+    @classmethod
+    def validate_session_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_sessions.session_id exceeds 200 bytes")
+        return value
+
+class MipSolverSessionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sessionId: str = Field(..., max_length=200)
+    revision: int | None = 0
+    problem: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("sessionId")
+    @classmethod
+    def validate_session_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_sessions.session_id exceeds 200 bytes")
+        return value
+
+MipSolverSolvesNodeRole = Literal["master", "slave"]
+
+class MipSolverSolves(Base):
+    __tablename__ = "mip_solver_solves"
+    __table_args__ = (
+        CheckConstraint("octet_length(solve_id) between 1 and 160", name="mip_solver_solves_solve_id_size_chk"),
+        CheckConstraint("octet_length(request_id) between 1 and 200", name="mip_solver_solves_request_id_size_chk"),
+        CheckConstraint("octet_length(status) between 1 and 64", name="mip_solver_solves_status_size_chk"),
+        CheckConstraint("octet_length(node_id) between 1 and 253", name="mip_solver_solves_node_id_size_chk"),
+        CheckConstraint("node_role in ('master', 'slave')", name="mip_solver_solves_node_role_chk"),
+        CheckConstraint("revision >= 0 and jobs_expected >= 0 and jobs_published >= 0 and jobs_completed >= 0 and jobs_redelegated >= 0 and jobs_split >= 0", name="mip_solver_solves_counts_chk"),
+        CheckConstraint("jsonb_typeof(problem) = 'object'", name="mip_solver_solves_problem_json_chk"),
+        CheckConstraint("jsonb_typeof(options) = 'object'", name="mip_solver_solves_options_json_chk"),
+        CheckConstraint("jsonb_typeof(response) = 'object'", name="mip_solver_solves_response_json_chk"),
+        CheckConstraint("jsonb_typeof(warnings) = 'array'", name="mip_solver_solves_warnings_json_chk"),
+        Index("mip_solver_solves_request_id_idx", "request_id", text("updated_at desc")),
+        Index("mip_solver_solves_status_idx", "status", text("updated_at desc")),
+    )
+
+    solve_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    revision: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    status: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'running'"))
+    node_id: Mapped[str] = mapped_column(String(253), nullable=False)
+    node_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    problem: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    jobs_expected: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_published: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_completed: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_redelegated: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_split: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    timed_out: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    distributed: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    warnings: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class MipSolverSolvesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    solveId: str = Field(..., max_length=160)
+    requestId: str = Field(..., max_length=200)
+    revision: int
+    status: str = Field(..., max_length=64)
+    nodeId: str = Field(..., max_length=253)
+    nodeRole: MipSolverSolvesNodeRole
+    problem: dict[str, Any]
+    options: dict[str, Any]
+    response: dict[str, Any]
+    jobsExpected: int = Field(..., ge=0)
+    jobsPublished: int = Field(..., ge=0)
+    jobsCompleted: int = Field(..., ge=0)
+    jobsRedelegated: int = Field(..., ge=0)
+    jobsSplit: int = Field(..., ge=0)
+    timedOut: bool
+    distributed: bool
+    warnings: list[Any]
+    startedAt: datetime
+    updatedAt: datetime
+    finishedAt: datetime | None = None
+
+    @field_validator("solveId")
+    @classmethod
+    def validate_solve_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("mip_solver_solves.solve_id exceeds 160 bytes")
+        return value
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_solves.request_id exceeds 200 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_solves.status exceeds 64 bytes")
+        return value
+
+    @field_validator("nodeId")
+    @classmethod
+    def validate_node_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("mip_solver_solves.node_id exceeds 253 bytes")
+        return value
+
+class MipSolverSolvesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    solveId: str = Field(..., max_length=160)
+    requestId: str = Field(..., max_length=200)
+    revision: int | None = 0
+    status: str | None = Field("running", max_length=64)
+    nodeId: str = Field(..., max_length=253)
+    nodeRole: MipSolverSolvesNodeRole
+    problem: dict[str, Any] | None = Field(default_factory=dict)
+    options: dict[str, Any] | None = Field(default_factory=dict)
+    response: dict[str, Any] | None = Field(default_factory=dict)
+    jobsExpected: int | None = Field(0, ge=0)
+    jobsPublished: int | None = Field(0, ge=0)
+    jobsCompleted: int | None = Field(0, ge=0)
+    jobsRedelegated: int | None = Field(0, ge=0)
+    jobsSplit: int | None = Field(0, ge=0)
+    timedOut: bool | None = False
+    distributed: bool | None = False
+    warnings: list[Any] | None = Field(default_factory=list)
+    startedAt: datetime | None = None
+    updatedAt: datetime | None = None
+    finishedAt: datetime | None = None
+
+    @field_validator("solveId")
+    @classmethod
+    def validate_solve_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("mip_solver_solves.solve_id exceeds 160 bytes")
+        return value
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_solves.request_id exceeds 200 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_solves.status exceeds 64 bytes")
+        return value
+
+    @field_validator("nodeId")
+    @classmethod
+    def validate_node_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("mip_solver_solves.node_id exceeds 253 bytes")
+        return value
+
+class MipSolverJobs(Base):
+    __tablename__ = "mip_solver_jobs"
+    __table_args__ = (
+        CheckConstraint("octet_length(job_id) between 1 and 240", name="mip_solver_jobs_job_id_size_chk"),
+        CheckConstraint("octet_length(root_job_id) between 1 and 240", name="mip_solver_jobs_root_job_id_size_chk"),
+        CheckConstraint("octet_length(status) between 1 and 64", name="mip_solver_jobs_status_size_chk"),
+        CheckConstraint("retry_index >= 0 and depth >= 0", name="mip_solver_jobs_counts_chk"),
+        CheckConstraint("jsonb_typeof(job_payload) = 'object'", name="mip_solver_jobs_job_payload_json_chk"),
+        CheckConstraint("jsonb_typeof(result_payload) = 'object'", name="mip_solver_jobs_result_payload_json_chk"),
+        Index("mip_solver_jobs_solve_status_idx", "solve_id", "status", text("updated_at desc")),
+        Index("mip_solver_jobs_root_idx", "solve_id", "root_job_id", "retry_index"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String(240), primary_key=True)
+    solve_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    root_job_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    retry_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    depth: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    status: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'submitted'"))
+    worker_node: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    job_payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    result_payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MipSolverJobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    jobId: str = Field(..., max_length=240)
+    solveId: str = Field(..., max_length=160)
+    rootJobId: str = Field(..., max_length=240)
+    retryIndex: int = Field(..., ge=0)
+    depth: int = Field(..., ge=0)
+    status: str = Field(..., max_length=64)
+    workerNode: str | None = Field(None, max_length=253)
+    jobPayload: dict[str, Any]
+    resultPayload: dict[str, Any]
+    submittedAt: datetime
+    finishedAt: datetime | None = None
+    updatedAt: datetime
+
+    @field_validator("jobId")
+    @classmethod
+    def validate_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("rootJobId")
+    @classmethod
+    def validate_root_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.root_job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_jobs.status exceeds 64 bytes")
+        return value
+
+class MipSolverJobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jobId: str = Field(..., max_length=240)
+    solveId: str = Field(..., max_length=160)
+    rootJobId: str = Field(..., max_length=240)
+    retryIndex: int | None = Field(0, ge=0)
+    depth: int | None = Field(0, ge=0)
+    status: str | None = Field("submitted", max_length=64)
+    workerNode: str | None = Field(None, max_length=253)
+    jobPayload: dict[str, Any] | None = Field(default_factory=dict)
+    resultPayload: dict[str, Any] | None = Field(default_factory=dict)
+    submittedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("jobId")
+    @classmethod
+    def validate_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("rootJobId")
+    @classmethod
+    def validate_root_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.root_job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_jobs.status exceeds 64 bytes")
+        return value
+
+class MipSolverEvents(Base):
+    __tablename__ = "mip_solver_events"
+    __table_args__ = (
+        CheckConstraint("event_kind ~ '^[A-Za-z0-9._:-]{1,80}$'", name="mip_solver_events_event_kind_format_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="mip_solver_events_payload_json_chk"),
+        Index("mip_solver_events_solve_created_at_idx", "solve_id", text("created_at desc"), postgresql_where=text("solve_id is not null")),
+        Index("mip_solver_events_session_created_at_idx", "session_id", text("created_at desc"), postgresql_where=text("session_id is not null")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    solve_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    event_kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MipSolverEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    solveId: str | None = Field(None, max_length=160)
+    sessionId: str | None = Field(None, max_length=200)
+    jobId: str | None = Field(None, max_length=240)
+    eventKind: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any]
+    createdAt: datetime
+
+class MipSolverEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    solveId: str | None = Field(None, max_length=160)
+    sessionId: str | None = Field(None, max_length=200)
+    jobId: str | None = Field(None, max_length=240)
+    eventKind: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
 LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"]
 LambdaFunctionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
 LambdaFunctionStatus = Literal["draft", "active", "paused", "archived"]

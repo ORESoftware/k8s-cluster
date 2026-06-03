@@ -937,6 +937,310 @@ class AgentRemoteDevRuntimeLockObjectBox {
 }
 
 @Entity()
+class MipSolverSessionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String sessionId;
+
+  int revision;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String problem;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  MipSolverSessionsObjectBox({
+    required this.sessionId,
+    required this.revision,
+    required this.problem,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sessionId": sessionId,
+    "revision": revision,
+    "problem": jsonDecode(problem),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static MipSolverSessionsObjectBox fromJson(Map<String, Object?> json) {
+    return MipSolverSessionsObjectBox(
+      sessionId: json["sessionId"] as String,
+      revision: (json["revision"] as num).toInt(),
+      problem: json["problem"] is String ? json["problem"] as String : jsonEncode(json["problem"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class MipSolverSolvesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String solveId;
+
+  String requestId;
+
+  int revision;
+
+  String status;
+
+  String nodeId;
+
+  String nodeRole;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String problem;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String options;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String response;
+
+  int jobsExpected;
+
+  int jobsPublished;
+
+  int jobsCompleted;
+
+  int jobsRedelegated;
+
+  int jobsSplit;
+
+  bool timedOut;
+
+  bool distributed;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String warnings;
+
+  String startedAt;
+
+  String updatedAt;
+
+  String? finishedAt;
+
+
+  MipSolverSolvesObjectBox({
+    required this.solveId,
+    required this.requestId,
+    required this.revision,
+    required this.status,
+    required this.nodeId,
+    required this.nodeRole,
+    required this.problem,
+    required this.options,
+    required this.response,
+    required this.jobsExpected,
+    required this.jobsPublished,
+    required this.jobsCompleted,
+    required this.jobsRedelegated,
+    required this.jobsSplit,
+    required this.timedOut,
+    required this.distributed,
+    required this.warnings,
+    required this.startedAt,
+    required this.updatedAt,
+    this.finishedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "solveId": solveId,
+    "requestId": requestId,
+    "revision": revision,
+    "status": status,
+    "nodeId": nodeId,
+    "nodeRole": nodeRole,
+    "problem": jsonDecode(problem),
+    "options": jsonDecode(options),
+    "response": jsonDecode(response),
+    "jobsExpected": jobsExpected,
+    "jobsPublished": jobsPublished,
+    "jobsCompleted": jobsCompleted,
+    "jobsRedelegated": jobsRedelegated,
+    "jobsSplit": jobsSplit,
+    "timedOut": timedOut,
+    "distributed": distributed,
+    "warnings": jsonDecode(warnings),
+    "startedAt": startedAt,
+    "updatedAt": updatedAt,
+    "finishedAt": finishedAt,
+  };
+
+  static MipSolverSolvesObjectBox fromJson(Map<String, Object?> json) {
+    return MipSolverSolvesObjectBox(
+      solveId: json["solveId"] as String,
+      requestId: json["requestId"] as String,
+      revision: (json["revision"] as num).toInt(),
+      status: json["status"] as String,
+      nodeId: json["nodeId"] as String,
+      nodeRole: json["nodeRole"] as String,
+      problem: json["problem"] is String ? json["problem"] as String : jsonEncode(json["problem"]),
+      options: json["options"] is String ? json["options"] as String : jsonEncode(json["options"]),
+      response: json["response"] is String ? json["response"] as String : jsonEncode(json["response"]),
+      jobsExpected: (json["jobsExpected"] as num).toInt(),
+      jobsPublished: (json["jobsPublished"] as num).toInt(),
+      jobsCompleted: (json["jobsCompleted"] as num).toInt(),
+      jobsRedelegated: (json["jobsRedelegated"] as num).toInt(),
+      jobsSplit: (json["jobsSplit"] as num).toInt(),
+      timedOut: json["timedOut"] as bool,
+      distributed: json["distributed"] as bool,
+      warnings: json["warnings"] is String ? json["warnings"] as String : jsonEncode(json["warnings"]),
+      startedAt: json["startedAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      finishedAt: json["finishedAt"] as String?,
+    );
+  }
+}
+
+@Entity()
+class MipSolverJobsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String jobId;
+
+  String solveId;
+
+  String rootJobId;
+
+  int retryIndex;
+
+  int depth;
+
+  String status;
+
+  String? workerNode;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String jobPayload;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String resultPayload;
+
+  String submittedAt;
+
+  String? finishedAt;
+
+  String updatedAt;
+
+
+  MipSolverJobsObjectBox({
+    required this.jobId,
+    required this.solveId,
+    required this.rootJobId,
+    required this.retryIndex,
+    required this.depth,
+    required this.status,
+    this.workerNode,
+    required this.jobPayload,
+    required this.resultPayload,
+    required this.submittedAt,
+    this.finishedAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "jobId": jobId,
+    "solveId": solveId,
+    "rootJobId": rootJobId,
+    "retryIndex": retryIndex,
+    "depth": depth,
+    "status": status,
+    "workerNode": workerNode,
+    "jobPayload": jsonDecode(jobPayload),
+    "resultPayload": jsonDecode(resultPayload),
+    "submittedAt": submittedAt,
+    "finishedAt": finishedAt,
+    "updatedAt": updatedAt,
+  };
+
+  static MipSolverJobsObjectBox fromJson(Map<String, Object?> json) {
+    return MipSolverJobsObjectBox(
+      jobId: json["jobId"] as String,
+      solveId: json["solveId"] as String,
+      rootJobId: json["rootJobId"] as String,
+      retryIndex: (json["retryIndex"] as num).toInt(),
+      depth: (json["depth"] as num).toInt(),
+      status: json["status"] as String,
+      workerNode: json["workerNode"] as String?,
+      jobPayload: json["jobPayload"] is String ? json["jobPayload"] as String : jsonEncode(json["jobPayload"]),
+      resultPayload: json["resultPayload"] is String ? json["resultPayload"] as String : jsonEncode(json["resultPayload"]),
+      submittedAt: json["submittedAt"] as String,
+      finishedAt: json["finishedAt"] as String?,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class MipSolverEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int id;
+
+  String? solveId;
+
+  String? sessionId;
+
+  String? jobId;
+
+  String eventKind;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String createdAt;
+
+
+  MipSolverEventsObjectBox({
+    required this.id,
+    this.solveId,
+    this.sessionId,
+    this.jobId,
+    required this.eventKind,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "solveId": solveId,
+    "sessionId": sessionId,
+    "jobId": jobId,
+    "eventKind": eventKind,
+    "payload": jsonDecode(payload),
+    "createdAt": createdAt,
+  };
+
+  static MipSolverEventsObjectBox fromJson(Map<String, Object?> json) {
+    return MipSolverEventsObjectBox(
+      id: (json["id"] as num).toInt(),
+      solveId: json["solveId"] as String?,
+      sessionId: json["sessionId"] as String?,
+      jobId: json["jobId"] as String?,
+      eventKind: json["eventKind"] as String,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      createdAt: json["createdAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class LambdaFunctionObjectBox {
   @Id()
   int obxId = 0;

@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs_mnesia).
--export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_context_blobs_attributes/0, agent_context_blobs_table_def/0, agent_context_blobs_record_info/0, agent_context_embeddings_attributes/0, agent_context_embeddings_table_def/0, agent_context_embeddings_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_breadcrumbs_attributes/0, agent_remote_dev_breadcrumbs_table_def/0, agent_remote_dev_breadcrumbs_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, container_pool_image_revisions_attributes/0, container_pool_image_revisions_table_def/0, container_pool_image_revisions_record_info/0, container_pool_build_runs_attributes/0, container_pool_build_runs_table_def/0, container_pool_build_runs_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, des_soccer_learning_experiments_attributes/0, des_soccer_learning_experiments_table_def/0, des_soccer_learning_experiments_record_info/0, des_soccer_learning_policy_versions_attributes/0, des_soccer_learning_policy_versions_table_def/0, des_soccer_learning_policy_versions_record_info/0, des_soccer_learning_policy_entries_attributes/0, des_soccer_learning_policy_entries_table_def/0, des_soccer_learning_policy_entries_record_info/0, des_soccer_learning_jobs_attributes/0, des_soccer_learning_jobs_table_def/0, des_soccer_learning_jobs_record_info/0, des_soccer_learning_runs_attributes/0, des_soccer_learning_runs_table_def/0, des_soccer_learning_runs_record_info/0, des_soccer_learning_run_deltas_attributes/0, des_soccer_learning_run_deltas_table_def/0, des_soccer_learning_run_deltas_record_info/0, des_soccer_learning_merge_events_attributes/0, des_soccer_learning_merge_events_table_def/0, des_soccer_learning_merge_events_record_info/0, all_table_defs/0]).
+-export([app_config_attributes/0, app_config_table_def/0, app_config_record_info/0, container_pool_configs_attributes/0, container_pool_configs_table_def/0, container_pool_configs_record_info/0, known_git_repos_attributes/0, known_git_repos_table_def/0, known_git_repos_record_info/0, agent_context_blobs_attributes/0, agent_context_blobs_table_def/0, agent_context_blobs_record_info/0, agent_context_embeddings_attributes/0, agent_context_embeddings_table_def/0, agent_context_embeddings_record_info/0, agent_remote_dev_threads_attributes/0, agent_remote_dev_threads_table_def/0, agent_remote_dev_threads_record_info/0, agent_remote_dev_tasks_attributes/0, agent_remote_dev_tasks_table_def/0, agent_remote_dev_tasks_record_info/0, agent_remote_dev_events_attributes/0, agent_remote_dev_events_table_def/0, agent_remote_dev_events_record_info/0, agent_remote_dev_breadcrumbs_attributes/0, agent_remote_dev_breadcrumbs_table_def/0, agent_remote_dev_breadcrumbs_record_info/0, agent_remote_dev_artifacts_attributes/0, agent_remote_dev_artifacts_table_def/0, agent_remote_dev_artifacts_record_info/0, agent_remote_dev_runtime_locks_attributes/0, agent_remote_dev_runtime_locks_table_def/0, agent_remote_dev_runtime_locks_record_info/0, mip_solver_sessions_attributes/0, mip_solver_sessions_table_def/0, mip_solver_sessions_record_info/0, mip_solver_solves_attributes/0, mip_solver_solves_table_def/0, mip_solver_solves_record_info/0, mip_solver_jobs_attributes/0, mip_solver_jobs_table_def/0, mip_solver_jobs_record_info/0, mip_solver_events_attributes/0, mip_solver_events_table_def/0, mip_solver_events_record_info/0, lambda_functions_attributes/0, lambda_functions_table_def/0, lambda_functions_record_info/0, container_pool_image_revisions_attributes/0, container_pool_image_revisions_table_def/0, container_pool_image_revisions_record_info/0, container_pool_build_runs_attributes/0, container_pool_build_runs_table_def/0, container_pool_build_runs_record_info/0, presence_convs_attributes/0, presence_convs_table_def/0, presence_convs_record_info/0, presence_conv_members_attributes/0, presence_conv_members_table_def/0, presence_conv_members_record_info/0, presence_users_attributes/0, presence_users_table_def/0, presence_users_record_info/0, presence_events_attributes/0, presence_events_table_def/0, presence_events_record_info/0, presence_consumer_checkpoints_attributes/0, presence_consumer_checkpoints_table_def/0, presence_consumer_checkpoints_record_info/0, des_soccer_learning_experiments_attributes/0, des_soccer_learning_experiments_table_def/0, des_soccer_learning_experiments_record_info/0, des_soccer_learning_policy_versions_attributes/0, des_soccer_learning_policy_versions_table_def/0, des_soccer_learning_policy_versions_record_info/0, des_soccer_learning_policy_entries_attributes/0, des_soccer_learning_policy_entries_table_def/0, des_soccer_learning_policy_entries_record_info/0, des_soccer_learning_jobs_attributes/0, des_soccer_learning_jobs_table_def/0, des_soccer_learning_jobs_record_info/0, des_soccer_learning_runs_attributes/0, des_soccer_learning_runs_table_def/0, des_soccer_learning_runs_record_info/0, des_soccer_learning_run_deltas_attributes/0, des_soccer_learning_run_deltas_table_def/0, des_soccer_learning_run_deltas_record_info/0, des_soccer_learning_merge_events_attributes/0, des_soccer_learning_merge_events_table_def/0, des_soccer_learning_merge_events_record_info/0, all_table_defs/0]).
 
 -record(app_config, {id, scope, key, value, version, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(container_pool_configs, {id, slug, display_name, image, command, env, request_path, health_path, container_port, min_warm, max_warm, max_concurrency_per_container, request_timeout_ms, idle_ttl_seconds, nats_subject, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
@@ -16,6 +16,10 @@
 -record(agent_remote_dev_breadcrumbs, {id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider}).
 -record(agent_remote_dev_artifacts, {id, task_id, thread_id, filename, content_type, size_bytes, storage_provider, storage_bucket, storage_key, url, signed_url_expires_at, sha256, meta, created_at}).
 -record(agent_remote_dev_runtime_locks, {id, thread_id, owner, status, fencing_token, lease_expires_at, created_at, updated_at}).
+-record(mip_solver_sessions, {session_id, revision, problem, created_at, updated_at}).
+-record(mip_solver_solves, {solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at}).
+-record(mip_solver_jobs, {job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at}).
+-record(mip_solver_events, {id, solve_id, session_id, job_id, event_kind, payload, created_at}).
 -record(lambda_functions, {id, slug, display_name, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, status, env, labels, meta_data, last_invoked_at, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(container_pool_image_revisions, {id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by}).
 -record(container_pool_build_runs, {id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at}).
@@ -172,6 +176,58 @@ agent_remote_dev_runtime_locks_table_def() ->
         {attributes, agent_remote_dev_runtime_locks_attributes()},
         {type, set},
         {record_name, agent_remote_dev_runtime_locks},
+        {disc_copies, [node()]}
+    ].
+
+mip_solver_sessions_attributes() -> ['session_id', 'revision', 'problem', 'created_at', 'updated_at'].
+
+mip_solver_sessions_record_info() ->
+    {mip_solver_sessions, 5, mip_solver_sessions_attributes()}.
+
+mip_solver_sessions_table_def() ->
+    [
+        {attributes, mip_solver_sessions_attributes()},
+        {type, set},
+        {record_name, mip_solver_sessions},
+        {disc_copies, [node()]}
+    ].
+
+mip_solver_solves_attributes() -> ['solve_id', 'request_id', 'revision', 'status', 'node_id', 'node_role', 'problem', 'options', 'response', 'jobs_expected', 'jobs_published', 'jobs_completed', 'jobs_redelegated', 'jobs_split', 'timed_out', 'distributed', 'warnings', 'started_at', 'updated_at', 'finished_at'].
+
+mip_solver_solves_record_info() ->
+    {mip_solver_solves, 20, mip_solver_solves_attributes()}.
+
+mip_solver_solves_table_def() ->
+    [
+        {attributes, mip_solver_solves_attributes()},
+        {type, set},
+        {record_name, mip_solver_solves},
+        {disc_copies, [node()]}
+    ].
+
+mip_solver_jobs_attributes() -> ['job_id', 'solve_id', 'root_job_id', 'retry_index', 'depth', 'status', 'worker_node', 'job_payload', 'result_payload', 'submitted_at', 'finished_at', 'updated_at'].
+
+mip_solver_jobs_record_info() ->
+    {mip_solver_jobs, 12, mip_solver_jobs_attributes()}.
+
+mip_solver_jobs_table_def() ->
+    [
+        {attributes, mip_solver_jobs_attributes()},
+        {type, set},
+        {record_name, mip_solver_jobs},
+        {disc_copies, [node()]}
+    ].
+
+mip_solver_events_attributes() -> ['id', 'solve_id', 'session_id', 'job_id', 'event_kind', 'payload', 'created_at'].
+
+mip_solver_events_record_info() ->
+    {mip_solver_events, 7, mip_solver_events_attributes()}.
+
+mip_solver_events_table_def() ->
+    [
+        {attributes, mip_solver_events_attributes()},
+        {type, set},
+        {record_name, mip_solver_events},
         {disc_copies, [node()]}
     ].
 
@@ -371,4 +427,4 @@ des_soccer_learning_merge_events_table_def() ->
     ].
 
 all_table_defs() ->
-    [{app_config, app_config_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_context_blobs, agent_context_blobs_table_def()}, {agent_context_embeddings, agent_context_embeddings_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_breadcrumbs, agent_remote_dev_breadcrumbs_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {lambda_functions, lambda_functions_table_def()}, {container_pool_image_revisions, container_pool_image_revisions_table_def()}, {container_pool_build_runs, container_pool_build_runs_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}, {des_soccer_learning_experiments, des_soccer_learning_experiments_table_def()}, {des_soccer_learning_policy_versions, des_soccer_learning_policy_versions_table_def()}, {des_soccer_learning_policy_entries, des_soccer_learning_policy_entries_table_def()}, {des_soccer_learning_jobs, des_soccer_learning_jobs_table_def()}, {des_soccer_learning_runs, des_soccer_learning_runs_table_def()}, {des_soccer_learning_run_deltas, des_soccer_learning_run_deltas_table_def()}, {des_soccer_learning_merge_events, des_soccer_learning_merge_events_table_def()}].
+    [{app_config, app_config_table_def()}, {container_pool_configs, container_pool_configs_table_def()}, {known_git_repos, known_git_repos_table_def()}, {agent_context_blobs, agent_context_blobs_table_def()}, {agent_context_embeddings, agent_context_embeddings_table_def()}, {agent_remote_dev_threads, agent_remote_dev_threads_table_def()}, {agent_remote_dev_tasks, agent_remote_dev_tasks_table_def()}, {agent_remote_dev_events, agent_remote_dev_events_table_def()}, {agent_remote_dev_breadcrumbs, agent_remote_dev_breadcrumbs_table_def()}, {agent_remote_dev_artifacts, agent_remote_dev_artifacts_table_def()}, {agent_remote_dev_runtime_locks, agent_remote_dev_runtime_locks_table_def()}, {mip_solver_sessions, mip_solver_sessions_table_def()}, {mip_solver_solves, mip_solver_solves_table_def()}, {mip_solver_jobs, mip_solver_jobs_table_def()}, {mip_solver_events, mip_solver_events_table_def()}, {lambda_functions, lambda_functions_table_def()}, {container_pool_image_revisions, container_pool_image_revisions_table_def()}, {container_pool_build_runs, container_pool_build_runs_table_def()}, {presence_convs, presence_convs_table_def()}, {presence_conv_members, presence_conv_members_table_def()}, {presence_users, presence_users_table_def()}, {presence_events, presence_events_table_def()}, {presence_consumer_checkpoints, presence_consumer_checkpoints_table_def()}, {des_soccer_learning_experiments, des_soccer_learning_experiments_table_def()}, {des_soccer_learning_policy_versions, des_soccer_learning_policy_versions_table_def()}, {des_soccer_learning_policy_entries, des_soccer_learning_policy_entries_table_def()}, {des_soccer_learning_jobs, des_soccer_learning_jobs_table_def()}, {des_soccer_learning_runs, des_soccer_learning_runs_table_def()}, {des_soccer_learning_run_deltas, des_soccer_learning_run_deltas_table_def()}, {des_soccer_learning_merge_events, des_soccer_learning_merge_events_table_def()}].

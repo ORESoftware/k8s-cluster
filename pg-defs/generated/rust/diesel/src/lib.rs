@@ -604,6 +604,202 @@ pub struct AgentRemoteDevRuntimeLockDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    mip_solver_sessions (session_id) {
+        session_id -> Varchar,
+        revision -> Int8,
+        problem -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_sessions)]
+pub struct MipSolverSessionsDieselRow {
+    pub session_id: String,
+    pub revision: i64,
+    pub problem: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_sessions)]
+pub struct MipSolverSessionsDieselInsert {
+    pub session_id: Option<String>,
+    pub revision: Option<i64>,
+    pub problem: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    mip_solver_solves (solve_id) {
+        solve_id -> Varchar,
+        request_id -> Varchar,
+        revision -> Int8,
+        status -> Varchar,
+        node_id -> Varchar,
+        node_role -> Varchar,
+        problem -> Jsonb,
+        options -> Jsonb,
+        response -> Jsonb,
+        jobs_expected -> Int4,
+        jobs_published -> Int4,
+        jobs_completed -> Int4,
+        jobs_redelegated -> Int4,
+        jobs_split -> Int4,
+        timed_out -> Bool,
+        distributed -> Bool,
+        warnings -> Jsonb,
+        started_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        finished_at -> Nullable<Timestamptz>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_solves)]
+pub struct MipSolverSolvesDieselRow {
+    pub solve_id: String,
+    pub request_id: String,
+    pub revision: i64,
+    pub status: String,
+    pub node_id: String,
+    pub node_role: String,
+    pub problem: Value,
+    pub options: Value,
+    pub response: Value,
+    pub jobs_expected: i32,
+    pub jobs_published: i32,
+    pub jobs_completed: i32,
+    pub jobs_redelegated: i32,
+    pub jobs_split: i32,
+    pub timed_out: bool,
+    pub distributed: bool,
+    pub warnings: Value,
+    pub started_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_solves)]
+pub struct MipSolverSolvesDieselInsert {
+    pub solve_id: Option<String>,
+    pub request_id: Option<String>,
+    pub revision: Option<i64>,
+    pub status: Option<String>,
+    pub node_id: Option<String>,
+    pub node_role: Option<String>,
+    pub problem: Option<Value>,
+    pub options: Option<Value>,
+    pub response: Option<Value>,
+    pub jobs_expected: Option<i32>,
+    pub jobs_published: Option<i32>,
+    pub jobs_completed: Option<i32>,
+    pub jobs_redelegated: Option<i32>,
+    pub jobs_split: Option<i32>,
+    pub timed_out: Option<bool>,
+    pub distributed: Option<bool>,
+    pub warnings: Option<Value>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    mip_solver_jobs (job_id) {
+        job_id -> Varchar,
+        solve_id -> Varchar,
+        root_job_id -> Varchar,
+        retry_index -> Int4,
+        depth -> Int4,
+        status -> Varchar,
+        worker_node -> Nullable<Varchar>,
+        job_payload -> Jsonb,
+        result_payload -> Jsonb,
+        submitted_at -> Timestamptz,
+        finished_at -> Nullable<Timestamptz>,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_jobs)]
+pub struct MipSolverJobsDieselRow {
+    pub job_id: String,
+    pub solve_id: String,
+    pub root_job_id: String,
+    pub retry_index: i32,
+    pub depth: i32,
+    pub status: String,
+    pub worker_node: Option<String>,
+    pub job_payload: Value,
+    pub result_payload: Value,
+    pub submitted_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_jobs)]
+pub struct MipSolverJobsDieselInsert {
+    pub job_id: Option<String>,
+    pub solve_id: Option<String>,
+    pub root_job_id: Option<String>,
+    pub retry_index: Option<i32>,
+    pub depth: Option<i32>,
+    pub status: Option<String>,
+    pub worker_node: Option<String>,
+    pub job_payload: Option<Value>,
+    pub result_payload: Option<Value>,
+    pub submitted_at: Option<DateTime<Utc>>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    mip_solver_events (id) {
+        id -> Int8,
+        solve_id -> Nullable<Varchar>,
+        session_id -> Nullable<Varchar>,
+        job_id -> Nullable<Varchar>,
+        event_kind -> Varchar,
+        payload -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_events)]
+pub struct MipSolverEventsDieselRow {
+    pub id: i64,
+    pub solve_id: Option<String>,
+    pub session_id: Option<String>,
+    pub job_id: Option<String>,
+    pub event_kind: String,
+    pub payload: Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = mip_solver_events)]
+pub struct MipSolverEventsDieselInsert {
+    pub id: Option<i64>,
+    pub solve_id: Option<String>,
+    pub session_id: Option<String>,
+    pub job_id: Option<String>,
+    pub event_kind: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     lambda_functions (id) {
         id -> Uuid,
         slug -> Varchar,
