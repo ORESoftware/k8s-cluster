@@ -2572,6 +2572,58 @@ mod tests {
             .contains("booted as slave"));
     }
 
+    #[tokio::test]
+    async fn http_session_streams_dynamic_edits_then_solves() {
+        let app = app_router(test_state(NodeRole::Master));
+        let commands = json!([
+            {
+                "op": "init",
+                "sense": "max",
+                "c": [10.0, 40.0, 30.0, 50.0],
+                "a": [[5.0, 4.0, 6.0, 3.0]],
+                "b": [7.0],
+                "integerVars": [true, true, true, true],
+                "ub": [1.0, 1.0, 1.0, 1.0]
+            },
+            {
+                "op": "set_rhs",
+                "index": 0,
+                "rhs": 10.0
+            },
+            {
+                "op": "snapshot"
+            }
+        ]);
+
+        let (events_status, events_body) =
+            post_json(app.clone(), "/sessions/live-mip/events", commands).await;
+        assert_eq!(events_status, StatusCode::OK);
+        assert_eq!(events_body.get("ok"), Some(&json!(true)));
+        assert_eq!(events_body.get("revision"), Some(&json!(2)));
+        assert!(events_body
+            .get("frames")
+            .and_then(Value::as_array)
+            .is_some_and(|frames| frames
+                .iter()
+                .any(|frame| frame.get("event") == Some(&json!("model")))));
+
+        let solve_payload = json!({
+            "requestId": "live-mip",
+            "options": {
+                "splitDepth": 2,
+                "maxNodes": 10000
+            }
+        });
+        let (solve_status, solve_body) =
+            post_json(app, "/sessions/live-mip/solve", solve_payload).await;
+
+        assert_eq!(solve_status, StatusCode::OK);
+        assert_eq!(solve_body.get("ok"), Some(&json!(true)));
+        assert_eq!(solve_body.get("status"), Some(&json!("optimal")));
+        assert_eq!(solve_body.get("revision"), Some(&json!(2)));
+        assert_eq!(solve_body.get("z"), Some(&json!(90.0)));
+    }
+
     #[test]
     fn aggregate_results_counts_infeasible_subtrees_as_complete() {
         let problem = binary_knapsack_problem();
