@@ -1644,6 +1644,23 @@ fn result_consumer_config(
     }
 }
 
+fn worker_consumer_config(
+    consumer_name: &str,
+    jobs_subject: &str,
+    ack_wait: Duration,
+    max_ack_pending: i64,
+    max_deliver: i64,
+) -> async_nats::jetstream::consumer::pull::Config {
+    async_nats::jetstream::consumer::pull::Config {
+        durable_name: Some(consumer_name.to_string()),
+        filter_subject: jobs_subject.to_string(),
+        ack_wait,
+        max_ack_pending,
+        max_deliver,
+        ..Default::default()
+    }
+}
+
 async fn build_result_consumer(
     client: async_nats::Client,
     consumer_name: &str,
@@ -2056,21 +2073,23 @@ async fn solve_session(
 async fn build_jetstream_consumer(
     client: async_nats::Client,
     consumer_name: &str,
+    jobs_subject: &str,
     ack_wait: Duration,
     max_ack_pending: i64,
+    max_deliver: i64,
 ) -> Result<async_nats::jetstream::consumer::PullConsumer, Box<dyn Error + Send + Sync>> {
     let stream = ensure_mip_stream(client).await?;
+    let config = worker_consumer_config(
+        consumer_name,
+        jobs_subject,
+        ack_wait,
+        max_ack_pending,
+        max_deliver,
+    );
     let consumer = stream
         .get_or_create_consumer::<async_nats::jetstream::consumer::pull::Config>(
             consumer_name,
-            async_nats::jetstream::consumer::pull::Config {
-                durable_name: Some(consumer_name.to_string()),
-                filter_subject: MIP_SOLVER_JOBS_SUBJECT.to_string(),
-                ack_wait,
-                max_ack_pending,
-                max_deliver: 5,
-                ..Default::default()
-            },
+            config,
         )
         .await?;
     Ok(consumer)
@@ -2084,8 +2103,16 @@ async fn run_slave(state: AppState) -> Result<(), Box<dyn Error + Send + Sync>> 
     let consumer_name = env_value("MIP_SOLVER_NATS_CONSUMER", MIP_SOLVER_WORKERS_QUEUE_GROUP);
     let ack_wait = Duration::from_secs(env_u64("MIP_SOLVER_ACK_WAIT_SECONDS", 600));
     let max_ack_pending = env_u64("MIP_SOLVER_MAX_ACK_PENDING", 32) as i64;
-    let consumer =
-        build_jetstream_consumer(nats.clone(), &consumer_name, ack_wait, max_ack_pending).await?;
+    let max_deliver = env_u64("MIP_SOLVER_MAX_DELIVER", 5) as i64;
+    let consumer = build_jetstream_consumer(
+        nats.clone(),
+        &consumer_name,
+        &state.jobs_subject,
+        ack_wait,
+        max_ack_pending,
+        max_deliver,
+    )
+    .await?;
     let mut messages = consumer.messages().await?;
     publish_event(
         &state,
@@ -2486,6 +2513,26 @@ mod tests {
             config.deliver_policy,
             async_nats::jetstream::consumer::DeliverPolicy::ByStartSequence { start_sequence: 42 }
         ));
+    }
+
+    #[test]
+    fn worker_consumer_config_uses_runtime_jobs_subject_and_delivery_limits() {
+        let config = worker_consumer_config(
+            MIP_SOLVER_WORKERS_QUEUE_GROUP,
+            "dd.remote.mip_solver.jobs.custom",
+            Duration::from_secs(900),
+            64,
+            7,
+        );
+
+        assert_eq!(
+            config.durable_name.as_deref(),
+            Some(MIP_SOLVER_WORKERS_QUEUE_GROUP)
+        );
+        assert_eq!(config.filter_subject, "dd.remote.mip_solver.jobs.custom");
+        assert_eq!(config.ack_wait, Duration::from_secs(900));
+        assert_eq!(config.max_ack_pending, 64);
+        assert_eq!(config.max_deliver, 7);
     }
 
     #[test]
