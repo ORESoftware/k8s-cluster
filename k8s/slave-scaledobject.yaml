@@ -1,0 +1,44 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: dd-in-house-mip-solver-node-slave-nats-jetstream
+  namespace: ai-ml
+  labels:
+    app: dd-in-house-mip-solver-node-slave
+    app.kubernetes.io/component: slave
+spec:
+  pollingInterval: 5
+  cooldownPeriod: 180
+  minReplicaCount: 1
+  maxReplicaCount: 64
+  scaleTargetRef:
+    name: dd-in-house-mip-solver-node-slave
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Percent
+              value: 200
+              periodSeconds: 30
+            - type: Pods
+              value: 8
+              periodSeconds: 30
+          selectPolicy: Max
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
+  triggers:
+    - type: nats-jetstream
+      metadata:
+        natsServerMonitoringEndpoint: dd-nats.messaging.svc.cluster.local:8222
+        account: $G
+        stream: DD_REMOTE_MIP_SOLVER
+        consumer: dd-in-house-mip-solver-node-workers
+        lagThreshold: '8'
+        activationLagThreshold: '1'
+        useHttps: 'false'

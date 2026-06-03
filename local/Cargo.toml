@@ -1,0 +1,20 @@
+[package]
+name = "dd-in-house-mip-solver-node-local"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "dd-in-house-mip-solver-node"
+path = "../src/main.rs"
+
+[dependencies]
+async-nats = "=0.38.0"
+axum = { version = "0.7", features = ["macros"] }
+dd-nats-subject-defs = { path = "../../k8s-cluster/remote/libs/nats/subject-defs/generated/rust" }
+des_engine = { path = "../../k8s-cluster/remote/submodules/discrete-event-system.rs" }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
