@@ -577,8 +577,11 @@ jobs:
           echo "=== sync EC2 checkout ==="
           git status --short || true
           stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
-          echo "stashing top-level tracked/untracked changes before merge: $stash_name"
-          git stash push --include-untracked -m "$stash_name" || true
+          echo "stashing tracked/untracked repo content before merge: $stash_name"
+          # Scope the stash to repository content that this workflow mutates.
+          # The EC2 checkout also carries machine-local state such as .kube/,
+          # which can be unreadable to ec2-user and should never be removed by git.
+          git stash push --include-untracked -m "$stash_name" -- remote .github || true
           echo "stashing submodule worktrees before merge"
           git submodule foreach --recursive 'git stash push --include-untracked -m remote-k8s-maintenance-pre-merge-submodule || true' || true
           git submodule update --init --recursive remote/submodules/rust-network-mutex-rs || true
