@@ -2451,7 +2451,7 @@ jobs:
 
           prom_query() {
             local expr="$1"
-            kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python -c 'import json, sys, urllib.parse, urllib.request; expr = sys.argv[1]; url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr}); payload = json.load(urllib.request.urlopen(url, timeout=8)); print(json.dumps(payload.get("data", {}).get("result", [])[:25], separators=(",", ":")))' "$expr" 2>/dev/null || true
+            kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python -c 'import json, sys, urllib.parse, urllib.request; expr = sys.argv[1]; url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr}); payload = json.load(urllib.request.urlopen(url, timeout=8)); print(json.dumps(payload.get("data", {}).get("result", [])[:8], separators=(",", ":")))' "$expr" 2>/dev/null || true
           }
 
           prom_snapshot() {
@@ -2462,7 +2462,6 @@ jobs:
               'gcs_ws_connections_total' \
               'gcs_ws_read_errors_total' \
               'gcs_ws_writes_total' \
-              'gcs_ws_connection_maps' \
               'gcs_ws_load_shed_total' \
               'gcs_runtime_gauge{name="goroutines"}' \
               'gcs_process_resident_memory_bytes' \
@@ -2581,7 +2580,7 @@ jobs:
             kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas} updated={.status.updatedReplicas}{"\n"}' || true
             kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null \
               | awk '{counts[$3]++; total++} END {printf "pod-status "; if (total == 0) {print "none"} else {for (s in counts) printf "%s=%d ", s, counts[s]; print ""}}' || true
-            kubectl -n default logs -l "app=$d" --all-containers --since=45m --tail=-1 --prefix=true --max-log-requests=20 2>/dev/null \
+            loader_logs "$d" \
               | awk '
                 /gcs-report/ {
                   pod = $1
@@ -2622,7 +2621,7 @@ jobs:
 
           loader_summary() {
             local d="$1"
-            kubectl -n default logs -l "app=$d" --all-containers --since=45m --tail=-1 --prefix=true --max-log-requests=20 2>/dev/null \
+            loader_logs "$d" \
               | awk '
                 /gcs-report/ {
                   pod = $1
@@ -2651,6 +2650,14 @@ jobs:
                   }
                   printf "%d %d %d %d %d %d %d %d %d %d\n", pods, attempted, connected, failed, open, sent, received, in_flight, correlation_misses, receive_errors
                 }' || printf '0 0 0 0 0 0 0 0 0 0\n'
+          }
+
+          loader_logs() {
+            local d="$1"
+            local pod
+            for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              kubectl -n default logs "$pod" --all-containers --since=45m --tail=-1 --prefix=true 2>/dev/null || true
+            done
           }
 
           wait_loader_reports() {
