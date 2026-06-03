@@ -880,6 +880,16 @@ fn validate_problem(problem: &MipProblemSpec) -> Result<(), String> {
             return Err("ub entries must be non-negative or infinite".to_string());
         }
     }
+    if let Some(names) = &problem.var_names {
+        if names.len() != n {
+            return Err("varNames length must equal len(c)".to_string());
+        }
+    }
+    if let Some(names) = &problem.con_names {
+        if names.len() != problem.a.len() {
+            return Err("conNames length must equal constraint count".to_string());
+        }
+    }
     Ok(())
 }
 
@@ -930,6 +940,15 @@ fn bool_at(command: &Value, key: &str, fallback: bool) -> bool {
         .unwrap_or(fallback)
 }
 
+fn vec_string(command: &Value, key: &str) -> Option<Vec<String>> {
+    command.get(key)?.as_array().map(|items| {
+        items
+            .iter()
+            .map(|value| value.as_str().unwrap_or_default().to_string())
+            .collect()
+    })
+}
+
 fn str_at(command: &Value, key: &str) -> Option<String> {
     command.get(key).and_then(Value::as_str).map(String::from)
 }
@@ -978,8 +997,8 @@ fn apply_stream_command(
                     .map(|items| items.iter().map(|v| v.as_bool().unwrap_or(false)).collect())
                     .unwrap_or_default(),
                 ub: vec_f64(command, "ub"),
-                var_names: None,
-                con_names: None,
+                var_names: vec_string(command, "varNames"),
+                con_names: vec_string(command, "conNames"),
             }
         };
         next = normalized_problem(next)?;
@@ -1004,6 +1023,12 @@ fn apply_stream_command(
             }
             p.a.push(coefs);
             p.b.push(rhs);
+            if let Some(names) = p.con_names.as_mut() {
+                names.push(
+                    str_at(command, "name")
+                        .unwrap_or_else(|| format!("constraint{}", p.a.len() - 1)),
+                );
+            }
         }
         "set_constraint" | "modify_constraint" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
@@ -1022,6 +1047,9 @@ fn apply_stream_command(
                     return Err("rhs must be finite".to_string());
                 }
                 p.b[index] = rhs;
+            }
+            if let (Some(name), Some(names)) = (str_at(command, "name"), p.con_names.as_mut()) {
+                names[index] = name;
             }
         }
         "remove_constraint" => {
@@ -1069,6 +1097,10 @@ fn apply_stream_command(
                 p.ub.get_or_insert_with(|| vec![f64::INFINITY; p.c.len() - 1])
                     .push(upper);
             }
+            if let Some(names) = p.var_names.as_mut() {
+                names
+                    .push(str_at(command, "name").unwrap_or_else(|| format!("x{}", p.c.len() - 1)));
+            }
         }
         "set_variable" | "modify_variable" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
@@ -1093,6 +1125,9 @@ fn apply_stream_command(
                     row[index] = *value;
                 }
             }
+            if let (Some(name), Some(names)) = (str_at(command, "name"), p.var_names.as_mut()) {
+                names[index] = name;
+            }
         }
         "remove_variable" => {
             let index = usize_at(command, "index").ok_or("index is required")?;
@@ -1109,6 +1144,9 @@ fn apply_stream_command(
             }
             if let Some(ub) = p.ub.as_mut() {
                 ub.remove(index);
+            }
+            if let Some(names) = p.var_names.as_mut() {
+                names.remove(index);
             }
         }
         "set_objective" => {
@@ -1161,6 +1199,7 @@ fn to_ipmip_problem(
     let problem = normalized_problem(problem.clone())?;
     let mut a = problem.a.clone();
     let mut b = problem.b.clone();
+    let mut con_names = problem.con_names.clone();
     for constraint in extra_constraints {
         if constraint.coefs.len() != problem.c.len() {
             return Err(format!(
@@ -1172,6 +1211,9 @@ fn to_ipmip_problem(
         }
         a.push(constraint.coefs.clone());
         b.push(constraint.rhs);
+        if let Some(names) = con_names.as_mut() {
+            names.push(constraint.name.clone());
+        }
     }
     Ok(IPMIPProblem {
         sense: sense_of(&problem.sense),
@@ -1181,7 +1223,7 @@ fn to_ipmip_problem(
         integer_vars: problem.integer_vars,
         ub: problem.ub,
         var_names: problem.var_names,
-        con_names: problem.con_names,
+        con_names,
         lazy_constraints: None,
         variable_nodes: None,
         constraint_nodes: None,
@@ -1195,9 +1237,13 @@ fn to_lp_problem(
     let problem = normalized_problem(problem.clone())?;
     let mut a = problem.a.clone();
     let mut b = problem.b.clone();
+    let mut con_names = problem.con_names.clone();
     for constraint in extra_constraints {
         a.push(constraint.coefs.clone());
         b.push(constraint.rhs);
+        if let Some(names) = con_names.as_mut() {
+            names.push(constraint.name.clone());
+        }
     }
     Ok(LPProblem {
         sense: sense_of(&problem.sense),
@@ -1211,7 +1257,7 @@ fn to_lp_problem(
             .ub
             .map(|ub| ub.into_iter().map(|v| v.is_finite().then_some(v)).collect()),
         var_names: problem.var_names.clone(),
-        con_names: problem.con_names.clone(),
+        con_names,
     })
 }
 
@@ -2429,6 +2475,44 @@ mod tests {
     }
 
     #[test]
+    fn branch_constraints_extend_named_constraint_metadata() {
+        let problem = normalized_problem(MipProblemSpec {
+            sense: "max".to_string(),
+            c: vec![1.0],
+            a: vec![vec![1.0]],
+            b: vec![1.5],
+            integer_vars: vec![true],
+            ub: Some(vec![3.0]),
+            var_names: Some(vec!["x0".to_string()]),
+            con_names: Some(vec!["capacity".to_string()]),
+        })
+        .unwrap();
+        let extra = vec![BranchConstraint {
+            coefs: vec![1.0],
+            rhs: 1.0,
+            name: "branch_d0_x0_le_1".to_string(),
+        }];
+
+        let ipmip = to_ipmip_problem(&problem, &extra).unwrap();
+        let lp = to_lp_problem(&problem, &extra).unwrap();
+
+        assert_eq!(
+            ipmip.con_names,
+            Some(vec![
+                "capacity".to_string(),
+                "branch_d0_x0_le_1".to_string()
+            ])
+        );
+        assert_eq!(
+            lp.con_names,
+            Some(vec![
+                "capacity".to_string(),
+                "branch_d0_x0_le_1".to_string()
+            ])
+        );
+    }
+
+    #[test]
     fn bound_preprocess_prunes_rows_impossible_under_lower_bounds() {
         let problem = MipProblemSpec {
             sense: "max".to_string(),
@@ -2582,6 +2666,29 @@ mod tests {
         assert_eq!(result.x.len(), 4);
         assert!((result.x[1] - 1.0).abs() < 1e-6);
         assert!((result.x[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn solve_subproblem_accepts_named_constraints_with_branch_rows() {
+        let mut problem = binary_knapsack_problem();
+        problem.var_names = Some(vec![
+            "item0".to_string(),
+            "item1".to_string(),
+            "item2".to_string(),
+            "item3".to_string(),
+        ]);
+        problem.con_names = Some(vec!["capacity".to_string()]);
+        let mut job = test_job(problem);
+        job.extra_constraints.push(BranchConstraint {
+            coefs: vec![1.0, 0.0, 0.0, 0.0],
+            rhs: 0.0,
+            name: "branch_d0_x0_le_0".to_string(),
+        });
+
+        let result = solve_subproblem(job, "worker-test".to_string());
+
+        assert!(result.ok, "subproblem error: {:?}", result.error);
+        assert_eq!(result.status, "optimal");
     }
 
     #[tokio::test]
