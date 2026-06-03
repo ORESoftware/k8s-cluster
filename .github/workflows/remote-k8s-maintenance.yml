@@ -1918,6 +1918,7 @@ jobs:
           if [ -n "$target_gcs_sha" ]; then
             echo "=== target gcs/chat-vibe submodule ==="
             echo "$target_gcs_sha"
+            echo "PROOF target_gcs_sha=$target_gcs_sha"
             git -C remote/deployments/gcs/chat-vibe fetch origin
             git -C remote/deployments/gcs/chat-vibe merge --ff-only --quiet "$target_gcs_sha"
           fi
@@ -2266,6 +2267,11 @@ jobs:
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
           duration = os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180"
           script = r'''set -euo pipefail
+          proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
+          if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+          fi
+          echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
           repo=/home/ec2-user/codes/dd/dd-next-1
           duration="${LOADTEST_DURATION_SECONDS:-180}"
           case "$duration" in
@@ -2275,11 +2281,12 @@ jobs:
           case "$loader_replicas" in
             ''|*[!0-9]*) loader_replicas=6 ;;
           esac
-          clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-3335}"
+          clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-5000}"
           case "$clients_per_replica" in
-            ''|*[!0-9]*) clients_per_replica=3335 ;;
+            ''|*[!0-9]*) clients_per_replica=5000 ;;
           esac
           total_connections=$((loader_replicas * clients_per_replica))
+          echo "PROOF loadtest_target total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=2.5 duration_seconds=$duration"
 
           apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
@@ -2432,6 +2439,7 @@ jobs:
           if [ -n "$target_gcs_sha" ]; then
             echo "=== target gcs/chat-vibe submodule ==="
             echo "$target_gcs_sha"
+            echo "PROOF target_gcs_sha=$target_gcs_sha"
             git -C remote/deployments/gcs/chat-vibe fetch origin
             git -C remote/deployments/gcs/chat-vibe merge --ff-only --quiet "$target_gcs_sha"
           fi
@@ -2478,6 +2486,22 @@ jobs:
             echo "=== $d selected events ==="
             kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -80 || true
             return 1
+          }
+
+          deployment_available() {
+            kubectl -n default get "deployment/$1" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || printf '0'
+          }
+
+          statefulset_ready() {
+            kubectl -n default get "statefulset/$1" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || printf '0'
+          }
+
+          endpoint_count() {
+            { kubectl -n default get "endpoints/$1" -o jsonpath='{range .subsets[*].addresses[*]}x{end}' 2>/dev/null || true; } | tr -cd x | wc -c | awk '{print $1}'
+          }
+
+          report_dependency_health() {
+            echo "PROOF dependency_health kafka_available=$(deployment_available gcs-kafka)/1 kafka_endpoints=$(endpoint_count gcs-kafka) rabbitmq_available=$(deployment_available gcs-rabbitmq)/1 rabbitmq_endpoints=$(endpoint_count gcs-rabbitmq) redis_available=$(deployment_available dd-redis-cache)/1 redis_endpoints=$(endpoint_count dd-redis-cache) mongodb_ready=$(statefulset_ready gcs-mongodb)/1 mongodb_endpoints=$(endpoint_count gcs-mongodb)"
           }
 
           diagnose_gcs_dependencies() {
@@ -2618,6 +2642,7 @@ jobs:
           kubectl -n default get statefulset gcs-mongodb -o wide || true
           kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
           wait_available gcs-kafka 1
+          report_dependency_health
           kubectl -n default rollout restart deployment/gcs deployment/gcs-router
           if ! kubectl -n default rollout status deployment/gcs --timeout=900s; then
             diagnose_gcs_rollout "gcs"
@@ -2888,6 +2913,7 @@ jobs:
             fi
             wait_available gcs 3
             wait_available gcs-router 3
+            echo "PROOF loader_pass loader=$loader_name total_connections=$total_connections open=$open failed=$failed receive_errors=$receive_errors sent=$sent received=$received"
           }
 
           diagnose_load_failure() {
@@ -2997,6 +3023,8 @@ jobs:
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
           echo "=== final router metrics ==="
           router_metrics
+          report_dependency_health
+          echo "PROOF loadtest_all_passed total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica loaders=rust,nodejs,gleam"
           '''
 
           print(json.dumps({
