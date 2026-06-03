@@ -47,4 +47,6 @@ Request `options` override environment defaults. When an option is omitted, the 
 
 KEDA scales slave pods from NATS JetStream consumer lag. New pods boot with `MIP_SOLVER_NODE_ROLE=slave`, attach to the same durable pull consumer, and start draining pending subproblems.
 
+The Kubernetes startup command runs Cargo from `remote/deployments/mip-solver-node.rs` inside a full `k8s-cluster` source tree, with `CARGO_TARGET_DIR` pointed at `/tmp`. Keep that relative layout intact: the normal manifest depends on generated NATS definitions under `remote/libs/nats/...` and the in-house DES solver under `remote/submodules/discrete-event-system.rs`.
+
 GPU resources are intentionally not requested in the base manifest. Add an overlay with `nvidia.com/gpu` limits for GPU-backed node pools; the server reports GPU availability when devices are present.

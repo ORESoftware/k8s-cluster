@@ -67,11 +67,8 @@ spec:
                 echo "solver source not found at ${solver_src}" >&2
                 exit 1
               fi
-              rm -rf /tmp/mip-solver-node.rs
-              mkdir -p /tmp/mip-solver-node.rs
-              cp -a "${solver_src}/." /tmp/mip-solver-node.rs/
-              cd /tmp/mip-solver-node.rs
-              exec /usr/local/cargo/bin/cargo run --release
+              cd "${solver_src}"
+              exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: HOST
               value: 0.0.0.0
