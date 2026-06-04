@@ -59,7 +59,7 @@ spec:
               hostPort: 443
           resources:
             requests:
-              cpu: 50m
+              cpu: 5m
               memory: 64Mi
             limits:
               cpu: 500m
