@@ -5,6 +5,7 @@
   "scripts": {
     "generate:api-docs": "node ../tools/generate-api-docs.mjs",
     "check:api-docs": "node ../tools/generate-api-docs.mjs --check",
+    "audit:ai-ml-platform-helm": "node ../tools/audit-ai-ml-platform-helm.mjs",
     "test:cli": "node cli-smoke.mjs",
     "test:cli:ai-ml-platform": "pnpm exec tsx --test general/ai-ml-platform-config.test.ts",
     "test:cli:bastion-config": "pnpm exec tsx --test general/bastion-config.test.ts",

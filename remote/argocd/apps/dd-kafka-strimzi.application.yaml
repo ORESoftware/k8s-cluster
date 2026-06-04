@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-kafka-strimzi
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -13,12 +15,24 @@ spec:
       skipTests: true
       values: |
         watchAnyNamespace: false
+        watchNamespaces:
+          - kafka
+        tmpDirSizeLimit: 16Mi
+        resources:
+          requests:
+            cpu: 200m
+            memory: 384Mi
+          limits:
+            cpu: 1000m
+            memory: 384Mi
         podSecurityContext:
           runAsNonRoot: true
           seccompProfile:
             type: RuntimeDefault
         securityContext:
           allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL

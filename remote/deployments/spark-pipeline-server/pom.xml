@@ -172,6 +172,18 @@
 
     <build>
         <finalName>dd-spark-pipeline-server</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/generated</directory>
+                <includes>
+                    <include>api-docs.html</include>
+                    <include>api-docs.json</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

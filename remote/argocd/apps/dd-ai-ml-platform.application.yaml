@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-ai-ml-platform
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -16,5 +18,3 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

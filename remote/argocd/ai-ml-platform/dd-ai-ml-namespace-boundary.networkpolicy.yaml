@@ -4,7 +4,17 @@ metadata:
   name: dd-ai-ml-namespace-boundary
   namespace: ai-ml
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: NotIn
+        values:
+          - dd-ai-ml-pipeline
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values:
+          - dd-dagster-postgresql
+          - dd-mlflow-postgresql
   policyTypes:
     - Ingress
   ingress:

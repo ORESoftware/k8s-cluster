@@ -319,9 +319,9 @@ const MANAGED_DEPLOYMENTS: &[ManagedDeployment] = &[
     ManagedDeployment {
         slug: "spark-pipeline",
         title: "Spark pipeline server",
-        namespace: "default",
+        namespace: "ai-ml",
         deployment: "dd-spark-pipeline-server",
-        service: "dd-spark-pipeline-server.default.svc.cluster.local:8085",
+        service: "dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085",
         access: "internal",
         notes: "Java/Spark batch and stream coordination service.",
     },

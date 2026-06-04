@@ -113,3 +113,6 @@ temp
 
 # Local cluster-test runtime artifacts (Gleam presence server etc.)
 **/.cluster-local/
+
+# Local Maven cache accidentally created by spark-pipeline-server builds.
+remote/deployments/spark-pipeline-server/?/
