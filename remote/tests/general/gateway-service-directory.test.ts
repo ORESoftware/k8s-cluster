@@ -797,7 +797,19 @@ test('rust agent tasks page fetches the REST API directly', async () => {
     refreshWorkflow,
     /kubectl wait --for=condition=Available deployment\/dd-remote-web-home -n default --timeout=300s/,
   );
-  assert.doesNotMatch(refreshWorkflow, /kubectl apply -f remote\/argocd\/dd-next-runtime/);
+  assert.match(
+    refreshWorkflow,
+    /kubectl apply -f remote\/argocd\/dd-next-runtime\/dd-remote-gateway\.configmap\.yaml/,
+  );
+  assert.match(
+    refreshWorkflow,
+    /kubectl -n default rollout restart deployment\/dd-remote-gateway/,
+  );
+  assert.match(
+    refreshWorkflow,
+    /kubectl -n default rollout status deployment\/dd-remote-gateway --timeout=300s/,
+  );
+  assert.doesNotMatch(refreshWorkflow, /rollout status deployment\/dd-remote-rest-api/);
   assert.match(refreshWorkflow, /aws ssm send-command/);
   assert.match(refreshWorkflow, /aws ssm get-command-invocation/);
   assert.match(maintenanceWorkflow, /-\s*verify-gleam-mcp-server/);
