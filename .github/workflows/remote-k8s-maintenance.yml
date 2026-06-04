@@ -2139,15 +2139,30 @@ jobs:
           echo "=== compact GCS pod state and logs ==="
           kubectl -n default get deploy gcs gcs-router -o wide || true
           kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide || true
-          for app in gcs-router gcs; do
-            for pod in $(kubectl -n default get pods -l "app=$app" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
-              echo "--- current logs for pod/$pod ---"
-              kubectl -n default logs "$pod" --all-containers --tail=80 --prefix=true || true
-              echo "--- previous logs for pod/$pod ---"
-              kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
-              echo "--- recent events for pod/$pod ---"
-              kubectl -n default get events --field-selector "involvedObject.name=$pod" --sort-by=.lastTimestamp || true
-            done
+          echo "=== current GCS pod last states ==="
+          for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- gcs pod $pod state ---"
+            kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} {range .status.containerStatuses[*]}container={.name} ready={.ready} restarts={.restartCount} waiting={.state.waiting.reason} terminated={.state.terminated.reason}:{.state.terminated.exitCode}:{.state.terminated.signal} last={.lastState.terminated.reason}:{.lastState.terminated.exitCode}:{.lastState.terminated.signal} {end}{"\n"}' || true
+            echo "--- current logs for pod/$pod ---"
+            kubectl -n default logs "$pod" --all-containers --tail=80 --prefix=true || true
+            echo "--- previous logs for pod/$pod ---"
+            kubectl -n default logs "$pod" --all-containers --previous --tail=160 --prefix=true || true
+            echo "--- recent events for pod/$pod ---"
+            kubectl -n default get events --field-selector "involvedObject.name=$pod" --sort-by=.lastTimestamp || true
+          done
+          echo "=== compact router state and upstream summaries ==="
+          for pod in $(kubectl -n default get pods -l app=gcs-router -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- router pod $pod state ---"
+            kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} {range .status.containerStatuses[*]}container={.name} ready={.ready} restarts={.restartCount} waiting={.state.waiting.reason} terminated={.state.terminated.reason}:{.state.terminated.exitCode}:{.state.terminated.signal} last={.lastState.terminated.reason}:{.lastState.terminated.exitCode}:{.lastState.terminated.signal} {end}{"\n"}' || true
+            echo "--- router pod $pod upstream summary ---"
+            kubectl -n default logs "$pod" --all-containers --tail=600 --prefix=true 2>/dev/null \
+              | awk '/upstream error/ {n++; if ($0 ~ /connect: connection refused/) refused++; if ($0 ~ /connection reset by peer/) reset++; if (match($0, /peer=[^ ]+/)) peers[substr($0, RSTART, RLENGTH)]++} /peers changed/ {changes++; last=$0} END {printf("upstream_errors=%d refused=%d reset=%d peer_changes=%d\n", n+0, refused+0, reset+0, changes+0); for (p in peers) printf("peer_error_count %s %d\n", p, peers[p]); if (last != "") print "last_peer_change " last}' || true
+            echo "--- router pod $pod recent upstream tail ---"
+            kubectl -n default logs "$pod" --all-containers --tail=600 --prefix=true 2>/dev/null \
+              | grep -E 'upstream error|peers changed|overloaded|rejected|max active|listening|starting' \
+              | tail -30 || true
+            echo "--- recent events for pod/$pod ---"
+            kubectl -n default get events --field-selector "involvedObject.name=$pod" --sort-by=.lastTimestamp || true
           done
           echo "=== compact Argo GCS state ==="
           kubectl -n argocd get application/gcs -o wide || true
