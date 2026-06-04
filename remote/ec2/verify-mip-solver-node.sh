@@ -175,6 +175,7 @@ wait_for_rollout "${master_deployment}"
 wait_for_rollout "${slave_deployment}"
 
 echo "=== scale slaves to 3 for distributed smoke ==="
+# Keep KEDA from reconciling the smoke-test scale-down before the 3-slave proof.
 kubectl -n "${namespace}" patch "scaledobject/${slave_scaledobject}" --type merge \
   -p '{"spec":{"minReplicaCount":3}}'
 restore_slave_min_replicas=true
