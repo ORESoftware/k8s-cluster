@@ -39,6 +39,23 @@ dump_rollout_state() {
   kubectl -n "${namespace}" get pods \
     -l "app in (${master_deployment},${slave_deployment})" \
     -o wide || true
+  echo "=== node allocatable and pod pressure ==="
+  kubectl get nodes -o json 2>/dev/null \
+    | jq -r '
+        .items[]
+        | "node=\(.metadata.name) alloc_cpu=\(.status.allocatable.cpu) alloc_mem=\(.status.allocatable.memory) alloc_pods=\(.status.allocatable.pods) cap_cpu=\(.status.capacity.cpu) cap_mem=\(.status.capacity.memory) cap_pods=\(.status.capacity.pods)"
+      ' || true
+  kubectl get pods -A --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || true
+  echo "=== pod-specific scheduler events ==="
+  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+    echo "--- events for pod/${pod} ---"
+    kubectl -n "${namespace}" get events --field-selector "involvedObject.name=${pod}" --sort-by=.lastTimestamp || true
+  done
+  echo "=== solver pod describes ==="
+  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
+    echo "=== DESCRIBE ${pod} ==="
+    kubectl -n "${namespace}" describe "${pod}" | tail -140 || true
+  done
   kubectl -n "${namespace}" get pods \
     -l "app in (${master_deployment},${slave_deployment})" \
     -o json 2>/dev/null \
@@ -56,16 +73,12 @@ dump_rollout_state() {
           }
         | @json
       ' || true
-  kubectl -n "${namespace}" get deploy,rs,pods,svc,scaledobject,hpa \
+  kubectl -n "${namespace}" get deploy,pods,svc,scaledobject,hpa \
     -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
     -o wide || true
   kubectl -n "${namespace}" describe "deployment/${master_deployment}" | tail -140 || true
   kubectl -n "${namespace}" describe "deployment/${slave_deployment}" | tail -140 || true
   kubectl get events -n "${namespace}" --sort-by=.lastTimestamp | tail -160 || true
-  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
-    echo "=== DESCRIBE ${pod} ==="
-    kubectl -n "${namespace}" describe "${pod}" | tail -100 || true
-  done
   for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
     echo "=== LOGS ${pod} ==="
     kubectl -n "${namespace}" logs "${pod}" --all-containers --tail=40 || true
