@@ -32,7 +32,7 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
-        dd.dev/chat-vibe-revision: "cafd8f0-hot-dispatch"
+        dd.dev/chat-vibe-revision: "d1ab694-pressure-shed"
         dd.dev/gcs-capacity-profile: "2026-06-03-30k-4pods"
       labels:
         app: gcs
@@ -142,13 +142,21 @@ spec:
             - name: GCS_WS_SHED_RSS_BYTES
               value: '2684354560'
             - name: GCS_WS_SHED_GOROUTINES
-              value: '500000'
+              value: '120000'
             - name: GCS_WS_SHED_MESSAGE_LATENCY
-              value: '180s'
+              value: '10s'
             - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
               value: '30s'
             - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
               value: '512'
+            - name: GCS_WS_SIDE_EFFECT_LOCAL_PRESSURE_SHED
+              value: 'true'
+            - name: GCS_WS_SIDE_EFFECT_SHED_IN_FLIGHT_PERCENT
+              value: '50'
+            - name: GCS_WS_SIDE_EFFECT_SHED_GOROUTINES
+              value: '80000'
+            - name: GCS_WS_SIDE_EFFECT_SHED_HEAP_BYTES
+              value: '1258291200'
             # The router pins a conversation to one GCS pod, so local fanout covers
             # hot-path conversation delivery without one RMQ subscriber per socket.
             - name: GCS_WS_ENABLE_RMQ_SUBSCRIPTIONS
