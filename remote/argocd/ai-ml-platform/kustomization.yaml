@@ -13,6 +13,7 @@ resources:
   - dd-spark-namespace-boundary.networkpolicy.yaml
   - dd-ai-ml-serviceaccount.yaml
   - dd-ai-ml-agent-secrets.externalsecret.yaml
+  - dd-ai-ml-rest-api-secrets.externalsecret.yaml
   - dd-ai-ml-platform-secrets.externalsecret.yaml
   - dd-mlflow-artifacts.pvc.yaml
   - dd-ai-ml-data-contracts.configmap.yaml

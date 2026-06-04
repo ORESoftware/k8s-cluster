@@ -90,6 +90,11 @@ definitions by UUID without inheriting the REST API secret bundle.
 `secretKeyRef`s so read-only MCP tools can inspect database-backed contracts without inheriting the
 broader REST API or agent secret bundles.
 
+`dd/remote-dev/agent-secrets` and `dd/remote-dev/rest-api-secrets` are also projected into `ai-ml`,
+but only as narrow key projections: `SERVER_AUTH_SECRET` for the Python/Spark pipeline auth path,
+and `RDS_DATABASE_URL` for `dd-spark-pipeline-server` Postgres access. Do not use broad
+`dataFrom.extract` projections for the AI/ML namespace.
+
 `dd/remote-dev/big-data-secrets` must include `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`,
 `AIRFLOW_ADMIN_USERNAME`, and `AIRFLOW_ADMIN_PASSWORD` before applying the optional
 `k8s/big-data` bundle. Keep those values rotation-friendly in AWS Secrets Manager; do not restore

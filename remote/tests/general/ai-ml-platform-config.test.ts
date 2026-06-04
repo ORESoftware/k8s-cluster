@@ -89,6 +89,9 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   const externalSecret = await readRepoFile(
     'remote/argocd/ai-ml-platform/dd-ai-ml-agent-secrets.externalsecret.yaml',
   );
+  const restApiExternalSecret = await readRepoFile(
+    'remote/argocd/ai-ml-platform/dd-ai-ml-rest-api-secrets.externalsecret.yaml',
+  );
   const serviceAccount = await readRepoFile(
     'remote/argocd/ai-ml-platform/dd-ai-ml-serviceaccount.yaml',
   );
@@ -136,6 +139,7 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(kustomization, /dd-ai-ml-namespace-boundary\.networkpolicy\.yaml/);
   assert.match(kustomization, /dd-kafka-namespace-boundary\.networkpolicy\.yaml/);
   assert.match(kustomization, /dd-spark-namespace-boundary\.networkpolicy\.yaml/);
+  assert.match(kustomization, /dd-ai-ml-rest-api-secrets\.externalsecret\.yaml/);
 
   for (const tool of [
     'Dagster',
@@ -178,6 +182,7 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
   assert.match(deployment, /runAsNonRoot:\s*true/);
+  assert.match(deployment, /securityContext:[\s\S]*seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
   assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(deployment, /mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/);
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
@@ -188,6 +193,18 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(externalSecret, /kind:\s*ExternalSecret/);
   assert.match(externalSecret, /namespace:\s*ai-ml/);
   assert.match(externalSecret, /name:\s*dd-agent-secrets/);
+  assert.doesNotMatch(externalSecret, /dataFrom:/);
+  assert.match(externalSecret, /secretKey:\s*SERVER_AUTH_SECRET/);
+  assert.match(externalSecret, /key:\s*dd\/remote-dev\/agent-secrets/);
+  assert.match(externalSecret, /property:\s*SERVER_AUTH_SECRET/);
+  assert.match(restApiExternalSecret, /kind:\s*ExternalSecret/);
+  assert.match(restApiExternalSecret, /namespace:\s*ai-ml/);
+  assert.match(restApiExternalSecret, /name:\s*dd-ai-ml-rest-api-secrets/);
+  assert.match(restApiExternalSecret, /target:[\s\S]*name:\s*dd-remote-rest-api-secrets/);
+  assert.doesNotMatch(restApiExternalSecret, /dataFrom:/);
+  assert.match(restApiExternalSecret, /secretKey:\s*RDS_DATABASE_URL/);
+  assert.match(restApiExternalSecret, /key:\s*dd\/remote-dev\/rest-api-secrets/);
+  assert.match(restApiExternalSecret, /property:\s*RDS_DATABASE_URL/);
   assert.match(serviceAccount, /automountServiceAccountToken:\s*false/);
   assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
   assert.match(networkPolicy, /policyTypes:[\s\S]*- Ingress[\s\S]*- Egress/);
@@ -203,6 +220,8 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
     assert.match(policy, /podSelector:\s*\{\}[\s\S]*namespaceSelector:/);
     assert.match(policy, /kubernetes\.io\/metadata\.name:\s*observability/);
   }
+  assert.doesNotMatch(aiMlBoundary, /kubernetes\.io\/metadata\.name:\s*airbyte/);
+  assert.doesNotMatch(aiMlBoundary, /kubernetes\.io\/metadata\.name:\s*spark/);
 });
 
 test('open-source ai/ml platform tools have Argo CD entries', async () => {
@@ -210,6 +229,9 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   const platform = await readRepoFile('remote/argocd/apps/dd-ai-ml-platform.application.yaml');
   const sparkPipeline = await readRepoFile(
     'remote/argocd/apps/dd-spark-pipeline-server.application.yaml',
+  );
+  const sparkPipelineDeployment = await readRepoFile(
+    'remote/deployments/spark-pipeline-server/k8s/ec2/dd-spark-pipeline-server.deployment.yaml',
   );
   const dagster = await readRepoFile('remote/argocd/apps/dd-dagster.application.yaml');
   const airflow = await readRepoFile('remote/argocd/apps/dd-airflow.application.yaml');
@@ -232,6 +254,23 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   ]) {
     assert.match(manifest, /project:\s*dd-ai-ml-platform/);
   }
+  for (const optionalApp of [sparkPipeline, dagster, airflow, mlflow, kafka, spark, qdrant, airbyte]) {
+    assert.doesNotMatch(optionalApp, /CreateNamespace=true/);
+  }
+  assert.match(sparkPipeline, /destination:[\s\S]*namespace:\s*ai-ml/);
+  assert.match(sparkPipelineDeployment, /namespace:\s*ai-ml/);
+  assert.match(sparkPipelineDeployment, /automountServiceAccountToken:\s*false/);
+  assert.match(sparkPipelineDeployment, /securityContext:[\s\S]*runAsNonRoot:\s*true/);
+  assert.match(sparkPipelineDeployment, /securityContext:[\s\S]*runAsUser:\s*1000/);
+  assert.match(
+    sparkPipelineDeployment,
+    /securityContext:[\s\S]*seccompProfile:[\s\S]*type:\s*RuntimeDefault/,
+  );
+  assert.match(sparkPipelineDeployment, /allowPrivilegeEscalation:\s*false/);
+  assert.match(sparkPipelineDeployment, /readOnlyRootFilesystem:\s*true/);
+  assert.match(sparkPipelineDeployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
+  assert.match(sparkPipelineDeployment, /mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/);
+  assert.match(sparkPipelineDeployment, /mountPath:\s*\/work[\s\S]*emptyDir:\s*\{\}/);
   assert.match(project, /kind:\s*AppProject/);
   assert.match(project, /name:\s*dd-ai-ml-platform/);
   assert.match(project, /sourceRepos:[\s\S]*https:\/\/airflow\.apache\.org/);
@@ -240,6 +279,7 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   assert.match(project, /destinations:[\s\S]*namespace:\s*airbyte/);
   assert.match(project, /destinations:[\s\S]*namespace:\s*kafka/);
   assert.match(project, /destinations:[\s\S]*namespace:\s*spark/);
+  assert.doesNotMatch(project, /destinations:[\s\S]*namespace:\s*default/);
   assert.match(project, /clusterResourceWhitelist:[\s\S]*kind:\s*CustomResourceDefinition/);
   assert.match(project, /clusterResourceWhitelist:[\s\S]*kind:\s*ClusterRole/);
   assert.match(project, /clusterResourceWhitelist:[\s\S]*kind:\s*ClusterRoleBinding/);

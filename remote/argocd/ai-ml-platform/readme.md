@@ -10,8 +10,8 @@ This bundle installs the lightweight always-on pieces:
 - `airbyte`, `kafka`, and `spark` namespaces with restricted Pod Security audit/warn labels
 - `dd-ai-ml-pipeline`, a Python3 online feature pipeline that bridges telemetry into the existing
   Rust MDP/POMDP/RL optimizer
-- an `ExternalSecret` that mirrors `dd/remote-dev/agent-secrets` into the `ai-ml` namespace for
-  `SERVER_AUTH_SECRET`
+- narrow `ExternalSecret` projections that mirror only `SERVER_AUTH_SECRET` and `RDS_DATABASE_URL`
+  into the `ai-ml` namespace for the Python and Spark pipeline services
 - `ExternalSecret` entries that project `dd/remote-dev/ai-ml-platform-secrets` into the chart
   secrets consumed by Airbyte auth, Airflow, Dagster, MLflow, and Qdrant
 - a secret-backed Airbyte Postgres StatefulSet plus S3 credential secret so the Airbyte chart does
@@ -38,12 +38,12 @@ Heavier platform tools are kept as separate Argo CD `Application` manifests in
 
 Apply `remote/argocd/apps/dd-ai-ml-platform.appproject.yaml` before syncing these optional apps.
 The AppProject restricts them to the expected chart/git repos and the `ai-ml`, `airbyte`, `kafka`,
-`spark`, and `default` namespaces. Its cluster-resource allowlist is limited to Namespace, CRDs,
+and `spark` namespaces. Its cluster-resource allowlist is limited to Namespace, CRDs,
 and operator ClusterRole/ClusterRoleBinding resources required by the Spark and Strimzi charts.
 Its namespaced-resource allowlist is also explicit, covering only the workload, service, storage,
 RBAC, ExternalSecret, NetworkPolicy, and hook Pod/Job kinds rendered by the current platform apps.
-The Spark chart is configured with namespace creation disabled because the seed layer owns the
-`spark` Namespace labels.
+The optional chart apps and Spark pipeline app do not use Argo CD `CreateNamespace=true`; sync the
+seed layer first so the Git-owned Namespace labels are present before those apps deploy.
 
 The intended data path is:
 
@@ -61,8 +61,13 @@ the repo hostPath as read-only, and only allows egress to kube-dns plus the NATS
 `messaging` namespace when a NetworkPolicy-capable CNI is installed.
 
 The namespace boundary NetworkPolicies are ingress-only. They keep same-namespace traffic open,
-allow the expected platform namespaces to call each other, and allow the `observability` namespace
-to scrape, without blocking egress to S3, registries, the Kubernetes API, or external data systems.
+allow the expected platform namespaces to call into Airbyte/Kafka/Spark, and allow the
+`observability` namespace to scrape, without blocking egress to S3, registries, the Kubernetes API,
+or external data systems. Inbound traffic to `ai-ml` stays limited to same-namespace callers,
+`default`, and `observability`; this avoids widening the pipeline-specific ingress policies through
+an additive namespace-wide rule.
+The chart values also request runtime-default seccomp profiles where the current charts expose
+security-context knobs, and the Spark pipeline server runs without an API token as a non-root pod.
 
 `dd/remote-dev/ai-ml-platform-secrets` must exist before syncing the optional chart applications
 that depend on it. Expected JSON keys:
