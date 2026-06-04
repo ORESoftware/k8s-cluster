@@ -12,22 +12,42 @@ local_port="${MIP_SOLVER_LOCAL_PORT:-18117}"
 
 dump_rollout_state() {
   echo "=== MIP solver rollout diagnostics ==="
-  kubectl -n "${namespace}" get deploy,rs,pods,svc,scaledobject,hpa \
-    -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
-    -o wide || true
+  echo "=== compact MIP solver pod state ==="
   kubectl -n "${namespace}" get pods \
     -l "app in (${master_deployment},${slave_deployment})" \
     -o wide || true
-  kubectl -n "${namespace}" describe "deployment/${master_deployment}" || true
-  kubectl -n "${namespace}" describe "deployment/${slave_deployment}" || true
+  kubectl -n "${namespace}" get pods \
+    -l "app in (${master_deployment},${slave_deployment})" \
+    -o json 2>/dev/null \
+    | jq -r '
+        .items[]
+        | .metadata.name as $pod
+        | (.status.containerStatuses // [])[]
+        | {
+            pod: $pod,
+            container: .name,
+            ready: .ready,
+            restartCount: .restartCount,
+            state: .state,
+            lastState: .lastState
+          }
+        | @json
+      ' || true
+  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
+    echo "=== LOGS ${pod} ==="
+    kubectl -n "${namespace}" logs "${pod}" --all-containers --tail=120 || true
+    echo "=== PREV_LOGS ${pod} ==="
+    kubectl -n "${namespace}" logs "${pod}" --all-containers --previous --tail=120 2>/dev/null || true
+  done
+  kubectl -n "${namespace}" get deploy,rs,pods,svc,scaledobject,hpa \
+    -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
+    -o wide || true
+  kubectl -n "${namespace}" describe "deployment/${master_deployment}" | tail -140 || true
+  kubectl -n "${namespace}" describe "deployment/${slave_deployment}" | tail -140 || true
   kubectl get events -n "${namespace}" --sort-by=.lastTimestamp | tail -160 || true
   for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
     echo "=== DESCRIBE ${pod} ==="
-    kubectl -n "${namespace}" describe "${pod}" | tail -180 || true
-    echo "=== LOGS ${pod} ==="
-    kubectl -n "${namespace}" logs "${pod}" --all-containers --tail=180 || true
-    echo "=== PREV_LOGS ${pod} ==="
-    kubectl -n "${namespace}" logs "${pod}" --all-containers --previous --tail=180 2>/dev/null || true
+    kubectl -n "${namespace}" describe "${pod}" | tail -100 || true
   done
 }
 

@@ -3203,7 +3203,7 @@ jobs:
           output = Path("remote/ec2/mip-solver-node-last-verification.json")
           data = json.loads(source.read_text())
 
-          def tail(value, limit=16000):
+          def tail(value, limit=60000):
               value = value or ""
               return value[-limit:]
 
