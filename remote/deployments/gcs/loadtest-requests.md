@@ -14,3 +14,4 @@
 - 2026-06-04 10k-light retry with GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT=2048: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
 - 2026-06-04 diagnose 10k-light 2048 side-effect cap collapse: confirm GCS pod restarts, OOM state, and dependency pressure.
 - 2026-06-04 recover GCS side-effect cap to 512 after 2048 retry OOMKilled pods during 10k-light.
+- 2026-06-04 10k-light retry after rate-limiting websocket side-effect shed logs: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
