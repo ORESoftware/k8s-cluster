@@ -13,11 +13,51 @@ local_port="${MIP_SOLVER_LOCAL_PORT:-18117}"
 port_forward_pid=""
 restore_argo_selfheal=false
 restore_slave_keda_pause=false
+restore_capacity_apps=false
+
+mip_capacity_apps="${MIP_SOLVER_CAPACITY_ARGO_APPS:-dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs}"
+mip_capacity_targets="${MIP_SOLVER_CAPACITY_TARGETS:-dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs}"
+mip_capacity_app_manifests="${MIP_SOLVER_CAPACITY_APP_MANIFESTS:-remote/argocd/apps/dd-next-runtime.application.yaml remote/argocd/apps/dd-akka-ws-server.application.yaml remote/argocd/apps/dd-dart-server.application.yaml remote/argocd/apps/dd-fsharp-ws-server.application.yaml remote/argocd/apps/dd-gleamlang-server.application.yaml remote/argocd/apps/dd-ws-loadtest-gleam.application.yaml remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml}"
+
+pod_count_for_phase() {
+  local phase="$1"
+  kubectl get pods -A --field-selector="status.phase=${phase}" --no-headers 2>/dev/null \
+    | awk 'END {print NR + 0}'
+}
+
+print_cluster_pod_pressure() {
+  echo "=== cluster pod pressure: ${1:-snapshot} ==="
+  kubectl get nodes -o json 2>/dev/null \
+    | jq -r '
+        .items[]
+        | "node=\(.metadata.name) alloc_cpu=\(.status.allocatable.cpu) alloc_mem=\(.status.allocatable.memory) alloc_pods=\(.status.allocatable.pods) cap_cpu=\(.status.capacity.cpu) cap_mem=\(.status.capacity.memory) cap_pods=\(.status.capacity.pods)"
+      ' || true
+  echo "running_pods=$(pod_count_for_phase Running) pending_pods=$(pod_count_for_phase Pending) succeeded_pods=$(pod_count_for_phase Succeeded) failed_pods=$(pod_count_for_phase Failed)"
+}
+
+restore_capacity_app_manifests() {
+  if [ "${restore_capacity_apps}" != true ]; then
+    return 0
+  fi
+
+  echo "=== restore temporary MIP capacity Argo apps ==="
+  for manifest in ${mip_capacity_app_manifests}; do
+    if [ -f "${manifest}" ]; then
+      kubectl apply -f "${manifest}" >/dev/null 2>&1 || true
+    fi
+  done
+  for app in ${mip_capacity_apps}; do
+    kubectl -n argocd annotate "application/${app}" \
+      argocd.argoproj.io/refresh=hard \
+      --overwrite >/dev/null 2>&1 || true
+  done
+}
 
 cleanup() {
   if [ -n "${port_forward_pid}" ]; then
     kill "${port_forward_pid}" >/dev/null 2>&1 || true
   fi
+  restore_capacity_app_manifests
   if [ "${restore_slave_keda_pause}" = true ]; then
     kubectl -n "${namespace}" annotate "scaledobject/${slave_scaledobject}" \
       autoscaling.keda.sh/paused-replicas- \
@@ -32,6 +72,58 @@ cleanup() {
 }
 
 trap cleanup EXIT
+
+free_cluster_pod_slots_for_mip() {
+  local desired_running="${MIP_SOLVER_POD_CAPACITY_TARGET:-100}"
+  case "${desired_running}" in
+    ''|*[!0-9]*) desired_running=100 ;;
+  esac
+
+  print_cluster_pod_pressure "before MIP capacity preflight"
+  echo "=== disable Argo auto-sync for temporary MIP capacity owners ==="
+  for app in ${mip_capacity_apps}; do
+    kubectl -n argocd patch "application/${app}" --type json \
+      -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' >/dev/null 2>&1 || true
+    kubectl -n argocd get "application/${app}" \
+      -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' 2>/dev/null || true
+  done
+  restore_capacity_apps=true
+
+  echo "=== scale temporary MIP capacity targets to zero ==="
+  kubectl -n default get deploy ${mip_capacity_targets} -o wide 2>/dev/null || true
+  for target in ${mip_capacity_targets}; do
+    kubectl -n default scale "deployment/${target}" --replicas=0 >/dev/null 2>&1 || true
+  done
+
+  echo "=== clean terminal pods for pod-slot headroom ==="
+  kubectl delete pod -A --field-selector=status.phase=Succeeded --wait=false >/dev/null 2>&1 || true
+  kubectl delete pod -A --field-selector=status.phase=Failed --wait=false >/dev/null 2>&1 || true
+  kubectl -n "${namespace}" delete pod \
+    -l "app in (${master_deployment},${slave_deployment})" \
+    --field-selector=status.phase=Pending \
+    --wait=false >/dev/null 2>&1 || true
+
+  for attempt in $(seq 1 90); do
+    local running pending
+    running="$(pod_count_for_phase Running)"
+    pending="$(pod_count_for_phase Pending)"
+    if [ "${running}" -le "${desired_running}" ]; then
+      echo "MIP pod-slot preflight passed running_pods=${running} pending_pods=${pending} target_running<=${desired_running}"
+      print_cluster_pod_pressure "after MIP capacity preflight"
+      return 0
+    fi
+    if [ "${attempt}" -le 5 ] || [ $((attempt % 12)) -eq 0 ]; then
+      echo "waiting for pod-slot headroom running_pods=${running} pending_pods=${pending} target_running<=${desired_running} attempt=${attempt}/90"
+      kubectl -n default get deploy ${mip_capacity_targets} -o wide 2>/dev/null || true
+    fi
+    sleep 5
+  done
+
+  echo "MIP pod-slot preflight did not reach target_running<=${desired_running}" >&2
+  print_cluster_pod_pressure "failed MIP capacity preflight"
+  kubectl get pods -A -o wide | tail -160 || true
+  exit 1
+}
 
 dump_rollout_state() {
   echo "=== MIP solver rollout diagnostics ==="
@@ -146,6 +238,9 @@ git submodule update --init --recursive \
   remote/submodules/discrete-event-system.rs
 git rev-parse --short HEAD
 git -C remote/deployments/mip-solver-node.rs rev-parse --short HEAD
+
+echo "=== free pod slots for MIP solver verifier ==="
+free_cluster_pod_slots_for_mip
 
 echo "=== render MIP solver manifests ==="
 kubectl kustomize remote/deployments/mip-solver-node.rs/k8s >/tmp/dd-mip-solver-render.yaml
