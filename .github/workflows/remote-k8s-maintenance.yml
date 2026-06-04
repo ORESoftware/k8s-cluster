@@ -3295,8 +3295,17 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add remote/ec2/mip-solver-node-last-verification.json
-            git commit -m "Record MIP solver verification result [skip ci]" || true
-            git push origin "HEAD:${GITHUB_REF_NAME:-dev}" || true
+            if git commit -m "Record MIP solver verification result [skip ci]"; then
+              result_branch="${GITHUB_REF_NAME:-dev}"
+              for attempt in 1 2 3; do
+                if git push origin "HEAD:${result_branch}"; then
+                  break
+                fi
+                echo "MIP result push failed; rebasing on origin/${result_branch} attempt ${attempt}/3"
+                git fetch origin "${result_branch}"
+                git rebase "origin/${result_branch}"
+              done
+            fi
           fi
           status="$(jq -r '.Status' /tmp/ssm-invocation.json)"
           test "$status" = "Success"
