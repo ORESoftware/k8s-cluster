@@ -7,8 +7,24 @@ namespace="${MIP_SOLVER_NAMESPACE:-ai-ml}"
 app_name="${MIP_SOLVER_ARGO_APP:-dd-in-house-mip-solver-node}"
 master_deployment="${MIP_SOLVER_MASTER_DEPLOYMENT:-dd-in-house-mip-solver-node-master}"
 slave_deployment="${MIP_SOLVER_SLAVE_DEPLOYMENT:-dd-in-house-mip-solver-node-slave}"
+slave_scaledobject="${MIP_SOLVER_SLAVE_SCALEDOBJECT:-dd-in-house-mip-solver-node-slave-nats-jetstream}"
 service_name="${MIP_SOLVER_SERVICE:-dd-in-house-mip-solver-node}"
 local_port="${MIP_SOLVER_LOCAL_PORT:-18117}"
+port_forward_pid=""
+restore_slave_min_replicas=false
+
+cleanup() {
+  if [ -n "${port_forward_pid}" ]; then
+    kill "${port_forward_pid}" >/dev/null 2>&1 || true
+  fi
+  if [ "${restore_slave_min_replicas}" = true ]; then
+    kubectl -n "${namespace}" patch "scaledobject/${slave_scaledobject}" --type merge \
+      -p '{"spec":{"minReplicaCount":1}}' >/dev/null 2>&1 || true
+    kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=1 >/dev/null 2>&1 || true
+  fi
+}
+
+trap cleanup EXIT
 
 dump_rollout_state() {
   echo "=== MIP solver rollout diagnostics ==="
@@ -159,6 +175,9 @@ wait_for_rollout "${master_deployment}"
 wait_for_rollout "${slave_deployment}"
 
 echo "=== scale slaves to 3 for distributed smoke ==="
+kubectl -n "${namespace}" patch "scaledobject/${slave_scaledobject}" --type merge \
+  -p '{"spec":{"minReplicaCount":3}}'
+restore_slave_min_replicas=true
 kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=3
 wait_for_rollout "${slave_deployment}"
 wait_for_ready_replicas "${master_deployment}" 1
@@ -175,10 +194,6 @@ port_forward_log="/tmp/dd-mip-solver-port-forward.log"
 rm -f "${port_forward_log}"
 kubectl -n "${namespace}" port-forward "svc/${service_name}" "127.0.0.1:${local_port}:8117" >"${port_forward_log}" 2>&1 &
 port_forward_pid="$!"
-cleanup() {
-  kill "${port_forward_pid}" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
 
 for attempt in $(seq 1 120); do
   if curl -fsS "http://127.0.0.1:${local_port}/healthz" >/tmp/dd-mip-solver-health.json 2>/tmp/dd-mip-solver-health.err; then
