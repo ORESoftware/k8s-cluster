@@ -205,7 +205,7 @@ kubectl -n "${namespace}" get pods \
 echo "=== port-forward master service ==="
 port_forward_log="/tmp/dd-mip-solver-port-forward.log"
 rm -f "${port_forward_log}"
-kubectl -n "${namespace}" port-forward "svc/${service_name}" "127.0.0.1:${local_port}:8117" >"${port_forward_log}" 2>&1 &
+kubectl -n "${namespace}" port-forward --address 127.0.0.1 "svc/${service_name}" "${local_port}:8117" >"${port_forward_log}" 2>&1 &
 port_forward_pid="$!"
 
 for attempt in $(seq 1 120); do

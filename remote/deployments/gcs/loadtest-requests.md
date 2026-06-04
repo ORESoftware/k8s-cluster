@@ -16,3 +16,7 @@
 - 2026-06-04 recover GCS side-effect cap to 512 after 2048 retry OOMKilled pods during 10k-light.
 - 2026-06-04 10k-light retry after rate-limiting websocket side-effect shed logs: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
 - 2026-06-04 diagnose current GCS state while stale recovery SSM command is still in progress.
+- 2026-06-04 10k-light retry after shedding side-effect retries and sampling broker hot-path logs: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
+- 2026-06-04 10k-light trigger after merging latest parent dev: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
+- 2026-06-04 diagnose active 10k-light retry-pressure loadtest while SSM output is still pending.
+- 2026-06-04 snapshot active 10k-light retry-pressure loadtest metrics while proof run is still pending.
