@@ -54,7 +54,7 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    extract::{rejection::JsonRejection, DefaultBodyLimit, Multipart, Path, Query, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -102,6 +102,8 @@ const MAX_MUSIC_AUTH_HEADER_NAME_CHARS: usize = 64;
 const MAX_MUSIC_COOKIE_BYTES: usize = 512 * 1024;
 const MUSIC_DOWNLOAD_TIMEOUT_SECS: u64 = 180;
 const MAX_FILTER_LEN: usize = 96;
+const MAX_SIMULATE_MATCHES: usize = 8;
+const SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS: f64 = 90_000.0;
 
 /// Interactive landing page. All `fetch`/link URLs are RELATIVE so the page
 /// works both at `/` (local `cargo run`) and behind the gateway at `/des-rs/`
@@ -755,6 +757,43 @@ fn sim_names() -> Vec<&'static str> {
         .collect()
 }
 
+fn matching_sim_names(needle: &str, exact: bool) -> Vec<&'static str> {
+    simulation_catalogue()
+        .into_iter()
+        .filter(|(name, _)| {
+            if exact {
+                *name == needle
+            } else {
+                name.contains(needle)
+            }
+        })
+        .map(|(name, _)| name)
+        .collect()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SimMatchError {
+    NoMatches,
+    TooMany {
+        count: usize,
+        preview: Vec<&'static str>,
+    },
+}
+
+fn checked_sim_names(needle: &str, exact: bool) -> Result<Vec<&'static str>, SimMatchError> {
+    let matches = matching_sim_names(needle, exact);
+    if matches.is_empty() {
+        return Err(SimMatchError::NoMatches);
+    }
+    if !exact && matches.len() > MAX_SIMULATE_MATCHES {
+        return Err(SimMatchError::TooMany {
+            count: matches.len(),
+            preview: matches.into_iter().take(MAX_SIMULATE_MATCHES).collect(),
+        });
+    }
+    Ok(matches)
+}
+
 fn outcome_json(outcomes: &[SimOutcome]) -> Vec<Value> {
     outcomes
         .iter()
@@ -1370,6 +1409,7 @@ async fn download_music_source_url(
     auth: &MusicSourceAuth,
 ) -> Result<String, String> {
     let url = validate_public_music_url(raw)?;
+    validate_public_music_url_dns(&url).await?;
     if prefers_ytdlp(&url) {
         match download_with_ytdlp(url.as_str().to_string(), path.to_path_buf(), auth).await {
             Ok(kind) => return Ok(format!("{kind}; access={}", auth.effective_mode().as_str())),
@@ -1408,6 +1448,48 @@ fn validate_public_music_url(raw: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(raw.trim()).map_err(|e| format!("invalid source_url: {e}"))?;
     validate_public_music_url_parts(&url)?;
     Ok(url)
+}
+
+async fn validate_public_music_url_dns(url: &reqwest::Url) -> Result<(), String> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| "source_url must include a public host".to_string())?;
+    if host.parse::<IpAddr>().is_ok() {
+        return Ok(());
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| "source_url must use a URL scheme with a known port".to_string())?;
+    let addrs = tokio::net::lookup_host((host, port)).await.map_err(|e| {
+        format!(
+            "source_url host `{}` could not be resolved: {e}",
+            truncate_for_error(host, 120)
+        )
+    })?;
+    validate_music_resolved_addrs(host, addrs.map(|addr| addr.ip()))
+}
+
+fn validate_music_resolved_addrs<I>(host: &str, addrs: I) -> Result<(), String>
+where
+    I: IntoIterator<Item = IpAddr>,
+{
+    let mut saw_addr = false;
+    for ip in addrs {
+        saw_addr = true;
+        if is_blocked_music_ip(ip) {
+            return Err(format!(
+                "source_url host `{}` resolves to localhost/private network",
+                truncate_for_error(host, 120)
+            ));
+        }
+    }
+    if !saw_addr {
+        return Err(format!(
+            "source_url host `{}` resolved to no addresses",
+            truncate_for_error(host, 120)
+        ));
+    }
+    Ok(())
 }
 
 fn validate_public_music_url_parts(url: &reqwest::Url) -> Result<(), String> {
@@ -1872,19 +1954,37 @@ fn validate_filter(raw: &str) -> Result<String, String> {
 }
 
 async fn run_response(state: &AppState, needle: String, exact: bool) -> Response {
-    let outcomes = run_filter(state, needle.clone(), exact).await;
-    if outcomes.is_empty() {
-        let how = if exact { "named" } else { "matching" };
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "ok": false,
-                "error": format!("no simulation {how} `{needle}`"),
-                "simulations": sim_names(),
-            })),
-        )
-            .into_response();
+    match checked_sim_names(&needle, exact) {
+        Ok(_) => {}
+        Err(SimMatchError::NoMatches) => {
+            let how = if exact { "named" } else { "matching" };
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "ok": false,
+                    "error": format!("no simulation {how} `{needle}`"),
+                    "simulations": sim_names(),
+                })),
+            )
+                .into_response();
+        }
+        Err(SimMatchError::TooMany { count, preview }) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "ok": false,
+                    "error": format!(
+                        "simulation filter `{needle}` matches {count} simulations; refine the name or use exact=true for a single catalogue entry"
+                    ),
+                    "matchCount": count,
+                    "maxMatches": MAX_SIMULATE_MATCHES,
+                    "preview": preview,
+                })),
+            )
+                .into_response();
+        }
     }
+    let outcomes = run_filter(state, needle.clone(), exact).await;
     let all_ok = outcomes.iter().all(|o| o.ok);
     Json(json!({
         "ok": all_ok,
@@ -2141,20 +2241,54 @@ async fn soccer_planner_page(State(state): State<AppState>) -> Html<String> {
 /// `POST /soccer/planner/solve` — re-solve with roster/constraints from the UI.
 async fn soccer_planner_solve(
     State(state): State<AppState>,
-    Json(req): Json<PlannerRequest>,
+    request: Result<Json<PlannerRequest>, JsonRejection>,
 ) -> Response {
-    let _guard = state.sim_lock.lock().await;
-    let result = tokio::task::spawn_blocking(move || solve_planner(&req)).await;
-    let resp = match result {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "ok": false, "error": format!("solve task failed: {e}") })),
-            )
-                .into_response();
+    let Json(mut req) = match request {
+        Ok(req) => req,
+        Err(err) => {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                format!("invalid soccer planner request JSON: {err}"),
+            );
         }
     };
+    let requested_solver_time_limit_ms = req.solver_time_limit_ms;
+    let solver_time_was_capped = requested_solver_time_limit_ms.is_finite()
+        && requested_solver_time_limit_ms > SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS;
+    if solver_time_was_capped {
+        req.solver_time_limit_ms = SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS;
+    }
+
+    let _guard = state.sim_lock.lock().await;
+    let result =
+        tokio::task::spawn_blocking(move || catch_unwind(AssertUnwindSafe(|| solve_planner(&req))))
+            .await;
+    let mut resp = match result {
+        Ok(Ok(r)) => r,
+        Ok(Err(panic_payload)) => {
+            let error = panic_payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| panic_payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "soccer planner solve panicked".to_string());
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("soccer planner solve panicked: {error}"),
+            );
+        }
+        Err(e) => {
+            return json_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("soccer planner solve task failed: {e}"),
+            );
+        }
+    };
+    if solver_time_was_capped {
+        resp.solver_notes.push(format!(
+            "Server capped solverTimeLimitMs from {:.0}ms to {:.0}ms so the HTTP endpoint returns JSON before the gateway timeout.",
+            requested_solver_time_limit_ms, SOCCER_PLANNER_HTTP_SOLVE_BUDGET_MS
+        ));
+    }
     let status = if resp.ok {
         StatusCode::OK
     } else {
@@ -2817,6 +2951,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
             {
+                if let Err(SimMatchError::TooMany { count, .. }) = checked_sim_names(&needle, false)
+                {
+                    eprintln!(
+                        "[dd-des-rs] startup `{needle}` skipped: filter matches {count} sim(s); use narrower DES_STARTUP_SIMS entries"
+                    );
+                    continue;
+                }
                 let outcomes = run_filter(&startup_state, needle.clone(), false).await;
                 println!(
                     "[dd-des-rs] startup `{needle}`: ran {} sim(s)",
@@ -2961,6 +3102,18 @@ mod tests {
     }
 
     #[test]
+    fn broad_simulation_filters_are_capped_before_running() {
+        assert!(matches!(
+            checked_sim_names("main", false),
+            Err(SimMatchError::TooMany { count, .. }) if count > MAX_SIMULATE_MATCHES
+        ));
+        assert_eq!(
+            checked_sim_names("main_electric_circuit", true).unwrap(),
+            vec!["main_electric_circuit"]
+        );
+    }
+
+    #[test]
     fn music_source_url_validation_blocks_private_and_secret_bearing_urls() {
         for raw in [
             "ftp://example.com/seed.mp4",
@@ -2983,6 +3136,26 @@ mod tests {
         }
 
         assert!(validate_public_music_url("https://example.com/path/seed.mp4").is_ok());
+    }
+
+    #[test]
+    fn music_source_dns_validation_blocks_private_resolutions() {
+        assert!(validate_music_resolved_addrs(
+            "media.example",
+            ["93.184.216.34".parse::<IpAddr>().unwrap()]
+        )
+        .is_ok());
+        assert!(validate_music_resolved_addrs(
+            "media.example",
+            [
+                "93.184.216.34".parse::<IpAddr>().unwrap(),
+                "10.1.2.3".parse::<IpAddr>().unwrap()
+            ]
+        )
+        .is_err());
+        assert!(
+            validate_music_resolved_addrs("media.example", std::iter::empty::<IpAddr>()).is_err()
+        );
     }
 
     #[test]

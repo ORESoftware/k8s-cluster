@@ -4,7 +4,12 @@ metadata:
   name: dd-airbyte-namespace-boundary
   namespace: airbyte
 spec:
-  podSelector: {}
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: NotIn
+        values:
+          - dd-airbyte-postgresql
   policyTypes:
     - Ingress
   ingress:

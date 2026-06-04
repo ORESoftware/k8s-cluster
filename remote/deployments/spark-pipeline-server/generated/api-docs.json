@@ -1,0 +1,176 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "spark-pipeline-server",
+  "language": "java",
+  "routeCount": 9,
+  "routeTypeCounts": {
+    "service": 6,
+    "user-generated": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "ApiDocsHandler.html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "ApiDocsHandler.json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "ApiDocsHandler.html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "HealthHandler.liveness"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "MetricsHandler.create"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "HealthHandler.readiness"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/jobs",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ListJobsHandler",
+        "SubmitJobHandler",
+        "authGate"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/jobs/:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "JobStatusHandler",
+        "authGate"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/repos",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ListReposHandler",
+        "authGate"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    }
+  ]
+}

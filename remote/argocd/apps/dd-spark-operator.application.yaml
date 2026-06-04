@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-spark-operator
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -12,8 +14,42 @@ spec:
     helm:
       skipTests: true
       values: |
-        controller:
+        operatorDeployment:
           replicas: 1
+          strategy:
+            type: Recreate
+          operatorPod:
+            securityContext:
+              fsGroup: 185
+              fsGroupChangePolicy: OnRootMismatch
+              runAsGroup: 185
+              runAsNonRoot: true
+              runAsUser: 185
+              seccompProfile:
+                type: RuntimeDefault
+            operatorContainer:
+              jvmArgs: "-Dfile.encoding=UTF8 -XX:+ExitOnOutOfMemoryError -XX:+UseParallelGC -XX:InitialRAMPercentage=80 -XX:MaxRAMPercentage=80 -XX:+AlwaysPreTouch -Dio.netty.noUnsafe=true -XX:+UseCompactObjectHeaders -Djava.io.tmpdir=/opt/spark-operator/logs"
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                  ephemeral-storage: 1Gi
+                limits:
+                  cpu: '1'
+                  memory: 2Gi
+                  ephemeral-storage: 2Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                privileged: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                runAsGroup: 185
+                runAsNonRoot: true
+                runAsUser: 185
+                seccompProfile:
+                  type: RuntimeDefault
         workloadResources:
           namespaces:
             create: false
