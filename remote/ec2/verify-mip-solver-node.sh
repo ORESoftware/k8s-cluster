@@ -10,6 +10,35 @@ slave_deployment="${MIP_SOLVER_SLAVE_DEPLOYMENT:-dd-in-house-mip-solver-node-sla
 service_name="${MIP_SOLVER_SERVICE:-dd-in-house-mip-solver-node}"
 local_port="${MIP_SOLVER_LOCAL_PORT:-18117}"
 
+dump_rollout_state() {
+  echo "=== MIP solver rollout diagnostics ==="
+  kubectl -n "${namespace}" get deploy,rs,pods,svc,scaledobject,hpa \
+    -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
+    -o wide || true
+  kubectl -n "${namespace}" get pods \
+    -l "app in (${master_deployment},${slave_deployment})" \
+    -o wide || true
+  kubectl -n "${namespace}" describe "deployment/${master_deployment}" || true
+  kubectl -n "${namespace}" describe "deployment/${slave_deployment}" || true
+  kubectl get events -n "${namespace}" --sort-by=.lastTimestamp | tail -160 || true
+  for pod in $(kubectl -n "${namespace}" get pods -l "app in (${master_deployment},${slave_deployment})" -o name 2>/dev/null || true); do
+    echo "=== DESCRIBE ${pod} ==="
+    kubectl -n "${namespace}" describe "${pod}" | tail -180 || true
+    echo "=== LOGS ${pod} ==="
+    kubectl -n "${namespace}" logs "${pod}" --all-containers --tail=180 || true
+    echo "=== PREV_LOGS ${pod} ==="
+    kubectl -n "${namespace}" logs "${pod}" --all-containers --previous --tail=180 2>/dev/null || true
+  done
+}
+
+wait_for_rollout() {
+  local deployment="$1"
+  if ! kubectl -n "${namespace}" rollout status "deployment/${deployment}" --timeout=1800s; then
+    dump_rollout_state
+    exit 1
+  fi
+}
+
 cd "${repo_root}"
 
 echo "=== sync EC2 checkout and solver submodule ==="
@@ -65,12 +94,13 @@ for attempt in $(seq 1 90); do
 done
 
 echo "=== wait for master/slave rollouts ==="
-kubectl -n "${namespace}" rollout status "deployment/${master_deployment}" --timeout=1800s
-kubectl -n "${namespace}" rollout status "deployment/${slave_deployment}" --timeout=1800s
+kubectl -n "${namespace}" rollout restart "deployment/${master_deployment}" "deployment/${slave_deployment}"
+wait_for_rollout "${master_deployment}"
+wait_for_rollout "${slave_deployment}"
 
 echo "=== scale slaves to 3 for distributed smoke ==="
 kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=3
-kubectl -n "${namespace}" rollout status "deployment/${slave_deployment}" --timeout=1800s
+wait_for_rollout "${slave_deployment}"
 kubectl -n "${namespace}" wait --for=condition=Ready pod \
   -l app="${master_deployment}" \
   --timeout=1800s
