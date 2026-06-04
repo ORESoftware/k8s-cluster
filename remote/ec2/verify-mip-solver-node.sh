@@ -59,6 +59,46 @@ wait_for_rollout() {
   fi
 }
 
+wait_for_ready_replicas() {
+  local deployment="$1"
+  local expected="$2"
+
+  for attempt in $(seq 1 900); do
+    local snapshot
+    snapshot="$(
+      kubectl -n "${namespace}" get "deployment/${deployment}" -o json 2>/dev/null \
+        | jq -r '{
+            desired: (.spec.replicas // 0),
+            ready: (.status.readyReplicas // 0),
+            available: (.status.availableReplicas // 0),
+            updated: (.status.updatedReplicas // 0)
+          } | @json'
+    )" || snapshot=""
+
+    if [ -n "${snapshot}" ]; then
+      local ready available updated
+      ready="$(jq -r '.ready // 0' <<<"${snapshot}")"
+      available="$(jq -r '.available // 0' <<<"${snapshot}")"
+      updated="$(jq -r '.updated // 0' <<<"${snapshot}")"
+      if [ "${ready}" -ge "${expected}" ] \
+        && [ "${available}" -ge "${expected}" ] \
+        && [ "${updated}" -ge "${expected}" ]; then
+        echo "deployment/${deployment} ready replicas ${ready}/${expected} available=${available} updated=${updated}"
+        return 0
+      fi
+      if [ "${attempt}" -le 5 ] || [ $((attempt % 30)) -eq 0 ]; then
+        echo "waiting for deployment/${deployment} ready replicas ${snapshot}"
+      fi
+    fi
+
+    sleep 2
+  done
+
+  echo "deployment/${deployment} did not reach ${expected} ready updated replicas" >&2
+  dump_rollout_state
+  exit 1
+}
+
 cd "${repo_root}"
 
 echo "=== sync EC2 checkout and solver submodule ==="
@@ -121,12 +161,8 @@ wait_for_rollout "${slave_deployment}"
 echo "=== scale slaves to 3 for distributed smoke ==="
 kubectl -n "${namespace}" scale "deployment/${slave_deployment}" --replicas=3
 wait_for_rollout "${slave_deployment}"
-kubectl -n "${namespace}" wait --for=condition=Ready pod \
-  -l app="${master_deployment}" \
-  --timeout=1800s
-kubectl -n "${namespace}" wait --for=condition=Ready pod \
-  -l app="${slave_deployment}" \
-  --timeout=1800s
+wait_for_ready_replicas "${master_deployment}" 1
+wait_for_ready_replicas "${slave_deployment}" 3
 kubectl -n "${namespace}" get deploy,svc,pods,scaledobject \
   -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
   -o wide || true
