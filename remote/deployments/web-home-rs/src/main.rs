@@ -7771,6 +7771,7 @@ const state = {
   userWs: null,
   convs: {},          // convId → { ws, panel, logEl, statusEl, membersEl }
   helloUserNode: null,
+  presenceProbe: null,
 };
 
 function nowTs() {
@@ -7796,25 +7797,82 @@ function setPill(el, text, cls) {
   el.className = "pill " + cls;
 }
 
+function compactBody(text) {
+  const s = String(text || "").trim();
+  return s.length > 180 ? s.slice(0, 180) + "..." : s;
+}
+function normalizedHost(hostname) {
+  return String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+}
+function isLoopbackHost(hostname) {
+  const h = normalizedHost(hostname);
+  return h === "localhost" || h === "::1" || h === "0.0.0.0" || h.startsWith("127.");
+}
+function isLocalPage() {
+  return isLoopbackHost(location.hostname);
+}
 function presenceBaseUrl() {
   const raw = $("presence").value.trim() || "/presence";
   const url = new URL(raw, location.origin);
   if (url.protocol === "ws:") url.protocol = "http:";
   if (url.protocol === "wss:") url.protocol = "https:";
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`unsupported presence base protocol: ${url.protocol}`);
+  }
+  if (!isLocalPage() && isLoopbackHost(url.hostname)) {
+    throw new Error(`refusing loopback presence base from remote page: ${url.hostname}`);
+  }
   url.hash = "";
   url.search = "";
   return url;
 }
+function safePresenceBaseUrl(panelLog) {
+  try {
+    return presenceBaseUrl();
+  } catch (e) {
+    const targetLog = panelLog || $("user-log");
+    log(targetLog, e && e.message ? e.message : String(e), "bad");
+    setPill($("status"), "invalid base", "bad");
+    return null;
+  }
+}
 function stripTrailingSlash(value) {
   return value.replace(/\/$/, "");
 }
-function wsBase() {
-  const url = presenceBaseUrl();
+function wsBase(panelLog) {
+  const url = safePresenceBaseUrl(panelLog);
+  if (!url) return null;
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return stripTrailingSlash(url.toString());
 }
-function httpBase() {
-  return stripTrailingSlash(presenceBaseUrl().toString());
+function httpBase(panelLog) {
+  const url = safePresenceBaseUrl(panelLog);
+  return url ? stripTrailingSlash(url.toString()) : null;
+}
+async function ensurePresenceReady(panelLog) {
+  const base = httpBase(panelLog);
+  if (!base) return false;
+  const now = Date.now();
+  const cached = state.presenceProbe;
+  if (cached && cached.base === base && now - cached.at < 3000) return cached.ok;
+  try {
+    const r = await fetch(`${base}/healthz`, { credentials: "same-origin", cache: "no-store" });
+    const body = compactBody(await r.text());
+    const ok = r.ok;
+    state.presenceProbe = { base, ok, at: now };
+    if (!ok) {
+      const auth = r.status === 401 ? "presence gateway auth required" : "presence health check failed";
+      log(panelLog, `${auth}: HTTP ${r.status}${body ? " " + body : ""}`, "bad");
+      setPill($("status"), r.status === 401 ? "auth required" : "health failed", "bad");
+      return false;
+    }
+    return true;
+  } catch (e) {
+    state.presenceProbe = { base, ok: false, at: now };
+    log(panelLog, `presence health check failed: ${e}`, "bad");
+    setPill($("status"), "health failed", "bad");
+    return false;
+  }
 }
 
 function updateWsCount() {
@@ -7898,27 +7956,32 @@ function buildConvPanels() {
 
 // ───────────────────────────────────────────────────────────────────
 // user-ws lifecycle
-function openUserWs() {
-  if (state.userWs && state.userWs.readyState <= 1) return;
+async function openUserWs(skipPreflight = false) {
+  const logEl = $("user-log");
+  if (state.userWs && state.userWs.readyState <= 1) return true;
+  if (!skipPreflight && !(await ensurePresenceReady(logEl))) return false;
   const user = $("user").value.trim();
   const device = $("device").value.trim();
-  if (!user) { log($("user-log"), "missing user-id", "bad"); return; }
+  if (!user) { log(logEl, "missing user-id", "bad"); return false; }
   const qs = new URLSearchParams({ user });
   if (device) qs.set("device", device);
-  const url = `${wsBase()}/ws?${qs}`;
+  const base = wsBase(logEl);
+  if (!base) return false;
+  const url = `${base}/ws?${qs}`;
   $("user-meta").textContent = url;
   const ws = new WebSocket(url);
   state.userWs = ws;
   setPill($("user-status"), "connecting", "warn");
-  log($("user-log"), `→ open ${url}`, "muted");
+  log(logEl, `→ open ${url}`, "muted");
   ws.onopen = () => { setPill($("user-status"), "open", "ok"); updateWsCount(); };
   ws.onclose = (e) => {
     setPill($("user-status"), `closed (${e.code})`, "bad");
-    log($("user-log"), `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
+    log(logEl, `← close code=${e.code} reason="${e.reason || ""}"`, "warn");
     updateWsCount();
   };
-  ws.onerror = () => log($("user-log"), "← error (see devtools)", "bad");
+  ws.onerror = () => log(logEl, "← error (see devtools)", "bad");
   ws.onmessage = (e) => handleUserFrame(e.data);
+  return true;
 }
 
 function closeUserWs() {
@@ -7958,15 +8021,18 @@ function handleUserFrame(raw) {
 
 // ───────────────────────────────────────────────────────────────────
 // conv-ws lifecycle
-function openConvWs(convId) {
+async function openConvWs(convId, skipPreflight = false) {
   const c = state.convs[convId];
-  if (!c) return;
-  if (c.ws && c.ws.readyState <= 1) return;
+  if (!c) return false;
+  if (c.ws && c.ws.readyState <= 1) return true;
+  if (!skipPreflight && !(await ensurePresenceReady(c.logEl))) return false;
   const user = $("user").value.trim();
   const device = $("device").value.trim();
   const qs = new URLSearchParams({ user, conv: convId });
   if (device) qs.set("device", device);
-  const url = `${wsBase()}/ws?${qs}`;
+  const base = wsBase(c.logEl);
+  if (!base) return false;
+  const url = `${base}/ws?${qs}`;
   const ws = new WebSocket(url);
   c.ws = ws;
   setPill(c.statusEl, "connecting", "warn");
@@ -7979,6 +8045,7 @@ function openConvWs(convId) {
   };
   ws.onerror = () => log(c.logEl, "← error", "bad");
   ws.onmessage = (e) => handleConvFrame(convId, e.data);
+  return true;
 }
 
 function closeConvWs(convId) {
@@ -8010,17 +8077,22 @@ function handleConvFrame(convId, raw) {
 async function joinConv(convId) {
   const user = $("user").value.trim();
   const c = state.convs[convId];
-  const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
+  const base = httpBase(c ? c.logEl : $("user-log"));
+  if (!base) return false;
+  const res = await postPlain(`${base}/conv/${enc(convId)}/members/${enc(user)}`);
   if (c) log(c.logEl, `POST /members/${user} → ${res}`, "system");
   // Refresh membership pill (the user-ws will also see the membership-
   // changed JSON if I'm registered).
   refreshConvMembers(convId);
+  return !res.startsWith("HTTP 401");
 }
 
 async function leaveConv(convId) {
   const user = $("user").value.trim();
   const c = state.convs[convId];
-  const res = await deletePlain(`${httpBase()}/conv/${enc(convId)}/members/${enc(user)}`);
+  const base = httpBase(c ? c.logEl : $("user-log"));
+  if (!base) return;
+  const res = await deletePlain(`${base}/conv/${enc(convId)}/members/${enc(user)}`);
   if (c) log(c.logEl, `DELETE /members/${user} → ${res}`, "warn");
   refreshConvMembers(convId);
 }
@@ -8028,9 +8100,15 @@ async function leaveConv(convId) {
 async function refreshConvMembers(convId) {
   const c = state.convs[convId];
   if (!c) return;
+  const base = httpBase(c.logEl);
+  if (!base) return;
   try {
-    const r = await fetch(`${httpBase()}/conv/${enc(convId)}/members`);
+    const r = await fetch(`${base}/conv/${enc(convId)}/members`, { credentials: "same-origin", cache: "no-store" });
     const body = (await r.text()).trim();
+    if (!r.ok) {
+      setPill(c.membersEl, `members: HTTP ${r.status}`, "bad");
+      return;
+    }
     const members = body ? body.split("\n") : [];
     setPill(c.membersEl, `members: ${members.join(",") || "—"}`, members.length ? "" : "warn");
   } catch (e) {
@@ -8040,13 +8118,17 @@ async function refreshConvMembers(convId) {
 
 async function convBroadcast(convId, payload) {
   const c = state.convs[convId];
-  const res = await postPlain(`${httpBase()}/conv/${enc(convId)}/broadcast`, payload);
+  const base = httpBase(c ? c.logEl : $("user-log"));
+  if (!base) return;
+  const res = await postPlain(`${base}/conv/${enc(convId)}/broadcast`, payload);
   if (c) log(c.logEl, `POST /broadcast (${payload.length}B) → ${res}`, "muted");
 }
 
 async function userBroadcast(payload) {
   const user = $("user").value.trim();
-  const res = await postPlain(`${httpBase()}/user/${enc(user)}/broadcast`, payload);
+  const base = httpBase($("user-log"));
+  if (!base) return;
+  const res = await postPlain(`${base}/user/${enc(user)}/broadcast`, payload);
   log($("user-log"), `POST /user/${user}/broadcast → ${res}`, "muted");
 }
 
@@ -8054,7 +8136,9 @@ async function deviceLogout() {
   const user = $("user").value.trim();
   const device = $("device").value.trim();
   if (!device) { log($("user-log"), "device-id required for logout", "bad"); return; }
-  const res = await postPlain(`${httpBase()}/user/${enc(user)}/devices/${enc(device)}/logout`, "ui-button");
+  const base = httpBase($("user-log"));
+  if (!base) return;
+  const res = await postPlain(`${base}/user/${enc(user)}/devices/${enc(device)}/logout`, "ui-button");
   log($("user-log"), `POST /devices/${device}/logout → ${res}`, "warn");
 }
 
@@ -8062,13 +8146,19 @@ async function deviceLogout() {
 // helpers
 async function postPlain(url, body = "") {
   try {
-    const r = await fetch(url, { method: "POST", body, headers: { "content-type": "text/plain" } });
+    const r = await fetch(url, {
+      method: "POST",
+      body,
+      headers: { "content-type": "text/plain" },
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     return `HTTP ${r.status} ${(await r.text()).trim()}`;
   } catch (e) { return `error: ${e}`; }
 }
 async function deletePlain(url) {
   try {
-    const r = await fetch(url, { method: "DELETE" });
+    const r = await fetch(url, { method: "DELETE", credentials: "same-origin", cache: "no-store" });
     return `HTTP ${r.status} ${(await r.text()).trim()}`;
   } catch (e) { return `error: ${e}`; }
 }
@@ -8088,12 +8178,13 @@ function tryParseSystemFrame(raw) {
 // top-level connect / disconnect
 async function connectAll() {
   setPill($("status"), "connecting", "warn");
-  openUserWs();
+  if (!(await ensurePresenceReady($("user-log")))) return;
+  await openUserWs(true);
   // Join every conv THEN open its ws. Membership is required for the
   // conv-ws upgrade to succeed.
   for (const convId of Object.keys(state.convs)) {
-    await joinConv(convId);
-    openConvWs(convId);
+    const joined = await joinConv(convId);
+    if (joined) await openConvWs(convId, true);
   }
   setPill($("status"), "connected", "ok");
 }
@@ -8109,6 +8200,7 @@ function disconnectAll() {
 $("user").addEventListener("input", applySelfInfo);
 $("device").addEventListener("input", applySelfInfo);
 $("convs").addEventListener("change", buildConvPanels);
+$("presence").addEventListener("input", () => { state.presenceProbe = null; });
 
 $("connect").onclick = connectAll;
 $("disconnect").onclick = disconnectAll;
