@@ -3627,6 +3627,69 @@ fn decode_chunked_body(body: &[u8]) -> Result<Vec<u8>, String> {
     }
 }
 
+fn header_value<'a>(headers: &'a str, name: &str) -> Option<&'a str> {
+    headers.lines().skip(1).find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        key.trim()
+            .eq_ignore_ascii_case(name)
+            .then_some(value.trim())
+    })
+}
+
+fn response_content_length(headers: &str) -> Result<Option<usize>, String> {
+    header_value(headers, "content-length")
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .map_err(|error| format!("invalid live-mutex content-length {value:?}: {error}"))
+        })
+        .transpose()
+}
+
+fn response_is_chunked(headers: &str) -> bool {
+    header_value(headers, "transfer-encoding").is_some_and(|value| {
+        value
+            .split(',')
+            .any(|encoding| encoding.trim().eq_ignore_ascii_case("chunked"))
+    })
+}
+
+fn chunked_body_complete(body: &[u8]) -> bool {
+    let mut index = 0usize;
+    loop {
+        let Some(line_end) = body[index..]
+            .windows(2)
+            .position(|window| window == b"\r\n")
+            .map(|position| index + position)
+        else {
+            return false;
+        };
+        let Ok(size_text) = std::str::from_utf8(&body[index..line_end]) else {
+            return false;
+        };
+        let size_hex = size_text
+            .split_once(';')
+            .map(|(size, _)| size)
+            .unwrap_or(size_text)
+            .trim();
+        let Ok(size) = usize::from_str_radix(size_hex, 16) else {
+            return false;
+        };
+        index = line_end + 2;
+        if size == 0 {
+            return body[index..].windows(2).any(|window| window == b"\r\n");
+        }
+        let chunk_end = index.saturating_add(size);
+        if chunk_end + 2 > body.len() {
+            return false;
+        }
+        if &body[chunk_end..chunk_end + 2] != b"\r\n" {
+            return false;
+        }
+        index = chunk_end + 2;
+    }
+}
+
 async fn live_mutex_post_json(
     config: &LiveMutexConfig,
     path: &str,
@@ -3675,19 +3738,53 @@ async fn live_mutex_post_json(
             .write_all(&body)
             .await
             .map_err(|error| format!("write request body: {error}"))?;
-        let _ = stream.shutdown().await;
+        stream
+            .flush()
+            .await
+            .map_err(|error| format!("flush request body: {error}"))?;
         let max_response_bytes = config.max_response_bytes.clamp(1, 16 * 1024 * 1024);
         let mut response = Vec::new();
-        let mut limited = stream.take(max_response_bytes.saturating_add(1));
-        limited
-            .read_to_end(&mut response)
-            .await
-            .map_err(|error| format!("read response: {error}"))?;
-        if response.len() as u64 > max_response_bytes {
-            return Err(format!(
-                "live-mutex response exceeded {} bytes",
-                max_response_bytes
-            ));
+        let mut header_end: Option<usize> = None;
+        let mut expected_len: Option<usize> = None;
+        let mut chunked = false;
+        let mut buf = [0u8; 4096];
+        loop {
+            if response.len() as u64 > max_response_bytes {
+                return Err(format!(
+                    "live-mutex response exceeded {} bytes",
+                    max_response_bytes
+                ));
+            }
+            if let Some(end) = header_end {
+                let body_start = end + 4;
+                let body_len = response.len().saturating_sub(body_start);
+                if let Some(length) = expected_len {
+                    if body_len >= length {
+                        response.truncate(body_start + length);
+                        break;
+                    }
+                } else if chunked && chunked_body_complete(&response[body_start..]) {
+                    break;
+                }
+            }
+            let read = stream
+                .read(&mut buf)
+                .await
+                .map_err(|error| format!("read response: {error}"))?;
+            if read == 0 {
+                break;
+            }
+            response.extend_from_slice(&buf[..read]);
+            if header_end.is_none() {
+                if let Some(end) = response.windows(4).position(|window| window == b"\r\n\r\n") {
+                    let headers = std::str::from_utf8(&response[..end]).map_err(|error| {
+                        format!("live-mutex response headers are not utf8: {error}")
+                    })?;
+                    expected_len = response_content_length(headers)?;
+                    chunked = response_is_chunked(headers);
+                    header_end = Some(end);
+                }
+            }
         }
         Ok::<Vec<u8>, String>(response)
     })
@@ -3732,20 +3829,33 @@ async fn acquire_redis_coordination_lock(
         return Err("Redis coordination requested but Redis is not configured".to_string());
     };
     let token = format!("{}:{}", state.node_id, Uuid::new_v4());
-    let mut connection = client
-        .get_multiplexed_async_connection()
-        .await
-        .map_err(|error| format!("Redis coordination connection failed: {error}"))?;
+    let connection_timeout = Duration::from_millis(wait_ms.max(1));
+    let mut connection = tokio::time::timeout(
+        connection_timeout,
+        client.get_multiplexed_async_connection(),
+    )
+    .await
+    .map_err(|_| format!("Redis coordination connection timed out after {wait_ms} ms"))?
+    .map_err(|error| format!("Redis coordination connection failed: {error}"))?;
     let deadline = Instant::now() + Duration::from_millis(wait_ms);
     loop {
-        let result: redis::RedisResult<Option<String>> = redis::cmd("SET")
-            .arg(key)
-            .arg(&token)
-            .arg("NX")
-            .arg("PX")
-            .arg(ttl_ms.max(1))
-            .query_async(&mut connection)
-            .await;
+        let now = Instant::now();
+        let remaining = deadline.saturating_duration_since(now);
+        if remaining.is_zero() {
+            return Err(format!("coordination lock busy: {key}"));
+        }
+        let result: redis::RedisResult<Option<String>> = tokio::time::timeout(
+            remaining,
+            redis::cmd("SET")
+                .arg(key)
+                .arg(&token)
+                .arg("NX")
+                .arg("PX")
+                .arg(ttl_ms.max(1))
+                .query_async(&mut connection),
+        )
+        .await
+        .map_err(|_| format!("Redis coordination SET NX timed out for {key}"))?;
         match result {
             Ok(Some(response)) if response == "OK" => return Ok(token),
             Ok(_) => {}
@@ -6854,6 +6964,40 @@ mod tests {
             .unwrap_err();
 
         assert!(error.contains("CRLF"));
+    }
+
+    #[tokio::test]
+    async fn live_mutex_http_client_stops_after_content_length_without_eof() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0u8; 1024];
+            let _ = socket.read(&mut request).await.unwrap();
+            let body = br#"{"acquired":true,"lockUuid":"lock-a"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+            socket.write_all(body).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(750)).await;
+        });
+        let config = LiveMutexConfig {
+            base_url: format!("http://{addr}"),
+            auth_token: None,
+            request_timeout_ms: 1_000,
+            max_response_bytes: 1024,
+        };
+
+        let started = Instant::now();
+        let value = live_mutex_post_json(&config, "/v1/lock", json!({"key":"content-length"}))
+            .await
+            .unwrap();
+
+        assert_eq!(value["lockUuid"], "lock-a");
+        assert!(started.elapsed() < Duration::from_millis(500));
+        server.await.unwrap();
     }
 
     #[test]

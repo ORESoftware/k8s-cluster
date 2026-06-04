@@ -117,7 +117,7 @@ spec:
             - name: MIP_SOLVER_REDIS_KEY_PREFIX
               value: dd:mip-solver
             - name: MIP_SOLVER_COORDINATION_BACKENDS
-              value: redis
+              value: both
             - name: MIP_SOLVER_LIVE_MUTEX_URL
               value: http://dd-rust-network-mutex.default.svc.cluster.local:6971
             - name: MIP_SOLVER_LIVE_MUTEX_AUTH_TOKEN
