@@ -20,3 +20,4 @@
 - 2026-06-04 10k-light trigger after merging latest parent dev: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
 - 2026-06-04 diagnose active 10k-light retry-pressure loadtest while SSM output is still pending.
 - 2026-06-04 snapshot active 10k-light retry-pressure loadtest metrics while proof run is still pending.
+- 2026-06-04 20k-light goroutine-fix validation: 5 loader replicas x 4000 clients, 1.0 msg/(conn*second), 180s.
