@@ -74,9 +74,9 @@ cleanup() {
 trap cleanup EXIT
 
 free_cluster_pod_slots_for_mip() {
-  local desired_running="${MIP_SOLVER_POD_CAPACITY_TARGET:-100}"
+  local desired_running="${MIP_SOLVER_POD_CAPACITY_TARGET:-102}"
   case "${desired_running}" in
-    ''|*[!0-9]*) desired_running=100 ;;
+    ''|*[!0-9]*) desired_running=102 ;;
   esac
 
   print_cluster_pod_pressure "before MIP capacity preflight"
@@ -105,6 +105,9 @@ free_cluster_pod_slots_for_mip() {
 
   for attempt in $(seq 1 90); do
     local running pending
+    for target in ${mip_capacity_targets}; do
+      kubectl -n default scale "deployment/${target}" --replicas=0 >/dev/null 2>&1 || true
+    done
     running="$(pod_count_for_phase Running)"
     pending="$(pod_count_for_phase Pending)"
     if [ "${running}" -le "${desired_running}" ]; then
