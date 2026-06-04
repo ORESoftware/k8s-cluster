@@ -85,6 +85,7 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
     '/ml/',
     '/builds',
     '/gleam/',
+    '/presence/',
     '/mcp',
     '/gcs/',
     '/webrtc/',
@@ -208,6 +209,9 @@ test('rust homepage lists public pages and protected ops/data paths', async () =
   assertPathEntry(home, '/gleam/home', '/gleam/home');
   assertPathEntry(home, '/gleam/healthz', '/gleam/healthz');
   assertPathEntry(home, '/gleam/metrics', '/gleam/metrics');
+  assertPathEntry(home, '/presence/healthz', '/presence/healthz');
+  assertPathEntry(home, '/presence/ws');
+  assertPathEntry(home, '/presence/user/<id>/broadcast');
   assertPathEntry(home, '?preset=gleam', '/wss-test?preset=gleam');
   assertPathEntry(home, '?preset=webrtc', '/wss-test?preset=webrtc');
   assertPathEntry(home, '?preset=gcs', '/wss-test?preset=gcs');
@@ -425,6 +429,11 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     gateway,
     /location\s+\/gleam\/[\s\S]*dd-gleamlang-server\.default\.svc\.cluster\.local:8081\//,
   );
+  assert.match(gateway, /location = \/presence[\s\S]*return 302 \/presence\//);
+  assert.match(
+    gateway,
+    /location\s+\/presence\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade[\s\S]*presence-svc\.presence\.svc\.cluster\.local:8081\//,
+  );
   assert.match(
     gateway,
     /location = \/mcp[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp/,
@@ -436,6 +445,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   for (const blockPattern of [
     /location = \/fsws[\s\S]*?\n      \}/,
     /location \/fsws\/[\s\S]*?\n      \}/,
+    /location = \/presence[\s\S]*?\n      \}/,
+    /location \/presence\/[\s\S]*?\n      \}/,
     /location = \/gcs[\s\S]*?\n      \}/,
     /location = \/gcs\/health[\s\S]*?\n      \}/,
     /location = \/gcs\/ws-health[\s\S]*?\n      \}/,
@@ -515,7 +526,7 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(scraperService, /port:\s*8097/);
   assert.match(buildServerDeployment, /name:\s*dd-build-server/);
   assert.match(buildServerDeployment, /serviceAccountName:\s*dd-build-server/);
-  assert.match(buildServerDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/build-server-rs/);
+  assert.match(buildServerDeployment, /cd "\$source_root\/remote\/deployments\/build-server-rs"/);
   assert.match(buildServerDeployment, /containerPort:\s*8100/);
   assert.match(
     buildServerDeployment,

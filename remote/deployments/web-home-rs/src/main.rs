@@ -282,7 +282,7 @@ fn home_summary() -> Markup {
             code { "/api/lambdas/" } ", " code { "/api/agent-worker/" } ", "
             code { "/container-pools" } ", " code { "/bastion/" } ", " code { "/scrape" } ", "
             code { "/trading/" } ", " code { "/contracts/" } ", " code { "/ml/" } ", "
-            code { "/builds" } ", " code { "/gleam/" } ", " code { "/mcp" } ", and "
+            code { "/builds" } ", " code { "/gleam/" } ", " code { "/presence/" } ", " code { "/mcp" } ", and "
             code { "/gcs/" } ", " code { "/webrtc/" } ", " code { "/fsws/" } ", "
             code { "/mdp/" } ", " code { "/des/" } ", and " code { "/des-rs/" } ". Internal-access ops: " code { "/headlamp/" } ", "
             code { "/telemetry/" } ", "
@@ -496,7 +496,7 @@ static DEPLOYMENT_ROWS: &[DeploymentRow] = &[
     DeploymentRow { deployments: &["dd-billing-server"], service: &["dd-billing-server:80"], service_note: Some("(pod 8087)"), access: CLUSTER_LOCAL, notes: "Rust multi-tenant AR/AP ledger. Serves /v1/tenants/* billing/payable state, ledger primitives, provider connections, OAuth, webhooks, locks, scheduled jobs, and notifications. Not yet exposed through the public gateway." },
     DeploymentRow { deployments: &["dd-wal-gateway"], service: &["dd-wal-gateway:8104"], service_note: None, access: INTERNAL, notes: "Rust Postgres -> NATS JetStream CDC gateway. Owns one logical replication slot, publishes cdc.<schema>.<table>.<op> envelopes on stream CDC, and exposes /healthz, /readyz, /metrics." },
     DeploymentRow { deployments: &["dd-gleamlang-server"], service: &["dd-gleamlang-server:8081"], service_note: None, access: SERVER_AUTH, notes: "Gleam/OTP WebSocket fan-out behind /gleam/*. Exposes /gleam/home, /gleam/healthz, /gleam/metrics, and wss://<host>/gleam/ws." },
-    DeploymentRow { deployments: &["presence"], service: &["presence-svc.presence:8080"], service_note: Some("(StatefulSet)"), access: CLUSTER_LOCAL, notes: "Gleam gleamlang-presence-server. Distributed-Erlang StatefulSet that powers user-scoped and conv-scoped websockets driving the /presence-test browser harness." },
+    DeploymentRow { deployments: &["presence"], service: &["presence-svc.presence:8081"], service_note: Some("(StatefulSet)"), access: SERVER_AUTH, notes: "Gleam gleamlang-presence-server behind /presence/*. Distributed-Erlang StatefulSet that powers user-scoped and conv-scoped websockets driving the /presence-test browser harness." },
     DeploymentRow { deployments: &["dd-gleam-mcp-server"], service: &["dd-gleam-mcp-server:8090"], service_note: None, access: SERVER_AUTH, notes: "Gleam JSON-RPC MCP service behind /mcp and /mcp/*. Ships read-only runtime tools, Prometheus metrics, and Loki-collected stdout." },
     DeploymentRow { deployments: &["dd-webrtc-signaling"], service: &["dd-webrtc-signaling:8095"], service_note: None, access: SERVER_AUTH, notes: "Rust WebRTC signaling service behind /webrtc/. Room WebSocket signaling for browser/mobile peer handshakes; media and data channels stay peer-to-peer." },
     DeploymentRow { deployments: &["dd-mdp-optimizer"], service: &["dd-mdp-optimizer:8096"], service_note: None, access: SERVER_AUTH, notes: "Rust MDP/POMDP/RL optimizer behind /mdp/. Consumes dd.remote.mdp.optimize and dd.remote.telemetry.mdp." },
@@ -520,6 +520,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/api/agents/tasks", href: Some("/api/agents/tasks") }, PathEntry { label: "/api/agents/threads/<uuid>/context", href: Some("/api/agents/threads/example-thread-id/context") }], target: "Rust REST API (JSON only)", access: SERVER_AUTH, notes: "JSON-only boundary for task snapshots and thread context. The browser UI lives at /agents/tasks and uses the dd_auth cookie for same-origin API reads." },
     PathRow { paths: &[PathEntry { label: "/lambdas/functions", href: Some("/lambdas/functions") }, PathEntry { label: "/api/lambdas/functions", href: Some("/api/lambdas/functions") }, PathEntry { label: "POST /lambdas/invoke/<function-id>", href: Some("/lambdas/invoke/00000000-0000-0000-0000-000000000000") }], target: "dd-gleam-lambda-runner deployment + Rust REST API", access: SERVER_AUTH, notes: "CRUD/read models stay in the REST API. Invocation traffic is routed directly by the gateway to the Gleam child-process runner." },
     PathRow { paths: &[PathEntry { label: "/presence-test", href: Some("/presence-test?user=alice&device=d1&autoconnect=1") }], target: "gleamlang-presence-server browser harness", access: PUBLIC, notes: "Self-contained page that opens one user-scoped ws plus N conv-scoped ws connections against the presence server." },
+    PathRow { paths: &[PathEntry { label: "/presence/healthz", href: Some("/presence/healthz") }, PathEntry { label: "/presence/ws", href: None }, PathEntry { label: "/presence/user/<id>/broadcast", href: None }], target: "gleamlang-presence-server gateway proxy", access: SERVER_AUTH, notes: "Authenticated same-origin proxy for the presence lab. WebSocket endpoint is wss://<host>/presence/ws." },
     PathRow { paths: &[PathEntry { label: "/wss-test", href: Some("/wss-test") }, PathEntry { label: "?preset=gleam", href: Some("/wss-test?preset=gleam") }, PathEntry { label: "?preset=webrtc", href: Some("/wss-test?preset=webrtc") }, PathEntry { label: "?preset=gcs", href: Some("/wss-test?preset=gcs") }, PathEntry { label: "?preset=fsrx", href: Some("/wss-test?preset=fsrx") }], target: "Gateway WebSocket test lab", access: PUBLIC, notes: "Rust-served browser harness. Preset health checks and sockets use gateway-authenticated upstream routes when they leave the public page." },
     PathRow { paths: &[PathEntry { label: "/auth", href: Some("/auth?return=/home") }, PathEntry { label: "/auth/login", href: Some("/auth/login") }, PathEntry { label: "/auth/logout", href: Some("/auth/logout") }], target: "dd-remote-auth Rust PIN auth", access: PUBLIC, notes: "Sets the temporary dd_auth cookie so the gateway can accept browser sessions without the legacy Auth header." },
     PathRow { paths: &[PathEntry { label: "/bastion/runtime/deployments", href: Some("/bastion/runtime/deployments") }, PathEntry { label: "/bastion/profile", href: Some("/bastion/profile") }, PathEntry { label: "/bastion/terminal", href: None }], target: "Rust bastion/jumphost access broker", access: SERVER_AUTH, notes: "Same-origin gateway access to bastion inventory and allowlisted browser exec terminals." },
@@ -7611,7 +7612,7 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 const PRESENCE_TEST_BODY: &str = r###"<header>
   <label>user-id<input id="user" value="alice" /></label>
   <label>device-id<input id="device" value="d1" /></label>
-  <label>presence base<input id="presence" value="http://localhost:8081" style="width: 220px;" /></label>
+  <label>presence base<input id="presence" value="/presence" style="width: 220px;" /></label>
   <label>conv ids (comma)<input id="convs" value="conv-1,conv-2,conv-3,conv-4,conv-5" style="width: 260px;" /></label>
   <div style="flex:1"></div>
   <button id="connect" class="primary" type="button">Connect all</button>
@@ -7702,12 +7703,25 @@ function setPill(el, text, cls) {
   el.className = "pill " + cls;
 }
 
+function presenceBaseUrl() {
+  const raw = $("presence").value.trim() || "/presence";
+  const url = new URL(raw, location.origin);
+  if (url.protocol === "ws:") url.protocol = "http:";
+  if (url.protocol === "wss:") url.protocol = "https:";
+  url.hash = "";
+  url.search = "";
+  return url;
+}
+function stripTrailingSlash(value) {
+  return value.replace(/\/$/, "");
+}
 function wsBase() {
-  const http = $("presence").value.trim().replace(/\/$/, "");
-  return http.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
+  const url = presenceBaseUrl();
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return stripTrailingSlash(url.toString());
 }
 function httpBase() {
-  return $("presence").value.trim().replace(/\/$/, "");
+  return stripTrailingSlash(presenceBaseUrl().toString());
 }
 
 function updateWsCount() {

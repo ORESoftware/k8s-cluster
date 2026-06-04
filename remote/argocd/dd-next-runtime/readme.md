@@ -78,6 +78,8 @@ Gateway path map:
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
 - `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` ->
   `dd-webrtc-signaling:8095` (gateway auth required)
+- `/presence/`, `/presence/healthz`, `/presence/ws`, `/presence/conv/*`, `/presence/user/*` ->
+  `presence-svc.presence:8081` (gateway auth required)
 - `/fsws/`, `/fsws/healthz`, `/fsws/livez`, `/fsws/ws/*` -> `dd-fsharp-ws-server:8087`
   (gateway auth required)
 - `/gcs/health`, `/gcs/ws-health`, `/gcs/api/*`, `/gcs/ws/*` -> `gcs` / `gcs-router`
