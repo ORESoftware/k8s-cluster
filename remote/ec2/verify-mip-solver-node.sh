@@ -130,6 +130,75 @@ free_cluster_pod_slots_for_mip() {
 
 dump_rollout_state() {
   echo "=== MIP solver rollout diagnostics ==="
+  echo "=== compact MIP solver deployment status ==="
+  for deployment in "${master_deployment}" "${slave_deployment}"; do
+    echo "--- deployment/${deployment} status ---"
+    kubectl -n "${namespace}" get "deployment/${deployment}" -o json 2>/dev/null \
+      | jq -c '
+          {
+            name: .metadata.name,
+            generation: .metadata.generation,
+            observedGeneration: .status.observedGeneration,
+            paused: (.spec.paused // false),
+            replicas: .spec.replicas,
+            selector: .spec.selector.matchLabels,
+            status: {
+              replicas: (.status.replicas // 0),
+              updatedReplicas: (.status.updatedReplicas // 0),
+              readyReplicas: (.status.readyReplicas // 0),
+              availableReplicas: (.status.availableReplicas // 0),
+              unavailableReplicas: (.status.unavailableReplicas // 0),
+              collisionCount: (.status.collisionCount // 0)
+            },
+            conditions: [
+              .status.conditions[]? | {
+                type,
+                status,
+                reason,
+                message,
+                lastUpdateTime,
+                lastTransitionTime
+              }
+            ]
+          }
+        ' || true
+  done
+  echo "=== compact MIP solver replica sets ==="
+  kubectl -n "${namespace}" get rs \
+    -l app.kubernetes.io/name=dd-in-house-mip-solver-node \
+    -o json 2>/dev/null \
+    | jq -c '
+        .items[]
+        | {
+            name: .metadata.name,
+            ownerReferences: (.metadata.ownerReferences // []),
+            labels: .metadata.labels,
+            replicas: .spec.replicas,
+            status: {
+              replicas: (.status.replicas // 0),
+              fullyLabeledReplicas: (.status.fullyLabeledReplicas // 0),
+              readyReplicas: (.status.readyReplicas // 0),
+              availableReplicas: (.status.availableReplicas // 0),
+              observedGeneration: (.status.observedGeneration // 0)
+            },
+            conditions: [
+              .status.conditions[]? | {
+                type,
+                status,
+                reason,
+                message,
+                lastTransitionTime
+              }
+            ]
+          }
+      ' || true
+  echo "=== MIP solver deployment and replica set events ==="
+  for object_name in "${master_deployment}" "${slave_deployment}" $(kubectl -n "${namespace}" get rs -l app.kubernetes.io/name=dd-in-house-mip-solver-node -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+    echo "--- events for ${object_name} ---"
+    kubectl -n "${namespace}" get events \
+      --field-selector "involvedObject.name=${object_name}" \
+      --sort-by=.lastTimestamp || true
+  done
   echo "=== compact MIP solver pod state ==="
   kubectl -n "${namespace}" get pods \
     -l "app in (${master_deployment},${slave_deployment})" \
@@ -261,6 +330,7 @@ kubectl -n argocd annotate "application/${app_name}" \
 kubectl -n argocd patch "application/${app_name}" --type merge -p \
   '{"operation":{"initiatedBy":{"username":"verify-mip-solver-node"},"info":[{"name":"reason","value":"verify-mip-solver-node"}],"sync":{"revision":"HEAD","prune":true}}}' || true
 
+argo_sync_ready=false
 for attempt in $(seq 1 90); do
   phase="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
   started_at="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.startedAt}' 2>/dev/null || true)"
@@ -272,7 +342,10 @@ for attempt in $(seq 1 90); do
   echo "argo wait ${attempt}/90 phase=${phase:-unknown} sync=${sync_status:-unknown} health=${health_status:-unknown} revision=${revision:-unknown} started=${started_at:-unknown} finished=${finished_at:-unknown}"
   case "${phase}" in
     Succeeded)
-      break
+      if [ "${sync_status:-}" = "Synced" ]; then
+        argo_sync_ready=true
+        break
+      fi
       ;;
     Failed|Error)
       if [ "${operation_fingerprint}" = "${pre_sync_fingerprint}" ] && [ "${attempt}" -lt 12 ]; then
@@ -286,8 +359,22 @@ for attempt in $(seq 1 90); do
   esac
   sleep 5
 done
+if [ "${argo_sync_ready}" != "true" ]; then
+  echo "Argo application/${app_name} did not reach sync=Synced" >&2
+  kubectl -n argocd get "application/${app_name}" -o yaml | tail -160 || true
+  exit 1
+fi
+if [ "${health_status:-}" = "Degraded" ]; then
+  echo "Argo application/${app_name} is Degraded after sync; rollout restart will attempt to recover it"
+  kubectl -n argocd get "application/${app_name}" -o json 2>/dev/null \
+    | jq -c '{sync: .status.sync, health: .status.health, conditions: (.status.conditions // []), resources: (.status.resources // [])}' || true
+fi
 
 echo "=== wait for master/slave rollouts ==="
+kubectl -n "${namespace}" rollout resume "deployment/${master_deployment}" || true
+kubectl -n "${namespace}" rollout resume "deployment/${slave_deployment}" || true
+kubectl -n "${namespace}" patch "deployment/${master_deployment}" --type merge -p '{"spec":{"paused":false}}' || true
+kubectl -n "${namespace}" patch "deployment/${slave_deployment}" --type merge -p '{"spec":{"paused":false}}' || true
 kubectl -n "${namespace}" rollout restart "deployment/${master_deployment}" "deployment/${slave_deployment}"
 wait_for_rollout "${master_deployment}"
 wait_for_rollout "${slave_deployment}"
