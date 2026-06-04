@@ -15,23 +15,34 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-15-nats-watchdog'
+        dd.dev/telemetry-revision: '2026-05-20-runtime-floor'
       labels:
         app: dd-idle-reaper
     spec:
-      automountServiceAccountToken: false
+      serviceAccountName: dd-idle-reaper
+      automountServiceAccountToken: true
       terminationGracePeriodSeconds: 20
       containers:
         - name: reaper
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
+          # Additive baseline: no privilege escalation + RuntimeDefault
+          # seccomp. We do NOT drop capabilities or set runAsNonRoot
+          # because this pod talks to /run/containerd/containerd.sock
+          # via nerdctl (worker image rebuild path), which needs root +
+          # DAC_OVERRIDE. Tightening further is a coordinated change.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/idle-reaper-rs
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/idle-reaper-rs
               exec /usr/local/cargo/bin/cargo run --release
           envFrom:
             - configMapRef:

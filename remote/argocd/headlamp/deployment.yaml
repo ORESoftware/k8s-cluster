@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headlamp
+  namespace: headlamp
+  labels:
+    app: headlamp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: headlamp
+  template:
+    metadata:
+      annotations:
+        dd.dev/config-revision: "2026-05-18-headlamp"
+      labels:
+        app: headlamp
+    spec:
+      serviceAccountName: headlamp
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: headlamp
+          image: ghcr.io/headlamp-k8s/headlamp:v0.42.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-in-cluster"
+            - "-in-cluster-context-name=main"
+            - "-plugins-dir=/headlamp/plugins"
+            - "-base-url=/headlamp"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+          ports:
+            - name: http
+              containerPort: 4466
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /headlamp/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /headlamp/
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      nodeSelector:
+        kubernetes.io/os: linux
+

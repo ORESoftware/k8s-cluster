@@ -1,0 +1,735 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "rest-api-rs",
+  "language": "rust",
+  "routeCount": 41,
+  "routeTypeCounts": {
+    "user-generated": 23,
+    "service": 5,
+    "internal-db": 10,
+    "runtime-config": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/agents/events",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ingest_agent_event"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/git-repos",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "known_git_repos",
+        "save_known_git_repo"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/tasks",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agents_tasks"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/tasks/:task_id/events",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agent_task_events"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/tasks/:task_id/feedback",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agent_task_feedback"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/archive",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "archive_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/breadcrumbs",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "ingest_agent_breadcrumb"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/breadcrumbs/tail",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "agent_thread_breadcrumb_tail"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/context",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "thread_context"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/context-candidates",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "thread_context_candidates"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/hard-delete",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "hard_delete_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/make-commit",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "make_commit_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/merge-upstream",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "merge_upstream_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/open-pr",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "open_pr_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/prepare",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "prepare_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/runtime",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "thread_runtime"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/sleep",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "sleep_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/stream/:task_id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "stream_thread_task"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/tasks",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "dispatch_thread_task"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/threads/:thread_id/terminal",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "terminal_thread"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/lambdas/functions",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_lambda_function",
+        "lambda_functions"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/lambdas/functions/:id",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "lambda_function",
+        "update_lambda_function"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/runtime-config/snapshot/:env",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "runtime_config_snapshot"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/contract/tables",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "contract_tables"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/join",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "join_rows"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/pg-defs/tables",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "contract_tables"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/schemas/:schema/tables/:table",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "table_metadata_explicit_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/schemas/:schema/tables/:table/rows",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "insert_row_explicit_schema",
+        "list_rows_explicit_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "delete_row_explicit_schema",
+        "get_row_explicit_schema",
+        "update_row_explicit_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/tables",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "list_tables"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/tables/:table",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "table_metadata_default_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/tables/:table/rows",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "insert_row_default_schema",
+        "list_rows_default_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/tables/:table/rows/:id",
+      "methods": [
+        "GET",
+        "PATCH",
+        "DELETE"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "delete_row_default_schema",
+        "get_row_default_schema",
+        "update_row_default_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "handlers": [
+        "dd_runtime_config_client::handle_get"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "handlers": [
+        "dd_runtime_config_client::handle_reset"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "handlers": [
+        "dd_runtime_config_client::handle_apply"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

@@ -8,7 +8,13 @@ on:
       - ".github/workflows/refresh-remote-web-home-local-image.yml"
       - "remote/argocd/apps/dd-next-runtime.application.yaml"
       - "remote/argocd/dd-next-runtime/**"
-      - "remote/web-home-rs/**"
+      - "remote/deployments/container-pool-rs/**"
+      - "remote/deployments/dev-server/**"
+      - "remote/deployments/idle-reaper-rs/**"
+      - "remote/k8s/**"
+      - "remote/deployments/queue-consumer-rs/**"
+      - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/web-home-rs/**"
   workflow_dispatch:
 
 concurrency:
@@ -42,25 +48,48 @@ jobs:
               --comment "Refresh remote web-home local image" \
               --parameters 'commands=[
                 "set -euo pipefail",
-                "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin dev; git merge --ff-only origin/dev; git rev-parse --short HEAD'\''",
-                "cd /home/ec2-user/codes/dd/dd-next-1",
-                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-remote-web-home:dev remote/web-home-rs",
-                "sudo -u ec2-user -H bash -lc '\''cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
+                "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; source_repo=/home/ec2-user/codes/dd/dd-next-1; cd \"$source_repo\"; git status --short; refresh_root=$(mktemp -d /tmp/dd-web-home-refresh.XXXXXX); git clone --depth 1 --branch dev \"$(git config --get remote.origin.url)\" \"$refresh_root\"; cd \"$refresh_root\"; git rev-parse --short HEAD; printf \"%s\\n\" \"$refresh_root\" >/tmp/dd-web-home-refresh-root'\''",
+                "refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\"",
+                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-dev-server:dev remote/deployments/dev-server",
+                "sudo nerdctl -n k8s.io build --progress=plain -f remote/deployments/web-home-rs/Dockerfile -t docker.io/library/dd-remote-web-home:dev remote",
+                "sudo -u ec2-user -H bash -lc '\''refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\" && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
+                "sudo -u ec2-user -H bash -lc '\''refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\" && kubectl apply -f remote/argocd/apps/dd-gleam-lambda-runner.application.yaml'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-next-runtime'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-gleam-lambda-runner'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd annotate application/dd-gleam-lambda-runner argocd.argoproj.io/refresh=hard --overwrite'\''",
+                "sudo -u ec2-user -H bash -lc '\''refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\" && kubectl apply -f remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n default rollout restart deployment/dd-remote-gateway'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl -n default rollout status deployment/dd-remote-gateway --timeout=300s'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl delete pod -n default -l app=dd-remote-web-home --wait=true --timeout=120s'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl wait --for=condition=Available deployment/dd-remote-web-home -n default --timeout=300s'\''",
-                "sudo -u ec2-user -H bash -lc '\''kubectl get deployment dd-remote-web-home -n default -o wide'\''",
-                "sudo -u ec2-user -H bash -lc '\''kubectl get pods -n default -l app=dd-remote-web-home -o wide'\''"
+                "sudo -u ec2-user -H bash -lc '\''kubectl get deployment dd-remote-gateway dd-remote-web-home -n default -o wide'\''",
+                "sudo -u ec2-user -H bash -lc '\''kubectl get pods -n default -l \"app in (dd-remote-gateway,dd-remote-web-home)\" -o wide'\''"
               ]' \
               --query "Command.CommandId" \
               --output text
           )"
-          aws ssm wait command-executed \
-            --command-id "$command_id" \
-            --instance-id "${{ secrets.AWS_SSM_INSTANCE_ID }}"
+          status=""
+          for attempt in {1..180}; do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "${{ secrets.AWS_SSM_INSTANCE_ID }}" \
+                --query "Status" \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Cancelled|Cancelling|Failed|TimedOut)
+                break
+                ;;
+            esac
+            echo "SSM command $command_id status=${status:-pending} attempt=$attempt/180"
+            sleep 10
+          done
           aws ssm get-command-invocation \
             --command-id "$command_id" \
             --instance-id "${{ secrets.AWS_SSM_INSTANCE_ID }}" \
             --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
-            --output json
+            --output json | tee /tmp/ssm-invocation.json
+          status="$(jq -r '.Status' /tmp/ssm-invocation.json)"
+          test "$status" = "Success"

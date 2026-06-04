@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-spark-pipeline-server
+  namespace: ai-ml
+  labels:
+    app: dd-spark-pipeline-server
+spec:
+  selector:
+    app: dd-spark-pipeline-server
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8085
+  type: ClusterIP

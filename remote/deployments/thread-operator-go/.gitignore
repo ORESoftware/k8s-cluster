@@ -1,0 +1,11 @@
+# Compiled binaries from `go build` runs in this module. The deployed
+# binary is built inside the pod from the hostPath-mounted source, so
+# we never want a host-built binary checked in.
+/operator
+/dd-thread-operator
+
+# Local Go build artefacts that shouldn't leak into the tree.
+/.go-build/
+/go-build/
+*.test
+*.out

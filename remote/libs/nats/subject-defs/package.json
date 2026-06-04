@@ -1,0 +1,24 @@
+{
+  "name": "@dd/nats-subject-defs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "JSON Schema source of truth for NATS subject names, parameterized subject patterns, wildcard subjects, queue groups, and JetStream stream definitions used across dd services. Generated outputs (constants, formatters, parsers) live under generated/<lang>.",
+  "scripts": {
+    "generate": "node src/generate.mjs",
+    "check": "node src/generate.mjs --check",
+    "test": "node --test \"src/**/*.test.mjs\""
+  },
+  "exports": {
+    "./schema": "./schema/index.json",
+    "./typescript": "./generated/typescript/index.ts",
+    "./rust": "./generated/rust/src/lib.rs",
+    "./python": "./generated/python/dd_nats_subject_defs.py",
+    "./gleam": "./generated/gleam/src/dd_nats_subject_defs.gleam",
+    "./erlang": "./generated/erlang/src/dd_nats_subject_defs.erl",
+    "./dart": "./generated/dart/lib/dd_nats_subject_defs.dart",
+    "./go": "./generated/go/ddnats.go",
+    "./java": "./generated/jvm/src/main/java/dd/nats/DdNatsSubjects.java"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

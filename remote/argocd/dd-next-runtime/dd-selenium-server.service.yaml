@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-selenium-server
+  namespace: default
+  labels:
+    app: dd-selenium-server
+spec:
+  selector:
+    app: dd-selenium-server
+  ports:
+    # Only the authenticated Java API is exposed. The Selenium Grid (:4444) stays pod-internal so
+    # it is never reachable as an unauthenticated remote-control endpoint.
+    - name: http
+      port: 8105
+      targetPort: http

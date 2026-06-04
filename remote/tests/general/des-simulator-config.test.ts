@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/des-simulator-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/des-simulator-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust discrete event simulator declares, validates, and runs async DES jobs', async () => {
-  const cargo = await readRepoFile('remote/des-simulator-rs/Cargo.toml');
-  const source = await readRepoFile('remote/des-simulator-rs/src/main.rs');
-  const readme = await readRepoFile('remote/des-simulator-rs/readme.md');
+  const cargo = await readRepoFile('remote/deployments/des-simulator-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/des-simulator-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/des-simulator-rs/readme.md');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-des-simulator.deployment.yaml',
   );
@@ -36,11 +36,18 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(cargo, /name = "dd-des-simulator"/);
   assert.match(cargo, /async-nats = "=0\.38\.0"/);
+  // Source-of-truth NATS subject + queue group constants come from the
+  // generated @dd/nats-subject-defs crate.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?DES_RESULTS_SUBJECT[\s\S]*?DES_SIMULATE_QUEUE_GROUP[\s\S]*?DES_SIMULATE_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?\};/,
+  );
   assert.match(source, /const MODEL_SCHEMA_VERSION: &str = "des\.v1"/);
   assert.match(source, /struct SimulationRequest/);
   assert.match(source, /struct SimulationModel/);
@@ -64,8 +71,9 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   assert.match(source, /\.route\("\/validate", post\(validate_with_metrics\)\)/);
   assert.match(source, /\.route\("\/simulate", post\(simulate_http\)\)/);
   assert.match(source, /\.route\("\/simulations\/:job_id", get\(job_status\)\)/);
-  assert.match(source, /dd\.remote\.des\.simulate/);
-  assert.match(source, /dd\.remote\.des\.results/);
+  assert.match(source, /DES_SIMULATE_SUBJECT/);
+  assert.match(source, /DES_RESULTS_SUBJECT/);
+  assert.match(source, /DES_SIMULATE_QUEUE_GROUP/);
   assert.match(source, /dd_des_simulator_jobs_started_total/);
   assert.match(source, /dd_des_simulator_max_active_jobs/);
   assert.match(source, /dd_des_simulator_validation_errors_total/);
@@ -79,7 +87,7 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   assert.match(readme, /schemaVersion": "des\.v1"/);
 
   assert.match(deployment, /name:\s*dd-des-simulator/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/des-simulator-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/des-simulator-rs/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8099'/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
   assert.match(deployment, /DES_SIMULATE_SUBJECT[\s\S]*dd\.remote\.des\.simulate/);
@@ -119,7 +127,10 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   assert.match(otel, /dd-des-simulator\.default\.svc\.cluster\.local:8099/);
   assert.match(home, /Rust discrete event simulator/);
   assert.match(home, /\/des\/model\/schema/);
-  assert.match(home, /dd\.remote\.des\.simulate/);
+  // web-home-rs now sources the displayed NATS subject from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: DES_SIMULATE_SUBJECT/);
   assert.match(runtimeReadme, /`dd-des-simulator`/);
   assert.match(runtimeReadme, /\/des\/model\/schema/);
 });

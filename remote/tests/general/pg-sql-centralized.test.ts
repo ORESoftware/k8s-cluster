@@ -32,6 +32,13 @@ const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [
   // .sql files are codegen INPUTS (consumed by `sqlc generate`), not authoritative DDL — the
   // pg-defs `--check` workflow keeps them locked to schema/schema.sql.
   'remote/libs/pg-defs/generated/go/sqlc',
+  // Billing owns a separate SQLx-managed ledger database; those migrations are
+  // intentionally outside the shared pg-defs RDS schema.
+  'remote/deployments/billing-server-rs/migrations',
+  // The F# websocket demo owns a service-local PostgreSQL data plane and runs
+  // this idempotent schema at boot. It is intentionally disjoint from shared
+  // RDS pg-defs tables.
+  'remote/deployments/fsharp-ws-server/sql',
 ];
 
 const IGNORED_DIRS = new Set([
@@ -41,12 +48,20 @@ const IGNORED_DIRS = new Set([
   '.idea',
   'node_modules',
   'target',
+  'bin',
+  'obj',
   'build',
   '_build',
   'dist',
   '.terraform',
   '.pnpm-store',
   'agent-transcripts',
+  // `tmp` and `temp` are ignored at the repo root .gitignore level. Tooling
+  // such as scripts/pg/diff/rds-vs-pg-defs.mjs writes scratch *.sql diffs into
+  // remote/libs/pg-defs/tmp/migrations/, and those should NOT trip this guard
+  // because they are not part of the source contract.
+  'tmp',
+  'temp',
 ]);
 
 async function walk(currentRoot: string, repoRootDir: string, sink: string[]): Promise<void> {
@@ -132,6 +147,7 @@ test('schema.sql still defines every table referenced by the generated bindings'
     'agent_remote_dev_threads',
     'agent_remote_dev_tasks',
     'agent_remote_dev_events',
+    'agent_remote_dev_breadcrumbs',
     'agent_remote_dev_artifacts',
     'agent_remote_dev_runtime_locks',
     'lambda_functions',
@@ -180,4 +196,18 @@ test('the tables/ folder is fully retired (no orphan tracking files)', async () 
       `remote/databases/pg/tables/ should be empty (its DDL now lives in schema.sql); found: ${remaining.join(', ')}`,
     );
   }
+});
+
+test('AGENTS.md makes pg-defs the schema source instead of Rust route code', async () => {
+  const agentContext = await readFile(resolve(repoRoot, 'AGENTS.md'), 'utf8');
+  assert.match(
+    agentContext,
+    /RDS Postgres plus `remote\/libs\/pg-defs\/schema\/schema\.sql` are the database contract\./,
+    'AGENTS.md must name RDS plus remote/libs/pg-defs/schema/schema.sql as the database contract.',
+  );
+  assert.match(
+    agentContext,
+    /Do not generate\s+SQL, migrations, or table DDL from Rust code, API route handlers, Rust structs, or other application\s+code\./,
+    'AGENTS.md must keep the global rule: never generate SQL from Rust/API code.',
+  );
 });

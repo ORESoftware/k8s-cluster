@@ -4,17 +4,17 @@ metadata:
   name: dd-spark-pipeline-server
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev
-    path: remote/spark-pipeline-server/k8s/ec2
+    path: remote/deployments/spark-pipeline-server/k8s/ec2
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: ai-ml
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+      - ServerSideApply=true

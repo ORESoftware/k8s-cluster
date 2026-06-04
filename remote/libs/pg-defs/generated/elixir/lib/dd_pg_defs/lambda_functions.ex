@@ -17,7 +17,7 @@ defmodule DdPgDefs.LambdaFunctions do
     field :display_name, :string
     field :description, :string, default: ""
     field :runtime, :string, default: "nodejs"
-    field :entry_command, :string, default: "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
+    field :entry_command, :string, default: "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
     field :function_body, :string
     field :reuse_key, :string
     field :idle_timeout_seconds, :integer, default: 300

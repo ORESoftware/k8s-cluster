@@ -1,6 +1,0 @@
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: dd-remote-queue-consumer-nats-jetstream
-  namespace: default
-$patch: delete

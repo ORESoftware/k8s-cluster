@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev
-    path: remote/gleam-lambda-runner/k8s/ec2
+    path: remote/deployments/gleam-lambda-runner/k8s/ec2
   destination:
     server: https://kubernetes.default.svc
     namespace: default

@@ -1,0 +1,231 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-des-rs
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-des-rs
+spec:
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-des-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-04-soccer-learning-k8s-engine-9ce9838'
+        dd.dev/des-engine-revision: '9ce98383669d11bcc0ebfb0984d3df39bfe180c7'
+      labels:
+        app: dd-des-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: install-yt-dlp
+          image: docker.io/library/python:3.12-slim-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -eu
+              python -m venv /tools/yt-dlp-venv
+              /tools/yt-dlp-venv/bin/python -m pip install --no-cache-dir --upgrade pip yt-dlp
+              /tools/yt-dlp-venv/bin/yt-dlp --version
+          volumeMounts:
+            - name: tools
+              mountPath: /tools
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: des-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/tools/yt-dlp-venv/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Resolve the dd-des-rs server source. The mounted repo on the EC2
+              # node can lag Git after an Argo-only sync, so prefer a fresh clone
+              # of this k8s repo and fall back to the mount only if GitHub is
+              # unavailable.
+              server_src="/opt/dd-next-1/remote/deployments/des-rs"
+              if [ -n "${DES_SERVER_GIT_URL:-}" ]; then
+                rm -rf /tmp/k8s-source
+                if git clone --depth 1 --branch "${DES_SERVER_GIT_REF:-dev}" "${DES_SERVER_GIT_URL}" /tmp/k8s-source; then
+                  server_src=/tmp/k8s-source/remote/deployments/des-rs
+                  echo "[dd-des-rs] server: cloned ${DES_SERVER_GIT_URL}@${DES_SERVER_GIT_REF:-dev} ($(git -C /tmp/k8s-source rev-parse --short HEAD))"
+                else
+                  echo "[dd-des-rs] server clone failed; using mounted source at ${server_src}" >&2
+                fi
+              fi
+              # Resolve the discrete-event-system.rs engine source. Fetch
+              # DES_ENGINE_GIT_REF (default: main) into the writable /tmp
+              # emptyDir and build against it, so the deployment does not depend
+              # on the node having the git submodule checked out. If the clone
+              # fails — or DES_ENGINE_GIT_URL is set empty — we fall back to the
+              # pinned submodule in the read-only repo mount.
+              engine_src="/opt/dd-next-1/remote/submodules/discrete-event-system.rs"
+              if [ -n "${DES_ENGINE_GIT_URL:-}" ]; then
+                rm -rf /tmp/engine
+                if git clone --depth 1 --no-checkout "${DES_ENGINE_GIT_URL}" /tmp/engine \
+                  && git -C /tmp/engine fetch --depth 1 origin "${DES_ENGINE_GIT_REF:-main}" \
+                  && git -C /tmp/engine switch --detach FETCH_HEAD; then
+                  engine_src=/tmp/engine
+                  echo "[dd-des-rs] engine: cloned ${DES_ENGINE_GIT_URL}@${DES_ENGINE_GIT_REF:-main} ($(git -C /tmp/engine rev-parse --short HEAD))"
+                else
+                  echo "[dd-des-rs] engine clone failed; using pinned submodule at ${engine_src}" >&2
+                fi
+              fi
+              # Build from a writable copy so the engine path dependency can be
+              # repointed and Cargo.lock stays writable under the read-only root fs.
+              rm -rf /tmp/des-rs
+              mkdir -p /tmp/des-rs
+              cp -a "${server_src}/." /tmp/des-rs/
+              rm -rf /tmp/des-rs/target
+              cd /tmp/des-rs
+              sed -i "s#path = \"../../submodules/discrete-event-system.rs\"#path = \"${engine_src}\"#" Cargo.toml
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8112'
+            # Server source: fetch this k8s repo at pod start so route code does
+            # not depend on the EC2 hostPath checkout being freshly pulled.
+            - name: DES_SERVER_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: DES_SERVER_GIT_REF
+              value: dev
+            # Engine source: fetch the pinned engine revision at pod start and
+            # build against it. Set DES_ENGINE_GIT_URL to "" to instead use the
+            # pinned git submodule in the mounted repo, or point
+            # DES_ENGINE_GIT_REF at a branch/tag/sha to change the revision.
+            - name: DES_ENGINE_GIT_URL
+              value: https://github.com/ORESoftware/discrete-event-system.rs.git
+            - name: DES_ENGINE_GIT_REF
+              value: codex/soccer-learning-k8s
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/des-rs-target
+            # Keep rustc memory predictable during the cold in-pod release
+            # build. The node has enough headroom, but parallel crate builds
+            # previously pushed the pod over its memory limit before the server
+            # could start.
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            # Writable working dir the engine renders artifacts into (out/ is
+            # created here). Kept on the /tmp emptyDir so the repo can stay
+            # read-only.
+            - name: DES_WORK_DIR
+              value: /tmp/des-rs-work
+            # Fast, HTML-producing simulations rendered once at startup so /out/
+            # has content immediately (ends with build_site for the curated
+            # index.html). Override or set empty to skip. Heavy sims are run on
+            # demand via POST /simulate.
+            #
+            # main_soccer_rotation_anim renders the 7-a-side rotation showcase:
+            # a 13-player squad, four 10-minute periods, the IP/MIP solver with a
+            # "no more than 3 consecutive periods on the field" stamina cap, and
+            # forces ANIMATE on internally (so no global ANIMATE env is needed,
+            # leaving the other startup sims unaffected). Roster/match knobs
+            # (NUM_PLAYERS, NUM_PERIODS, MINUTES_PER_PERIOD, MAX_CONSEC_ON_FIELD,
+            # POLICY) can still be overridden via env if desired.
+            - name: DES_STARTUP_SIMS
+              value: main_shadow_eval,main_empirical_control_report,main_observability_controllability_anim,main_elevator_highrise,main_two_disease,main_soccer_rotation_anim,main_soccer_planner,main_delivery_planner,main_build_site
+          ports:
+            - name: http
+              containerPort: 8112
+          resources:
+            requests:
+              cpu: 50m
+              memory: 2Gi
+            limits:
+              cpu: '2'
+              # Headroom for the cold release build: the pod recompiles the full
+              # des_engine crate (plus axum/tokio) from an empty /tmp on every
+              # (re)start, which peaks higher than des-simulator's smaller build.
+              memory: 8Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build of the engine + server from an empty /tmp can
+            # take several minutes on the 2-CPU node, so allow up to ~15 min
+            # before the startup probe gives up (5s * 180).
+            periodSeconds: 5
+            failureThreshold: 180
+          # The landing page is available as soon as the server binds; rendered
+          # /out artifacts warm in the background and should not remove routing.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: tools
+              mountPath: /tools
+              readOnly: true
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}
+        - name: tools
+          emptyDir: {}

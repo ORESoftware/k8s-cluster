@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/web-home-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/web-home-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -20,130 +20,241 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
-test('rust homepage lists public task paths and protected ops paths', async () => {
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+function regexEscape(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertHomeCode(source: string, value: string): void {
+  assert.match(source, new RegExp(`code \\{ "${regexEscape(value)}" \\}`));
+}
+
+function assertDeploymentRow(source: string, deployment: string, service?: string): void {
+  const deploymentPattern =
+    `DeploymentRow \\{ deployments: &\\[[^\\]]*"${regexEscape(deployment)}"[^\\]]*\\]`;
+  assert.match(source, new RegExp(deploymentPattern));
+
+  if (service) {
+    const rowPattern =
+      `${deploymentPattern}, service: &\\[[^\\]]*"${regexEscape(service)}"[^\\]]*\\]`;
+    assert.match(source, new RegExp(rowPattern));
+  }
+}
+
+function assertPathEntry(source: string, label: string, href?: string): void {
+  const hrefPattern = href === undefined ? '[^}]+' : `Some\\("${regexEscape(href)}"\\)`;
+  assert.match(
+    source,
+    new RegExp(`PathEntry \\{ label: "${regexEscape(label)}", href: ${hrefPattern} \\}`),
+  );
+}
+
+function assertGatewayLocationRequiresAuth(source: string, locationPattern: RegExp): void {
+  const match = source.match(locationPattern);
+  assert.ok(match?.[0], `expected gateway location ${locationPattern} to exist`);
+  assert.match(match[0], /if \(\$dd_gateway_auth_ok = 0\) \{\s*return 401;\s*\}/);
+}
+
+test('rust homepage lists public pages and protected ops/data paths', async () => {
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(home, /dd remote service directory/);
-  assert.match(
-    home,
-    /<code>\/<\/code>, <code>\/home<\/code>, <code>\/agents\/tasks<\/code>, <code>\/agents\/threads<\/code>, <code>\/api\/agents\/tasks<\/code>, <code>\/presence-test<\/code>, <code>\/wss-test<\/code>, and <code>\/webrtc\/<\/code> are open\. Authenticated entries include <code>\/lambdas\/functions<\/code>, <code>\/lambdas\/invoke\/&lt;function-id&gt;<\/code>, <code>\/scrape<\/code>, <code>\/trading<\/code>, <code>\/container-pools<\/code>, <code>\/bastion<\/code>, and <code>\/builds<\/code>; ops paths stay behind internal gateway access\./,
-  );
-  assert.match(home, /<h2>Deployments<\/h2>/);
-  assert.match(home, /<code>dd-web-scraper<\/code>/);
-  assert.match(home, /<code>dd-web-scraper:8097<\/code>/);
-  assert.match(home, /SCRAPER_PARSER_WORKERS=2/);
-  assert.match(home, /<code>dd-build-server<\/code>/);
-  assert.match(home, /<code>dd-build-server:8100<\/code>/);
+  assert.match(home, /Public entrypoint for the EC2 Kubernetes runtime\. Open paths:/);
+  for (const path of [
+    '/',
+    '/home',
+    '/auth',
+    '/agents/tasks',
+    '/agents/threads',
+    '/presence-test',
+    '/wss-test',
+  ]) {
+    assertHomeCode(home, path);
+  }
+  assert.match(home, /Server-auth paths:/);
+  for (const path of [
+    '/lambdas/functions',
+    '/lambdas/invoke/<function-id>',
+    '/api/agents/',
+    '/api/lambdas/',
+    '/api/agent-worker/',
+    '/container-pools',
+    '/bastion/',
+    '/scrape',
+    '/trading/',
+    '/contracts/',
+    '/ml/',
+    '/builds',
+    '/gleam/',
+    '/presence/',
+    '/mcp',
+    '/gcs/',
+    '/webrtc/',
+    '/fsws/',
+    '/mdp/',
+    '/des/',
+  ]) {
+    assertHomeCode(home, path);
+  }
+  assert.match(home, /Internal-access ops:/);
+  for (const path of [
+    '/headlamp/',
+    '/telemetry/',
+    '/prometheus/',
+    '/nats/',
+    '/nats-metrics/',
+    '/reaper/',
+    '/cron/',
+  ]) {
+    assertHomeCode(home, path);
+  }
+  assert.match(home, /h2 \{ "Deployments" \}/);
+  assertDeploymentRow(home, 'dd-web-scraper', 'dd-web-scraper:8097');
+  assert.match(home, /scraper parser workers/);
+  assertDeploymentRow(home, 'dd-build-server', 'dd-build-server:8100');
   assert.match(home, /Rust CI\/CD server/);
-  assert.match(home, /<code>dd-vpn<\/code>/);
-  assert.match(home, /<code>dd-live-mutex<\/code>/);
-  assert.match(home, /<code>dd-bastion<\/code>/);
-  assert.match(home, /<code>dd-redis-cache<\/code>/);
-  assert.match(home, /<code>dd-lock-loadtest-trigger<\/code>/);
-  assert.match(home, /<code>dd-container-pool<\/code>/);
-  assert.match(home, /<h2>Live containers<\/h2>/);
+  assertDeploymentRow(home, 'dd-vpn');
+  assertDeploymentRow(home, 'dd-live-mutex');
+  assertDeploymentRow(home, 'dd-bastion');
+  assertDeploymentRow(home, 'dd-redis-cache');
+  assertDeploymentRow(home, 'dd-lock-loadtest-trigger');
+  assertDeploymentRow(home, 'dd-container-pool');
+  assert.match(home, /h2 \{ "Live containers" \}/);
   assert.match(home, /\/bastion\/runtime\/deployments/);
-  assert.match(home, /home-terminal-frame/);
-  assert.match(home, /Open bastion exec terminal/);
+  assert.match(home, /const runtimeReloadIntervalMs = 30000/);
+  assert.match(home, /HTTP poll plus websocket-triggered refresh/);
+  assert.match(home, /openRuntimeSocket\("gleam", `\/admin\/gleam\/ws\?channel=k8s-runtime-admin&client=home-\$\{clientId\}`\)/);
+  assert.match(home, /openRuntimeSocket\("rust", `\/admin\/webrtc\/runtime\/ws\?client=home-\$\{clientId\}`\)/);
+  assert.match(home, /startTimedReload\(\)/);
+  // The terminal pane is now an inline expanding row underneath the pod
+  // it targets rather than a fixed dock at the bottom of the section. The
+  // logs button uses the same panel mechanism but talks to the new
+  // /bastion/logs/ws endpoint that streams kubectl logs -f.
+  assert.match(home, /openTerminalPanel\(/);
+  assert.match(home, /openLogsPanel\(/);
+  assert.match(home, /Open inline bastion exec terminal/);
+  assert.match(home, /Open inline kubectl logs -f stream/);
   assert.match(home, /const safeBastionTerminalUrl = \(value\) =>/);
-  assert.match(home, /url\.pathname !== "\/bastion\/terminal"/);
-  assert.match(home, /ignored unsafe bastion terminal URL/);
+  assert.match(home, /const safeBastionLogsUrl = \(value\) =>/);
+  assert.match(home, /expectedPath/);
+  assert.match(home, /safeBastionUrl\(value, "\/bastion\/terminal"\)/);
+  assert.match(home, /safeBastionUrl\(value, "\/bastion\/logs\/ws"\)/);
   assert.match(home, /const safeTerminalUrl = safeBastionTerminalUrl\(container\.terminalUrl\)/);
-  assert.match(home, /href="\/builds"/);
-  assert.match(home, /\/builds\/&lt;jobId&gt;\/logs/);
-  assert.match(home, /<code>dd-gleam-lambda-runner<\/code>/);
-  assert.match(home, /<code>dd-gleam-lambda-runner:8083<\/code>/);
+  assert.match(home, /const safeLogsUrl = safeBastionLogsUrl\(container\.logsUrl\)/);
+  // CPU/memory chips are rendered when metrics-server returns a snapshot.
+  assert.match(home, /metricChip\("cpu"/);
+  assert.match(home, /metricChip\("mem"/);
+  assertPathEntry(home, 'POST /builds', '/builds');
+  assertPathEntry(home, '/builds/<jobId>/logs', '/builds/example-job/logs');
+  assertDeploymentRow(home, 'dd-gleam-lambda-runner', 'dd-gleam-lambda-runner:8083');
   assert.match(home, /dd-gleam-lambda-runner-secrets/);
   assert.doesNotMatch(home, /Auth: [^<"]+/);
-  assert.doesNotMatch(home, /Auth header/);
+  assert.match(home, /legacy Auth header/);
   assert.match(home, /Node\.js Coding Agent Task Manager/);
   assert.doesNotMatch(home, /Node control-plane API/);
-  assert.match(
-    home,
-    /href="\/tasks"><code>\/tasks<\/code><\/a><a href="\/status"><code>\/status<\/code><\/a><a href="\/stream\/example-task-id"><code>\/stream\/&lt;uuid&gt;<\/code><\/a>/,
-  );
-  assert.match(
-    home,
-    /href="\/"><code>\/<\/code><\/a><a href="\/home"><code>\/home<\/code><\/a><a href="\/agents\/tasks"><code>\/agents\/tasks<\/code><\/a><a href="\/agents\/threads"><code>\/agents\/threads<\/code><\/a>/,
-  );
-  assert.match(home, /href="\/"><code>\/<\/code><\/a><a href="\/home"><code>\/home<\/code><\/a>/);
+  assertPathEntry(home, '/tasks', '/tasks');
+  assertPathEntry(home, '/status', '/status');
+  assertPathEntry(home, '/stream/<uuid>', '/stream/example-task-id');
+  assertPathEntry(home, '/', '/');
+  assertPathEntry(home, '/home', '/home');
+  assertPathEntry(home, '/agents/tasks', '/agents/tasks');
+  assertPathEntry(home, '/agents/threads', '/agents/threads');
   assert.match(home, /rejects requests for the wrong pinned thread/);
   assert.match(home, /Kubernetes Ingress selects the UUID-bound worker Service/);
   assert.match(home, /Kubernetes per-thread Ingress/);
-  assert.match(home, /\/dd-thread\/&lt;short&gt;/);
-  assert.match(home, /href="\/dd-thread\/example"/);
-  assert.match(home, /\/dd-thread\/&lt;short&gt;\/tasks/);
-  assert.match(home, /href="\/dd-thread\/example\/tasks"/);
+  assertPathEntry(home, '/dd-thread/<short>', '/dd-thread/example');
+  assertPathEntry(home, '/dd-thread/<short>/tasks', '/dd-thread/example/tasks');
   assert.match(home, /Ingress selects the UUID-bound worker Service/);
   assert.doesNotMatch(home, /routes by thread UUID\/taskId/);
-  assert.match(home, /href="\/agents\/tasks"/);
-  assert.match(home, /href="\/agents\/threads"/);
+  assertPathEntry(home, '/agents/tasks', '/agents/tasks');
+  assertPathEntry(home, '/agents/threads', '/agents/threads');
   assert.match(home, /Rust web homepage deployment/);
   assert.match(home, /Service directory plus cluster-served task\/thread\/PR UI/);
   assert.match(home, /stored events/);
-  assert.match(home, /href="\/api\/agents\/tasks"/);
-  assert.match(home, /href="\/api\/agents\/threads\/example-thread-id\/context"/);
-  assert.match(home, /href="\/lambdas\/functions"/);
-  assert.match(home, /href="\/api\/lambdas\/functions"/);
-  assert.match(home, /href="\/lambdas\/invoke\/00000000-0000-0000-0000-000000000000"/);
+  assertPathEntry(home, '/api/agents/tasks', '/api/agents/tasks');
+  assertPathEntry(
+    home,
+    '/api/agents/threads/<uuid>/context',
+    '/api/agents/threads/example-thread-id/context',
+  );
+  assertPathEntry(home, '/lambdas/functions', '/lambdas/functions');
+  assertPathEntry(home, '/api/lambdas/functions', '/api/lambdas/functions');
+  assertPathEntry(
+    home,
+    'POST /lambdas/invoke/<function-id>',
+    '/lambdas/invoke/00000000-0000-0000-0000-000000000000',
+  );
   assert.match(home, /dd-gleam-lambda-runner deployment \+ Rust REST API/);
   assert.match(home, /Gleam child-process runner/);
-  assert.match(home, /href="\/auth\?return=\/home"/);
+  assertPathEntry(home, '/auth', '/auth?return=/home');
   assert.match(home, /Rust PIN auth service/);
   assert.match(home, /dd_auth/);
-  assert.match(home, /href="\/bastion\/runtime\/deployments"/);
+  assertPathEntry(home, '/bastion/runtime/deployments', '/bastion/runtime/deployments');
   assert.match(home, /Rust bastion\/jumphost access broker/);
   assert.match(home, /allowlisted browser exec terminals/);
-  assert.match(home, /option value="echo" \{ "echo" \}/);
+  assert.match(home, /option value="openai-sdk" selected \{ "openai-sdk" \}/);
+  assert.match(home, /option value="generic-ai-sdk" \{ "generic-ai-sdk" \}/);
+  assert.match(home, /option value="opencode-ai-sdk" \{ "opencode-ai-sdk" \}/);
+  assert.doesNotMatch(home, /option value="echo" \{ "echo" \}/);
   assert.match(home, /Queue Consumer/);
   assert.match(home, /Rust NATS shadow preparer \(dd-remote-queue-consumer\)/);
   assert.match(home, /Rust NATS Queue Consumer/);
   assert.match(home, /dd\.remote\.thread\.\*\.tasks/);
-  assert.match(home, /href="\/api\/agents\/threads\/example-thread-id\/prepare"/);
-  assert.match(home, /dd-remote-thread-preparer/);
-  assert.match(home, /It does not execute prompts/);
-  assert.match(home, /href="\/gleam\/home"/);
-  assert.match(home, /href="\/gleam\/healthz"/);
-  assert.match(home, /href="\/gleam\/metrics"/);
-  assert.match(home, /href="\/wss-test\?preset=gleam"/);
-  assert.match(home, /href="\/wss-test\?preset=webrtc"/);
-  assert.match(home, /href="\/wss-test\?preset=gcs"/);
-  assert.match(home, /href="\/wss-test\?preset=fsrx"/);
+  assertPathEntry(
+    home,
+    'POST /api/agents/threads/<uuid>/prepare',
+    '/api/agents/threads/example-thread-id/prepare',
+  );
+  assertDeploymentRow(home, 'dd-remote-queue-consumer');
+  assert.match(home, /routes repo-matched work into warm container pools/);
+  assertPathEntry(home, '/gleam/home', '/gleam/home');
+  assertPathEntry(home, '/gleam/healthz', '/gleam/healthz');
+  assertPathEntry(home, '/gleam/metrics', '/gleam/metrics');
+  assertPathEntry(home, '/presence/healthz', '/presence/healthz');
+  assertPathEntry(home, '/presence/ws');
+  assertPathEntry(home, '/presence/user/<id>/broadcast');
+  assertPathEntry(home, '?preset=gleam', '/wss-test?preset=gleam');
+  assertPathEntry(home, '?preset=webrtc', '/wss-test?preset=webrtc');
+  assertPathEntry(home, '?preset=gcs', '/wss-test?preset=gcs');
+  assertPathEntry(home, '?preset=fsrx', '/wss-test?preset=fsrx');
   assert.match(home, /\/fsws\/ws\/rx-burst/);
   assert.match(home, /id="send-burst"/);
   assert.match(home, /id="start-interval"/);
   assert.match(home, /id="stop-interval"/);
-  assert.match(home, /wss:\/\/54\.91\.17\.58\/gleam\/ws/);
+  assert.match(home, /wss:\/\/<host>\/gleam\/ws/);
   assert.doesNotMatch(home, /ws:\/\/54\.91\.17\.58\/gleam\/ws/);
-  assert.match(home, /href="\/mcp"/);
-  assert.match(home, /href="\/mcp\/home"/);
-  assert.match(home, /href="\/mcp\/healthz"/);
-  assert.match(home, /href="\/mcp\/metrics"/);
+  assertPathEntry(home, '/mcp', '/mcp');
+  assertPathEntry(home, '/mcp/home', '/mcp/home');
+  assertPathEntry(home, '/mcp/healthz', '/mcp/healthz');
+  assertPathEntry(home, '/mcp/metrics', '/mcp/metrics');
   assert.match(home, /Gleam MCP service/);
-  assert.match(home, /href="\/webrtc\/"/);
-  assert.match(home, /href="\/webrtc\/healthz"/);
-  assert.match(home, /href="\/webrtc\/metrics"/);
-  assert.match(home, /href="\/wss-test\?preset=webrtc"/);
+  assertPathEntry(home, '/webrtc/', '/webrtc/');
+  assertPathEntry(home, '/webrtc/healthz', '/webrtc/healthz');
+  assertPathEntry(home, '/webrtc/metrics', '/webrtc/metrics');
+  assertPathEntry(home, '/webrtc/signal test', '/wss-test?preset=webrtc');
   assert.match(home, /\/webrtc\/signal/);
+  assert.match(home, /target: "Rust WebRTC signaling service", access: SERVER_AUTH/);
   assert.match(home, /Rust WebRTC signaling service/);
   assert.match(home, /Media and data channels stay peer-to-peer/);
-  assert.match(home, /href="\/scrape"/);
-  assert.match(home, /href="\/scrape\/healthz"/);
+  assert.match(home, /target: "Rust MDP\/POMDP optimizer", access: SERVER_AUTH/);
+  assert.match(home, /target: "Rust discrete event simulator", access: SERVER_AUTH/);
+  assert.match(home, /target: "dd-fsharp-ws-server", access: SERVER_AUTH/);
+  assertPathEntry(home, 'POST /scrape', '/scrape');
+  assertPathEntry(home, '/scrape/healthz', '/scrape/healthz');
   assert.match(home, /Playwright, Puppeteer, and Browserless scraping/);
   assert.doesNotMatch(home, /href="\/scraper/);
-  assert.match(home, /href="\/telemetry\/"/);
-  assert.match(home, /href="\/prometheus\/"/);
-  assert.match(home, /href="\/nats\/"/);
-  assert.match(home, /href="\/nats-metrics\/metrics"/);
-  assert.match(home, /href="\/reaper\/"/);
-  assert.match(home, /href="\/cron\/"/);
+  assertPathEntry(home, '/telemetry/', '/telemetry/');
+  assertPathEntry(home, '/prometheus/', '/prometheus/');
+  assertPathEntry(home, '/nats/', '/nats/');
+  assertPathEntry(home, '/nats-metrics/metrics', '/nats-metrics/metrics');
+  assertPathEntry(home, '/reaper/', '/reaper/');
+  assertPathEntry(home, '/cron/', '/cron/');
   assert.match(
     home,
     /Today: the public gateway keeps ops paths behind temporary internal access while bootstrap work is still in flight\./,
   );
 });
 
-test('gateway exposes public task paths and protects ops paths behind temporary Auth header', async () => {
+test('gateway exposes public task pages and protects ops/data paths behind temporary Auth header', async () => {
   const gateway = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
   );
@@ -157,7 +268,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   const authService = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-auth.service.yaml',
   );
-  const authServer = await readRepoFile('remote/auth-server-rs/src/main.rs');
+  const authServer = await readRepoFile('remote/deployments/auth-server-rs/src/main.rs');
   const webrtcDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-webrtc-signaling.deployment.yaml',
   );
@@ -183,10 +294,10 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     'remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml',
   );
   const lambdaDeployment = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
   );
   const lambdaService = await readRepoFile(
-    'remote/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
+    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
   );
   const lambdaApp = await readRepoFile(
     'remote/argocd/apps/dd-gleam-lambda-runner.application.yaml',
@@ -219,7 +330,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   assert.match(
     gateway,
-    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\/ws\$"[\s\S]*proxy_pass http:\/\/\$dd_thread_service:8080\/ws\$is_args\$args/,
+    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\/ws\$"[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*proxy_set_header Auth \$dd_gateway_auth_header[\s\S]*proxy_pass http:\/\/\$dd_thread_service:8080\/ws\$is_args\$args/,
   );
   assert.match(
     gateway,
@@ -230,10 +341,10 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /if \(\$dd_thread_proxy_path = ""\) {\s*set \$dd_thread_proxy_path \/;\s*}/,
   );
-  assert.match(gateway, /proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"/);
+  assert.match(gateway, /proxy_set_header X-Server-Auth \$dd_dev_server_auth_header/);
   assert.match(
     gateway,
-    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\(\?<thread_path>\/\.\*\)\?\$"[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade/,
+    /location ~ "\^\/dd-thread\/\(\?<thread_short>\[a-z0-9\]\{12\}\)\(\?<thread_path>\/\.\*\)\?\$"[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header/,
   );
   assert.match(gateway, /proxy_pass http:\/\/\$dd_thread_service:8080\$dd_thread_proxy_path/);
   assert.doesNotMatch(gateway, /location ~ "\^\/dd-thread\/\(\[a-z0-9\]\{12\}\)\(\/\.\*\)\$"/);
@@ -258,7 +369,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   );
   assert.match(
     gateway,
-    /location\s+\/api\/agents\/[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+    /location\s+\/api\/agents\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth \$dd_dev_server_auth_header[\s\S]*proxy_set_header X-Agent-Auth \$dd_dev_server_auth_header[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
   );
   assert.match(gateway, /location = \/bastion[\s\S]*return 302 \/bastion\/profile/);
   assert.match(
@@ -289,6 +400,10 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /location\s+\/lambdas\/invoke\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083\/invoke\//,
   );
+  assert.match(
+    gateway,
+    /location\s+=\s+\/lambdas\/check[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*proxy_set_header X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083\/check/,
+  );
   assert.match(gateway, /location = \/telemetry[\s\S]*return 302 \/telemetry\//);
   assert.match(
     gateway,
@@ -314,6 +429,11 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /location\s+\/gleam\/[\s\S]*dd-gleamlang-server\.default\.svc\.cluster\.local:8081\//,
   );
+  assert.match(gateway, /location = \/presence[\s\S]*return 302 \/presence\//);
+  assert.match(
+    gateway,
+    /location\s+\/presence\/[\s\S]*proxy_set_header Upgrade \$http_upgrade[\s\S]*proxy_set_header Connection \$connection_upgrade[\s\S]*set \$dd_presence_upstream presence-svc\.presence\.svc\.cluster\.local:8081;[\s\S]*rewrite \^\/presence\/\?\(\.\*\)\$ \/\$1 break;[\s\S]*proxy_pass http:\/\/\$dd_presence_upstream/,
+  );
   assert.match(
     gateway,
     /location = \/mcp[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp/,
@@ -322,6 +442,25 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     gateway,
     /location\s+\/mcp\/[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\//,
   );
+  for (const blockPattern of [
+    /location = \/fsws[\s\S]*?\n      \}/,
+    /location \/fsws\/[\s\S]*?\n      \}/,
+    /location = \/presence[\s\S]*?\n      \}/,
+    /location \/presence\/[\s\S]*?\n      \}/,
+    /location = \/gcs[\s\S]*?\n      \}/,
+    /location = \/gcs\/health[\s\S]*?\n      \}/,
+    /location = \/gcs\/ws-health[\s\S]*?\n      \}/,
+    /location \/gcs\/api\/[\s\S]*?\n      \}/,
+    /location \/gcs\/ws\/[\s\S]*?\n      \}/,
+    /location = \/webrtc[\s\S]*?\n      \}/,
+    /location \/webrtc\/[\s\S]*?\n      \}/,
+    /location = \/mdp[\s\S]*?\n      \}/,
+    /location \/mdp\/[\s\S]*?\n      \}/,
+    /location = \/des[\s\S]*?\n      \}/,
+    /location \/des\/[\s\S]*?\n      \}/,
+  ]) {
+    assertGatewayLocationRequiresAuth(gateway, blockPattern);
+  }
   assert.match(gateway, /location = \/webrtc[\s\S]*return 302 \/webrtc\//);
   assert.match(
     gateway,
@@ -348,7 +487,7 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(gateway, /location = \/cron[\s\S]*return 302 \/cron\//);
   assert.match(gateway, /location\s+\/cron\//);
   assert.match(gateway, /location @auth_required/);
-  assert.doesNotMatch(gateway, /requiredHeader":"Auth: all-dogs-go-to-heaven"/);
+  assert.doesNotMatch(gateway, /requiredHeader":"Auth: [^"]+"/);
   assert.match(gateway, /"errMessage":"missing required dd header"/);
   assert.match(gateway, /errMessage":"missing required dd header"/);
   assert.doesNotMatch(gateway, /requiredHeader/);
@@ -376,18 +515,18 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(kustomization, /dd-build-server\.service\.yaml/);
   assert.match(kustomization, /dd-build-server\.networkpolicy\.yaml/);
   assert.match(webrtcDeployment, /name:\s*dd-webrtc-signaling/);
-  assert.match(webrtcDeployment, /cd \/opt\/dd-next-1\/remote\/webrtc-signaling-rs/);
+  assert.match(webrtcDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/webrtc-signaling-rs/);
   assert.match(webrtcDeployment, /containerPort:\s*8095/);
   assert.match(webrtcService, /name:\s*dd-webrtc-signaling/);
   assert.match(webrtcService, /port:\s*8095/);
   assert.match(scraperDeployment, /name:\s*dd-web-scraper/);
-  assert.match(scraperDeployment, /cd \/opt\/dd-next-1\/remote\/web-scraper-service/);
+  assert.match(scraperDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/web-scraper-service/);
   assert.match(scraperDeployment, /containerPort:\s*8097/);
   assert.match(scraperService, /name:\s*dd-web-scraper/);
   assert.match(scraperService, /port:\s*8097/);
   assert.match(buildServerDeployment, /name:\s*dd-build-server/);
   assert.match(buildServerDeployment, /serviceAccountName:\s*dd-build-server/);
-  assert.match(buildServerDeployment, /cd \/opt\/dd-next-1\/remote\/build-server-rs/);
+  assert.match(buildServerDeployment, /cd "\$source_root\/remote\/deployments\/build-server-rs"/);
   assert.match(buildServerDeployment, /containerPort:\s*8100/);
   assert.match(
     buildServerDeployment,
@@ -412,11 +551,11 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(buildServerNetworkPolicy, /app:\s*dd-build-server/);
   assert.match(buildServerNetworkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(lambdaDeployment, /name:\s*dd-gleam-lambda-runner/);
-  assert.match(lambdaDeployment, /cd \/opt\/dd-next-1\/remote\/gleam-lambda-runner/);
+  assert.match(lambdaDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/gleam-lambda-runner/);
   assert.match(lambdaDeployment, /containerPort:\s*8083/);
   assert.match(lambdaService, /name:\s*dd-gleam-lambda-runner/);
   assert.match(lambdaService, /port:\s*8083/);
-  assert.match(lambdaApp, /path:\s*remote\/gleam-lambda-runner\/k8s\/ec2/);
+  assert.match(lambdaApp, /path:\s*remote\/deployments\/gleam-lambda-runner\/k8s\/ec2/);
   assert.match(authDeployment, /name:\s*dd-remote-auth/);
   assert.match(
     authDeployment,
@@ -426,6 +565,12 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
     authDeployment,
     /name:\s*DD_AUTH_COOKIE_VALUE[\s\S]*valueFrom:[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_COOKIE_VALUE/,
   );
+  assert.match(authDeployment, /name:\s*DD_AUTH_COOKIE_MAX_AGE_SECONDS[\s\S]*value:\s*'259200'/);
+  assert.match(
+    authDeployment,
+    /name:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-remote-auth-secrets[\s\S]*key:\s*DD_AUTH_TOTP_SECRET_BASE32[\s\S]*optional:\s*true/,
+  );
+  assert.match(authDeployment, /name:\s*DD_AUTH_TOTP_WINDOW_STEPS[\s\S]*value:\s*'1'/);
   const authPinEnvBlock =
     authDeployment.match(/- name: DD_AUTH_PIN[\s\S]*?(?=\n\s*- name:|\n\s*ports:)/)?.[0] ?? '';
   const authCookieValueEnvBlock =
@@ -445,6 +590,9 @@ test('gateway exposes public task paths and protects ops paths behind temporary 
   assert.match(authServer, /fn auth_pin\(\) -> String/);
   assert.match(authServer, /fn cookie_name\(\) -> String/);
   assert.match(authServer, /fn cookie_value\(\) -> String/);
+  assert.match(authServer, /fn valid_totp_code/);
+  assert.match(authServer, /DD_AUTH_TOTP_SECRET_BASE32/);
+  assert.match(authServer, /constant_time_eq/);
   assert.match(authServer, /fn validate_required_config\(\)/);
   assert.match(authServer, /validate_required_config\(\);/);
   assert.doesNotMatch(authServer, /DD_AUTH_PIN"\)\.unwrap_or_else/);
@@ -473,10 +621,14 @@ test('gateway terminates self-signed TLS on host port 443', async () => {
 
   assert.match(gateway, /listen 80 default_server/);
   assert.match(gateway, /listen 443 ssl default_server/);
+  assert.match(gateway, /return 308 https:\/\/\$host\$request_uri/);
   assert.match(gateway, /ssl_certificate \/etc\/nginx\/tls\/tls\.crt/);
   assert.match(gateway, /ssl_certificate_key \/etc\/nginx\/tls\/tls\.key/);
   assert.match(gateway, /ssl_protocols TLSv1\.2 TLSv1\.3/);
-  assert.match(gateway, /Strict-Transport-Security "max-age=3600" always/);
+  // HSTS max-age is gateway-hardening-controlled and must be at least 90d.
+  // The exact value is asserted in cluster-hardening.test.ts; here we just
+  // confirm the header is present.
+  assert.match(gateway, /Strict-Transport-Security "max-age=\d+" always/);
   assert.match(gateway, /Content-Security-Policy "upgrade-insecure-requests" always/);
   assert.match(gateway, /location \/\.well-known\/acme-challenge\//);
   assert.match(gateway, /root \/var\/www\/acme/);
@@ -491,7 +643,7 @@ test('gateway terminates self-signed TLS on host port 443', async () => {
   assert.match(deployment, /secretName:\s*dd-remote-gateway-tls/);
   assert.match(deployment, /path:\s*\/home\/ec2-user\/dd-acme-webroot/);
   assert.match(deployment, /type:\s*DirectoryOrCreate/);
-  assert.match(runtimeReadme, /HTTP remains enabled for[\s\S]*bootstrap access/);
+  assert.match(runtimeReadme, /HTTP remains enabled for ACME HTTP-01[\s\S]*redirects browser traffic to HTTPS/);
   assert.match(runtimeReadme, /curl -k https:\/\/54\.91\.17\.58\/home/);
   assert.match(runtimeReadme, /\/home\/ec2-user\/dd-acme-webroot/);
   assert.match(runtimeReadme, /--webroot-path \/home\/ec2-user\/dd-acme-webroot/);
@@ -550,16 +702,17 @@ test("gateway Let's Encrypt renewal script stays aligned with the ACME webroot f
 });
 
 test('rust agent tasks page fetches the REST API directly', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const cargo = await readRepoFile('remote/web-home-rs/Cargo.toml');
-  const readme = await readRepoFile('remote/web-home-rs/readme.md');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/web-home-rs/Cargo.toml');
+  const readme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml',
   );
-  const dockerfile = await readRepoFile('remote/web-home-rs/Dockerfile');
+  const dockerfile = await readRepoFile('remote/deployments/web-home-rs/Dockerfile');
   const refreshWorkflow = await readRepoFile(
     '.github/workflows/refresh-remote-web-home-local-image.yml',
   );
+  const maintenanceWorkflow = await readRepoFile('.github/workflows/remote-k8s-maintenance.yml');
   const restDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-rest-api.deployment.yaml',
   );
@@ -569,8 +722,8 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   const restRbac = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-rest-api-rbac.yaml',
   );
-  const restReadme = await readRepoFile('remote/rest-api-rs/readme.md');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const restReadme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(server, /\/agents\/tasks/);
   assert.match(server, /Thread chat/);
@@ -603,12 +756,15 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(deployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
-  assert.match(dockerfile, /COPY --from=build \/app\/target\/release\/dd-remote-web-home/);
+  assert.match(
+    dockerfile,
+    /COPY --from=build \/app\/deployments\/web-home-rs\/target\/release\/dd-remote-web-home/,
+  );
   assert.match(dockerfile, /USER 10001:10001/);
   assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/dd-remote-web-home"\]/);
   assert.match(refreshWorkflow, /name: Refresh remote web-home local image/);
   assert.match(refreshWorkflow, /push:[\s\S]*branches:[\s\S]*-\s*dev/);
-  assert.match(refreshWorkflow, /remote\/web-home-rs\/\*\*/);
+  assert.match(refreshWorkflow, /remote\/deployments\/web-home-rs\/\*\*/);
   assert.match(refreshWorkflow, /workflow_dispatch:/);
   assert.match(refreshWorkflow, /group: refresh-remote-web-home-local-image/);
   assert.match(refreshWorkflow, /ref: dev/);
@@ -619,11 +775,11 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(refreshWorkflow, /aws-region: \$\{\{ vars\.AWS_REGION \|\| secrets\.AWS_REGION \|\| 'us-east-1' \}\}/);
   assert.match(
     refreshWorkflow,
-    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-t docker\.io\/library\/dd-remote-web-home:dev remote\/web-home-rs/,
+    /nerdctl -n k8s\.io build --progress=plain[\s\S]*-f remote\/deployments\/web-home-rs\/Dockerfile -t docker\.io\/library\/dd-remote-web-home:dev remote/,
   );
   assert.match(
     refreshWorkflow,
-    /sudo -u ec2-user -H bash -lc '\\''cd \/home\/ec2-user\/codes\/dd\/dd-next-1 && kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
+    /sudo -u ec2-user -H bash -lc '\\''refresh_root=\$\(cat \/tmp\/dd-web-home-refresh-root\); cd \\"\$refresh_root\\" && kubectl apply -f remote\/argocd\/apps\/dd-next-runtime\.application\.yaml/,
   );
   assert.match(
     refreshWorkflow,
@@ -641,14 +797,31 @@ test('rust agent tasks page fetches the REST API directly', async () => {
     refreshWorkflow,
     /kubectl wait --for=condition=Available deployment\/dd-remote-web-home -n default --timeout=300s/,
   );
-  assert.doesNotMatch(refreshWorkflow, /kubectl apply -f remote\/argocd\/dd-next-runtime/);
+  assert.match(
+    refreshWorkflow,
+    /kubectl apply -f remote\/argocd\/dd-next-runtime\/dd-remote-gateway\.configmap\.yaml/,
+  );
+  assert.match(
+    refreshWorkflow,
+    /kubectl -n default rollout restart deployment\/dd-remote-gateway/,
+  );
+  assert.match(
+    refreshWorkflow,
+    /kubectl -n default rollout status deployment\/dd-remote-gateway --timeout=300s/,
+  );
+  assert.doesNotMatch(refreshWorkflow, /rollout status deployment\/dd-remote-rest-api/);
   assert.match(refreshWorkflow, /aws ssm send-command/);
   assert.match(refreshWorkflow, /aws ssm get-command-invocation/);
+  assert.match(maintenanceWorkflow, /-\s*verify-gleam-mcp-server/);
+  assert.match(maintenanceWorkflow, /verify-gleam-mcp-server\)/);
+  assert.match(maintenanceWorkflow, /remote\/ec2\/verify-gleam-mcp-server\.sh/);
   assert.doesNotMatch(deployment, /REMOTE_REST_API_URL/);
   assert.doesNotMatch(deployment, /dd-remote-web-home-secrets/);
   assert.match(restDeployment, /name:\s*dd-agent-secrets[\s\S]*optional:\s*true/);
   assert.match(restDeployment, /name:\s*dd-remote-rest-api-secrets[\s\S]*optional:\s*true/);
   assert.match(restDeployment, /name:\s*THREAD_RUNTIME_NAMESPACE[\s\S]*value:\s*default/);
+  assert.match(restDeployment, /name:\s*THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED[\s\S]*value:\s*'true'/);
+  assert.match(restDeployment, /name:\s*THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS[\s\S]*value:\s*'4'/);
   assert.match(restDeployment, /name:\s*http[\s\S]*containerPort:\s*8082/);
   assert.match(restDeployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(restDeployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
@@ -704,7 +877,14 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   );
   assert.match(
     restServer,
-    /insert into agent_remote_dev_tasks[\s\S]*\(id, thread_id, user_id, docker_task_id, prompt, status, branch, last_event_seq, is_soft_deleted, started_at, created_at, updated_at, created_by, updated_by\)/,
+    /insert into agent_remote_dev_tasks[\s\S]*\(id, thread_id, user_id, docker_task_id, prompt, status, branch, last_event_seq, meta, is_soft_deleted, started_at, created_at, updated_at, created_by, updated_by\)/,
+  );
+  assert.match(restServer, /meta = agent_remote_dev_tasks\.meta \|\| excluded\.meta/);
+  assert.match(restServer, /struct AgentContextCandidatesRequest/);
+  assert.match(restServer, /async fn fetch_agent_context_candidates_from_postgres/);
+  assert.match(
+    restServer,
+    /\.route\(\s*"\/api\/agents\/threads\/:thread_id\/context-candidates",\s*post\(thread_context_candidates\),\s*\)/,
   );
   assert.match(restServer, /updated_by = excluded\.updated_by/);
   assert.match(restServer, /fn public_data_source_error\(source: &str\) -> String \{/);
@@ -713,6 +893,13 @@ test('rust agent tasks page fetches the REST API directly', async () => {
     restServer,
     /env::var\("THREAD_RUNTIME_NAMESPACE"\)\.unwrap_or_else\(\|_\| "default"\.to_string\(\)\)/,
   );
+  assert.match(maintenanceWorkflow, /free-thread-pod-slots/);
+  assert.match(maintenanceWorkflow, /sync-agent-gh-pat/);
+  assert.match(maintenanceWorkflow, /sync-agent-model-keys/);
+  assert.match(maintenanceWorkflow, /data\["XAI_MODELS"\]\s*=\s*"grok-4\.3"/);
+  assert.match(maintenanceWorkflow, /REMOTE_DEV_GH_PAT/);
+  assert.match(maintenanceWorkflow, /dd\/remote-dev\/agent-secrets/);
+  assert.match(maintenanceWorkflow, /THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS/);
   assert.match(restServer, /source unavailable; check remote REST API server logs/);
   assert.match(
     restServer,
@@ -746,7 +933,7 @@ test('otel collector scrapes the rust REST API', async () => {
 });
 
 test('rust agent tasks page keeps the direct REST fetch error contract', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.doesNotMatch(server, /agent_remote_dev_threads/);
   assert.doesNotMatch(server, /SUPABASE_SERVICE_ROLE_KEY/);
@@ -780,16 +967,16 @@ test('rust agent tasks page keeps the direct REST fetch error contract', async (
 });
 
 test('rust agent threads page renders stored response events and feedback controls', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const readme = await readRepoFile('remote/web-home-rs/readme.md');
-  const restReadme = await readRepoFile('remote/rest-api-rs/readme.md');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
+  const restReadme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
   const threadsJs = server.slice(
     server.indexOf('const AGENTS_THREADS_JS'),
     server.indexOf('const AGENTS_TASKS_CSS'),
   );
 
   assert.match(server, /async fn agents_threads_page\(\) -> impl IntoResponse/);
-  assert.match(server, /use maud::\{html, Markup, DOCTYPE\}/);
+  assert.match(server, /use maud::\{html, Markup, PreEscaped, DOCTYPE\}/);
   assert.match(server, /const AGENTS_THREADS_CSS: &str/);
   assert.match(server, /const AGENTS_THREADS_JS: &str/);
   assert.doesNotMatch(server, /const AGENTS_THREADS_HTML: &str/);
@@ -803,37 +990,51 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
   );
-  assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
+  assert.match(server, /\.stream \{[\s\S]*overflow: visible;[\s\S]*padding-right: 0;/);
   assert.match(server, /\.thread-meta > span \{[\s\S]*text-overflow: ellipsis;/);
   assert.match(
     server,
     /section id="thread-control-panel" class="panel prompt-panel" tabindex="0" aria-label="Thread control panel"/,
   );
-  assert.match(server, /h2 \{ "Thread Control" \}/);
+  assert.match(server, /h2 id="thread-control-title" \{ "Thread Control" \}/);
   assert.match(server, /span id="thread-mode" class="pill warn" \{ "select thread" \}/);
+  assert.match(server, /button id="thread-control-toggle" class="icon" type="button" title="Expand Thread Control" aria-expanded="false" \{ "\^" \}/);
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(
     server,
-    /\.prompt-panel \{[\s\S]*flex: var\(--control-share\) 1 0;[\s\S]*overflow: hidden auto;/,
+    /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: visible;/,
   );
-  assert.match(server, /\.main\.control-wide \{[\s\S]*--control-share: 1\.2;[\s\S]*--lower-share: 0\.8;/);
-  assert.match(server, /\.main\.lower-wide \{[\s\S]*--control-share: 0\.8;[\s\S]*--lower-share: 1\.2;/);
+  assert.match(
+    server,
+    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*min-height: 154px;[\s\S]*max-height: none;[\s\S]*overflow: visible;/,
+  );
+  assert.match(server, /\.main\.control-top #thread-control-panel \{[\s\S]*order: 1;/);
+  assert.match(server, /\.main\.control-bottom #thread-control-panel \{[\s\S]*order: 2;/);
+  assert.match(server, /\.main\.control-sliding-down #thread-control-panel \{[\s\S]*animation: control-dock-travel 1500ms/);
+  assert.match(server, /@keyframes control-dock-morph \{[\s\S]*opacity: 0\.5;/);
+  assert.match(server, /\.main\.control-bottom \.prompt-panel \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
+  assert.match(server, /\.main\.control-bottom\.control-collapsed \.prompt-panel \{[\s\S]*max-height: 66px;[\s\S]*overflow: hidden;/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
-  assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
-  assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
-  assert.match(server, /\.task-stream-grid\.tasks-wide \{[\s\S]*grid-template-columns: minmax\(0, 1\.02fr\) minmax\(0, 0\.98fr\);/);
-  assert.match(server, /\.task-stream-grid\.stream-wide \{[\s\S]*grid-template-columns: minmax\(0, 0\.62fr\) minmax\(0, 1\.38fr\);/);
+  assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
+  assert.match(server, /aside id="previous-tasks-panel" class="tasks-sidebar" tabindex="0" aria-label="Thread tasks sidebar"/);
+  assert.match(server, /\.tasks-sidebar \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/);
+  assert.match(server, /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/);
   assert.match(server, /function setWorkspaceLayout\(mode\) \{/);
+  assert.match(server, /function setControlPosition\(position, options = \{\}\) \{/);
+  assert.match(server, /function setThreadControlCollapsed\(collapsed, options = \{\}\) \{/);
+  assert.match(server, /function syncThreadControlTitle\(\) \{/);
+  assert.match(server, /function scrollResponseToLatest\(\) \{/);
   assert.match(server, /function setThreadUiMode\(modeName\) \{/);
   assert.match(server, /const UUID_PATTERN = \/\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{4\}-\[0-9a-f\]\{12\}\$\/i;/);
   assert.match(server, /function readUuidInput\(id, label, options = \{\}\) \{/);
   assert.match(server, /const requestedThread = queryUuid\(params, "thread"\)/);
   assert.match(server, /const threadId = readUuidInput\("thread-id", "thread UUID", \{ generate: true \}\)/);
-  assert.match(server, /class="main mode-empty control-wide"/);
+  assert.match(server, /class="main mode-empty control-top"/);
   assert.match(server, /\.main\.mode-new #terminal-thread[\s\S]*display: none;/);
   assert.match(server, /\$\("send"\)\.textContent = modeName === "new" \? "Create thread & send"/);
   assert.match(server, /\$\("thread-control-panel"\)\.addEventListener\("click", handleControlPanelClick\)/);
+  assert.match(server, /\$\("thread-control-toggle"\)\.addEventListener\("click", \(event\) => \{/);
   assert.match(server, /function setTaskStreamLayout\(mode\) \{/);
   assert.match(server, /function handleLowerPanelClick\(event, mode\) \{/);
   assert.match(server, /\$\("previous-tasks-panel"\)\.addEventListener\("click", \(event\) => handleLowerPanelClick\(event, "tasks"\)\)/);
@@ -846,6 +1047,16 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /id="thread-list"/);
   assert.match(server, /select id="repo-url"/);
   assert.match(server, /input id="repo-url-new"/);
+  assert.match(server, /input id="zero-context" type="checkbox"/);
+  assert.match(server, /div id="context-candidates" class="context-candidates"/);
+  assert.match(server, /\.context-candidates \{[\s\S]*overflow: auto;/);
+  assert.match(server, /async function loadContextCandidates\(threadId, prompt, repo, baseBranch, promptKey\) \{/);
+  assert.match(
+    server,
+    /fetch\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/context-candidates`,/,
+  );
+  assert.match(server, /contextMode: contextDispatch\.contextMode/);
+  assert.match(server, /contextIds: contextDispatch\.contextIds/);
   assert.match(server, /placeholder="git@github\.com:org\/repo\.git or org\/repo"/);
   assert.match(server, /New repo URL\.\.\./);
   assert.match(server, /const BUILTIN_GIT_REPOS = \[/);
@@ -867,7 +1078,7 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /id="task-list"/);
   assert.match(server, /id="stream"/);
   assert.match(server, /Response stream/);
-  assert.match(server, /Previous tasks/);
+  assert.match(server, /h2 \{ "Tasks" \}/);
   assert.match(
     server,
     /fetch\(`\/api\/agents\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/events\?limit=250`, \{ cache: "no-store" \}\)/,
@@ -898,7 +1109,7 @@ test('rust agent threads page renders stored response events and feedback contro
     server,
     /button id="archive-thread" class="warn" type="button" title="Deep sleep: suspend the thread container" \{ "Archive" \}/,
   );
-  assert.match(server, /Delete \(Delete Container\)/);
+  assert.match(server, /Delete runtime/);
   assert.match(server, /Merge with upstream/);
   assert.match(
     server,
@@ -924,9 +1135,56 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.doesNotMatch(threadsJs, /terminalWindow/);
   assert.match(server, /sendFeedback\(seq, vote, button\)/);
   assert.match(server, /collectText\(raw\)/);
+  assert.match(server, /let sawTextKey = false/);
+  assert.match(server, /if \(!out\.length && !sawTextKey\) \{/);
+  assert.match(server, /model stream \$\{String\(finishReason\)\.toLowerCase\(\)\}/);
+  assert.match(server, /const AGENT_TEXT_JOIN_DELAY_MS = 1200/);
+  assert.match(server, /const AGENT_TEXT_MAX_BUFFER_MS = 3000/);
+  assert.match(server, /function shouldCoalesceAgentText\(row, text\) \{/);
+  assert.match(server, /if \(\/\^model stream\\b\/i\.test\(text\.trim\(\)\)\) return false/);
+  assert.match(server, /function flushAgentTextBuffer\(\) \{/);
+  assert.match(server, /seqLabel: pending\.firstSeq === pending\.lastSeq \? `seq \$\{pending\.firstSeq\}` : `seq \$\{pending\.firstSeq\}-\$\{pending\.lastSeq\}`/);
+  assert.match(server, /for \(const event of data\.events\) renderEventRow\(event\);[\s\S]*flushAgentTextBuffer\(\);/);
+  assert.match(server, /function prettyModelLabel\(provider, model\) \{/);
+  assert.match(server, /return rawModel\.replace\(\/\^gpt-\/i, "chatgpt-"\)/);
+  assert.match(server, /function eventModelLabel\(row\) \{/);
+  assert.match(server, /leftGroup\.className = "event-head-left"/);
+  assert.match(server, /modelChip\.className = "pill model"/);
+  assert.match(server, /leftGroup\.appendChild\(modelChip\)/);
   assert.match(server, /Creating or waking the UUID-bound worker/);
-  assert.match(server, /dispatch still waiting after/);
+  assert.match(server, /NATS container pool/);
+  assert.match(server, /queued via NATS/);
+  assert.match(server, /thread UUID as the affinity key/);
+  assert.match(server, /lastRuntimeData: null/);
+  assert.match(server, /async function readableFetchFailure\(response, label\) \{/);
+  assert.match(server, /retryableGatewayHtml/);
+  assert.match(server, /warnAdminDetail\("snapshot load retrying", failure\.message\);/);
+  assert.match(server, /updateSnapshotRetryState\(failure\.message, options, false\);/);
+  assert.match(server, /function clearSnapshotRetryStatus\(\) \{/);
+  assert.match(server, /gateway returned HTML; retrying/);
+  assert.match(server, /function workerRuntimeWaitDetails\(data\) \{/);
+  assert.match(server, /runtime phase=\$\{summary\.phase \|\| "unknown"\}/);
+  assert.match(server, /node pod-slot limit full/);
+  assert.match(server, /setStatus\(`dispatch waiting \$\{elapsed\}s`\)/);
+  assert.match(server, /message: \[[\s\S]*runtimeSummary,[\s\S]*runtimeDetails,[\s\S]*\]\.filter\(Boolean\)\.join\("\\n"\)/);
+  assert.match(server, /workerRuntimeWaitDetails\(state\.lastRuntimeData\)/);
   assert.match(server, /dispatch accepted/);
+  assert.match(server, /streamTaskId: null/);
+  assert.match(server, /async function loadTaskEvents\(taskId, options = \{\}\) \{/);
+  assert.match(server, /if \(options\.preserveCurrentOnEmpty && state\.streamTaskId === taskId && \$\("stream"\)\.childElementCount > 0\) \{/);
+  assert.match(server, /setStreamState\("showing live status", "ok"\)/);
+  assert.match(server, /if \(options\.appendOnly\) \{[\s\S]*state\.streamTaskId = taskId;[\s\S]*\} else \{[\s\S]*clearStream\("loading events", taskId\);[\s\S]*\}/);
+  assert.match(server, /async function loadSnapshot\(options = \{\}\) \{/);
+  assert.match(server, /snapshotFailures: 0/);
+  assert.match(server, /snapshotRetryTimer: null/);
+  assert.match(server, /function scheduleSnapshotRetry\(options = \{\}\) \{/);
+  assert.match(server, /function handleSnapshotError\(error, options = \{\}\) \{/);
+  assert.match(server, /snapshot unavailable · retrying/);
+  assert.match(server, /snapshot temporarily unavailable; retrying/);
+  assert.match(server, /if \(options\.preserveStreamForTask !== state\.selectedTaskId\) \{[\s\S]*await loadTaskEvents\(state\.selectedTaskId, \{[\s\S]*preserveCurrentOnEmpty: state\.streamTaskId === state\.selectedTaskId,[\s\S]*\}\);[\s\S]*\}/);
+  assert.match(server, /loadSnapshot\(\{ preserveStreamForTask: taskId \}\)/);
+  assert.match(server, /handleSnapshotError\(error, \{ preserveStreamForTask: taskId \}\)/);
+  assert.match(server, /setInterval\(\(\) => \{[\s\S]*loadSnapshot\(\{ preserveStreamForTask: state\.selectedTaskId \}\)[\s\S]*appendOnly: true,[\s\S]*\}, 10000\);/);
   assert.match(
     server,
     /fetch\(`\/api\/agents\/threads\/\$\{encodeURIComponent\(threadId\)\}\/runtime`, \{ cache: "no-store" \}\)/,
@@ -945,7 +1203,7 @@ test('rust agent threads page renders stored response events and feedback contro
     /\.thread-list \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/,
   );
   assert.match(server, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: hidden;/);
-  assert.match(server, /\.stream \{[\s\S]*overflow: auto;[\s\S]*overscroll-behavior: contain;/);
+  assert.match(server, /\.stream \{[\s\S]*overflow: visible;[\s\S]*padding-right: 0;/);
   assert.match(server, /\.thread-meta span \{[\s\S]*text-overflow: ellipsis;/);
   assert.match(
     server,
@@ -957,21 +1215,24 @@ test('rust agent threads page renders stored response events and feedback contro
   assert.match(server, /button, select, input, textarea \{[\s\S]*max-width: 100%;/);
   assert.match(
     server,
-    /\.prompt-panel \{[\s\S]*flex: var\(--control-share\) 1 0;[\s\S]*overflow: hidden auto;[\s\S]*z-index: 1;/,
+    /\.prompt-panel \{[\s\S]*flex: 0 0 auto;[\s\S]*min-height: 154px;[\s\S]*max-height: none;[\s\S]*overflow: visible;[\s\S]*z-index: 1;/,
   );
+  assert.match(server, /\.main\.control-bottom \.prompt-panel \{[\s\S]*position: sticky;[\s\S]*bottom: 0;/);
+  assert.match(server, /\.main\.control-bottom\.control-collapsed #thread-control-subtitle,[\s\S]*\.main\.control-bottom\.control-collapsed \.form-grid,/);
   assert.match(server, /\.prompt-panel label,[\s\S]*\.field-wide \{[\s\S]*min-width: 0;/);
   assert.match(server, /\.prompt-actions,[\s\S]*\.status-line \{[\s\S]*margin-top: 12px;/);
-  assert.match(server, /div id="task-stream-grid" class="grid task-stream-grid"/);
-  assert.match(server, /\.task-stream-grid \{[\s\S]*margin-top: 6px;/);
-  assert.match(server, /\.main > \.grid \{[\s\S]*flex: var\(--lower-share\) 1 0;/);
+  assert.match(server, /section id="response-stream-panel" class="panel stream-panel" tabindex="0" aria-label="Response stream panel"/);
+  assert.match(server, /aside id="previous-tasks-panel" class="tasks-sidebar" tabindex="0" aria-label="Thread tasks sidebar"/);
+  assert.match(server, /\.workspace-flow \{[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: visible;/);
   assert.match(
     server,
-    /\.grid > \.panel > \.task-list,[\s\S]*\.grid > \.panel > \.stream,[\s\S]*\.grid > \.panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/,
+    /\.stream-panel > \.stream,[\s\S]*\.stream-panel > \.terminal-inline \{[\s\S]*flex: 1 1 auto;/,
   );
   assert.match(
     server,
-    /@media \(max-width: 980px\) \{[\s\S]*\.app \{[\s\S]*grid-template-rows: minmax\(150px, 28dvh\) minmax\(0, 1fr\);/,
+    /@media \(max-width: 980px\) \{[\s\S]*\.app \{[\s\S]*grid-template-rows: minmax\(132px, 24dvh\) minmax\(0, 1fr\) minmax\(132px, 28dvh\);/,
   );
+  assert.match(server, /@media \(max-width: 980px\) \{[\s\S]*\.main\.control-bottom\.control-expanded \.prompt-panel \{[\s\S]*z-index: 1200;/);
   assert.match(
     server,
     /@media \(max-width: 980px\) \{[\s\S]*\.main \{[\s\S]*overflow: hidden auto;[\s\S]*overscroll-behavior: contain;/,
@@ -985,8 +1246,8 @@ test('rust agent threads page renders stored response events and feedback contro
 });
 
 test('rust thread chat dispatch keeps worker proxy transport errors server-side', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(
     server,
@@ -999,11 +1260,28 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
     /async fn dispatch_thread_task\(\s*Path\(thread_id\): Path<String>,\s*Json\(request\): Json<DispatchTaskRequest>,\s*\) -> Response \{/s,
   );
   assert.match(restServer, /threadId path\/body mismatch/);
+  assert.match(restServer, /THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED/);
+  assert.match(restServer, /THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS/);
+  assert.match(restServer, /async fn prune_awake_thread_workers_for_capacity/);
+  assert.match(restServer, /labelSelector=app\.kubernetes\.io%2Fcomponent%3Dthread-pod/);
+  assert.match(restServer, /"spec": \{ "replicas": 0 \}/);
+  assert.match(
+    restServer,
+    /prune_awake_thread_workers_for_capacity\(&namespace, &name\)\.await/,
+  );
+  assert.match(restServer, /REMOTE_DEV_THREAD_TITLE/);
+  assert.match(restServer, /title as thread_title/);
   assert.match(restServer, /failed to persist remote task before worker wake/);
   assert.match(
     restServer,
-    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(&request, None\)\.await[\s\S]*ensure_thread_worker\(&thread_id, &repo_config\.repo, &repo_config\.base_branch\)\.await/,
+    /remember_runtime_task\(&request, None\);[\s\S]*persist_runtime_task_to_postgres\(\s*&request,\s*None,\s*if queued_dispatch \{ "queued" \} else \{ "running" \},\s*\)\s*\.await[\s\S]*if queued_dispatch \{[\s\S]*publish_task_dispatch_to_nats\(&request, None\)\.await[\s\S]*ensure_thread_worker\(\s*&thread_id,\s*&repo_config\.repo,\s*&repo_config\.base_branch,\s*repo_config\.thread_title\.as_deref\(\),\s*\)/,
   );
+  assert.match(restServer, /fn default_dispatch_mode/);
+  assert.match(restServer, /REST_API_DEFAULT_DISPATCH_MODE/);
+  assert.match(restServer, /fn is_container_pool_dispatch_mode\(mode: &str\) -> bool/);
+  assert.match(restServer, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(restServer, /StatusCode::ACCEPTED/);
+  assert.match(restServer, /"directDispatch": false/);
   assert.match(restServer, /repo: String,/);
   assert.match(restServer, /base_branch: Option<String>,/);
   assert.match(restServer, /status: "running"\.to_string\(\),/);
@@ -1024,8 +1302,8 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
 });
 
 test('rust agent tasks page exposes runtime thread controls without collapsing admin archival semantics', async () => {
-  const server = await readRepoFile('remote/web-home-rs/src/main.rs');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(
     server,
@@ -1092,7 +1370,7 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
   assert.match(server, /openWorkerWebSocket\(threadId, taskId\)/);
   assert.match(
     server,
-    /appendStreamLine\(`dispatch accepted \$\{textBody\.slice\(0, 500\)\}`\);[\s\S]*openTaskStream\(threadId, taskId\);[\s\S]*openWorkerWebSocket\(threadId, taskId\);/,
+    /appendStreamLine\(`dispatch accepted \$\{adminPreview\("dispatch accepted response body", textBody\)\}`\);[\s\S]*openTaskStream\(threadId, taskId\);[\s\S]*openWorkerWebSocket\(threadId, taskId\);/,
   );
   assert.match(server, /setThreadRuntimeState\(threadId, "sleeping"/);
   assert.match(server, /button\.ok/);
@@ -1113,11 +1391,11 @@ test('rust agent tasks page exposes runtime thread controls without collapsing a
   );
   assert.match(
     server,
-    /appendStreamLine\(`\$\{config\.label\} failed \$\{response\.status\}: \$\{textBody\.slice\(0, 500\)\}`\);/,
+    /appendStreamLine\(`\$\{config\.label\} failed \$\{response\.status\}: \$\{adminPreview\(`\$\{config\.label\} response body`, textBody\)\}`\);/,
   );
   assert.match(
     server,
-    /appendStreamLine\(`\$\{config\.label\} accepted \$\{textBody\.slice\(0, 500\)\}`\);/,
+    /appendStreamLine\(`\$\{config\.label\} accepted \$\{adminPreview\(`\$\{config\.label\} response body`, textBody\)\}`\);/,
   );
   assert.match(
     server,
@@ -1198,7 +1476,7 @@ test('prometheus is configured for gateway subpath hosting', async () => {
 
 test('gleam websocket homepage honors the gateway prefix', async () => {
   const server = await readRepoFile(
-    'remote/gleamlang-server/src/gleamlang_server/http_server.gleam',
+    'remote/deployments/gleamlang-server/src/gleamlang_server/http_server.gleam',
   );
 
   assert.match(server, /startsWith\('\/gleam\/'\)/);
@@ -1206,8 +1484,8 @@ test('gleam websocket homepage honors the gateway prefix', async () => {
 });
 
 test('claude sdk runner pins a runnable native executable before dispatch', async () => {
-  const runner = await readRepoFile('remote/dev-server/src/agents/claude-sdk.ts');
-  const selector = await readRepoFile('remote/dev-server/src/agents/index.ts');
+  const runner = await readRepoFile('remote/deployments/dev-server/src/agents/claude-sdk.ts');
+  const selector = await readRepoFile('remote/deployments/dev-server/src/agents/index.ts');
 
   assert.match(runner, /resolveClaudeCodeExecutable/);
   assert.match(runner, /function isRunnableExecutable\(executable: string\): boolean/);
@@ -1228,18 +1506,18 @@ test('claude sdk runner pins a runnable native executable before dispatch', asyn
 });
 
 test('node worker image is baked with git/ssh and runs as the node user', async () => {
-  const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
+  const dockerfile = await readRepoFile('remote/deployments/dev-server/Dockerfile');
   const bootstrapDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(dockerfile, /apt-get install -y --no-install-recommends[\s\S]*git openssh-client/);
   assert.match(dockerfile, /USER node/);
   assert.match(dockerfile, /ENV HOME=\/home\/node/);
   assert.match(dockerfile, /WORKSPACE_REPO=\/home\/node\/workspace\/repo/);
   assert.match(dockerfile, /GH_DEPLOY_KEY_PATH=\/home\/node\/\.ssh\/id_ed25519/);
-  assert.match(dockerfile, /git clone --depth 50 --branch "\$DD_REPO_REF"/);
+  assert.match(dockerfile, /git clone --depth 1 --branch "\$DD_REPO_REF"/);
   assert.match(bootstrapDeployment, /image: docker\.io\/library\/dd-dev-server:dev/);
   assert.match(bootstrapDeployment, /EVENT_INGEST_URL[\s\S]*\/api\/agents\/events/);
   assert.match(bootstrapDeployment, /EVENT_INGEST_SECRET[\s\S]*SERVER_AUTH_SECRET/);
@@ -1270,9 +1548,9 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
 });
 
 test('node worker opens draft PRs only through explicit control action', async () => {
-  const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
-  const webHome = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(server, /POST \/thread\/open-pr/);
   assert.match(server, /fastify\.post\('\/thread\/open-pr'/);
@@ -1280,6 +1558,9 @@ test('node worker opens draft PRs only through explicit control action', async (
   assert.match(server, /async function openPullRequestForThread/);
   assert.match(server, /async function ensurePullRequestForSession/);
   assert.match(server, /'--draft'/);
+  assert.match(server, /\['rev-list', '--left-right', '--count', `origin\/\$\{config\.baseBranch\}\.\.\.HEAD`\]/);
+  assert.match(server, /'--allow-empty'/);
+  assert.match(server, /postSessionBreadcrumb\(input\.session, 'open-pr-marker-commit'/);
   assert.match(
     server,
     /const title = rawTitle\.startsWith\('WIP - '\) \? rawTitle : `WIP - \$\{rawTitle\}`/,
@@ -1295,8 +1576,8 @@ test('node worker opens draft PRs only through explicit control action', async (
 });
 
 test('node worker exposes manual commit and terminal controls for pinned threads', async () => {
-  const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
+  const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const dockerfile = await readRepoFile('remote/deployments/dev-server/Dockerfile');
 
   assert.match(server, /POST \/thread\/make-commit/);
   assert.match(server, /GET  \/terminal/);

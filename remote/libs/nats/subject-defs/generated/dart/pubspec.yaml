@@ -1,0 +1,7 @@
+name: dd_nats_subject_defs
+description: Generated Dart constants, formatters and parsers for dd NATS subject conventions. Do not edit by hand.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'

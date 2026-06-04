@@ -22,6 +22,9 @@ public class AgentRemoteDevEventEntity {
     @Column(name = "task_id", nullable = false)
     private UUID taskId;
 
+    @Column(name = "thread_id", nullable = true)
+    private UUID threadId;
+
     @Column(name = "seq", nullable = false)
     private Integer seq;
 
@@ -48,6 +51,14 @@ public class AgentRemoteDevEventEntity {
 
     public void setTaskId(UUID taskId) {
         this.taskId = taskId;
+    }
+
+    public UUID getThreadId() {
+        return threadId;
+    }
+
+    public void setThreadId(UUID threadId) {
+        this.threadId = threadId;
     }
 
     public Integer getSeq() {

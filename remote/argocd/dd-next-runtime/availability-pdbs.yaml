@@ -1,0 +1,142 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-remote-auth
+  namespace: default
+  labels:
+    app: dd-remote-auth
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-remote-auth
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-remote-rest-api
+  namespace: default
+  labels:
+    app: dd-remote-rest-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-remote-rest-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-agent-worker-broker
+  namespace: default
+  labels:
+    app: dd-agent-worker-broker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-agent-worker-broker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-des-rs
+  namespace: default
+  labels:
+    app: dd-des-rs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-des-rs
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-contract-service
+  namespace: default
+  labels:
+    app: dd-contract-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-contract-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-mdp-optimizer
+  namespace: default
+  labels:
+    app: dd-mdp-optimizer
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-mdp-optimizer
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-trading-server
+  namespace: default
+  labels:
+    app: dd-trading-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-trading-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-web-scraper
+  namespace: default
+  labels:
+    app: dd-web-scraper
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-web-scraper
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-browser-test-server
+  namespace: default
+  labels:
+    app: dd-browser-test-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-browser-test-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-selenium-server
+  namespace: default
+  labels:
+    app: dd-selenium-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-selenium-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-rust-vapi-phone
+  namespace: default
+  labels:
+    app: dd-rust-vapi-phone
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-rust-vapi-phone

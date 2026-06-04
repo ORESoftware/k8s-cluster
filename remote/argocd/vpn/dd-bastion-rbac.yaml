@@ -7,6 +7,11 @@ metadata:
     app.kubernetes.io/name: dd-bastion
     app.kubernetes.io/part-of: dd-remote-dev
 ---
+# dd-bastion-readonly: read-only listing for the cluster inventory rendered
+# under /home -> "Live containers" and the kubeconfig the bastion mints for
+# operator workstations. No mutation verbs (create/patch/update/delete) are
+# granted on regular API resources, and we explicitly do not grant access to
+# Kubernetes Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -53,6 +58,42 @@ rules:
       - get
       - list
       - watch
+  # Per-pod CPU and memory snapshots from metrics-server. Read-only and
+  # consumed by /bastion/runtime/deployments to drive the "Live containers"
+  # cards on the homepage.
+  - apiGroups: [metrics.k8s.io]
+    resources:
+      - pods
+      - nodes
+    verbs:
+      - get
+      - list
+  # `kubectl logs` for the managed deployment allowlist. Read-only stream of
+  # pod stdout/stderr; no log mutation verbs.
+  - apiGroups: ['']
+    resources:
+      - pods/log
+    verbs:
+      - get
+---
+# dd-bastion-exec: the only mutation verb the bastion needs is `create` on
+# `pods/exec`, which is what `kubectl exec -it ...` issues. It is split into
+# its own ClusterRole + ClusterRoleBinding so an operator can disable just
+# the browser terminal path (BASTION_TERMINAL_ENABLED=false plus this
+# binding removed) without touching the read-only role.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-bastion-exec
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/part-of: dd-remote-dev
+rules:
+  - apiGroups: ['']
+    resources:
+      - pods/exec
+    verbs:
+      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -69,3 +110,19 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: dd-bastion-readonly
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-bastion-exec
+  labels:
+    app.kubernetes.io/name: dd-bastion
+    app.kubernetes.io/part-of: dd-remote-dev
+subjects:
+  - kind: ServiceAccount
+    name: dd-bastion
+    namespace: vpn
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-bastion-exec

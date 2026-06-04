@@ -40,9 +40,30 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
+          # The lock-protocol TCP listener on 6970 is what makes the
+          # broker functional; the optional HTTP listener on 6971 mounts
+          # `/admin/otel`, `/healthz`, `/metrics`, and the status HTML
+          # page (see `remote/submodules/live-mutex/src/http-server.ts`)
+          # and is opted in here through `LMX_HTTP_PORT`. Probes still
+          # target port `lmx` because lock-port-up is the canonical
+          # liveness signal — a wedged HTTP listener should not bounce
+          # the broker.
+          env:
+            - name: LMX_HTTP_HOST
+              value: 0.0.0.0
+            - name: LMX_HTTP_PORT
+              value: '6971'
+            - name: LMX_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-lmx-admin-token
+                  key: LMX_ADMIN_TOKEN
+                  optional: true
           ports:
             - name: lmx
               containerPort: 6970
+            - name: http
+              containerPort: 6971
           resources:
             requests:
               cpu: 50m

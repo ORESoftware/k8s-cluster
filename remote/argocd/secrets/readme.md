@@ -19,11 +19,67 @@ Required AWS secret names:
 - `dd/remote-dev/lambda-runner-secrets` -> creates `dd-gleam-lambda-runner-secrets`
 - `dd/remote-dev/idle-reaper-secret` -> creates `dd-idle-reaper-secret`
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
+- `dd/remote-dev/gleamlang-server-secrets` -> creates `dd-gleamlang-server-secrets`
+- `dd/remote-dev/lmx-admin-token` -> creates `dd-lmx-admin-token`
+- `dd/remote-dev/ai-ml-platform-secrets` -> consumed by the optional AI/ML chart
+  `ExternalSecret`s in `remote/argocd/ai-ml-platform`
+- `dd/remote-dev/big-data-secrets` -> consumed by the optional
+  `remote/submodules/discrete-event-system.rs/k8s/big-data` ExternalSecrets for Airflow and MinIO
+
+`dd/remote-dev/lmx-admin-token` must include `LMX_ADMIN_TOKEN`. Both broker
+deployments (`dd-rust-network-mutex` and `dd-live-mutex`) consume it through
+explicit `secretKeyRef`s so `/admin/*` endpoints stop falling back to a
+literal default baked into the broker source. Rotate
+this value separately from `dd-agent-secrets` so admin-token changes do not
+force the wider Node coding-agent fleet to restart.
+
+`dd/remote-dev/agent-secrets` is also the home for Git credentials used by remote-dev workers.
+Expected Git keys are:
+
+- `DD_REPO_URL`
+- `DD_REPO_REF`
+- `GH_DEPLOY_KEY`
+- `GH_DEPLOY_KEY_PUBLIC` for operator/audit convenience
+- `GH_PAT` if GitHub CLI PR creation needs a token
+
+Never commit deploy-key material or bake it into a worker image. `dd-dev-server` writes
+`GH_DEPLOY_KEY` from the Kubernetes secret to a private key file at container startup.
 
 The `dd-aws-secrets-manager` store uses the External Secrets controller pod's default AWS
-credential chain. On EC2 this means the node instance role must allow
-`secretsmanager:GetSecretValue`, `secretsmanager:DescribeSecret`, and
-`secretsmanager:ListSecretVersionIds` on `arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*`.
+credential chain. On EC2 this is the node instance role `dd-remote-k8s-role`, which also
+backs the `Remote K8s maintenance` GitHub Actions workflow over SSM. A single inline
+policy `ManageRemoteDevSecrets` covers both consumers:
+
+```jsonc
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageRemoteDevSecretsByPath",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",      // workflow: repair-gleamlang-secret bootstrap path
+        "secretsmanager:DescribeSecret",    // ESO + workflow probe
+        "secretsmanager:PutSecretValue",    // workflow: repair-gleamlang-secret
+        "secretsmanager:GetSecretValue",    // ESO read path
+        "secretsmanager:ListSecretVersionIds", // ESO read path
+        "secretsmanager:TagResource"        // future tag-on-create paths
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*"
+    },
+    {
+      "Sid": "ListSecretsForInspect",
+      "Effect": "Allow",
+      "Action": "secretsmanager:ListSecrets", // not resource-scopeable
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Do not split this back into separate read-only and write policies — the bootstrap path
+needs `CreateSecret` and the inspect path needs `ListSecrets`, and the ESO read path is a
+strict subset of those actions on the same resource prefix.
 
 `dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the Gleam lambda runner
 consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda
@@ -33,6 +89,22 @@ definitions by UUID without inheriting the REST API secret bundle.
 `AGENT_TASKS_RDS_DATABASE_URL`; the Gleam MCP server consumes those keys through explicit
 `secretKeyRef`s so read-only MCP tools can inspect database-backed contracts without inheriting the
 broader REST API or agent secret bundles.
+
+`dd/remote-dev/agent-secrets` and `dd/remote-dev/rest-api-secrets` are also projected into `ai-ml`,
+but only as narrow key projections: `SERVER_AUTH_SECRET` for the Python/Spark pipeline auth path,
+and `RDS_DATABASE_URL` for `dd-spark-pipeline-server` Postgres access. Do not use broad
+`dataFrom.extract` projections for the AI/ML namespace.
+
+`dd/remote-dev/big-data-secrets` must include `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`,
+`AIRFLOW_ADMIN_USERNAME`, and `AIRFLOW_ADMIN_PASSWORD` before applying the optional
+`k8s/big-data` bundle. Keep those values rotation-friendly in AWS Secrets Manager; do not restore
+literal fallback credentials to the manifests or docs.
+
+`dd/remote-dev/ai-ml-platform-secrets` must include the chart-owned Airbyte auth, Airbyte
+database/storage, Airflow, Dagster, MLflow, and Qdrant keys listed in
+`remote/argocd/ai-ml-platform/readme.md`. Those chart apps should consume generated Kubernetes
+secrets through `existingSecret`, `existingAdminSecret`, or `secretKeyRef` values; do not commit
+fallback chart credentials such as `admin/admin`, `postgres`, `minio123`, or `test`.
 
 ## Updating Values
 

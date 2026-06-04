@@ -1,0 +1,133 @@
+// Gemini SDK runner - uses Google's official @google/genai package.
+//
+// This is intentionally a model-only runner today. It can read the full
+// thread context injected by server.ts, but it does not yet expose local
+// shell/edit tools like the Claude/OpenAI coding-agent runners.
+
+import type { AgentRunOpts, AgentRunner } from './types.js';
+
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue | undefined };
+type GeminiCandidate = { [key: string]: JsonValue | undefined };
+type GeminiUsageMetadata = { [key: string]: JsonValue | undefined };
+
+type GeminiStreamChunk = {
+  text?: string;
+  candidates?: GeminiCandidate[];
+  usageMetadata?: GeminiUsageMetadata;
+};
+
+type GoogleGenAiClient = {
+  models: {
+    generateContentStream: (_input: {
+      model: string;
+      contents: string;
+    }) => Promise<AsyncIterable<GeminiStreamChunk>>;
+  };
+};
+
+type GoogleGenAiModule = {
+  GoogleGenAI: new (_input: { apiKey: string }) => GoogleGenAiClient;
+};
+
+function geminiErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function isQuotaFailure(error: unknown): boolean {
+  const message = geminiErrorText(error);
+  return (
+    /RESOURCE_EXHAUSTED/i.test(message) ||
+    /Too Many Requests/i.test(message) ||
+    /\b429\b/.test(message) ||
+    /quota/i.test(message)
+  );
+}
+
+async function streamGeminiModel(
+  client: GoogleGenAiClient,
+  opts: AgentRunOpts,
+  model: string,
+): Promise<void> {
+  const stream = await client.models.generateContentStream({
+    model,
+    contents: opts.prompt,
+  });
+
+  let sawText = false;
+  let malformedFinishReason: string | undefined;
+
+  for await (const chunk of stream) {
+    if (opts.signal?.aborted) {
+      opts.emit({ kind: 'stderr', text: 'gemini-sdk: aborted by signal' });
+      return;
+    }
+    const text = typeof chunk.text === 'string' ? chunk.text : '';
+    if (text.trim()) {
+      sawText = true;
+      opts.emit({
+        kind: 'claude',
+        raw: {
+          provider: 'gemini-sdk',
+          model,
+          text,
+          usageMetadata: chunk.usageMetadata,
+        },
+      });
+    }
+    for (const candidate of chunk.candidates ?? []) {
+      const finishReason = candidate.finishReason;
+      if (typeof finishReason === 'string' && /MALFORMED_FUNCTION_CALL/i.test(finishReason)) {
+        malformedFinishReason = finishReason;
+      }
+    }
+  }
+
+  if (malformedFinishReason) {
+    throw new Error(`${model} returned ${malformedFinishReason}`);
+  }
+  if (!sawText) {
+    throw new Error(`${model} produced no text output`);
+  }
+}
+
+export const geminiSdkRunner: AgentRunner = {
+  id: 'gemini-sdk',
+  displayName: 'Gemini SDK',
+
+  async run(opts: AgentRunOpts): Promise<void> {
+    if (!opts.env.GEMINI_API_KEY) {
+      throw new Error('gemini-sdk requires GEMINI_API_KEY in the env allowlist');
+    }
+
+    const genai = (await import('@google/genai')) as GoogleGenAiModule;
+    const client = new genai.GoogleGenAI({ apiKey: opts.env.GEMINI_API_KEY });
+    const primaryModel = opts.env.GEMINI_MODEL ?? 'gemini-3.1-pro-preview';
+    const fallbackModel = opts.env.GEMINI_FALLBACK_MODEL?.trim();
+
+    try {
+      await streamGeminiModel(client, opts, primaryModel);
+    } catch (error) {
+      if (
+        fallbackModel &&
+        fallbackModel !== primaryModel &&
+        !opts.signal?.aborted &&
+        isQuotaFailure(error)
+      ) {
+        await streamGeminiModel(client, opts, fallbackModel);
+        return;
+      }
+      throw error;
+    }
+  },
+};

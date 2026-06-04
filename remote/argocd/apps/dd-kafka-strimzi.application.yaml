@@ -4,14 +4,27 @@ metadata:
   name: dd-kafka-strimzi
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: https://strimzi.io/charts/
     chart: strimzi-kafka-operator
     targetRevision: 1.0.0
     helm:
+      skipTests: true
       values: |
-        watchAnyNamespace: true
+        watchAnyNamespace: false
+        podSecurityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
   destination:
     server: https://kubernetes.default.svc
     namespace: kafka
@@ -20,5 +33,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
       - ServerSideApply=true

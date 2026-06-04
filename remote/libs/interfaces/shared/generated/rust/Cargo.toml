@@ -1,0 +1,12 @@
+[package]
+name = "dd-shared-interfaces"
+version = "0.1.0"
+edition = "2021"
+description = "Generated Rust types for dd shared cross-runtime interfaces. Do not edit by hand."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

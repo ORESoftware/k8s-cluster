@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/mdp-optimizer-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/mdp-optimizer-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,8 +21,8 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust mdp optimizer is deployed, scraped, and connected to nats', async () => {
-  const cargo = await readRepoFile('remote/mdp-optimizer-rs/Cargo.toml');
-  const source = await readRepoFile('remote/mdp-optimizer-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/mdp-optimizer-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/mdp-optimizer-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-mdp-optimizer.deployment.yaml',
   );
@@ -35,10 +35,17 @@ test('rust mdp optimizer is deployed, scraped, and connected to nats', async () 
   );
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
 
   assert.match(cargo, /name\s*=\s*"dd-mdp-optimizer"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
+  // Source-of-truth NATS subject + queue group constants come from the
+  // generated @dd/nats-subject-defs crate.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?MDP_OPTIMIZE_QUEUE_GROUP[\s\S]*?MDP_OPTIMIZE_SUBJECT[\s\S]*?MDP_RESULTS_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?TELEMETRY_MDP_SUBJECT[\s\S]*?\};/,
+  );
   assert.match(source, /fn optimize\(request: OptimizationRequest\)/);
   assert.match(source, /spawn_blocking\(move \|\| optimize\(request\)\)/);
   assert.match(source, /tokio::spawn\(async move/);
@@ -53,10 +60,11 @@ test('rust mdp optimizer is deployed, scraped, and connected to nats', async () 
   assert.match(source, /DefaultBodyLimit::max\(MAX_HTTP_BODY_BYTES\)/);
   assert.match(source, /payload\.len\(\) > MAX_NATS_PAYLOAD_BYTES/);
   assert.match(source, /bounded_impact_delta/);
-  assert.match(source, /dd\.remote\.mdp\.optimize/);
-  assert.match(source, /dd\.remote\.telemetry\.mdp/);
-  assert.match(source, /dd\.remote\.mdp\.results/);
-  assert.match(source, /dd\.remote\.events/);
+  assert.match(source, /MDP_OPTIMIZE_SUBJECT/);
+  assert.match(source, /TELEMETRY_MDP_SUBJECT/);
+  assert.match(source, /MDP_RESULTS_SUBJECT/);
+  assert.match(source, /RUNTIME_EVENTS_SUBJECT/);
+  assert.match(source, /MDP_OPTIMIZE_QUEUE_GROUP/);
   assert.match(source, /dd_mdp_optimizer_optimizations_total/);
   assert.match(source, /dd_mdp_optimizer_telemetry_requests_total/);
   assert.match(source, /dd_mdp_optimizer_nats_telemetry_messages_total/);

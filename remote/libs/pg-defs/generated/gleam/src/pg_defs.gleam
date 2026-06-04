@@ -226,6 +226,89 @@ pub fn validate_known_git_repos_status(value: String) -> Result(String, String) 
   }
 }
 
+pub const agent_context_blobs_table = "agent_context_blobs"
+pub const agent_context_blobs_select_sql = "select\n      id::text as id,\n      project_id,\n      repo_id::text as repo_id,\n      context_id,\n      context_title,\n      context_blob,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_context_blobs"
+
+pub type AgentContextBlobsStatus {
+  AgentContextBlobsStatusActive
+  AgentContextBlobsStatusPaused
+  AgentContextBlobsStatusArchived
+}
+
+pub fn agent_context_blobs_status_to_string(value: AgentContextBlobsStatus) -> String {
+  case value {
+    AgentContextBlobsStatusActive -> "active"
+    AgentContextBlobsStatusPaused -> "paused"
+    AgentContextBlobsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_agent_context_blobs_status(value: String) -> Result(AgentContextBlobsStatus, String) {
+  case value {
+    "active" -> Ok(AgentContextBlobsStatusActive)
+    "paused" -> Ok(AgentContextBlobsStatusPaused)
+    "archived" -> Ok(AgentContextBlobsStatusArchived)
+    _ -> Error("unsupported agent_context_blobs.status: " <> value)
+  }
+}
+
+pub type AgentContextBlobsRow {
+  AgentContextBlobsRow(
+    id: String,
+    project_id: String,
+    repo_id: Option(String),
+    context_id: String,
+    context_title: String,
+    context_blob: String,
+    status: String,
+    labels_json: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_agent_context_blobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("agent_context_blobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_agent_context_blobs_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported agent_context_blobs.status: " <> value)
+  }
+}
+
+pub const agent_context_embeddings_table = "agent_context_embeddings"
+pub const agent_context_embeddings_select_sql = "select\n      id::text as id,\n      context_blob_id::text as context_blob_id,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      content_sha256,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_context_embeddings"
+
+pub type AgentContextEmbeddingsRow {
+  AgentContextEmbeddingsRow(
+    id: String,
+    context_blob_id: String,
+    embedding_model: String,
+    embedding_json: String,
+    embedding_dimensions: Int,
+    content_sha256: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_agent_context_embeddings_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("agent_context_embeddings.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const agent_remote_dev_threads_table = "agent_remote_dev_threads"
 pub const agent_remote_dev_threads_select_sql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      meta::text as meta_json,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads"
 
@@ -406,12 +489,13 @@ pub fn validate_agent_remote_dev_tasks_exit_reason(value: String) -> Result(Stri
 }
 
 pub const agent_remote_dev_events_table = "agent_remote_dev_events"
-pub const agent_remote_dev_events_select_sql = "select\n      id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events"
+pub const agent_remote_dev_events_select_sql = "select\n      id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events"
 
 pub type AgentRemoteDevEventRow {
   AgentRemoteDevEventRow(
     id: Int,
     task_id: String,
+    thread_id: Option(String),
     seq: Int,
     event_kind: String,
     payload_json: String,
@@ -424,6 +508,31 @@ pub fn validate_agent_remote_dev_events_slug(value: String) -> Result(String, St
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("agent_remote_dev_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const agent_remote_dev_breadcrumbs_table = "agent_remote_dev_breadcrumbs"
+pub const agent_remote_dev_breadcrumbs_select_sql = "select\n      id,\n      thread_id::text as thread_id,\n      task_id::text as task_id,\n      kind,\n      payload::text as payload_json,\n      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as emitted_at,\n      pod_name,\n      branch,\n      provider\n    from agent_remote_dev_breadcrumbs"
+
+pub type AgentRemoteDevBreadcrumbRow {
+  AgentRemoteDevBreadcrumbRow(
+    id: Int,
+    thread_id: String,
+    task_id: Option(String),
+    kind: String,
+    payload_json: String,
+    emitted_at: String,
+    pod_name: Option(String),
+    branch: Option(String),
+    provider: Option(String),
+  )
+}
+
+pub fn validate_agent_remote_dev_breadcrumbs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("agent_remote_dev_breadcrumbs.slug must be a lowercase slug 3-120 characters long")
   }
 }
 
@@ -544,6 +653,141 @@ pub fn validate_agent_remote_dev_runtime_locks_status(value: String) -> Result(S
   case list.contains(["active", "released", "expired"], value) {
     True -> Ok(value)
     False -> Error("unsupported agent_remote_dev_runtime_locks.status: " <> value)
+  }
+}
+
+pub const mip_solver_sessions_table = "mip_solver_sessions"
+pub const mip_solver_sessions_select_sql = "select\n      session_id,\n      revision,\n      problem::text as problem_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_sessions"
+
+pub type MipSolverSessionsRow {
+  MipSolverSessionsRow(
+    session_id: String,
+    revision: Int,
+    problem_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_mip_solver_sessions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const mip_solver_solves_table = "mip_solver_solves"
+pub const mip_solver_solves_select_sql = "select\n      solve_id,\n      request_id,\n      revision,\n      status,\n      node_id,\n      node_role,\n      problem::text as problem_json,\n      options::text as options_json,\n      response::text as response_json,\n      jobs_expected,\n      jobs_published,\n      jobs_completed,\n      jobs_redelegated,\n      jobs_split,\n      timed_out,\n      distributed,\n      warnings::text as warnings_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from mip_solver_solves"
+
+pub type MipSolverSolvesNodeRole {
+  MipSolverSolvesNodeRoleMaster
+  MipSolverSolvesNodeRoleSlave
+}
+
+pub fn mip_solver_solves_node_role_to_string(value: MipSolverSolvesNodeRole) -> String {
+  case value {
+    MipSolverSolvesNodeRoleMaster -> "master"
+    MipSolverSolvesNodeRoleSlave -> "slave"
+  }
+}
+
+pub fn parse_mip_solver_solves_node_role(value: String) -> Result(MipSolverSolvesNodeRole, String) {
+  case value {
+    "master" -> Ok(MipSolverSolvesNodeRoleMaster)
+    "slave" -> Ok(MipSolverSolvesNodeRoleSlave)
+    _ -> Error("unsupported mip_solver_solves.node_role: " <> value)
+  }
+}
+
+pub type MipSolverSolvesRow {
+  MipSolverSolvesRow(
+    solve_id: String,
+    request_id: String,
+    revision: Int,
+    status: String,
+    node_id: String,
+    node_role: String,
+    problem_json: String,
+    options_json: String,
+    response_json: String,
+    jobs_expected: Int,
+    jobs_published: Int,
+    jobs_completed: Int,
+    jobs_redelegated: Int,
+    jobs_split: Int,
+    timed_out: Bool,
+    distributed: Bool,
+    warnings_json: String,
+    started_at: String,
+    updated_at: String,
+    finished_at: Option(String),
+  )
+}
+
+pub fn validate_mip_solver_solves_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_solves.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_mip_solver_solves_node_role(value: String) -> Result(String, String) {
+  case list.contains(["master", "slave"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported mip_solver_solves.node_role: " <> value)
+  }
+}
+
+pub const mip_solver_jobs_table = "mip_solver_jobs"
+pub const mip_solver_jobs_select_sql = "select\n      job_id,\n      solve_id,\n      root_job_id,\n      retry_index,\n      depth,\n      status,\n      worker_node,\n      job_payload::text as job_payload_json,\n      result_payload::text as result_payload_json,\n      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as submitted_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_jobs"
+
+pub type MipSolverJobsRow {
+  MipSolverJobsRow(
+    job_id: String,
+    solve_id: String,
+    root_job_id: String,
+    retry_index: Int,
+    depth: Int,
+    status: String,
+    worker_node: Option(String),
+    job_payload_json: String,
+    result_payload_json: String,
+    submitted_at: String,
+    finished_at: Option(String),
+    updated_at: String,
+  )
+}
+
+pub fn validate_mip_solver_jobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_jobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const mip_solver_events_table = "mip_solver_events"
+pub const mip_solver_events_select_sql = "select\n      id,\n      solve_id,\n      session_id,\n      job_id,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from mip_solver_events"
+
+pub type MipSolverEventsRow {
+  MipSolverEventsRow(
+    id: Int,
+    solve_id: Option(String),
+    session_id: Option(String),
+    job_id: Option(String),
+    event_kind: String,
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_mip_solver_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mip_solver_events.slug must be a lowercase slug 3-120 characters long")
   }
 }
 
@@ -702,6 +946,255 @@ pub fn validate_lambda_functions_status(value: String) -> Result(String, String)
   case list.contains(["draft", "active", "paused", "archived"], value) {
     True -> Ok(value)
     False -> Error("unsupported lambda_functions.status: " <> value)
+  }
+}
+
+pub const container_pool_image_revisions_table = "container_pool_image_revisions"
+pub const container_pool_image_revisions_select_sql = "select\n      id::text as id,\n      image_slug,\n      image_ref,\n      dockerfile_path,\n      build_context,\n      dockerfile_text,\n      dockerfile_sha256,\n      source,\n      notes,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_image_revisions"
+
+pub type ContainerPoolImageRevisionsSource {
+  ContainerPoolImageRevisionsSourceDiskDefault
+  ContainerPoolImageRevisionsSourceUser
+  ContainerPoolImageRevisionsSourceSystem
+}
+
+pub fn container_pool_image_revisions_source_to_string(value: ContainerPoolImageRevisionsSource) -> String {
+  case value {
+    ContainerPoolImageRevisionsSourceDiskDefault -> "disk-default"
+    ContainerPoolImageRevisionsSourceUser -> "user"
+    ContainerPoolImageRevisionsSourceSystem -> "system"
+  }
+}
+
+pub fn parse_container_pool_image_revisions_source(value: String) -> Result(ContainerPoolImageRevisionsSource, String) {
+  case value {
+    "disk-default" -> Ok(ContainerPoolImageRevisionsSourceDiskDefault)
+    "user" -> Ok(ContainerPoolImageRevisionsSourceUser)
+    "system" -> Ok(ContainerPoolImageRevisionsSourceSystem)
+    _ -> Error("unsupported container_pool_image_revisions.source: " <> value)
+  }
+}
+
+pub type ContainerPoolImageRevisionsStatus {
+  ContainerPoolImageRevisionsStatusCandidate
+  ContainerPoolImageRevisionsStatusActive
+  ContainerPoolImageRevisionsStatusArchived
+}
+
+pub fn container_pool_image_revisions_status_to_string(value: ContainerPoolImageRevisionsStatus) -> String {
+  case value {
+    ContainerPoolImageRevisionsStatusCandidate -> "candidate"
+    ContainerPoolImageRevisionsStatusActive -> "active"
+    ContainerPoolImageRevisionsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_container_pool_image_revisions_status(value: String) -> Result(ContainerPoolImageRevisionsStatus, String) {
+  case value {
+    "candidate" -> Ok(ContainerPoolImageRevisionsStatusCandidate)
+    "active" -> Ok(ContainerPoolImageRevisionsStatusActive)
+    "archived" -> Ok(ContainerPoolImageRevisionsStatusArchived)
+    _ -> Error("unsupported container_pool_image_revisions.status: " <> value)
+  }
+}
+
+pub type ContainerPoolImageRevisionsRow {
+  ContainerPoolImageRevisionsRow(
+    id: String,
+    image_slug: String,
+    image_ref: String,
+    dockerfile_path: String,
+    build_context: String,
+    dockerfile_text: String,
+    dockerfile_sha256: String,
+    source: String,
+    notes: String,
+    status: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_container_pool_image_revisions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("container_pool_image_revisions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_container_pool_image_revisions_source(value: String) -> Result(String, String) {
+  case list.contains(["disk-default", "user", "system"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_image_revisions.source: " <> value)
+  }
+}
+
+pub fn validate_container_pool_image_revisions_status(value: String) -> Result(String, String) {
+  case list.contains(["candidate", "active", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_image_revisions.status: " <> value)
+  }
+}
+
+pub const container_pool_build_runs_table = "container_pool_build_runs"
+pub const container_pool_build_runs_select_sql = "select\n      id::text as id,\n      image_slug,\n      revision_id::text as revision_id,\n      image_ref,\n      candidate_tag,\n      build_status,\n      test_status,\n      overall_status,\n      test_command,\n      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_started_at,\n      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_finished_at,\n      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_started_at,\n      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_finished_at,\n      build_log_excerpt,\n      test_log_excerpt,\n      error_message,\n      triggered_by::text as triggered_by,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from container_pool_build_runs"
+
+pub type ContainerPoolBuildRunsBuildStatus {
+  ContainerPoolBuildRunsBuildStatusQueued
+  ContainerPoolBuildRunsBuildStatusBuilding
+  ContainerPoolBuildRunsBuildStatusBuilt
+  ContainerPoolBuildRunsBuildStatusFailed
+  ContainerPoolBuildRunsBuildStatusSkipped
+  ContainerPoolBuildRunsBuildStatusCancelled
+}
+
+pub fn container_pool_build_runs_build_status_to_string(value: ContainerPoolBuildRunsBuildStatus) -> String {
+  case value {
+    ContainerPoolBuildRunsBuildStatusQueued -> "queued"
+    ContainerPoolBuildRunsBuildStatusBuilding -> "building"
+    ContainerPoolBuildRunsBuildStatusBuilt -> "built"
+    ContainerPoolBuildRunsBuildStatusFailed -> "failed"
+    ContainerPoolBuildRunsBuildStatusSkipped -> "skipped"
+    ContainerPoolBuildRunsBuildStatusCancelled -> "cancelled"
+  }
+}
+
+pub fn parse_container_pool_build_runs_build_status(value: String) -> Result(ContainerPoolBuildRunsBuildStatus, String) {
+  case value {
+    "queued" -> Ok(ContainerPoolBuildRunsBuildStatusQueued)
+    "building" -> Ok(ContainerPoolBuildRunsBuildStatusBuilding)
+    "built" -> Ok(ContainerPoolBuildRunsBuildStatusBuilt)
+    "failed" -> Ok(ContainerPoolBuildRunsBuildStatusFailed)
+    "skipped" -> Ok(ContainerPoolBuildRunsBuildStatusSkipped)
+    "cancelled" -> Ok(ContainerPoolBuildRunsBuildStatusCancelled)
+    _ -> Error("unsupported container_pool_build_runs.build_status: " <> value)
+  }
+}
+
+pub type ContainerPoolBuildRunsTestStatus {
+  ContainerPoolBuildRunsTestStatusNotStarted
+  ContainerPoolBuildRunsTestStatusPending
+  ContainerPoolBuildRunsTestStatusTesting
+  ContainerPoolBuildRunsTestStatusPassed
+  ContainerPoolBuildRunsTestStatusFailed
+  ContainerPoolBuildRunsTestStatusSkipped
+  ContainerPoolBuildRunsTestStatusCancelled
+}
+
+pub fn container_pool_build_runs_test_status_to_string(value: ContainerPoolBuildRunsTestStatus) -> String {
+  case value {
+    ContainerPoolBuildRunsTestStatusNotStarted -> "not_started"
+    ContainerPoolBuildRunsTestStatusPending -> "pending"
+    ContainerPoolBuildRunsTestStatusTesting -> "testing"
+    ContainerPoolBuildRunsTestStatusPassed -> "passed"
+    ContainerPoolBuildRunsTestStatusFailed -> "failed"
+    ContainerPoolBuildRunsTestStatusSkipped -> "skipped"
+    ContainerPoolBuildRunsTestStatusCancelled -> "cancelled"
+  }
+}
+
+pub fn parse_container_pool_build_runs_test_status(value: String) -> Result(ContainerPoolBuildRunsTestStatus, String) {
+  case value {
+    "not_started" -> Ok(ContainerPoolBuildRunsTestStatusNotStarted)
+    "pending" -> Ok(ContainerPoolBuildRunsTestStatusPending)
+    "testing" -> Ok(ContainerPoolBuildRunsTestStatusTesting)
+    "passed" -> Ok(ContainerPoolBuildRunsTestStatusPassed)
+    "failed" -> Ok(ContainerPoolBuildRunsTestStatusFailed)
+    "skipped" -> Ok(ContainerPoolBuildRunsTestStatusSkipped)
+    "cancelled" -> Ok(ContainerPoolBuildRunsTestStatusCancelled)
+    _ -> Error("unsupported container_pool_build_runs.test_status: " <> value)
+  }
+}
+
+pub type ContainerPoolBuildRunsOverallStatus {
+  ContainerPoolBuildRunsOverallStatusQueued
+  ContainerPoolBuildRunsOverallStatusRunning
+  ContainerPoolBuildRunsOverallStatusPassed
+  ContainerPoolBuildRunsOverallStatusFailed
+  ContainerPoolBuildRunsOverallStatusCancelled
+  ContainerPoolBuildRunsOverallStatusErrored
+}
+
+pub fn container_pool_build_runs_overall_status_to_string(value: ContainerPoolBuildRunsOverallStatus) -> String {
+  case value {
+    ContainerPoolBuildRunsOverallStatusQueued -> "queued"
+    ContainerPoolBuildRunsOverallStatusRunning -> "running"
+    ContainerPoolBuildRunsOverallStatusPassed -> "passed"
+    ContainerPoolBuildRunsOverallStatusFailed -> "failed"
+    ContainerPoolBuildRunsOverallStatusCancelled -> "cancelled"
+    ContainerPoolBuildRunsOverallStatusErrored -> "errored"
+  }
+}
+
+pub fn parse_container_pool_build_runs_overall_status(value: String) -> Result(ContainerPoolBuildRunsOverallStatus, String) {
+  case value {
+    "queued" -> Ok(ContainerPoolBuildRunsOverallStatusQueued)
+    "running" -> Ok(ContainerPoolBuildRunsOverallStatusRunning)
+    "passed" -> Ok(ContainerPoolBuildRunsOverallStatusPassed)
+    "failed" -> Ok(ContainerPoolBuildRunsOverallStatusFailed)
+    "cancelled" -> Ok(ContainerPoolBuildRunsOverallStatusCancelled)
+    "errored" -> Ok(ContainerPoolBuildRunsOverallStatusErrored)
+    _ -> Error("unsupported container_pool_build_runs.overall_status: " <> value)
+  }
+}
+
+pub type ContainerPoolBuildRunsRow {
+  ContainerPoolBuildRunsRow(
+    id: String,
+    image_slug: String,
+    revision_id: String,
+    image_ref: String,
+    candidate_tag: String,
+    build_status: String,
+    test_status: String,
+    overall_status: String,
+    test_command: String,
+    build_started_at: Option(String),
+    build_finished_at: Option(String),
+    test_started_at: Option(String),
+    test_finished_at: Option(String),
+    build_log_excerpt: String,
+    test_log_excerpt: String,
+    error_message: Option(String),
+    triggered_by: Option(String),
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_container_pool_build_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("container_pool_build_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_container_pool_build_runs_build_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "building", "built", "failed", "skipped", "cancelled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_build_runs.build_status: " <> value)
+  }
+}
+
+pub fn validate_container_pool_build_runs_test_status(value: String) -> Result(String, String) {
+  case list.contains(["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_build_runs.test_status: " <> value)
+  }
+}
+
+pub fn validate_container_pool_build_runs_overall_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "passed", "failed", "cancelled", "errored"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported container_pool_build_runs.overall_status: " <> value)
   }
 }
 
@@ -950,6 +1443,644 @@ pub fn validate_presence_consumer_checkpoints_slug(value: String) -> Result(Stri
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("presence_consumer_checkpoints.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const des_soccer_learning_experiments_table = "des_soccer_learning_experiments"
+pub const des_soccer_learning_experiments_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      status,\n      config::text as config_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_experiments"
+
+pub type DesSoccerLearningExperimentsStatus {
+  DesSoccerLearningExperimentsStatusActive
+  DesSoccerLearningExperimentsStatusPaused
+  DesSoccerLearningExperimentsStatusArchived
+}
+
+pub fn des_soccer_learning_experiments_status_to_string(value: DesSoccerLearningExperimentsStatus) -> String {
+  case value {
+    DesSoccerLearningExperimentsStatusActive -> "active"
+    DesSoccerLearningExperimentsStatusPaused -> "paused"
+    DesSoccerLearningExperimentsStatusArchived -> "archived"
+  }
+}
+
+pub fn parse_des_soccer_learning_experiments_status(value: String) -> Result(DesSoccerLearningExperimentsStatus, String) {
+  case value {
+    "active" -> Ok(DesSoccerLearningExperimentsStatusActive)
+    "paused" -> Ok(DesSoccerLearningExperimentsStatusPaused)
+    "archived" -> Ok(DesSoccerLearningExperimentsStatusArchived)
+    _ -> Error("unsupported des_soccer_learning_experiments.status: " <> value)
+  }
+}
+
+pub type DesSoccerLearningExperimentsRow {
+  DesSoccerLearningExperimentsRow(
+    id: String,
+    slug: String,
+    display_name: String,
+    description: String,
+    status: String,
+    config_json: String,
+    labels_json: String,
+    meta_data_json: String,
+    is_soft_deleted: Bool,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_des_soccer_learning_experiments_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_experiments.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_experiments_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "paused", "archived"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_experiments.status: " <> value)
+  }
+}
+
+pub const des_soccer_learning_policy_versions_table = "des_soccer_learning_policy_versions"
+pub const des_soccer_learning_policy_versions_select_sql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      parent_policy_version_id::text as parent_policy_version_id,\n      generation,\n      version_label,\n      source_kind,\n      status,\n      options::text as options_json,\n      config::text as config_json,\n      lineage::text as lineage_json,\n      metrics::text as metrics_json,\n      entry_count,\n      target_entry_count,\n      visit_count,\n      fitness_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_policy_versions"
+
+pub type DesSoccerLearningPolicyVersionsSourceKind {
+  DesSoccerLearningPolicyVersionsSourceKindSeed
+  DesSoccerLearningPolicyVersionsSourceKindMerge
+  DesSoccerLearningPolicyVersionsSourceKindMutation
+  DesSoccerLearningPolicyVersionsSourceKindCrossover
+  DesSoccerLearningPolicyVersionsSourceKindImport
+  DesSoccerLearningPolicyVersionsSourceKindReplay
+}
+
+pub fn des_soccer_learning_policy_versions_source_kind_to_string(value: DesSoccerLearningPolicyVersionsSourceKind) -> String {
+  case value {
+    DesSoccerLearningPolicyVersionsSourceKindSeed -> "seed"
+    DesSoccerLearningPolicyVersionsSourceKindMerge -> "merge"
+    DesSoccerLearningPolicyVersionsSourceKindMutation -> "mutation"
+    DesSoccerLearningPolicyVersionsSourceKindCrossover -> "crossover"
+    DesSoccerLearningPolicyVersionsSourceKindImport -> "import"
+    DesSoccerLearningPolicyVersionsSourceKindReplay -> "replay"
+  }
+}
+
+pub fn parse_des_soccer_learning_policy_versions_source_kind(value: String) -> Result(DesSoccerLearningPolicyVersionsSourceKind, String) {
+  case value {
+    "seed" -> Ok(DesSoccerLearningPolicyVersionsSourceKindSeed)
+    "merge" -> Ok(DesSoccerLearningPolicyVersionsSourceKindMerge)
+    "mutation" -> Ok(DesSoccerLearningPolicyVersionsSourceKindMutation)
+    "crossover" -> Ok(DesSoccerLearningPolicyVersionsSourceKindCrossover)
+    "import" -> Ok(DesSoccerLearningPolicyVersionsSourceKindImport)
+    "replay" -> Ok(DesSoccerLearningPolicyVersionsSourceKindReplay)
+    _ -> Error("unsupported des_soccer_learning_policy_versions.source_kind: " <> value)
+  }
+}
+
+pub type DesSoccerLearningPolicyVersionsStatus {
+  DesSoccerLearningPolicyVersionsStatusCandidate
+  DesSoccerLearningPolicyVersionsStatusActive
+  DesSoccerLearningPolicyVersionsStatusArchived
+  DesSoccerLearningPolicyVersionsStatusRejected
+}
+
+pub fn des_soccer_learning_policy_versions_status_to_string(value: DesSoccerLearningPolicyVersionsStatus) -> String {
+  case value {
+    DesSoccerLearningPolicyVersionsStatusCandidate -> "candidate"
+    DesSoccerLearningPolicyVersionsStatusActive -> "active"
+    DesSoccerLearningPolicyVersionsStatusArchived -> "archived"
+    DesSoccerLearningPolicyVersionsStatusRejected -> "rejected"
+  }
+}
+
+pub fn parse_des_soccer_learning_policy_versions_status(value: String) -> Result(DesSoccerLearningPolicyVersionsStatus, String) {
+  case value {
+    "candidate" -> Ok(DesSoccerLearningPolicyVersionsStatusCandidate)
+    "active" -> Ok(DesSoccerLearningPolicyVersionsStatusActive)
+    "archived" -> Ok(DesSoccerLearningPolicyVersionsStatusArchived)
+    "rejected" -> Ok(DesSoccerLearningPolicyVersionsStatusRejected)
+    _ -> Error("unsupported des_soccer_learning_policy_versions.status: " <> value)
+  }
+}
+
+pub type DesSoccerLearningPolicyVersionsRow {
+  DesSoccerLearningPolicyVersionsRow(
+    id: String,
+    experiment_id: String,
+    parent_policy_version_id: Option(String),
+    generation: Int,
+    version_label: String,
+    source_kind: String,
+    status: String,
+    options_json: String,
+    config_json: String,
+    lineage_json: String,
+    metrics_json: String,
+    entry_count: Int,
+    target_entry_count: Int,
+    visit_count: Int,
+    fitness_micros: Int,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_des_soccer_learning_policy_versions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_policy_versions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_policy_versions_source_kind(value: String) -> Result(String, String) {
+  case list.contains(["seed", "merge", "mutation", "crossover", "import", "replay"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_policy_versions.source_kind: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_policy_versions_status(value: String) -> Result(String, String) {
+  case list.contains(["candidate", "active", "archived", "rejected"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_policy_versions.status: " <> value)
+  }
+}
+
+pub const des_soccer_learning_policy_entries_table = "des_soccer_learning_policy_entries"
+pub const des_soccer_learning_policy_entries_select_sql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries"
+
+pub type DesSoccerLearningPolicyEntriesTeam {
+  DesSoccerLearningPolicyEntriesTeamHome
+  DesSoccerLearningPolicyEntriesTeamAway
+}
+
+pub fn des_soccer_learning_policy_entries_team_to_string(value: DesSoccerLearningPolicyEntriesTeam) -> String {
+  case value {
+    DesSoccerLearningPolicyEntriesTeamHome -> "home"
+    DesSoccerLearningPolicyEntriesTeamAway -> "away"
+  }
+}
+
+pub fn parse_des_soccer_learning_policy_entries_team(value: String) -> Result(DesSoccerLearningPolicyEntriesTeam, String) {
+  case value {
+    "home" -> Ok(DesSoccerLearningPolicyEntriesTeamHome)
+    "away" -> Ok(DesSoccerLearningPolicyEntriesTeamAway)
+    _ -> Error("unsupported des_soccer_learning_policy_entries.team: " <> value)
+  }
+}
+
+pub type DesSoccerLearningPolicyEntriesEntryKind {
+  DesSoccerLearningPolicyEntriesEntryKindAction
+  DesSoccerLearningPolicyEntriesEntryKindTarget
+}
+
+pub fn des_soccer_learning_policy_entries_entry_kind_to_string(value: DesSoccerLearningPolicyEntriesEntryKind) -> String {
+  case value {
+    DesSoccerLearningPolicyEntriesEntryKindAction -> "action"
+    DesSoccerLearningPolicyEntriesEntryKindTarget -> "target"
+  }
+}
+
+pub fn parse_des_soccer_learning_policy_entries_entry_kind(value: String) -> Result(DesSoccerLearningPolicyEntriesEntryKind, String) {
+  case value {
+    "action" -> Ok(DesSoccerLearningPolicyEntriesEntryKindAction)
+    "target" -> Ok(DesSoccerLearningPolicyEntriesEntryKindTarget)
+    _ -> Error("unsupported des_soccer_learning_policy_entries.entry_kind: " <> value)
+  }
+}
+
+pub type DesSoccerLearningPolicyEntriesRow {
+  DesSoccerLearningPolicyEntriesRow(
+    id: String,
+    policy_version_id: String,
+    team: String,
+    entry_kind: String,
+    state_hash: String,
+    state_key_json: String,
+    action: String,
+    target_fine_cell_id: Int,
+    target_tactical_cell_id: Int,
+    target_macro_cell_id: Int,
+    target_root_cell_id: Int,
+    value_micros: Int,
+    visits: Int,
+    source_run_id: Option(String),
+    created_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_policy_entries_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_policy_entries.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_policy_entries_team(value: String) -> Result(String, String) {
+  case list.contains(["home", "away"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_policy_entries.team: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_policy_entries_entry_kind(value: String) -> Result(String, String) {
+  case list.contains(["action", "target"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_policy_entries.entry_kind: " <> value)
+  }
+}
+
+pub const des_soccer_learning_jobs_table = "des_soccer_learning_jobs"
+pub const des_soccer_learning_jobs_select_sql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      spawn_strategy,\n      status,\n      priority,\n      seed,\n      attempt,\n      max_attempts,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      config::text as config_json,\n      runner_config::text as runner_config_json,\n      result_run_id::text as result_run_id,\n      error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_jobs"
+
+pub type DesSoccerLearningJobsSpawnStrategy {
+  DesSoccerLearningJobsSpawnStrategyLatest
+  DesSoccerLearningJobsSpawnStrategyElite
+  DesSoccerLearningJobsSpawnStrategyMutation
+  DesSoccerLearningJobsSpawnStrategyCrossover
+  DesSoccerLearningJobsSpawnStrategyRandom
+  DesSoccerLearningJobsSpawnStrategyReplay
+}
+
+pub fn des_soccer_learning_jobs_spawn_strategy_to_string(value: DesSoccerLearningJobsSpawnStrategy) -> String {
+  case value {
+    DesSoccerLearningJobsSpawnStrategyLatest -> "latest"
+    DesSoccerLearningJobsSpawnStrategyElite -> "elite"
+    DesSoccerLearningJobsSpawnStrategyMutation -> "mutation"
+    DesSoccerLearningJobsSpawnStrategyCrossover -> "crossover"
+    DesSoccerLearningJobsSpawnStrategyRandom -> "random"
+    DesSoccerLearningJobsSpawnStrategyReplay -> "replay"
+  }
+}
+
+pub fn parse_des_soccer_learning_jobs_spawn_strategy(value: String) -> Result(DesSoccerLearningJobsSpawnStrategy, String) {
+  case value {
+    "latest" -> Ok(DesSoccerLearningJobsSpawnStrategyLatest)
+    "elite" -> Ok(DesSoccerLearningJobsSpawnStrategyElite)
+    "mutation" -> Ok(DesSoccerLearningJobsSpawnStrategyMutation)
+    "crossover" -> Ok(DesSoccerLearningJobsSpawnStrategyCrossover)
+    "random" -> Ok(DesSoccerLearningJobsSpawnStrategyRandom)
+    "replay" -> Ok(DesSoccerLearningJobsSpawnStrategyReplay)
+    _ -> Error("unsupported des_soccer_learning_jobs.spawn_strategy: " <> value)
+  }
+}
+
+pub type DesSoccerLearningJobsStatus {
+  DesSoccerLearningJobsStatusQueued
+  DesSoccerLearningJobsStatusRunning
+  DesSoccerLearningJobsStatusCompleted
+  DesSoccerLearningJobsStatusFailed
+  DesSoccerLearningJobsStatusCanceled
+}
+
+pub fn des_soccer_learning_jobs_status_to_string(value: DesSoccerLearningJobsStatus) -> String {
+  case value {
+    DesSoccerLearningJobsStatusQueued -> "queued"
+    DesSoccerLearningJobsStatusRunning -> "running"
+    DesSoccerLearningJobsStatusCompleted -> "completed"
+    DesSoccerLearningJobsStatusFailed -> "failed"
+    DesSoccerLearningJobsStatusCanceled -> "canceled"
+  }
+}
+
+pub fn parse_des_soccer_learning_jobs_status(value: String) -> Result(DesSoccerLearningJobsStatus, String) {
+  case value {
+    "queued" -> Ok(DesSoccerLearningJobsStatusQueued)
+    "running" -> Ok(DesSoccerLearningJobsStatusRunning)
+    "completed" -> Ok(DesSoccerLearningJobsStatusCompleted)
+    "failed" -> Ok(DesSoccerLearningJobsStatusFailed)
+    "canceled" -> Ok(DesSoccerLearningJobsStatusCanceled)
+    _ -> Error("unsupported des_soccer_learning_jobs.status: " <> value)
+  }
+}
+
+pub type DesSoccerLearningJobsRow {
+  DesSoccerLearningJobsRow(
+    id: String,
+    experiment_id: String,
+    base_policy_version_id: Option(String),
+    spawn_strategy: String,
+    status: String,
+    priority: Int,
+    seed: Int,
+    attempt: Int,
+    max_attempts: Int,
+    lease_owner: Option(String),
+    lease_expires_at: Option(String),
+    started_at: Option(String),
+    finished_at: Option(String),
+    config_json: String,
+    runner_config_json: String,
+    result_run_id: Option(String),
+    error: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_jobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_jobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_jobs_spawn_strategy(value: String) -> Result(String, String) {
+  case list.contains(["latest", "elite", "mutation", "crossover", "random", "replay"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_jobs.spawn_strategy: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_jobs_status(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "completed", "failed", "canceled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_jobs.status: " <> value)
+  }
+}
+
+pub const des_soccer_learning_runs_table = "des_soccer_learning_runs"
+pub const des_soccer_learning_runs_select_sql = "select\n      id::text as id,\n      job_id::text as job_id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      output_policy_version_id::text as output_policy_version_id,\n      runner_id,\n      seed,\n      episode_index,\n      status,\n      score_home,\n      score_away,\n      home_goal_diff,\n      away_goal_diff,\n      home_outcome,\n      away_outcome,\n      home_merge_weight_micros,\n      away_merge_weight_micros,\n      fitness_micros,\n      duration_ticks,\n      simulated_seconds_micros,\n      elapsed_millis,\n      transitions,\n      summary::text as summary_json,\n      stats::text as stats_json,\n      error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_runs"
+
+pub type DesSoccerLearningRunsStatus {
+  DesSoccerLearningRunsStatusCompleted
+  DesSoccerLearningRunsStatusFailed
+}
+
+pub fn des_soccer_learning_runs_status_to_string(value: DesSoccerLearningRunsStatus) -> String {
+  case value {
+    DesSoccerLearningRunsStatusCompleted -> "completed"
+    DesSoccerLearningRunsStatusFailed -> "failed"
+  }
+}
+
+pub fn parse_des_soccer_learning_runs_status(value: String) -> Result(DesSoccerLearningRunsStatus, String) {
+  case value {
+    "completed" -> Ok(DesSoccerLearningRunsStatusCompleted)
+    "failed" -> Ok(DesSoccerLearningRunsStatusFailed)
+    _ -> Error("unsupported des_soccer_learning_runs.status: " <> value)
+  }
+}
+
+pub type DesSoccerLearningRunsHomeOutcome {
+  DesSoccerLearningRunsHomeOutcomeWin
+  DesSoccerLearningRunsHomeOutcomeDraw
+  DesSoccerLearningRunsHomeOutcomeLoss
+}
+
+pub fn des_soccer_learning_runs_home_outcome_to_string(value: DesSoccerLearningRunsHomeOutcome) -> String {
+  case value {
+    DesSoccerLearningRunsHomeOutcomeWin -> "win"
+    DesSoccerLearningRunsHomeOutcomeDraw -> "draw"
+    DesSoccerLearningRunsHomeOutcomeLoss -> "loss"
+  }
+}
+
+pub fn parse_des_soccer_learning_runs_home_outcome(value: String) -> Result(DesSoccerLearningRunsHomeOutcome, String) {
+  case value {
+    "win" -> Ok(DesSoccerLearningRunsHomeOutcomeWin)
+    "draw" -> Ok(DesSoccerLearningRunsHomeOutcomeDraw)
+    "loss" -> Ok(DesSoccerLearningRunsHomeOutcomeLoss)
+    _ -> Error("unsupported des_soccer_learning_runs.home_outcome: " <> value)
+  }
+}
+
+pub type DesSoccerLearningRunsAwayOutcome {
+  DesSoccerLearningRunsAwayOutcomeWin
+  DesSoccerLearningRunsAwayOutcomeDraw
+  DesSoccerLearningRunsAwayOutcomeLoss
+}
+
+pub fn des_soccer_learning_runs_away_outcome_to_string(value: DesSoccerLearningRunsAwayOutcome) -> String {
+  case value {
+    DesSoccerLearningRunsAwayOutcomeWin -> "win"
+    DesSoccerLearningRunsAwayOutcomeDraw -> "draw"
+    DesSoccerLearningRunsAwayOutcomeLoss -> "loss"
+  }
+}
+
+pub fn parse_des_soccer_learning_runs_away_outcome(value: String) -> Result(DesSoccerLearningRunsAwayOutcome, String) {
+  case value {
+    "win" -> Ok(DesSoccerLearningRunsAwayOutcomeWin)
+    "draw" -> Ok(DesSoccerLearningRunsAwayOutcomeDraw)
+    "loss" -> Ok(DesSoccerLearningRunsAwayOutcomeLoss)
+    _ -> Error("unsupported des_soccer_learning_runs.away_outcome: " <> value)
+  }
+}
+
+pub type DesSoccerLearningRunsRow {
+  DesSoccerLearningRunsRow(
+    id: String,
+    job_id: Option(String),
+    experiment_id: String,
+    base_policy_version_id: Option(String),
+    output_policy_version_id: Option(String),
+    runner_id: String,
+    seed: Int,
+    episode_index: Int,
+    status: String,
+    score_home: Int,
+    score_away: Int,
+    home_goal_diff: Int,
+    away_goal_diff: Int,
+    home_outcome: String,
+    away_outcome: String,
+    home_merge_weight_micros: Int,
+    away_merge_weight_micros: Int,
+    fitness_micros: Int,
+    duration_ticks: Int,
+    simulated_seconds_micros: Int,
+    elapsed_millis: Int,
+    transitions: Int,
+    summary_json: String,
+    stats_json: String,
+    error: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_runs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_runs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_runs_status(value: String) -> Result(String, String) {
+  case list.contains(["completed", "failed"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_runs.status: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_runs_home_outcome(value: String) -> Result(String, String) {
+  case list.contains(["win", "draw", "loss"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_runs.home_outcome: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_runs_away_outcome(value: String) -> Result(String, String) {
+  case list.contains(["win", "draw", "loss"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_runs.away_outcome: " <> value)
+  }
+}
+
+pub const des_soccer_learning_run_deltas_table = "des_soccer_learning_run_deltas"
+pub const des_soccer_learning_run_deltas_select_sql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas"
+
+pub type DesSoccerLearningRunDeltasTeam {
+  DesSoccerLearningRunDeltasTeamHome
+  DesSoccerLearningRunDeltasTeamAway
+}
+
+pub fn des_soccer_learning_run_deltas_team_to_string(value: DesSoccerLearningRunDeltasTeam) -> String {
+  case value {
+    DesSoccerLearningRunDeltasTeamHome -> "home"
+    DesSoccerLearningRunDeltasTeamAway -> "away"
+  }
+}
+
+pub fn parse_des_soccer_learning_run_deltas_team(value: String) -> Result(DesSoccerLearningRunDeltasTeam, String) {
+  case value {
+    "home" -> Ok(DesSoccerLearningRunDeltasTeamHome)
+    "away" -> Ok(DesSoccerLearningRunDeltasTeamAway)
+    _ -> Error("unsupported des_soccer_learning_run_deltas.team: " <> value)
+  }
+}
+
+pub type DesSoccerLearningRunDeltasEntryKind {
+  DesSoccerLearningRunDeltasEntryKindAction
+  DesSoccerLearningRunDeltasEntryKindTarget
+}
+
+pub fn des_soccer_learning_run_deltas_entry_kind_to_string(value: DesSoccerLearningRunDeltasEntryKind) -> String {
+  case value {
+    DesSoccerLearningRunDeltasEntryKindAction -> "action"
+    DesSoccerLearningRunDeltasEntryKindTarget -> "target"
+  }
+}
+
+pub fn parse_des_soccer_learning_run_deltas_entry_kind(value: String) -> Result(DesSoccerLearningRunDeltasEntryKind, String) {
+  case value {
+    "action" -> Ok(DesSoccerLearningRunDeltasEntryKindAction)
+    "target" -> Ok(DesSoccerLearningRunDeltasEntryKindTarget)
+    _ -> Error("unsupported des_soccer_learning_run_deltas.entry_kind: " <> value)
+  }
+}
+
+pub type DesSoccerLearningRunDeltasRow {
+  DesSoccerLearningRunDeltasRow(
+    id: String,
+    run_id: String,
+    team: String,
+    entry_kind: String,
+    state_hash: String,
+    state_key_json: String,
+    action: String,
+    target_fine_cell_id: Int,
+    target_tactical_cell_id: Int,
+    target_macro_cell_id: Int,
+    target_root_cell_id: Int,
+    before_value_micros: Int,
+    after_value_micros: Int,
+    value_delta_micros: Int,
+    visit_delta: Int,
+    merge_weight_micros: Int,
+    effective_visit_micros: Int,
+    created_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_run_deltas_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_run_deltas.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_run_deltas_team(value: String) -> Result(String, String) {
+  case list.contains(["home", "away"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_run_deltas.team: " <> value)
+  }
+}
+
+pub fn validate_des_soccer_learning_run_deltas_entry_kind(value: String) -> Result(String, String) {
+  case list.contains(["action", "target"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_run_deltas.entry_kind: " <> value)
+  }
+}
+
+pub const des_soccer_learning_merge_events_table = "des_soccer_learning_merge_events"
+pub const des_soccer_learning_merge_events_select_sql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      output_policy_version_id::text as output_policy_version_id,\n      strategy,\n      input_run_count,\n      input_delta_count,\n      decay_micros,\n      metrics::text as metrics_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_merge_events"
+
+pub type DesSoccerLearningMergeEventsStrategy {
+  DesSoccerLearningMergeEventsStrategyOutcomeWeightedAverage
+  DesSoccerLearningMergeEventsStrategyElite
+  DesSoccerLearningMergeEventsStrategyMutation
+  DesSoccerLearningMergeEventsStrategyCrossover
+}
+
+pub fn des_soccer_learning_merge_events_strategy_to_string(value: DesSoccerLearningMergeEventsStrategy) -> String {
+  case value {
+    DesSoccerLearningMergeEventsStrategyOutcomeWeightedAverage -> "outcome_weighted_average"
+    DesSoccerLearningMergeEventsStrategyElite -> "elite"
+    DesSoccerLearningMergeEventsStrategyMutation -> "mutation"
+    DesSoccerLearningMergeEventsStrategyCrossover -> "crossover"
+  }
+}
+
+pub fn parse_des_soccer_learning_merge_events_strategy(value: String) -> Result(DesSoccerLearningMergeEventsStrategy, String) {
+  case value {
+    "outcome_weighted_average" -> Ok(DesSoccerLearningMergeEventsStrategyOutcomeWeightedAverage)
+    "elite" -> Ok(DesSoccerLearningMergeEventsStrategyElite)
+    "mutation" -> Ok(DesSoccerLearningMergeEventsStrategyMutation)
+    "crossover" -> Ok(DesSoccerLearningMergeEventsStrategyCrossover)
+    _ -> Error("unsupported des_soccer_learning_merge_events.strategy: " <> value)
+  }
+}
+
+pub type DesSoccerLearningMergeEventsRow {
+  DesSoccerLearningMergeEventsRow(
+    id: String,
+    experiment_id: String,
+    base_policy_version_id: Option(String),
+    output_policy_version_id: String,
+    strategy: String,
+    input_run_count: Int,
+    input_delta_count: Int,
+    decay_micros: Int,
+    metrics_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_des_soccer_learning_merge_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("des_soccer_learning_merge_events.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_des_soccer_learning_merge_events_strategy(value: String) -> Result(String, String) {
+  case list.contains(["outcome_weighted_average", "elite", "mutation", "crossover"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported des_soccer_learning_merge_events.strategy: " <> value)
   }
 }
 

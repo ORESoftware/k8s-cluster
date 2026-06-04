@@ -38,12 +38,37 @@ operators reach through WireGuard or the gateway-proxied `/bastion/...` paths:
 
 Protected routes accept `X-Bastion-Auth`, `X-Server-Auth`, `Auth`, or `Authorization: Bearer ...`
 with `SERVER_AUTH_SECRET`. The generated kubeconfig is bound to
-`ClusterRole/dd-bastion-readonly`; it intentionally does not grant Kubernetes Secret access,
-patch/update/delete verbs, general pod creation, or `pods/exec`.
+`ClusterRole/dd-bastion-readonly`; it intentionally does not grant Kubernetes Secret access or
+patch/update/delete verbs.
 
-The browser terminal code path is compiled into the Rust service, but terminal access is disabled
-by default in the Kubernetes deployment and the shipped RBAC does not grant `pods/exec`. Enable it
-only after a separate review of the exact pod allowlist and operational need.
+`dd-bastion-readonly` was extended to also grant read access to `metrics.k8s.io` and `pods/log`
+so the homepage "Live containers" cards can show per-container CPU/memory and stream logs without
+needing exec. CPU and memory come from the cluster's `metrics-server` Argo CD app (kube-system)
+and are read through the metrics aggregation API.
+
+The browser terminal at `/bastion/terminal` is enabled in this Kubernetes deployment
+(`BASTION_TERMINAL_ENABLED=true`) and the matching `pods/exec` `create` verb is granted by a
+separate `ClusterRole`/`ClusterRoleBinding` named `dd-bastion-exec`. To revoke browser terminal
+access without touching inventory routes, flip the env var back to `false` and remove the
+`dd-bastion-exec` `ClusterRoleBinding` from `dd-bastion-rbac.yaml`. Read-only inventory + log
+streaming continues to work even when `dd-bastion-exec` is detached.
+
+## Recommended access model
+
+The safe version of "one password for access" is not a public MCP server that can mint AWS access.
+Keep the MCP server read-only, keep `dd-bastion` behind the authenticated gateway and WireGuard, and
+use a long random `SERVER_AUTH_SECRET` only as a gateway/bastion bearer secret. AWS credentials stay
+in AWS Secrets Manager, External Secrets, the EC2 instance profile, or a scoped CI/OIDC role; they
+should not be returned by MCP tools or the bastion API.
+
+For day-to-day operations:
+
+1. Connect a WireGuard client created by the private wg-easy UI.
+2. Query `dd-bastion` with `X-Bastion-Auth: $SERVER_AUTH_SECRET` for `/profile`, `/kubeconfig`, and
+   `/runtime/deployments`.
+3. Use the generated kubeconfig for read-only `kubectl get/list/watch` work.
+4. Use normal key-based SSH or AWS Systems Manager Session Manager for host shell access. Do not
+   make the Kubernetes MCP endpoint a public SSH/AWS credential broker.
 
 ## Secret setup
 

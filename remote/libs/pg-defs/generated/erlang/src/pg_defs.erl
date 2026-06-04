@@ -3,7 +3,7 @@
 % Generated ORM/client code is an adapter only; do not infer migrations from it.
 % MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 -module(pg_defs).
--export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0]).
+-export([app_config_table/0, app_config_columns/0, app_config_select_sql/0, app_config_status_values/0, validate_app_config_status/1, container_pool_configs_table/0, container_pool_configs_columns/0, container_pool_configs_select_sql/0, container_pool_configs_status_values/0, validate_container_pool_configs_status/1, known_git_repos_table/0, known_git_repos_columns/0, known_git_repos_select_sql/0, known_git_repos_provider_values/0, validate_known_git_repos_provider/1, known_git_repos_status_values/0, validate_known_git_repos_status/1, agent_context_blobs_table/0, agent_context_blobs_columns/0, agent_context_blobs_select_sql/0, agent_context_blobs_status_values/0, validate_agent_context_blobs_status/1, agent_context_embeddings_table/0, agent_context_embeddings_columns/0, agent_context_embeddings_select_sql/0, agent_remote_dev_threads_table/0, agent_remote_dev_threads_columns/0, agent_remote_dev_threads_select_sql/0, agent_remote_dev_tasks_table/0, agent_remote_dev_tasks_columns/0, agent_remote_dev_tasks_select_sql/0, agent_remote_dev_tasks_status_values/0, validate_agent_remote_dev_tasks_status/1, agent_remote_dev_tasks_pr_state_values/0, validate_agent_remote_dev_tasks_pr_state/1, agent_remote_dev_tasks_exit_reason_values/0, validate_agent_remote_dev_tasks_exit_reason/1, agent_remote_dev_events_table/0, agent_remote_dev_events_columns/0, agent_remote_dev_events_select_sql/0, agent_remote_dev_breadcrumbs_table/0, agent_remote_dev_breadcrumbs_columns/0, agent_remote_dev_breadcrumbs_select_sql/0, agent_remote_dev_artifacts_table/0, agent_remote_dev_artifacts_columns/0, agent_remote_dev_artifacts_select_sql/0, agent_remote_dev_artifacts_storage_provider_values/0, validate_agent_remote_dev_artifacts_storage_provider/1, agent_remote_dev_runtime_locks_table/0, agent_remote_dev_runtime_locks_columns/0, agent_remote_dev_runtime_locks_select_sql/0, agent_remote_dev_runtime_locks_status_values/0, validate_agent_remote_dev_runtime_locks_status/1, mip_solver_sessions_table/0, mip_solver_sessions_columns/0, mip_solver_sessions_select_sql/0, mip_solver_solves_table/0, mip_solver_solves_columns/0, mip_solver_solves_select_sql/0, mip_solver_solves_node_role_values/0, validate_mip_solver_solves_node_role/1, mip_solver_jobs_table/0, mip_solver_jobs_columns/0, mip_solver_jobs_select_sql/0, mip_solver_events_table/0, mip_solver_events_columns/0, mip_solver_events_select_sql/0, lambda_functions_table/0, lambda_functions_columns/0, lambda_functions_select_sql/0, lambda_functions_runtime_values/0, validate_lambda_functions_runtime/1, lambda_functions_container_build_status_values/0, validate_lambda_functions_container_build_status/1, lambda_functions_status_values/0, validate_lambda_functions_status/1, container_pool_image_revisions_table/0, container_pool_image_revisions_columns/0, container_pool_image_revisions_select_sql/0, container_pool_image_revisions_source_values/0, validate_container_pool_image_revisions_source/1, container_pool_image_revisions_status_values/0, validate_container_pool_image_revisions_status/1, container_pool_build_runs_table/0, container_pool_build_runs_columns/0, container_pool_build_runs_select_sql/0, container_pool_build_runs_build_status_values/0, validate_container_pool_build_runs_build_status/1, container_pool_build_runs_test_status_values/0, validate_container_pool_build_runs_test_status/1, container_pool_build_runs_overall_status_values/0, validate_container_pool_build_runs_overall_status/1, presence_convs_table/0, presence_convs_columns/0, presence_convs_select_sql/0, presence_convs_status_values/0, validate_presence_convs_status/1, presence_conv_members_table/0, presence_conv_members_columns/0, presence_conv_members_select_sql/0, presence_conv_members_role_values/0, validate_presence_conv_members_role/1, presence_conv_members_status_values/0, validate_presence_conv_members_status/1, presence_users_table/0, presence_users_columns/0, presence_users_select_sql/0, presence_events_table/0, presence_events_columns/0, presence_events_select_sql/0, presence_events_op_values/0, validate_presence_events_op/1, presence_consumer_checkpoints_table/0, presence_consumer_checkpoints_columns/0, presence_consumer_checkpoints_select_sql/0, des_soccer_learning_experiments_table/0, des_soccer_learning_experiments_columns/0, des_soccer_learning_experiments_select_sql/0, des_soccer_learning_experiments_status_values/0, validate_des_soccer_learning_experiments_status/1, des_soccer_learning_policy_versions_table/0, des_soccer_learning_policy_versions_columns/0, des_soccer_learning_policy_versions_select_sql/0, des_soccer_learning_policy_versions_source_kind_values/0, validate_des_soccer_learning_policy_versions_source_kind/1, des_soccer_learning_policy_versions_status_values/0, validate_des_soccer_learning_policy_versions_status/1, des_soccer_learning_policy_entries_table/0, des_soccer_learning_policy_entries_columns/0, des_soccer_learning_policy_entries_select_sql/0, des_soccer_learning_policy_entries_team_values/0, validate_des_soccer_learning_policy_entries_team/1, des_soccer_learning_policy_entries_entry_kind_values/0, validate_des_soccer_learning_policy_entries_entry_kind/1, des_soccer_learning_jobs_table/0, des_soccer_learning_jobs_columns/0, des_soccer_learning_jobs_select_sql/0, des_soccer_learning_jobs_spawn_strategy_values/0, validate_des_soccer_learning_jobs_spawn_strategy/1, des_soccer_learning_jobs_status_values/0, validate_des_soccer_learning_jobs_status/1, des_soccer_learning_runs_table/0, des_soccer_learning_runs_columns/0, des_soccer_learning_runs_select_sql/0, des_soccer_learning_runs_status_values/0, validate_des_soccer_learning_runs_status/1, des_soccer_learning_runs_home_outcome_values/0, validate_des_soccer_learning_runs_home_outcome/1, des_soccer_learning_runs_away_outcome_values/0, validate_des_soccer_learning_runs_away_outcome/1, des_soccer_learning_run_deltas_table/0, des_soccer_learning_run_deltas_columns/0, des_soccer_learning_run_deltas_select_sql/0, des_soccer_learning_run_deltas_team_values/0, validate_des_soccer_learning_run_deltas_team/1, des_soccer_learning_run_deltas_entry_kind_values/0, validate_des_soccer_learning_run_deltas_entry_kind/1, des_soccer_learning_merge_events_table/0, des_soccer_learning_merge_events_columns/0, des_soccer_learning_merge_events_select_sql/0, des_soccer_learning_merge_events_strategy_values/0, validate_des_soccer_learning_merge_events_strategy/1]).
 
 app_config_table() -> <<"app_config">>.
 
@@ -115,6 +115,51 @@ validate_known_git_repos_status(Value) when is_binary(Value) ->
 validate_known_git_repos_status(Value) when is_list(Value) ->
     validate_known_git_repos_status(unicode:characters_to_binary(Value)).
 
+agent_context_blobs_table() -> <<"agent_context_blobs">>.
+
+agent_context_blobs_columns() -> [<<"id">>, <<"project_id">>, <<"repo_id">>, <<"context_id">>, <<"context_title">>, <<"context_blob">>, <<"status">>, <<"labels">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+agent_context_blobs_select_sql() -> <<"select
+      id::text as id,
+      project_id,
+      repo_id::text as repo_id,
+      context_id,
+      context_title,
+      context_blob,
+      status,
+      labels::text as labels_json,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from agent_context_blobs">>.
+
+agent_context_blobs_status_values() -> [<<"active">>, <<"paused">>, <<"archived">>].
+
+validate_agent_context_blobs_status(Value) when is_binary(Value) ->
+    case lists:member(Value, agent_context_blobs_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported agent_context_blobs.status: "/binary, Value/binary>>}
+    end;
+validate_agent_context_blobs_status(Value) when is_list(Value) ->
+    validate_agent_context_blobs_status(unicode:characters_to_binary(Value)).
+
+agent_context_embeddings_table() -> <<"agent_context_embeddings">>.
+
+agent_context_embeddings_columns() -> [<<"id">>, <<"context_blob_id">>, <<"embedding_model">>, <<"embedding">>, <<"embedding_dimensions">>, <<"content_sha256">>, <<"created_at">>].
+
+agent_context_embeddings_select_sql() -> <<"select
+      id::text as id,
+      context_blob_id::text as context_blob_id,
+      embedding_model,
+      embedding::text as embedding_json,
+      embedding_dimensions,
+      content_sha256,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from agent_context_embeddings">>.
+
 agent_remote_dev_threads_table() -> <<"agent_remote_dev_threads">>.
 
 agent_remote_dev_threads_columns() -> [<<"id">>, <<"user_id">>, <<"known_git_repo_id">>, <<"title">>, <<"repo">>, <<"base_branch">>, <<"meta">>, <<"archived_at">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
@@ -194,16 +239,33 @@ validate_agent_remote_dev_tasks_exit_reason(Value) when is_list(Value) ->
 
 agent_remote_dev_events_table() -> <<"agent_remote_dev_events">>.
 
-agent_remote_dev_events_columns() -> [<<"id">>, <<"task_id">>, <<"seq">>, <<"event_kind">>, <<"payload">>, <<"created_at">>].
+agent_remote_dev_events_columns() -> [<<"id">>, <<"task_id">>, <<"thread_id">>, <<"seq">>, <<"event_kind">>, <<"payload">>, <<"created_at">>].
 
 agent_remote_dev_events_select_sql() -> <<"select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload::text as payload_json,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
     from agent_remote_dev_events">>.
+
+agent_remote_dev_breadcrumbs_table() -> <<"agent_remote_dev_breadcrumbs">>.
+
+agent_remote_dev_breadcrumbs_columns() -> [<<"id">>, <<"thread_id">>, <<"task_id">>, <<"kind">>, <<"payload">>, <<"emitted_at">>, <<"pod_name">>, <<"branch">>, <<"provider">>].
+
+agent_remote_dev_breadcrumbs_select_sql() -> <<"select
+      id,
+      thread_id::text as thread_id,
+      task_id::text as task_id,
+      kind,
+      payload::text as payload_json,
+      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as emitted_at,
+      pod_name,
+      branch,
+      provider
+    from agent_remote_dev_breadcrumbs">>.
 
 agent_remote_dev_artifacts_table() -> <<"agent_remote_dev_artifacts">>.
 
@@ -260,6 +322,88 @@ validate_agent_remote_dev_runtime_locks_status(Value) when is_binary(Value) ->
     end;
 validate_agent_remote_dev_runtime_locks_status(Value) when is_list(Value) ->
     validate_agent_remote_dev_runtime_locks_status(unicode:characters_to_binary(Value)).
+
+mip_solver_sessions_table() -> <<"mip_solver_sessions">>.
+
+mip_solver_sessions_columns() -> [<<"session_id">>, <<"revision">>, <<"problem">>, <<"created_at">>, <<"updated_at">>].
+
+mip_solver_sessions_select_sql() -> <<"select
+      session_id,
+      revision,
+      problem::text as problem_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from mip_solver_sessions">>.
+
+mip_solver_solves_table() -> <<"mip_solver_solves">>.
+
+mip_solver_solves_columns() -> [<<"solve_id">>, <<"request_id">>, <<"revision">>, <<"status">>, <<"node_id">>, <<"node_role">>, <<"problem">>, <<"options">>, <<"response">>, <<"jobs_expected">>, <<"jobs_published">>, <<"jobs_completed">>, <<"jobs_redelegated">>, <<"jobs_split">>, <<"timed_out">>, <<"distributed">>, <<"warnings">>, <<"started_at">>, <<"updated_at">>, <<"finished_at">>].
+
+mip_solver_solves_select_sql() -> <<"select
+      solve_id,
+      request_id,
+      revision,
+      status,
+      node_id,
+      node_role,
+      problem::text as problem_json,
+      options::text as options_json,
+      response::text as response_json,
+      jobs_expected,
+      jobs_published,
+      jobs_completed,
+      jobs_redelegated,
+      jobs_split,
+      timed_out,
+      distributed,
+      warnings::text as warnings_json,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at
+    from mip_solver_solves">>.
+
+mip_solver_solves_node_role_values() -> [<<"master">>, <<"slave">>].
+
+validate_mip_solver_solves_node_role(Value) when is_binary(Value) ->
+    case lists:member(Value, mip_solver_solves_node_role_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported mip_solver_solves.node_role: "/binary, Value/binary>>}
+    end;
+validate_mip_solver_solves_node_role(Value) when is_list(Value) ->
+    validate_mip_solver_solves_node_role(unicode:characters_to_binary(Value)).
+
+mip_solver_jobs_table() -> <<"mip_solver_jobs">>.
+
+mip_solver_jobs_columns() -> [<<"job_id">>, <<"solve_id">>, <<"root_job_id">>, <<"retry_index">>, <<"depth">>, <<"status">>, <<"worker_node">>, <<"job_payload">>, <<"result_payload">>, <<"submitted_at">>, <<"finished_at">>, <<"updated_at">>].
+
+mip_solver_jobs_select_sql() -> <<"select
+      job_id,
+      solve_id,
+      root_job_id,
+      retry_index,
+      depth,
+      status,
+      worker_node,
+      job_payload::text as job_payload_json,
+      result_payload::text as result_payload_json,
+      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as submitted_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from mip_solver_jobs">>.
+
+mip_solver_events_table() -> <<"mip_solver_events">>.
+
+mip_solver_events_columns() -> [<<"id">>, <<"solve_id">>, <<"session_id">>, <<"job_id">>, <<"event_kind">>, <<"payload">>, <<"created_at">>].
+
+mip_solver_events_select_sql() -> <<"select
+      id,
+      solve_id,
+      session_id,
+      job_id,
+      event_kind,
+      payload::text as payload_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from mip_solver_events">>.
 
 lambda_functions_table() -> <<"lambda_functions">>.
 
@@ -322,6 +466,107 @@ validate_lambda_functions_status(Value) when is_binary(Value) ->
     end;
 validate_lambda_functions_status(Value) when is_list(Value) ->
     validate_lambda_functions_status(unicode:characters_to_binary(Value)).
+
+container_pool_image_revisions_table() -> <<"container_pool_image_revisions">>.
+
+container_pool_image_revisions_columns() -> [<<"id">>, <<"image_slug">>, <<"image_ref">>, <<"dockerfile_path">>, <<"build_context">>, <<"dockerfile_text">>, <<"dockerfile_sha256">>, <<"source">>, <<"notes">>, <<"status">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+container_pool_image_revisions_select_sql() -> <<"select
+      id::text as id,
+      image_slug,
+      image_ref,
+      dockerfile_path,
+      build_context,
+      dockerfile_text,
+      dockerfile_sha256,
+      source,
+      notes,
+      status,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_image_revisions">>.
+
+container_pool_image_revisions_source_values() -> [<<"disk-default">>, <<"user">>, <<"system">>].
+
+validate_container_pool_image_revisions_source(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_image_revisions_source_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_image_revisions.source: "/binary, Value/binary>>}
+    end;
+validate_container_pool_image_revisions_source(Value) when is_list(Value) ->
+    validate_container_pool_image_revisions_source(unicode:characters_to_binary(Value)).
+
+container_pool_image_revisions_status_values() -> [<<"candidate">>, <<"active">>, <<"archived">>].
+
+validate_container_pool_image_revisions_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_image_revisions_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_image_revisions.status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_image_revisions_status(Value) when is_list(Value) ->
+    validate_container_pool_image_revisions_status(unicode:characters_to_binary(Value)).
+
+container_pool_build_runs_table() -> <<"container_pool_build_runs">>.
+
+container_pool_build_runs_columns() -> [<<"id">>, <<"image_slug">>, <<"revision_id">>, <<"image_ref">>, <<"candidate_tag">>, <<"build_status">>, <<"test_status">>, <<"overall_status">>, <<"test_command">>, <<"build_started_at">>, <<"build_finished_at">>, <<"test_started_at">>, <<"test_finished_at">>, <<"build_log_excerpt">>, <<"test_log_excerpt">>, <<"error_message">>, <<"triggered_by">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>].
+
+container_pool_build_runs_select_sql() -> <<"select
+      id::text as id,
+      image_slug,
+      revision_id::text as revision_id,
+      image_ref,
+      candidate_tag,
+      build_status,
+      test_status,
+      overall_status,
+      test_command,
+      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_started_at,
+      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_finished_at,
+      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_started_at,
+      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_finished_at,
+      build_log_excerpt,
+      test_log_excerpt,
+      error_message,
+      triggered_by::text as triggered_by,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from container_pool_build_runs">>.
+
+container_pool_build_runs_build_status_values() -> [<<"queued">>, <<"building">>, <<"built">>, <<"failed">>, <<"skipped">>, <<"cancelled">>].
+
+validate_container_pool_build_runs_build_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_build_runs_build_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_build_runs.build_status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_build_runs_build_status(Value) when is_list(Value) ->
+    validate_container_pool_build_runs_build_status(unicode:characters_to_binary(Value)).
+
+container_pool_build_runs_test_status_values() -> [<<"not_started">>, <<"pending">>, <<"testing">>, <<"passed">>, <<"failed">>, <<"skipped">>, <<"cancelled">>].
+
+validate_container_pool_build_runs_test_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_build_runs_test_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_build_runs.test_status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_build_runs_test_status(Value) when is_list(Value) ->
+    validate_container_pool_build_runs_test_status(unicode:characters_to_binary(Value)).
+
+container_pool_build_runs_overall_status_values() -> [<<"queued">>, <<"running">>, <<"passed">>, <<"failed">>, <<"cancelled">>, <<"errored">>].
+
+validate_container_pool_build_runs_overall_status(Value) when is_binary(Value) ->
+    case lists:member(Value, container_pool_build_runs_overall_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported container_pool_build_runs.overall_status: "/binary, Value/binary>>}
+    end;
+validate_container_pool_build_runs_overall_status(Value) when is_list(Value) ->
+    validate_container_pool_build_runs_overall_status(unicode:characters_to_binary(Value)).
 
 presence_convs_table() -> <<"presence_convs">>.
 
@@ -436,3 +681,303 @@ presence_consumer_checkpoints_select_sql() -> <<"select
       last_seq,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
     from presence_consumer_checkpoints">>.
+
+des_soccer_learning_experiments_table() -> <<"des_soccer_learning_experiments">>.
+
+des_soccer_learning_experiments_columns() -> [<<"id">>, <<"slug">>, <<"display_name">>, <<"description">>, <<"status">>, <<"config">>, <<"labels">>, <<"meta_data">>, <<"is_soft_deleted">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+des_soccer_learning_experiments_select_sql() -> <<"select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      status,
+      config::text as config_json,
+      labels::text as labels_json,
+      meta_data::text as meta_data_json,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_experiments">>.
+
+des_soccer_learning_experiments_status_values() -> [<<"active">>, <<"paused">>, <<"archived">>].
+
+validate_des_soccer_learning_experiments_status(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_experiments_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_experiments.status: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_experiments_status(Value) when is_list(Value) ->
+    validate_des_soccer_learning_experiments_status(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_policy_versions_table() -> <<"des_soccer_learning_policy_versions">>.
+
+des_soccer_learning_policy_versions_columns() -> [<<"id">>, <<"experiment_id">>, <<"parent_policy_version_id">>, <<"generation">>, <<"version_label">>, <<"source_kind">>, <<"status">>, <<"options">>, <<"config">>, <<"lineage">>, <<"metrics">>, <<"entry_count">>, <<"target_entry_count">>, <<"visit_count">>, <<"fitness_micros">>, <<"created_at">>, <<"updated_at">>, <<"created_by">>, <<"updated_by">>].
+
+des_soccer_learning_policy_versions_select_sql() -> <<"select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      parent_policy_version_id::text as parent_policy_version_id,
+      generation,
+      version_label,
+      source_kind,
+      status,
+      options::text as options_json,
+      config::text as config_json,
+      lineage::text as lineage_json,
+      metrics::text as metrics_json,
+      entry_count,
+      target_entry_count,
+      visit_count,
+      fitness_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_policy_versions">>.
+
+des_soccer_learning_policy_versions_source_kind_values() -> [<<"seed">>, <<"merge">>, <<"mutation">>, <<"crossover">>, <<"import">>, <<"replay">>].
+
+validate_des_soccer_learning_policy_versions_source_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_policy_versions_source_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_policy_versions.source_kind: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_policy_versions_source_kind(Value) when is_list(Value) ->
+    validate_des_soccer_learning_policy_versions_source_kind(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_policy_versions_status_values() -> [<<"candidate">>, <<"active">>, <<"archived">>, <<"rejected">>].
+
+validate_des_soccer_learning_policy_versions_status(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_policy_versions_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_policy_versions.status: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_policy_versions_status(Value) when is_list(Value) ->
+    validate_des_soccer_learning_policy_versions_status(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_policy_entries_table() -> <<"des_soccer_learning_policy_entries">>.
+
+des_soccer_learning_policy_entries_columns() -> [<<"id">>, <<"policy_version_id">>, <<"team">>, <<"entry_kind">>, <<"state_hash">>, <<"state_key">>, <<"action">>, <<"target_fine_cell_id">>, <<"target_tactical_cell_id">>, <<"target_macro_cell_id">>, <<"target_root_cell_id">>, <<"value_micros">>, <<"visits">>, <<"source_run_id">>, <<"created_at">>].
+
+des_soccer_learning_policy_entries_select_sql() -> <<"select
+      id::text as id,
+      policy_version_id::text as policy_version_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key::text as state_key_json,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      value_micros,
+      visits,
+      source_run_id::text as source_run_id,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from des_soccer_learning_policy_entries">>.
+
+des_soccer_learning_policy_entries_team_values() -> [<<"home">>, <<"away">>].
+
+validate_des_soccer_learning_policy_entries_team(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_policy_entries_team_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_policy_entries.team: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_policy_entries_team(Value) when is_list(Value) ->
+    validate_des_soccer_learning_policy_entries_team(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_policy_entries_entry_kind_values() -> [<<"action">>, <<"target">>].
+
+validate_des_soccer_learning_policy_entries_entry_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_policy_entries_entry_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_policy_entries.entry_kind: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_policy_entries_entry_kind(Value) when is_list(Value) ->
+    validate_des_soccer_learning_policy_entries_entry_kind(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_jobs_table() -> <<"des_soccer_learning_jobs">>.
+
+des_soccer_learning_jobs_columns() -> [<<"id">>, <<"experiment_id">>, <<"base_policy_version_id">>, <<"spawn_strategy">>, <<"status">>, <<"priority">>, <<"seed">>, <<"attempt">>, <<"max_attempts">>, <<"lease_owner">>, <<"lease_expires_at">>, <<"started_at">>, <<"finished_at">>, <<"config">>, <<"runner_config">>, <<"result_run_id">>, <<"error">>, <<"created_at">>, <<"updated_at">>].
+
+des_soccer_learning_jobs_select_sql() -> <<"select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      spawn_strategy,
+      status,
+      priority,
+      seed,
+      attempt,
+      max_attempts,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,
+      config::text as config_json,
+      runner_config::text as runner_config_json,
+      result_run_id::text as result_run_id,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from des_soccer_learning_jobs">>.
+
+des_soccer_learning_jobs_spawn_strategy_values() -> [<<"latest">>, <<"elite">>, <<"mutation">>, <<"crossover">>, <<"random">>, <<"replay">>].
+
+validate_des_soccer_learning_jobs_spawn_strategy(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_jobs_spawn_strategy_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_jobs.spawn_strategy: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_jobs_spawn_strategy(Value) when is_list(Value) ->
+    validate_des_soccer_learning_jobs_spawn_strategy(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_jobs_status_values() -> [<<"queued">>, <<"running">>, <<"completed">>, <<"failed">>, <<"canceled">>].
+
+validate_des_soccer_learning_jobs_status(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_jobs_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_jobs.status: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_jobs_status(Value) when is_list(Value) ->
+    validate_des_soccer_learning_jobs_status(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_runs_table() -> <<"des_soccer_learning_runs">>.
+
+des_soccer_learning_runs_columns() -> [<<"id">>, <<"job_id">>, <<"experiment_id">>, <<"base_policy_version_id">>, <<"output_policy_version_id">>, <<"runner_id">>, <<"seed">>, <<"episode_index">>, <<"status">>, <<"score_home">>, <<"score_away">>, <<"home_goal_diff">>, <<"away_goal_diff">>, <<"home_outcome">>, <<"away_outcome">>, <<"home_merge_weight_micros">>, <<"away_merge_weight_micros">>, <<"fitness_micros">>, <<"duration_ticks">>, <<"simulated_seconds_micros">>, <<"elapsed_millis">>, <<"transitions">>, <<"summary">>, <<"stats">>, <<"error">>, <<"created_at">>, <<"updated_at">>].
+
+des_soccer_learning_runs_select_sql() -> <<"select
+      id::text as id,
+      job_id::text as job_id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      runner_id,
+      seed,
+      episode_index,
+      status,
+      score_home,
+      score_away,
+      home_goal_diff,
+      away_goal_diff,
+      home_outcome,
+      away_outcome,
+      home_merge_weight_micros,
+      away_merge_weight_micros,
+      fitness_micros,
+      duration_ticks,
+      simulated_seconds_micros,
+      elapsed_millis,
+      transitions,
+      summary::text as summary_json,
+      stats::text as stats_json,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at
+    from des_soccer_learning_runs">>.
+
+des_soccer_learning_runs_status_values() -> [<<"completed">>, <<"failed">>].
+
+validate_des_soccer_learning_runs_status(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_runs_status_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_runs.status: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_runs_status(Value) when is_list(Value) ->
+    validate_des_soccer_learning_runs_status(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_runs_home_outcome_values() -> [<<"win">>, <<"draw">>, <<"loss">>].
+
+validate_des_soccer_learning_runs_home_outcome(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_runs_home_outcome_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_runs.home_outcome: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_runs_home_outcome(Value) when is_list(Value) ->
+    validate_des_soccer_learning_runs_home_outcome(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_runs_away_outcome_values() -> [<<"win">>, <<"draw">>, <<"loss">>].
+
+validate_des_soccer_learning_runs_away_outcome(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_runs_away_outcome_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_runs.away_outcome: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_runs_away_outcome(Value) when is_list(Value) ->
+    validate_des_soccer_learning_runs_away_outcome(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_run_deltas_table() -> <<"des_soccer_learning_run_deltas">>.
+
+des_soccer_learning_run_deltas_columns() -> [<<"id">>, <<"run_id">>, <<"team">>, <<"entry_kind">>, <<"state_hash">>, <<"state_key">>, <<"action">>, <<"target_fine_cell_id">>, <<"target_tactical_cell_id">>, <<"target_macro_cell_id">>, <<"target_root_cell_id">>, <<"before_value_micros">>, <<"after_value_micros">>, <<"value_delta_micros">>, <<"visit_delta">>, <<"merge_weight_micros">>, <<"effective_visit_micros">>, <<"created_at">>].
+
+des_soccer_learning_run_deltas_select_sql() -> <<"select
+      id::text as id,
+      run_id::text as run_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key::text as state_key_json,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      before_value_micros,
+      after_value_micros,
+      value_delta_micros,
+      visit_delta,
+      merge_weight_micros,
+      effective_visit_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from des_soccer_learning_run_deltas">>.
+
+des_soccer_learning_run_deltas_team_values() -> [<<"home">>, <<"away">>].
+
+validate_des_soccer_learning_run_deltas_team(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_run_deltas_team_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_run_deltas.team: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_run_deltas_team(Value) when is_list(Value) ->
+    validate_des_soccer_learning_run_deltas_team(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_run_deltas_entry_kind_values() -> [<<"action">>, <<"target">>].
+
+validate_des_soccer_learning_run_deltas_entry_kind(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_run_deltas_entry_kind_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_run_deltas.entry_kind: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_run_deltas_entry_kind(Value) when is_list(Value) ->
+    validate_des_soccer_learning_run_deltas_entry_kind(unicode:characters_to_binary(Value)).
+
+des_soccer_learning_merge_events_table() -> <<"des_soccer_learning_merge_events">>.
+
+des_soccer_learning_merge_events_columns() -> [<<"id">>, <<"experiment_id">>, <<"base_policy_version_id">>, <<"output_policy_version_id">>, <<"strategy">>, <<"input_run_count">>, <<"input_delta_count">>, <<"decay_micros">>, <<"metrics">>, <<"created_at">>].
+
+des_soccer_learning_merge_events_select_sql() -> <<"select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      strategy,
+      input_run_count,
+      input_delta_count,
+      decay_micros,
+      metrics::text as metrics_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at
+    from des_soccer_learning_merge_events">>.
+
+des_soccer_learning_merge_events_strategy_values() -> [<<"outcome_weighted_average">>, <<"elite">>, <<"mutation">>, <<"crossover">>].
+
+validate_des_soccer_learning_merge_events_strategy(Value) when is_binary(Value) ->
+    case lists:member(Value, des_soccer_learning_merge_events_strategy_values()) of
+        true -> ok;
+        false -> {error, <<"unsupported des_soccer_learning_merge_events.strategy: "/binary, Value/binary>>}
+    end;
+validate_des_soccer_learning_merge_events_strategy(Value) when is_list(Value) ->
+    validate_des_soccer_learning_merge_events_strategy(unicode:characters_to_binary(Value)).

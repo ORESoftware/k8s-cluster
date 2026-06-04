@@ -47,12 +47,12 @@ type BlockedCase = {
 
 const entryCommands: Record<RuntimeName, string> = {
   nodejs:
-    'env -i PATH="$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs',
+    'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs',
   python3:
     'env -i PATH="$PATH" PYTHONUNBUFFERED=1 python3 child-runtimes/python-function-runner.py',
   ruby: 'env -i PATH="$PATH" ruby child-runtimes/ruby-function-runner.rb',
   bash:
-    'env -i PATH="$PATH" node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs',
+    'env -i PATH="$PATH" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs',
 };
 
 function shellQuote(value: string): string {
@@ -267,7 +267,7 @@ sudo -n rm -rf "$work"
 mkdir -p "$repo"
 tar -xzf "$remote_archive" -C "$repo"
 find "$repo" -name '._*' -delete
-rm -rf "$repo/remote/gleam-lambda-runner/build" "$repo/remote/libs/pg-defs/generated/gleam/build"
+rm -rf "$repo/remote/deployments/gleam-lambda-runner/build" "$repo/remote/libs/pg-defs/generated/gleam/build"
 cp "$remote_cases" "$work/cases.json"
 cp "$remote_seed" "$work/seed.sql"
 
@@ -275,7 +275,7 @@ build_runtime() {
   runtime="$1"
   image="$2"
   log="$work/build-$runtime.log"
-  if ! sudo -n nerdctl -n k8s.io build -f "$repo/remote/gleam-lambda-runner/runtime-images/$runtime.Dockerfile" -t "$image" "$repo/remote/gleam-lambda-runner" >"$log" 2>&1; then
+  if ! sudo -n nerdctl -n k8s.io build -f "$repo/remote/deployments/gleam-lambda-runner/runtime-images/$runtime.Dockerfile" -t "$image" "$repo/remote/deployments/gleam-lambda-runner" >"$log" 2>&1; then
     cat "$log" >&2
     exit 1
   fi
@@ -361,7 +361,7 @@ spec:
             cat /tmp/dd-lambda-runner-apk.log
             exit 1
           fi
-          cd /opt/dd-next-1/remote/gleam-lambda-runner
+          cd /opt/dd-next-1/remote/deployments/gleam-lambda-runner
           gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
           exec gleam run
       env:
@@ -604,11 +604,11 @@ test(
           'tar',
           '--exclude=._*',
           '--exclude=*/._*',
-          '--exclude=remote/gleam-lambda-runner/build',
+          '--exclude=remote/deployments/gleam-lambda-runner/build',
           '--exclude=remote/libs/pg-defs/generated/gleam/build',
           '-czf',
           archivePath,
-          'remote/gleam-lambda-runner',
+          'remote/deployments/gleam-lambda-runner',
           'remote/libs/pg-defs/generated/gleam',
           'remote/libs/pg-defs/schema/schema.sql',
         ],

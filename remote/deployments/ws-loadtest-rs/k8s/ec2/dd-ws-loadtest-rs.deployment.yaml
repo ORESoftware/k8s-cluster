@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ws-loadtest-rs
+  namespace: default
+  labels:
+    app: dd-ws-loadtest-rs
+spec:
+  # Cross-language WSS benchmark loader for dd-gleamlang-server.
+  # Defaults match the rust-wss / dart / fsharp-rx / akkaws-akkastreams
+  # overlays: replicas=0 (off), 7500 conns/pod, LOAD_MODE=pipeline,
+  # 1.0 msg/s/client offered load. Operator scales to 4 (= 30K conns)
+  # for the duration of a benchmark and back to 0 afterwards.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dd-ws-loadtest-rs
+  template:
+    metadata:
+      labels:
+        app: dd-ws-loadtest-rs
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              ulimit -n 131072 || true
+              export PATH="/usr/local/cargo/bin:${PATH}"
+              cd /opt/dd-next-1/remote/deployments/ws-loadtest-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-gleamlang-server.default.svc.cluster.local:8081/ws
+            - name: LOAD_MODE
+              value: "pipeline"
+            - name: CLIENT_COUNT
+              value: "7500"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "1.0"
+            - name: MESSAGE_PAYLOAD
+              value: "gleam-bench-payload"
+            - name: HOLD_SECONDS
+              value: "600"
+            - name: CONNECT_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECEIVE_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECONNECT_DELAY_MS
+              value: "2000"
+            - name: RAMP_DELAY_MS
+              value: "3"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+            - name: CORRELATION_TIMEOUT_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "6"
+              memory: 12Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

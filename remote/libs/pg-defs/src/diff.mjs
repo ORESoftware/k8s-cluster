@@ -19,6 +19,12 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const repoRoot = path.resolve(packageRoot, "..", "..", "..");
 const args = process.argv.slice(2);
 const env = argValue("--env") ?? "dev";
+const DEFAULT_DATABASE_URL_ENV_KEYS = [
+  "AGENT_TASKS_RDS_DATABASE_URL",
+  "RDS_DATABASE_URL",
+  "DATABASE_URL",
+  "PG_DATABASE_URL",
+];
 const includeExtraTables = args.includes("--include-extra-tables");
 const outDir = path.resolve(packageRoot, "tmp", "migrations", env);
 const outputPath = path.resolve(outDir, "pg-defs-diff.sql");
@@ -27,16 +33,28 @@ const { contract, sourceSql, schemaPath } = await loadSqlContract(packageRoot);
 
 if (args.includes("--parse-only")) {
   console.log(
-    `Parsed ${contract.tables.length} table(s) from ${path.relative(process.cwd(), schemaPath)}: ${contract.tables
+    `Parsed ${contract.tables.length} table(s), ${contract.routines.length} routine(s), and ${contract.triggers.length} trigger(s) from ${path.relative(process.cwd(), schemaPath)}: ${contract.tables
       .map((table) => `${table.name}(${table.columns.length} columns)`)
+      .join(", ")}`,
+  );
+  console.log(
+    `Parsed ${(contract.routines ?? []).length} routine(s): ${(contract.routines ?? [])
+      .map((routine) => routineSignature(routine))
+      .join(", ")}`,
+  );
+  console.log(
+    `Parsed ${(contract.triggers ?? []).length} trigger(s): ${(contract.triggers ?? [])
+      .map((trigger) => `${trigger.tableName}.${trigger.name}`)
       .join(", ")}`,
   );
   console.log("No database connection opened and no migration SQL written.");
   process.exit(0);
 }
 
-const databaseUrl = await resolveDatabaseUrl();
-const actualSchema = await introspectDatabase(databaseUrl);
+const catalogJsonPath = argValue("--catalog-json");
+const actualSchema = catalogJsonPath
+  ? hydrateActualSchema(JSON.parse(await readFile(path.resolve(process.cwd(), catalogJsonPath), "utf8")))
+  : await introspectDatabase(await resolveDatabaseUrl());
 const diffSql = generateDiffSql({
   contract,
   actualSchema,
@@ -103,7 +121,7 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
 
       const desiredType = columnTypeSql(column);
       const actualType = normalizeActualType(actualColumn);
-      if (desiredType !== actualType) {
+      if (!typesEquivalent(column, actualType)) {
         lines.push(`-- MANUAL REVIEW: type differs for ${table.name}.${column.name}.`);
         lines.push(`-- Desired: ${desiredType}`);
         lines.push(`-- Actual:  ${actualType}`);
@@ -122,7 +140,7 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
         changeCount += 1;
       }
 
-      if (!defaultsEquivalent(column.defaultSql, actualColumn.defaultSql)) {
+      if (!defaultsEquivalent(column, actualColumn.defaultSql)) {
         lines.push(`-- MANUAL REVIEW: default differs for ${table.name}.${column.name}.`);
         lines.push(`-- Desired default: ${column.defaultSql ?? "none"}`);
         lines.push(`-- Actual default:  ${actualColumn.defaultSql ?? "none"}`);
@@ -185,8 +203,46 @@ function generateDiffSql({ contract, actualSchema, env, includeExtraTables, sche
     }
   }
 
+  for (const routine of contract.routines ?? []) {
+    const actualRoutine = actualSchema.routines.get(routineKey(routine));
+    if (!actualRoutine) {
+      lines.push(`-- Create missing function: ${routineSignature(routine)}`);
+      lines.push(ensureSemicolon(routine.createStatement));
+      lines.push("");
+      changeCount += 1;
+      continue;
+    }
+
+    if (!routineEquivalent(routine, actualRoutine)) {
+      lines.push(`-- Replace differing function: ${routineSignature(routine)}`);
+      lines.push(ensureSemicolon(routine.createStatement));
+      lines.push("");
+      changeCount += 1;
+    }
+  }
+
+  for (const trigger of contract.triggers ?? []) {
+    const actualTrigger = actualSchema.triggers.get(triggerKey(trigger));
+    if (!actualTrigger) {
+      lines.push(`-- Create missing trigger: ${trigger.tableName}.${trigger.name}`);
+      lines.push(dropTriggerSql(trigger));
+      lines.push(ensureSemicolon(trigger.createStatement));
+      lines.push("");
+      changeCount += 1;
+      continue;
+    }
+
+    if (!triggerEquivalent(trigger, actualTrigger)) {
+      lines.push(`-- Replace differing trigger: ${trigger.tableName}.${trigger.name}`);
+      lines.push(dropTriggerSql(trigger));
+      lines.push(ensureSemicolon(trigger.createStatement));
+      lines.push("");
+      changeCount += 1;
+    }
+  }
+
   if (changeCount === 0) {
-    lines.push("-- No schema differences detected for pg-defs-owned tables.");
+    lines.push("-- No schema differences detected for pg-defs-owned tables, routines, or triggers.");
     lines.push("");
   }
 
@@ -252,12 +308,53 @@ async function introspectDatabase(databaseUrl) {
           where nsp.nspname = 'public'
             and not ind.indisprimary
         ) i
+      ), '[]'::json),
+      'routines', coalesce((
+        select json_agg(row_to_json(r) order by r.routine_name, r.identity_arguments)
+        from (
+          select
+            proc.proname as routine_name,
+            pg_get_function_identity_arguments(proc.oid) as identity_arguments,
+            pg_get_function_result(proc.oid) as result_type,
+            lang.lanname as language,
+            case proc.provolatile
+              when 'i' then 'immutable'
+              when 's' then 'stable'
+              else 'volatile'
+            end as volatility,
+            proc.prosrc as body_sql
+          from pg_proc proc
+          join pg_namespace nsp on nsp.oid = proc.pronamespace
+          join pg_language lang on lang.oid = proc.prolang
+          where nsp.nspname = 'public'
+        ) r
+      ), '[]'::json),
+      'triggers', coalesce((
+        select json_agg(row_to_json(tg) order by tg.table_name, tg.trigger_name)
+        from (
+          select
+            event_object_table as table_name,
+            trigger_name,
+            lower(action_timing) as timing,
+            array_agg(lower(event_manipulation) order by lower(event_manipulation)) as events,
+            lower(action_orientation) as orientation,
+            action_statement
+          from information_schema.triggers
+          where trigger_schema = 'public'
+          group by event_object_table, trigger_name, action_timing, action_orientation, action_statement
+        ) tg
       ), '[]'::json)
     ) as schema_json;
   `);
 
+  return hydrateActualSchema(rows);
+}
+
+function hydrateActualSchema(rows) {
   const tables = new Map();
-  for (const table of rows.tables) {
+  const routines = new Map();
+  const triggers = new Map();
+  for (const table of rows.tables ?? []) {
     tables.set(table.table_name, {
       name: table.table_name,
       columns: new Map(),
@@ -266,7 +363,7 @@ async function introspectDatabase(databaseUrl) {
     });
   }
 
-  for (const column of rows.columns) {
+  for (const column of rows.columns ?? []) {
     const table = tables.get(column.table_name);
     if (!table) {
       continue;
@@ -281,21 +378,47 @@ async function introspectDatabase(databaseUrl) {
     });
   }
 
-  for (const check of rows.checks) {
+  for (const check of rows.checks ?? []) {
     tables.get(check.table_name)?.checks.set(check.constraint_name, {
       name: check.constraint_name,
       definition: check.definition,
     });
   }
 
-  for (const index of rows.indexes) {
+  for (const index of rows.indexes ?? []) {
     tables.get(index.table_name)?.indexes.set(index.index_name, {
       name: index.index_name,
       definition: index.definition,
     });
   }
 
-  return { tables };
+  for (const routine of rows.routines ?? []) {
+    const normalized = {
+      name: routine.routine_name,
+      identityArguments: normalizeRoutineArgs(routine.identity_arguments ?? ""),
+      returns: routine.result_type,
+      language: routine.language,
+      volatility: routine.volatility,
+      bodySql: routine.body_sql ?? "",
+    };
+    routines.set(routineKey(normalized), normalized);
+  }
+
+  for (const trigger of rows.triggers ?? []) {
+    const normalized = {
+      name: trigger.trigger_name,
+      tableName: trigger.table_name,
+      timing: trigger.timing,
+      events: trigger.events ?? [],
+      orientation: trigger.orientation,
+      functionName: triggerFunctionName(trigger.action_statement),
+      functionArguments: "",
+      actionStatement: trigger.action_statement,
+    };
+    triggers.set(triggerKey(normalized), normalized);
+  }
+
+  return { tables, routines, triggers };
 }
 
 async function queryJson(databaseUrl, sql) {
@@ -345,21 +468,26 @@ async function resolveDatabaseUrl() {
     return explicit;
   }
 
-  const envKey = argValue("--database-url-env") ?? "DATABASE_URL";
+  const explicitEnvKey = argValue("--database-url-env");
+  const envKeys = explicitEnvKey ? [explicitEnvKey] : DEFAULT_DATABASE_URL_ENV_KEYS;
   const envFile = await resolveEnvFile();
   if (envFile) {
     const envValues = parseEnvFile(await readFile(envFile, "utf8"));
-    if (envValues[envKey]) {
-      return envValues[envKey];
+    for (const envKey of envKeys) {
+      if (envValues[envKey]) {
+        return envValues[envKey];
+      }
     }
   }
 
-  if (process.env[envKey]) {
-    return process.env[envKey];
+  for (const envKey of envKeys) {
+    if (process.env[envKey]) {
+      return process.env[envKey];
+    }
   }
 
   throw new Error(
-    `No database URL found. Set ${envKey}, pass --database-url, or provide --env-file with ${envKey}.`,
+    `No database URL found. Set one of ${envKeys.join(", ")}, pass --database-url, or provide --env-file with one of those keys.`,
   );
 }
 
@@ -422,13 +550,21 @@ function normalizeActualType(column) {
   if (column.udtName === "int4") {
     return "integer";
   }
+  if (column.udtName === "int8") {
+    return "bigint";
+  }
   if (column.udtName === "bool") {
     return "boolean";
   }
   return column.udtName;
 }
 
-function defaultsEquivalent(desiredDefault, actualDefault) {
+function defaultsEquivalent(column, actualDefault) {
+  if ((column.sqlType === "bigserial" || column.sqlType === "serial") && isSequenceDefault(actualDefault)) {
+    return true;
+  }
+
+  const desiredDefault = column.defaultSql;
   if (!desiredDefault && !actualDefault) {
     return true;
   }
@@ -439,11 +575,21 @@ function defaultsEquivalent(desiredDefault, actualDefault) {
 }
 
 function normalizeDefault(value) {
-  return value
+  const normalized = value
     .replace(/::[\w\s.[\]"]+/g, "")
     .replace(/\bpublic\./g, "")
     .replace(/\s+/g, " ")
-    .trim()
+    .trim();
+  const unwrapped = stripOuterParens(normalized);
+  const numericString = unwrapped.match(/^'(-?\d+)'$/);
+  if (numericString) {
+    return numericString[1];
+  }
+  const booleanString = unwrapped.match(/^'(true|false)'$/i);
+  if (booleanString) {
+    return booleanString[1].toLowerCase();
+  }
+  return unwrapped
     .toLowerCase();
 }
 
@@ -452,8 +598,172 @@ function checkEquivalent(desired, actualDefinition) {
   return normalizeCheck(desired) === normalizeCheck(normalizedActual);
 }
 
+function routineEquivalent(desired, actual) {
+  return (
+    normalizeRoutineArgs(desired.identityArguments) === normalizeRoutineArgs(actual.identityArguments) &&
+    normalizePgType(desired.returns) === normalizePgType(actual.returns) &&
+    desired.language.toLowerCase() === actual.language.toLowerCase() &&
+    desired.volatility.toLowerCase() === actual.volatility.toLowerCase() &&
+    normalizeRoutineBody(desired.bodySql) === normalizeRoutineBody(actual.bodySql)
+  );
+}
+
+function triggerEquivalent(desired, actual) {
+  return (
+    desired.timing.toLowerCase() === actual.timing.toLowerCase() &&
+    normalizeStringList(desired.events).join(",") === normalizeStringList(actual.events).join(",") &&
+    desired.orientation.toLowerCase() === actual.orientation.toLowerCase() &&
+    desired.functionName.toLowerCase() === actual.functionName.toLowerCase()
+  );
+}
+
+function routineKey(routine) {
+  return `${routine.name}(${normalizeRoutineArgs(routine.identityArguments ?? routine.argumentsSql ?? "")})`;
+}
+
+function routineSignature(routine) {
+  return `${routine.name}(${routine.identityArguments ?? ""})`;
+}
+
+function triggerKey(trigger) {
+  return `${trigger.tableName}.${trigger.name}`;
+}
+
+function dropTriggerSql(trigger) {
+  return `drop trigger if exists ${quoteIdent(trigger.name)} on ${quoteIdent(trigger.tableName)};`;
+}
+
+function triggerFunctionName(actionStatement) {
+  const match = actionStatement.match(/\b(?:function|procedure)\s+("?[\w]+"?)\s*\(/i);
+  return match ? match[1].replace(/^"|"$/g, "") : actionStatement;
+}
+
+function normalizeRoutineArgs(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function normalizeStringList(value) {
+  return (value ?? []).map((item) => String(item).toLowerCase()).sort();
+}
+
+function normalizePgType(value) {
+  const normalized = String(value ?? "")
+    .replace(/\bpublic\./g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  switch (normalized) {
+    case "int":
+    case "int4":
+      return "integer";
+    case "bool":
+      return "boolean";
+    case "timestamp with time zone":
+      return "timestamptz";
+    default:
+      return normalized;
+  }
+}
+
+function normalizeRoutineBody(value) {
+  return String(value ?? "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .replace(/\bpublic\./g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function normalizeCheck(value) {
-  return value.replace(/\s+/g, " ").replace(/"/g, "").trim().toLowerCase();
+  // Postgres deparses stored CHECK definitions in a heavily parenthesised,
+  // cast-annotated form that's semantically identical to the lossy SQL we
+  // ship in schema.sql. Walk through the deparse-noise transforms in a
+  // fixed order until the string stabilises so simple shapes like
+  // `between`, `in`, `is null`, and `varchar` cast wraps don't show up
+  // as false-positive drift.
+  let normalized = value
+    .replace(/^CHECK\s*/i, "")
+    // Strip type casts including their `[]` array suffix so `::text[]`
+    // doesn't leave behind a stray `[]`.
+    .replace(
+      /::(?:text|character varying|integer|int|int4|int8|bigint|boolean|bool|jsonb|json|uuid|numeric|real|double precision|timestamp with time zone|timestamp without time zone|timestamptz|timestamp|date|smallint|bytea)(\s*\[\])?/gi,
+      "",
+    )
+    .replace(/::[\w.[\]"]+/g, "")
+    .replace(/"/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Pre-pass: strip parens around bare identifiers so the LHS of an
+  // `(col)::text = ANY (...)` has its bare `col` exposed before the
+  // `= ANY` → `IN` rewrite tries to match.
+  normalized = normalized.replace(/(?<![a-z0-9_])\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+
+  // `col = any ((array[...])[])` (PG deparse) → `col in (...)`. Tolerates
+  // the optional `[]` suffix the array-cast strip leaves behind. Done
+  // before the paren-flattening loop so subsequent passes can strip the
+  // resulting `(col in (...))` wrap with the same rule that strips
+  // other paren-wrapped clauses.
+  normalized = normalized.replace(
+    /([a-z_][\w]*)\s*=\s*any\s*\(\s*\(?\s*array\s*\[([^\]]+)\]\s*\)?\s*(?:\[\])?\s*\)/gi,
+    "$1 in ($2)",
+  );
+
+  // Repeatedly apply paren-flattening passes until idempotent so nested
+  // wraps like `(((x is null)))` collapse cleanly without depth-specific
+  // regexes.
+  for (let i = 0; i < 8; i += 1) {
+    const before = normalized;
+    normalized = stripOuterParens(normalized);
+    // `(ident)` — but ONLY when not glued to a function name. The previous
+    // version dropped the open paren of `octet_length(display_name)`.
+    normalized = normalized.replace(/(?<![a-z0-9_])\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+    // `(col is null)` / `(col is not null)`
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*)\s+(is\s+(?:not\s+)?null)\s*\)/gi,
+      "$1 $2",
+    );
+    // `(LHS OP RHS)` — strip parens around simple binary comparisons where
+    // LHS is an ident or a balanced function call (`octet_length(col)`),
+    // RHS is anything without inner parens. Done in a paren-context-safe
+    // way so `(octet_length(col) <= N)` becomes `octet_length(col) <= N`.
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*(?:\([^()]*\))?)\s*(>=|<=|<>|!=|=|>|<)\s*([^()]+?)\s*\)/gi,
+      "$1 $2 $3",
+    );
+    // `(col in (...))` and `(func(col) in (...))`
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*(?:\([^()]*\))?\s+in\s*\([^()]*\))\s*\)/gi,
+      "$1",
+    );
+    // `(X) AND (Y)` / `(X) OR (Y)` — strip parens around top-level boolean
+    // operands when each operand is itself a simple comparison/predicate.
+    normalized = normalized.replace(
+      /\(\s*([a-z_][\w]*(?:\([^()]*\))?\s+(?:is\s+(?:not\s+)?null|in\s*\([^()]*\)|(?:>=|<=|<>|!=|=|>|<|between)[^()]+?))\s*\)/gi,
+      "$1",
+    );
+    if (normalized === before) break;
+  }
+
+  // `(LHS >= N) AND (LHS <= M)` → `LHS between N and M`. LHS may be a
+  // bare identifier or a balanced function call. Bounds must be integer
+  // literals so this stays safe (no cross-column comparisons).
+  normalized = normalized.replace(
+    /([a-z_][\w]*(?:\([^()]*\))?)\s*>=\s*(-?\d+)\s+and\s+\1\s*<=\s*(-?\d+)/gi,
+    "$1 between $2 and $3",
+  );
+
+  // Final cleanup pass: paren strip + outer wrap + ws collapse.
+  for (let i = 0; i < 4; i += 1) {
+    const before = normalized;
+    normalized = stripOuterParens(normalized);
+    normalized = normalized.replace(/(?<![a-z0-9_])\(\s*([a-z_][\w]*)\s*\)/gi, "$1");
+    normalized = normalized.replace(/\s+/g, " ").trim();
+    if (normalized === before) break;
+  }
+  return normalized.toLowerCase();
 }
 
 function columnTypeSql(column) {
@@ -461,6 +771,61 @@ function columnTypeSql(column) {
     return `varchar(${column.maxLength})`;
   }
   return column.sqlType;
+}
+
+function typesEquivalent(column, actualType) {
+  if (column.sqlType === "bigserial") {
+    return actualType === "bigint";
+  }
+  if (column.sqlType === "serial") {
+    return actualType === "integer";
+  }
+  return columnTypeSql(column) === actualType;
+}
+
+function isSequenceDefault(value) {
+  return typeof value === "string" && /^nextval\('/i.test(value.trim());
+}
+
+function stripOuterParens(value) {
+  let current = value.trim();
+  while (current.startsWith("(") && current.endsWith(")") && enclosesWholeExpression(current)) {
+    current = current.slice(1, -1).trim();
+  }
+  return current;
+}
+
+function enclosesWholeExpression(value) {
+  let depth = 0;
+  let singleQuoted = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    const next = value[index + 1];
+    if (char === "'") {
+      if (singleQuoted && next === "'") {
+        index += 1;
+        continue;
+      }
+      singleQuoted = !singleQuoted;
+      continue;
+    }
+    if (singleQuoted) {
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+    }
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0 && index < value.length - 1) {
+        return false;
+      }
+    }
+    if (depth < 0) {
+      return false;
+    }
+  }
+  return depth === 0;
 }
 
 function quoteIdent(value) {

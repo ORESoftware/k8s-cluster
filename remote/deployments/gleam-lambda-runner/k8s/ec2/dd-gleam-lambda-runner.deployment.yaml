@@ -1,0 +1,213 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-lambda-runner
+  namespace: default
+  labels:
+    app: dd-gleam-lambda-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleam-lambda-runner
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-20-lambda-backend-checks'
+      labels:
+        app: dd-gleam-lambda-runner
+    spec:
+      serviceAccountName: dd-gleam-lambda-runner
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gleam-lambda-runner
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              if ! apk add --no-cache \
+                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
+                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
+                nodejs-current \
+                python3 \
+                ruby \
+                bash \
+                gcompat \
+                libc6-compat \
+                rebar3 \
+                postgresql-client >/tmp/dd-lambda-runner-apk.log 2>&1; then
+                cat /tmp/dd-lambda-runner-apk.log
+                exit 1
+              fi
+              cd /opt/dd-next-1/remote/deployments/gleam-lambda-runner
+              gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
+              gleam build
+              if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
+                mkdir -p build/dev/erlang/hpack/ebin
+                erlc -o build/dev/erlang/hpack/ebin build/dev/erlang/hpack/src/*.erl
+                cp build/dev/erlang/hpack/src/hpack.app.src build/dev/erlang/hpack/ebin/hpack.app
+              fi
+              exec gleam run
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8083'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_LAMBDA_INVOKE_SUBJECT
+              value: dd.remote.lambdas.invoke.*
+            - name: NATS_LAMBDA_QUEUE_GROUP
+              value: dd-gleam-lambda-runner
+            - name: NATS_LAMBDA_RESULT_SUBJECT
+              value: dd.remote.lambdas.results
+            - name: NATS_LAMBDA_FUNCTIONS_SUBJECT
+              value: dd.remote.lambdas.functions
+            - name: NATS_LAMBDA_MAX_PAYLOAD_BYTES
+              value: '5242880'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: LAMBDA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleam-lambda-runner-secrets
+                  key: LAMBDA_DATABASE_URL
+                  optional: true
+            - name: LAMBDA_FUNCTION_CACHE_MAX
+              value: '128'
+            - name: LAMBDA_FUNCTION_BODY_MAX_BYTES
+              value: '262144'
+            - name: LAMBDA_CHILD_INPUT_MAX_BYTES
+              value: '6291456'
+            - name: LAMBDA_RESULT_MAX_BYTES
+              value: '1048576'
+            - name: LAMBDA_ALLOW_HOST_RUNTIMES
+              value: nodejs
+            - name: LAMBDA_PREWARM_RUNTIMES
+              value: nodejs
+            - name: LAMBDA_PREWARM_CONTAINER_RUNTIMES
+              value: ''
+            - name: LAMBDA_CONTAINER_NERDCTL
+              value: /usr/local/bin/nerdctl
+            - name: LAMBDA_CONTAINER_NAMESPACE
+              value: dd-lambda
+            - name: LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS
+              value: '120'
+            - name: LAMBDA_CONTAINER_NETWORK
+              value: host
+            - name: LAMBDA_CONTAINER_RUNNER
+              value: ctr
+            - name: LAMBDA_CONTAINER_CTR
+              value: /usr/local/bin/ctr
+            - name: LAMBDA_CONTAINER_MEMORY_BYTES
+              value: '268435456'
+            - name: LAMBDA_NODEJS_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-nodejs-runtime:dev
+            - name: LAMBDA_PYTHON3_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-python3-runtime:dev
+            - name: LAMBDA_RUBY_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-ruby-runtime:dev
+            - name: LAMBDA_BASH_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-bash-runtime:dev
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-gleam-lambda-runner
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleam-lambda-runner
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-gleam-lambda-runner.default.svc.cluster.local:8083/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-gleam-lambda-runner-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8083
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+            - name: containerd-run
+              mountPath: /run/containerd
+              mountPropagation: Bidirectional
+            - name: containerd-root
+              mountPath: /var/lib/containerd
+              mountPropagation: Bidirectional
+            - name: nerdctl-bin
+              mountPath: /usr/local/bin/nerdctl
+              readOnly: true
+            - name: ctr-bin
+              mountPath: /usr/local/bin/ctr
+              readOnly: true
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: containerd-run
+          hostPath:
+            path: /run/containerd
+            type: Directory
+        - name: containerd-root
+          hostPath:
+            path: /var/lib/containerd
+            type: Directory
+        - name: nerdctl-bin
+          hostPath:
+            path: /usr/local/bin/nerdctl
+            type: File
+        - name: ctr-bin
+          hostPath:
+            path: /usr/local/bin/ctr
+            type: File

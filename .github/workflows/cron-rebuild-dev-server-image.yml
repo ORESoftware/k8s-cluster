@@ -81,7 +81,7 @@ jobs:
             -t "${IMAGE_BASE}:${{ steps.tags.outputs.short_sha }}" \
             -t "${IMAGE_BASE}:${{ steps.tags.outputs.date_tag }}" \
             -t "${IMAGE_BASE}:latest" \
-            remote/dev-server
+            remote/deployments/dev-server
 
           docker push "${IMAGE_BASE}:${{ steps.tags.outputs.short_sha }}"
           docker push "${IMAGE_BASE}:${{ steps.tags.outputs.date_tag }}"

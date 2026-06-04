@@ -1,0 +1,190 @@
+# gcs-loadtest: one-shot Job that runs the chat-vibe test/cli scripts
+# in-cluster against gcs-router.default.svc.cluster.local:3001.
+#
+# Why a Job and not an Argo-managed Deployment:
+#   - These are correctness + WS-fanout load tests, not a long-running
+#     workload. A Job + ttlSecondsAfterFinished keeps things tidy.
+#   - This file is intentionally OUTSIDE remote/deployments/gcs/k8s/ec2
+#     (the Argo CD source path for the gcs Application) so Argo won't
+#     try to manage / prune it. The operator applies it directly:
+#
+#       kubectl apply -f remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml
+#       kubectl logs -n default -f job/gcs-loadtest
+#       # (Job auto-cleans 10min after completion via ttlSecondsAfterFinished)
+#       # To re-run, delete first:
+#       kubectl delete job/gcs-loadtest -n default --ignore-not-found
+#
+# Source layout: this Job mounts the same chat-vibe hostPath that
+# gcs.deployment.yaml mounts, so we run exactly the test scripts that
+# match the deployed gcs binary (multi-device-test.js, cross-conv-test.js,
+# test-colocation.sh + ws-client.js).
+#
+# Target: gcs-router service, in-cluster. We bypass dd-remote-gateway
+# auth and exercise the router -> gcs pod ring directly. The router's
+# /gcs/ws/ path matching still works the same way internally.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gcs-loadtest
+  namespace: default
+  labels:
+    app: gcs-loadtest
+    component: gcs-loadtest
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: gcs-loadtest
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: loadtest
+          # node:22 (not 20) — the chat-vibe test/cli/*.js scripts use the
+          # built-in `WebSocket` global which is only an unconditional
+          # non-experimental global in Node >= 21. Node 20 has it behind
+          # --experimental-websocket and the scripts check `typeof
+          # WebSocket === 'undefined'` and bail out otherwise.
+          image: docker.io/library/node:22-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: GATEWAY
+              value: ws://gcs-router.default.svc.cluster.local:3001
+            # multi-device-test.js knobs
+            - name: MD_CONVS
+              value: "3"
+            - name: MD_USERS_PER_CONV
+              value: "4"
+            - name: MD_DEVICES_PER_USER
+              value: "3"
+            - name: MD_MESSAGES
+              value: "6"
+            # cross-conv-test.js knobs
+            - name: CC_CONVS
+              value: "4"
+            - name: CC_CLIENTS_PER_CONV
+              value: "5"
+            - name: CC_MESSAGES
+              value: "8"
+            # test-colocation.sh knobs (clients sharing a single conv)
+            - name: COLOC_N
+              value: "6"
+            - name: COLOC_DURATION
+              value: "8"
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -uo pipefail
+
+              SRC=/opt/chat-vibe-src
+              WORK=/tmp/chat.vibe
+              mkdir -p "$WORK"
+              cp -R --no-preserve=mode,ownership,timestamps "$SRC"/test "$WORK"/test
+              cd "$WORK"
+              chmod +x test/cli/test-colocation.sh test/cli/ws-client.js test/cli/multi-device-test.js test/cli/cross-conv-test.js || true
+
+              hr() { printf '\n=== %s ===\n\n' "$*"; }
+
+              fail=0
+
+              snapshot_router_metrics() {
+                # Snapshot live router state. The Service round-robins
+                # across router pods so each call may hit a different
+                # router pod; the gauges are per-pod (endpoint set is
+                # consistent across pods, active_conns is per-pod).
+                if ! command -v curl >/dev/null 2>&1; then
+                  echo "(curl not installed in base image)"; return
+                fi
+                local body http_code
+                body=$(curl -sS --max-time 5 -w '\nHTTP_CODE=%{http_code}' \
+                  http://gcs-router.default.svc.cluster.local:9100/metrics 2>&1) || {
+                  echo "(curl failed: $body)"; return
+                }
+                http_code=$(printf '%s\n' "$body" | awk -F= '/^HTTP_CODE=/{print $2}')
+                printf '%s\n' "$body" | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns)' || {
+                  echo "(no matching gcs_router_* gauges; http_code=${http_code:-unknown}; first 6 lines of body follow)"
+                  printf '%s\n' "$body" | head -6
+                }
+              }
+
+              hr "1/4: gcs-router /metrics BEFORE tests"
+              snapshot_router_metrics
+
+              hr "2/4: multi-device-test.js (${MD_CONVS} convs x ${MD_USERS_PER_CONV} users x ${MD_DEVICES_PER_USER} devices)"
+              node test/cli/multi-device-test.js \
+                   --gateway "$GATEWAY" \
+                   --convs "$MD_CONVS" \
+                   --users-per-conv "$MD_USERS_PER_CONV" \
+                   --devices-per-user "$MD_DEVICES_PER_USER" \
+                   --messages "$MD_MESSAGES" \
+                   --verbose
+              rc=$?
+              echo ">> multi-device-test.js exit=$rc"
+              [ "$rc" -ne 0 ] && fail=1
+
+              hr "3/4: cross-conv-test.js (${CC_CONVS} convs x ${CC_CLIENTS_PER_CONV} clients)"
+              node test/cli/cross-conv-test.js \
+                   --gateway "$GATEWAY" \
+                   --convs "$CC_CONVS" \
+                   --clients-per-conv "$CC_CLIENTS_PER_CONV" \
+                   --messages "$CC_MESSAGES" \
+                   --verbose
+              rc=$?
+              echo ">> cross-conv-test.js exit=$rc"
+              [ "$rc" -ne 0 ] && fail=1
+
+              hr "4/4: test-colocation.sh (N=${COLOC_N}, duration=${COLOC_DURATION}s)"
+              GATEWAY="$GATEWAY" CONV="coloc-$(date +%s)" N="$COLOC_N" DURATION="$COLOC_DURATION" \
+                bash test/cli/test-colocation.sh
+              rc=$?
+              echo ">> test-colocation.sh exit=$rc"
+              [ "$rc" -ne 0 ] && fail=1
+
+              hr "router /metrics AFTER tests"
+              snapshot_router_metrics
+
+              hr "summary"
+              if [ "$fail" -eq 0 ]; then
+                echo "ALL TESTS PASSED"
+                exit 0
+              else
+                echo "ONE OR MORE TESTS FAILED (see per-test exit codes above)"
+                exit 1
+              fi
+          resources:
+            requests:
+              cpu: 10m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: chat-vibe-src
+              mountPath: /opt/chat-vibe-src
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: chat-vibe-src
+          hostPath:
+            # Same hostPath that gcs.deployment.yaml mounts, so we
+            # always run the test scripts that match the deployed gcs
+            # build. See remote/deployments/gcs/readme.md for the
+            # bootstrap (`git submodule update --init --recursive`).
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gcs/chat-vibe
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

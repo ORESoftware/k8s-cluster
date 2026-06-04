@@ -1,0 +1,42 @@
+# RBAC for dd-thread-fleet-exporter.
+#
+# Posture: read-only.
+#
+# The exporter only needs list/watch on Deployments, Pods, and
+# PVCs in the dd-dev namespace. No write verbs anywhere.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-thread-fleet-exporter
+  namespace: default
+  labels:
+    app: dd-thread-fleet-exporter
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-thread-fleet-exporter
+  namespace: dd-dev
+rules:
+  - apiGroups: ['']
+    resources: [pods, persistentvolumeclaims]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-thread-fleet-exporter
+  namespace: dd-dev
+subjects:
+  - kind: ServiceAccount
+    name: dd-thread-fleet-exporter
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-thread-fleet-exporter

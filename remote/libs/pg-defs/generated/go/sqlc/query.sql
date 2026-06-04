@@ -46,6 +46,36 @@ update known_git_repos set repo_url = $2, display_name = $3, provider = $4, defa
 -- name: DeleteKnownGitRepos :exec
 delete from known_git_repos where id = $1;
 
+-- name: ListAgentContextBlobs :many
+select id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from agent_context_blobs;
+
+-- name: GetAgentContextBlobs :one
+select id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from agent_context_blobs where id = $1 limit 1;
+
+-- name: CreateAgentContextBlobs :one
+insert into agent_context_blobs (id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateAgentContextBlobs :one
+update agent_context_blobs set project_id = $2, repo_id = $3, context_id = $4, context_title = $5, context_blob = $6, status = $7, labels = $8, meta_data = $9, is_soft_deleted = $10, updated_at = $11, created_by = $12, updated_by = $13 where id = $1 returning id, project_id, repo_id, context_id, context_title, context_blob, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteAgentContextBlobs :exec
+delete from agent_context_blobs where id = $1;
+
+-- name: ListAgentContextEmbeddings :many
+select id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at from agent_context_embeddings;
+
+-- name: GetAgentContextEmbeddings :one
+select id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at from agent_context_embeddings where id = $1 limit 1;
+
+-- name: CreateAgentContextEmbeddings :one
+insert into agent_context_embeddings (id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at;
+
+-- name: UpdateAgentContextEmbeddings :one
+update agent_context_embeddings set context_blob_id = $2, embedding_model = $3, embedding = $4, embedding_dimensions = $5, content_sha256 = $6 where id = $1 returning id, context_blob_id, embedding_model, embedding, embedding_dimensions, content_sha256, created_at;
+
+-- name: DeleteAgentContextEmbeddings :exec
+delete from agent_context_embeddings where id = $1;
+
 -- name: ListAgentRemoteDevThreads :many
 select id, user_id, known_git_repo_id, title, repo, base_branch, meta, archived_at, is_soft_deleted, created_at, updated_at, created_by, updated_by from agent_remote_dev_threads;
 
@@ -77,19 +107,34 @@ update agent_remote_dev_tasks set thread_id = $2, user_id = $3, docker_task_id =
 delete from agent_remote_dev_tasks where id = $1;
 
 -- name: ListAgentRemoteDevEvents :many
-select id, task_id, seq, event_kind, payload, created_at from agent_remote_dev_events;
+select id, task_id, thread_id, seq, event_kind, payload, created_at from agent_remote_dev_events;
 
 -- name: GetAgentRemoteDevEvents :one
-select id, task_id, seq, event_kind, payload, created_at from agent_remote_dev_events where id = $1 limit 1;
+select id, task_id, thread_id, seq, event_kind, payload, created_at from agent_remote_dev_events where id = $1 limit 1;
 
 -- name: CreateAgentRemoteDevEvents :one
-insert into agent_remote_dev_events (id, task_id, seq, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6) returning id, task_id, seq, event_kind, payload, created_at;
+insert into agent_remote_dev_events (id, task_id, thread_id, seq, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, task_id, thread_id, seq, event_kind, payload, created_at;
 
 -- name: UpdateAgentRemoteDevEvents :one
-update agent_remote_dev_events set task_id = $2, seq = $3, event_kind = $4, payload = $5 where id = $1 returning id, task_id, seq, event_kind, payload, created_at;
+update agent_remote_dev_events set task_id = $2, thread_id = $3, seq = $4, event_kind = $5, payload = $6 where id = $1 returning id, task_id, thread_id, seq, event_kind, payload, created_at;
 
 -- name: DeleteAgentRemoteDevEvents :exec
 delete from agent_remote_dev_events where id = $1;
+
+-- name: ListAgentRemoteDevBreadcrumbs :many
+select id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider from agent_remote_dev_breadcrumbs;
+
+-- name: GetAgentRemoteDevBreadcrumbs :one
+select id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider from agent_remote_dev_breadcrumbs where id = $1 limit 1;
+
+-- name: CreateAgentRemoteDevBreadcrumbs :one
+insert into agent_remote_dev_breadcrumbs (id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider;
+
+-- name: UpdateAgentRemoteDevBreadcrumbs :one
+update agent_remote_dev_breadcrumbs set thread_id = $2, task_id = $3, kind = $4, payload = $5, emitted_at = $6, pod_name = $7, branch = $8, provider = $9 where id = $1 returning id, thread_id, task_id, kind, payload, emitted_at, pod_name, branch, provider;
+
+-- name: DeleteAgentRemoteDevBreadcrumbs :exec
+delete from agent_remote_dev_breadcrumbs where id = $1;
 
 -- name: ListAgentRemoteDevArtifacts :many
 select id, task_id, thread_id, filename, content_type, size_bytes, storage_provider, storage_bucket, storage_key, url, signed_url_expires_at, sha256, meta, created_at from agent_remote_dev_artifacts;
@@ -121,6 +166,66 @@ update agent_remote_dev_runtime_locks set thread_id = $2, owner = $3, status = $
 -- name: DeleteAgentRemoteDevRuntimeLocks :exec
 delete from agent_remote_dev_runtime_locks where id = $1;
 
+-- name: ListMipSolverSessions :many
+select session_id, revision, problem, created_at, updated_at from mip_solver_sessions;
+
+-- name: GetMipSolverSessions :one
+select session_id, revision, problem, created_at, updated_at from mip_solver_sessions where session_id = $1 limit 1;
+
+-- name: CreateMipSolverSessions :one
+insert into mip_solver_sessions (session_id, revision, problem, created_at, updated_at) values ($1, $2, $3, $4, $5) returning session_id, revision, problem, created_at, updated_at;
+
+-- name: UpdateMipSolverSessions :one
+update mip_solver_sessions set revision = $2, problem = $3, updated_at = $4 where session_id = $1 returning session_id, revision, problem, created_at, updated_at;
+
+-- name: DeleteMipSolverSessions :exec
+delete from mip_solver_sessions where session_id = $1;
+
+-- name: ListMipSolverSolves :many
+select solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at from mip_solver_solves;
+
+-- name: GetMipSolverSolves :one
+select solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at from mip_solver_solves where solve_id = $1 limit 1;
+
+-- name: CreateMipSolverSolves :one
+insert into mip_solver_solves (solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at;
+
+-- name: UpdateMipSolverSolves :one
+update mip_solver_solves set request_id = $2, revision = $3, status = $4, node_id = $5, node_role = $6, problem = $7, options = $8, response = $9, jobs_expected = $10, jobs_published = $11, jobs_completed = $12, jobs_redelegated = $13, jobs_split = $14, timed_out = $15, distributed = $16, warnings = $17, started_at = $18, updated_at = $19, finished_at = $20 where solve_id = $1 returning solve_id, request_id, revision, status, node_id, node_role, problem, options, response, jobs_expected, jobs_published, jobs_completed, jobs_redelegated, jobs_split, timed_out, distributed, warnings, started_at, updated_at, finished_at;
+
+-- name: DeleteMipSolverSolves :exec
+delete from mip_solver_solves where solve_id = $1;
+
+-- name: ListMipSolverJobs :many
+select job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at from mip_solver_jobs;
+
+-- name: GetMipSolverJobs :one
+select job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at from mip_solver_jobs where job_id = $1 limit 1;
+
+-- name: CreateMipSolverJobs :one
+insert into mip_solver_jobs (job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at;
+
+-- name: UpdateMipSolverJobs :one
+update mip_solver_jobs set solve_id = $2, root_job_id = $3, retry_index = $4, depth = $5, status = $6, worker_node = $7, job_payload = $8, result_payload = $9, submitted_at = $10, finished_at = $11, updated_at = $12 where job_id = $1 returning job_id, solve_id, root_job_id, retry_index, depth, status, worker_node, job_payload, result_payload, submitted_at, finished_at, updated_at;
+
+-- name: DeleteMipSolverJobs :exec
+delete from mip_solver_jobs where job_id = $1;
+
+-- name: ListMipSolverEvents :many
+select id, solve_id, session_id, job_id, event_kind, payload, created_at from mip_solver_events;
+
+-- name: GetMipSolverEvents :one
+select id, solve_id, session_id, job_id, event_kind, payload, created_at from mip_solver_events where id = $1 limit 1;
+
+-- name: CreateMipSolverEvents :one
+insert into mip_solver_events (id, solve_id, session_id, job_id, event_kind, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7) returning id, solve_id, session_id, job_id, event_kind, payload, created_at;
+
+-- name: UpdateMipSolverEvents :one
+update mip_solver_events set solve_id = $2, session_id = $3, job_id = $4, event_kind = $5, payload = $6 where id = $1 returning id, solve_id, session_id, job_id, event_kind, payload, created_at;
+
+-- name: DeleteMipSolverEvents :exec
+delete from mip_solver_events where id = $1;
+
 -- name: ListLambdaFunctions :many
 select id, slug, display_name, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, status, env, labels, meta_data, last_invoked_at, is_soft_deleted, created_at, updated_at, created_by, updated_by from lambda_functions;
 
@@ -135,6 +240,36 @@ update lambda_functions set slug = $2, display_name = $3, description = $4, runt
 
 -- name: DeleteLambdaFunctions :exec
 delete from lambda_functions where id = $1;
+
+-- name: ListContainerPoolImageRevisions :many
+select id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_image_revisions;
+
+-- name: GetContainerPoolImageRevisions :one
+select id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from container_pool_image_revisions where id = $1 limit 1;
+
+-- name: CreateContainerPoolImageRevisions :one
+insert into container_pool_image_revisions (id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateContainerPoolImageRevisions :one
+update container_pool_image_revisions set image_slug = $2, image_ref = $3, dockerfile_path = $4, build_context = $5, dockerfile_text = $6, dockerfile_sha256 = $7, source = $8, notes = $9, status = $10, meta_data = $11, is_soft_deleted = $12, updated_at = $13, created_by = $14, updated_by = $15 where id = $1 returning id, image_slug, image_ref, dockerfile_path, build_context, dockerfile_text, dockerfile_sha256, source, notes, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteContainerPoolImageRevisions :exec
+delete from container_pool_image_revisions where id = $1;
+
+-- name: ListContainerPoolBuildRuns :many
+select id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at from container_pool_build_runs;
+
+-- name: GetContainerPoolBuildRuns :one
+select id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at from container_pool_build_runs where id = $1 limit 1;
+
+-- name: CreateContainerPoolBuildRuns :one
+insert into container_pool_build_runs (id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) returning id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at;
+
+-- name: UpdateContainerPoolBuildRuns :one
+update container_pool_build_runs set image_slug = $2, revision_id = $3, image_ref = $4, candidate_tag = $5, build_status = $6, test_status = $7, overall_status = $8, test_command = $9, build_started_at = $10, build_finished_at = $11, test_started_at = $12, test_finished_at = $13, build_log_excerpt = $14, test_log_excerpt = $15, error_message = $16, triggered_by = $17, meta_data = $18, is_soft_deleted = $19, updated_at = $20 where id = $1 returning id, image_slug, revision_id, image_ref, candidate_tag, build_status, test_status, overall_status, test_command, build_started_at, build_finished_at, test_started_at, test_finished_at, build_log_excerpt, test_log_excerpt, error_message, triggered_by, meta_data, is_soft_deleted, created_at, updated_at;
+
+-- name: DeleteContainerPoolBuildRuns :exec
+delete from container_pool_build_runs where id = $1;
 
 -- name: ListPresenceConvs :many
 select id, slug, display_name, status, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from presence_convs;
@@ -210,3 +345,108 @@ update presence_consumer_checkpoints set last_seq = $2, updated_at = $3 where co
 
 -- name: DeletePresenceConsumerCheckpoints :exec
 delete from presence_consumer_checkpoints where consumer_id = $1;
+
+-- name: ListDesSoccerLearningExperiments :many
+select id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from des_soccer_learning_experiments;
+
+-- name: GetDesSoccerLearningExperiments :one
+select id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from des_soccer_learning_experiments where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningExperiments :one
+insert into des_soccer_learning_experiments (id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateDesSoccerLearningExperiments :one
+update des_soccer_learning_experiments set slug = $2, display_name = $3, description = $4, status = $5, config = $6, labels = $7, meta_data = $8, is_soft_deleted = $9, updated_at = $10, created_by = $11, updated_by = $12 where id = $1 returning id, slug, display_name, description, status, config, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteDesSoccerLearningExperiments :exec
+delete from des_soccer_learning_experiments where id = $1;
+
+-- name: ListDesSoccerLearningPolicyVersions :many
+select id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by from des_soccer_learning_policy_versions;
+
+-- name: GetDesSoccerLearningPolicyVersions :one
+select id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by from des_soccer_learning_policy_versions where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningPolicyVersions :one
+insert into des_soccer_learning_policy_versions (id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateDesSoccerLearningPolicyVersions :one
+update des_soccer_learning_policy_versions set experiment_id = $2, parent_policy_version_id = $3, generation = $4, version_label = $5, source_kind = $6, status = $7, options = $8, config = $9, lineage = $10, metrics = $11, entry_count = $12, target_entry_count = $13, visit_count = $14, fitness_micros = $15, updated_at = $16, created_by = $17, updated_by = $18 where id = $1 returning id, experiment_id, parent_policy_version_id, generation, version_label, source_kind, status, options, config, lineage, metrics, entry_count, target_entry_count, visit_count, fitness_micros, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteDesSoccerLearningPolicyVersions :exec
+delete from des_soccer_learning_policy_versions where id = $1;
+
+-- name: ListDesSoccerLearningPolicyEntries :many
+select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries;
+
+-- name: GetDesSoccerLearningPolicyEntries :one
+select id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at from des_soccer_learning_policy_entries where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningPolicyEntries :one
+insert into des_soccer_learning_policy_entries (id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at;
+
+-- name: UpdateDesSoccerLearningPolicyEntries :one
+update des_soccer_learning_policy_entries set policy_version_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, value_micros = $12, visits = $13, source_run_id = $14 where id = $1 returning id, policy_version_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, value_micros, visits, source_run_id, created_at;
+
+-- name: DeleteDesSoccerLearningPolicyEntries :exec
+delete from des_soccer_learning_policy_entries where id = $1;
+
+-- name: ListDesSoccerLearningJobs :many
+select id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at from des_soccer_learning_jobs;
+
+-- name: GetDesSoccerLearningJobs :one
+select id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at from des_soccer_learning_jobs where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningJobs :one
+insert into des_soccer_learning_jobs (id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at;
+
+-- name: UpdateDesSoccerLearningJobs :one
+update des_soccer_learning_jobs set experiment_id = $2, base_policy_version_id = $3, spawn_strategy = $4, status = $5, priority = $6, seed = $7, attempt = $8, max_attempts = $9, lease_owner = $10, lease_expires_at = $11, started_at = $12, finished_at = $13, config = $14, runner_config = $15, result_run_id = $16, error = $17, updated_at = $18 where id = $1 returning id, experiment_id, base_policy_version_id, spawn_strategy, status, priority, seed, attempt, max_attempts, lease_owner, lease_expires_at, started_at, finished_at, config, runner_config, result_run_id, error, created_at, updated_at;
+
+-- name: DeleteDesSoccerLearningJobs :exec
+delete from des_soccer_learning_jobs where id = $1;
+
+-- name: ListDesSoccerLearningRuns :many
+select id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at from des_soccer_learning_runs;
+
+-- name: GetDesSoccerLearningRuns :one
+select id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at from des_soccer_learning_runs where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningRuns :one
+insert into des_soccer_learning_runs (id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27) returning id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at;
+
+-- name: UpdateDesSoccerLearningRuns :one
+update des_soccer_learning_runs set job_id = $2, experiment_id = $3, base_policy_version_id = $4, output_policy_version_id = $5, runner_id = $6, seed = $7, episode_index = $8, status = $9, score_home = $10, score_away = $11, home_goal_diff = $12, away_goal_diff = $13, home_outcome = $14, away_outcome = $15, home_merge_weight_micros = $16, away_merge_weight_micros = $17, fitness_micros = $18, duration_ticks = $19, simulated_seconds_micros = $20, elapsed_millis = $21, transitions = $22, summary = $23, stats = $24, error = $25, updated_at = $26 where id = $1 returning id, job_id, experiment_id, base_policy_version_id, output_policy_version_id, runner_id, seed, episode_index, status, score_home, score_away, home_goal_diff, away_goal_diff, home_outcome, away_outcome, home_merge_weight_micros, away_merge_weight_micros, fitness_micros, duration_ticks, simulated_seconds_micros, elapsed_millis, transitions, summary, stats, error, created_at, updated_at;
+
+-- name: DeleteDesSoccerLearningRuns :exec
+delete from des_soccer_learning_runs where id = $1;
+
+-- name: ListDesSoccerLearningRunDeltas :many
+select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas;
+
+-- name: GetDesSoccerLearningRunDeltas :one
+select id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at from des_soccer_learning_run_deltas where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningRunDeltas :one
+insert into des_soccer_learning_run_deltas (id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
+
+-- name: UpdateDesSoccerLearningRunDeltas :one
+update des_soccer_learning_run_deltas set run_id = $2, team = $3, entry_kind = $4, state_hash = $5, state_key = $6, action = $7, target_fine_cell_id = $8, target_tactical_cell_id = $9, target_macro_cell_id = $10, target_root_cell_id = $11, before_value_micros = $12, after_value_micros = $13, value_delta_micros = $14, visit_delta = $15, merge_weight_micros = $16, effective_visit_micros = $17 where id = $1 returning id, run_id, team, entry_kind, state_hash, state_key, action, target_fine_cell_id, target_tactical_cell_id, target_macro_cell_id, target_root_cell_id, before_value_micros, after_value_micros, value_delta_micros, visit_delta, merge_weight_micros, effective_visit_micros, created_at;
+
+-- name: DeleteDesSoccerLearningRunDeltas :exec
+delete from des_soccer_learning_run_deltas where id = $1;
+
+-- name: ListDesSoccerLearningMergeEvents :many
+select id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at from des_soccer_learning_merge_events;
+
+-- name: GetDesSoccerLearningMergeEvents :one
+select id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at from des_soccer_learning_merge_events where id = $1 limit 1;
+
+-- name: CreateDesSoccerLearningMergeEvents :one
+insert into des_soccer_learning_merge_events (id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at;
+
+-- name: UpdateDesSoccerLearningMergeEvents :one
+update des_soccer_learning_merge_events set experiment_id = $2, base_policy_version_id = $3, output_policy_version_id = $4, strategy = $5, input_run_count = $6, input_delta_count = $7, decay_micros = $8, metrics = $9 where id = $1 returning id, experiment_id, base_policy_version_id, output_policy_version_id, strategy, input_run_count, input_delta_count, decay_micros, metrics, created_at;
+
+-- name: DeleteDesSoccerLearningMergeEvents :exec
+delete from des_soccer_learning_merge_events where id = $1;

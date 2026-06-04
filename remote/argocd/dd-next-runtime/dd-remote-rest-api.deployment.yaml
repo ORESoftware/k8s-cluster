@@ -6,16 +6,21 @@ metadata:
   labels:
     app: dd-remote-rest-api
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-remote-rest-api
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-15-rest-api-split'
+        dd.dev/telemetry-revision: '2026-05-19-status-ws-direct-fanout'
       labels:
         app: dd-remote-rest-api
     spec:
@@ -33,7 +38,8 @@ spec:
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/rest-api-rs
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/rest-api-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
@@ -46,8 +52,30 @@ spec:
               value: dd.remote.thread.*.tasks
             - name: NATS_TASK_STREAM
               value: DD_REMOTE_TASKS
+            - name: REST_API_DEFAULT_DISPATCH_MODE
+              value: queued
+            - name: REST_STATUS_GLEAM_BROADCAST_URL
+              value: http://dd-gleamlang-server.default.svc.cluster.local:8081/broadcast
+            - name: REST_STATUS_RUST_BROADCAST_URL
+              value: http://dd-webrtc-signaling.default.svc.cluster.local:8095/runtime/broadcast
+            - name: REST_STATUS_GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
+                  optional: true
+            - name: REST_STATUS_RUST_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
             - name: THREAD_RUNTIME_NAMESPACE
               value: default
+            - name: THREAD_RUNTIME_CAPACITY_PRUNE_ENABLED
+              value: 'true'
+            - name: THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS
+              value: '4'
             - name: LAMBDA_IMAGE_BUILD_ENABLED
               value: 'true'
             - name: LAMBDA_IMAGE_BUILD_ROOT
@@ -62,6 +90,52 @@ spec:
               value: k8s.io
             - name: LAMBDA_ALLOW_HOST_RUNTIMES
               value: nodejs
+            - name: CONTAINER_POOL_IMAGE_BUILDS_ENABLED
+              value: 'true'
+            - name: CONTAINER_POOL_IMAGE_API_AUTH_REQUIRED
+              value: 'true'
+            - name: CONTAINER_POOL_IMAGE_CUSTOM_TEST_COMMANDS_ENABLED
+              value: 'false'
+            - name: CONTAINER_POOL_IMAGE_BUILD_ROOT
+              value: /var/lib/dd-container-pool-images
+            # Builds run in the same containerd namespace as the host
+            # buildkitd (k8s.io), matching LAMBDA_IMAGE_BUILD_NAMESPACE and the
+            # idle-reaper worker-image build. With dd-pool, nerdctl could not
+            # locate a buildkit socket and aborted before invoking buildctl.
+            - name: CONTAINER_POOL_IMAGE_BUILD_NAMESPACE
+              value: k8s.io
+            - name: CONTAINER_POOL_IMAGE_BUILD_NERDCTL
+              value: /usr/local/bin/nerdctl
+            - name: CONTAINER_POOL_IMAGE_REPO_ROOT
+              value: /opt/dd-next-1
+            - name: CONTAINER_POOL_IMAGE_BUILD_TIMEOUT_SECONDS
+              value: '1200'
+            - name: CONTAINER_POOL_IMAGE_TEST_TIMEOUT_SECONDS
+              value: '120'
+            # Base URL the /api/runtime-config/snapshot/* proxy forwards to.
+            # See remote/deployments/runtime-config-rs/readme.md.
+            - name: RUNTIME_CONFIG_BASE_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110
+            # runtime-config receive helper: registers this pod with the control
+            # plane so it receives /internal/update-runtime-config pushes too,
+            # in addition to acting as the public pull-proxy for short-lived
+            # consumers (lambdas, gateway-fronted clients).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-remote-rest-api
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-remote-rest-api
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-remote-rest-api.default.svc.cluster.local:8082/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           envFrom:
             - secretRef:
                 name: dd-agent-secrets
@@ -104,6 +178,8 @@ spec:
               mountPath: /opt/dd-next-1
             - name: lambda-image-builds
               mountPath: /var/lib/dd-lambdas
+            - name: container-pool-image-builds
+              mountPath: /var/lib/dd-container-pool-images
             - name: containerd-sock
               mountPath: /run/containerd/containerd.sock
             - name: containerd-root
@@ -112,6 +188,26 @@ spec:
             - name: nerdctl-bin
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
+            # buildctl + the host buildkitd socket dir are required so nerdctl
+            # can shell out for `nerdctl build`. Both are baked on the host but
+            # absent inside the rust:1.90 image, which caused container-pool
+            # build-test rows to instantly fail with: `buildctl` executable
+            # file not found in $PATH.
+            - name: buildctl-bin
+              mountPath: /usr/local/bin/buildctl
+              readOnly: true
+            - name: buildkit-run
+              mountPath: /run/buildkit
+              readOnly: true
+            # nerdctl writes per-container etchosts + meta to /var/lib/nerdctl.
+            # Without this mount, `nerdctl run` fails immediately with:
+            #   failed to fulfil mount request: open
+            #   /var/lib/nerdctl/<id>/etchosts/<ns>/<cid>/hosts: no such file
+            # The dd-container-pool deployment already mounts this with
+            # Bidirectional propagation; mirror it here for build smoke tests.
+            - name: nerdctl-state
+              mountPath: /var/lib/nerdctl
+              mountPropagation: Bidirectional
       volumes:
         - name: repo
           hostPath:
@@ -120,6 +216,10 @@ spec:
         - name: lambda-image-builds
           hostPath:
             path: /var/lib/dd-lambdas
+            type: DirectoryOrCreate
+        - name: container-pool-image-builds
+          hostPath:
+            path: /var/lib/dd-container-pool-images
             type: DirectoryOrCreate
         - name: containerd-sock
           hostPath:
@@ -133,3 +233,15 @@ spec:
           hostPath:
             path: /usr/local/bin/nerdctl
             type: File
+        - name: buildctl-bin
+          hostPath:
+            path: /usr/local/bin/buildctl
+            type: File
+        - name: buildkit-run
+          hostPath:
+            path: /run/buildkit
+            type: Directory
+        - name: nerdctl-state
+          hostPath:
+            path: /var/lib/nerdctl
+            type: DirectoryOrCreate

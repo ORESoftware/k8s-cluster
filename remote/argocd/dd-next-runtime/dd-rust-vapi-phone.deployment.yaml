@@ -1,0 +1,218 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-rust-vapi-phone
+  namespace: default
+  labels:
+    app: dd-rust-vapi-phone
+spec:
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-rust-vapi-phone
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-31-rust-vapi-phone'
+      labels:
+        app: dd-rust-vapi-phone
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: rust-vapi-phone
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export CARGO_HOME=/var/cache/dd-rust-vapi-phone/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-rust-vapi-phone/target
+              export VAPI_SERVER_SECRET="${VAPI_SERVER_SECRET:-dummy-vapi-server-secret}"
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              source_root=/opt/dd-next-1
+              if [ -n "${VAPI_PHONE_GIT_URL:-}" ]; then
+                clone_root="$(mktemp -d /tmp/dd-rust-vapi-phone-source.XXXXXX)"
+                if git clone --depth 1 --branch "${VAPI_PHONE_GIT_REF:-dev}" "${VAPI_PHONE_GIT_URL}" "$clone_root"; then
+                  source_root="$clone_root"
+                  echo "[dd-rust-vapi-phone] source: cloned ${VAPI_PHONE_GIT_URL}@${VAPI_PHONE_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
+                else
+                  echo "[dd-rust-vapi-phone] source clone failed; using mounted source at ${source_root}" >&2
+                fi
+              fi
+              cd "$source_root/remote/deployments/rust-vapi-phone-rs"
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-rust-vapi-phone/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-rust-vapi-phone/target
+            - name: VAPI_PHONE_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: VAPI_PHONE_GIT_REF
+              value: dev
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8113'
+            - name: VAPI_API_BASE
+              value: https://api.vapi.ai
+            - name: VAPI_FORWARD_NUMBER
+              value: '+17372814824'
+            - name: VAPI_OWNER_NAME
+              value: Alex Mills
+            # Voice the assistant speaks in. Default is a stock Vapi voice.
+            # To use Alex's *cloned* voice: clone it in ElevenLabs (or Cartesia),
+            # add that provider's API key in Vapi → Integrations, then set
+            # VAPI_VOICE_PROVIDER=11labs and VAPI_VOICE_ID=<cloned voice id>.
+            # The cloned voice then reads the name + the option-1/option-2 menu.
+            - name: VAPI_VOICE_PROVIDER
+              value: vapi
+            - name: VAPI_VOICE_ID
+              value: Elliot
+            # - name: VAPI_VOICE_PROVIDER
+            #   value: 11labs
+            # - name: VAPI_VOICE_ID
+            #   value: <your-cloned-elevenlabs-voice-id>
+            - name: VAPI_WEBHOOK_URL
+              value: https://54.91.17.58/vapi/webhook
+            # Telephony provider. Default 'vapi' allots a free US *local* number
+            # (no toll-free). For an 800/888/833 number, set this to 'twilio',
+            # buy + verify the toll-free number in Twilio, set VAPI_PHONE_NUMBER
+            # to it, and provide TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN below.
+            - name: VAPI_NUMBER_PROVIDER
+              value: vapi
+            # - name: VAPI_PHONE_NUMBER
+            #   value: '+18005551234'   # the toll-free number bought in Twilio
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: TWILIO_ACCOUNT_SID
+                  optional: true
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: TWILIO_AUTH_TOKEN
+                  optional: true
+            # Vapi private API key, server webhook shared secret, and optional
+            # server credential id live in AWS Secrets Manager
+            # (dd/remote-dev/agent-secrets) and are synced into
+            # dd-agent-secrets by External Secrets. /setup + /status return
+            # 503 until VAPI_API_KEY is present. VAPI_SERVER_SECRET is
+            # optional at the Secret layer so the startup script can provide a
+            # dummy fallback until AWS Secrets Manager has the real value.
+            - name: VAPI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: VAPI_API_KEY
+                  optional: true
+            - name: VAPI_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: VAPI_SERVER_SECRET
+                  optional: true
+            - name: VAPI_SERVER_CREDENTIAL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: VAPI_SERVER_CREDENTIAL_ID
+                  optional: true
+            # Gateway-injected x-server-auth value gating /setup and /status.
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-rust-vapi-phone
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-rust-vapi-phone
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-rust-vapi-phone.default.svc.cluster.local:8113/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8113
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-rust-vapi-phone
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

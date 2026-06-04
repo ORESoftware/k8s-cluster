@@ -169,6 +169,77 @@ create index if not exists known_git_repos_updated_at_idx
   on known_git_repos (updated_at desc)
   where is_soft_deleted = false;
 
+create table if not exists agent_context_blobs (
+  id uuid primary key default gen_random_uuid(),
+  project_id varchar(120) default 'default' not null,
+  repo_id uuid,
+  context_id varchar(200) not null,
+  context_title varchar(300) not null,
+  context_blob text not null,
+  status varchar(32) default 'active' not null,
+  labels jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint agent_context_blobs_project_id_format_chk
+    check (project_id ~ '^[A-Za-z0-9._:/-]{1,120}$'),
+  constraint agent_context_blobs_context_id_format_chk
+    check (context_id ~ '^[A-Za-z0-9._:/-]{1,200}$'),
+  constraint agent_context_blobs_context_title_size_chk
+    check (octet_length(context_title) between 1 and 300),
+  constraint agent_context_blobs_context_blob_size_chk
+    check (octet_length(context_blob) between 1 and 1048576),
+  constraint agent_context_blobs_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint agent_context_blobs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint agent_context_blobs_status_chk
+    check (status in ('active', 'paused', 'archived'))
+);
+
+create unique index if not exists agent_context_blobs_project_repo_context_active_uq
+  on agent_context_blobs (project_id, repo_id, context_id)
+  where is_soft_deleted = false;
+
+create index if not exists agent_context_blobs_repo_id_idx
+  on agent_context_blobs (repo_id)
+  where is_soft_deleted = false;
+
+create index if not exists agent_context_blobs_project_id_idx
+  on agent_context_blobs (project_id)
+  where is_soft_deleted = false;
+
+create index if not exists agent_context_blobs_updated_at_idx
+  on agent_context_blobs (updated_at desc)
+  where is_soft_deleted = false;
+
+create table if not exists agent_context_embeddings (
+  id uuid primary key default gen_random_uuid(),
+  context_blob_id uuid not null,
+  embedding_model varchar(120) not null,
+  embedding jsonb not null,
+  embedding_dimensions integer not null,
+  content_sha256 varchar(64) not null,
+  created_at timestamptz default now() not null,
+  constraint agent_context_embeddings_model_format_chk
+    check (embedding_model ~ '^[A-Za-z0-9._:/-]{1,120}$'),
+  constraint agent_context_embeddings_dimensions_chk
+    check (embedding_dimensions > 0),
+  constraint agent_context_embeddings_array_chk
+    check (jsonb_typeof(embedding) = 'array'),
+  constraint agent_context_embeddings_sha256_chk
+    check (content_sha256 ~ '^[a-f0-9]{64}$')
+);
+
+create unique index if not exists agent_context_embeddings_blob_model_sha_uq
+  on agent_context_embeddings (context_blob_id, embedding_model, content_sha256);
+
+create index if not exists agent_context_embeddings_blob_id_idx
+  on agent_context_embeddings (context_blob_id);
+
 create table if not exists agent_remote_dev_threads (
   id uuid primary key,
   user_id uuid not null,
@@ -274,6 +345,7 @@ create index if not exists agent_remote_dev_tasks_created_at_idx
 create table if not exists agent_remote_dev_events (
   id bigserial primary key,
   task_id uuid not null,
+  thread_id uuid,
   seq integer not null,
   event_kind varchar(80) not null,
   payload jsonb default '{}'::jsonb not null,
@@ -287,11 +359,50 @@ create table if not exists agent_remote_dev_events (
 create unique index if not exists agent_remote_dev_events_task_seq_uq
   on agent_remote_dev_events (task_id, seq);
 
+alter table if exists agent_remote_dev_events
+  add column if not exists thread_id uuid;
+
 create index if not exists agent_remote_dev_events_task_id_created_at_idx
   on agent_remote_dev_events (task_id, created_at desc);
 
+create index if not exists agent_remote_dev_events_thread_id_created_at_idx
+  on agent_remote_dev_events (thread_id, created_at desc)
+  where thread_id is not null;
+
 create index if not exists agent_remote_dev_events_created_at_idx
   on agent_remote_dev_events (created_at desc);
+
+create table if not exists agent_remote_dev_breadcrumbs (
+  id bigserial primary key,
+  thread_id uuid not null,
+  task_id uuid,
+  kind varchar(80) not null,
+  payload jsonb default '{}'::jsonb not null,
+  emitted_at timestamptz default now() not null,
+  pod_name varchar(253),
+  branch varchar(120),
+  provider varchar(60),
+  constraint agent_remote_dev_breadcrumbs_kind_format_chk
+    check (kind ~ '^[A-Za-z0-9._:-]{1,80}$'),
+  constraint agent_remote_dev_breadcrumbs_payload_object_chk
+    check (jsonb_typeof(payload) = 'object'),
+  constraint agent_remote_dev_breadcrumbs_pod_name_size_chk
+    check (pod_name is null or octet_length(pod_name) <= 253),
+  constraint agent_remote_dev_breadcrumbs_branch_size_chk
+    check (branch is null or octet_length(branch) <= 120),
+  constraint agent_remote_dev_breadcrumbs_provider_size_chk
+    check (provider is null or octet_length(provider) <= 60)
+);
+
+create index if not exists agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx
+  on agent_remote_dev_breadcrumbs (thread_id, emitted_at desc);
+
+create index if not exists agent_remote_dev_breadcrumbs_task_id_emitted_at_idx
+  on agent_remote_dev_breadcrumbs (task_id, emitted_at desc)
+  where task_id is not null;
+
+create index if not exists agent_remote_dev_breadcrumbs_emitted_at_idx
+  on agent_remote_dev_breadcrumbs (emitted_at desc);
 
 create table if not exists agent_remote_dev_artifacts (
   id uuid primary key default gen_random_uuid(),
@@ -349,13 +460,150 @@ create unique index if not exists agent_remote_dev_runtime_locks_thread_active_u
 create index if not exists agent_remote_dev_runtime_locks_lease_expires_at_idx
   on agent_remote_dev_runtime_locks (lease_expires_at);
 
+create table if not exists mip_solver_sessions (
+  session_id varchar(200) primary key,
+  revision bigint default 0 not null,
+  problem jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint mip_solver_sessions_session_id_size_chk
+    check (octet_length(session_id) between 1 and 200),
+  constraint mip_solver_sessions_revision_chk
+    check (revision >= 0),
+  constraint mip_solver_sessions_problem_json_chk
+    check (jsonb_typeof(problem) = 'object')
+);
+
+create index if not exists mip_solver_sessions_updated_at_idx
+  on mip_solver_sessions (updated_at desc);
+
+create table if not exists mip_solver_solves (
+  solve_id varchar(160) primary key,
+  request_id varchar(200) not null,
+  revision bigint default 0 not null,
+  status varchar(64) default 'running' not null,
+  node_id varchar(253) not null,
+  node_role varchar(32) not null,
+  problem jsonb default '{}'::jsonb not null,
+  options jsonb default '{}'::jsonb not null,
+  response jsonb default '{}'::jsonb not null,
+  jobs_expected integer default 0 not null,
+  jobs_published integer default 0 not null,
+  jobs_completed integer default 0 not null,
+  jobs_redelegated integer default 0 not null,
+  jobs_split integer default 0 not null,
+  timed_out boolean default false not null,
+  distributed boolean default false not null,
+  warnings jsonb default '[]'::jsonb not null,
+  started_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  finished_at timestamptz,
+  constraint mip_solver_solves_solve_id_size_chk
+    check (octet_length(solve_id) between 1 and 160),
+  constraint mip_solver_solves_request_id_size_chk
+    check (octet_length(request_id) between 1 and 200),
+  constraint mip_solver_solves_status_size_chk
+    check (octet_length(status) between 1 and 64),
+  constraint mip_solver_solves_node_id_size_chk
+    check (octet_length(node_id) between 1 and 253),
+  constraint mip_solver_solves_node_role_chk
+    check (node_role in ('master', 'slave')),
+  constraint mip_solver_solves_counts_chk
+    check (revision >= 0 and jobs_expected >= 0 and jobs_published >= 0 and jobs_completed >= 0 and jobs_redelegated >= 0 and jobs_split >= 0),
+  constraint mip_solver_solves_problem_json_chk
+    check (jsonb_typeof(problem) = 'object'),
+  constraint mip_solver_solves_options_json_chk
+    check (jsonb_typeof(options) = 'object'),
+  constraint mip_solver_solves_response_json_chk
+    check (jsonb_typeof(response) = 'object'),
+  constraint mip_solver_solves_warnings_json_chk
+    check (jsonb_typeof(warnings) = 'array')
+);
+
+create index if not exists mip_solver_solves_request_id_idx
+  on mip_solver_solves (request_id, updated_at desc);
+
+create index if not exists mip_solver_solves_status_idx
+  on mip_solver_solves (status, updated_at desc);
+
+create table if not exists mip_solver_jobs (
+  job_id varchar(240) primary key,
+  solve_id varchar(160) not null,
+  root_job_id varchar(240) not null,
+  retry_index integer default 0 not null,
+  depth integer default 0 not null,
+  status varchar(64) default 'submitted' not null,
+  worker_node varchar(253),
+  job_payload jsonb default '{}'::jsonb not null,
+  result_payload jsonb default '{}'::jsonb not null,
+  submitted_at timestamptz default now() not null,
+  finished_at timestamptz,
+  updated_at timestamptz default now() not null,
+  constraint mip_solver_jobs_job_id_size_chk
+    check (octet_length(job_id) between 1 and 240),
+  constraint mip_solver_jobs_root_job_id_size_chk
+    check (octet_length(root_job_id) between 1 and 240),
+  constraint mip_solver_jobs_status_size_chk
+    check (octet_length(status) between 1 and 64),
+  constraint mip_solver_jobs_counts_chk
+    check (retry_index >= 0 and depth >= 0),
+  constraint mip_solver_jobs_job_payload_json_chk
+    check (jsonb_typeof(job_payload) = 'object'),
+  constraint mip_solver_jobs_result_payload_json_chk
+    check (jsonb_typeof(result_payload) = 'object')
+);
+
+create index if not exists mip_solver_jobs_solve_status_idx
+  on mip_solver_jobs (solve_id, status, updated_at desc);
+
+create index if not exists mip_solver_jobs_root_idx
+  on mip_solver_jobs (solve_id, root_job_id, retry_index);
+
+create table if not exists mip_solver_events (
+  id bigserial primary key,
+  solve_id varchar(160),
+  session_id varchar(200),
+  job_id varchar(240),
+  event_kind varchar(80) not null,
+  payload jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint mip_solver_events_event_kind_format_chk
+    check (event_kind ~ '^[A-Za-z0-9._:-]{1,80}$'),
+  constraint mip_solver_events_payload_json_chk
+    check (jsonb_typeof(payload) = 'object')
+);
+
+create index if not exists mip_solver_events_solve_created_at_idx
+  on mip_solver_events (solve_id, created_at desc)
+  where solve_id is not null;
+
+create index if not exists mip_solver_events_session_created_at_idx
+  on mip_solver_events (session_id, created_at desc)
+  where session_id is not null;
+
+alter table if exists mip_solver_jobs
+  add constraint mip_solver_jobs_solve_fk
+  foreign key (solve_id) references mip_solver_solves(solve_id);
+
+alter table if exists mip_solver_events
+  add constraint mip_solver_events_solve_fk
+  foreign key (solve_id) references mip_solver_solves(solve_id);
+
+alter table if exists mip_solver_events
+  add constraint mip_solver_events_session_fk
+  foreign key (session_id) references mip_solver_sessions(session_id);
+
+alter table if exists mip_solver_events
+  add constraint mip_solver_events_job_fk
+  foreign key (job_id) references mip_solver_jobs(job_id);
+
 create table if not exists lambda_functions (
   id uuid primary key default gen_random_uuid(),
   slug varchar(120) not null,
   display_name varchar(200) not null,
   description text default '' not null,
   runtime varchar(40) default 'nodejs' not null,
-  entry_command text default 'env -i PATH="$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs' not null,
+  entry_command text default 'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs' not null,
   function_body text not null,
   reuse_key varchar(200),
   idle_timeout_seconds integer default 300 not null,
@@ -414,9 +662,132 @@ create index if not exists lambda_functions_updated_at_idx
 create index if not exists lambda_functions_labels_gin_idx
   on lambda_functions using gin (labels);
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Container-pool image config:
+--
+-- One row per saved Dockerfile revision for each container-pool image (e.g.
+-- the per-runtime warm runtime images and the dd-dev-server worker image).
+-- Operators iterate on Dockerfiles via /container-pool/config in the web UI;
+-- the on-disk Dockerfile in git is the "sane default" (loaded as a synthetic
+-- revision with source='disk-default'), and saves become new rows here.
+-- Each revision is content-addressed by `dockerfile_sha256` so duplicate
+-- saves coalesce into a single row.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists container_pool_image_revisions (
+  id uuid primary key default gen_random_uuid(),
+  image_slug varchar(120) not null,
+  image_ref text not null,
+  dockerfile_path text not null,
+  build_context text not null,
+  dockerfile_text text not null,
+  dockerfile_sha256 varchar(64) not null,
+  source varchar(32) default 'user' not null,
+  notes text default '' not null,
+  status varchar(32) default 'candidate' not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint container_pool_image_revisions_slug_format_chk
+    check (image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'),
+  constraint container_pool_image_revisions_dockerfile_size_chk
+    check (octet_length(dockerfile_text) between 1 and 65536),
+  constraint container_pool_image_revisions_image_ref_size_chk
+    check (octet_length(image_ref) between 1 and 512),
+  constraint container_pool_image_revisions_path_size_chk
+    check (octet_length(dockerfile_path) between 1 and 512),
+  constraint container_pool_image_revisions_context_size_chk
+    check (octet_length(build_context) between 1 and 512),
+  constraint container_pool_image_revisions_notes_size_chk
+    check (octet_length(notes) <= 8192),
+  constraint container_pool_image_revisions_sha_format_chk
+    check (dockerfile_sha256 ~ '^[0-9a-f]{64}$'),
+  constraint container_pool_image_revisions_status_chk
+    check (status in ('candidate', 'active', 'archived')),
+  constraint container_pool_image_revisions_source_chk
+    check (source in ('disk-default', 'user', 'system')),
+  constraint container_pool_image_revisions_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists container_pool_image_revisions_slug_idx
+  on container_pool_image_revisions (image_slug, created_at desc)
+  where is_soft_deleted = false;
+
+create unique index if not exists container_pool_image_revisions_slug_sha_uq
+  on container_pool_image_revisions (image_slug, dockerfile_sha256)
+  where is_soft_deleted = false;
+
+-- Per-image build + smoke-test runs. `build_status` covers the nerdctl build
+-- step; `test_status` covers the post-build smoke run; `overall_status` is
+-- the rolled-up state surfaced in the UI.
+create table if not exists container_pool_build_runs (
+  id uuid primary key default gen_random_uuid(),
+  image_slug varchar(120) not null,
+  revision_id uuid not null references container_pool_image_revisions(id),
+  image_ref text not null,
+  candidate_tag text not null,
+  build_status varchar(32) default 'queued' not null,
+  test_status varchar(32) default 'not_started' not null,
+  overall_status varchar(32) default 'queued' not null,
+  test_command text default '' not null,
+  build_started_at timestamptz,
+  build_finished_at timestamptz,
+  test_started_at timestamptz,
+  test_finished_at timestamptz,
+  build_log_excerpt text default '' not null,
+  test_log_excerpt text default '' not null,
+  error_message text,
+  triggered_by uuid,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint container_pool_build_runs_slug_format_chk
+    check (image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'),
+  constraint container_pool_build_runs_image_ref_size_chk
+    check (octet_length(image_ref) between 1 and 512),
+  constraint container_pool_build_runs_candidate_tag_size_chk
+    check (octet_length(candidate_tag) between 1 and 512),
+  constraint container_pool_build_runs_test_command_size_chk
+    check (octet_length(test_command) <= 4096),
+  constraint container_pool_build_runs_log_size_chk
+    check (octet_length(build_log_excerpt) <= 65536
+       and octet_length(test_log_excerpt) <= 65536),
+  constraint container_pool_build_runs_error_size_chk
+    check (error_message is null or octet_length(error_message) <= 8192),
+  constraint container_pool_build_runs_build_status_chk
+    check (build_status in ('queued', 'building', 'built', 'failed', 'skipped', 'cancelled')),
+  constraint container_pool_build_runs_test_status_chk
+    check (test_status in ('not_started', 'pending', 'testing', 'passed', 'failed', 'skipped', 'cancelled')),
+  constraint container_pool_build_runs_overall_status_chk
+    check (overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'errored')),
+  constraint container_pool_build_runs_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object')
+);
+
+create index if not exists container_pool_build_runs_slug_idx
+  on container_pool_build_runs (image_slug, created_at desc)
+  where is_soft_deleted = false;
+
+create index if not exists container_pool_build_runs_overall_idx
+  on container_pool_build_runs (overall_status)
+  where is_soft_deleted = false;
+
 alter table if exists agent_remote_dev_threads
   add constraint agent_remote_dev_threads_known_git_repo_fk
   foreign key (known_git_repo_id) references known_git_repos(id);
+
+alter table if exists agent_context_blobs
+  add constraint agent_context_blobs_repo_fk
+  foreign key (repo_id) references known_git_repos(id);
+
+alter table if exists agent_context_embeddings
+  add constraint agent_context_embeddings_blob_fk
+  foreign key (context_blob_id) references agent_context_blobs(id);
 
 alter table if exists agent_remote_dev_tasks
   add constraint agent_remote_dev_tasks_thread_fk
@@ -425,6 +796,10 @@ alter table if exists agent_remote_dev_tasks
 alter table if exists agent_remote_dev_events
   add constraint agent_remote_dev_events_task_fk
   foreign key (task_id) references agent_remote_dev_tasks(id);
+
+alter table if exists agent_remote_dev_events
+  add constraint agent_remote_dev_events_thread_fk
+  foreign key (thread_id) references agent_remote_dev_threads(id);
 
 alter table if exists agent_remote_dev_artifacts
   add constraint agent_remote_dev_artifacts_task_fk
@@ -776,7 +1151,7 @@ create table if not exists presence_consumer_checkpoints (
 
 -- ── WAL / logical replication helpers ───────────────────────────────────
 --
--- The pg_wal.gleam consumer wants TWO Postgres-side artefacts:
+-- The opt-in pg_wal.gleam consumer wants TWO Postgres-side artefacts:
 --
 --   1. A PUBLICATION listing the tables we care about. Logical
 --      replication only ships row changes for tables included in some
@@ -797,9 +1172,11 @@ create table if not exists presence_consumer_checkpoints (
 --   * `max_slot_wal_keep_size` set, OR an alert on slot lag, to avoid
 --     the classic "dead slot fills the disk" outage.
 --
--- The helpers below are intentionally simple wrappers — the consumer
--- creates its slot at startup (idempotent) so deploys don't need a
--- separate DBA step.
+-- The helpers below are intentionally simple wrappers. Enable the per-pod
+-- WAL consumer only for deployments that explicitly need the direct PG WAL
+-- path, and pair it with `max_slot_wal_keep_size` plus slot-lag alerts; the
+-- SQL outbox above remains the lower-risk durable replay path because it
+-- does not retain Postgres WAL per pod.
 
 -- `CREATE PUBLICATION IF NOT EXISTS` doesn't exist in any PG version, so
 -- wrap in a DO block so re-running the schema file is idempotent.
@@ -857,4 +1234,459 @@ language sql
 stable
 as $$
   select current_setting('wal_level') = 'logical';
+$$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- DES soccer self-play learning.
+--
+-- Immutable policy versions plus per-simulation deltas are the durable learning
+-- authority. JSONB stores high-dimensional state/config payloads, while merge
+-- math uses fixed-point integer columns so generated adapters stay portable.
+-- Values and weights use a 1e6 scale.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+create table if not exists des_soccer_learning_experiments (
+  id uuid primary key default gen_random_uuid(),
+  slug varchar(160) not null,
+  display_name varchar(240) not null,
+  description text default '' not null,
+  status varchar(32) default 'active' not null,
+  config jsonb default '{}'::jsonb not null,
+  labels jsonb default '[]'::jsonb not null,
+  meta_data jsonb default '{}'::jsonb not null,
+  is_soft_deleted boolean default false not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint des_soccer_learning_experiments_slug_format_chk
+    check (slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'),
+  constraint des_soccer_learning_experiments_display_name_size_chk
+    check (octet_length(display_name) between 1 and 240),
+  constraint des_soccer_learning_experiments_description_size_chk
+    check (octet_length(description) <= 8192),
+  constraint des_soccer_learning_experiments_config_object_chk
+    check (jsonb_typeof(config) = 'object'),
+  constraint des_soccer_learning_experiments_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint des_soccer_learning_experiments_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint des_soccer_learning_experiments_status_chk
+    check (status in ('active', 'paused', 'archived'))
+);
+
+create unique index if not exists des_soccer_learning_experiments_slug_active_uq
+  on des_soccer_learning_experiments (slug)
+  where is_soft_deleted = false;
+
+create index if not exists des_soccer_learning_experiments_status_idx
+  on des_soccer_learning_experiments (status)
+  where is_soft_deleted = false;
+
+create index if not exists des_soccer_learning_experiments_updated_at_idx
+  on des_soccer_learning_experiments (updated_at desc)
+  where is_soft_deleted = false;
+
+create table if not exists des_soccer_learning_policy_versions (
+  id uuid primary key default gen_random_uuid(),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  parent_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  generation integer default 0 not null,
+  version_label varchar(160) not null,
+  source_kind varchar(40) default 'seed' not null,
+  status varchar(32) default 'candidate' not null,
+  options jsonb default '{}'::jsonb not null,
+  config jsonb default '{}'::jsonb not null,
+  lineage jsonb default '[]'::jsonb not null,
+  metrics jsonb default '{}'::jsonb not null,
+  entry_count integer default 0 not null,
+  target_entry_count integer default 0 not null,
+  visit_count bigint default 0 not null,
+  fitness_micros bigint default 0 not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint des_soccer_learning_policy_versions_generation_chk
+    check (generation >= 0),
+  constraint des_soccer_learning_policy_versions_label_format_chk
+    check (version_label ~ '^[A-Za-z0-9._:/-]{1,160}$'),
+  constraint des_soccer_learning_policy_versions_source_chk
+    check (source_kind in ('seed', 'merge', 'mutation', 'crossover', 'import', 'replay')),
+  constraint des_soccer_learning_policy_versions_status_chk
+    check (status in ('candidate', 'active', 'archived', 'rejected')),
+  constraint des_soccer_learning_policy_versions_options_object_chk
+    check (jsonb_typeof(options) = 'object'),
+  constraint des_soccer_learning_policy_versions_config_object_chk
+    check (jsonb_typeof(config) = 'object'),
+  constraint des_soccer_learning_policy_versions_lineage_array_chk
+    check (jsonb_typeof(lineage) = 'array'),
+  constraint des_soccer_learning_policy_versions_metrics_object_chk
+    check (jsonb_typeof(metrics) = 'object'),
+  constraint des_soccer_learning_policy_versions_entry_count_chk
+    check (entry_count >= 0),
+  constraint des_soccer_learning_policy_versions_target_entry_count_chk
+    check (target_entry_count >= 0),
+  constraint des_soccer_learning_policy_versions_visit_count_chk
+    check (visit_count >= 0)
+);
+
+create unique index if not exists des_soccer_learning_policy_versions_label_uq
+  on des_soccer_learning_policy_versions (experiment_id, version_label);
+
+create index if not exists des_soccer_learning_policy_versions_active_idx
+  on des_soccer_learning_policy_versions (experiment_id, generation desc, updated_at desc)
+  where status = 'active';
+
+create index if not exists des_soccer_learning_policy_versions_fitness_idx
+  on des_soccer_learning_policy_versions (experiment_id, fitness_micros desc, updated_at desc)
+  where status in ('active', 'candidate');
+
+create table if not exists des_soccer_learning_policy_entries (
+  id uuid primary key default gen_random_uuid(),
+  policy_version_id uuid not null references des_soccer_learning_policy_versions(id),
+  team varchar(8) not null,
+  entry_kind varchar(16) not null,
+  state_hash varchar(32) not null,
+  state_key jsonb not null,
+  action varchar(80) not null,
+  target_fine_cell_id integer default -1 not null,
+  target_tactical_cell_id integer default -1 not null,
+  target_macro_cell_id integer default -1 not null,
+  target_root_cell_id integer default -1 not null,
+  value_micros bigint not null,
+  visits integer default 0 not null,
+  source_run_id uuid,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_policy_entries_team_chk
+    check (team in ('home', 'away')),
+  constraint des_soccer_learning_policy_entries_kind_chk
+    check (entry_kind in ('action', 'target')),
+  constraint des_soccer_learning_policy_entries_state_hash_chk
+    check (state_hash ~ '^[a-f0-9]{16,32}$'),
+  constraint des_soccer_learning_policy_entries_state_object_chk
+    check (jsonb_typeof(state_key) = 'object'),
+  constraint des_soccer_learning_policy_entries_action_size_chk
+    check (octet_length(action) between 1 and 80),
+  constraint des_soccer_learning_policy_entries_target_fine_chk
+    check (target_fine_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_target_tactical_chk
+    check (target_tactical_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_target_macro_chk
+    check (target_macro_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_target_root_chk
+    check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_policy_entries_visits_chk
+    check (visits >= 0)
+);
+
+create unique index if not exists des_soccer_learning_policy_entries_key_uq
+  on des_soccer_learning_policy_entries (
+    policy_version_id,
+    team,
+    entry_kind,
+    state_hash,
+    action,
+    target_fine_cell_id,
+    target_tactical_cell_id,
+    target_macro_cell_id,
+    target_root_cell_id
+  );
+
+create index if not exists des_soccer_learning_policy_entries_lookup_idx
+  on des_soccer_learning_policy_entries (policy_version_id, team, entry_kind, state_hash);
+
+create table if not exists des_soccer_learning_jobs (
+  id uuid primary key default gen_random_uuid(),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  base_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  spawn_strategy varchar(32) default 'latest' not null,
+  status varchar(32) default 'queued' not null,
+  priority integer default 0 not null,
+  seed bigint not null,
+  attempt integer default 0 not null,
+  max_attempts integer default 1 not null,
+  lease_owner varchar(200),
+  lease_expires_at timestamptz,
+  started_at timestamptz,
+  finished_at timestamptz,
+  config jsonb default '{}'::jsonb not null,
+  runner_config jsonb default '{}'::jsonb not null,
+  result_run_id uuid,
+  error text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint des_soccer_learning_jobs_spawn_strategy_chk
+    check (spawn_strategy in ('latest', 'elite', 'mutation', 'crossover', 'random', 'replay')),
+  constraint des_soccer_learning_jobs_status_chk
+    check (status in ('queued', 'running', 'completed', 'failed', 'canceled')),
+  constraint des_soccer_learning_jobs_seed_chk
+    check (seed >= 0),
+  constraint des_soccer_learning_jobs_attempt_chk
+    check (attempt >= 0),
+  constraint des_soccer_learning_jobs_max_attempts_chk
+    check (max_attempts between 1 and 100),
+  constraint des_soccer_learning_jobs_lease_owner_size_chk
+    check (lease_owner is null or octet_length(lease_owner) <= 200),
+  constraint des_soccer_learning_jobs_config_object_chk
+    check (jsonb_typeof(config) = 'object'),
+  constraint des_soccer_learning_jobs_runner_config_object_chk
+    check (jsonb_typeof(runner_config) = 'object'),
+  constraint des_soccer_learning_jobs_error_size_chk
+    check (error is null or octet_length(error) <= 16384)
+);
+
+create index if not exists des_soccer_learning_jobs_claim_idx
+  on des_soccer_learning_jobs (experiment_id, status, priority desc, created_at)
+  where status in ('queued', 'running');
+
+create index if not exists des_soccer_learning_jobs_base_policy_idx
+  on des_soccer_learning_jobs (base_policy_version_id, created_at desc);
+
+create table if not exists des_soccer_learning_runs (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid references des_soccer_learning_jobs(id),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  base_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  output_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  runner_id varchar(200) not null,
+  seed bigint not null,
+  episode_index integer default 0 not null,
+  status varchar(32) default 'completed' not null,
+  score_home integer default 0 not null,
+  score_away integer default 0 not null,
+  home_goal_diff integer default 0 not null,
+  away_goal_diff integer default 0 not null,
+  home_outcome varchar(16) default 'draw' not null,
+  away_outcome varchar(16) default 'draw' not null,
+  home_merge_weight_micros bigint default 0 not null,
+  away_merge_weight_micros bigint default 0 not null,
+  fitness_micros bigint default 0 not null,
+  duration_ticks bigint default 0 not null,
+  simulated_seconds_micros bigint default 0 not null,
+  elapsed_millis bigint default 0 not null,
+  transitions integer default 0 not null,
+  summary jsonb default '{}'::jsonb not null,
+  stats jsonb default '{}'::jsonb not null,
+  error text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint des_soccer_learning_runs_runner_id_size_chk
+    check (octet_length(runner_id) between 1 and 200),
+  constraint des_soccer_learning_runs_seed_chk
+    check (seed >= 0),
+  constraint des_soccer_learning_runs_episode_index_chk
+    check (episode_index >= 0),
+  constraint des_soccer_learning_runs_status_chk
+    check (status in ('completed', 'failed')),
+  constraint des_soccer_learning_runs_scores_chk
+    check (score_home >= 0 and score_away >= 0),
+  constraint des_soccer_learning_runs_home_outcome_chk
+    check (home_outcome in ('win', 'draw', 'loss')),
+  constraint des_soccer_learning_runs_away_outcome_chk
+    check (away_outcome in ('win', 'draw', 'loss')),
+  constraint des_soccer_learning_runs_duration_ticks_chk
+    check (duration_ticks >= 0),
+  constraint des_soccer_learning_runs_simulated_seconds_chk
+    check (simulated_seconds_micros >= 0),
+  constraint des_soccer_learning_runs_elapsed_millis_chk
+    check (elapsed_millis >= 0),
+  constraint des_soccer_learning_runs_transitions_chk
+    check (transitions >= 0),
+  constraint des_soccer_learning_runs_summary_object_chk
+    check (jsonb_typeof(summary) = 'object'),
+  constraint des_soccer_learning_runs_stats_object_chk
+    check (jsonb_typeof(stats) = 'object'),
+  constraint des_soccer_learning_runs_error_size_chk
+    check (error is null or octet_length(error) <= 16384)
+);
+
+create index if not exists des_soccer_learning_runs_experiment_idx
+  on des_soccer_learning_runs (experiment_id, created_at desc);
+
+create index if not exists des_soccer_learning_runs_policy_fitness_idx
+  on des_soccer_learning_runs (base_policy_version_id, fitness_micros desc, created_at desc);
+
+create table if not exists des_soccer_learning_run_deltas (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references des_soccer_learning_runs(id),
+  team varchar(8) not null,
+  entry_kind varchar(16) not null,
+  state_hash varchar(32) not null,
+  state_key jsonb not null,
+  action varchar(80) not null,
+  target_fine_cell_id integer default -1 not null,
+  target_tactical_cell_id integer default -1 not null,
+  target_macro_cell_id integer default -1 not null,
+  target_root_cell_id integer default -1 not null,
+  before_value_micros bigint default 0 not null,
+  after_value_micros bigint default 0 not null,
+  value_delta_micros bigint default 0 not null,
+  visit_delta integer default 0 not null,
+  merge_weight_micros bigint default 0 not null,
+  effective_visit_micros bigint default 0 not null,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_run_deltas_team_chk
+    check (team in ('home', 'away')),
+  constraint des_soccer_learning_run_deltas_kind_chk
+    check (entry_kind in ('action', 'target')),
+  constraint des_soccer_learning_run_deltas_state_hash_chk
+    check (state_hash ~ '^[a-f0-9]{16,32}$'),
+  constraint des_soccer_learning_run_deltas_state_object_chk
+    check (jsonb_typeof(state_key) = 'object'),
+  constraint des_soccer_learning_run_deltas_action_size_chk
+    check (octet_length(action) between 1 and 80),
+  constraint des_soccer_learning_run_deltas_target_fine_chk
+    check (target_fine_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_target_tactical_chk
+    check (target_tactical_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_target_macro_chk
+    check (target_macro_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_target_root_chk
+    check (target_root_cell_id >= -1),
+  constraint des_soccer_learning_run_deltas_visit_delta_chk
+    check (visit_delta > 0),
+  constraint des_soccer_learning_run_deltas_merge_weight_chk
+    check (merge_weight_micros >= 0),
+  constraint des_soccer_learning_run_deltas_effective_visit_chk
+    check (effective_visit_micros >= 0)
+);
+
+create unique index if not exists des_soccer_learning_run_deltas_key_uq
+  on des_soccer_learning_run_deltas (
+    run_id,
+    team,
+    entry_kind,
+    state_hash,
+    action,
+    target_fine_cell_id,
+    target_tactical_cell_id,
+    target_macro_cell_id,
+    target_root_cell_id
+  );
+
+create index if not exists des_soccer_learning_run_deltas_merge_idx
+  on des_soccer_learning_run_deltas (team, entry_kind, state_hash, action);
+
+create table if not exists des_soccer_learning_merge_events (
+  id uuid primary key default gen_random_uuid(),
+  experiment_id uuid not null references des_soccer_learning_experiments(id),
+  base_policy_version_id uuid references des_soccer_learning_policy_versions(id),
+  output_policy_version_id uuid not null references des_soccer_learning_policy_versions(id),
+  strategy varchar(40) default 'outcome_weighted_average' not null,
+  input_run_count integer default 0 not null,
+  input_delta_count integer default 0 not null,
+  decay_micros bigint default 1000000 not null,
+  metrics jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  constraint des_soccer_learning_merge_events_strategy_chk
+    check (strategy in ('outcome_weighted_average', 'elite', 'mutation', 'crossover')),
+  constraint des_soccer_learning_merge_events_input_run_count_chk
+    check (input_run_count >= 0),
+  constraint des_soccer_learning_merge_events_input_delta_count_chk
+    check (input_delta_count >= 0),
+  constraint des_soccer_learning_merge_events_decay_chk
+    check (decay_micros between 0 and 1000000),
+  constraint des_soccer_learning_merge_events_metrics_object_chk
+    check (jsonb_typeof(metrics) = 'object')
+);
+
+create index if not exists des_soccer_learning_merge_events_experiment_idx
+  on des_soccer_learning_merge_events (experiment_id, created_at desc);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Generic CDC gateway publication.
+--
+-- The `wal-gateway-rs` service runs ONE logical replication slot per cluster
+-- (leader-elected via a Postgres advisory lock) and fans the resulting
+-- row-change events out over NATS JetStream subjects shaped like
+-- `cdc.<schema>.<table>.<op>`. Application services subscribe via the
+-- `dd-wal-consumer` crate; they never see Postgres on the read path.
+--
+-- This publication is intentionally narrow: only tables that other services
+-- read but rarely (or never) write are listed here. `presence_conv_members`
+-- has its own `presence_pub` because the presence server runs a *separate*
+-- per-pod consumer with sharded routing. We deliberately keep the two
+-- streams apart so a busy presence pipeline can't starve the slow-moving
+-- config CDC stream.
+--
+-- Adding a table to the gateway means adding it to the create-publication list
+-- and the idempotent `alter publication ... add table` guard below; new
+-- subscribers do not require schema changes.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+do $$
+begin
+  if not exists (select 1 from pg_publication where pubname = 'cdc_pub') then
+    create publication cdc_pub for table
+      app_config,
+      container_pool_configs,
+      lambda_functions,
+      known_git_repos,
+      agent_remote_dev_events;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'cdc_pub'
+      and schemaname = 'public'
+      and tablename = 'agent_remote_dev_events'
+  ) then
+    alter publication cdc_pub add table agent_remote_dev_events;
+  end if;
+end;
+$$;
+
+-- Idempotent slot bootstrap for the gateway. Mirrors `presence_ensure_wal_slot`
+-- but generic over the plugin so future deploys can swap to `pgoutput` or
+-- `test_decoding` without a schema change. Returns true when the slot exists
+-- at end of call. Returns false if creation failed (typically because the
+-- requested output plugin isn't installed).
+create or replace function cdc_ensure_wal_slot(p_slot_name text, p_plugin text default 'wal2json')
+returns boolean
+language plpgsql
+as $$
+declare
+  v_exists boolean;
+begin
+  select exists(
+    select 1 from pg_replication_slots where slot_name = p_slot_name
+  ) into v_exists;
+  if v_exists then
+    return true;
+  end if;
+  begin
+    perform pg_create_logical_replication_slot(p_slot_name, p_plugin);
+    return true;
+  exception when others then
+    return false;
+  end;
+end;
+$$;
+
+-- Same coarse precondition check as `presence_wal_available`. Kept as a
+-- separate symbol so the gateway code doesn't depend on presence_* names.
+create or replace function cdc_wal_available()
+returns boolean
+language sql
+stable
+as $$
+  select current_setting('wal_level') = 'logical';
+$$;
+
+-- Slot lag introspection. Exposed for the gateway's /healthz and for
+-- ops dashboards. Returns NULL when no slot with the given name exists.
+create or replace function cdc_slot_lag_bytes(p_slot_name text)
+returns bigint
+language sql
+stable
+as $$
+  select case
+    when slot is null then null
+    else pg_wal_lsn_diff(pg_current_wal_lsn(), slot.confirmed_flush_lsn)
+  end
+  from (
+    select * from pg_replication_slots where slot_name = p_slot_name
+  ) slot;
 $$;

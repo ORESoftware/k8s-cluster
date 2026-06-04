@@ -1,0 +1,176 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleamlang-server
+  namespace: default
+  labels:
+    app: dd-gleamlang-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dd-gleamlang-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-20-pg-ws-shards'
+      labels:
+        app: dd-gleamlang-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gleamlang-server
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              if ! apk add --no-cache postgresql-client >/tmp/dd-gleamlang-apk.log 2>&1; then
+                cat /tmp/dd-gleamlang-apk.log
+                exit 1
+              fi
+              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-server
+              gleam clean || true
+              gleam deps download
+              exec gleam run
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
+            - name: GLEAM_NATS_PUBLISH_URL
+              value: http://127.0.0.1:8083/publish
+            - name: NATS_PUBLISH_SUBJECT
+              value: dd.remote.websocket.events
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
+            - name: PRESENCE_WAL_ENABLED
+              value: "true"
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-gleamlang-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleamlang-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-gleamlang-server.default.svc.cluster.local:8081/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-gleamlang-server-secrets
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            # Keep the 6-core benchmark cap aligned with the other WSS
+            # runtimes, but request less CPU so the steady service can
+            # schedule on the packed single-node dev cluster.
+            requests:
+              cpu: 250m
+              memory: 2Gi
+            limits:
+              cpu: '6'
+              memory: 8Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+        - name: nats-bridge
+          image: docker.io/library/node:22-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              exec node /opt/dd-next-1/remote/deployments/gleamlang-ws-server/nats-bridge.mjs
+          env:
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_READ_SUBJECT
+              value: dd.remote.events
+            - name: NATS_EVENT_SUBJECT
+              value: dd.remote.events
+            - name: NATS_PUBLISH_SUBJECT
+              value: dd.remote.websocket.events
+            - name: NATS_BRIDGE_HTTP_PORT
+              value: '8083'
+            - name: GLEAM_BROADCAST_URL
+              value: http://127.0.0.1:8081/broadcast
+            - name: GLEAM_BROADCAST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleamlang-server-secrets
+                  key: GLEAM_BROADCAST_SECRET
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

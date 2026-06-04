@@ -1,0 +1,128 @@
+# dd-thread-fleet-exporter: read-only Prometheus exporter for the
+# dd-dev thread fleet.
+#
+# Build model matches dd-thread-operator and gcs-router: golang
+# base image, hostPath mount of the source tree, build at startup.
+# Swap to an ECR image when the Go image pipeline is wired up.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-thread-fleet-exporter
+  namespace: default
+  labels:
+    app: dd-thread-fleet-exporter
+    app.kubernetes.io/part-of: dd-remote-dev
+    app.kubernetes.io/component: fleet-exporter
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-thread-fleet-exporter
+  template:
+    metadata:
+      labels:
+        app: dd-thread-fleet-exporter
+        app.kubernetes.io/part-of: dd-remote-dev
+        app.kubernetes.io/component: fleet-exporter
+    spec:
+      serviceAccountName: dd-thread-fleet-exporter
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 15
+      # Read-only exporter; build script only writes to /tmp.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: exporter
+          image: docker.io/library/golang:1.23-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export HOME=/tmp
+              export GO111MODULE=on
+              export GOPROXY=https://proxy.golang.org,direct
+              export GOSUMDB=off
+              export GOCACHE=/tmp/go-build
+              export GOMODCACHE=/tmp/go-mod
+
+              SRC=/opt/exporter-src
+              WORK=/tmp/exporter
+              BIN=/tmp/dd-thread-fleet-exporter
+
+              if [ ! -x "$BIN" ]; then
+                rm -rf "$WORK"
+                mkdir -p "$WORK" "$GOCACHE" "$GOMODCACHE"
+                cp -R --no-preserve=mode,ownership,timestamps "$SRC"/. "$WORK"/
+                cd "$WORK"
+                /usr/local/go/bin/go mod download
+                /usr/local/go/bin/go build -trimpath -ldflags="-s -w" \
+                  -o "$BIN" ./cmd/exporter
+              fi
+
+              exec "$BIN" \
+                --listen-addr=:9103 \
+                --namespace=dd-dev \
+                --label-selector=app.kubernetes.io/component=thread-pod \
+                --scrape-period=15s
+          ports:
+            - name: metrics
+              containerPort: 9103
+          # Build-at-runtime sizing: this container starts from
+          # docker.io/library/golang:1.23-bookworm and runs `go build` of
+          # the exporter (client-go + prometheus/client_golang) on first
+          # start. Peak RSS during the cold compile is well under 1Gi
+          # but 256Mi was OOMKilled in production. After the first
+          # successful build the binary is cached at
+          # /tmp/dd-thread-fleet-exporter and steady-state RSS sits well
+          # under 64Mi, so the limit is sized for the build peak only.
+          # The startup probe matches the gcs-router convention:
+          # 2s period * 120 failures = 4 minute build window.
+          startupProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 2
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: exporter-src
+              mountPath: /opt/exporter-src
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: exporter-src
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/thread-fleet-exporter-go
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

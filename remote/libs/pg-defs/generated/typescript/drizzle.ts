@@ -273,6 +273,128 @@ export type KnownGitRepoRow = z.infer<typeof knownGitRepoRowSchema>;
 export type KnownGitRepoInsert = z.infer<typeof knownGitRepoInsertSchema>;
 export type KnownGitRepoUpdate = z.infer<typeof knownGitRepoUpdateSchema>;
 
+export const agentContextBlobsStatusValues = ["active","paused","archived"] as const;
+export const agentContextBlobsStatusSchema = z.enum(agentContextBlobsStatusValues);
+export type AgentContextBlobsStatus = z.infer<typeof agentContextBlobsStatusSchema>;
+
+export const agentContextBlobs = pgTable(
+  "agent_context_blobs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    projectId: varchar("project_id", { length: 120 }).default(sql`'default'`).notNull(),
+    repoId: uuid("repo_id"),
+    contextId: varchar("context_id", { length: 200 }).notNull(),
+    contextTitle: varchar("context_title", { length: 300 }).notNull(),
+    contextBlob: text("context_blob").notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    agentContextBlobsProjectIdFormatChk: check("agent_context_blobs_project_id_format_chk", sql.raw("project_id ~ '^[A-Za-z0-9._:/-]{1,120}$'")),
+    agentContextBlobsContextIdFormatChk: check("agent_context_blobs_context_id_format_chk", sql.raw("context_id ~ '^[A-Za-z0-9._:/-]{1,200}$'")),
+    agentContextBlobsContextTitleSizeChk: check("agent_context_blobs_context_title_size_chk", sql.raw("octet_length(context_title) between 1 and 300")),
+    agentContextBlobsContextBlobSizeChk: check("agent_context_blobs_context_blob_size_chk", sql.raw("octet_length(context_blob) between 1 and 1048576")),
+    agentContextBlobsLabelsArrayChk: check("agent_context_blobs_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    agentContextBlobsMetaObjectChk: check("agent_context_blobs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    agentContextBlobsStatusChk: check("agent_context_blobs_status_chk", sql.raw("status in ('active', 'paused', 'archived')")),
+    agentContextBlobsProjectRepoContextActiveUq: uniqueIndex("agent_context_blobs_project_repo_context_active_uq").on(table.projectId, table.repoId, table.contextId).where(sql.raw("is_soft_deleted = false")),
+    agentContextBlobsRepoIdIdx: index("agent_context_blobs_repo_id_idx").on(table.repoId).where(sql.raw("is_soft_deleted = false")),
+    agentContextBlobsProjectIdIdx: index("agent_context_blobs_project_id_idx").on(table.projectId).where(sql.raw("is_soft_deleted = false")),
+    agentContextBlobsUpdatedAtIdx: index("agent_context_blobs_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const agentContextBlobsRowSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  repoId: z.string().uuid().nullable(),
+  contextId: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  contextTitle: z.string().max(300).refine((value) => byteLength(value) <= 300, "Must be at most 300 bytes"),
+  contextBlob: z.string().refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
+  status: agentContextBlobsStatusSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const agentContextBlobsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  projectId: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")).optional().default("default"),
+  repoId: z.string().uuid().nullable().optional(),
+  contextId: z.string().max(200).regex(new RegExp("^[A-Za-z0-9._:/-]{1,200}$")),
+  contextTitle: z.string().max(300).refine((value) => byteLength(value) <= 300, "Must be at most 300 bytes"),
+  contextBlob: z.string().refine((value) => byteLength(value) <= 1048576, "Must be at most 1048576 bytes"),
+  status: agentContextBlobsStatusSchema.optional().default("active"),
+  labels: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const agentContextBlobsUpdateSchema = agentContextBlobsInsertSchema.partial();
+export type AgentContextBlobsRow = z.infer<typeof agentContextBlobsRowSchema>;
+export type AgentContextBlobsInsert = z.infer<typeof agentContextBlobsInsertSchema>;
+export type AgentContextBlobsUpdate = z.infer<typeof agentContextBlobsUpdateSchema>;
+
+export const agentContextEmbeddings = pgTable(
+  "agent_context_embeddings",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    contextBlobId: uuid("context_blob_id").notNull(),
+    embeddingModel: varchar("embedding_model", { length: 120 }).notNull(),
+    embedding: jsonb("embedding").notNull(),
+    embeddingDimensions: integer("embedding_dimensions").notNull(),
+    contentSha256: varchar("content_sha256", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    agentContextEmbeddingsModelFormatChk: check("agent_context_embeddings_model_format_chk", sql.raw("embedding_model ~ '^[A-Za-z0-9._:/-]{1,120}$'")),
+    agentContextEmbeddingsDimensionsChk: check("agent_context_embeddings_dimensions_chk", sql.raw("embedding_dimensions > 0")),
+    agentContextEmbeddingsArrayChk: check("agent_context_embeddings_array_chk", sql.raw("jsonb_typeof(embedding) = 'array'")),
+    agentContextEmbeddingsSha256Chk: check("agent_context_embeddings_sha256_chk", sql.raw("content_sha256 ~ '^[a-f0-9]{64}$'")),
+    agentContextEmbeddingsBlobModelShaUq: uniqueIndex("agent_context_embeddings_blob_model_sha_uq").on(table.contextBlobId, table.embeddingModel, table.contentSha256),
+    agentContextEmbeddingsBlobIdIdx: index("agent_context_embeddings_blob_id_idx").on(table.contextBlobId),
+  }),
+);
+
+export const agentContextEmbeddingsRowSchema = z.object({
+  id: z.string().uuid(),
+  contextBlobId: z.string().uuid(),
+  embeddingModel: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  embedding: jsonArraySchema,
+  embeddingDimensions: z.number().int().min(1),
+  contentSha256: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  createdAt: z.string().datetime(),
+});
+
+export const agentContextEmbeddingsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  contextBlobId: z.string().uuid(),
+  embeddingModel: z.string().max(120).regex(new RegExp("^[A-Za-z0-9._:/-]{1,120}$")),
+  embedding: jsonArraySchema,
+  embeddingDimensions: z.number().int().min(1),
+  contentSha256: z.string().max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const agentContextEmbeddingsUpdateSchema = agentContextEmbeddingsInsertSchema.partial();
+export type AgentContextEmbeddingsRow = z.infer<typeof agentContextEmbeddingsRowSchema>;
+export type AgentContextEmbeddingsInsert = z.infer<typeof agentContextEmbeddingsInsertSchema>;
+export type AgentContextEmbeddingsUpdate = z.infer<typeof agentContextEmbeddingsUpdateSchema>;
+
 export const agentRemoteDevThreads = pgTable(
   "agent_remote_dev_threads",
   {
@@ -448,6 +570,7 @@ export const agentRemoteDevEvents = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     taskId: uuid("task_id").notNull(),
+    threadId: uuid("thread_id"),
     seq: integer("seq").notNull(),
     eventKind: varchar("event_kind", { length: 80 }).notNull(),
     payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
@@ -458,6 +581,7 @@ export const agentRemoteDevEvents = pgTable(
     agentRemoteDevEventsPayloadObjectChk: check("agent_remote_dev_events_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
     agentRemoteDevEventsTaskSeqUq: uniqueIndex("agent_remote_dev_events_task_seq_uq").on(table.taskId, table.seq),
     agentRemoteDevEventsTaskIdCreatedAtIdx: index("agent_remote_dev_events_task_id_created_at_idx").on(table.taskId, table.createdAt.desc()),
+    agentRemoteDevEventsThreadIdCreatedAtIdx: index("agent_remote_dev_events_thread_id_created_at_idx").on(table.threadId, table.createdAt.desc()).where(sql.raw("thread_id is not null")),
     agentRemoteDevEventsCreatedAtIdx: index("agent_remote_dev_events_created_at_idx").on(table.createdAt.desc()),
   }),
 );
@@ -465,6 +589,7 @@ export const agentRemoteDevEvents = pgTable(
 export const agentRemoteDevEventRowSchema = z.object({
   id: z.number().int(),
   taskId: z.string().uuid(),
+  threadId: z.string().uuid().nullable(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
   payload: jsonObjectSchema,
@@ -474,6 +599,7 @@ export const agentRemoteDevEventRowSchema = z.object({
 export const agentRemoteDevEventInsertSchema = z.object({
   id: z.number().int().optional(),
   taskId: z.string().uuid(),
+  threadId: z.string().uuid().nullable().optional(),
   seq: z.number().int(),
   eventKind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
   payload: jsonObjectSchema.optional().default({}),
@@ -484,6 +610,60 @@ export const agentRemoteDevEventUpdateSchema = agentRemoteDevEventInsertSchema.p
 export type AgentRemoteDevEventRow = z.infer<typeof agentRemoteDevEventRowSchema>;
 export type AgentRemoteDevEventInsert = z.infer<typeof agentRemoteDevEventInsertSchema>;
 export type AgentRemoteDevEventUpdate = z.infer<typeof agentRemoteDevEventUpdateSchema>;
+
+export const agentRemoteDevBreadcrumbs = pgTable(
+  "agent_remote_dev_breadcrumbs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    threadId: uuid("thread_id").notNull(),
+    taskId: uuid("task_id"),
+    kind: varchar("kind", { length: 80 }).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    emittedAt: timestamp("emitted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    podName: varchar("pod_name", { length: 253 }),
+    branch: varchar("branch", { length: 120 }),
+    provider: varchar("provider", { length: 60 }),
+  },
+  (table) => ({
+    agentRemoteDevBreadcrumbsKindFormatChk: check("agent_remote_dev_breadcrumbs_kind_format_chk", sql.raw("kind ~ '^[A-Za-z0-9._:-]{1,80}$'")),
+    agentRemoteDevBreadcrumbsPayloadObjectChk: check("agent_remote_dev_breadcrumbs_payload_object_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    agentRemoteDevBreadcrumbsPodNameSizeChk: check("agent_remote_dev_breadcrumbs_pod_name_size_chk", sql.raw("pod_name is null or octet_length(pod_name) <= 253")),
+    agentRemoteDevBreadcrumbsBranchSizeChk: check("agent_remote_dev_breadcrumbs_branch_size_chk", sql.raw("branch is null or octet_length(branch) <= 120")),
+    agentRemoteDevBreadcrumbsProviderSizeChk: check("agent_remote_dev_breadcrumbs_provider_size_chk", sql.raw("provider is null or octet_length(provider) <= 60")),
+    agentRemoteDevBreadcrumbsThreadIdEmittedAtIdx: index("agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx").on(table.threadId, table.emittedAt.desc()),
+    agentRemoteDevBreadcrumbsTaskIdEmittedAtIdx: index("agent_remote_dev_breadcrumbs_task_id_emitted_at_idx").on(table.taskId, table.emittedAt.desc()).where(sql.raw("task_id is not null")),
+    agentRemoteDevBreadcrumbsEmittedAtIdx: index("agent_remote_dev_breadcrumbs_emitted_at_idx").on(table.emittedAt.desc()),
+  }),
+);
+
+export const agentRemoteDevBreadcrumbRowSchema = z.object({
+  id: z.number().int(),
+  threadId: z.string().uuid(),
+  taskId: z.string().uuid().nullable(),
+  kind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema,
+  emittedAt: z.string().datetime(),
+  podName: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes").nullable(),
+  branch: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable(),
+  provider: z.string().max(60).refine((value) => byteLength(value) <= 60, "Must be at most 60 bytes").nullable(),
+});
+
+export const agentRemoteDevBreadcrumbInsertSchema = z.object({
+  id: z.number().int().optional(),
+  threadId: z.string().uuid(),
+  taskId: z.string().uuid().nullable().optional(),
+  kind: z.string().min(1).max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema.optional().default({}),
+  emittedAt: z.string().datetime().optional(),
+  podName: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes").nullable().optional(),
+  branch: z.string().max(120).refine((value) => byteLength(value) <= 120, "Must be at most 120 bytes").nullable().optional(),
+  provider: z.string().max(60).refine((value) => byteLength(value) <= 60, "Must be at most 60 bytes").nullable().optional(),
+});
+
+export const agentRemoteDevBreadcrumbUpdateSchema = agentRemoteDevBreadcrumbInsertSchema.partial();
+export type AgentRemoteDevBreadcrumbRow = z.infer<typeof agentRemoteDevBreadcrumbRowSchema>;
+export type AgentRemoteDevBreadcrumbInsert = z.infer<typeof agentRemoteDevBreadcrumbInsertSchema>;
+export type AgentRemoteDevBreadcrumbUpdate = z.infer<typeof agentRemoteDevBreadcrumbUpdateSchema>;
 
 export const agentRemoteDevArtifactStorageProviderValues = ["s3","r2","gcs","drive","local"] as const;
 export const agentRemoteDevArtifactStorageProviderSchema = z.enum(agentRemoteDevArtifactStorageProviderValues);
@@ -608,6 +788,246 @@ export type AgentRemoteDevRuntimeLockRow = z.infer<typeof agentRemoteDevRuntimeL
 export type AgentRemoteDevRuntimeLockInsert = z.infer<typeof agentRemoteDevRuntimeLockInsertSchema>;
 export type AgentRemoteDevRuntimeLockUpdate = z.infer<typeof agentRemoteDevRuntimeLockUpdateSchema>;
 
+export const mipSolverSessions = pgTable(
+  "mip_solver_sessions",
+  {
+    sessionId: varchar("session_id", { length: 200 }).primaryKey(),
+    revision: bigint("revision", { mode: "number" }).default(sql`0`).notNull(),
+    problem: jsonb("problem").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    mipSolverSessionsSessionIdSizeChk: check("mip_solver_sessions_session_id_size_chk", sql.raw("octet_length(session_id) between 1 and 200")),
+    mipSolverSessionsRevisionChk: check("mip_solver_sessions_revision_chk", sql.raw("revision >= 0")),
+    mipSolverSessionsProblemJsonChk: check("mip_solver_sessions_problem_json_chk", sql.raw("jsonb_typeof(problem) = 'object'")),
+    mipSolverSessionsUpdatedAtIdx: index("mip_solver_sessions_updated_at_idx").on(table.updatedAt.desc()),
+  }),
+);
+
+export const mipSolverSessionsRowSchema = z.object({
+  sessionId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0),
+  problem: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const mipSolverSessionsInsertSchema = z.object({
+  sessionId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0).optional().default(0),
+  problem: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const mipSolverSessionsUpdateSchema = mipSolverSessionsInsertSchema.partial();
+export type MipSolverSessionsRow = z.infer<typeof mipSolverSessionsRowSchema>;
+export type MipSolverSessionsInsert = z.infer<typeof mipSolverSessionsInsertSchema>;
+export type MipSolverSessionsUpdate = z.infer<typeof mipSolverSessionsUpdateSchema>;
+
+export const mipSolverSolvesNodeRoleValues = ["master","slave"] as const;
+export const mipSolverSolvesNodeRoleSchema = z.enum(mipSolverSolvesNodeRoleValues);
+export type MipSolverSolvesNodeRole = z.infer<typeof mipSolverSolvesNodeRoleSchema>;
+
+export const mipSolverSolves = pgTable(
+  "mip_solver_solves",
+  {
+    solveId: varchar("solve_id", { length: 160 }).primaryKey(),
+    requestId: varchar("request_id", { length: 200 }).notNull(),
+    revision: bigint("revision", { mode: "number" }).default(sql`0`).notNull(),
+    status: varchar("status", { length: 64 }).default(sql`'running'`).notNull(),
+    nodeId: varchar("node_id", { length: 253 }).notNull(),
+    nodeRole: varchar("node_role", { length: 32 }).notNull(),
+    problem: jsonb("problem").default(sql`'{}'::jsonb`).notNull(),
+    options: jsonb("options").default(sql`'{}'::jsonb`).notNull(),
+    response: jsonb("response").default(sql`'{}'::jsonb`).notNull(),
+    jobsExpected: integer("jobs_expected").default(sql`0`).notNull(),
+    jobsPublished: integer("jobs_published").default(sql`0`).notNull(),
+    jobsCompleted: integer("jobs_completed").default(sql`0`).notNull(),
+    jobsRedelegated: integer("jobs_redelegated").default(sql`0`).notNull(),
+    jobsSplit: integer("jobs_split").default(sql`0`).notNull(),
+    timedOut: boolean("timed_out").default(sql`false`).notNull(),
+    distributed: boolean("distributed").default(sql`false`).notNull(),
+    warnings: jsonb("warnings").default(sql`'[]'::jsonb`).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    mipSolverSolvesSolveIdSizeChk: check("mip_solver_solves_solve_id_size_chk", sql.raw("octet_length(solve_id) between 1 and 160")),
+    mipSolverSolvesRequestIdSizeChk: check("mip_solver_solves_request_id_size_chk", sql.raw("octet_length(request_id) between 1 and 200")),
+    mipSolverSolvesStatusSizeChk: check("mip_solver_solves_status_size_chk", sql.raw("octet_length(status) between 1 and 64")),
+    mipSolverSolvesNodeIdSizeChk: check("mip_solver_solves_node_id_size_chk", sql.raw("octet_length(node_id) between 1 and 253")),
+    mipSolverSolvesNodeRoleChk: check("mip_solver_solves_node_role_chk", sql.raw("node_role in ('master', 'slave')")),
+    mipSolverSolvesCountsChk: check("mip_solver_solves_counts_chk", sql.raw("revision >= 0 and jobs_expected >= 0 and jobs_published >= 0 and jobs_completed >= 0 and jobs_redelegated >= 0 and jobs_split >= 0")),
+    mipSolverSolvesProblemJsonChk: check("mip_solver_solves_problem_json_chk", sql.raw("jsonb_typeof(problem) = 'object'")),
+    mipSolverSolvesOptionsJsonChk: check("mip_solver_solves_options_json_chk", sql.raw("jsonb_typeof(options) = 'object'")),
+    mipSolverSolvesResponseJsonChk: check("mip_solver_solves_response_json_chk", sql.raw("jsonb_typeof(response) = 'object'")),
+    mipSolverSolvesWarningsJsonChk: check("mip_solver_solves_warnings_json_chk", sql.raw("jsonb_typeof(warnings) = 'array'")),
+    mipSolverSolvesRequestIdIdx: index("mip_solver_solves_request_id_idx").on(table.requestId, table.updatedAt.desc()),
+    mipSolverSolvesStatusIdx: index("mip_solver_solves_status_idx").on(table.status, table.updatedAt.desc()),
+  }),
+);
+
+export const mipSolverSolvesRowSchema = z.object({
+  solveId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  requestId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  nodeId: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes"),
+  nodeRole: mipSolverSolvesNodeRoleSchema,
+  problem: jsonObjectSchema,
+  options: jsonObjectSchema,
+  response: jsonObjectSchema,
+  jobsExpected: z.number().int().min(0),
+  jobsPublished: z.number().int().min(0),
+  jobsCompleted: z.number().int().min(0),
+  jobsRedelegated: z.number().int().min(0),
+  jobsSplit: z.number().int().min(0),
+  timedOut: z.boolean(),
+  distributed: z.boolean(),
+  warnings: jsonArraySchema,
+  startedAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+});
+
+export const mipSolverSolvesInsertSchema = z.object({
+  solveId: z.string().max(160).refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes"),
+  requestId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  revision: z.number().int().min(0).optional().default(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").optional().default("running"),
+  nodeId: z.string().max(253).refine((value) => byteLength(value) <= 253, "Must be at most 253 bytes"),
+  nodeRole: mipSolverSolvesNodeRoleSchema,
+  problem: jsonObjectSchema.optional().default({}),
+  options: jsonObjectSchema.optional().default({}),
+  response: jsonObjectSchema.optional().default({}),
+  jobsExpected: z.number().int().min(0).optional().default(0),
+  jobsPublished: z.number().int().min(0).optional().default(0),
+  jobsCompleted: z.number().int().min(0).optional().default(0),
+  jobsRedelegated: z.number().int().min(0).optional().default(0),
+  jobsSplit: z.number().int().min(0).optional().default(0),
+  timedOut: z.boolean().optional().default(false),
+  distributed: z.boolean().optional().default(false),
+  warnings: jsonArraySchema.optional().default([]),
+  startedAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+});
+
+export const mipSolverSolvesUpdateSchema = mipSolverSolvesInsertSchema.partial();
+export type MipSolverSolvesRow = z.infer<typeof mipSolverSolvesRowSchema>;
+export type MipSolverSolvesInsert = z.infer<typeof mipSolverSolvesInsertSchema>;
+export type MipSolverSolvesUpdate = z.infer<typeof mipSolverSolvesUpdateSchema>;
+
+export const mipSolverJobs = pgTable(
+  "mip_solver_jobs",
+  {
+    jobId: varchar("job_id", { length: 240 }).primaryKey(),
+    solveId: varchar("solve_id", { length: 160 }).notNull(),
+    rootJobId: varchar("root_job_id", { length: 240 }).notNull(),
+    retryIndex: integer("retry_index").default(sql`0`).notNull(),
+    depth: integer("depth").default(sql`0`).notNull(),
+    status: varchar("status", { length: 64 }).default(sql`'submitted'`).notNull(),
+    workerNode: varchar("worker_node", { length: 253 }),
+    jobPayload: jsonb("job_payload").default(sql`'{}'::jsonb`).notNull(),
+    resultPayload: jsonb("result_payload").default(sql`'{}'::jsonb`).notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    mipSolverJobsJobIdSizeChk: check("mip_solver_jobs_job_id_size_chk", sql.raw("octet_length(job_id) between 1 and 240")),
+    mipSolverJobsRootJobIdSizeChk: check("mip_solver_jobs_root_job_id_size_chk", sql.raw("octet_length(root_job_id) between 1 and 240")),
+    mipSolverJobsStatusSizeChk: check("mip_solver_jobs_status_size_chk", sql.raw("octet_length(status) between 1 and 64")),
+    mipSolverJobsCountsChk: check("mip_solver_jobs_counts_chk", sql.raw("retry_index >= 0 and depth >= 0")),
+    mipSolverJobsJobPayloadJsonChk: check("mip_solver_jobs_job_payload_json_chk", sql.raw("jsonb_typeof(job_payload) = 'object'")),
+    mipSolverJobsResultPayloadJsonChk: check("mip_solver_jobs_result_payload_json_chk", sql.raw("jsonb_typeof(result_payload) = 'object'")),
+    mipSolverJobsSolveStatusIdx: index("mip_solver_jobs_solve_status_idx").on(table.solveId, table.status, table.updatedAt.desc()),
+    mipSolverJobsRootIdx: index("mip_solver_jobs_root_idx").on(table.solveId, table.rootJobId, table.retryIndex),
+  }),
+);
+
+export const mipSolverJobsRowSchema = z.object({
+  jobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  solveId: z.string().max(160),
+  rootJobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  retryIndex: z.number().int().min(0),
+  depth: z.number().int().min(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  workerNode: z.string().max(253).nullable(),
+  jobPayload: jsonObjectSchema,
+  resultPayload: jsonObjectSchema,
+  submittedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime(),
+});
+
+export const mipSolverJobsInsertSchema = z.object({
+  jobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  solveId: z.string().max(160),
+  rootJobId: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  retryIndex: z.number().int().min(0).optional().default(0),
+  depth: z.number().int().min(0).optional().default(0),
+  status: z.string().max(64).refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").optional().default("submitted"),
+  workerNode: z.string().max(253).nullable().optional(),
+  jobPayload: jsonObjectSchema.optional().default({}),
+  resultPayload: jsonObjectSchema.optional().default({}),
+  submittedAt: z.string().datetime().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const mipSolverJobsUpdateSchema = mipSolverJobsInsertSchema.partial();
+export type MipSolverJobsRow = z.infer<typeof mipSolverJobsRowSchema>;
+export type MipSolverJobsInsert = z.infer<typeof mipSolverJobsInsertSchema>;
+export type MipSolverJobsUpdate = z.infer<typeof mipSolverJobsUpdateSchema>;
+
+export const mipSolverEvents = pgTable(
+  "mip_solver_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    solveId: varchar("solve_id", { length: 160 }),
+    sessionId: varchar("session_id", { length: 200 }),
+    jobId: varchar("job_id", { length: 240 }),
+    eventKind: varchar("event_kind", { length: 80 }).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    mipSolverEventsEventKindFormatChk: check("mip_solver_events_event_kind_format_chk", sql.raw("event_kind ~ '^[A-Za-z0-9._:-]{1,80}$'")),
+    mipSolverEventsPayloadJsonChk: check("mip_solver_events_payload_json_chk", sql.raw("jsonb_typeof(payload) = 'object'")),
+    mipSolverEventsSolveCreatedAtIdx: index("mip_solver_events_solve_created_at_idx").on(table.solveId, table.createdAt.desc()).where(sql.raw("solve_id is not null")),
+    mipSolverEventsSessionCreatedAtIdx: index("mip_solver_events_session_created_at_idx").on(table.sessionId, table.createdAt.desc()).where(sql.raw("session_id is not null")),
+  }),
+);
+
+export const mipSolverEventsRowSchema = z.object({
+  id: z.number().int(),
+  solveId: z.string().max(160).nullable(),
+  sessionId: z.string().max(200).nullable(),
+  jobId: z.string().max(240).nullable(),
+  eventKind: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const mipSolverEventsInsertSchema = z.object({
+  id: z.number().int(),
+  solveId: z.string().max(160).nullable().optional(),
+  sessionId: z.string().max(200).nullable().optional(),
+  jobId: z.string().max(240).nullable().optional(),
+  eventKind: z.string().max(80).regex(new RegExp("^[A-Za-z0-9._:-]{1,80}$")),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const mipSolverEventsUpdateSchema = mipSolverEventsInsertSchema.partial();
+export type MipSolverEventsRow = z.infer<typeof mipSolverEventsRowSchema>;
+export type MipSolverEventsInsert = z.infer<typeof mipSolverEventsInsertSchema>;
+export type MipSolverEventsUpdate = z.infer<typeof mipSolverEventsUpdateSchema>;
+
 export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell"] as const;
 export const lambdaFunctionRuntimeSchema = z.enum(lambdaFunctionRuntimeValues);
 export type LambdaFunctionRuntime = z.infer<typeof lambdaFunctionRuntimeSchema>;
@@ -628,7 +1048,7 @@ export const lambdaFunctions = pgTable(
     displayName: varchar("display_name", { length: 200 }).notNull(),
     description: text("description").default(sql`''`).notNull(),
     runtime: varchar("runtime", { length: 40 }).default(sql`'nodejs'`).notNull(),
-    entryCommand: text("entry_command").default(sql`'env -i PATH="$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'`).notNull(),
+    entryCommand: text("entry_command").default(sql`'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'`).notNull(),
     functionBody: text("function_body").notNull(),
     reuseKey: varchar("reuse_key", { length: 200 }),
     idleTimeoutSeconds: integer("idle_timeout_seconds").default(sql`300`).notNull(),
@@ -702,7 +1122,7 @@ export const lambdaFunctionInsertSchema = z.object({
   displayName: z.string().min(1).max(200),
   description: z.string().optional().default(""),
   runtime: lambdaFunctionRuntimeSchema.optional().default("nodejs"),
-  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default("env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"),
+  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default("env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"),
   functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
   reuseKey: z.string().max(200).nullable().optional(),
   idleTimeoutSeconds: z.number().int().min(1).max(3600).optional().default(300),
@@ -728,6 +1148,199 @@ export const lambdaFunctionUpdateSchema = lambdaFunctionInsertSchema.partial();
 export type LambdaFunctionRow = z.infer<typeof lambdaFunctionRowSchema>;
 export type LambdaFunctionInsert = z.infer<typeof lambdaFunctionInsertSchema>;
 export type LambdaFunctionUpdate = z.infer<typeof lambdaFunctionUpdateSchema>;
+
+export const containerPoolImageRevisionsSourceValues = ["disk-default","user","system"] as const;
+export const containerPoolImageRevisionsSourceSchema = z.enum(containerPoolImageRevisionsSourceValues);
+export type ContainerPoolImageRevisionsSource = z.infer<typeof containerPoolImageRevisionsSourceSchema>;
+
+export const containerPoolImageRevisionsStatusValues = ["candidate","active","archived"] as const;
+export const containerPoolImageRevisionsStatusSchema = z.enum(containerPoolImageRevisionsStatusValues);
+export type ContainerPoolImageRevisionsStatus = z.infer<typeof containerPoolImageRevisionsStatusSchema>;
+
+export const containerPoolImageRevisions = pgTable(
+  "container_pool_image_revisions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    imageSlug: varchar("image_slug", { length: 120 }).notNull(),
+    imageRef: text("image_ref").notNull(),
+    dockerfilePath: text("dockerfile_path").notNull(),
+    buildContext: text("build_context").notNull(),
+    dockerfileText: text("dockerfile_text").notNull(),
+    dockerfileSha256: varchar("dockerfile_sha256", { length: 64 }).notNull(),
+    source: varchar("source", { length: 32 }).default(sql`'user'`).notNull(),
+    notes: text("notes").default(sql`''`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'candidate'`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    containerPoolImageRevisionsSlugFormatChk: check("container_pool_image_revisions_slug_format_chk", sql.raw("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'")),
+    containerPoolImageRevisionsDockerfileSizeChk: check("container_pool_image_revisions_dockerfile_size_chk", sql.raw("octet_length(dockerfile_text) between 1 and 65536")),
+    containerPoolImageRevisionsImageRefSizeChk: check("container_pool_image_revisions_image_ref_size_chk", sql.raw("octet_length(image_ref) between 1 and 512")),
+    containerPoolImageRevisionsPathSizeChk: check("container_pool_image_revisions_path_size_chk", sql.raw("octet_length(dockerfile_path) between 1 and 512")),
+    containerPoolImageRevisionsContextSizeChk: check("container_pool_image_revisions_context_size_chk", sql.raw("octet_length(build_context) between 1 and 512")),
+    containerPoolImageRevisionsNotesSizeChk: check("container_pool_image_revisions_notes_size_chk", sql.raw("octet_length(notes) <= 8192")),
+    containerPoolImageRevisionsShaFormatChk: check("container_pool_image_revisions_sha_format_chk", sql.raw("dockerfile_sha256 ~ '^[0-9a-f]{64}$'")),
+    containerPoolImageRevisionsStatusChk: check("container_pool_image_revisions_status_chk", sql.raw("status in ('candidate', 'active', 'archived')")),
+    containerPoolImageRevisionsSourceChk: check("container_pool_image_revisions_source_chk", sql.raw("source in ('disk-default', 'user', 'system')")),
+    containerPoolImageRevisionsMetaObjectChk: check("container_pool_image_revisions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    containerPoolImageRevisionsSlugIdx: index("container_pool_image_revisions_slug_idx").on(table.imageSlug, table.createdAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    containerPoolImageRevisionsSlugShaUq: uniqueIndex("container_pool_image_revisions_slug_sha_uq").on(table.imageSlug, table.dockerfileSha256).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const containerPoolImageRevisionsRowSchema = z.object({
+  id: z.string().uuid(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfilePath: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildContext: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfileText: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  dockerfileSha256: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  source: containerPoolImageRevisionsSourceSchema,
+  notes: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes"),
+  status: containerPoolImageRevisionsStatusSchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const containerPoolImageRevisionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfilePath: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildContext: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  dockerfileText: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  dockerfileSha256: z.string().max(64).regex(new RegExp("^[0-9a-f]{64}$")),
+  source: containerPoolImageRevisionsSourceSchema.optional().default("user"),
+  notes: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").optional().default(""),
+  status: containerPoolImageRevisionsStatusSchema.optional().default("candidate"),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const containerPoolImageRevisionsUpdateSchema = containerPoolImageRevisionsInsertSchema.partial();
+export type ContainerPoolImageRevisionsRow = z.infer<typeof containerPoolImageRevisionsRowSchema>;
+export type ContainerPoolImageRevisionsInsert = z.infer<typeof containerPoolImageRevisionsInsertSchema>;
+export type ContainerPoolImageRevisionsUpdate = z.infer<typeof containerPoolImageRevisionsUpdateSchema>;
+
+export const containerPoolBuildRunsBuildStatusValues = ["queued","building","built","failed","skipped","cancelled"] as const;
+export const containerPoolBuildRunsBuildStatusSchema = z.enum(containerPoolBuildRunsBuildStatusValues);
+export type ContainerPoolBuildRunsBuildStatus = z.infer<typeof containerPoolBuildRunsBuildStatusSchema>;
+
+export const containerPoolBuildRunsTestStatusValues = ["not_started","pending","testing","passed","failed","skipped","cancelled"] as const;
+export const containerPoolBuildRunsTestStatusSchema = z.enum(containerPoolBuildRunsTestStatusValues);
+export type ContainerPoolBuildRunsTestStatus = z.infer<typeof containerPoolBuildRunsTestStatusSchema>;
+
+export const containerPoolBuildRunsOverallStatusValues = ["queued","running","passed","failed","cancelled","errored"] as const;
+export const containerPoolBuildRunsOverallStatusSchema = z.enum(containerPoolBuildRunsOverallStatusValues);
+export type ContainerPoolBuildRunsOverallStatus = z.infer<typeof containerPoolBuildRunsOverallStatusSchema>;
+
+export const containerPoolBuildRuns = pgTable(
+  "container_pool_build_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    imageSlug: varchar("image_slug", { length: 120 }).notNull(),
+    revisionId: uuid("revision_id").notNull(),
+    imageRef: text("image_ref").notNull(),
+    candidateTag: text("candidate_tag").notNull(),
+    buildStatus: varchar("build_status", { length: 32 }).default(sql`'queued'`).notNull(),
+    testStatus: varchar("test_status", { length: 32 }).default(sql`'not_started'`).notNull(),
+    overallStatus: varchar("overall_status", { length: 32 }).default(sql`'queued'`).notNull(),
+    testCommand: text("test_command").default(sql`''`).notNull(),
+    buildStartedAt: timestamp("build_started_at", { withTimezone: true, mode: "string" }),
+    buildFinishedAt: timestamp("build_finished_at", { withTimezone: true, mode: "string" }),
+    testStartedAt: timestamp("test_started_at", { withTimezone: true, mode: "string" }),
+    testFinishedAt: timestamp("test_finished_at", { withTimezone: true, mode: "string" }),
+    buildLogExcerpt: text("build_log_excerpt").default(sql`''`).notNull(),
+    testLogExcerpt: text("test_log_excerpt").default(sql`''`).notNull(),
+    errorMessage: text("error_message"),
+    triggeredBy: uuid("triggered_by"),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    containerPoolBuildRunsSlugFormatChk: check("container_pool_build_runs_slug_format_chk", sql.raw("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'")),
+    containerPoolBuildRunsImageRefSizeChk: check("container_pool_build_runs_image_ref_size_chk", sql.raw("octet_length(image_ref) between 1 and 512")),
+    containerPoolBuildRunsCandidateTagSizeChk: check("container_pool_build_runs_candidate_tag_size_chk", sql.raw("octet_length(candidate_tag) between 1 and 512")),
+    containerPoolBuildRunsTestCommandSizeChk: check("container_pool_build_runs_test_command_size_chk", sql.raw("octet_length(test_command) <= 4096")),
+    containerPoolBuildRunsLogSizeChk: check("container_pool_build_runs_log_size_chk", sql.raw("octet_length(build_log_excerpt) <= 65536\n       and octet_length(test_log_excerpt) <= 65536")),
+    containerPoolBuildRunsErrorSizeChk: check("container_pool_build_runs_error_size_chk", sql.raw("error_message is null or octet_length(error_message) <= 8192")),
+    containerPoolBuildRunsBuildStatusChk: check("container_pool_build_runs_build_status_chk", sql.raw("build_status in ('queued', 'building', 'built', 'failed', 'skipped', 'cancelled')")),
+    containerPoolBuildRunsTestStatusChk: check("container_pool_build_runs_test_status_chk", sql.raw("test_status in ('not_started', 'pending', 'testing', 'passed', 'failed', 'skipped', 'cancelled')")),
+    containerPoolBuildRunsOverallStatusChk: check("container_pool_build_runs_overall_status_chk", sql.raw("overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'errored')")),
+    containerPoolBuildRunsMetaObjectChk: check("container_pool_build_runs_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    containerPoolBuildRunsSlugIdx: index("container_pool_build_runs_slug_idx").on(table.imageSlug, table.createdAt.desc()).where(sql.raw("is_soft_deleted = false")),
+    containerPoolBuildRunsOverallIdx: index("container_pool_build_runs_overall_idx").on(table.overallStatus).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const containerPoolBuildRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  revisionId: z.string().uuid(),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  candidateTag: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildStatus: containerPoolBuildRunsBuildStatusSchema,
+  testStatus: containerPoolBuildRunsTestStatusSchema,
+  overallStatus: containerPoolBuildRunsOverallStatusSchema,
+  testCommand: z.string().refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  buildStartedAt: z.string().datetime().nullable(),
+  buildFinishedAt: z.string().datetime().nullable(),
+  testStartedAt: z.string().datetime().nullable(),
+  testFinishedAt: z.string().datetime().nullable(),
+  buildLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  testLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes"),
+  errorMessage: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  triggeredBy: z.string().uuid().nullable(),
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const containerPoolBuildRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  imageSlug: z.string().max(120).regex(new RegExp("^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")),
+  revisionId: z.string().uuid(),
+  imageRef: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  candidateTag: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  buildStatus: containerPoolBuildRunsBuildStatusSchema.optional().default("queued"),
+  testStatus: containerPoolBuildRunsTestStatusSchema.optional().default("not_started"),
+  overallStatus: containerPoolBuildRunsOverallStatusSchema.optional().default("queued"),
+  testCommand: z.string().refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").optional().default(""),
+  buildStartedAt: z.string().datetime().nullable().optional(),
+  buildFinishedAt: z.string().datetime().nullable().optional(),
+  testStartedAt: z.string().datetime().nullable().optional(),
+  testFinishedAt: z.string().datetime().nullable().optional(),
+  buildLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes").optional().default(""),
+  testLogExcerpt: z.string().refine((value) => byteLength(value) <= 65536, "Must be at most 65536 bytes").optional().default(""),
+  errorMessage: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  triggeredBy: z.string().uuid().nullable().optional(),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const containerPoolBuildRunsUpdateSchema = containerPoolBuildRunsInsertSchema.partial();
+export type ContainerPoolBuildRunsRow = z.infer<typeof containerPoolBuildRunsRowSchema>;
+export type ContainerPoolBuildRunsInsert = z.infer<typeof containerPoolBuildRunsInsertSchema>;
+export type ContainerPoolBuildRunsUpdate = z.infer<typeof containerPoolBuildRunsUpdateSchema>;
 
 export const presenceConvsStatusValues = ["active","paused","archived"] as const;
 export const presenceConvsStatusSchema = z.enum(presenceConvsStatusValues);
@@ -975,3 +1588,634 @@ export const presenceConsumerCheckpointsUpdateSchema = presenceConsumerCheckpoin
 export type PresenceConsumerCheckpointsRow = z.infer<typeof presenceConsumerCheckpointsRowSchema>;
 export type PresenceConsumerCheckpointsInsert = z.infer<typeof presenceConsumerCheckpointsInsertSchema>;
 export type PresenceConsumerCheckpointsUpdate = z.infer<typeof presenceConsumerCheckpointsUpdateSchema>;
+
+export const desSoccerLearningExperimentsStatusValues = ["active","paused","archived"] as const;
+export const desSoccerLearningExperimentsStatusSchema = z.enum(desSoccerLearningExperimentsStatusValues);
+export type DesSoccerLearningExperimentsStatus = z.infer<typeof desSoccerLearningExperimentsStatusSchema>;
+
+export const desSoccerLearningExperiments = pgTable(
+  "des_soccer_learning_experiments",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    slug: varchar("slug", { length: 160 }).notNull(),
+    displayName: varchar("display_name", { length: 240 }).notNull(),
+    description: text("description").default(sql`''`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'active'`).notNull(),
+    config: jsonb("config").default(sql`'{}'::jsonb`).notNull(),
+    labels: jsonb("labels").default(sql`'[]'::jsonb`).notNull(),
+    metaData: jsonb("meta_data").default(sql`'{}'::jsonb`).notNull(),
+    isSoftDeleted: boolean("is_soft_deleted").default(sql`false`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    desSoccerLearningExperimentsSlugFormatChk: check("des_soccer_learning_experiments_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'")),
+    desSoccerLearningExperimentsDisplayNameSizeChk: check("des_soccer_learning_experiments_display_name_size_chk", sql.raw("octet_length(display_name) between 1 and 240")),
+    desSoccerLearningExperimentsDescriptionSizeChk: check("des_soccer_learning_experiments_description_size_chk", sql.raw("octet_length(description) <= 8192")),
+    desSoccerLearningExperimentsConfigObjectChk: check("des_soccer_learning_experiments_config_object_chk", sql.raw("jsonb_typeof(config) = 'object'")),
+    desSoccerLearningExperimentsLabelsArrayChk: check("des_soccer_learning_experiments_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    desSoccerLearningExperimentsMetaObjectChk: check("des_soccer_learning_experiments_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    desSoccerLearningExperimentsStatusChk: check("des_soccer_learning_experiments_status_chk", sql.raw("status in ('active', 'paused', 'archived')")),
+    desSoccerLearningExperimentsSlugActiveUq: uniqueIndex("des_soccer_learning_experiments_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
+    desSoccerLearningExperimentsStatusIdx: index("des_soccer_learning_experiments_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
+    desSoccerLearningExperimentsUpdatedAtIdx: index("des_soccer_learning_experiments_updated_at_idx").on(table.updatedAt.desc()).where(sql.raw("is_soft_deleted = false")),
+  }),
+);
+
+export const desSoccerLearningExperimentsRowSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().max(160).regex(new RegExp("^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")),
+  displayName: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  description: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes"),
+  status: desSoccerLearningExperimentsStatusSchema,
+  config: jsonObjectSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  isSoftDeleted: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const desSoccerLearningExperimentsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z.string().max(160).regex(new RegExp("^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")),
+  displayName: z.string().max(240).refine((value) => byteLength(value) <= 240, "Must be at most 240 bytes"),
+  description: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").optional().default(""),
+  status: desSoccerLearningExperimentsStatusSchema.optional().default("active"),
+  config: jsonObjectSchema.optional().default({}),
+  labels: jsonArraySchema.optional().default([]),
+  metaData: jsonObjectSchema.optional().default({}),
+  isSoftDeleted: z.boolean().optional().default(false),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const desSoccerLearningExperimentsUpdateSchema = desSoccerLearningExperimentsInsertSchema.partial();
+export type DesSoccerLearningExperimentsRow = z.infer<typeof desSoccerLearningExperimentsRowSchema>;
+export type DesSoccerLearningExperimentsInsert = z.infer<typeof desSoccerLearningExperimentsInsertSchema>;
+export type DesSoccerLearningExperimentsUpdate = z.infer<typeof desSoccerLearningExperimentsUpdateSchema>;
+
+export const desSoccerLearningPolicyVersionsSourceKindValues = ["seed","merge","mutation","crossover","import","replay"] as const;
+export const desSoccerLearningPolicyVersionsSourceKindSchema = z.enum(desSoccerLearningPolicyVersionsSourceKindValues);
+export type DesSoccerLearningPolicyVersionsSourceKind = z.infer<typeof desSoccerLearningPolicyVersionsSourceKindSchema>;
+
+export const desSoccerLearningPolicyVersionsStatusValues = ["candidate","active","archived","rejected"] as const;
+export const desSoccerLearningPolicyVersionsStatusSchema = z.enum(desSoccerLearningPolicyVersionsStatusValues);
+export type DesSoccerLearningPolicyVersionsStatus = z.infer<typeof desSoccerLearningPolicyVersionsStatusSchema>;
+
+export const desSoccerLearningPolicyVersions = pgTable(
+  "des_soccer_learning_policy_versions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    experimentId: uuid("experiment_id").notNull(),
+    parentPolicyVersionId: uuid("parent_policy_version_id"),
+    generation: integer("generation").default(sql`0`).notNull(),
+    versionLabel: varchar("version_label", { length: 160 }).notNull(),
+    sourceKind: varchar("source_kind", { length: 40 }).default(sql`'seed'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'candidate'`).notNull(),
+    options: jsonb("options").default(sql`'{}'::jsonb`).notNull(),
+    config: jsonb("config").default(sql`'{}'::jsonb`).notNull(),
+    lineage: jsonb("lineage").default(sql`'[]'::jsonb`).notNull(),
+    metrics: jsonb("metrics").default(sql`'{}'::jsonb`).notNull(),
+    entryCount: integer("entry_count").default(sql`0`).notNull(),
+    targetEntryCount: integer("target_entry_count").default(sql`0`).notNull(),
+    visitCount: bigint("visit_count", { mode: "number" }).default(sql`0`).notNull(),
+    fitnessMicros: bigint("fitness_micros", { mode: "number" }).default(sql`0`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    desSoccerLearningPolicyVersionsGenerationChk: check("des_soccer_learning_policy_versions_generation_chk", sql.raw("generation >= 0")),
+    desSoccerLearningPolicyVersionsLabelFormatChk: check("des_soccer_learning_policy_versions_label_format_chk", sql.raw("version_label ~ '^[A-Za-z0-9._:/-]{1,160}$'")),
+    desSoccerLearningPolicyVersionsSourceChk: check("des_soccer_learning_policy_versions_source_chk", sql.raw("source_kind in ('seed', 'merge', 'mutation', 'crossover', 'import', 'replay')")),
+    desSoccerLearningPolicyVersionsStatusChk: check("des_soccer_learning_policy_versions_status_chk", sql.raw("status in ('candidate', 'active', 'archived', 'rejected')")),
+    desSoccerLearningPolicyVersionsOptionsObjectChk: check("des_soccer_learning_policy_versions_options_object_chk", sql.raw("jsonb_typeof(options) = 'object'")),
+    desSoccerLearningPolicyVersionsConfigObjectChk: check("des_soccer_learning_policy_versions_config_object_chk", sql.raw("jsonb_typeof(config) = 'object'")),
+    desSoccerLearningPolicyVersionsLineageArrayChk: check("des_soccer_learning_policy_versions_lineage_array_chk", sql.raw("jsonb_typeof(lineage) = 'array'")),
+    desSoccerLearningPolicyVersionsMetricsObjectChk: check("des_soccer_learning_policy_versions_metrics_object_chk", sql.raw("jsonb_typeof(metrics) = 'object'")),
+    desSoccerLearningPolicyVersionsEntryCountChk: check("des_soccer_learning_policy_versions_entry_count_chk", sql.raw("entry_count >= 0")),
+    desSoccerLearningPolicyVersionsTargetEntryCountChk: check("des_soccer_learning_policy_versions_target_entry_count_chk", sql.raw("target_entry_count >= 0")),
+    desSoccerLearningPolicyVersionsVisitCountChk: check("des_soccer_learning_policy_versions_visit_count_chk", sql.raw("visit_count >= 0")),
+    desSoccerLearningPolicyVersionsLabelUq: uniqueIndex("des_soccer_learning_policy_versions_label_uq").on(table.experimentId, table.versionLabel),
+    desSoccerLearningPolicyVersionsActiveIdx: index("des_soccer_learning_policy_versions_active_idx").on(table.experimentId, table.generation.desc(), table.updatedAt.desc()).where(sql.raw("status = 'active'")),
+    desSoccerLearningPolicyVersionsFitnessIdx: index("des_soccer_learning_policy_versions_fitness_idx").on(table.experimentId, table.fitnessMicros.desc(), table.updatedAt.desc()).where(sql.raw("status in ('active', 'candidate')")),
+  }),
+);
+
+export const desSoccerLearningPolicyVersionsRowSchema = z.object({
+  id: z.string().uuid(),
+  experimentId: z.string().uuid(),
+  parentPolicyVersionId: z.string().uuid().nullable(),
+  generation: z.number().int().min(0),
+  versionLabel: z.string().max(160).regex(new RegExp("^[A-Za-z0-9._:/-]{1,160}$")),
+  sourceKind: desSoccerLearningPolicyVersionsSourceKindSchema,
+  status: desSoccerLearningPolicyVersionsStatusSchema,
+  options: jsonObjectSchema,
+  config: jsonObjectSchema,
+  lineage: jsonArraySchema,
+  metrics: jsonObjectSchema,
+  entryCount: z.number().int().min(0),
+  targetEntryCount: z.number().int().min(0),
+  visitCount: z.number().int().min(0),
+  fitnessMicros: z.number().int(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const desSoccerLearningPolicyVersionsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  experimentId: z.string().uuid(),
+  parentPolicyVersionId: z.string().uuid().nullable().optional(),
+  generation: z.number().int().min(0).optional().default(0),
+  versionLabel: z.string().max(160).regex(new RegExp("^[A-Za-z0-9._:/-]{1,160}$")),
+  sourceKind: desSoccerLearningPolicyVersionsSourceKindSchema.optional().default("seed"),
+  status: desSoccerLearningPolicyVersionsStatusSchema.optional().default("candidate"),
+  options: jsonObjectSchema.optional().default({}),
+  config: jsonObjectSchema.optional().default({}),
+  lineage: jsonArraySchema.optional().default([]),
+  metrics: jsonObjectSchema.optional().default({}),
+  entryCount: z.number().int().min(0).optional().default(0),
+  targetEntryCount: z.number().int().min(0).optional().default(0),
+  visitCount: z.number().int().min(0).optional().default(0),
+  fitnessMicros: z.number().int().optional().default(0),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const desSoccerLearningPolicyVersionsUpdateSchema = desSoccerLearningPolicyVersionsInsertSchema.partial();
+export type DesSoccerLearningPolicyVersionsRow = z.infer<typeof desSoccerLearningPolicyVersionsRowSchema>;
+export type DesSoccerLearningPolicyVersionsInsert = z.infer<typeof desSoccerLearningPolicyVersionsInsertSchema>;
+export type DesSoccerLearningPolicyVersionsUpdate = z.infer<typeof desSoccerLearningPolicyVersionsUpdateSchema>;
+
+export const desSoccerLearningPolicyEntriesTeamValues = ["home","away"] as const;
+export const desSoccerLearningPolicyEntriesTeamSchema = z.enum(desSoccerLearningPolicyEntriesTeamValues);
+export type DesSoccerLearningPolicyEntriesTeam = z.infer<typeof desSoccerLearningPolicyEntriesTeamSchema>;
+
+export const desSoccerLearningPolicyEntriesEntryKindValues = ["action","target"] as const;
+export const desSoccerLearningPolicyEntriesEntryKindSchema = z.enum(desSoccerLearningPolicyEntriesEntryKindValues);
+export type DesSoccerLearningPolicyEntriesEntryKind = z.infer<typeof desSoccerLearningPolicyEntriesEntryKindSchema>;
+
+export const desSoccerLearningPolicyEntries = pgTable(
+  "des_soccer_learning_policy_entries",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    policyVersionId: uuid("policy_version_id").notNull(),
+    team: varchar("team", { length: 8 }).notNull(),
+    entryKind: varchar("entry_kind", { length: 16 }).notNull(),
+    stateHash: varchar("state_hash", { length: 32 }).notNull(),
+    stateKey: jsonb("state_key").notNull(),
+    action: varchar("action", { length: 80 }).notNull(),
+    targetFineCellId: integer("target_fine_cell_id").default(sql`-1`).notNull(),
+    targetTacticalCellId: integer("target_tactical_cell_id").default(sql`-1`).notNull(),
+    targetMacroCellId: integer("target_macro_cell_id").default(sql`-1`).notNull(),
+    targetRootCellId: integer("target_root_cell_id").default(sql`-1`).notNull(),
+    valueMicros: bigint("value_micros", { mode: "number" }).notNull(),
+    visits: integer("visits").default(sql`0`).notNull(),
+    sourceRunId: uuid("source_run_id"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningPolicyEntriesTeamChk: check("des_soccer_learning_policy_entries_team_chk", sql.raw("team in ('home', 'away')")),
+    desSoccerLearningPolicyEntriesKindChk: check("des_soccer_learning_policy_entries_kind_chk", sql.raw("entry_kind in ('action', 'target')")),
+    desSoccerLearningPolicyEntriesStateHashChk: check("des_soccer_learning_policy_entries_state_hash_chk", sql.raw("state_hash ~ '^[a-f0-9]{16,32}$'")),
+    desSoccerLearningPolicyEntriesStateObjectChk: check("des_soccer_learning_policy_entries_state_object_chk", sql.raw("jsonb_typeof(state_key) = 'object'")),
+    desSoccerLearningPolicyEntriesActionSizeChk: check("des_soccer_learning_policy_entries_action_size_chk", sql.raw("octet_length(action) between 1 and 80")),
+    desSoccerLearningPolicyEntriesTargetFineChk: check("des_soccer_learning_policy_entries_target_fine_chk", sql.raw("target_fine_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesTargetTacticalChk: check("des_soccer_learning_policy_entries_target_tactical_chk", sql.raw("target_tactical_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesTargetMacroChk: check("des_soccer_learning_policy_entries_target_macro_chk", sql.raw("target_macro_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesTargetRootChk: check("des_soccer_learning_policy_entries_target_root_chk", sql.raw("target_root_cell_id >= -1")),
+    desSoccerLearningPolicyEntriesVisitsChk: check("des_soccer_learning_policy_entries_visits_chk", sql.raw("visits >= 0")),
+    desSoccerLearningPolicyEntriesKeyUq: uniqueIndex("des_soccer_learning_policy_entries_key_uq").on(table.policyVersionId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId),
+    desSoccerLearningPolicyEntriesLookupIdx: index("des_soccer_learning_policy_entries_lookup_idx").on(table.policyVersionId, table.team, table.entryKind, table.stateHash),
+  }),
+);
+
+export const desSoccerLearningPolicyEntriesRowSchema = z.object({
+  id: z.string().uuid(),
+  policyVersionId: z.string().uuid(),
+  team: desSoccerLearningPolicyEntriesTeamSchema,
+  entryKind: desSoccerLearningPolicyEntriesEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1),
+  targetTacticalCellId: z.number().int().min(-1),
+  targetMacroCellId: z.number().int().min(-1),
+  targetRootCellId: z.number().int().min(-1),
+  valueMicros: z.number().int(),
+  visits: z.number().int().min(0),
+  sourceRunId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningPolicyEntriesInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  policyVersionId: z.string().uuid(),
+  team: desSoccerLearningPolicyEntriesTeamSchema,
+  entryKind: desSoccerLearningPolicyEntriesEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1).optional().default(-1),
+  targetTacticalCellId: z.number().int().min(-1).optional().default(-1),
+  targetMacroCellId: z.number().int().min(-1).optional().default(-1),
+  targetRootCellId: z.number().int().min(-1).optional().default(-1),
+  valueMicros: z.number().int(),
+  visits: z.number().int().min(0).optional().default(0),
+  sourceRunId: z.string().uuid().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningPolicyEntriesUpdateSchema = desSoccerLearningPolicyEntriesInsertSchema.partial();
+export type DesSoccerLearningPolicyEntriesRow = z.infer<typeof desSoccerLearningPolicyEntriesRowSchema>;
+export type DesSoccerLearningPolicyEntriesInsert = z.infer<typeof desSoccerLearningPolicyEntriesInsertSchema>;
+export type DesSoccerLearningPolicyEntriesUpdate = z.infer<typeof desSoccerLearningPolicyEntriesUpdateSchema>;
+
+export const desSoccerLearningJobsSpawnStrategyValues = ["latest","elite","mutation","crossover","random","replay"] as const;
+export const desSoccerLearningJobsSpawnStrategySchema = z.enum(desSoccerLearningJobsSpawnStrategyValues);
+export type DesSoccerLearningJobsSpawnStrategy = z.infer<typeof desSoccerLearningJobsSpawnStrategySchema>;
+
+export const desSoccerLearningJobsStatusValues = ["queued","running","completed","failed","canceled"] as const;
+export const desSoccerLearningJobsStatusSchema = z.enum(desSoccerLearningJobsStatusValues);
+export type DesSoccerLearningJobsStatus = z.infer<typeof desSoccerLearningJobsStatusSchema>;
+
+export const desSoccerLearningJobs = pgTable(
+  "des_soccer_learning_jobs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    experimentId: uuid("experiment_id").notNull(),
+    basePolicyVersionId: uuid("base_policy_version_id"),
+    spawnStrategy: varchar("spawn_strategy", { length: 32 }).default(sql`'latest'`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'queued'`).notNull(),
+    priority: integer("priority").default(sql`0`).notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    attempt: integer("attempt").default(sql`0`).notNull(),
+    maxAttempts: integer("max_attempts").default(sql`1`).notNull(),
+    leaseOwner: varchar("lease_owner", { length: 200 }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "string" }),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    finishedAt: timestamp("finished_at", { withTimezone: true, mode: "string" }),
+    config: jsonb("config").default(sql`'{}'::jsonb`).notNull(),
+    runnerConfig: jsonb("runner_config").default(sql`'{}'::jsonb`).notNull(),
+    resultRunId: uuid("result_run_id"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningJobsSpawnStrategyChk: check("des_soccer_learning_jobs_spawn_strategy_chk", sql.raw("spawn_strategy in ('latest', 'elite', 'mutation', 'crossover', 'random', 'replay')")),
+    desSoccerLearningJobsStatusChk: check("des_soccer_learning_jobs_status_chk", sql.raw("status in ('queued', 'running', 'completed', 'failed', 'canceled')")),
+    desSoccerLearningJobsSeedChk: check("des_soccer_learning_jobs_seed_chk", sql.raw("seed >= 0")),
+    desSoccerLearningJobsAttemptChk: check("des_soccer_learning_jobs_attempt_chk", sql.raw("attempt >= 0")),
+    desSoccerLearningJobsMaxAttemptsChk: check("des_soccer_learning_jobs_max_attempts_chk", sql.raw("max_attempts between 1 and 100")),
+    desSoccerLearningJobsLeaseOwnerSizeChk: check("des_soccer_learning_jobs_lease_owner_size_chk", sql.raw("lease_owner is null or octet_length(lease_owner) <= 200")),
+    desSoccerLearningJobsConfigObjectChk: check("des_soccer_learning_jobs_config_object_chk", sql.raw("jsonb_typeof(config) = 'object'")),
+    desSoccerLearningJobsRunnerConfigObjectChk: check("des_soccer_learning_jobs_runner_config_object_chk", sql.raw("jsonb_typeof(runner_config) = 'object'")),
+    desSoccerLearningJobsErrorSizeChk: check("des_soccer_learning_jobs_error_size_chk", sql.raw("error is null or octet_length(error) <= 16384")),
+    desSoccerLearningJobsClaimIdx: index("des_soccer_learning_jobs_claim_idx").on(table.experimentId, table.status, table.priority.desc(), table.createdAt).where(sql.raw("status in ('queued', 'running')")),
+    desSoccerLearningJobsBasePolicyIdx: index("des_soccer_learning_jobs_base_policy_idx").on(table.basePolicyVersionId, table.createdAt.desc()),
+  }),
+);
+
+export const desSoccerLearningJobsRowSchema = z.object({
+  id: z.string().uuid(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable(),
+  spawnStrategy: desSoccerLearningJobsSpawnStrategySchema,
+  status: desSoccerLearningJobsStatusSchema,
+  priority: z.number().int(),
+  seed: z.number().int().min(0),
+  attempt: z.number().int().min(0),
+  maxAttempts: z.number().int().min(1).max(100),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  leaseExpiresAt: z.string().datetime().nullable(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  config: jsonObjectSchema,
+  runnerConfig: jsonObjectSchema,
+  resultRunId: z.string().uuid().nullable(),
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const desSoccerLearningJobsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable().optional(),
+  spawnStrategy: desSoccerLearningJobsSpawnStrategySchema.optional().default("latest"),
+  status: desSoccerLearningJobsStatusSchema.optional().default("queued"),
+  priority: z.number().int().optional().default(0),
+  seed: z.number().int().min(0),
+  attempt: z.number().int().min(0).optional().default(0),
+  maxAttempts: z.number().int().min(1).max(100).optional().default(1),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  leaseExpiresAt: z.string().datetime().nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  finishedAt: z.string().datetime().nullable().optional(),
+  config: jsonObjectSchema.optional().default({}),
+  runnerConfig: jsonObjectSchema.optional().default({}),
+  resultRunId: z.string().uuid().nullable().optional(),
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningJobsUpdateSchema = desSoccerLearningJobsInsertSchema.partial();
+export type DesSoccerLearningJobsRow = z.infer<typeof desSoccerLearningJobsRowSchema>;
+export type DesSoccerLearningJobsInsert = z.infer<typeof desSoccerLearningJobsInsertSchema>;
+export type DesSoccerLearningJobsUpdate = z.infer<typeof desSoccerLearningJobsUpdateSchema>;
+
+export const desSoccerLearningRunsStatusValues = ["completed","failed"] as const;
+export const desSoccerLearningRunsStatusSchema = z.enum(desSoccerLearningRunsStatusValues);
+export type DesSoccerLearningRunsStatus = z.infer<typeof desSoccerLearningRunsStatusSchema>;
+
+export const desSoccerLearningRunsHomeOutcomeValues = ["win","draw","loss"] as const;
+export const desSoccerLearningRunsHomeOutcomeSchema = z.enum(desSoccerLearningRunsHomeOutcomeValues);
+export type DesSoccerLearningRunsHomeOutcome = z.infer<typeof desSoccerLearningRunsHomeOutcomeSchema>;
+
+export const desSoccerLearningRunsAwayOutcomeValues = ["win","draw","loss"] as const;
+export const desSoccerLearningRunsAwayOutcomeSchema = z.enum(desSoccerLearningRunsAwayOutcomeValues);
+export type DesSoccerLearningRunsAwayOutcome = z.infer<typeof desSoccerLearningRunsAwayOutcomeSchema>;
+
+export const desSoccerLearningRuns = pgTable(
+  "des_soccer_learning_runs",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    jobId: uuid("job_id"),
+    experimentId: uuid("experiment_id").notNull(),
+    basePolicyVersionId: uuid("base_policy_version_id"),
+    outputPolicyVersionId: uuid("output_policy_version_id"),
+    runnerId: varchar("runner_id", { length: 200 }).notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    episodeIndex: integer("episode_index").default(sql`0`).notNull(),
+    status: varchar("status", { length: 32 }).default(sql`'completed'`).notNull(),
+    scoreHome: integer("score_home").default(sql`0`).notNull(),
+    scoreAway: integer("score_away").default(sql`0`).notNull(),
+    homeGoalDiff: integer("home_goal_diff").default(sql`0`).notNull(),
+    awayGoalDiff: integer("away_goal_diff").default(sql`0`).notNull(),
+    homeOutcome: varchar("home_outcome", { length: 16 }).default(sql`'draw'`).notNull(),
+    awayOutcome: varchar("away_outcome", { length: 16 }).default(sql`'draw'`).notNull(),
+    homeMergeWeightMicros: bigint("home_merge_weight_micros", { mode: "number" }).default(sql`0`).notNull(),
+    awayMergeWeightMicros: bigint("away_merge_weight_micros", { mode: "number" }).default(sql`0`).notNull(),
+    fitnessMicros: bigint("fitness_micros", { mode: "number" }).default(sql`0`).notNull(),
+    durationTicks: bigint("duration_ticks", { mode: "number" }).default(sql`0`).notNull(),
+    simulatedSecondsMicros: bigint("simulated_seconds_micros", { mode: "number" }).default(sql`0`).notNull(),
+    elapsedMillis: bigint("elapsed_millis", { mode: "number" }).default(sql`0`).notNull(),
+    transitions: integer("transitions").default(sql`0`).notNull(),
+    summary: jsonb("summary").default(sql`'{}'::jsonb`).notNull(),
+    stats: jsonb("stats").default(sql`'{}'::jsonb`).notNull(),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningRunsRunnerIdSizeChk: check("des_soccer_learning_runs_runner_id_size_chk", sql.raw("octet_length(runner_id) between 1 and 200")),
+    desSoccerLearningRunsSeedChk: check("des_soccer_learning_runs_seed_chk", sql.raw("seed >= 0")),
+    desSoccerLearningRunsEpisodeIndexChk: check("des_soccer_learning_runs_episode_index_chk", sql.raw("episode_index >= 0")),
+    desSoccerLearningRunsStatusChk: check("des_soccer_learning_runs_status_chk", sql.raw("status in ('completed', 'failed')")),
+    desSoccerLearningRunsScoresChk: check("des_soccer_learning_runs_scores_chk", sql.raw("score_home >= 0 and score_away >= 0")),
+    desSoccerLearningRunsHomeOutcomeChk: check("des_soccer_learning_runs_home_outcome_chk", sql.raw("home_outcome in ('win', 'draw', 'loss')")),
+    desSoccerLearningRunsAwayOutcomeChk: check("des_soccer_learning_runs_away_outcome_chk", sql.raw("away_outcome in ('win', 'draw', 'loss')")),
+    desSoccerLearningRunsDurationTicksChk: check("des_soccer_learning_runs_duration_ticks_chk", sql.raw("duration_ticks >= 0")),
+    desSoccerLearningRunsSimulatedSecondsChk: check("des_soccer_learning_runs_simulated_seconds_chk", sql.raw("simulated_seconds_micros >= 0")),
+    desSoccerLearningRunsElapsedMillisChk: check("des_soccer_learning_runs_elapsed_millis_chk", sql.raw("elapsed_millis >= 0")),
+    desSoccerLearningRunsTransitionsChk: check("des_soccer_learning_runs_transitions_chk", sql.raw("transitions >= 0")),
+    desSoccerLearningRunsSummaryObjectChk: check("des_soccer_learning_runs_summary_object_chk", sql.raw("jsonb_typeof(summary) = 'object'")),
+    desSoccerLearningRunsStatsObjectChk: check("des_soccer_learning_runs_stats_object_chk", sql.raw("jsonb_typeof(stats) = 'object'")),
+    desSoccerLearningRunsErrorSizeChk: check("des_soccer_learning_runs_error_size_chk", sql.raw("error is null or octet_length(error) <= 16384")),
+    desSoccerLearningRunsExperimentIdx: index("des_soccer_learning_runs_experiment_idx").on(table.experimentId, table.createdAt.desc()),
+    desSoccerLearningRunsPolicyFitnessIdx: index("des_soccer_learning_runs_policy_fitness_idx").on(table.basePolicyVersionId, table.fitnessMicros.desc(), table.createdAt.desc()),
+  }),
+);
+
+export const desSoccerLearningRunsRowSchema = z.object({
+  id: z.string().uuid(),
+  jobId: z.string().uuid().nullable(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable(),
+  outputPolicyVersionId: z.string().uuid().nullable(),
+  runnerId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  seed: z.number().int().min(0),
+  episodeIndex: z.number().int().min(0),
+  status: desSoccerLearningRunsStatusSchema,
+  scoreHome: z.number().int().min(0),
+  scoreAway: z.number().int().min(0),
+  homeGoalDiff: z.number().int(),
+  awayGoalDiff: z.number().int(),
+  homeOutcome: desSoccerLearningRunsHomeOutcomeSchema,
+  awayOutcome: desSoccerLearningRunsAwayOutcomeSchema,
+  homeMergeWeightMicros: z.number().int(),
+  awayMergeWeightMicros: z.number().int(),
+  fitnessMicros: z.number().int(),
+  durationTicks: z.number().int().min(0),
+  simulatedSecondsMicros: z.number().int().min(0),
+  elapsedMillis: z.number().int().min(0),
+  transitions: z.number().int().min(0),
+  summary: jsonObjectSchema,
+  stats: jsonObjectSchema,
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const desSoccerLearningRunsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  jobId: z.string().uuid().nullable().optional(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable().optional(),
+  outputPolicyVersionId: z.string().uuid().nullable().optional(),
+  runnerId: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  seed: z.number().int().min(0),
+  episodeIndex: z.number().int().min(0).optional().default(0),
+  status: desSoccerLearningRunsStatusSchema.optional().default("completed"),
+  scoreHome: z.number().int().min(0).optional().default(0),
+  scoreAway: z.number().int().min(0).optional().default(0),
+  homeGoalDiff: z.number().int().optional().default(0),
+  awayGoalDiff: z.number().int().optional().default(0),
+  homeOutcome: desSoccerLearningRunsHomeOutcomeSchema.optional().default("draw"),
+  awayOutcome: desSoccerLearningRunsAwayOutcomeSchema.optional().default("draw"),
+  homeMergeWeightMicros: z.number().int().optional().default(0),
+  awayMergeWeightMicros: z.number().int().optional().default(0),
+  fitnessMicros: z.number().int().optional().default(0),
+  durationTicks: z.number().int().min(0).optional().default(0),
+  simulatedSecondsMicros: z.number().int().min(0).optional().default(0),
+  elapsedMillis: z.number().int().min(0).optional().default(0),
+  transitions: z.number().int().min(0).optional().default(0),
+  summary: jsonObjectSchema.optional().default({}),
+  stats: jsonObjectSchema.optional().default({}),
+  error: z.string().refine((value) => byteLength(value) <= 16384, "Must be at most 16384 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningRunsUpdateSchema = desSoccerLearningRunsInsertSchema.partial();
+export type DesSoccerLearningRunsRow = z.infer<typeof desSoccerLearningRunsRowSchema>;
+export type DesSoccerLearningRunsInsert = z.infer<typeof desSoccerLearningRunsInsertSchema>;
+export type DesSoccerLearningRunsUpdate = z.infer<typeof desSoccerLearningRunsUpdateSchema>;
+
+export const desSoccerLearningRunDeltasTeamValues = ["home","away"] as const;
+export const desSoccerLearningRunDeltasTeamSchema = z.enum(desSoccerLearningRunDeltasTeamValues);
+export type DesSoccerLearningRunDeltasTeam = z.infer<typeof desSoccerLearningRunDeltasTeamSchema>;
+
+export const desSoccerLearningRunDeltasEntryKindValues = ["action","target"] as const;
+export const desSoccerLearningRunDeltasEntryKindSchema = z.enum(desSoccerLearningRunDeltasEntryKindValues);
+export type DesSoccerLearningRunDeltasEntryKind = z.infer<typeof desSoccerLearningRunDeltasEntryKindSchema>;
+
+export const desSoccerLearningRunDeltas = pgTable(
+  "des_soccer_learning_run_deltas",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    runId: uuid("run_id").notNull(),
+    team: varchar("team", { length: 8 }).notNull(),
+    entryKind: varchar("entry_kind", { length: 16 }).notNull(),
+    stateHash: varchar("state_hash", { length: 32 }).notNull(),
+    stateKey: jsonb("state_key").notNull(),
+    action: varchar("action", { length: 80 }).notNull(),
+    targetFineCellId: integer("target_fine_cell_id").default(sql`-1`).notNull(),
+    targetTacticalCellId: integer("target_tactical_cell_id").default(sql`-1`).notNull(),
+    targetMacroCellId: integer("target_macro_cell_id").default(sql`-1`).notNull(),
+    targetRootCellId: integer("target_root_cell_id").default(sql`-1`).notNull(),
+    beforeValueMicros: bigint("before_value_micros", { mode: "number" }).default(sql`0`).notNull(),
+    afterValueMicros: bigint("after_value_micros", { mode: "number" }).default(sql`0`).notNull(),
+    valueDeltaMicros: bigint("value_delta_micros", { mode: "number" }).default(sql`0`).notNull(),
+    visitDelta: integer("visit_delta").default(sql`0`).notNull(),
+    mergeWeightMicros: bigint("merge_weight_micros", { mode: "number" }).default(sql`0`).notNull(),
+    effectiveVisitMicros: bigint("effective_visit_micros", { mode: "number" }).default(sql`0`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningRunDeltasTeamChk: check("des_soccer_learning_run_deltas_team_chk", sql.raw("team in ('home', 'away')")),
+    desSoccerLearningRunDeltasKindChk: check("des_soccer_learning_run_deltas_kind_chk", sql.raw("entry_kind in ('action', 'target')")),
+    desSoccerLearningRunDeltasStateHashChk: check("des_soccer_learning_run_deltas_state_hash_chk", sql.raw("state_hash ~ '^[a-f0-9]{16,32}$'")),
+    desSoccerLearningRunDeltasStateObjectChk: check("des_soccer_learning_run_deltas_state_object_chk", sql.raw("jsonb_typeof(state_key) = 'object'")),
+    desSoccerLearningRunDeltasActionSizeChk: check("des_soccer_learning_run_deltas_action_size_chk", sql.raw("octet_length(action) between 1 and 80")),
+    desSoccerLearningRunDeltasTargetFineChk: check("des_soccer_learning_run_deltas_target_fine_chk", sql.raw("target_fine_cell_id >= -1")),
+    desSoccerLearningRunDeltasTargetTacticalChk: check("des_soccer_learning_run_deltas_target_tactical_chk", sql.raw("target_tactical_cell_id >= -1")),
+    desSoccerLearningRunDeltasTargetMacroChk: check("des_soccer_learning_run_deltas_target_macro_chk", sql.raw("target_macro_cell_id >= -1")),
+    desSoccerLearningRunDeltasTargetRootChk: check("des_soccer_learning_run_deltas_target_root_chk", sql.raw("target_root_cell_id >= -1")),
+    desSoccerLearningRunDeltasVisitDeltaChk: check("des_soccer_learning_run_deltas_visit_delta_chk", sql.raw("visit_delta > 0")),
+    desSoccerLearningRunDeltasMergeWeightChk: check("des_soccer_learning_run_deltas_merge_weight_chk", sql.raw("merge_weight_micros >= 0")),
+    desSoccerLearningRunDeltasEffectiveVisitChk: check("des_soccer_learning_run_deltas_effective_visit_chk", sql.raw("effective_visit_micros >= 0")),
+    desSoccerLearningRunDeltasKeyUq: uniqueIndex("des_soccer_learning_run_deltas_key_uq").on(table.runId, table.team, table.entryKind, table.stateHash, table.action, table.targetFineCellId, table.targetTacticalCellId, table.targetMacroCellId, table.targetRootCellId),
+    desSoccerLearningRunDeltasMergeIdx: index("des_soccer_learning_run_deltas_merge_idx").on(table.team, table.entryKind, table.stateHash, table.action),
+  }),
+);
+
+export const desSoccerLearningRunDeltasRowSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  team: desSoccerLearningRunDeltasTeamSchema,
+  entryKind: desSoccerLearningRunDeltasEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1),
+  targetTacticalCellId: z.number().int().min(-1),
+  targetMacroCellId: z.number().int().min(-1),
+  targetRootCellId: z.number().int().min(-1),
+  beforeValueMicros: z.number().int(),
+  afterValueMicros: z.number().int(),
+  valueDeltaMicros: z.number().int(),
+  visitDelta: z.number().int().min(1),
+  mergeWeightMicros: z.number().int().min(0),
+  effectiveVisitMicros: z.number().int().min(0),
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningRunDeltasInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  runId: z.string().uuid(),
+  team: desSoccerLearningRunDeltasTeamSchema,
+  entryKind: desSoccerLearningRunDeltasEntryKindSchema,
+  stateHash: z.string().max(32).regex(new RegExp("^[a-f0-9]{16,32}$")),
+  stateKey: jsonObjectSchema,
+  action: z.string().max(80).refine((value) => byteLength(value) <= 80, "Must be at most 80 bytes"),
+  targetFineCellId: z.number().int().min(-1).optional().default(-1),
+  targetTacticalCellId: z.number().int().min(-1).optional().default(-1),
+  targetMacroCellId: z.number().int().min(-1).optional().default(-1),
+  targetRootCellId: z.number().int().min(-1).optional().default(-1),
+  beforeValueMicros: z.number().int().optional().default(0),
+  afterValueMicros: z.number().int().optional().default(0),
+  valueDeltaMicros: z.number().int().optional().default(0),
+  visitDelta: z.number().int().min(1).optional().default(0),
+  mergeWeightMicros: z.number().int().min(0).optional().default(0),
+  effectiveVisitMicros: z.number().int().min(0).optional().default(0),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningRunDeltasUpdateSchema = desSoccerLearningRunDeltasInsertSchema.partial();
+export type DesSoccerLearningRunDeltasRow = z.infer<typeof desSoccerLearningRunDeltasRowSchema>;
+export type DesSoccerLearningRunDeltasInsert = z.infer<typeof desSoccerLearningRunDeltasInsertSchema>;
+export type DesSoccerLearningRunDeltasUpdate = z.infer<typeof desSoccerLearningRunDeltasUpdateSchema>;
+
+export const desSoccerLearningMergeEventsStrategyValues = ["outcome_weighted_average","elite","mutation","crossover"] as const;
+export const desSoccerLearningMergeEventsStrategySchema = z.enum(desSoccerLearningMergeEventsStrategyValues);
+export type DesSoccerLearningMergeEventsStrategy = z.infer<typeof desSoccerLearningMergeEventsStrategySchema>;
+
+export const desSoccerLearningMergeEvents = pgTable(
+  "des_soccer_learning_merge_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    experimentId: uuid("experiment_id").notNull(),
+    basePolicyVersionId: uuid("base_policy_version_id"),
+    outputPolicyVersionId: uuid("output_policy_version_id").notNull(),
+    strategy: varchar("strategy", { length: 40 }).default(sql`'outcome_weighted_average'`).notNull(),
+    inputRunCount: integer("input_run_count").default(sql`0`).notNull(),
+    inputDeltaCount: integer("input_delta_count").default(sql`0`).notNull(),
+    decayMicros: bigint("decay_micros", { mode: "number" }).default(sql`1000000`).notNull(),
+    metrics: jsonb("metrics").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    desSoccerLearningMergeEventsStrategyChk: check("des_soccer_learning_merge_events_strategy_chk", sql.raw("strategy in ('outcome_weighted_average', 'elite', 'mutation', 'crossover')")),
+    desSoccerLearningMergeEventsInputRunCountChk: check("des_soccer_learning_merge_events_input_run_count_chk", sql.raw("input_run_count >= 0")),
+    desSoccerLearningMergeEventsInputDeltaCountChk: check("des_soccer_learning_merge_events_input_delta_count_chk", sql.raw("input_delta_count >= 0")),
+    desSoccerLearningMergeEventsDecayChk: check("des_soccer_learning_merge_events_decay_chk", sql.raw("decay_micros between 0 and 1000000")),
+    desSoccerLearningMergeEventsMetricsObjectChk: check("des_soccer_learning_merge_events_metrics_object_chk", sql.raw("jsonb_typeof(metrics) = 'object'")),
+    desSoccerLearningMergeEventsExperimentIdx: index("des_soccer_learning_merge_events_experiment_idx").on(table.experimentId, table.createdAt.desc()),
+  }),
+);
+
+export const desSoccerLearningMergeEventsRowSchema = z.object({
+  id: z.string().uuid(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable(),
+  outputPolicyVersionId: z.string().uuid(),
+  strategy: desSoccerLearningMergeEventsStrategySchema,
+  inputRunCount: z.number().int().min(0),
+  inputDeltaCount: z.number().int().min(0),
+  decayMicros: z.number().int().min(0).max(1000000),
+  metrics: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const desSoccerLearningMergeEventsInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  experimentId: z.string().uuid(),
+  basePolicyVersionId: z.string().uuid().nullable().optional(),
+  outputPolicyVersionId: z.string().uuid(),
+  strategy: desSoccerLearningMergeEventsStrategySchema.optional().default("outcome_weighted_average"),
+  inputRunCount: z.number().int().min(0).optional().default(0),
+  inputDeltaCount: z.number().int().min(0).optional().default(0),
+  decayMicros: z.number().int().min(0).max(1000000).optional().default(1000000),
+  metrics: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const desSoccerLearningMergeEventsUpdateSchema = desSoccerLearningMergeEventsInsertSchema.partial();
+export type DesSoccerLearningMergeEventsRow = z.infer<typeof desSoccerLearningMergeEventsRowSchema>;
+export type DesSoccerLearningMergeEventsInsert = z.infer<typeof desSoccerLearningMergeEventsInsertSchema>;
+export type DesSoccerLearningMergeEventsUpdate = z.infer<typeof desSoccerLearningMergeEventsUpdateSchema>;

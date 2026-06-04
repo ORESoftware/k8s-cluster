@@ -6,31 +6,50 @@ spawn child processes that outlive an HTTP request, or all three.
 
 Today there are several key runtime services:
 
-- [`dev-server/`](./dev-server/) — Node worker/API runtime for task dispatch, streaming, and agent
+- [`deployments/dev-server/`](./deployments/dev-server/) — Node worker/API runtime for task dispatch, streaming, and agent
   execution
-- [`web-home-rs/`](./web-home-rs/) — Rust public web layer for `/` + `/home`
-- [`rest-api-rs/`](./rest-api-rs/) — Rust REST API boundary for RDS/Postgres-backed agent task data
-- [`build-server-rs/`](./build-server-rs/) — Rust CI/CD server for authenticated repo image builds
+- [`deployments/web-home-rs/`](./deployments/web-home-rs/) — Rust public web layer for `/` + `/home`
+- [`deployments/rest-api-rs/`](./deployments/rest-api-rs/) — Rust REST API boundary for RDS/Postgres-backed agent task data
+- [`deployments/build-server-rs/`](./deployments/build-server-rs/) — Rust CI/CD server for authenticated repo image builds
   and controlled Kubernetes deploys
-- [`contract-service-rs/`](./contract-service-rs/) — Rust Solana contract gateway for validated
+- [`deployments/contract-service-rs/`](./deployments/contract-service-rs/) — Rust Solana contract gateway for validated
   instruction envelopes, signed transaction simulation, and NATS validation results.
-- [`ai-ml-pipeline/`](./ai-ml-pipeline/) — Python3 online feature pipeline for telemetry analysis
+- [`deployments/rust-vapi-phone-rs/`](./deployments/rust-vapi-phone-rs/) — Rust Vapi.ai AI phone-tree call screener. It
+  provisions a Vapi phone number + assistant through the Vapi REST API and serves the Vapi server webhook that screens
+  inbound callers, warm-transferring verified humans to a personal forwarding number and declining scammers/spammers.
+- [`deployments/ai-ml-pipeline/`](./deployments/ai-ml-pipeline/) — Python3 online feature pipeline for telemetry analysis
   and MDP-ready AI/ML signals.
-- [`trading-server-rs/`](./trading-server-rs/) — Rust trading decision service that turns scraper,
+- [`deployments/trading-server-rs/`](./deployments/trading-server-rs/) — Rust trading decision service that turns scraper,
   AI/ML, market, and MDP/POMDP inputs into risk-gated NATS order intents. Broker metadata is seeded
   through [`databases/pg/seeds/trading-platform-app-config.sql`](./databases/pg/seeds/trading-platform-app-config.sql).
+- [`deployments/runtime-config-rs/`](./deployments/runtime-config-rs/) — Rust runtime-config control plane. Redis-backed
+  source of truth for per-env (`stage`/`prod`) key/value config; every 5 min the cron loop POSTs the
+  current snapshot to every registered subscriber's `/internal/update-runtime-config` endpoint, and
+  the admin UI at `/runtime-config/admin` triggers on-demand pushes. Short-lived consumers
+  (lambdas, container-pool images, cron jobs) pull through the rest-api at
+  `/api/runtime-config/snapshot/{env}`. Shared payload types live in
+  [`libs/interfaces/shared/`](./libs/interfaces/shared/) and are generated from JSON Schema into
+  Rust, TypeScript, Python, and Gleam.
 
 Future entries (a long-running queue worker, a stateful LLM evaluator, a headless browser farm,
 etc.) would live as siblings.
 
 There are also runtime siblings for queueing, scheduling, and optimization:
 
-- [`queue-consumer-rs/`](./queue-consumer-rs/) — Rust NATS shadow consumer that prepares UUID-bound
-  thread workers and de-dupes taskIds.
-- [`idle-reaper-rs/`](./idle-reaper-rs/) — Rust maintenance supervisor for idle sweeping, cluster
+- [`deployments/queue-consumer-rs/`](./deployments/queue-consumer-rs/) — Rust NATS queue consumer that hands
+  queued tasks to repo-scoped warm workers and de-dupes taskIds.
+- [`deployments/idle-reaper-rs/`](./deployments/idle-reaper-rs/) — Rust maintenance supervisor for idle sweeping, cluster
   doctor prompts, NATS watchdog work, and the daily 4am Eastern worker-image build.
-- [`mdp-optimizer-rs/`](./mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
+- [`deployments/mdp-optimizer-rs/`](./deployments/mdp-optimizer-rs/) — Rust MDP/POMDP/RL optimizer that consumes NATS jobs
   and publishes optimization results.
+- [`deployments/thread-operator-go/`](./deployments/thread-operator-go/) — Go Kubernetes operator that owns the
+  per-thread workspace lifecycle as a `Thread` CRD (`dd.dev/v1alpha1`). Strictly opt-in: only
+  reconciles `Thread` CRs and refuses to adopt resources that lack the
+  `dd.dev/managed-by=dd-thread-operator` label, so existing template-provisioned threads are
+  unaffected.
+- [`deployments/thread-fleet-exporter-go/`](./deployments/thread-fleet-exporter-go/) — Go Prometheus exporter
+  for the `dd-dev` thread fleet. Read-only; exposes the same `active|starting|sleeping|failed|dead`
+  taxonomy used by `/u/admin/k8s` so Grafana and alert rules can finally see thread health.
 
 The AI/ML platform seed layer lives in
 [`argocd/ai-ml-platform/`](./argocd/ai-ml-platform/) and is managed by the
@@ -45,11 +64,11 @@ The baseline Kubernetes runtime bundle lives in
 when bootstrapping Argo, then let Git + Argo own runtime Deployment, Service, ConfigMap, and gateway
 changes.
 
-There are also two Gleam/OTP services with their own ArgoCD Application manifests for both Minikube
-and EC2 k8s paths:
+There are also two Gleam/OTP services with their own ArgoCD Application manifests for the EC2 k8s
+runtime. The live MCP and agent cluster-context path is EC2:
 
-- [`gleamlang-server/`](./gleamlang-server/) — WebSocket streaming service.
-- [`gleam-mcp-server/`](./gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools
+- [`deployments/gleamlang-server/`](./deployments/gleamlang-server/) — WebSocket streaming service.
+- [`deployments/gleam-mcp-server/`](./deployments/gleam-mcp-server/) — MCP JSON-RPC service with read-only runtime tools
   and Prometheus metrics.
 
 The cluster observability stack lives in [`argocd/observability/`](./argocd/observability/) and is
@@ -124,7 +143,7 @@ being tuned:
 - K8s runtime entrypoint: Deployment `dd-remote-gateway` in namespace `default`, with
   `hostPort: 80` and `hostPort: 443`
 - Public web deployment behind the gateway: `dd-remote-web-home`
-- Internal/public JSON API deployment behind the gateway: `dd-remote-rest-api`
+- Authenticated JSON API deployment behind the gateway: `dd-remote-rest-api`
 - Worker dispatch broker behind the gateway: `dd-agent-worker-broker`
 - Authenticated build/deploy server behind the gateway: `dd-build-server`
 - Bootstrap Node.js coding-agent task manager behind the gateway: `dd-dev-server-api`
@@ -135,7 +154,7 @@ being tuned:
     bootstrap)
   - `https://54.91.17.58/agents/threads` (Rust thread-first chat UI with stored response stream and
     feedback)
-  - `https://54.91.17.58/api/agents/tasks` (Rust REST API snapshot, public during bootstrap)
+    - `https://54.91.17.58/api/agents/tasks` (Rust REST API snapshot, requires `Auth` or `dd_auth`)
   - `https://54.91.17.58/api/agent-worker/threads/<threadId>/tasks` (Rust worker broker, requires
     `Auth`)
   - `https://54.91.17.58/container-pools` (Rust container pool control surface, requires `Auth`)
@@ -158,18 +177,24 @@ This fallback service keeps the box observable while we continue promoting the f
 path in `dd-dev`.
 
 `/agents/tasks` and `/agents/threads` are served by the Rust web deployment, not Vercel/Next.js.
-They are HTML-only; the browser calls the public gateway routes `/api/agents/tasks` and
-`/api/agents/tasks/:taskId/events` directly. The REST API owns RDS/Postgres access via
+They are HTML-only; the browser calls the authenticated same-origin gateway routes
+`/api/agents/tasks` and `/api/agents/tasks/:taskId/events` directly. The REST API owns RDS/Postgres access via
 `AGENT_TASKS_RDS_DATABASE_URL` or `RDS_DATABASE_URL`, with `AGENT_TASKS_DATABASE_URL` /
 `DATABASE_URL` and Supabase REST as migration fallbacks. When we deploy Postgres inside the
 cluster, only the REST API needs to point at that internal service.
 
 `dd-agent-worker-broker` is the intended long-run home for Node.js worker lifecycle dispatch. The
 REST API still owns the existing `/api/agents/threads/:threadId/tasks` path during migration, while
-the broker exposes `/api/agent-worker/threads/:threadId/tasks` for NATS-first dispatch, wakeup, and
-direct-if-awake handoff to the pinned worker. Until the UI is moved over, it is acceptable for the
-REST API to keep brokering worker calls; after the broker path is proven, the REST API should shed
-worker wake/dispatch/stream responsibilities and stay focused on data/API ownership.
+the broker exposes `/api/agent-worker/threads/:threadId/tasks` and chooses either direct-if-awake
+handoff to the pinned worker or NATS queued dispatch, never both. Until the UI is moved over, it is
+acceptable for the REST API to keep brokering worker calls; after the broker path is proven, the
+REST API should shed worker wake/dispatch/stream responsibilities and stay focused on data/API
+ownership.
+
+For queued dispatch, REST status visibility is not NATS-only. The REST API also posts `task-event`
+status envelopes directly to the Gleam websocket broadcaster and the Rust WebRTC runtime broadcaster;
+the `/agents/threads` client listens to both and filters/dedupes by `threadId`, `taskId`, and
+`messageId`.
 
 Temporary gateway auth is intentionally simple during bootstrap: protected ops paths only pass when
 the request includes the configured dd gateway auth header. Public responses must not reveal that
@@ -390,14 +415,14 @@ The EC2 k8s cluster has a separate observability plane:
 
 Runtime telemetry is deliberately explicit:
 
-- Node `remote/dev-server` does **not** use OpenTelemetry auto-instrumentation or monkey-patching.
+- Node `remote/deployments/dev-server` does **not** use OpenTelemetry auto-instrumentation or monkey-patching.
   It emits direct OTLP/HTTP spans from local calls in `src/telemetry.ts` and exposes `/metrics`.
-- Rust `remote/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
-- Rust `remote/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
+- Rust `remote/deployments/web-home-rs` uses Prometheus counters/gauges and exposes `/metrics`.
+- Rust `remote/deployments/rest-api-rs` uses Prometheus counters/gauges and exposes `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-remote-rest-api`.
-- Gleam `remote/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
+- Gleam `remote/deployments/gleamlang-server` reports actor-backed WebSocket connection, tick, HTTP, and
   message counters at `/metrics`.
-- Gleam `remote/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
+- Gleam `remote/deployments/gleam-mcp-server` reports HTTP and JSON-RPC method counters at `/metrics`; the
   OpenTelemetry Collector scrapes it as `dd-gleam-mcp-server`.
 
 Grafana starts with the provisioned dashboard `Remote Dev Runtime Overview`, which tracks request
@@ -421,9 +446,9 @@ worker nodes.
 A Node.js + TypeScript HTTP server (Fastify) that:
 
 1. Receives a task from Vercel: `POST /tasks { taskId, threadId, prompt }`.
-2. Creates or reuses the thread workspace/branch `dev-thread/<threadId>/<slugified-thread-title>`
+2. Creates or reuses the thread workspace/branch `agent/k8s/openai-5.5/<threadId>/<slugified-thread-title>`
    from the warm baseline of `dd-next-1` on `dev`.
-3. Runs the selected provider (`claude-sdk` default, Claude CLI, OpenAI Agents SDK, or OpenAI Codex
+3. Runs the selected provider (`openai-sdk` default, Claude SDK/CLI, or OpenAI Codex
    CLI) inside the thread workspace.
 4. Streams every event:
    - back to Vercel via `POST /api/admin/remote-dev/events` (server-to-server, used to populate
@@ -441,7 +466,7 @@ The container keeps only hot runtime state. NeonDB remains the source of truth f
 threads/tasks/events/artifacts; the thread branch and PR let a restarted container resume from
 GitHub when needed.
 
-See [`dev-server/readme.md`](./dev-server/readme.md) for build, run, and the full env-var
+See [`deployments/dev-server/readme.md`](./deployments/dev-server/readme.md) for build, run, and the full env-var
 reference.
 
 ## Control plane vs worker plane
@@ -454,9 +479,9 @@ The repo already splits remote-dev into two cooperating pieces:
    admin UI, tracks thread UUIDs, resolves a UUID to a live pod through Redis first and the
    Kubernetes API second, and wakes a sleeping pod by scaling its Deployment from `replicas: 0` to
    `1`.
-2. **Worker plane**: one `remote/dev-server/` runtime per thread. That container fetches
+2. **Worker plane**: one `remote/deployments/dev-server/` runtime per thread. That container fetches
    `origin/dev`, accepts new commands, updates PRs, and runs tests. Public `/` and `/home` now come
-   from `remote/web-home-rs`, not the worker runtime.
+   from `remote/deployments/web-home-rs`, not the worker runtime.
 
 That split is why the cluster can safely sleep idle pods and still bring back the matching
 UUID-bound worker when the next request arrives. Kubernetes Ingress/Service selection owns UUID
@@ -488,9 +513,9 @@ mismatches.
    │                           │             │
    ▼                           │             ▼
 ┌─────────────────────────────────────┐  ┌────────────────┐
-│  remote/dev-server/  (Docker)       │  │   NeonDB       │
+│  remote/deployments/dev-server/  (Docker)       │  │   NeonDB       │
 │  • git worktree per task            │  │ agent_remote_  │
-│  • spawns claude                    │  │  dev_threads   │
+│  • runs OpenAI SDK by default       │  │  dev_threads   │
 │  • streams events                   │  │  …_tasks       │
 │  • opens PRs                        │  │  …_events      │
 │  • publishes outputs to S3/GCS/R2/  │  │  …_artifacts   │
@@ -498,8 +523,8 @@ mismatches.
 └──┬─────────────────────────┬────────┘
    ▼                         ▼
 ┌────────────┐       ┌──────────────────────┐       ┌──────────────────────┐
-│  GitHub    │       │  Anthropic API       │       │  S3 / GCS / R2 /     │
-│ (truth +   │       │  (claude-opus-4-7)   │       │  Drive (artifacts)   │
+│  GitHub    │       │  OpenAI API          │       │  S3 / GCS / R2 /     │
+│ (truth +   │       │  (gpt-5.5 default)   │       │  Drive (artifacts)   │
 │  PRs)      │       │                      │       │                      │
 └────────────┘       └──────────────────────┘       └──────────────────────┘
 ```
@@ -543,7 +568,7 @@ authenticated HTTP/webhook calls and Supabase client APIs.
 - Next.js resolves thread -> worker container/pod and forwards to `POST /tasks` on the worker with
   `X-Server-Auth`.
 - Reusing the same UUID reuses the same runtime session and branch.
-- Branch naming convention is now: `dev-thread/<threadId>/<title-and-explanation-slug>`.
+- Branch naming convention is now: `agent/k8s/openai-5.5/<threadId>/<title-and-explanation-slug>`.
 - Completed runs emit a `done` event with `prUrl`; the admin pages surface those links in both
   `/u/admin/remote-dev` and `/u/admin/remote-ui`.
 
@@ -585,7 +610,7 @@ Schema lives in
 
 ## Required environment variables
 
-The full reference is in [`dev-server/readme.md`](./dev-server/readme.md). Quick sanity-check table
+The full reference is in [`deployments/dev-server/readme.md`](./deployments/dev-server/readme.md). Quick sanity-check table
 for core k8s routing + shared secrets:
 
 | Var                                                                  | Where set           | Purpose                                                                                                                                                          |
@@ -628,9 +653,9 @@ The live `dd-idle-reaper` pod also owns the 90-minute cluster doctor loop:
 - `CLUSTER_DOCTOR_TASK_URL=http://dd-dev-server-api.default.svc.cluster.local:8080/tasks`
 - `CLUSTER_DOCTOR_THREAD_ID=00000000-0000-4000-8000-000000000001`
 
-The prompt is inline in [`idle-reaper-rs/src/main.rs`](./idle-reaper-rs/src/main.rs) for now. It
+The prompt is inline in [`deployments/idle-reaper-rs/src/main.rs`](./deployments/idle-reaper-rs/src/main.rs) for now. It
 asks the remote-dev agent to query Prometheus, Loki, Grafana, NATS, and runtime health endpoints,
-patch concrete issues under `remote/`, run targeted tests, and rely on `remote/dev-server` to
+patch concrete issues under `remote/`, run targeted tests, and rely on `remote/deployments/dev-server` to
 push/open the PR.
 
 The same `dd-idle-reaper` deployment owns the daily worker image cron. At 4am America/New_York it
@@ -654,19 +679,23 @@ admin's events because they subscribe with their own UUID. Three layers of defen
 
 ## Agent providers (pluggable)
 
-Each task can be driven by Claude or OpenAI, via either CLI or SDK. The default is the Claude SDK
-runner; override per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`
-env on the docker.
+Each task can be driven by Gemini, Claude, or OpenAI. The default is the OpenAI SDK runner;
+override per dispatch (UI picker / API `provider` field) or globally via `AGENT_PROVIDER`
+env on the docker. Failed runs rotate through every key in `AGENT_PROVIDER_ROTATION`, with
+`openai-sdk,claude-sdk,gemini-sdk` as the default order. For repo-edit prompts, Gemini is skipped
+because it is model-only.
 
 | Provider           | Path                                                | Status               |
 | ------------------ | --------------------------------------------------- | -------------------- |
-| `claude-sdk`       | `@anthropic-ai/claude-agent-sdk` `query()` iterator | working (default)    |
+| `gemini-sdk`       | `@google/genai` streaming SDK                       | model-only response runner |
+| `claude-sdk`       | `@anthropic-ai/claude-agent-sdk` `query()` iterator | working              |
 | `claude-cli`       | `claude -p ... --output-format stream-json`         | working CLI fallback |
-| `openai-sdk`       | `@openai/agents` + scoped shell/apply-patch tools   | working SDK path     |
+| `openai-sdk`       | `@openai/agents` + scoped shell/apply-patch tools   | working default SDK path |
 | `openai-codex-cli` | `codex exec "<prompt>" --json`                      | working CLI fallback |
 
-Each runner gets a **strict env allowlist** — only the API key it needs (`ANTHROPIC_API_KEY` for
-`claude-*`, `OPENAI_API_KEY` for `openai-*`), `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
+Each runner gets a **strict env allowlist** — only one selected API key per attempt
+(`GEMINI_API_KEY` for `gemini-sdk`, `ANTHROPIC_API_KEY` for `claude-*`, `OPENAI_API_KEY` for
+`openai-*`), model pins such as `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL`, `PATH`, `HOME`, `USER`, `LANG`, `NODE_ENV`. The agent
 process never sees the GitHub PAT, deploy key, Supabase service role key, or `REMOTE_DEV_*` shared
 secrets.
 
@@ -697,11 +726,11 @@ secrets.
 The structural plumbing — schema, zod shapes, event flow, UI, auth, thread runtime routing, and
 SDK/CLI provider selection — is in place end-to-end. The only thing between us and a real cloud
 upload is the storage SDK install + adapter implementation, all clearly marked `TODO(remote-dev)`
-in [`dev-server/src/storage/`](./dev-server/src/storage/).
+in [`deployments/dev-server/src/storage/`](./deployments/dev-server/src/storage/).
 
 ## Deployment cadence and container shape
 
-The warm-image path is now the default for Kubernetes: `remote/dev-server` builds an image with
+The warm-image path is now the default for Kubernetes: `remote/deployments/dev-server` builds an image with
 git, OpenSSH, GitHub CLI, provider CLIs, the compiled Node server, and a warm `dd-next-1`
 repo-template already installed. The image runs as the built-in `node` user and stores mutable
 thread state under `/home/node/workspace`.
@@ -738,7 +767,7 @@ surface — review before broadening access.
 
 - **Agent shell/file tools can make broad branch edits.** SDK providers are scoped to the thread
   workspace and use explicit tool surfaces; CLI providers still expose broad shell access inside
-  that workspace. The blast radius is bounded to the thread branch (`dev-thread/<threadId>/<slug>`)
+  that workspace. The blast radius is bounded to the thread branch (`agent/k8s/openai-5.5/<threadId>/<slug>`)
   and PR review gate, not direct `dev` writes.
 - **No per-user concurrent-stream cap.** A single admin opening many task tabs each starts a
   250ms-poll SSE against Postgres for up to ~12 min. Mitigate later with a Redis semaphore (cap N
@@ -759,13 +788,14 @@ surface — review before broadening access.
   HMAC-sign the body with per-task derivation so injected events for unknown tasks 4xx.
 - **Image storage adapters S3/R2/GCS/Drive are stubs.** They throw on call until the corresponding
   SDK is wired in (`@aws-sdk/client-s3`, `@google-cloud/storage`, `googleapis`). Each TODO block in
-  [`dev-server/src/storage/`](./dev-server/src/storage/) has the exact code to drop in.
+  [`deployments/dev-server/src/storage/`](./deployments/dev-server/src/storage/) has the exact code to drop in.
 
 ## Adding more services here later
 
-A new long-running service should be a sibling directory with its own `Dockerfile`, `package.json`,
-and `readme.md` — for example, `remote/queue-worker/` or `remote/eval-runner/`. Try to reuse the
-same patterns dev-server uses:
+A new long-running service should be a directory under `remote/deployments/` with its own
+`Dockerfile`, `package.json`, and `readme.md` — for example,
+`remote/deployments/queue-worker/` or `remote/deployments/eval-runner/`. Try to reuse the same
+patterns dev-server uses:
 
 - All credentials in `process.env`, never baked into the image.
 - Talk to Vercel via shared-secret HTTP, not direct DB access.

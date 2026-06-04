@@ -6,9 +6,14 @@ metadata:
   labels:
     app: dd-contract-service
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-contract-service
@@ -39,7 +44,8 @@ spec:
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/contract-service-rs
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/contract-service-rs
               export CARGO_HOME=/var/cache/dd-contract-service/cargo
               export CARGO_TARGET_DIR=/var/cache/dd-contract-service/target
               exec /usr/local/cargo/bin/cargo run --release --locked
@@ -70,12 +76,31 @@ spec:
               value: dd.remote.contracts.solana.results
             - name: CONTRACT_EVENT_SUBJECT
               value: dd.remote.events
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-contract-service
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-contract-service
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-contract-service.default.svc.cluster.local:8101/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           ports:
             - name: http
               containerPort: 8101
           resources:
             requests:
-              cpu: 100m
+              cpu: 50m
               memory: 128Mi
             limits:
               cpu: '1'

@@ -1,0 +1,179 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-rust-network-mutex
+  namespace: default
+  labels:
+    app: dd-rust-network-mutex
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-rust-network-mutex
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-06-03-rust-network-mutex-0.1.127-jsonl-rw-regressions'
+        dd.dev/live-mutex-rs-revision: '0c368a11e3b6a972da34c37ff66d897aa75d598d'
+      labels:
+        app: dd-rust-network-mutex
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: rust-network-mutex
+          # Build the broker from the exact upstream live-mutex-rs commit at
+          # pod start. Docker Hub does not yet have a 0.1.127 image tag, so
+          # this mirrors the source-fetch pattern used by dd-des-rs: clone the
+          # pinned source into writable /tmp and fall back to the hostPath
+          # submodule only if GitHub is unavailable.
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              source_src="/opt/dd-next-1/remote/submodules/rust-network-mutex-rs"
+              if [ -n "${LMX_RS_GIT_URL:-}" ]; then
+                rm -rf /tmp/live-mutex-rs-source
+                if git clone --depth 1 --no-checkout "${LMX_RS_GIT_URL}" /tmp/live-mutex-rs-source \
+                  && git -C /tmp/live-mutex-rs-source fetch --depth 1 origin "${LMX_RS_GIT_REF:-dev}" \
+                  && git -C /tmp/live-mutex-rs-source switch --detach FETCH_HEAD; then
+                  source_src=/tmp/live-mutex-rs-source
+                  echo "[dd-rust-network-mutex] cloned ${LMX_RS_GIT_URL}@${LMX_RS_GIT_REF:-dev} ($(git -C /tmp/live-mutex-rs-source rev-parse --short HEAD))"
+                else
+                  echo "[dd-rust-network-mutex] source clone failed; using mounted source at ${source_src}" >&2
+                fi
+              fi
+              if [[ "${LMX_RS_GIT_REF:-}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                actual_ref="$(git -C "${source_src}" rev-parse HEAD 2>/dev/null || true)"
+                if [ "${actual_ref}" != "${LMX_RS_GIT_REF}" ]; then
+                  echo "[dd-rust-network-mutex] source ref mismatch: expected=${LMX_RS_GIT_REF} actual=${actual_ref:-unknown} source=${source_src}" >&2
+                  exit 1
+                fi
+              fi
+              rm -rf /tmp/live-mutex-rs-build
+              mkdir -p /tmp/live-mutex-rs-build
+              cp -a "${source_src}/." /tmp/live-mutex-rs-build/
+              rm -rf /tmp/live-mutex-rs-build/target
+              cd /tmp/live-mutex-rs-build
+              exec /usr/local/cargo/bin/cargo run --release --bin dd-rust-network-mutex
+          env:
+            - name: LMX_RS_GIT_URL
+              value: https://github.com/ORESoftware/live-mutex-rs.git
+            - name: LMX_RS_GIT_REF
+              value: 0c368a11e3b6a972da34c37ff66d897aa75d598d
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/live-mutex-rs-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: LMX_BIND_HOST
+              value: 0.0.0.0
+            - name: LMX_TCP_PORT
+              value: '6970'
+            - name: LMX_HTTP_PORT
+              value: '6971'
+            # Default-on so the broker GC keeps the per-key fencing-token
+            # counter monotonic across reincarnations of a key.
+            - name: LMX_DEFAULT_TTL_MS
+              value: '4000'
+            - name: LMX_MAX_LOCK_HOLDERS
+              value: '1'
+            - name: LMX_LOG_FORMAT
+              value: text
+            - name: RUST_LOG
+              value: info,lmx=info
+            # Optional: set LMX_AUTH_TOKEN via the dd-agent-secrets bundle when
+            # the broker is exposed beyond cluster-internal ServiceIPs. Inside
+            # `default` namespace traffic is already gated by NetworkPolicy
+            # in the larger cluster, so an empty token is acceptable for the
+            # current bootstrap.
+            - name: LMX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: LMX_AUTH_TOKEN
+                  optional: true
+            # `LMX_ADMIN_TOKEN` gates `/admin/otel` (and future `/admin/log`,
+            # `/admin/tcp`) on the broker's HTTP listener. Without this set
+            # the broker falls back to its source-level literal default,
+            # which is acceptable for the in-cluster ServiceIP traffic but
+            # not for anything reachable through the public gateway. Sourced
+            # from its own `dd-lmx-admin-token` secret so the admin-control
+            # blast radius stays separate from `dd-agent-secrets`.
+            - name: LMX_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-lmx-admin-token
+                  key: LMX_ADMIN_TOKEN
+                  optional: true
+          ports:
+            - name: lmx-tcp
+              containerPort: 6970
+            - name: http
+              containerPort: 6971
+          resources:
+            requests:
+              cpu: 50m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            # Cold release build from /tmp can take several minutes.
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir: {}

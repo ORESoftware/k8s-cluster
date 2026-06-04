@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/trading-server-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/trading-server-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust trading server scores signals and emits gated order intents', async () => {
-  const cargo = await readRepoFile('remote/trading-server-rs/Cargo.toml');
-  const source = await readRepoFile('remote/trading-server-rs/src/main.rs');
-  const readme = await readRepoFile('remote/trading-server-rs/readme.md');
+  const cargo = await readRepoFile('remote/deployments/trading-server-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/trading-server-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/trading-server-rs/readme.md');
   const appConfigSeed = await readRepoFile(
     'remote/databases/pg/seeds/trading-platform-app-config.sql',
   );
@@ -32,8 +32,16 @@ test('rust trading server scores signals and emits gated order intents', async (
 
   assert.match(cargo, /name\s*=\s*"dd-trading-server"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
+  // Source-of-truth NATS subject + queue group constants come from the
+  // generated @dd/nats-subject-defs crate.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?TRADING_DECISIONS_SUBJECT[\s\S]*?TRADING_ORDER_INTENTS_SUBJECT[\s\S]*?TRADING_SIGNALS_QUEUE_GROUP[\s\S]*?TRADING_SIGNALS_SUBJECT[\s\S]*?\};/,
+  );
   assert.match(cargo, /tokio-postgres/);
   assert.match(cargo, /tokio-postgres-rustls/);
+  assert.match(cargo, /rustls-pemfile/);
   assert.match(source, /const SCHEMA_VERSION: &str = "trading\.decision\.v1"/);
   assert.match(source, /struct TradingPlatform/);
   assert.match(source, /struct TradingPlatformConfig/);
@@ -43,6 +51,10 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /TRADING_APP_CONFIG_KEY/);
   assert.match(source, /trading\.platforms\.v1/);
   assert.match(source, /from app_config/);
+  assert.match(source, /rds-us-east-1-bundle\.pem/);
+  assert.match(source, /add_rds_root_certificates/);
+  assert.match(source, /is_missing_app_config_table_error/);
+  assert.match(source, /using built-in platform defaults/);
   assert.match(source, /fetch_platform_config_from_app_config/);
   assert.match(source, /refresh_platform_config/);
   assert.match(source, /fn conservative_cap/);
@@ -63,11 +75,13 @@ test('rust trading server scores signals and emits gated order intents', async (
   assert.match(source, /blocked_by_safety_gate/);
   assert.match(source, /TRADING_ALLOW_LIVE_ORDERS/);
   assert.match(source, /SERVER_AUTH_SECRET/);
+  assert.match(source, /"TRADING_DATABASE_URL",[\s\S]*"RDS_DATABASE_URL",[\s\S]*"AGENT_TASKS_RDS_DATABASE_URL"/);
   assert.match(source, /constant_time_equals/);
   assert.match(source, /queue_subscribe/);
-  assert.match(source, /dd\.remote\.trading\.signals/);
-  assert.match(source, /dd\.remote\.trading\.decisions/);
-  assert.match(source, /dd\.remote\.trading\.order_intents/);
+  assert.match(source, /TRADING_SIGNALS_SUBJECT/);
+  assert.match(source, /TRADING_DECISIONS_SUBJECT/);
+  assert.match(source, /TRADING_ORDER_INTENTS_SUBJECT/);
+  assert.match(source, /TRADING_SIGNALS_QUEUE_GROUP/);
   assert.match(source, /dd_trading_server_order_intents_total/);
   assert.match(source, /\.route\("\/schema", get\(schema\)\)/);
   assert.match(source, /\.route\("\/example", get\(example\)\)/);
@@ -120,7 +134,7 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
 
@@ -164,7 +178,11 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   );
   assert.match(home, /dd-trading-server/);
   assert.match(home, /POST \/trading\/decide/);
-  assert.match(home, /dd\.remote\.trading\.order_intents/);
+  // web-home-rs now sources the displayed NATS subjects from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: TRADING_ORDER_INTENTS_SUBJECT/);
+  assert.match(home, /label: TRADING_SIGNALS_SUBJECT/);
   assert.match(runtimeReadme, /dd-trading-server/);
   assert.match(runtimeReadme, /`POST \/trading\/decide`/);
   assert.match(remoteReadme, /trading-server-rs/);

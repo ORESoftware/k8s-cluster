@@ -1,0 +1,119 @@
+# StatefulSet so pod names are stable (`presence-0`, `presence-1`, …) and
+# each gets a stable DNS A record under the headless Service. Erlang node
+# names embed those DNS names, so a freshly-rolled pod re-joins the cluster
+# under the same identity.
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: presence
+  namespace: presence
+spec:
+  replicas: 3
+  serviceName: presence-svc
+  selector:
+    matchLabels:
+      app: presence
+  template:
+    metadata:
+      labels:
+        app: presence
+    spec:
+      serviceAccountName: presence
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: presence
+          image: ghcr.io/your-org/presence:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PORT
+              value: "8081"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: RELEASE_DISTRIBUTION
+              value: name
+            - name: RELEASE_NODE
+              value: "presence@$(POD_NAME).presence-svc.$(POD_NAMESPACE).svc.cluster.local"
+            - name: RELEASE_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: presence-cookie
+                  key: cookie
+            - name: CLUSTER_NAMESPACE
+              value: "presence"
+            - name: CLUSTER_LABEL_SELECTOR
+              value: "app=presence"
+            - name: CLUSTER_NODE_PREFIX
+              value: "presence"
+            - name: CLUSTER_HEADLESS_SERVICE
+              value: "presence-svc"
+            - name: CLUSTER_DISCOVERY_INTERVAL_MS
+              value: "5000"
+            - name: ERL_AFLAGS
+              value: "-kernel inet_dist_listen_min 9100 inet_dist_listen_max 9100"
+            - name: PG_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: presence-pg
+                  key: url
+                  optional: true
+            - name: PRESENCE_NOTIFY_SHARDS
+              value: "256"
+            # Direct per-pod logical replication is intentionally opt-in.
+            # The default durable recovery path is the SQL outbox, which
+            # does not retain Postgres WAL per pod.
+            - name: PRESENCE_WAL_ENABLED
+              value: "false"
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            # APPLY_URL uses POD_NAME so each replica registers itself
+            # individually under the headless service — every pod gets the
+            # push.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: "dd-gleamlang-presence-server-$(POD_NAME)"
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleamlang-presence-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: "http://$(POD_NAME).presence-svc.presence.svc.cluster.local:8081/internal/update-runtime-config"
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: ws
+              containerPort: 8081
+            - name: epmd
+              containerPort: 4369
+            - name: dist
+              containerPort: 9100
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"

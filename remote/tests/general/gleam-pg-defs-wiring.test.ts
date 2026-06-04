@@ -35,17 +35,17 @@ const GLEAM_PROJECTS: ReadonlyArray<{
   },
   {
     name: 'gleam_lambda_runner',
-    dir: 'remote/gleam-lambda-runner',
+    dir: 'remote/deployments/gleam-lambda-runner',
     requiresPathDep: true,
   },
   {
     name: 'gleam_mcp_server',
-    dir: 'remote/gleam-mcp-server',
+    dir: 'remote/deployments/gleam-mcp-server',
     requiresPathDep: true,
   },
   {
     name: 'gleamlang_server',
-    dir: 'remote/gleamlang-server',
+    dir: 'remote/deployments/gleamlang-server',
     requiresPathDep: true,
   },
 ];
@@ -88,7 +88,7 @@ test('every Gleam project lists dd_pg_defs as a path dependency where required',
     );
     assert.match(
       gleamToml,
-      /dd_pg_defs\s*=\s*\{\s*path\s*=\s*"\.\.\/libs\/pg-defs\/generated\/gleam"\s*\}/,
+      /dd_pg_defs\s*=\s*\{\s*path\s*=\s*"\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam"\s*\}/,
       `${project.name} (${project.dir}/gleam.toml) is missing the dd_pg_defs path dependency. Without it the service can't import pg_defs and the schema source-of-truth fragments.`,
     );
   }
@@ -111,7 +111,7 @@ test('every consumer exposes a pg_contract module that re-exports dd_pg_defs', a
     );
     assert.ok(
       existsSync(pgContractPath),
-      `${project.name} is missing ${pgContractPath}. See remote/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam for the reference pattern.`,
+      `${project.name} is missing ${pgContractPath}. See remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam for the reference pattern.`,
     );
     const source = await readFile(pgContractPath, 'utf8');
     assert.match(
@@ -172,7 +172,7 @@ test('gleam test passes for every Gleam project', { timeout: 600_000 }, async (t
       const manifestText = await readFile(manifestPath, 'utf8');
       assert.match(
         manifestText,
-        /name\s*=\s*"dd_pg_defs"[\s\S]*?source\s*=\s*"local"[\s\S]*?path\s*=\s*"\.\.\/libs\/pg-defs\/generated\/gleam"/,
+        /name\s*=\s*"dd_pg_defs"[\s\S]*?source\s*=\s*"local"[\s\S]*?path\s*=\s*"\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam"/,
         `${project.name}: manifest.toml does not record dd_pg_defs as a local path-dep. Wiring is broken; \`gleam deps download\` may have silently picked up a hex version instead.\n${manifestText}`,
       );
       const builtDepDir = resolve(projectDir, 'build', 'dev', 'erlang', 'dd_pg_defs');

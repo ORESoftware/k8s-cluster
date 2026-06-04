@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/agent-orchestration.schema.json",
+  "title": "AgentOrchestrationNats",
+  "description": "NATS subjects, queue groups, and JetStream streams used by the agent thread orchestration plane: REST API producer, queue consumer, idle reaper, cron, and per-thread workers.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "dd-remote-rest-api",
+    "summary": "Per-thread task dispatch and orchestrator wakeup signals. See remote/deployments/nats/future.md for the full design.",
+    "subjects": [
+      {
+        "name": "ThreadTasks",
+        "description": "Per-thread task queue. JetStream-backed (DD_REMOTE_TASKS). Producers publish per-thread; consumers either subscribe to the exact subject (the worker for that thread) or to the wildcard via a queue group (the preparer).",
+        "kind": "parameterized",
+        "pattern": "dd.remote.thread.{thread_id}.tasks",
+        "wildcard": "dd.remote.thread.*.tasks",
+        "params": [
+          { "name": "thread_id", "type": "string", "description": "Thread UUID (dashes ok; NATS treats hyphens as a single token)." }
+        ],
+        "direction": "both",
+        "queueGroup": "dd-remote-thread-preparer",
+        "stream": "DD_REMOTE_TASKS"
+      },
+      {
+        "name": "ThreadControl",
+        "description": "Per-thread control-plane commands (scale, evict, reload). Short-retention JetStream control stream.",
+        "kind": "parameterized",
+        "pattern": "dd.remote.thread.{thread_id}.control",
+        "wildcard": "dd.remote.thread.*.control",
+        "params": [
+          { "name": "thread_id", "type": "string", "description": "Thread UUID." }
+        ],
+        "direction": "both",
+        "stream": "DD_REMOTE_CONTROL"
+      },
+      {
+        "name": "ThreadEvents",
+        "description": "Per-thread worker events (progress, status, output). Longer-retention JetStream events stream.",
+        "kind": "parameterized",
+        "pattern": "dd.remote.thread.{thread_id}.events",
+        "wildcard": "dd.remote.thread.*.events",
+        "params": [
+          { "name": "thread_id", "type": "string", "description": "Thread UUID." }
+        ],
+        "direction": "both",
+        "stream": "DD_REMOTE_EVENTS"
+      },
+      {
+        "name": "ThreadHeartbeat",
+        "description": "Per-thread worker liveness pings.",
+        "kind": "parameterized",
+        "pattern": "dd.remote.thread.{thread_id}.heartbeat",
+        "wildcard": "dd.remote.thread.*.heartbeat",
+        "params": [
+          { "name": "thread_id", "type": "string", "description": "Thread UUID." }
+        ],
+        "direction": "both",
+        "stream": "DD_REMOTE_EVENTS"
+      },
+      {
+        "name": "OrchestratorWakeup",
+        "description": "Wakeup signal published whenever a new task is enqueued for a thread, so the orchestrator can prepare/scale the matching worker deployment without polling.",
+        "kind": "static",
+        "subject": "dd.remote.orchestrator.wakeup",
+        "direction": "both",
+        "stream": "DD_REMOTE_CONTROL"
+      },
+      {
+        "name": "CronPrompts",
+        "description": "Scheduled prompts published by dd-chron-service. A producer converts these into normal per-thread task messages so cron doesn't bypass idempotency or affinity.",
+        "kind": "static",
+        "subject": "dd.remote.cron.prompts",
+        "direction": "both",
+        "stream": "DD_REMOTE_CRON"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "ThreadPreparerQueueGroup",
+        "value": "dd-remote-thread-preparer",
+        "description": "Shared queue group used by dd-remote-queue-consumer replicas so each task is only prepared once."
+      }
+    ],
+    "streams": [
+      {
+        "name": "DD_REMOTE_TASKS",
+        "description": "JetStream file storage, explicit ack, message dedupe by Nats-Msg-Id ('remote-task:<taskId>'). Postgres remains the real idempotency guard.",
+        "subjects": ["dd.remote.thread.*.tasks"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      },
+      {
+        "name": "DD_REMOTE_CONTROL",
+        "description": "Short-retention control plane stream.",
+        "subjects": ["dd.remote.thread.*.control", "dd.remote.orchestrator.wakeup"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      },
+      {
+        "name": "DD_REMOTE_EVENTS",
+        "description": "Longer-retention event stream for replay/debugging, mirrored into Postgres.",
+        "subjects": ["dd.remote.thread.*.events", "dd.remote.thread.*.heartbeat"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      },
+      {
+        "name": "DD_REMOTE_CRON",
+        "description": "Cron-initiated jobs.",
+        "subjects": ["dd.remote.cron.prompts"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      }
+    ]
+  }
+}

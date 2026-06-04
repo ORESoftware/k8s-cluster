@@ -4,19 +4,74 @@ metadata:
   name: dd-mlflow
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: https://community-charts.github.io/helm-charts
     chart: mlflow
     targetRevision: 1.8.1
     helm:
+      skipTests: true
       values: |
         replicaCount: 1
+        serviceAccount:
+          automount: false
+        podSecurityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        auth:
+          enabled: true
+          existingAdminSecret:
+            name: dd-mlflow-auth
+            usernameKey: username
+            passwordKey: password
+          postgres:
+            enabled: true
+            host: dd-mlflow-postgresql
+            port: 5432
+            database: mlflow
+            existingSecret:
+              name: dd-mlflow-postgresql
+              usernameKey: username
+              passwordKey: password
+        postgresql:
+          enabled: true
+          image:
+            tag: 17.6.0-debian-12-r4
+          auth:
+            username: mlflow
+            database: mlflow
+            existingSecret: dd-mlflow-postgresql
+            secretKeys:
+              adminPasswordKey: postgres-password
+              userPasswordKey: password
+        artifactRoot:
+          defaultArtifactsDestination: /mlflow/artifacts
+        extraVolumes:
+          - name: mlflow-artifacts
+            persistentVolumeClaim:
+              claimName: dd-mlflow-artifacts
+        extraVolumeMounts:
+          - name: mlflow-artifacts
+            mountPath: /mlflow/artifacts
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 2Gi
         service:
           type: ClusterIP
-        tracking:
-          service:
-            type: ClusterIP
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-ml
@@ -24,5 +79,3 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

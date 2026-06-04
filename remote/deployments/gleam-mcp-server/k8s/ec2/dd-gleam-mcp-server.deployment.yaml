@@ -1,0 +1,363 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleam-mcp-server
+  namespace: default
+  labels:
+    app: dd-gleam-mcp-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-gleam-mcp-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-05-20-track-gleam-manifest"
+      labels:
+        app: dd-gleam-mcp-server
+    spec:
+      serviceAccountName: dd-gleam-mcp-server
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 20
+      initContainers:
+        # Preflight runs before the main container and produces a single,
+        # operator-actionable log line if the host checkout is missing the
+        # files this deployment needs. We learned the hard way (commit
+        # 073e451 + follow-up) that running gleam straight out of the
+        # hostPath silently crash-loops the pod and surfaces as a 502 at
+        # the public gateway. Fail here, in `kubectl describe pod`, with
+        # a clear cause instead.
+        - name: preflight
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -eu
+              PROJ=/opt/dd-next-1/remote/deployments/gleam-mcp-server
+              missing=0
+              for path in \
+                "$PROJ/gleam.toml" \
+                "$PROJ/manifest.toml" \
+                /opt/dd-next-1/remote/libs/pg-defs/generated/gleam/gleam.toml \
+                /opt/dd-next-1/remote/libs/runtime-config-client-gleam/gleam.toml; do
+                if [ ! -e "$path" ]; then
+                  echo "preflight: missing required source file at host mount: $path"
+                  missing=1
+                fi
+              done
+              if [ "$missing" != "0" ]; then
+                echo "preflight: warm /home/ec2-user/codes/dd/dd-next-1 on the EC2 node so the gleam-mcp-server hostPath mount has the full repo"
+                exit 1
+              fi
+              if [ ! -d "$PROJ/build/packages" ] \
+                 || [ -z "$(ls -A "$PROJ/build/packages" 2>/dev/null)" ]; then
+                echo "preflight: build/packages is empty in the host checkout, and this pod's NetworkPolicy blocks hex.pm"
+                echo "preflight: run 'gleam deps download' once on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server before deploying"
+                exit 1
+              fi
+              # Cross-check that every package listed in manifest.toml has a
+              # corresponding entry under build/packages/. Local-path deps
+              # show up as `<name>.config_fingerprint`, hex deps show up as
+              # `<name>/`. We hit this exact failure mode once: a new
+              # local-path dep (dd_runtime_config_client) was added to
+              # gleam.toml/manifest.toml but the host's build/packages was
+              # left stale from a previous warm, so `gleam run` inside the
+              # pod tried to resolve the missing dep over the network and
+              # crash-looped against the NetworkPolicy.
+              names=$(awk '/^packages = \[/,/^\]/' "$PROJ/manifest.toml" \
+                | grep -oE 'name = "[^"]+"' \
+                | awk -F'"' '{print $2}' \
+                | sort -u)
+              if [ -z "$names" ]; then
+                echo "preflight: could not parse package names from manifest.toml; refusing to start until the host checkout has a valid manifest"
+                exit 1
+              fi
+              stale=""
+              for name in $names; do
+                if [ -d "$PROJ/build/packages/$name" ] \
+                   || [ -f "$PROJ/build/packages/$name.config_fingerprint" ]; then
+                  continue
+                fi
+                stale="$stale $name"
+              done
+              if [ -n "$stale" ]; then
+                echo "preflight: build/packages on the host is stale, missing entries for:$stale"
+                echo "preflight: re-run 'gleam deps download' on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server"
+                echo "preflight: see remote/deployments/gleam-mcp-server/readme.md \"Warming build/packages on the EC2 host\" for the exact nerdctl one-liner"
+                exit 1
+              fi
+              echo "preflight: ok"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+              ephemeral-storage: 16Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+              ephemeral-storage: 64Mi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+      containers:
+        - name: gleam-mcp-server
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            # The only mutable filesystem this container needs is the
+            # `scratch` emptyDir for the boot-time copy + gleam build
+            # output, plus a small `tmp` emptyDir for OS-level temp
+            # files. Everything else is locked down. Verified
+            # end-to-end against ghcr.io/gleam-lang/gleam:v1.16.0
+            # with HOME/XDG_CACHE_HOME/GLEAM_HOME redirected into
+            # the scratch mount: gleam compiled in <0.5s and /mcp
+            # served the full tool catalog.
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            # The hostPath mount at /opt/dd-next-1 is owned by ec2-user on the
+            # node, and this container drops ALL Linux capabilities (no
+            # CAP_DAC_OVERRIDE) so even root inside the pod cannot write to
+            # files owned by ec2-user. `gleam run` needs to materialise
+            # `build/dev/erlang/...` artifacts, so we copy the project plus
+            # its local-path dependencies into a fully writable scratch dir
+            # backed by an explicit, bounded emptyDir (mounted at
+            # /tmp/dd-gleam-mcp-server) and run gleam from there. The
+            # NetworkPolicy egress allowlist blocks hex.pm, so we
+            # deliberately do *not* call `gleam deps download` here and
+            # instead lean on the host having a populated `build/packages/`
+            # (the preflight init container fails fast if it isn't there).
+            # See commit 073e451 + follow-up for the original failure mode
+            # (CrashLoop -> 502 at the public gateway) when this script
+            # ran straight from the mount.
+            - |
+              set -eu
+              umask 022
+              SRC_ROOT=/opt/dd-next-1
+              SCRATCH_ROOT=/tmp/dd-gleam-mcp-server
+              WORK_ROOT="$SCRATCH_ROOT/dd-next-1"
+              # Probe-write into $SCRATCH_ROOT instead of guessing with
+              # `mountpoint -q`. Under readOnlyRootFilesystem: true the
+              # only way this write can succeed is if the `scratch`
+              # emptyDir is actually mounted at $SCRATCH_ROOT. Failing
+              # here gives an operator-actionable log instead of a noisy
+              # warning followed by a confusing EROFS.
+              if ! mkdir -p "$SCRATCH_ROOT" \
+                 || ! touch "$SCRATCH_ROOT/.boot-probe" 2>/dev/null; then
+                echo "boot: $SCRATCH_ROOT is not writable; expected an emptyDir mounted there (see scratch volume in the Deployment)"
+                exit 1
+              fi
+              rm -f "$SCRATCH_ROOT/.boot-probe"
+              # HOME, XDG_CACHE_HOME, and GLEAM_HOME are env-pinned below
+              # to subdirectories of $SCRATCH_ROOT so the gleam image's
+              # implicit writes (cache, lock files, transient compile
+              # artifacts) all land inside the bounded emptyDir, not the
+              # read-only rootfs.
+              mkdir -p "$SCRATCH_ROOT/home" "$SCRATCH_ROOT/cache" "$SCRATCH_ROOT/gleam-home"
+              rm -rf "$WORK_ROOT"
+              mkdir -p \
+                "$WORK_ROOT/remote/deployments/gleam-mcp-server" \
+                "$WORK_ROOT/remote/libs/pg-defs/generated" \
+                "$WORK_ROOT/remote/libs/runtime-config-client-gleam"
+              cp -R "$SRC_ROOT/remote/deployments/gleam-mcp-server"/. "$WORK_ROOT/remote/deployments/gleam-mcp-server"/
+              cp -R "$SRC_ROOT/remote/libs/pg-defs/generated/gleam" "$WORK_ROOT/remote/libs/pg-defs/generated/gleam"
+              cp -R "$SRC_ROOT/remote/libs/runtime-config-client-gleam"/. "$WORK_ROOT/remote/libs/runtime-config-client-gleam"/
+              cd "$WORK_ROOT/remote/deployments/gleam-mcp-server"
+              if [ ! -f manifest.toml ]; then
+                echo "boot: manifest.toml is required for offline-safe Gleam startup; run gleam deps download and commit the manifest"
+                exit 1
+              fi
+              if [ ! -d build/packages ] || [ -z "$(ls -A build/packages 2>/dev/null)" ]; then
+                echo "boot: build/packages is empty in the copied project; warm the host checkout with 'gleam deps download' before deploying (NetworkPolicy blocks hex.pm from inside the pod)"
+                exit 1
+              fi
+              # Defensive: re-check the manifest-vs-build/packages
+              # consistency inside the main container too. The preflight
+              # init container already did this against the hostPath, but
+              # because the copy above happens in a separate process and
+              # the manifest could in theory change mid-rollout, we
+              # duplicate the cheap check here. Same failure mode that
+              # produced the 502 once already.
+              names=$(awk '/^packages = \[/,/^\]/' manifest.toml \
+                | grep -oE 'name = "[^"]+"' \
+                | awk -F'"' '{print $2}' \
+                | sort -u)
+              stale=""
+              for name in $names; do
+                if [ -d "build/packages/$name" ] \
+                   || [ -f "build/packages/$name.config_fingerprint" ]; then
+                  continue
+                fi
+                stale="$stale $name"
+              done
+              if [ -n "$stale" ]; then
+                echo "boot: build/packages stale relative to manifest.toml, missing:$stale"
+                echo "boot: re-run 'gleam deps download' on the EC2 node under /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gleam-mcp-server"
+                exit 1
+              fi
+              exec gleam run
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8090'
+            # Redirect the gleam image's implicit writable paths into the
+            # bounded scratch emptyDir so readOnlyRootFilesystem: true can
+            # stay on. Each of these is created by the boot script before
+            # `gleam run`.
+            - name: HOME
+              value: /tmp/dd-gleam-mcp-server/home
+            - name: XDG_CACHE_HOME
+              value: /tmp/dd-gleam-mcp-server/cache
+            - name: GLEAM_HOME
+              value: /tmp/dd-gleam-mcp-server/gleam-home
+            - name: RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleam-mcp-server-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: AGENT_TASKS_RDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gleam-mcp-server-secrets
+                  key: AGENT_TASKS_RDS_DATABASE_URL
+                  optional: true
+            - name: MCP_PROMETHEUS_URL
+              value: http://dd-prometheus.observability.svc.cluster.local:9090
+            - name: MCP_LOKI_URL
+              value: http://dd-loki.observability.svc.cluster.local:3100
+            - name: MCP_GRAFANA_URL
+              value: http://dd-grafana.observability.svc.cluster.local:3000
+            - name: MCP_TEMPO_URL
+              value: http://dd-tempo.observability.svc.cluster.local:3200
+            - name: MCP_JAEGER_URL
+              value: http://dd-jaeger.observability.svc.cluster.local:16686
+            - name: MCP_OTEL_COLLECTOR_URL
+              value: http://dd-otel-collector.observability.svc.cluster.local:8889
+            - name: MCP_NATS_MONITOR_URL
+              value: http://dd-nats.messaging.svc.cluster.local:8222
+            - name: MCP_NATS_METRICS_URL
+              value: http://dd-nats.messaging.svc.cluster.local:7777
+            - name: MCP_OBSERVABILITY_TIMEOUT_MS
+              value: '1200'
+            - name: MCP_OBSERVABILITY_BODY_LIMIT_BYTES
+              value: '32768'
+            - name: MCP_KUBERNETES_TIMEOUT_MS
+              value: '1500'
+            - name: MCP_KUBERNETES_BODY_LIMIT_BYTES
+              value: '262144'
+            - name: MCP_KUBERNETES_INVENTORY_BODY_LIMIT_BYTES
+              value: '32768'
+            # dd-runtime-config subscriber wiring (Gleam helper:
+            # `dd_runtime_config_client.start_registration_loop`).
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-gleam-mcp-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-gleam-mcp-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-gleam-mcp-server.default.svc.cluster.local:8090/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: dd-gleam-mcp-server-secrets
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8090
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+              ephemeral-storage: 256Mi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+              ephemeral-storage: 2Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: scratch
+              mountPath: /tmp/dd-gleam-mcp-server
+            # Small writable /tmp so OS-level transient temp files (mktemp,
+            # erlang's crash dump path, anything else that targets the
+            # parent of /tmp/dd-gleam-mcp-server) have somewhere to land
+            # under readOnlyRootFilesystem: true. Bounded small because no
+            # workload artifact belongs here.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        # Explicit, bounded scratch space for the boot-time copy of the
+        # project + local-path deps. Sized large enough to hold the
+        # gleam-mcp-server project plus pg-defs and runtime-config-client
+        # generated Gleam sources and a single Erlang build tree (~hundreds
+        # of MB), with headroom for an incremental rebuild on container
+        # restart. emptyDir gives the kernel-level page cache benefits of a
+        # real filesystem on the node and resets on every Pod restart,
+        # which matches the boot script's `rm -rf` semantics.
+        - name: scratch
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+app_manifest="${repo_root}/remote/argocd/apps/dd-gleam-mcp-server.application.yaml"
+
+namespace="${MCP_NAMESPACE:-default}"
+argocd_namespace="${ARGOCD_NAMESPACE:-argocd}"
+app_name="${MCP_ARGO_APP_NAME:-dd-gleam-mcp-server}"
+service_name="${MCP_SERVICE_NAME:-dd-gleam-mcp-server}"
+deployment_name="${MCP_DEPLOYMENT_NAME:-dd-gleam-mcp-server}"
+service_account="${MCP_SERVICE_ACCOUNT:-system:serviceaccount:${namespace}:dd-gleam-mcp-server}"
+expected_app_path="${MCP_EXPECTED_APP_PATH:-remote/deployments/gleam-mcp-server/k8s/ec2}"
+local_port="${MCP_LOCAL_PORT:-18090}"
+rollout_timeout="${MCP_ROLLOUT_TIMEOUT:-300s}"
+
+context="$(kubectl config current-context 2>/dev/null || true)"
+if [[ -z "${context}" ]]; then
+  echo "No kubectl context is configured. Run this from the EC2 host or a kubeconfig pointed at the EC2 cluster." >&2
+  exit 2
+fi
+
+if [[ "${ALLOW_NON_EC2_CONTEXT:-false}" != "true" ]]; then
+  case "${context}" in
+    *kind*|*docker-desktop*|*colima*)
+      echo "Refusing to verify EC2 MCP against local kubectl context '${context}'." >&2
+      echo "Use the EC2 host kubeconfig, or set ALLOW_NON_EC2_CONTEXT=true only for deliberate local testing." >&2
+      exit 2
+      ;;
+  esac
+fi
+
+echo "Using kubectl context: ${context}"
+echo "Applying EC2 MCP Argo CD application: ${app_manifest}"
+kubectl apply -f "${app_manifest}"
+
+actual_app_path="$(kubectl -n "${argocd_namespace}" get application "${app_name}" -o jsonpath='{.spec.source.path}')"
+if [[ "${actual_app_path}" != "${expected_app_path}" ]]; then
+  echo "Argo application ${app_name} points at '${actual_app_path}', expected '${expected_app_path}'." >&2
+  exit 1
+fi
+
+actual_destination_namespace="$(kubectl -n "${argocd_namespace}" get application "${app_name}" -o jsonpath='{.spec.destination.namespace}')"
+if [[ "${actual_destination_namespace}" != "${namespace}" ]]; then
+  echo "Argo application ${app_name} deploys to namespace '${actual_destination_namespace}', expected '${namespace}'." >&2
+  exit 1
+fi
+
+echo "Applying EC2 MCP overlay: ${repo_root}/${expected_app_path}"
+kubectl apply -k "${repo_root}/${expected_app_path}"
+
+if command -v argocd >/dev/null 2>&1 && argocd app get "${app_name}" --grpc-web >/dev/null 2>&1; then
+  echo "Syncing ${app_name} with argocd CLI."
+  argocd app sync "${app_name}" --grpc-web
+  argocd app wait "${app_name}" --health --sync --timeout 300 --grpc-web
+else
+  echo "argocd CLI not found or not logged in; relying on automated Argo CD sync."
+fi
+
+echo "Waiting for MCP deployment rollout."
+kubectl -n "${namespace}" rollout status "deployment/${deployment_name}" --timeout="${rollout_timeout}"
+
+echo "Asserting MCP preflight init container produced its OK sentinel."
+preflight_log_lines=""
+mapfile -t mcp_pod_names < <(kubectl -n "${namespace}" get pods -l "app=${deployment_name}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+if [[ ${#mcp_pod_names[@]} -eq 0 ]]; then
+  echo "No pods found for app=${deployment_name} in namespace ${namespace}." >&2
+  exit 1
+fi
+for pod in "${mcp_pod_names[@]}"; do
+  log="$(kubectl -n "${namespace}" logs "${pod}" -c preflight 2>/dev/null || true)"
+  if [[ -z "${log}" ]]; then
+    echo "preflight init container produced no logs for pod ${pod}." >&2
+    exit 1
+  fi
+  if ! grep -q '^preflight: ok$' <<<"${log}"; then
+    echo "preflight init container did not log 'preflight: ok' for pod ${pod}. Last 20 lines:" >&2
+    tail -n 20 <<<"${log}" >&2
+    exit 1
+  fi
+  preflight_log_lines+="${log}"$'\n'
+done
+echo "preflight init container logged OK for ${#mcp_pod_names[@]} pod(s)."
+
+echo "Asserting MCP PodDisruptionBudget is healthy."
+pdb_name="${MCP_PDB_NAME:-${deployment_name}}"
+if ! kubectl -n "${namespace}" get poddisruptionbudget "${pdb_name}" >/dev/null 2>&1; then
+  echo "Expected PodDisruptionBudget ${pdb_name} to exist in namespace ${namespace}." >&2
+  exit 1
+fi
+pdb_min_available="$(kubectl -n "${namespace}" get poddisruptionbudget "${pdb_name}" -o jsonpath='{.spec.minAvailable}')"
+if [[ "${pdb_min_available}" != "1" ]]; then
+  echo "Expected PodDisruptionBudget ${pdb_name} minAvailable=1, got '${pdb_min_available}'." >&2
+  exit 1
+fi
+echo "PodDisruptionBudget ${pdb_name} present with minAvailable=${pdb_min_available}."
+
+mcp_subject_namespace="${service_account#system:serviceaccount:}"
+mcp_subject_namespace="${mcp_subject_namespace%%:*}"
+mcp_subject_name="${service_account##*:}"
+
+mcp_rbac_diagnostics() {
+  echo "=== MCP effective permissions for ${service_account} in namespace ${namespace} ===" >&2
+  kubectl auth can-i --list --as="${service_account}" -n "${namespace}" >&2 || true
+
+  echo "=== MCP inventory ClusterRole ===" >&2
+  kubectl get clusterrole dd-gleam-mcp-server-read-inventory -o yaml >&2 || true
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "jq is not available; skipping RoleBinding/ClusterRoleBinding subject diagnostics." >&2
+    return 0
+  fi
+
+  echo "=== RoleBindings that apply to ${service_account} or broad service account groups ===" >&2
+  kubectl get rolebindings -A -o json \
+    | jq -r --arg ns "${mcp_subject_namespace}" --arg sa "${mcp_subject_name}" '
+      .items[] as $item
+      | select(any($item.subjects[]?;
+          (.kind == "ServiceAccount" and .name == $sa and ((.namespace // $item.metadata.namespace) == $ns))
+          or (.kind == "User" and .name == ("system:serviceaccount:" + $ns + ":" + $sa))
+          or (.kind == "Group" and (.name == "system:serviceaccounts" or .name == ("system:serviceaccounts:" + $ns) or .name == "system:authenticated"))
+        ))
+      | [
+          $item.kind,
+          ($item.metadata.namespace // "-"),
+          $item.metadata.name,
+          $item.roleRef.kind,
+          $item.roleRef.name,
+          (($item.subjects // []) | map(.kind + ":" + (if .namespace then .namespace + "/" else "" end) + .name) | join(","))
+        ]
+      | @tsv
+    ' >&2 || true
+
+  echo "=== ClusterRoleBindings that apply to ${service_account} or broad service account groups ===" >&2
+  kubectl get clusterrolebindings -o json \
+    | jq -r --arg ns "${mcp_subject_namespace}" --arg sa "${mcp_subject_name}" '
+      .items[] as $item
+      | select(any($item.subjects[]?;
+          (.kind == "ServiceAccount" and .name == $sa and ((.namespace // "") == $ns))
+          or (.kind == "User" and .name == ("system:serviceaccount:" + $ns + ":" + $sa))
+          or (.kind == "Group" and (.name == "system:serviceaccounts" or .name == ("system:serviceaccounts:" + $ns) or .name == "system:authenticated"))
+        ))
+      | [
+          $item.kind,
+          "-",
+          $item.metadata.name,
+          $item.roleRef.kind,
+          $item.roleRef.name,
+          (($item.subjects // []) | map(.kind + ":" + (if .namespace then .namespace + "/" else "" end) + .name) | join(","))
+        ]
+      | @tsv
+    ' >&2 || true
+}
+
+require_can_i() {
+  local verb="$1"
+  local resource="$2"
+  local scope_args=("${@:3}")
+  if [[ "$(kubectl auth can-i "${verb}" "${resource}" --as="${service_account}" "${scope_args[@]}")" != "yes" ]]; then
+    echo "Expected ${service_account} to be able to ${verb} ${resource} ${scope_args[*]}." >&2
+    exit 1
+  fi
+}
+
+require_cannot_i() {
+  local verb="$1"
+  local resource="$2"
+  local scope_args=("${@:3}")
+  if [[ "$(kubectl auth can-i "${verb}" "${resource}" --as="${service_account}" "${scope_args[@]}")" != "no" ]]; then
+    echo "Expected ${service_account} to be denied ${verb} ${resource} ${scope_args[*]}." >&2
+    mcp_rbac_diagnostics
+    exit 1
+  fi
+}
+
+echo "Checking EC2 MCP RBAC."
+require_can_i list deployments.apps --all-namespaces
+require_can_i list pods --all-namespaces
+require_can_i list services --all-namespaces
+require_can_i list customresourcedefinitions.apiextensions.k8s.io
+require_cannot_i list secrets --all-namespaces
+require_cannot_i list configmaps --all-namespaces
+require_cannot_i get pods/log -n "${namespace}"
+require_cannot_i create pods/exec -n "${namespace}"
+require_cannot_i patch deployments.apps -n "${namespace}"
+
+port_forward_log="$(mktemp -t dd-gleam-mcp-port-forward.XXXXXX.log)"
+kubectl -n "${namespace}" port-forward "svc/${service_name}" "${local_port}:8090" >"${port_forward_log}" 2>&1 &
+port_forward_pid="$!"
+cleanup() {
+  kill "${port_forward_pid}" >/dev/null 2>&1 || true
+  rm -f "${port_forward_log}"
+}
+trap cleanup EXIT
+
+for _ in {1..40}; do
+  if curl -fsS "http://127.0.0.1:${local_port}/healthz" >/dev/null 2>&1; then
+    break
+  fi
+  if ! kill -0 "${port_forward_pid}" >/dev/null 2>&1; then
+    echo "kubectl port-forward exited early:" >&2
+    cat "${port_forward_log}" >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+echo "Checking MCP tool surface through the EC2 cluster service."
+curl -fsS "http://127.0.0.1:${local_port}/mcp" | grep -q '"kubernetes_inventory"'
+curl -fsS "http://127.0.0.1:${local_port}/mcp" | grep -q '"human_access_policy"'
+
+curl -fsS \
+  -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":42,"method":"tools/list"}' \
+  "http://127.0.0.1:${local_port}/mcp" \
+  | grep -q '"id":42'
+
+curl -fsS \
+  -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"human_access_policy","arguments":{}}}' \
+  "http://127.0.0.1:${local_port}/mcp" \
+  | grep -q '"elevatedMcpToolsEnabled":false'
+
+curl -fsS \
+  -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kubernetes_inventory","arguments":{}}}' \
+  "http://127.0.0.1:${local_port}/mcp" \
+  | grep -q '"metadataOnlyRequest":true'
+
+echo "EC2 Gleam MCP server verification passed."

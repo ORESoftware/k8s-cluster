@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-formal-methods-server
+  namespace: default
+  labels:
+    app: dd-formal-methods-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-formal-methods-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-05-17-formal-methods-server'
+      labels:
+        app: dd-formal-methods-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: formal-methods-server
+          image: docker.io/library/dd-formal-methods-server:dev
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8110'
+            - name: FORMAL_METHODS_WORK_ROOT
+              value: /var/lib/dd-formal-methods-server/jobs
+            - name: FORMAL_METHODS_GIT_BIN
+              value: git
+            - name: FORMAL_METHODS_Z3_BIN
+              value: z3
+            - name: FORMAL_METHODS_ALLOWED_REPO_PREFIXES
+              value: https://github.com/,git@github.com:,ssh://git@github.com/
+            - name: FORMAL_METHODS_MAX_CONCURRENT
+              value: '2'
+            - name: FORMAL_METHODS_JOB_TIMEOUT_SECONDS
+              value: '900'
+            - name: FORMAL_METHODS_Z3_TIMEOUT_SECONDS
+              value: '5'
+            - name: FORMAL_METHODS_MAX_LOG_BYTES
+              value: '4194304'
+            - name: FORMAL_METHODS_MAX_FILES
+              value: '5000'
+            - name: FORMAL_METHODS_MAX_FILE_BYTES
+              value: '524288'
+            - name: FORMAL_METHODS_MAX_FINDINGS_PER_JOB
+              value: '5000'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            - name: GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GITHUB_WEBHOOK_SECRET
+                  optional: true
+            - name: GITHUB_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GITHUB_API_TOKEN
+                  optional: true
+            - name: FORMAL_METHODS_PR_DIFF_ONLY
+              value: 'true'
+            - name: FORMAL_METHODS_PR_BASE_FETCH_DEPTH
+              value: '200'
+            - name: FORMAL_METHODS_PR_COMMENT_MAX_ROWS
+              value: '25'
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-formal-methods-server
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-formal-methods-server
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-formal-methods-server.default.svc.cluster.local:8110/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8110
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: '2'
+              memory: 1500Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: work
+              mountPath: /var/lib/dd-formal-methods-server
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: work
+          hostPath:
+            path: /var/lib/dd-formal-methods-server
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}

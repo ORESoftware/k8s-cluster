@@ -25,6 +25,9 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           command:

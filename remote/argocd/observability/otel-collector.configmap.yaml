@@ -57,6 +57,16 @@ data:
               static_configs:
                 - targets:
                     - dd-webrtc-signaling.default.svc.cluster.local:8095
+            # dd-dart-server exposes the unified Prometheus exposition on its
+            # coordinator (admin) port 8088: per-shard WS gauges plus the MDP
+            # isolate-pool autotuner counters/gauges and the adopt /
+            # first-frame latency histograms.
+            - job_name: dd-dart-server
+              scrape_interval: 10s
+              metrics_path: /metrics
+              static_configs:
+                - targets:
+                    - dd-dart-server.default.svc.cluster.local:8088
             - job_name: dd-mdp-optimizer
               scrape_interval: 10s
               metrics_path: /metrics
@@ -122,19 +132,75 @@ data:
               metrics_path: /metrics
               static_configs:
                 - targets:
-                    - dd-spark-pipeline-server.default.svc.cluster.local:8085
+                    - dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085
             - job_name: dd-formal-methods-server
               scrape_interval: 10s
               metrics_path: /metrics
               static_configs:
                 - targets:
                     - dd-formal-methods-server.default.svc.cluster.local:8110
+            # gcs-router runs with >=2 replicas; the in-process counters
+            # gcs_router_routed_total / gcs_router_active_conns /
+            # gcs_router_no_peers_total / gcs_router_latency_seconds are
+            # per-pod, so static_configs against the Service VIP would
+            # round-robin scrapes between pods and lose ~half the signal
+            # plus alias-counter-resets on the way through. Discover each
+            # pod directly via kubernetes_sd and label by pod for
+            # per-router visibility.
             - job_name: gcs-router
               scrape_interval: 10s
               metrics_path: /metrics
-              static_configs:
-                - targets:
-                    - gcs-router.default.svc.cluster.local:9100
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                      - default
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  action: keep
+                  regex: gcs-router
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  action: keep
+                  regex: metrics
+                - source_labels: [__meta_kubernetes_pod_phase]
+                  action: keep
+                  regex: Running
+                - source_labels: [__meta_kubernetes_pod_ready]
+                  action: keep
+                  regex: "true"
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  target_label: app
+            - job_name: gcs
+              scrape_interval: 10s
+              metrics_path: /chat/metrics
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                      - default
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  action: keep
+                  regex: gcs
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  action: keep
+                  regex: rest
+                - source_labels: [__meta_kubernetes_pod_phase]
+                  action: keep
+                  regex: Running
+                - source_labels: [__meta_kubernetes_pod_ready]
+                  action: keep
+                  regex: "true"
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  target_label: app
             - job_name: dd-agent-worker-broker
               scrape_interval: 10s
               metrics_path: /metrics
@@ -171,6 +237,30 @@ data:
               static_configs:
                 - targets:
                     - dd-nats.messaging.svc.cluster.local:7777
+            - job_name: dd-promtail
+              scrape_interval: 10s
+              metrics_path: /metrics
+              kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                      - observability
+              relabel_configs:
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  action: keep
+                  regex: dd-promtail
+                - source_labels: [__meta_kubernetes_pod_container_port_name]
+                  action: keep
+                  regex: http
+                - source_labels: [__meta_kubernetes_pod_phase]
+                  action: keep
+                  regex: Running
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: namespace
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: pod
+                - source_labels: [__meta_kubernetes_pod_label_app]
+                  target_label: app
 
     processors:
       batch: {}

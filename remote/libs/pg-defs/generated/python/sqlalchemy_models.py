@@ -325,6 +325,144 @@ class KnownGitRepoInsert(BaseModel):
             raise ValueError("known_git_repos.display_name exceeds 200 bytes")
         return value
 
+AgentContextBlobsStatus = Literal["active", "paused", "archived"]
+
+class AgentContextBlobs(Base):
+    __tablename__ = "agent_context_blobs"
+    __table_args__ = (
+        CheckConstraint("project_id ~ '^[A-Za-z0-9._:/-]{1,120}$'", name="agent_context_blobs_project_id_format_chk"),
+        CheckConstraint("context_id ~ '^[A-Za-z0-9._:/-]{1,200}$'", name="agent_context_blobs_context_id_format_chk"),
+        CheckConstraint("octet_length(context_title) between 1 and 300", name="agent_context_blobs_context_title_size_chk"),
+        CheckConstraint("octet_length(context_blob) between 1 and 1048576", name="agent_context_blobs_context_blob_size_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="agent_context_blobs_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="agent_context_blobs_meta_object_chk"),
+        CheckConstraint("status in ('active', 'paused', 'archived')", name="agent_context_blobs_status_chk"),
+        Index("agent_context_blobs_project_repo_context_active_uq", "project_id", "repo_id", "context_id", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_context_blobs_repo_id_idx", "repo_id", postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_context_blobs_project_id_idx", "project_id", postgresql_where=text("is_soft_deleted = false")),
+        Index("agent_context_blobs_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    project_id: Mapped[str] = mapped_column(String(120), nullable=False, server_default=text("'default'"))
+    repo_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    context_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    context_title: Mapped[str] = mapped_column(String(300), nullable=False)
+    context_blob: Mapped[str] = mapped_column(Text(), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class AgentContextBlobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    projectId: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    repoId: UUID | None = None
+    contextId: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
+    contextTitle: str = Field(..., max_length=300)
+    contextBlob: str
+    status: AgentContextBlobsStatus
+    labels: list[Any]
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("contextTitle")
+    @classmethod
+    def validate_context_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 300:
+            raise ValueError("agent_context_blobs.context_title exceeds 300 bytes")
+        return value
+
+    @field_validator("contextBlob")
+    @classmethod
+    def validate_context_blob(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1048576:
+            raise ValueError("agent_context_blobs.context_blob exceeds 1048576 bytes")
+        return value
+
+class AgentContextBlobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    projectId: str | None = Field("default", max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    repoId: UUID | None = None
+    contextId: str = Field(..., max_length=200, pattern="^[A-Za-z0-9._:/-]{1,200}$")
+    contextTitle: str = Field(..., max_length=300)
+    contextBlob: str
+    status: AgentContextBlobsStatus | None = "active"
+    labels: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("contextTitle")
+    @classmethod
+    def validate_context_title(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 300:
+            raise ValueError("agent_context_blobs.context_title exceeds 300 bytes")
+        return value
+
+    @field_validator("contextBlob")
+    @classmethod
+    def validate_context_blob(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 1048576:
+            raise ValueError("agent_context_blobs.context_blob exceeds 1048576 bytes")
+        return value
+
+class AgentContextEmbeddings(Base):
+    __tablename__ = "agent_context_embeddings"
+    __table_args__ = (
+        CheckConstraint("embedding_model ~ '^[A-Za-z0-9._:/-]{1,120}$'", name="agent_context_embeddings_model_format_chk"),
+        CheckConstraint("embedding_dimensions > 0", name="agent_context_embeddings_dimensions_chk"),
+        CheckConstraint("jsonb_typeof(embedding) = 'array'", name="agent_context_embeddings_array_chk"),
+        CheckConstraint("content_sha256 ~ '^[a-f0-9]{64}$'", name="agent_context_embeddings_sha256_chk"),
+        Index("agent_context_embeddings_blob_model_sha_uq", "context_blob_id", "embedding_model", "content_sha256", unique=True),
+        Index("agent_context_embeddings_blob_id_idx", "context_blob_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    context_blob_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(120), nullable=False)
+    embedding: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    embedding_dimensions: Mapped[int] = mapped_column(Integer(), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class AgentContextEmbeddingsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    contextBlobId: UUID
+    embeddingModel: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    embedding: list[Any]
+    embeddingDimensions: int = Field(..., ge=1)
+    contentSha256: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    createdAt: datetime
+
+class AgentContextEmbeddingsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    contextBlobId: UUID
+    embeddingModel: str = Field(..., max_length=120, pattern="^[A-Za-z0-9._:/-]{1,120}$")
+    embedding: list[Any]
+    embeddingDimensions: int = Field(..., ge=1)
+    contentSha256: str = Field(..., max_length=64, pattern="^[a-f0-9]{64}$")
+    createdAt: datetime | None = None
+
 class AgentRemoteDevThread(Base):
     __tablename__ = "agent_remote_dev_threads"
     __table_args__ = (
@@ -526,11 +664,13 @@ class AgentRemoteDevEvent(Base):
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="agent_remote_dev_events_payload_object_chk"),
         Index("agent_remote_dev_events_task_seq_uq", "task_id", "seq", unique=True),
         Index("agent_remote_dev_events_task_id_created_at_idx", "task_id", text("created_at desc")),
+        Index("agent_remote_dev_events_thread_id_created_at_idx", "thread_id", text("created_at desc"), postgresql_where=text("thread_id is not null")),
         Index("agent_remote_dev_events_created_at_idx", text("created_at desc")),
     )
 
     id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
     task_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    thread_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
     seq: Mapped[int] = mapped_column(Integer(), nullable=False)
     event_kind: Mapped[str] = mapped_column(String(80), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
@@ -541,6 +681,7 @@ class AgentRemoteDevEventRow(BaseModel):
 
     id: int
     taskId: UUID
+    threadId: UUID | None = None
     seq: int
     eventKind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
     payload: dict[str, Any]
@@ -551,10 +692,102 @@ class AgentRemoteDevEventInsert(BaseModel):
 
     id: int | None = None
     taskId: UUID
+    threadId: UUID | None = None
     seq: int
     eventKind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
+
+class AgentRemoteDevBreadcrumb(Base):
+    __tablename__ = "agent_remote_dev_breadcrumbs"
+    __table_args__ = (
+        CheckConstraint("kind ~ '^[A-Za-z0-9._:-]{1,80}$'", name="agent_remote_dev_breadcrumbs_kind_format_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="agent_remote_dev_breadcrumbs_payload_object_chk"),
+        CheckConstraint("pod_name is null or octet_length(pod_name) <= 253", name="agent_remote_dev_breadcrumbs_pod_name_size_chk"),
+        CheckConstraint("branch is null or octet_length(branch) <= 120", name="agent_remote_dev_breadcrumbs_branch_size_chk"),
+        CheckConstraint("provider is null or octet_length(provider) <= 60", name="agent_remote_dev_breadcrumbs_provider_size_chk"),
+        Index("agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx", "thread_id", text("emitted_at desc")),
+        Index("agent_remote_dev_breadcrumbs_task_id_emitted_at_idx", "task_id", text("emitted_at desc"), postgresql_where=text("task_id is not null")),
+        Index("agent_remote_dev_breadcrumbs_emitted_at_idx", text("emitted_at desc")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    thread_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    task_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    emitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    pod_name: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True)
+
+class AgentRemoteDevBreadcrumbRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    threadId: UUID
+    taskId: UUID | None = None
+    kind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any]
+    emittedAt: datetime
+    podName: str | None = Field(None, max_length=253)
+    branch: str | None = Field(None, max_length=120)
+    provider: str | None = Field(None, max_length=60)
+
+    @field_validator("podName")
+    @classmethod
+    def validate_pod_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes")
+        return value
+
+    @field_validator("branch")
+    @classmethod
+    def validate_branch(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 60:
+            raise ValueError("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes")
+        return value
+
+class AgentRemoteDevBreadcrumbInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int | None = None
+    threadId: UUID
+    taskId: UUID | None = None
+    kind: str = Field(..., min_length=1, max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    emittedAt: datetime | None = None
+    podName: str | None = Field(None, max_length=253)
+    branch: str | None = Field(None, max_length=120)
+    provider: str | None = Field(None, max_length=60)
+
+    @field_validator("podName")
+    @classmethod
+    def validate_pod_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes")
+        return value
+
+    @field_validator("branch")
+    @classmethod
+    def validate_branch(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 120:
+            raise ValueError("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 60:
+            raise ValueError("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes")
+        return value
 
 AgentRemoteDevArtifactStorageProvider = Literal["s3", "r2", "gcs", "drive", "local"]
 
@@ -707,6 +940,336 @@ class AgentRemoteDevRuntimeLockInsert(BaseModel):
             raise ValueError("agent_remote_dev_runtime_locks.owner exceeds 200 bytes")
         return value
 
+class MipSolverSessions(Base):
+    __tablename__ = "mip_solver_sessions"
+    __table_args__ = (
+        CheckConstraint("octet_length(session_id) between 1 and 200", name="mip_solver_sessions_session_id_size_chk"),
+        CheckConstraint("revision >= 0", name="mip_solver_sessions_revision_chk"),
+        CheckConstraint("jsonb_typeof(problem) = 'object'", name="mip_solver_sessions_problem_json_chk"),
+        Index("mip_solver_sessions_updated_at_idx", text("updated_at desc")),
+    )
+
+    session_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    problem: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MipSolverSessionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sessionId: str = Field(..., max_length=200)
+    revision: int
+    problem: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("sessionId")
+    @classmethod
+    def validate_session_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_sessions.session_id exceeds 200 bytes")
+        return value
+
+class MipSolverSessionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sessionId: str = Field(..., max_length=200)
+    revision: int | None = 0
+    problem: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("sessionId")
+    @classmethod
+    def validate_session_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_sessions.session_id exceeds 200 bytes")
+        return value
+
+MipSolverSolvesNodeRole = Literal["master", "slave"]
+
+class MipSolverSolves(Base):
+    __tablename__ = "mip_solver_solves"
+    __table_args__ = (
+        CheckConstraint("octet_length(solve_id) between 1 and 160", name="mip_solver_solves_solve_id_size_chk"),
+        CheckConstraint("octet_length(request_id) between 1 and 200", name="mip_solver_solves_request_id_size_chk"),
+        CheckConstraint("octet_length(status) between 1 and 64", name="mip_solver_solves_status_size_chk"),
+        CheckConstraint("octet_length(node_id) between 1 and 253", name="mip_solver_solves_node_id_size_chk"),
+        CheckConstraint("node_role in ('master', 'slave')", name="mip_solver_solves_node_role_chk"),
+        CheckConstraint("revision >= 0 and jobs_expected >= 0 and jobs_published >= 0 and jobs_completed >= 0 and jobs_redelegated >= 0 and jobs_split >= 0", name="mip_solver_solves_counts_chk"),
+        CheckConstraint("jsonb_typeof(problem) = 'object'", name="mip_solver_solves_problem_json_chk"),
+        CheckConstraint("jsonb_typeof(options) = 'object'", name="mip_solver_solves_options_json_chk"),
+        CheckConstraint("jsonb_typeof(response) = 'object'", name="mip_solver_solves_response_json_chk"),
+        CheckConstraint("jsonb_typeof(warnings) = 'array'", name="mip_solver_solves_warnings_json_chk"),
+        Index("mip_solver_solves_request_id_idx", "request_id", text("updated_at desc")),
+        Index("mip_solver_solves_status_idx", "status", text("updated_at desc")),
+    )
+
+    solve_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    revision: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    status: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'running'"))
+    node_id: Mapped[str] = mapped_column(String(253), nullable=False)
+    node_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    problem: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    jobs_expected: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_published: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_completed: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_redelegated: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    jobs_split: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    timed_out: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    distributed: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    warnings: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class MipSolverSolvesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    solveId: str = Field(..., max_length=160)
+    requestId: str = Field(..., max_length=200)
+    revision: int
+    status: str = Field(..., max_length=64)
+    nodeId: str = Field(..., max_length=253)
+    nodeRole: MipSolverSolvesNodeRole
+    problem: dict[str, Any]
+    options: dict[str, Any]
+    response: dict[str, Any]
+    jobsExpected: int = Field(..., ge=0)
+    jobsPublished: int = Field(..., ge=0)
+    jobsCompleted: int = Field(..., ge=0)
+    jobsRedelegated: int = Field(..., ge=0)
+    jobsSplit: int = Field(..., ge=0)
+    timedOut: bool
+    distributed: bool
+    warnings: list[Any]
+    startedAt: datetime
+    updatedAt: datetime
+    finishedAt: datetime | None = None
+
+    @field_validator("solveId")
+    @classmethod
+    def validate_solve_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("mip_solver_solves.solve_id exceeds 160 bytes")
+        return value
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_solves.request_id exceeds 200 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_solves.status exceeds 64 bytes")
+        return value
+
+    @field_validator("nodeId")
+    @classmethod
+    def validate_node_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("mip_solver_solves.node_id exceeds 253 bytes")
+        return value
+
+class MipSolverSolvesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    solveId: str = Field(..., max_length=160)
+    requestId: str = Field(..., max_length=200)
+    revision: int | None = 0
+    status: str | None = Field("running", max_length=64)
+    nodeId: str = Field(..., max_length=253)
+    nodeRole: MipSolverSolvesNodeRole
+    problem: dict[str, Any] | None = Field(default_factory=dict)
+    options: dict[str, Any] | None = Field(default_factory=dict)
+    response: dict[str, Any] | None = Field(default_factory=dict)
+    jobsExpected: int | None = Field(0, ge=0)
+    jobsPublished: int | None = Field(0, ge=0)
+    jobsCompleted: int | None = Field(0, ge=0)
+    jobsRedelegated: int | None = Field(0, ge=0)
+    jobsSplit: int | None = Field(0, ge=0)
+    timedOut: bool | None = False
+    distributed: bool | None = False
+    warnings: list[Any] | None = Field(default_factory=list)
+    startedAt: datetime | None = None
+    updatedAt: datetime | None = None
+    finishedAt: datetime | None = None
+
+    @field_validator("solveId")
+    @classmethod
+    def validate_solve_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("mip_solver_solves.solve_id exceeds 160 bytes")
+        return value
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("mip_solver_solves.request_id exceeds 200 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_solves.status exceeds 64 bytes")
+        return value
+
+    @field_validator("nodeId")
+    @classmethod
+    def validate_node_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 253:
+            raise ValueError("mip_solver_solves.node_id exceeds 253 bytes")
+        return value
+
+class MipSolverJobs(Base):
+    __tablename__ = "mip_solver_jobs"
+    __table_args__ = (
+        CheckConstraint("octet_length(job_id) between 1 and 240", name="mip_solver_jobs_job_id_size_chk"),
+        CheckConstraint("octet_length(root_job_id) between 1 and 240", name="mip_solver_jobs_root_job_id_size_chk"),
+        CheckConstraint("octet_length(status) between 1 and 64", name="mip_solver_jobs_status_size_chk"),
+        CheckConstraint("retry_index >= 0 and depth >= 0", name="mip_solver_jobs_counts_chk"),
+        CheckConstraint("jsonb_typeof(job_payload) = 'object'", name="mip_solver_jobs_job_payload_json_chk"),
+        CheckConstraint("jsonb_typeof(result_payload) = 'object'", name="mip_solver_jobs_result_payload_json_chk"),
+        Index("mip_solver_jobs_solve_status_idx", "solve_id", "status", text("updated_at desc")),
+        Index("mip_solver_jobs_root_idx", "solve_id", "root_job_id", "retry_index"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String(240), primary_key=True)
+    solve_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    root_job_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    retry_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    depth: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    status: Mapped[str] = mapped_column(String(64), nullable=False, server_default=text("'submitted'"))
+    worker_node: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    job_payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    result_payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MipSolverJobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    jobId: str = Field(..., max_length=240)
+    solveId: str = Field(..., max_length=160)
+    rootJobId: str = Field(..., max_length=240)
+    retryIndex: int = Field(..., ge=0)
+    depth: int = Field(..., ge=0)
+    status: str = Field(..., max_length=64)
+    workerNode: str | None = Field(None, max_length=253)
+    jobPayload: dict[str, Any]
+    resultPayload: dict[str, Any]
+    submittedAt: datetime
+    finishedAt: datetime | None = None
+    updatedAt: datetime
+
+    @field_validator("jobId")
+    @classmethod
+    def validate_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("rootJobId")
+    @classmethod
+    def validate_root_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.root_job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_jobs.status exceeds 64 bytes")
+        return value
+
+class MipSolverJobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jobId: str = Field(..., max_length=240)
+    solveId: str = Field(..., max_length=160)
+    rootJobId: str = Field(..., max_length=240)
+    retryIndex: int | None = Field(0, ge=0)
+    depth: int | None = Field(0, ge=0)
+    status: str | None = Field("submitted", max_length=64)
+    workerNode: str | None = Field(None, max_length=253)
+    jobPayload: dict[str, Any] | None = Field(default_factory=dict)
+    resultPayload: dict[str, Any] | None = Field(default_factory=dict)
+    submittedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("jobId")
+    @classmethod
+    def validate_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("rootJobId")
+    @classmethod
+    def validate_root_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("mip_solver_jobs.root_job_id exceeds 240 bytes")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("mip_solver_jobs.status exceeds 64 bytes")
+        return value
+
+class MipSolverEvents(Base):
+    __tablename__ = "mip_solver_events"
+    __table_args__ = (
+        CheckConstraint("event_kind ~ '^[A-Za-z0-9._:-]{1,80}$'", name="mip_solver_events_event_kind_format_chk"),
+        CheckConstraint("jsonb_typeof(payload) = 'object'", name="mip_solver_events_payload_json_chk"),
+        Index("mip_solver_events_solve_created_at_idx", "solve_id", text("created_at desc"), postgresql_where=text("solve_id is not null")),
+        Index("mip_solver_events_session_created_at_idx", "session_id", text("created_at desc"), postgresql_where=text("session_id is not null")),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    solve_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    event_kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class MipSolverEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    solveId: str | None = Field(None, max_length=160)
+    sessionId: str | None = Field(None, max_length=200)
+    jobId: str | None = Field(None, max_length=240)
+    eventKind: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any]
+    createdAt: datetime
+
+class MipSolverEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    solveId: str | None = Field(None, max_length=160)
+    sessionId: str | None = Field(None, max_length=200)
+    jobId: str | None = Field(None, max_length=240)
+    eventKind: str = Field(..., max_length=80, pattern="^[A-Za-z0-9._:-]{1,80}$")
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
 LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell"]
 LambdaFunctionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
 LambdaFunctionStatus = Literal["draft", "active", "paused", "archived"]
@@ -736,7 +1299,7 @@ class LambdaFunction(Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
     runtime: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'nodejs'"))
-    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'"))
+    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'"))
     function_body: Mapped[str] = mapped_column(Text(), nullable=False)
     reuse_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     idle_timeout_seconds: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("300"))
@@ -822,7 +1385,7 @@ class LambdaFunctionInsert(BaseModel):
     displayName: str = Field(..., min_length=1, max_length=200)
     description: str | None = ""
     runtime: LambdaFunctionRuntime | None = "nodejs"
-    entryCommand: str | None = "env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs"
+    entryCommand: str | None = "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
     functionBody: str = Field(..., min_length=1)
     reuseKey: str | None = Field(None, max_length=200)
     idleTimeoutSeconds: int | None = Field(300, ge=1, le=3600)
@@ -869,6 +1432,330 @@ class LambdaFunctionInsert(BaseModel):
     def validate_container_build_error(cls, value):
         if value is not None and len(value.encode("utf-8")) > 8192:
             raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
+        return value
+
+ContainerPoolImageRevisionsSource = Literal["disk-default", "user", "system"]
+ContainerPoolImageRevisionsStatus = Literal["candidate", "active", "archived"]
+
+class ContainerPoolImageRevisions(Base):
+    __tablename__ = "container_pool_image_revisions"
+    __table_args__ = (
+        CheckConstraint("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'", name="container_pool_image_revisions_slug_format_chk"),
+        CheckConstraint("octet_length(dockerfile_text) between 1 and 65536", name="container_pool_image_revisions_dockerfile_size_chk"),
+        CheckConstraint("octet_length(image_ref) between 1 and 512", name="container_pool_image_revisions_image_ref_size_chk"),
+        CheckConstraint("octet_length(dockerfile_path) between 1 and 512", name="container_pool_image_revisions_path_size_chk"),
+        CheckConstraint("octet_length(build_context) between 1 and 512", name="container_pool_image_revisions_context_size_chk"),
+        CheckConstraint("octet_length(notes) <= 8192", name="container_pool_image_revisions_notes_size_chk"),
+        CheckConstraint("dockerfile_sha256 ~ '^[0-9a-f]{64}$'", name="container_pool_image_revisions_sha_format_chk"),
+        CheckConstraint("status in ('candidate', 'active', 'archived')", name="container_pool_image_revisions_status_chk"),
+        CheckConstraint("source in ('disk-default', 'user', 'system')", name="container_pool_image_revisions_source_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="container_pool_image_revisions_meta_object_chk"),
+        Index("container_pool_image_revisions_slug_idx", "image_slug", text("created_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("container_pool_image_revisions_slug_sha_uq", "image_slug", "dockerfile_sha256", unique=True, postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    image_slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    image_ref: Mapped[str] = mapped_column(Text(), nullable=False)
+    dockerfile_path: Mapped[str] = mapped_column(Text(), nullable=False)
+    build_context: Mapped[str] = mapped_column(Text(), nullable=False)
+    dockerfile_text: Mapped[str] = mapped_column(Text(), nullable=False)
+    dockerfile_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'user'"))
+    notes: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'candidate'"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class ContainerPoolImageRevisionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    imageRef: str
+    dockerfilePath: str
+    buildContext: str
+    dockerfileText: str
+    dockerfileSha256: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    source: ContainerPoolImageRevisionsSource
+    notes: str
+    status: ContainerPoolImageRevisionsStatus
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfilePath")
+    @classmethod
+    def validate_dockerfile_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.dockerfile_path exceeds 512 bytes")
+        return value
+
+    @field_validator("buildContext")
+    @classmethod
+    def validate_build_context(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.build_context exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfileText")
+    @classmethod
+    def validate_dockerfile_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def validate_notes(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_image_revisions.notes exceeds 8192 bytes")
+        return value
+
+class ContainerPoolImageRevisionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    imageRef: str
+    dockerfilePath: str
+    buildContext: str
+    dockerfileText: str
+    dockerfileSha256: str = Field(..., max_length=64, pattern="^[0-9a-f]{64}$")
+    source: ContainerPoolImageRevisionsSource | None = "user"
+    notes: str | None = ""
+    status: ContainerPoolImageRevisionsStatus | None = "candidate"
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfilePath")
+    @classmethod
+    def validate_dockerfile_path(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.dockerfile_path exceeds 512 bytes")
+        return value
+
+    @field_validator("buildContext")
+    @classmethod
+    def validate_build_context(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_image_revisions.build_context exceeds 512 bytes")
+        return value
+
+    @field_validator("dockerfileText")
+    @classmethod
+    def validate_dockerfile_text(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def validate_notes(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_image_revisions.notes exceeds 8192 bytes")
+        return value
+
+ContainerPoolBuildRunsBuildStatus = Literal["queued", "building", "built", "failed", "skipped", "cancelled"]
+ContainerPoolBuildRunsTestStatus = Literal["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"]
+ContainerPoolBuildRunsOverallStatus = Literal["queued", "running", "passed", "failed", "cancelled", "errored"]
+
+class ContainerPoolBuildRuns(Base):
+    __tablename__ = "container_pool_build_runs"
+    __table_args__ = (
+        CheckConstraint("image_slug ~ '^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$'", name="container_pool_build_runs_slug_format_chk"),
+        CheckConstraint("octet_length(image_ref) between 1 and 512", name="container_pool_build_runs_image_ref_size_chk"),
+        CheckConstraint("octet_length(candidate_tag) between 1 and 512", name="container_pool_build_runs_candidate_tag_size_chk"),
+        CheckConstraint("octet_length(test_command) <= 4096", name="container_pool_build_runs_test_command_size_chk"),
+        CheckConstraint("octet_length(build_log_excerpt) <= 65536\n       and octet_length(test_log_excerpt) <= 65536", name="container_pool_build_runs_log_size_chk"),
+        CheckConstraint("error_message is null or octet_length(error_message) <= 8192", name="container_pool_build_runs_error_size_chk"),
+        CheckConstraint("build_status in ('queued', 'building', 'built', 'failed', 'skipped', 'cancelled')", name="container_pool_build_runs_build_status_chk"),
+        CheckConstraint("test_status in ('not_started', 'pending', 'testing', 'passed', 'failed', 'skipped', 'cancelled')", name="container_pool_build_runs_test_status_chk"),
+        CheckConstraint("overall_status in ('queued', 'running', 'passed', 'failed', 'cancelled', 'errored')", name="container_pool_build_runs_overall_status_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="container_pool_build_runs_meta_object_chk"),
+        Index("container_pool_build_runs_slug_idx", "image_slug", text("created_at desc"), postgresql_where=text("is_soft_deleted = false")),
+        Index("container_pool_build_runs_overall_idx", "overall_status", postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    image_slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    revision_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    image_ref: Mapped[str] = mapped_column(Text(), nullable=False)
+    candidate_tag: Mapped[str] = mapped_column(Text(), nullable=False)
+    build_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    test_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'not_started'"))
+    overall_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    test_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    build_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    build_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    test_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    test_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    build_log_excerpt: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    test_log_excerpt: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    triggered_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class ContainerPoolBuildRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    revisionId: UUID
+    imageRef: str
+    candidateTag: str
+    buildStatus: ContainerPoolBuildRunsBuildStatus
+    testStatus: ContainerPoolBuildRunsTestStatus
+    overallStatus: ContainerPoolBuildRunsOverallStatus
+    testCommand: str
+    buildStartedAt: datetime | None = None
+    buildFinishedAt: datetime | None = None
+    testStartedAt: datetime | None = None
+    testFinishedAt: datetime | None = None
+    buildLogExcerpt: str
+    testLogExcerpt: str
+    errorMessage: str | None = None
+    triggeredBy: UUID | None = None
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("candidateTag")
+    @classmethod
+    def validate_candidate_tag(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.candidate_tag exceeds 512 bytes")
+        return value
+
+    @field_validator("testCommand")
+    @classmethod
+    def validate_test_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("container_pool_build_runs.test_command exceeds 4096 bytes")
+        return value
+
+    @field_validator("buildLogExcerpt")
+    @classmethod
+    def validate_build_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("testLogExcerpt")
+    @classmethod
+    def validate_test_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("errorMessage")
+    @classmethod
+    def validate_error_message(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_build_runs.error_message exceeds 8192 bytes")
+        return value
+
+class ContainerPoolBuildRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    imageSlug: str = Field(..., max_length=120, pattern="^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$")
+    revisionId: UUID
+    imageRef: str
+    candidateTag: str
+    buildStatus: ContainerPoolBuildRunsBuildStatus | None = "queued"
+    testStatus: ContainerPoolBuildRunsTestStatus | None = "not_started"
+    overallStatus: ContainerPoolBuildRunsOverallStatus | None = "queued"
+    testCommand: str | None = ""
+    buildStartedAt: datetime | None = None
+    buildFinishedAt: datetime | None = None
+    testStartedAt: datetime | None = None
+    testFinishedAt: datetime | None = None
+    buildLogExcerpt: str | None = ""
+    testLogExcerpt: str | None = ""
+    errorMessage: str | None = None
+    triggeredBy: UUID | None = None
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("imageRef")
+    @classmethod
+    def validate_image_ref(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.image_ref exceeds 512 bytes")
+        return value
+
+    @field_validator("candidateTag")
+    @classmethod
+    def validate_candidate_tag(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("container_pool_build_runs.candidate_tag exceeds 512 bytes")
+        return value
+
+    @field_validator("testCommand")
+    @classmethod
+    def validate_test_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("container_pool_build_runs.test_command exceeds 4096 bytes")
+        return value
+
+    @field_validator("buildLogExcerpt")
+    @classmethod
+    def validate_build_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("testLogExcerpt")
+    @classmethod
+    def validate_test_log_excerpt(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 65536:
+            raise ValueError("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes")
+        return value
+
+    @field_validator("errorMessage")
+    @classmethod
+    def validate_error_message(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("container_pool_build_runs.error_message exceeds 8192 bytes")
         return value
 
 PresenceConvsStatus = Literal["active", "paused", "archived"]
@@ -1097,3 +1984,679 @@ class PresenceConsumerCheckpointsInsert(BaseModel):
     consumerId: str
     lastSeq: int | None = 0
     updatedAt: datetime | None = None
+
+DesSoccerLearningExperimentsStatus = Literal["active", "paused", "archived"]
+
+class DesSoccerLearningExperiments(Base):
+    __tablename__ = "des_soccer_learning_experiments"
+    __table_args__ = (
+        CheckConstraint("slug ~ '^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$'", name="des_soccer_learning_experiments_slug_format_chk"),
+        CheckConstraint("octet_length(display_name) between 1 and 240", name="des_soccer_learning_experiments_display_name_size_chk"),
+        CheckConstraint("octet_length(description) <= 8192", name="des_soccer_learning_experiments_description_size_chk"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="des_soccer_learning_experiments_config_object_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="des_soccer_learning_experiments_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="des_soccer_learning_experiments_meta_object_chk"),
+        CheckConstraint("status in ('active', 'paused', 'archived')", name="des_soccer_learning_experiments_status_chk"),
+        Index("des_soccer_learning_experiments_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
+        Index("des_soccer_learning_experiments_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
+        Index("des_soccer_learning_experiments_updated_at_idx", text("updated_at desc"), postgresql_where=text("is_soft_deleted = false")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'active'"))
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    is_soft_deleted: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class DesSoccerLearningExperimentsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str = Field(..., max_length=160, pattern="^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")
+    displayName: str = Field(..., max_length=240)
+    description: str
+    status: DesSoccerLearningExperimentsStatus
+    config: dict[str, Any]
+    labels: list[Any]
+    metaData: dict[str, Any]
+    isSoftDeleted: bool
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("des_soccer_learning_experiments.display_name exceeds 240 bytes")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("des_soccer_learning_experiments.description exceeds 8192 bytes")
+        return value
+
+class DesSoccerLearningExperimentsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    slug: str = Field(..., max_length=160, pattern="^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$")
+    displayName: str = Field(..., max_length=240)
+    description: str | None = ""
+    status: DesSoccerLearningExperimentsStatus | None = "active"
+    config: dict[str, Any] | None = Field(default_factory=dict)
+    labels: list[Any] | None = Field(default_factory=list)
+    metaData: dict[str, Any] | None = Field(default_factory=dict)
+    isSoftDeleted: bool | None = False
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 240:
+            raise ValueError("des_soccer_learning_experiments.display_name exceeds 240 bytes")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("des_soccer_learning_experiments.description exceeds 8192 bytes")
+        return value
+
+DesSoccerLearningPolicyVersionsSourceKind = Literal["seed", "merge", "mutation", "crossover", "import", "replay"]
+DesSoccerLearningPolicyVersionsStatus = Literal["candidate", "active", "archived", "rejected"]
+
+class DesSoccerLearningPolicyVersions(Base):
+    __tablename__ = "des_soccer_learning_policy_versions"
+    __table_args__ = (
+        CheckConstraint("generation >= 0", name="des_soccer_learning_policy_versions_generation_chk"),
+        CheckConstraint("version_label ~ '^[A-Za-z0-9._:/-]{1,160}$'", name="des_soccer_learning_policy_versions_label_format_chk"),
+        CheckConstraint("source_kind in ('seed', 'merge', 'mutation', 'crossover', 'import', 'replay')", name="des_soccer_learning_policy_versions_source_chk"),
+        CheckConstraint("status in ('candidate', 'active', 'archived', 'rejected')", name="des_soccer_learning_policy_versions_status_chk"),
+        CheckConstraint("jsonb_typeof(options) = 'object'", name="des_soccer_learning_policy_versions_options_object_chk"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="des_soccer_learning_policy_versions_config_object_chk"),
+        CheckConstraint("jsonb_typeof(lineage) = 'array'", name="des_soccer_learning_policy_versions_lineage_array_chk"),
+        CheckConstraint("jsonb_typeof(metrics) = 'object'", name="des_soccer_learning_policy_versions_metrics_object_chk"),
+        CheckConstraint("entry_count >= 0", name="des_soccer_learning_policy_versions_entry_count_chk"),
+        CheckConstraint("target_entry_count >= 0", name="des_soccer_learning_policy_versions_target_entry_count_chk"),
+        CheckConstraint("visit_count >= 0", name="des_soccer_learning_policy_versions_visit_count_chk"),
+        Index("des_soccer_learning_policy_versions_label_uq", "experiment_id", "version_label", unique=True),
+        Index("des_soccer_learning_policy_versions_active_idx", "experiment_id", text("generation desc"), text("updated_at desc"), postgresql_where=text("status = 'active'")),
+        Index("des_soccer_learning_policy_versions_fitness_idx", "experiment_id", text("fitness_micros desc"), text("updated_at desc"), postgresql_where=text("status in ('active', 'candidate')")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    parent_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    generation: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    version_label: Mapped[str] = mapped_column(String(160), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'seed'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'candidate'"))
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    lineage: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    entry_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    target_entry_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    visit_count: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    fitness_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class DesSoccerLearningPolicyVersionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    experimentId: UUID
+    parentPolicyVersionId: UUID | None = None
+    generation: int = Field(..., ge=0)
+    versionLabel: str = Field(..., max_length=160, pattern="^[A-Za-z0-9._:/-]{1,160}$")
+    sourceKind: DesSoccerLearningPolicyVersionsSourceKind
+    status: DesSoccerLearningPolicyVersionsStatus
+    options: dict[str, Any]
+    config: dict[str, Any]
+    lineage: list[Any]
+    metrics: dict[str, Any]
+    entryCount: int = Field(..., ge=0)
+    targetEntryCount: int = Field(..., ge=0)
+    visitCount: int
+    fitnessMicros: int
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+class DesSoccerLearningPolicyVersionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    experimentId: UUID
+    parentPolicyVersionId: UUID | None = None
+    generation: int | None = Field(0, ge=0)
+    versionLabel: str = Field(..., max_length=160, pattern="^[A-Za-z0-9._:/-]{1,160}$")
+    sourceKind: DesSoccerLearningPolicyVersionsSourceKind | None = "seed"
+    status: DesSoccerLearningPolicyVersionsStatus | None = "candidate"
+    options: dict[str, Any] | None = Field(default_factory=dict)
+    config: dict[str, Any] | None = Field(default_factory=dict)
+    lineage: list[Any] | None = Field(default_factory=list)
+    metrics: dict[str, Any] | None = Field(default_factory=dict)
+    entryCount: int | None = Field(0, ge=0)
+    targetEntryCount: int | None = Field(0, ge=0)
+    visitCount: int | None = 0
+    fitnessMicros: int | None = 0
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+DesSoccerLearningPolicyEntriesTeam = Literal["home", "away"]
+DesSoccerLearningPolicyEntriesEntryKind = Literal["action", "target"]
+
+class DesSoccerLearningPolicyEntries(Base):
+    __tablename__ = "des_soccer_learning_policy_entries"
+    __table_args__ = (
+        CheckConstraint("team in ('home', 'away')", name="des_soccer_learning_policy_entries_team_chk"),
+        CheckConstraint("entry_kind in ('action', 'target')", name="des_soccer_learning_policy_entries_kind_chk"),
+        CheckConstraint("state_hash ~ '^[a-f0-9]{16,32}$'", name="des_soccer_learning_policy_entries_state_hash_chk"),
+        CheckConstraint("jsonb_typeof(state_key) = 'object'", name="des_soccer_learning_policy_entries_state_object_chk"),
+        CheckConstraint("octet_length(action) between 1 and 80", name="des_soccer_learning_policy_entries_action_size_chk"),
+        CheckConstraint("target_fine_cell_id >= -1", name="des_soccer_learning_policy_entries_target_fine_chk"),
+        CheckConstraint("target_tactical_cell_id >= -1", name="des_soccer_learning_policy_entries_target_tactical_chk"),
+        CheckConstraint("target_macro_cell_id >= -1", name="des_soccer_learning_policy_entries_target_macro_chk"),
+        CheckConstraint("target_root_cell_id >= -1", name="des_soccer_learning_policy_entries_target_root_chk"),
+        CheckConstraint("visits >= 0", name="des_soccer_learning_policy_entries_visits_chk"),
+        Index("des_soccer_learning_policy_entries_key_uq", "policy_version_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", unique=True),
+        Index("des_soccer_learning_policy_entries_lookup_idx", "policy_version_id", "team", "entry_kind", "state_hash"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    policy_version_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    team: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    state_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    state_key: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_fine_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_tactical_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_macro_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_root_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    visits: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    source_run_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningPolicyEntriesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    policyVersionId: UUID
+    team: DesSoccerLearningPolicyEntriesTeam
+    entryKind: DesSoccerLearningPolicyEntriesEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int = Field(..., ge=-1)
+    targetTacticalCellId: int = Field(..., ge=-1)
+    targetMacroCellId: int = Field(..., ge=-1)
+    targetRootCellId: int = Field(..., ge=-1)
+    valueMicros: int
+    visits: int = Field(..., ge=0)
+    sourceRunId: UUID | None = None
+    createdAt: datetime
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_policy_entries.action exceeds 80 bytes")
+        return value
+
+class DesSoccerLearningPolicyEntriesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    policyVersionId: UUID
+    team: DesSoccerLearningPolicyEntriesTeam
+    entryKind: DesSoccerLearningPolicyEntriesEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int | None = Field(-1, ge=-1)
+    targetTacticalCellId: int | None = Field(-1, ge=-1)
+    targetMacroCellId: int | None = Field(-1, ge=-1)
+    targetRootCellId: int | None = Field(-1, ge=-1)
+    valueMicros: int
+    visits: int | None = Field(0, ge=0)
+    sourceRunId: UUID | None = None
+    createdAt: datetime | None = None
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_policy_entries.action exceeds 80 bytes")
+        return value
+
+DesSoccerLearningJobsSpawnStrategy = Literal["latest", "elite", "mutation", "crossover", "random", "replay"]
+DesSoccerLearningJobsStatus = Literal["queued", "running", "completed", "failed", "canceled"]
+
+class DesSoccerLearningJobs(Base):
+    __tablename__ = "des_soccer_learning_jobs"
+    __table_args__ = (
+        CheckConstraint("spawn_strategy in ('latest', 'elite', 'mutation', 'crossover', 'random', 'replay')", name="des_soccer_learning_jobs_spawn_strategy_chk"),
+        CheckConstraint("status in ('queued', 'running', 'completed', 'failed', 'canceled')", name="des_soccer_learning_jobs_status_chk"),
+        CheckConstraint("seed >= 0", name="des_soccer_learning_jobs_seed_chk"),
+        CheckConstraint("attempt >= 0", name="des_soccer_learning_jobs_attempt_chk"),
+        CheckConstraint("max_attempts between 1 and 100", name="des_soccer_learning_jobs_max_attempts_chk"),
+        CheckConstraint("lease_owner is null or octet_length(lease_owner) <= 200", name="des_soccer_learning_jobs_lease_owner_size_chk"),
+        CheckConstraint("jsonb_typeof(config) = 'object'", name="des_soccer_learning_jobs_config_object_chk"),
+        CheckConstraint("jsonb_typeof(runner_config) = 'object'", name="des_soccer_learning_jobs_runner_config_object_chk"),
+        CheckConstraint("error is null or octet_length(error) <= 16384", name="des_soccer_learning_jobs_error_size_chk"),
+        Index("des_soccer_learning_jobs_claim_idx", "experiment_id", "status", text("priority desc"), "created_at", postgresql_where=text("status in ('queued', 'running')")),
+        Index("des_soccer_learning_jobs_base_policy_idx", "base_policy_version_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    base_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    spawn_strategy: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'latest'"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'queued'"))
+    priority: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("1"))
+    lease_owner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    runner_config: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    result_run_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningJobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    spawnStrategy: DesSoccerLearningJobsSpawnStrategy
+    status: DesSoccerLearningJobsStatus
+    priority: int
+    seed: int
+    attempt: int = Field(..., ge=0)
+    maxAttempts: int = Field(..., ge=1, le=100)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseExpiresAt: datetime | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    config: dict[str, Any]
+    runnerConfig: dict[str, Any]
+    resultRunId: UUID | None = None
+    error: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_jobs.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_jobs.error exceeds 16384 bytes")
+        return value
+
+class DesSoccerLearningJobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    spawnStrategy: DesSoccerLearningJobsSpawnStrategy | None = "latest"
+    status: DesSoccerLearningJobsStatus | None = "queued"
+    priority: int | None = 0
+    seed: int
+    attempt: int | None = Field(0, ge=0)
+    maxAttempts: int | None = Field(1, ge=1, le=100)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseExpiresAt: datetime | None = None
+    startedAt: datetime | None = None
+    finishedAt: datetime | None = None
+    config: dict[str, Any] | None = Field(default_factory=dict)
+    runnerConfig: dict[str, Any] | None = Field(default_factory=dict)
+    resultRunId: UUID | None = None
+    error: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_jobs.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_jobs.error exceeds 16384 bytes")
+        return value
+
+DesSoccerLearningRunsStatus = Literal["completed", "failed"]
+DesSoccerLearningRunsHomeOutcome = Literal["win", "draw", "loss"]
+DesSoccerLearningRunsAwayOutcome = Literal["win", "draw", "loss"]
+
+class DesSoccerLearningRuns(Base):
+    __tablename__ = "des_soccer_learning_runs"
+    __table_args__ = (
+        CheckConstraint("octet_length(runner_id) between 1 and 200", name="des_soccer_learning_runs_runner_id_size_chk"),
+        CheckConstraint("seed >= 0", name="des_soccer_learning_runs_seed_chk"),
+        CheckConstraint("episode_index >= 0", name="des_soccer_learning_runs_episode_index_chk"),
+        CheckConstraint("status in ('completed', 'failed')", name="des_soccer_learning_runs_status_chk"),
+        CheckConstraint("score_home >= 0 and score_away >= 0", name="des_soccer_learning_runs_scores_chk"),
+        CheckConstraint("home_outcome in ('win', 'draw', 'loss')", name="des_soccer_learning_runs_home_outcome_chk"),
+        CheckConstraint("away_outcome in ('win', 'draw', 'loss')", name="des_soccer_learning_runs_away_outcome_chk"),
+        CheckConstraint("duration_ticks >= 0", name="des_soccer_learning_runs_duration_ticks_chk"),
+        CheckConstraint("simulated_seconds_micros >= 0", name="des_soccer_learning_runs_simulated_seconds_chk"),
+        CheckConstraint("elapsed_millis >= 0", name="des_soccer_learning_runs_elapsed_millis_chk"),
+        CheckConstraint("transitions >= 0", name="des_soccer_learning_runs_transitions_chk"),
+        CheckConstraint("jsonb_typeof(summary) = 'object'", name="des_soccer_learning_runs_summary_object_chk"),
+        CheckConstraint("jsonb_typeof(stats) = 'object'", name="des_soccer_learning_runs_stats_object_chk"),
+        CheckConstraint("error is null or octet_length(error) <= 16384", name="des_soccer_learning_runs_error_size_chk"),
+        Index("des_soccer_learning_runs_experiment_idx", "experiment_id", text("created_at desc")),
+        Index("des_soccer_learning_runs_policy_fitness_idx", "base_policy_version_id", text("fitness_micros desc"), text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    job_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    base_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    output_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    runner_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    seed: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    episode_index: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'completed'"))
+    score_home: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    score_away: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    home_goal_diff: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    away_goal_diff: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    home_outcome: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'draw'"))
+    away_outcome: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'draw'"))
+    home_merge_weight_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    away_merge_weight_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    fitness_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    duration_ticks: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    simulated_seconds_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    elapsed_millis: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    transitions: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    stats: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningRunsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    jobId: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID | None = None
+    runnerId: str = Field(..., max_length=200)
+    seed: int
+    episodeIndex: int = Field(..., ge=0)
+    status: DesSoccerLearningRunsStatus
+    scoreHome: int = Field(..., ge=0)
+    scoreAway: int = Field(..., ge=0)
+    homeGoalDiff: int
+    awayGoalDiff: int
+    homeOutcome: DesSoccerLearningRunsHomeOutcome
+    awayOutcome: DesSoccerLearningRunsAwayOutcome
+    homeMergeWeightMicros: int
+    awayMergeWeightMicros: int
+    fitnessMicros: int
+    durationTicks: int
+    simulatedSecondsMicros: int
+    elapsedMillis: int
+    transitions: int = Field(..., ge=0)
+    summary: dict[str, Any]
+    stats: dict[str, Any]
+    error: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("runnerId")
+    @classmethod
+    def validate_runner_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_runs.runner_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_runs.error exceeds 16384 bytes")
+        return value
+
+class DesSoccerLearningRunsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    jobId: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID | None = None
+    runnerId: str = Field(..., max_length=200)
+    seed: int
+    episodeIndex: int | None = Field(0, ge=0)
+    status: DesSoccerLearningRunsStatus | None = "completed"
+    scoreHome: int | None = Field(0, ge=0)
+    scoreAway: int | None = Field(0, ge=0)
+    homeGoalDiff: int | None = 0
+    awayGoalDiff: int | None = 0
+    homeOutcome: DesSoccerLearningRunsHomeOutcome | None = "draw"
+    awayOutcome: DesSoccerLearningRunsAwayOutcome | None = "draw"
+    homeMergeWeightMicros: int | None = 0
+    awayMergeWeightMicros: int | None = 0
+    fitnessMicros: int | None = 0
+    durationTicks: int | None = 0
+    simulatedSecondsMicros: int | None = 0
+    elapsedMillis: int | None = 0
+    transitions: int | None = Field(0, ge=0)
+    summary: dict[str, Any] | None = Field(default_factory=dict)
+    stats: dict[str, Any] | None = Field(default_factory=dict)
+    error: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("runnerId")
+    @classmethod
+    def validate_runner_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("des_soccer_learning_runs.runner_id exceeds 200 bytes")
+        return value
+
+    @field_validator("error")
+    @classmethod
+    def validate_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 16384:
+            raise ValueError("des_soccer_learning_runs.error exceeds 16384 bytes")
+        return value
+
+DesSoccerLearningRunDeltasTeam = Literal["home", "away"]
+DesSoccerLearningRunDeltasEntryKind = Literal["action", "target"]
+
+class DesSoccerLearningRunDeltas(Base):
+    __tablename__ = "des_soccer_learning_run_deltas"
+    __table_args__ = (
+        CheckConstraint("team in ('home', 'away')", name="des_soccer_learning_run_deltas_team_chk"),
+        CheckConstraint("entry_kind in ('action', 'target')", name="des_soccer_learning_run_deltas_kind_chk"),
+        CheckConstraint("state_hash ~ '^[a-f0-9]{16,32}$'", name="des_soccer_learning_run_deltas_state_hash_chk"),
+        CheckConstraint("jsonb_typeof(state_key) = 'object'", name="des_soccer_learning_run_deltas_state_object_chk"),
+        CheckConstraint("octet_length(action) between 1 and 80", name="des_soccer_learning_run_deltas_action_size_chk"),
+        CheckConstraint("target_fine_cell_id >= -1", name="des_soccer_learning_run_deltas_target_fine_chk"),
+        CheckConstraint("target_tactical_cell_id >= -1", name="des_soccer_learning_run_deltas_target_tactical_chk"),
+        CheckConstraint("target_macro_cell_id >= -1", name="des_soccer_learning_run_deltas_target_macro_chk"),
+        CheckConstraint("target_root_cell_id >= -1", name="des_soccer_learning_run_deltas_target_root_chk"),
+        CheckConstraint("visit_delta > 0", name="des_soccer_learning_run_deltas_visit_delta_chk"),
+        CheckConstraint("merge_weight_micros >= 0", name="des_soccer_learning_run_deltas_merge_weight_chk"),
+        CheckConstraint("effective_visit_micros >= 0", name="des_soccer_learning_run_deltas_effective_visit_chk"),
+        Index("des_soccer_learning_run_deltas_key_uq", "run_id", "team", "entry_kind", "state_hash", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", unique=True),
+        Index("des_soccer_learning_run_deltas_merge_idx", "team", "entry_kind", "state_hash", "action"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    run_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    team: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    state_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    state_key: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_fine_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_tactical_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_macro_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    target_root_cell_id: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("-1"))
+    before_value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    after_value_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    value_delta_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    visit_delta: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    merge_weight_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    effective_visit_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningRunDeltasRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    runId: UUID
+    team: DesSoccerLearningRunDeltasTeam
+    entryKind: DesSoccerLearningRunDeltasEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int = Field(..., ge=-1)
+    targetTacticalCellId: int = Field(..., ge=-1)
+    targetMacroCellId: int = Field(..., ge=-1)
+    targetRootCellId: int = Field(..., ge=-1)
+    beforeValueMicros: int
+    afterValueMicros: int
+    valueDeltaMicros: int
+    visitDelta: int = Field(..., ge=1)
+    mergeWeightMicros: int
+    effectiveVisitMicros: int
+    createdAt: datetime
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_run_deltas.action exceeds 80 bytes")
+        return value
+
+class DesSoccerLearningRunDeltasInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    runId: UUID
+    team: DesSoccerLearningRunDeltasTeam
+    entryKind: DesSoccerLearningRunDeltasEntryKind
+    stateHash: str = Field(..., max_length=32, pattern="^[a-f0-9]{16,32}$")
+    stateKey: dict[str, Any]
+    action: str = Field(..., max_length=80)
+    targetFineCellId: int | None = Field(-1, ge=-1)
+    targetTacticalCellId: int | None = Field(-1, ge=-1)
+    targetMacroCellId: int | None = Field(-1, ge=-1)
+    targetRootCellId: int | None = Field(-1, ge=-1)
+    beforeValueMicros: int | None = 0
+    afterValueMicros: int | None = 0
+    valueDeltaMicros: int | None = 0
+    visitDelta: int | None = Field(0, ge=1)
+    mergeWeightMicros: int | None = 0
+    effectiveVisitMicros: int | None = 0
+    createdAt: datetime | None = None
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 80:
+            raise ValueError("des_soccer_learning_run_deltas.action exceeds 80 bytes")
+        return value
+
+DesSoccerLearningMergeEventsStrategy = Literal["outcome_weighted_average", "elite", "mutation", "crossover"]
+
+class DesSoccerLearningMergeEvents(Base):
+    __tablename__ = "des_soccer_learning_merge_events"
+    __table_args__ = (
+        CheckConstraint("strategy in ('outcome_weighted_average', 'elite', 'mutation', 'crossover')", name="des_soccer_learning_merge_events_strategy_chk"),
+        CheckConstraint("input_run_count >= 0", name="des_soccer_learning_merge_events_input_run_count_chk"),
+        CheckConstraint("input_delta_count >= 0", name="des_soccer_learning_merge_events_input_delta_count_chk"),
+        CheckConstraint("decay_micros between 0 and 1000000", name="des_soccer_learning_merge_events_decay_chk"),
+        CheckConstraint("jsonb_typeof(metrics) = 'object'", name="des_soccer_learning_merge_events_metrics_object_chk"),
+        Index("des_soccer_learning_merge_events_experiment_idx", "experiment_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    experiment_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    base_policy_version_id: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    output_policy_version_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'outcome_weighted_average'"))
+    input_run_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    input_delta_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    decay_micros: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1000000"))
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class DesSoccerLearningMergeEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID
+    strategy: DesSoccerLearningMergeEventsStrategy
+    inputRunCount: int = Field(..., ge=0)
+    inputDeltaCount: int = Field(..., ge=0)
+    decayMicros: int
+    metrics: dict[str, Any]
+    createdAt: datetime
+
+class DesSoccerLearningMergeEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    experimentId: UUID
+    basePolicyVersionId: UUID | None = None
+    outputPolicyVersionId: UUID
+    strategy: DesSoccerLearningMergeEventsStrategy | None = "outcome_weighted_average"
+    inputRunCount: int | None = Field(0, ge=0)
+    inputDeltaCount: int | None = Field(0, ge=0)
+    decayMicros: int | None = 1000000
+    metrics: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None

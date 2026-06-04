@@ -1,0 +1,163 @@
+# gcs-router: Go-based WebSocket-aware reverse proxy.
+#
+# Replaces the previous nginx-based router (see git log: "gcs-router:
+# replace nginx with Go binary"). The nginx version routed via
+# `hash $request_uri consistent` over a headless-service upstream,
+# but NGINX OSS only resolves the upstream hostname ONCE at startup
+# and picks a single A record — so `hash` was a no-op (one peer) and
+# scaling gcs broke routing (the chosen pod could become stale).
+#
+# The Go binary:
+#   - watches EndpointSlices for gcs-headless via the k8s API
+#   - maintains a SHA-256 ketama ring over live pod IPs
+#   - routes /conv/<id> via consistent hash, everything else via
+#     least-connections
+#   - sets X-Gcs-Pool and X-Gcs-Upstream response headers
+#   - exposes /healthz on :3001 and /metrics on :9100
+#
+# Build model matches gcs.deployment.yaml: a golang base image mounts
+# /home/ec2-user/codes/dd/chat.vibe via hostPath and runs `go build`
+# against src/gcs-router/ on first start, then execs the binary.
+# Subsequent restarts skip the build (binary cached in /tmp).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcs-router
+  namespace: default
+  labels:
+    app: gcs-router
+spec:
+  # gcs-router is stateless; keep one router per gcs pod during load
+  # tests so 20k upgrades do not bottleneck on two half-core proxies.
+  replicas: 3
+  strategy:
+    # Single-node CPU-bound cluster: surge=0 to avoid Pending pods
+    # blocking the rollout. Brief downtime is acceptable for the
+    # router (clients reconnect; dd-remote-gateway will buffer).
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: gcs-router
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
+      labels:
+        app: gcs-router
+    spec:
+      serviceAccountName: gcs-router
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gcs-router
+          image: docker.io/library/golang:1.24-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export HOME=/tmp
+              export GO111MODULE=on
+              export GOPROXY=https://proxy.golang.org,direct
+              export GOSUMDB=off
+              export GOCACHE=/tmp/go-build
+              export GOMODCACHE=/tmp/go-mod
+
+              SRC=/opt/chat-vibe-src
+              WORK=/tmp/chat.vibe
+              BIN=/tmp/gcs-router
+
+              if [ ! -x "$BIN" ]; then
+                rm -rf "$WORK"
+                mkdir -p "$WORK" "$GOCACHE" "$GOMODCACHE"
+                cp -R --no-preserve=mode,ownership,timestamps "$SRC"/. "$WORK"/
+                cd "$WORK"
+                grep -v "^replace" go.mod > go.mod.tmp
+                mv go.mod.tmp go.mod
+                /usr/local/go/bin/go mod download
+                /usr/local/go/bin/go build -trimpath -ldflags="-s -w" -o "$BIN" "$PWD/src/gcs-router"
+              fi
+
+              exec "$BIN" \
+                --listen-addr=:3001 \
+                --metrics-addr=:9100 \
+                --namespace=default \
+                --service=gcs-headless \
+                --upstream-port=3001 \
+                --vnodes=160 \
+                --connect-timeout=15s \
+                --ws-idle-timeout=4h \
+                --max-active-conns=12000
+          ports:
+            - name: ws
+              containerPort: 3001
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              # 2Gi covers the initial `go build` (heavy peak), then steady
+              # state is well under 64Mi. 256Mi was OOMKilled mid-build.
+              cpu: "2"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            periodSeconds: 2
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ws
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - 'kill -TERM 1 || true; sleep 5'
+          volumeMounts:
+            - name: chat-vibe-src
+              mountPath: /opt/chat-vibe-src
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: chat-vibe-src
+          hostPath:
+            # See gcs.deployment.yaml for the rationale. chat.vibe is
+            # a submodule at remote/deployments/gcs/chat-vibe; on the EC2 host
+            # the repo is cloned at /home/ec2-user/codes/dd/dd-next-1.
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gcs/chat-vibe
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

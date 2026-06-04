@@ -1,0 +1,263 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-dart-server
+  namespace: default
+  labels:
+    app: dd-dart-server
+spec:
+  # Single-pod horizontal sharding via in-process gateway-shard
+  # isolates (see gateway_isolate.dart). The pod runs:
+  #
+  #   * 1 coordinator (main isolate) — admin port 8088 (/metrics,
+  #     /healthz, /readyz, /dart/admin/*), aggregates per-shard
+  #     metrics + gauges, owns pgPool/hotReloader.
+  #   * 1 HTTP isolate — port 8090 (Jaspr SSR, Flutter SPA, assets).
+  #   * N gateway-shard isolates — port 8089 bound `shared: true`,
+  #     SO_REUSEPORT distributes new WS connections across the pool.
+  #     Each shard owns its sockets through the full WS lifecycle
+  #     (accept → upgrade → frame I/O → close) and runs its own
+  #     EventBus / Presence / ConversationRegistry / SessionSupervisor
+  #     + child host pool. Sized via `WS_GATEWAY_SHARDS`.
+  replicas: 1
+  # Sequential rolling update: bring one pod down, one up, repeat.
+  # The single-node EC2 cluster has limited spare capacity, so we
+  # avoid surging extra replicas during deploys.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-dart-server
+  template:
+    metadata:
+      labels:
+        app: dd-dart-server
+      annotations:
+        dd.dev/code-revision: '2026-05-23-30k-target-1000-sessions-per-host'
+        # Bump when the Prometheus exposition / scrape contract changes so
+        # reloader-style tooling can correlate dashboards with the running
+        # build. This revision adds the MDP isolate-pool autotuner metrics
+        # and the WS adopt / first-frame latency histograms, plus the joint
+        # pool-size × host-density action and its target-density gauges.
+        dd.dev/telemetry-revision: '2026-05-31-mdp-pool-autotuner-density'
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: dart-server
+          # Pre-built multi-stage image (see ../../Dockerfile). Built on the
+          # EC2 host with:
+          #   docker build \
+          #     -f remote/deployments/dart-server/Dockerfile \
+          #     -t dd-dart-server:dev \
+          #     .
+          # All Flutter and Dart compilation happens at image-build time, so
+          # the pod only runs the AOT-compiled `dd-dart-server` binary and
+          # serves the pre-built Flutter SPA + mobile bundles. This matches
+          # the dd-formal-methods-server / dd-remote-web-home pattern.
+          image: docker.io/library/dd-dart-server:dev
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HTTP_HOST
+              value: 0.0.0.0
+            # WS gateway port. Each gateway-shard isolate binds this
+            # port with `shared: true`; the kernel SO_REUSEPORT hash
+            # distributes incoming connections across the shard pool.
+            - name: HTTP_PORT
+              value: '8089'
+            # Internal port for the dedicated HTTP isolate (Jaspr SSR,
+            # Flutter SPAs, assets). Keep this in sync with the `http`
+            # port on the Service and the ingress route for non-WS
+            # /dart/* paths.
+            - name: HTTP_INTERNAL_PORT
+              value: '8090'
+            # Coordinator (main isolate) admin + probes + /metrics +
+            # /dart/admin/*. Keep in sync with the `admin` port on the
+            # Service and with the probes below.
+            - name: ADMIN_PORT
+              value: '8088'
+            - name: STATIC_DIR
+              value: /opt/dd-dart-server/public
+            - name: MOBILE_STATIC_DIR
+              value: /opt/dd-dart-server/mobile-public
+            - name: READY_AT_BOOT
+              value: 'true'
+            # Number of WS gateway-shard isolates. Each shard runs its
+            # own accept + WS upgrade + frame I/O event loop and owns
+            # its own SessionSupervisor + child host pool. 8 is a
+            # comfortable default for 4-vCPU pods carrying ~10K
+            # connections; bump to 16–32 for 20K+. Range 1..256.
+            - name: WS_GATEWAY_SHARDS
+              value: '16'
+            # Sessions per session-host isolate (per shard). Each shard
+            # lazily spawns ceil(shard_connections / SESSIONS_PER_HOST)
+            # host isolates. Range 1..2000. 1000 is what the 30K
+            # benchmark uses: 8 shards × ~3.75 hosts × 1000 sessions
+            # ≈ 30K with ~30 host isolates total (vs ~150 at 200/host).
+            - name: SESSIONS_PER_HOST
+              value: '1000'
+            # Hard idle disconnect: a session that hasn't received an
+            # inbound frame for this long emits a 4001 `idle_timeout`
+            # close. 1200 = 20 min. Set to 0 to disable.
+            - name: WS_IDLE_TIMEOUT_SECONDS
+              value: '1200'
+            # Age-based eviction: sessions older than WS_MAX_AGE_SECONDS
+            # AND idle for at least WS_AGE_BASED_IDLE_SECONDS get
+            # force-closed (4003 `session_aged`). Lets old shards drain
+            # naturally over time. 10800 = 3 h, 30 s idle. 0 disables.
+            - name: WS_MAX_AGE_SECONDS
+              value: '10800'
+            - name: WS_AGE_BASED_IDLE_SECONDS
+              value: '30'
+            # Per-session Clock OOB swap interval. At 20K connections a
+            # 1 s clock would be ~20 cores of jaspr render work; we
+            # default to 5 s so the loader's RECEIVE_TIMEOUT can stay
+            # well under one minute and the server stays comfortable.
+            # Set to 0 to disable the visible clock entirely.
+            - name: WS_CLOCK_INTERVAL_SECONDS
+              value: '5'
+            # Pure-connection benchmark mode: disables the bus.register
+            # / presence.bind path on adopt and skips system-topic
+            # broadcasts (presence.session_joined / session_left). Cuts
+            # the O(N²) bus fanout that otherwise dominates CPU once
+            # live sessions exceed ~10K. Set to `false` for normal app
+            # traffic; `true` while running the 20K WS benchmark.
+            - name: WS_BENCHMARK_MODE
+              value: 'true'
+            # Hardening knobs (see lib/server/session_supervisor.dart):
+            #   * frame size cap — kills 1009 (`message too big`).
+            #   * outbound rate cap — kills 1011 slow-client.
+            - name: WS_MAX_INBOUND_BYTES
+              value: '65536'
+            - name: WS_MAX_OUTBOUND_RATE_PER_SECOND
+              value: '200'
+            - name: WS_SLOW_CLIENT_WINDOWS
+              value: '5'
+            # How often each shard pushes a gauge snapshot to the
+            # coordinator for /metrics aggregation. 1 s is plenty fresh
+            # and the inter-isolate traffic stays trivial.
+            - name: WS_GAUGE_REPORT_INTERVAL_MS
+              value: '1000'
+            # SIGTERM grace: coordinator broadcasts ShardShutdown,
+            # waits for sessions to drain. Pod's
+            # terminationGracePeriodSeconds is 30; reserve 5 s for the
+            # kubelet to deliver SIGKILL after the drain budget.
+            - name: SHUTDOWN_GRACE_SECONDS
+              value: '25'
+            # ---- MDP isolate-pool autotuner --------------------------------
+            # Learns how to size + pack the session-host isolate pool,
+            # online, from live telemetry (p99 adopt/first-frame latency,
+            # cold-start + capacity-refusal pressure, idle-host waste). Each
+            # control tick it jointly picks a pod-wide host-isolate target
+            # from WS_POOL_SIZE_LEVELS AND a per-host density from
+            # WS_HOST_DENSITY_LEVELS, then pre-warms / retires hosts and
+            # retunes the per-host cap toward that decision off the hot path.
+            #
+            #   off    — legacy lazy-spawn-only behaviour (default; identical
+            #            to pre-autotuner builds).
+            #   local  — in-process tabular Q-learner (zero external deps).
+            #   remote — delegate to dd-mdp-optimizer, fall back to a held
+            #            setpoint when it is unreachable.
+            #
+            # Flip to `local` to run the joint size × density experiment.
+            - name: WS_MDP_MODE
+              value: 'local'
+            # Discrete host-isolate ladder the autotuner chooses between
+            # (pod-wide, summed across shards). These are the four levels we
+            # A/B/n across on the way to 50K connections.
+            - name: WS_POOL_SIZE_LEVELS
+              value: '20,30,40,50'
+            # Second experiment: discrete per-host *density* ladder
+            # (sessionsPerHost caps) the autotuner jointly tunes with pool
+            # size. The learner explores the full size × density grid (e.g.
+            # "40 hosts × 250/host" vs "20 hosts × 1000/host") to find the
+            # cheapest packing that holds the offered load at low tail
+            # latency. Set to a single value (e.g. '1000') to pin density and
+            # run the pool-size-only experiment. The live cap is published as
+            # `dart_sessions_per_host_cap`; the chosen target as
+            # `dart_pool_target_density`.
+            - name: WS_HOST_DENSITY_LEVELS
+              value: '100,250,500,1000'
+            # Control-loop cadence: read telemetry, decide, broadcast a
+            # per-shard ShardPoolDirective.
+            - name: WS_MDP_CONTROL_INTERVAL_MS
+              value: '5000'
+            # Warm floor: hosts kept alive per shard even at the lowest
+            # target, so the first connections after an idle trough skip the
+            # cold-start spawn.
+            - name: WS_POOL_MIN_WARM_HOSTS
+              value: '1'
+            # Hard per-shard host ceiling. 0 = unbounded. Defaults (when
+            # unset) to ceil(max_level / shards) + 2. At the ceiling a full
+            # pool sheds new connections (1013) instead of forking past it.
+            - name: WS_POOL_MAX_HOSTS_PER_SHARD
+              value: '0'
+            # Idle dwell before an empty host may be retired (anti-thrash).
+            - name: WS_POOL_RETIRE_COOLDOWN_MS
+              value: '15000'
+            # dd-mdp-optimizer endpoint used only when WS_MDP_MODE=remote.
+            - name: WS_MDP_OPTIMIZER_URL
+              value: 'http://dd-mdp-optimizer.default.svc.cluster.local:8096'
+          ports:
+            - name: admin
+              containerPort: 8088
+            - name: ws
+              containerPort: 8089
+            - name: http
+              containerPort: 8090
+          # All three probes hit the dedicated HTTP isolate (port `http`,
+          # 8090). The gateway isolate (port `ws`, 8089) can be heavily
+          # loaded by WebSocket pumps under stress; the HTTP isolate is
+          # a separate event loop that should always respond promptly,
+          # which is exactly what we want from a probe authority.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Single pod, but ~110 isolates inside it (1 coordinator + 1
+          # HTTP + 16 gateway shards + ~60 child hosts at 50K conns),
+          # plus jaspr render fan-out at WS_CLOCK_INTERVAL_SECONDS
+          # cadence. Request 2 vCPU / 2 Gi steady-state and let it
+          # burst up to 10 cores / 12 Gi during peak load. Load-tested to
+          # 50K concurrent WS at 2 msg/s/client using ~7.3 cores / 2.3 Gi,
+          # so 10 cores leaves headroom and 12 Gi is well above the <6 GB
+          # target. The hot-path ceiling scales with WS_GATEWAY_SHARDS
+          # (16 shards cleared the ~39K cliff seen at 8 shards).
+          resources:
+            requests:
+              cpu: '2'
+              memory: 2Gi
+            limits:
+              cpu: '10'
+              memory: 12Gi

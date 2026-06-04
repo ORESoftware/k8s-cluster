@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/rest-api-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/rest-api-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -20,31 +20,86 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
-test('rest api publishes successful direct dispatches to the nats shadow queue', async () => {
-  const cargo = await readRepoFile('remote/rest-api-rs/Cargo.toml');
-  const server = await readRepoFile('remote/rest-api-rs/src/main.rs');
+test('rest api publishes queued handoffs while preserving direct worker dispatch', async () => {
+  const cargo = await readRepoFile('remote/deployments/rest-api-rs/Cargo.toml');
+  const server = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
 
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
-  assert.match(server, /struct NatsTaskMessage/);
+  // The rest-api-rs deployment must source its NATS subjects from the
+  // @dd/nats-subject-defs generated crate so any rename in the JSON Schema
+  // breaks the build here instead of silently producing the wrong subject.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    server,
+    /use dd_nats_subject_defs::\{[\s\S]*?cdc_table_filter_subject[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
+  );
+  assert.match(server, /use dd_shared_interfaces::AgentTaskQueueMessage/);
+  assert.match(server, /let message = AgentTaskQueueMessage \{/);
+  assert.match(server, /dispatch_mode: Some\(dispatch_mode\)/);
+  assert.match(server, /container_pool_dispatch: Some\(container_pool_dispatch\)/);
+  assert.match(server, /thread_title: Option<String>/);
   assert.match(server, /fn nats_task_subject/);
-  assert.match(server, /dd\.remote\.thread\.\{thread_id\}\.tasks/);
+  assert.match(server, /thread_tasks_subject\(thread_id\)/);
   assert.match(server, /fn nats_task_stream_name/);
-  assert.match(server, /DD_REMOTE_TASKS/);
+  assert.match(server, /DD_REMOTE_TASKS_STREAM_NAME/);
+  assert.match(server, /THREAD_TASKS_WILDCARD/);
   assert.match(server, /ensure_nats_task_stream/);
   assert.match(server, /jetstream_publish_task/);
   assert.match(server, /RetentionPolicy::WorkQueue/);
   assert.match(server, /fn nats_wakeup_subject/);
-  assert.match(server, /dd\.remote\.orchestrator\.wakeup/);
-  assert.match(server, /message_kind: "task\.shadow"/);
-  assert.match(server, /shadow: true/);
-  assert.match(server, /direct_dispatch: true/);
-  assert.match(server, /publish_task_shadow_to_nats\(&request, branch\.as_deref\(\)\)/);
+  assert.match(server, /ORCHESTRATOR_WAKEUP_SUBJECT/);
+  assert.match(server, /fn nats_event_subject/);
+  assert.match(server, /RUNTIME_EVENTS_SUBJECT/);
+  assert.match(
+    server,
+    /cdc_table_filter_subject\("cdc", "public", "lambda_functions"\)/,
+  );
+  assert.match(
+    server,
+    /cdc_table_filter_subject\("cdc", "public", "known_git_repos"\)/,
+  );
+  assert.match(
+    server,
+    /cdc_table_filter_subject\("cdc", "public", "agent_remote_dev_events"\)/,
+  );
+  assert.match(server, /persist_task_status_event/);
+  assert.match(server, /publish_task_event_to_nats/);
+  assert.match(server, /queued-dispatch-accepted/);
+  assert.match(server, /"stage": "nats-published"/);
+  assert.match(server, /"dispatchMode": &message\.dispatch_mode/);
+  assert.match(server, /"containerPoolDispatch": message\.container_pool_dispatch/);
+  assert.match(server, /on conflict \(task_id, seq\) do update set/);
+  assert.match(server, /publish_task_dispatch_to_nats/);
+  assert.match(server, /container_pool_dispatch/);
+  assert.match(server, /publish_task_to_nats\(request, branch, "task\.dispatch", false\)\.await/);
+  assert.match(server, /fn default_dispatch_mode/);
+  assert.match(server, /REST_API_DEFAULT_DISPATCH_MODE/);
+  assert.match(server, /unwrap_or_else\(\|\| "queued"\.to_string\(\)\)/);
+  assert.match(server, /fn is_container_pool_dispatch_mode/);
+  assert.match(server, /"queued" \| "nats" \| "async" \| "queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(server, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(server, /plain_queued_modes_use_uuid_bound_worker_queue/);
+  assert.match(server, /publish_task_dispatch_to_nats\(&request, None\)\.await/);
+  assert.match(server, /"directDispatch": false/);
+  assert.match(server, /"task\.dispatch"/);
+  assert.match(server, /dispatch_mode/);
+  assert.match(server, /"stage": "nats-publish-failed"/);
+  assert.match(server, /requestedDispatchMode/);
+  assert.match(server, /thread_title: repo_config\.thread_title\.clone\(\)/);
+  assert.ok(
+    server.indexOf('publish_task_dispatch_to_nats(&request, None).await')
+      < server.indexOf('let Ok((namespace, name, _results)) = ensure_thread_worker('),
+    'queued NATS publish must happen before the synchronous worker wake path',
+  );
+  assert.match(server, /shadow: Some\(shadow\)/);
+  assert.match(server, /direct_dispatch: Some\(false\)/);
+  assert.match(server, /reqwest::Client::builder\(\)[\s\S]*\.timeout\(std::time::Duration::from_secs\(2\)\)/);
   assert.match(server, /Duration::from_secs\(2\)/);
 });
 
 test('queue consumer is deployed and prepares deterministic thread workers', async () => {
-  const cargo = await readRepoFile('remote/queue-consumer-rs/Cargo.toml');
-  const consumer = await readRepoFile('remote/queue-consumer-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/queue-consumer-rs/Cargo.toml');
+  const consumer = await readRepoFile('remote/deployments/queue-consumer-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml',
   );
@@ -54,6 +109,13 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   const kustomization = await readRepoFile('remote/argocd/dd-next-runtime/kustomization.yaml');
 
   assert.match(cargo, /name\s*=\s*"dd-remote-queue-consumer"/);
+  // The queue consumer must source its NATS subject/stream/queue-group from
+  // the @dd/nats-subject-defs generated crate, matching the producer side.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    consumer,
+    /use dd_nats_subject_defs::\{[\s\S]*?DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?RUNTIME_CRITICAL_EVENTS_QUEUE_GROUP[\s\S]*?RUNTIME_CRITICAL_EVENTS_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_PREPARER_QUEUE_GROUP[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
+  );
   assert.match(consumer, /build_jetstream_consumer/);
   assert.match(consumer, /get_or_create_stream/);
   assert.match(consumer, /get_or_create_consumer/);
@@ -62,19 +124,73 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /AckKind::Nak\(Some/);
   assert.match(consumer, /api\/agents\/threads\/\{thread_id\}\/prepare/);
   assert.match(consumer, /X-Agent-Auth/);
-  assert.match(consumer, /dd\.remote\.thread\.\*\.tasks/);
-  assert.match(consumer, /DD_REMOTE_TASKS/);
+  assert.match(consumer, /THREAD_TASKS_WILDCARD/);
+  assert.match(consumer, /THREAD_PREPARER_QUEUE_GROUP/);
+  assert.match(consumer, /DD_REMOTE_TASKS_STREAM_NAME/);
   assert.match(consumer, /QUEUE_CONSUMER_RECEIPTS_DIR/);
+  assert.match(consumer, /CONTAINER_POOL_BASE_URL/);
+  assert.match(consumer, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH/);
+  assert.match(consumer, /fn env_bool/);
+  assert.match(consumer, /type QueueTaskMessage = AgentTaskQueueMessage/);
+  assert.match(consumer, /task\.dispatch_mode/);
+  assert.match(consumer, /task\.container_pool_dispatch/);
+  assert.match(consumer, /should_dispatch_to_container_pool/);
+  assert.match(consumer, /"queued-pool" \| "nats-pool" \| "container-pool" \| "pool"/);
+  assert.match(consumer, /dispatch_to_container_pool/);
+  assert.match(consumer, /dispatch_to_deterministic_worker/);
+  assert.match(consumer, /dispatch_to_rest_api/);
+  assert.match(consumer, /repo_pool_slug/);
+  assert.match(consumer, /nodejs-chat-claude-/);
+  assert.match(consumer, /"affinityKey": &task\.thread_id/);
+  assert.match(consumer, /"freshAffinity": true/);
   assert.match(consumer, /HashSet/);
   assert.match(consumer, /has_task_receipt/);
   assert.match(consumer, /write_task_receipt/);
-  assert.match(consumer, /queue task skipped duplicate/);
+  assert.match(consumer, /queue-task-skipped-duplicate/);
+  assert.match(consumer, /emit_queue_status_event/);
+  assert.match(consumer, /persist_queue_status_event/);
+  assert.match(consumer, /publish_queue_status_event/);
+  assert.match(consumer, /RUNTIME_EVENTS_SUBJECT/);
+  assert.match(consumer, /RUNTIME_CRITICAL_EVENTS_SUBJECT/);
+  assert.match(consumer, /DD_REMOTE_CRITICAL_EVENTS_STREAM_NAME/);
+  assert.match(consumer, /run_critical_event_logger/);
+  assert.match(consumer, /runtime-critical-event-received/);
+  assert.match(consumer, /critical-event-ack-failed/);
+  assert.match(consumer, /queue-received/);
+  assert.match(consumer, /direct-dispatch-observed/);
+  assert.match(consumer, /Synchronous REST dispatch owns worker creation and task execution/);
+  assert.match(consumer, /shadow-prepare-failed/);
+  assert.match(consumer, /original task dispatch already owns execution/);
+  assert.match(consumer, /if direct_dispatch \{[\s\S]*Ok\(\(\)\)[\s\S]*\} else if shadow \{[\s\S]*prepare_thread\(&http, &rest_api_url, &secret, &task\.thread_id\)\.await[\s\S]*\} else if !container_pool_dispatch \{/);
+  assert.match(consumer, /deterministic-worker-dispatch/);
+  assert.match(consumer, /without container-pool/);
+  assert.match(consumer, /deterministic-worker-accepted/);
+  assert.match(consumer, /deterministic-worker-failed/);
+  assert.match(consumer, /container-pool-dispatch/);
+  assert.match(consumer, /let pool = task[\s\S]*repo_pool_slug\(repo, task\.base_branch\.as_deref\(\)\.unwrap_or\("dev"\)\)/);
+  assert.match(consumer, /match dispatch_to_container_pool\(&http, &container_pool_url, &secret, &task\)\.await/);
+  assert.match(consumer, /container-pool-failed/);
+  assert.match(consumer, /rest-fallback-dispatch/);
+  assert.match(consumer, /prepare_thread\(http, rest_api_url, secret, &task\.thread_id\)\.await\?/);
+  assert.match(consumer, /dispatch_to_rest_api\(http, rest_api_url, secret, task\)\.await/);
+  assert.match(consumer, /"dispatchMode": "direct"/);
+  assert.match(consumer, /rest-fallback-accepted/);
+  assert.match(consumer, /rest-fallback-failed/);
+  assert.match(consumer, /"affinityKey": &task\.thread_id/);
+  assert.match(consumer, /queue-handoff-ok/);
+  assert.match(consumer, /queue-acked/);
   assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);
   assert.match(deployment, /name:\s*dd-remote-queue-consumer/);
   assert.match(deployment, /NATS_QUEUE_GROUP[\s\S]*dd-remote-thread-preparer/);
   assert.match(deployment, /NATS_TASK_STREAM[\s\S]*DD_REMOTE_TASKS/);
   assert.match(deployment, /NATS_TASK_CONSUMER[\s\S]*dd-remote-thread-preparer/);
+  assert.match(deployment, /NATS_CRITICAL_EVENT_STREAM[\s\S]*DD_REMOTE_CRITICAL_EVENTS/);
+  assert.match(deployment, /NATS_CRITICAL_EVENT_CONSUMER[\s\S]*dd-runtime-critical-events/);
+  assert.match(deployment, /QUEUE_CONSUMER_CRITICAL_EVENT_LOGGER[\s\S]*'true'/);
+  assert.match(deployment, /NATS_TASK_ACK_WAIT_SECONDS[\s\S]*'600'/);
   assert.match(deployment, /NATS_TASK_NAK_DELAY_SECONDS[\s\S]*'15'/);
+  assert.match(deployment, /QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS[\s\S]*value:\s*'420'/);
+  assert.match(deployment, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH[\s\S]*value:\s*'true'/);
   assert.match(deployment, /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/);
   assert.match(
     deployment,
@@ -83,6 +199,10 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(
     deployment,
     /REMOTE_REST_API_URL[\s\S]*dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+  );
+  assert.match(
+    deployment,
+    /CONTAINER_POOL_BASE_URL[\s\S]*dd-container-pool\.default\.svc\.cluster\.local:8102/,
   );
   assert.match(
     deployment,
@@ -110,8 +230,8 @@ test('keda is declared for event-driven queue consumer scaling', async () => {
 });
 
 test('rest api exposes an internal prepare route for queue warmup', async () => {
-  const server = await readRepoFile('remote/rest-api-rs/src/main.rs');
-  const readme = await readRepoFile('remote/rest-api-rs/readme.md');
+  const server = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
 
   assert.match(server, /async fn prepare_thread/);
   assert.match(server, /authorized_internal_request/);
@@ -141,6 +261,7 @@ test('runtime deployments avoid routing to half-started rust services', async ()
   assert.match(restDeployment, /readinessProbe:[\s\S]*path: \/healthz/);
   assert.match(restDeployment, /livenessProbe:[\s\S]*path: \/healthz/);
   assert.match(restDeployment, /NATS_TASK_STREAM[\s\S]*DD_REMOTE_TASKS/);
+  assert.match(restDeployment, /REST_API_DEFAULT_DISPATCH_MODE[\s\S]*queued/);
   assert.match(
     consumerDeployment,
     /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/,

@@ -499,6 +499,196 @@ pub fn validate_known_git_repos_insert(value: &KnownGitRepoInsert) -> Result<(),
     Ok(())
 }
 
+pub const AGENT_CONTEXT_BLOBS_TABLE: &str = "agent_context_blobs";
+pub const AGENT_CONTEXT_BLOBS_COLUMNS: &[&str] = &["id", "project_id", "repo_id", "context_id", "context_title", "context_blob", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const AGENT_CONTEXT_BLOBS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      project_id,
+      repo_id::text as repo_id,
+      context_id,
+      context_title,
+      context_blob,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from agent_context_blobs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentContextBlobsStatus {
+    Active,
+    Paused,
+    Archived,
+}
+
+impl AgentContextBlobsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for AgentContextBlobsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextBlobsRow {
+    pub id: String,
+    pub project_id: String,
+    pub repo_id: Option<String>,
+    pub context_id: String,
+    pub context_title: String,
+    pub context_blob: String,
+    pub status: String,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextBlobsInsert {
+    pub id: Option<String>,
+    pub project_id: Option<String>,
+    pub repo_id: Option<String>,
+    pub context_id: Option<String>,
+    pub context_title: Option<String>,
+    pub context_blob: Option<String>,
+    pub status: Option<String>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_agent_context_blobs_row(value: &AgentContextBlobsRow) -> Result<(), String> {
+    validate_string_length("agent_context_blobs.project_id", &value.project_id, None, Some(120))?;
+    validate_string_length("agent_context_blobs.context_id", &value.context_id, None, Some(200))?;
+    validate_string_length("agent_context_blobs.context_title", &value.context_title, None, Some(300))?;
+    if (&value.context_title).as_bytes().len() > 300 { return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string()); }
+    if (&value.context_blob).as_bytes().len() > 1048576 { return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string()); }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported agent_context_blobs.status: {}", &value.status)); }
+    if !(&value.labels).is_array() { return Err("agent_context_blobs.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("agent_context_blobs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_agent_context_blobs_insert(value: &AgentContextBlobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.project_id {
+        validate_string_length("agent_context_blobs.project_id", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.context_id {
+        validate_string_length("agent_context_blobs.context_id", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.context_title {
+        validate_string_length("agent_context_blobs.context_title", value, None, Some(300))?;
+        if (value).as_bytes().len() > 300 { return Err("agent_context_blobs.context_title exceeds 300 bytes".to_string()); }
+    }
+    if let Some(value) = &value.context_blob {
+        if (value).as_bytes().len() > 1048576 { return Err("agent_context_blobs.context_blob exceeds 1048576 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported agent_context_blobs.status: {}", value)); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("agent_context_blobs.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("agent_context_blobs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const AGENT_CONTEXT_EMBEDDINGS_TABLE: &str = "agent_context_embeddings";
+pub const AGENT_CONTEXT_EMBEDDINGS_COLUMNS: &[&str] = &["id", "context_blob_id", "embedding_model", "embedding", "embedding_dimensions", "content_sha256", "created_at"];
+pub const AGENT_CONTEXT_EMBEDDINGS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      context_blob_id::text as context_blob_id,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      content_sha256,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from agent_context_embeddings"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextEmbeddingsRow {
+    pub id: String,
+    pub context_blob_id: String,
+    pub embedding_model: String,
+    pub embedding: Value,
+    pub embedding_dimensions: i32,
+    pub content_sha256: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContextEmbeddingsInsert {
+    pub id: Option<String>,
+    pub context_blob_id: Option<String>,
+    pub embedding_model: Option<String>,
+    pub embedding: Option<Value>,
+    pub embedding_dimensions: Option<i32>,
+    pub content_sha256: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_agent_context_embeddings_row(value: &AgentContextEmbeddingsRow) -> Result<(), String> {
+    validate_string_length("agent_context_embeddings.embedding_model", &value.embedding_model, None, Some(120))?;
+    if !(&value.embedding).is_array() { return Err("agent_context_embeddings.embedding must be a JSON array".to_string()); }
+    if *(&value.embedding_dimensions) < 1 { return Err("agent_context_embeddings.embedding_dimensions is below the minimum".to_string()); }
+    validate_string_length("agent_context_embeddings.content_sha256", &value.content_sha256, None, Some(64))?;
+    Ok(())
+}
+
+pub fn validate_agent_context_embeddings_insert(value: &AgentContextEmbeddingsInsert) -> Result<(), String> {
+    if let Some(value) = &value.embedding_model {
+        validate_string_length("agent_context_embeddings.embedding_model", value, None, Some(120))?;
+    }
+    if let Some(value) = &value.embedding {
+        if !(value).is_array() { return Err("agent_context_embeddings.embedding must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.embedding_dimensions {
+        if *(value) < 1 { return Err("agent_context_embeddings.embedding_dimensions is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.content_sha256 {
+        validate_string_length("agent_context_embeddings.content_sha256", value, None, Some(64))?;
+    }
+    Ok(())
+}
+
 pub const AGENT_REMOTE_DEV_THREADS_TABLE: &str = "agent_remote_dev_threads";
 pub const AGENT_REMOTE_DEV_THREADS_COLUMNS: &[&str] = &["id", "user_id", "known_git_repo_id", "title", "repo", "base_branch", "meta", "archived_at", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const AGENT_REMOTE_DEV_THREADS_SELECT_SQL: &str = r###"select
@@ -822,10 +1012,11 @@ pub fn validate_agent_remote_dev_tasks_insert(value: &AgentRemoteDevTaskInsert) 
 }
 
 pub const AGENT_REMOTE_DEV_EVENTS_TABLE: &str = "agent_remote_dev_events";
-pub const AGENT_REMOTE_DEV_EVENTS_COLUMNS: &[&str] = &["id", "task_id", "seq", "event_kind", "payload", "created_at"];
+pub const AGENT_REMOTE_DEV_EVENTS_COLUMNS: &[&str] = &["id", "task_id", "thread_id", "seq", "event_kind", "payload", "created_at"];
 pub const AGENT_REMOTE_DEV_EVENTS_SELECT_SQL: &str = r###"select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload,
@@ -838,6 +1029,7 @@ pub const AGENT_REMOTE_DEV_EVENTS_SELECT_SQL: &str = r###"select
 pub struct AgentRemoteDevEventRow {
     pub id: i64,
     pub task_id: String,
+    pub thread_id: Option<String>,
     pub seq: i32,
     pub event_kind: String,
     pub payload: Value,
@@ -849,6 +1041,7 @@ pub struct AgentRemoteDevEventRow {
 pub struct AgentRemoteDevEventInsert {
     pub id: Option<i64>,
     pub task_id: Option<String>,
+    pub thread_id: Option<String>,
     pub seq: Option<i32>,
     pub event_kind: Option<String>,
     pub payload: Option<Value>,
@@ -867,6 +1060,89 @@ pub fn validate_agent_remote_dev_events_insert(value: &AgentRemoteDevEventInsert
     }
     if let Some(value) = &value.payload {
         if !(value).is_object() { return Err("agent_remote_dev_events.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const AGENT_REMOTE_DEV_BREADCRUMBS_TABLE: &str = "agent_remote_dev_breadcrumbs";
+pub const AGENT_REMOTE_DEV_BREADCRUMBS_COLUMNS: &[&str] = &["id", "thread_id", "task_id", "kind", "payload", "emitted_at", "pod_name", "branch", "provider"];
+pub const AGENT_REMOTE_DEV_BREADCRUMBS_SELECT_SQL: &str = r###"select
+      id,
+      thread_id::text as thread_id,
+      task_id::text as task_id,
+      kind,
+      payload,
+      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+      pod_name,
+      branch,
+      provider
+    from agent_remote_dev_breadcrumbs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRemoteDevBreadcrumbRow {
+    pub id: i64,
+    pub thread_id: String,
+    pub task_id: Option<String>,
+    pub kind: String,
+    pub payload: Value,
+    pub emitted_at: String,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRemoteDevBreadcrumbInsert {
+    pub id: Option<i64>,
+    pub thread_id: Option<String>,
+    pub task_id: Option<String>,
+    pub kind: Option<String>,
+    pub payload: Option<Value>,
+    pub emitted_at: Option<String>,
+    pub pod_name: Option<String>,
+    pub branch: Option<String>,
+    pub provider: Option<String>,
+}
+
+pub fn validate_agent_remote_dev_breadcrumbs_row(value: &AgentRemoteDevBreadcrumbRow) -> Result<(), String> {
+    validate_string_length("agent_remote_dev_breadcrumbs.kind", &value.kind, Some(1), Some(80))?;
+    if !(&value.payload).is_object() { return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string()); }
+    if let Some(value) = &value.pod_name {
+        validate_string_length("agent_remote_dev_breadcrumbs.pod_name", value, None, Some(253))?;
+        if (value).as_bytes().len() > 253 { return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string()); }
+    }
+    if let Some(value) = &value.branch {
+        validate_string_length("agent_remote_dev_breadcrumbs.branch", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider {
+        validate_string_length("agent_remote_dev_breadcrumbs.provider", value, None, Some(60))?;
+        if (value).as_bytes().len() > 60 { return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_agent_remote_dev_breadcrumbs_insert(value: &AgentRemoteDevBreadcrumbInsert) -> Result<(), String> {
+    if let Some(value) = &value.kind {
+        validate_string_length("agent_remote_dev_breadcrumbs.kind", value, Some(1), Some(80))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("agent_remote_dev_breadcrumbs.payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.pod_name {
+        validate_string_length("agent_remote_dev_breadcrumbs.pod_name", value, None, Some(253))?;
+        if (value).as_bytes().len() > 253 { return Err("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes".to_string()); }
+    }
+    if let Some(value) = &value.branch {
+        validate_string_length("agent_remote_dev_breadcrumbs.branch", value, None, Some(120))?;
+        if (value).as_bytes().len() > 120 { return Err("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider {
+        validate_string_length("agent_remote_dev_breadcrumbs.provider", value, None, Some(60))?;
+        if (value).as_bytes().len() > 60 { return Err("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes".to_string()); }
     }
     Ok(())
 }
@@ -1101,6 +1377,416 @@ pub fn validate_agent_remote_dev_runtime_locks_insert(value: &AgentRemoteDevRunt
     }
     if let Some(value) = &value.status {
         if !["active", "released", "expired"].contains(&(value).as_str()) { return Err(format!("unsupported agent_remote_dev_runtime_locks.status: {}", value)); }
+    }
+    Ok(())
+}
+
+pub const MIP_SOLVER_SESSIONS_TABLE: &str = "mip_solver_sessions";
+pub const MIP_SOLVER_SESSIONS_COLUMNS: &[&str] = &["session_id", "revision", "problem", "created_at", "updated_at"];
+pub const MIP_SOLVER_SESSIONS_SELECT_SQL: &str = r###"select
+      session_id,
+      revision,
+      problem,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_sessions"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSessionsRow {
+    pub session_id: String,
+    pub revision: i64,
+    pub problem: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSessionsInsert {
+    pub session_id: Option<String>,
+    pub revision: Option<i64>,
+    pub problem: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_mip_solver_sessions_row(value: &MipSolverSessionsRow) -> Result<(), String> {
+    validate_string_length("mip_solver_sessions.session_id", &value.session_id, None, Some(200))?;
+    if (&value.session_id).as_bytes().len() > 200 { return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string()); }
+    if *(&value.revision) < 0 { return Err("mip_solver_sessions.revision is below the minimum".to_string()); }
+    if !(&value.problem).is_object() { return Err("mip_solver_sessions.problem must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_sessions_insert(value: &MipSolverSessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.session_id {
+        validate_string_length("mip_solver_sessions.session_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("mip_solver_sessions.session_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.revision {
+        if *(value) < 0 { return Err("mip_solver_sessions.revision is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.problem {
+        if !(value).is_object() { return Err("mip_solver_sessions.problem must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MIP_SOLVER_SOLVES_TABLE: &str = "mip_solver_solves";
+pub const MIP_SOLVER_SOLVES_COLUMNS: &[&str] = &["solve_id", "request_id", "revision", "status", "node_id", "node_role", "problem", "options", "response", "jobs_expected", "jobs_published", "jobs_completed", "jobs_redelegated", "jobs_split", "timed_out", "distributed", "warnings", "started_at", "updated_at", "finished_at"];
+pub const MIP_SOLVER_SOLVES_SELECT_SQL: &str = r###"select
+      solve_id,
+      request_id,
+      revision,
+      status,
+      node_id,
+      node_role,
+      problem,
+      options,
+      response,
+      jobs_expected,
+      jobs_published,
+      jobs_completed,
+      jobs_redelegated,
+      jobs_split,
+      timed_out,
+      distributed,
+      warnings,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from mip_solver_solves"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MipSolverSolvesNodeRole {
+    Master,
+    Slave,
+}
+
+impl MipSolverSolvesNodeRole {
+    pub const VALUES: &'static [&'static str] = &["master", "slave"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Master => "master",
+            Self::Slave => "slave",
+        }
+    }
+}
+
+impl TryFrom<&str> for MipSolverSolvesNodeRole {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "master" => Ok(Self::Master),
+            "slave" => Ok(Self::Slave),
+            _ => Err(format!("unsupported node_role: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSolvesRow {
+    pub solve_id: String,
+    pub request_id: String,
+    pub revision: i64,
+    pub status: String,
+    pub node_id: String,
+    pub node_role: String,
+    pub problem: Value,
+    pub options: Value,
+    pub response: Value,
+    pub jobs_expected: i32,
+    pub jobs_published: i32,
+    pub jobs_completed: i32,
+    pub jobs_redelegated: i32,
+    pub jobs_split: i32,
+    pub timed_out: bool,
+    pub distributed: bool,
+    pub warnings: Value,
+    pub started_at: String,
+    pub updated_at: String,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverSolvesInsert {
+    pub solve_id: Option<String>,
+    pub request_id: Option<String>,
+    pub revision: Option<i64>,
+    pub status: Option<String>,
+    pub node_id: Option<String>,
+    pub node_role: Option<String>,
+    pub problem: Option<Value>,
+    pub options: Option<Value>,
+    pub response: Option<Value>,
+    pub jobs_expected: Option<i32>,
+    pub jobs_published: Option<i32>,
+    pub jobs_completed: Option<i32>,
+    pub jobs_redelegated: Option<i32>,
+    pub jobs_split: Option<i32>,
+    pub timed_out: Option<bool>,
+    pub distributed: Option<bool>,
+    pub warnings: Option<Value>,
+    pub started_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
+pub fn validate_mip_solver_solves_row(value: &MipSolverSolvesRow) -> Result<(), String> {
+    validate_string_length("mip_solver_solves.solve_id", &value.solve_id, None, Some(160))?;
+    if (&value.solve_id).as_bytes().len() > 160 { return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string()); }
+    validate_string_length("mip_solver_solves.request_id", &value.request_id, None, Some(200))?;
+    if (&value.request_id).as_bytes().len() > 200 { return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string()); }
+    if *(&value.revision) < 0 { return Err("mip_solver_solves.revision is below the minimum".to_string()); }
+    validate_string_length("mip_solver_solves.status", &value.status, None, Some(64))?;
+    if (&value.status).as_bytes().len() > 64 { return Err("mip_solver_solves.status exceeds 64 bytes".to_string()); }
+    validate_string_length("mip_solver_solves.node_id", &value.node_id, None, Some(253))?;
+    if (&value.node_id).as_bytes().len() > 253 { return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string()); }
+    if !["master", "slave"].contains(&(&value.node_role).as_str()) { return Err(format!("unsupported mip_solver_solves.node_role: {}", &value.node_role)); }
+    if !(&value.problem).is_object() { return Err("mip_solver_solves.problem must be a JSON object".to_string()); }
+    if !(&value.options).is_object() { return Err("mip_solver_solves.options must be a JSON object".to_string()); }
+    if !(&value.response).is_object() { return Err("mip_solver_solves.response must be a JSON object".to_string()); }
+    if *(&value.jobs_expected) < 0 { return Err("mip_solver_solves.jobs_expected is below the minimum".to_string()); }
+    if *(&value.jobs_published) < 0 { return Err("mip_solver_solves.jobs_published is below the minimum".to_string()); }
+    if *(&value.jobs_completed) < 0 { return Err("mip_solver_solves.jobs_completed is below the minimum".to_string()); }
+    if *(&value.jobs_redelegated) < 0 { return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string()); }
+    if *(&value.jobs_split) < 0 { return Err("mip_solver_solves.jobs_split is below the minimum".to_string()); }
+    if !(&value.warnings).is_array() { return Err("mip_solver_solves.warnings must be a JSON array".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_solves_insert(value: &MipSolverSolvesInsert) -> Result<(), String> {
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_solves.solve_id", value, None, Some(160))?;
+        if (value).as_bytes().len() > 160 { return Err("mip_solver_solves.solve_id exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.request_id {
+        validate_string_length("mip_solver_solves.request_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("mip_solver_solves.request_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.revision {
+        if *(value) < 0 { return Err("mip_solver_solves.revision is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        validate_string_length("mip_solver_solves.status", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("mip_solver_solves.status exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.node_id {
+        validate_string_length("mip_solver_solves.node_id", value, None, Some(253))?;
+        if (value).as_bytes().len() > 253 { return Err("mip_solver_solves.node_id exceeds 253 bytes".to_string()); }
+    }
+    if let Some(value) = &value.node_role {
+        if !["master", "slave"].contains(&(value).as_str()) { return Err(format!("unsupported mip_solver_solves.node_role: {}", value)); }
+    }
+    if let Some(value) = &value.problem {
+        if !(value).is_object() { return Err("mip_solver_solves.problem must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.options {
+        if !(value).is_object() { return Err("mip_solver_solves.options must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.response {
+        if !(value).is_object() { return Err("mip_solver_solves.response must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.jobs_expected {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_expected is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_published {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_published is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_completed {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_completed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_redelegated {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_redelegated is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.jobs_split {
+        if *(value) < 0 { return Err("mip_solver_solves.jobs_split is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.warnings {
+        if !(value).is_array() { return Err("mip_solver_solves.warnings must be a JSON array".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MIP_SOLVER_JOBS_TABLE: &str = "mip_solver_jobs";
+pub const MIP_SOLVER_JOBS_COLUMNS: &[&str] = &["job_id", "solve_id", "root_job_id", "retry_index", "depth", "status", "worker_node", "job_payload", "result_payload", "submitted_at", "finished_at", "updated_at"];
+pub const MIP_SOLVER_JOBS_SELECT_SQL: &str = r###"select
+      job_id,
+      solve_id,
+      root_job_id,
+      retry_index,
+      depth,
+      status,
+      worker_node,
+      job_payload,
+      result_payload,
+      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as submitted_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_jobs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverJobsRow {
+    pub job_id: String,
+    pub solve_id: String,
+    pub root_job_id: String,
+    pub retry_index: i32,
+    pub depth: i32,
+    pub status: String,
+    pub worker_node: Option<String>,
+    pub job_payload: Value,
+    pub result_payload: Value,
+    pub submitted_at: String,
+    pub finished_at: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverJobsInsert {
+    pub job_id: Option<String>,
+    pub solve_id: Option<String>,
+    pub root_job_id: Option<String>,
+    pub retry_index: Option<i32>,
+    pub depth: Option<i32>,
+    pub status: Option<String>,
+    pub worker_node: Option<String>,
+    pub job_payload: Option<Value>,
+    pub result_payload: Option<Value>,
+    pub submitted_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_mip_solver_jobs_row(value: &MipSolverJobsRow) -> Result<(), String> {
+    validate_string_length("mip_solver_jobs.job_id", &value.job_id, None, Some(240))?;
+    if (&value.job_id).as_bytes().len() > 240 { return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string()); }
+    validate_string_length("mip_solver_jobs.solve_id", &value.solve_id, None, Some(160))?;
+    validate_string_length("mip_solver_jobs.root_job_id", &value.root_job_id, None, Some(240))?;
+    if (&value.root_job_id).as_bytes().len() > 240 { return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string()); }
+    if *(&value.retry_index) < 0 { return Err("mip_solver_jobs.retry_index is below the minimum".to_string()); }
+    if *(&value.depth) < 0 { return Err("mip_solver_jobs.depth is below the minimum".to_string()); }
+    validate_string_length("mip_solver_jobs.status", &value.status, None, Some(64))?;
+    if (&value.status).as_bytes().len() > 64 { return Err("mip_solver_jobs.status exceeds 64 bytes".to_string()); }
+    if let Some(value) = &value.worker_node {
+        validate_string_length("mip_solver_jobs.worker_node", value, None, Some(253))?;
+    }
+    if !(&value.job_payload).is_object() { return Err("mip_solver_jobs.job_payload must be a JSON object".to_string()); }
+    if !(&value.result_payload).is_object() { return Err("mip_solver_jobs.result_payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_jobs_insert(value: &MipSolverJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.job_id {
+        validate_string_length("mip_solver_jobs.job_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("mip_solver_jobs.job_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_jobs.solve_id", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.root_job_id {
+        validate_string_length("mip_solver_jobs.root_job_id", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("mip_solver_jobs.root_job_id exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.retry_index {
+        if *(value) < 0 { return Err("mip_solver_jobs.retry_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.depth {
+        if *(value) < 0 { return Err("mip_solver_jobs.depth is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        validate_string_length("mip_solver_jobs.status", value, None, Some(64))?;
+        if (value).as_bytes().len() > 64 { return Err("mip_solver_jobs.status exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.worker_node {
+        validate_string_length("mip_solver_jobs.worker_node", value, None, Some(253))?;
+    }
+    if let Some(value) = &value.job_payload {
+        if !(value).is_object() { return Err("mip_solver_jobs.job_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.result_payload {
+        if !(value).is_object() { return Err("mip_solver_jobs.result_payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MIP_SOLVER_EVENTS_TABLE: &str = "mip_solver_events";
+pub const MIP_SOLVER_EVENTS_COLUMNS: &[&str] = &["id", "solve_id", "session_id", "job_id", "event_kind", "payload", "created_at"];
+pub const MIP_SOLVER_EVENTS_SELECT_SQL: &str = r###"select
+      id,
+      solve_id,
+      session_id,
+      job_id,
+      event_kind,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from mip_solver_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverEventsRow {
+    pub id: i64,
+    pub solve_id: Option<String>,
+    pub session_id: Option<String>,
+    pub job_id: Option<String>,
+    pub event_kind: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MipSolverEventsInsert {
+    pub id: Option<i64>,
+    pub solve_id: Option<String>,
+    pub session_id: Option<String>,
+    pub job_id: Option<String>,
+    pub event_kind: Option<String>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_mip_solver_events_row(value: &MipSolverEventsRow) -> Result<(), String> {
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_events.solve_id", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.session_id {
+        validate_string_length("mip_solver_events.session_id", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.job_id {
+        validate_string_length("mip_solver_events.job_id", value, None, Some(240))?;
+    }
+    validate_string_length("mip_solver_events.event_kind", &value.event_kind, None, Some(80))?;
+    if !(&value.payload).is_object() { return Err("mip_solver_events.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_mip_solver_events_insert(value: &MipSolverEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.solve_id {
+        validate_string_length("mip_solver_events.solve_id", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.session_id {
+        validate_string_length("mip_solver_events.session_id", value, None, Some(200))?;
+    }
+    if let Some(value) = &value.job_id {
+        validate_string_length("mip_solver_events.job_id", value, None, Some(240))?;
+    }
+    if let Some(value) = &value.event_kind {
+        validate_string_length("mip_solver_events.event_kind", value, None, Some(80))?;
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("mip_solver_events.payload must be a JSON object".to_string()); }
     }
     Ok(())
 }
@@ -1402,6 +2088,446 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     Ok(())
 }
 
+pub const CONTAINER_POOL_IMAGE_REVISIONS_TABLE: &str = "container_pool_image_revisions";
+pub const CONTAINER_POOL_IMAGE_REVISIONS_COLUMNS: &[&str] = &["id", "image_slug", "image_ref", "dockerfile_path", "build_context", "dockerfile_text", "dockerfile_sha256", "source", "notes", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const CONTAINER_POOL_IMAGE_REVISIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      image_slug,
+      image_ref,
+      dockerfile_path,
+      build_context,
+      dockerfile_text,
+      dockerfile_sha256,
+      source,
+      notes,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_image_revisions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolImageRevisionsSource {
+    DiskDefault,
+    User,
+    System,
+}
+
+impl ContainerPoolImageRevisionsSource {
+    pub const VALUES: &'static [&'static str] = &["disk-default", "user", "system"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DiskDefault => "disk-default",
+            Self::User => "user",
+            Self::System => "system",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolImageRevisionsSource {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "disk-default" => Ok(Self::DiskDefault),
+            "user" => Ok(Self::User),
+            "system" => Ok(Self::System),
+            _ => Err(format!("unsupported source: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolImageRevisionsStatus {
+    Candidate,
+    Active,
+    Archived,
+}
+
+impl ContainerPoolImageRevisionsStatus {
+    pub const VALUES: &'static [&'static str] = &["candidate", "active", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Candidate => "candidate",
+            Self::Active => "active",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolImageRevisionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "candidate" => Ok(Self::Candidate),
+            "active" => Ok(Self::Active),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolImageRevisionsRow {
+    pub id: String,
+    pub image_slug: String,
+    pub image_ref: String,
+    pub dockerfile_path: String,
+    pub build_context: String,
+    pub dockerfile_text: String,
+    pub dockerfile_sha256: String,
+    pub source: String,
+    pub notes: String,
+    pub status: String,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolImageRevisionsInsert {
+    pub id: Option<String>,
+    pub image_slug: Option<String>,
+    pub image_ref: Option<String>,
+    pub dockerfile_path: Option<String>,
+    pub build_context: Option<String>,
+    pub dockerfile_text: Option<String>,
+    pub dockerfile_sha256: Option<String>,
+    pub source: Option<String>,
+    pub notes: Option<String>,
+    pub status: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_container_pool_image_revisions_row(value: &ContainerPoolImageRevisionsRow) -> Result<(), String> {
+    validate_slug("container_pool_image_revisions.image_slug", &value.image_slug)?;
+    if (&value.image_ref).as_bytes().len() > 512 { return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string()); }
+    if (&value.dockerfile_path).as_bytes().len() > 512 { return Err("container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string()); }
+    if (&value.build_context).as_bytes().len() > 512 { return Err("container_pool_image_revisions.build_context exceeds 512 bytes".to_string()); }
+    if (&value.dockerfile_text).as_bytes().len() > 65536 { return Err("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string()); }
+    validate_string_length("container_pool_image_revisions.dockerfile_sha256", &value.dockerfile_sha256, None, Some(64))?;
+    if !["disk-default", "user", "system"].contains(&(&value.source).as_str()) { return Err(format!("unsupported container_pool_image_revisions.source: {}", &value.source)); }
+    if (&value.notes).as_bytes().len() > 8192 { return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string()); }
+    if !["candidate", "active", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported container_pool_image_revisions.status: {}", &value.status)); }
+    if !(&value.meta_data).is_object() { return Err("container_pool_image_revisions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_container_pool_image_revisions_insert(value: &ContainerPoolImageRevisionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.image_slug {
+        validate_slug("container_pool_image_revisions.image_slug", value)?;
+    }
+    if let Some(value) = &value.image_ref {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.image_ref exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.dockerfile_path {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.dockerfile_path exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.build_context {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_image_revisions.build_context exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.dockerfile_text {
+        if (value).as_bytes().len() > 65536 { return Err("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes".to_string()); }
+    }
+    if let Some(value) = &value.dockerfile_sha256 {
+        validate_string_length("container_pool_image_revisions.dockerfile_sha256", value, None, Some(64))?;
+    }
+    if let Some(value) = &value.source {
+        if !["disk-default", "user", "system"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_image_revisions.source: {}", value)); }
+    }
+    if let Some(value) = &value.notes {
+        if (value).as_bytes().len() > 8192 { return Err("container_pool_image_revisions.notes exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["candidate", "active", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_image_revisions.status: {}", value)); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("container_pool_image_revisions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const CONTAINER_POOL_BUILD_RUNS_TABLE: &str = "container_pool_build_runs";
+pub const CONTAINER_POOL_BUILD_RUNS_COLUMNS: &[&str] = &["id", "image_slug", "revision_id", "image_ref", "candidate_tag", "build_status", "test_status", "overall_status", "test_command", "build_started_at", "build_finished_at", "test_started_at", "test_finished_at", "build_log_excerpt", "test_log_excerpt", "error_message", "triggered_by", "meta_data", "is_soft_deleted", "created_at", "updated_at"];
+pub const CONTAINER_POOL_BUILD_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      image_slug,
+      revision_id::text as revision_id,
+      image_ref,
+      candidate_tag,
+      build_status,
+      test_status,
+      overall_status,
+      test_command,
+      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_started_at,
+      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_finished_at,
+      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_started_at,
+      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_finished_at,
+      build_log_excerpt,
+      test_log_excerpt,
+      error_message,
+      triggered_by::text as triggered_by,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from container_pool_build_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolBuildRunsBuildStatus {
+    Queued,
+    Building,
+    Built,
+    Failed,
+    Skipped,
+    Cancelled,
+}
+
+impl ContainerPoolBuildRunsBuildStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "building", "built", "failed", "skipped", "cancelled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Building => "building",
+            Self::Built => "built",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolBuildRunsBuildStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "building" => Ok(Self::Building),
+            "built" => Ok(Self::Built),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(format!("unsupported build_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolBuildRunsTestStatus {
+    NotStarted,
+    Pending,
+    Testing,
+    Passed,
+    Failed,
+    Skipped,
+    Cancelled,
+}
+
+impl ContainerPoolBuildRunsTestStatus {
+    pub const VALUES: &'static [&'static str] = &["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotStarted => "not_started",
+            Self::Pending => "pending",
+            Self::Testing => "testing",
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolBuildRunsTestStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "not_started" => Ok(Self::NotStarted),
+            "pending" => Ok(Self::Pending),
+            "testing" => Ok(Self::Testing),
+            "passed" => Ok(Self::Passed),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(format!("unsupported test_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerPoolBuildRunsOverallStatus {
+    Queued,
+    Running,
+    Passed,
+    Failed,
+    Cancelled,
+    Errored,
+}
+
+impl ContainerPoolBuildRunsOverallStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "passed", "failed", "cancelled", "errored"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Passed => "passed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Errored => "errored",
+        }
+    }
+}
+
+impl TryFrom<&str> for ContainerPoolBuildRunsOverallStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "passed" => Ok(Self::Passed),
+            "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
+            "errored" => Ok(Self::Errored),
+            _ => Err(format!("unsupported overall_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolBuildRunsRow {
+    pub id: String,
+    pub image_slug: String,
+    pub revision_id: String,
+    pub image_ref: String,
+    pub candidate_tag: String,
+    pub build_status: String,
+    pub test_status: String,
+    pub overall_status: String,
+    pub test_command: String,
+    pub build_started_at: Option<String>,
+    pub build_finished_at: Option<String>,
+    pub test_started_at: Option<String>,
+    pub test_finished_at: Option<String>,
+    pub build_log_excerpt: String,
+    pub test_log_excerpt: String,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<String>,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerPoolBuildRunsInsert {
+    pub id: Option<String>,
+    pub image_slug: Option<String>,
+    pub revision_id: Option<String>,
+    pub image_ref: Option<String>,
+    pub candidate_tag: Option<String>,
+    pub build_status: Option<String>,
+    pub test_status: Option<String>,
+    pub overall_status: Option<String>,
+    pub test_command: Option<String>,
+    pub build_started_at: Option<String>,
+    pub build_finished_at: Option<String>,
+    pub test_started_at: Option<String>,
+    pub test_finished_at: Option<String>,
+    pub build_log_excerpt: Option<String>,
+    pub test_log_excerpt: Option<String>,
+    pub error_message: Option<String>,
+    pub triggered_by: Option<String>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_container_pool_build_runs_row(value: &ContainerPoolBuildRunsRow) -> Result<(), String> {
+    validate_slug("container_pool_build_runs.image_slug", &value.image_slug)?;
+    if (&value.image_ref).as_bytes().len() > 512 { return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string()); }
+    if (&value.candidate_tag).as_bytes().len() > 512 { return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string()); }
+    if !["queued", "building", "built", "failed", "skipped", "cancelled"].contains(&(&value.build_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.build_status: {}", &value.build_status)); }
+    if !["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"].contains(&(&value.test_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.test_status: {}", &value.test_status)); }
+    if !["queued", "running", "passed", "failed", "cancelled", "errored"].contains(&(&value.overall_status).as_str()) { return Err(format!("unsupported container_pool_build_runs.overall_status: {}", &value.overall_status)); }
+    if (&value.test_command).as_bytes().len() > 4096 { return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string()); }
+    if (&value.build_log_excerpt).as_bytes().len() > 65536 { return Err("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string()); }
+    if (&value.test_log_excerpt).as_bytes().len() > 65536 { return Err("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string()); }
+    if let Some(value) = &value.error_message {
+        if (value).as_bytes().len() > 8192 { return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string()); }
+    }
+    if !(&value.meta_data).is_object() { return Err("container_pool_build_runs.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_container_pool_build_runs_insert(value: &ContainerPoolBuildRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.image_slug {
+        validate_slug("container_pool_build_runs.image_slug", value)?;
+    }
+    if let Some(value) = &value.image_ref {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_build_runs.image_ref exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.candidate_tag {
+        if (value).as_bytes().len() > 512 { return Err("container_pool_build_runs.candidate_tag exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.build_status {
+        if !["queued", "building", "built", "failed", "skipped", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.build_status: {}", value)); }
+    }
+    if let Some(value) = &value.test_status {
+        if !["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.test_status: {}", value)); }
+    }
+    if let Some(value) = &value.overall_status {
+        if !["queued", "running", "passed", "failed", "cancelled", "errored"].contains(&(value).as_str()) { return Err(format!("unsupported container_pool_build_runs.overall_status: {}", value)); }
+    }
+    if let Some(value) = &value.test_command {
+        if (value).as_bytes().len() > 4096 { return Err("container_pool_build_runs.test_command exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.build_log_excerpt {
+        if (value).as_bytes().len() > 65536 { return Err("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes".to_string()); }
+    }
+    if let Some(value) = &value.test_log_excerpt {
+        if (value).as_bytes().len() > 65536 { return Err("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes".to_string()); }
+    }
+    if let Some(value) = &value.error_message {
+        if (value).as_bytes().len() > 8192 { return Err("container_pool_build_runs.error_message exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("container_pool_build_runs.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
 pub const PRESENCE_CONVS_TABLE: &str = "presence_convs";
 pub const PRESENCE_CONVS_COLUMNS: &[&str] = &["id", "slug", "display_name", "status", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const PRESENCE_CONVS_SELECT_SQL: &str = r###"select
@@ -1682,11 +2808,11 @@ pub struct PresenceUsersInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_presence_users_row(value: &PresenceUsersRow) -> Result<(), String> {
+pub fn validate_presence_users_row(_value: &PresenceUsersRow) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_presence_users_insert(value: &PresenceUsersInsert) -> Result<(), String> {
+pub fn validate_presence_users_insert(_value: &PresenceUsersInsert) -> Result<(), String> {
     Ok(())
 }
 
@@ -1806,11 +2932,1282 @@ pub struct PresenceConsumerCheckpointsInsert {
     pub updated_at: Option<String>,
 }
 
-pub fn validate_presence_consumer_checkpoints_row(value: &PresenceConsumerCheckpointsRow) -> Result<(), String> {
+pub fn validate_presence_consumer_checkpoints_row(_value: &PresenceConsumerCheckpointsRow) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_presence_consumer_checkpoints_insert(value: &PresenceConsumerCheckpointsInsert) -> Result<(), String> {
+pub fn validate_presence_consumer_checkpoints_insert(_value: &PresenceConsumerCheckpointsInsert) -> Result<(), String> {
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_EXPERIMENTS_TABLE: &str = "des_soccer_learning_experiments";
+pub const DES_SOCCER_LEARNING_EXPERIMENTS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "status", "config", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
+pub const DES_SOCCER_LEARNING_EXPERIMENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      status,
+      config,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_experiments"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningExperimentsStatus {
+    Active,
+    Paused,
+    Archived,
+}
+
+impl DesSoccerLearningExperimentsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "paused", "archived"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningExperimentsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "paused" => Ok(Self::Paused),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningExperimentsRow {
+    pub id: String,
+    pub slug: String,
+    pub display_name: String,
+    pub description: String,
+    pub status: String,
+    pub config: Value,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub is_soft_deleted: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningExperimentsInsert {
+    pub id: Option<String>,
+    pub slug: Option<String>,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+    pub config: Option<Value>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub is_soft_deleted: Option<bool>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_experiments_row(value: &DesSoccerLearningExperimentsRow) -> Result<(), String> {
+    validate_slug("des_soccer_learning_experiments.slug", &value.slug)?;
+    validate_string_length("des_soccer_learning_experiments.display_name", &value.display_name, None, Some(240))?;
+    if (&value.display_name).as_bytes().len() > 240 { return Err("des_soccer_learning_experiments.display_name exceeds 240 bytes".to_string()); }
+    if (&value.description).as_bytes().len() > 8192 { return Err("des_soccer_learning_experiments.description exceeds 8192 bytes".to_string()); }
+    if !["active", "paused", "archived"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_experiments.status: {}", &value.status)); }
+    if !(&value.config).is_object() { return Err("des_soccer_learning_experiments.config must be a JSON object".to_string()); }
+    if !(&value.labels).is_array() { return Err("des_soccer_learning_experiments.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("des_soccer_learning_experiments.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_experiments_insert(value: &DesSoccerLearningExperimentsInsert) -> Result<(), String> {
+    if let Some(value) = &value.slug {
+        validate_slug("des_soccer_learning_experiments.slug", value)?;
+    }
+    if let Some(value) = &value.display_name {
+        validate_string_length("des_soccer_learning_experiments.display_name", value, None, Some(240))?;
+        if (value).as_bytes().len() > 240 { return Err("des_soccer_learning_experiments.display_name exceeds 240 bytes".to_string()); }
+    }
+    if let Some(value) = &value.description {
+        if (value).as_bytes().len() > 8192 { return Err("des_soccer_learning_experiments.description exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "paused", "archived"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_experiments.status: {}", value)); }
+    }
+    if let Some(value) = &value.config {
+        if !(value).is_object() { return Err("des_soccer_learning_experiments.config must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("des_soccer_learning_experiments.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("des_soccer_learning_experiments.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_TABLE: &str = "des_soccer_learning_policy_versions";
+pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_COLUMNS: &[&str] = &["id", "experiment_id", "parent_policy_version_id", "generation", "version_label", "source_kind", "status", "options", "config", "lineage", "metrics", "entry_count", "target_entry_count", "visit_count", "fitness_micros", "created_at", "updated_at", "created_by", "updated_by"];
+pub const DES_SOCCER_LEARNING_POLICY_VERSIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      parent_policy_version_id::text as parent_policy_version_id,
+      generation,
+      version_label,
+      source_kind,
+      status,
+      options,
+      config,
+      lineage,
+      metrics,
+      entry_count,
+      target_entry_count,
+      visit_count,
+      fitness_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_policy_versions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningPolicyVersionsSourceKind {
+    Seed,
+    Merge,
+    Mutation,
+    Crossover,
+    Import,
+    Replay,
+}
+
+impl DesSoccerLearningPolicyVersionsSourceKind {
+    pub const VALUES: &'static [&'static str] = &["seed", "merge", "mutation", "crossover", "import", "replay"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Seed => "seed",
+            Self::Merge => "merge",
+            Self::Mutation => "mutation",
+            Self::Crossover => "crossover",
+            Self::Import => "import",
+            Self::Replay => "replay",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningPolicyVersionsSourceKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "seed" => Ok(Self::Seed),
+            "merge" => Ok(Self::Merge),
+            "mutation" => Ok(Self::Mutation),
+            "crossover" => Ok(Self::Crossover),
+            "import" => Ok(Self::Import),
+            "replay" => Ok(Self::Replay),
+            _ => Err(format!("unsupported source_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningPolicyVersionsStatus {
+    Candidate,
+    Active,
+    Archived,
+    Rejected,
+}
+
+impl DesSoccerLearningPolicyVersionsStatus {
+    pub const VALUES: &'static [&'static str] = &["candidate", "active", "archived", "rejected"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Candidate => "candidate",
+            Self::Active => "active",
+            Self::Archived => "archived",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningPolicyVersionsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "candidate" => Ok(Self::Candidate),
+            "active" => Ok(Self::Active),
+            "archived" => Ok(Self::Archived),
+            "rejected" => Ok(Self::Rejected),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningPolicyVersionsRow {
+    pub id: String,
+    pub experiment_id: String,
+    pub parent_policy_version_id: Option<String>,
+    pub generation: i32,
+    pub version_label: String,
+    pub source_kind: String,
+    pub status: String,
+    pub options: Value,
+    pub config: Value,
+    pub lineage: Value,
+    pub metrics: Value,
+    pub entry_count: i32,
+    pub target_entry_count: i32,
+    pub visit_count: i64,
+    pub fitness_micros: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningPolicyVersionsInsert {
+    pub id: Option<String>,
+    pub experiment_id: Option<String>,
+    pub parent_policy_version_id: Option<String>,
+    pub generation: Option<i32>,
+    pub version_label: Option<String>,
+    pub source_kind: Option<String>,
+    pub status: Option<String>,
+    pub options: Option<Value>,
+    pub config: Option<Value>,
+    pub lineage: Option<Value>,
+    pub metrics: Option<Value>,
+    pub entry_count: Option<i32>,
+    pub target_entry_count: Option<i32>,
+    pub visit_count: Option<i64>,
+    pub fitness_micros: Option<i64>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_policy_versions_row(value: &DesSoccerLearningPolicyVersionsRow) -> Result<(), String> {
+    if *(&value.generation) < 0 { return Err("des_soccer_learning_policy_versions.generation is below the minimum".to_string()); }
+    validate_string_length("des_soccer_learning_policy_versions.version_label", &value.version_label, None, Some(160))?;
+    if !["seed", "merge", "mutation", "crossover", "import", "replay"].contains(&(&value.source_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.source_kind: {}", &value.source_kind)); }
+    if !["candidate", "active", "archived", "rejected"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.status: {}", &value.status)); }
+    if !(&value.options).is_object() { return Err("des_soccer_learning_policy_versions.options must be a JSON object".to_string()); }
+    if !(&value.config).is_object() { return Err("des_soccer_learning_policy_versions.config must be a JSON object".to_string()); }
+    if !(&value.lineage).is_array() { return Err("des_soccer_learning_policy_versions.lineage must be a JSON array".to_string()); }
+    if !(&value.metrics).is_object() { return Err("des_soccer_learning_policy_versions.metrics must be a JSON object".to_string()); }
+    if *(&value.entry_count) < 0 { return Err("des_soccer_learning_policy_versions.entry_count is below the minimum".to_string()); }
+    if *(&value.target_entry_count) < 0 { return Err("des_soccer_learning_policy_versions.target_entry_count is below the minimum".to_string()); }
+    if *(&value.visit_count) < 0 { return Err("des_soccer_learning_policy_versions.visit_count is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_policy_versions_insert(value: &DesSoccerLearningPolicyVersionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.generation {
+        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.generation is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.version_label {
+        validate_string_length("des_soccer_learning_policy_versions.version_label", value, None, Some(160))?;
+    }
+    if let Some(value) = &value.source_kind {
+        if !["seed", "merge", "mutation", "crossover", "import", "replay"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.source_kind: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["candidate", "active", "archived", "rejected"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_versions.status: {}", value)); }
+    }
+    if let Some(value) = &value.options {
+        if !(value).is_object() { return Err("des_soccer_learning_policy_versions.options must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.config {
+        if !(value).is_object() { return Err("des_soccer_learning_policy_versions.config must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.lineage {
+        if !(value).is_array() { return Err("des_soccer_learning_policy_versions.lineage must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.metrics {
+        if !(value).is_object() { return Err("des_soccer_learning_policy_versions.metrics must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.entry_count {
+        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.entry_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.target_entry_count {
+        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.target_entry_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.visit_count {
+        if *(value) < 0 { return Err("des_soccer_learning_policy_versions.visit_count is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_TABLE: &str = "des_soccer_learning_policy_entries";
+pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_COLUMNS: &[&str] = &["id", "policy_version_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "value_micros", "visits", "source_run_id", "created_at"];
+pub const DES_SOCCER_LEARNING_POLICY_ENTRIES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      policy_version_id::text as policy_version_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      value_micros,
+      visits,
+      source_run_id::text as source_run_id,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_policy_entries"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningPolicyEntriesTeam {
+    Home,
+    Away,
+}
+
+impl DesSoccerLearningPolicyEntriesTeam {
+    pub const VALUES: &'static [&'static str] = &["home", "away"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Home => "home",
+            Self::Away => "away",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningPolicyEntriesTeam {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "home" => Ok(Self::Home),
+            "away" => Ok(Self::Away),
+            _ => Err(format!("unsupported team: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningPolicyEntriesEntryKind {
+    Action,
+    Target,
+}
+
+impl DesSoccerLearningPolicyEntriesEntryKind {
+    pub const VALUES: &'static [&'static str] = &["action", "target"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Action => "action",
+            Self::Target => "target",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningPolicyEntriesEntryKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "action" => Ok(Self::Action),
+            "target" => Ok(Self::Target),
+            _ => Err(format!("unsupported entry_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningPolicyEntriesRow {
+    pub id: String,
+    pub policy_version_id: String,
+    pub team: String,
+    pub entry_kind: String,
+    pub state_hash: String,
+    pub state_key: Value,
+    pub action: String,
+    pub target_fine_cell_id: i32,
+    pub target_tactical_cell_id: i32,
+    pub target_macro_cell_id: i32,
+    pub target_root_cell_id: i32,
+    pub value_micros: i64,
+    pub visits: i32,
+    pub source_run_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningPolicyEntriesInsert {
+    pub id: Option<String>,
+    pub policy_version_id: Option<String>,
+    pub team: Option<String>,
+    pub entry_kind: Option<String>,
+    pub state_hash: Option<String>,
+    pub state_key: Option<Value>,
+    pub action: Option<String>,
+    pub target_fine_cell_id: Option<i32>,
+    pub target_tactical_cell_id: Option<i32>,
+    pub target_macro_cell_id: Option<i32>,
+    pub target_root_cell_id: Option<i32>,
+    pub value_micros: Option<i64>,
+    pub visits: Option<i32>,
+    pub source_run_id: Option<String>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_policy_entries_row(value: &DesSoccerLearningPolicyEntriesRow) -> Result<(), String> {
+    if !["home", "away"].contains(&(&value.team).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.team: {}", &value.team)); }
+    if !["action", "target"].contains(&(&value.entry_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.entry_kind: {}", &value.entry_kind)); }
+    validate_string_length("des_soccer_learning_policy_entries.state_hash", &value.state_hash, None, Some(32))?;
+    if !(&value.state_key).is_object() { return Err("des_soccer_learning_policy_entries.state_key must be a JSON object".to_string()); }
+    validate_string_length("des_soccer_learning_policy_entries.action", &value.action, None, Some(80))?;
+    if (&value.action).as_bytes().len() > 80 { return Err("des_soccer_learning_policy_entries.action exceeds 80 bytes".to_string()); }
+    if *(&value.target_fine_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum".to_string()); }
+    if *(&value.target_tactical_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum".to_string()); }
+    if *(&value.target_macro_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum".to_string()); }
+    if *(&value.target_root_cell_id) < -1 { return Err("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum".to_string()); }
+    if *(&value.visits) < 0 { return Err("des_soccer_learning_policy_entries.visits is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_policy_entries_insert(value: &DesSoccerLearningPolicyEntriesInsert) -> Result<(), String> {
+    if let Some(value) = &value.team {
+        if !["home", "away"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.team: {}", value)); }
+    }
+    if let Some(value) = &value.entry_kind {
+        if !["action", "target"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_policy_entries.entry_kind: {}", value)); }
+    }
+    if let Some(value) = &value.state_hash {
+        validate_string_length("des_soccer_learning_policy_entries.state_hash", value, None, Some(32))?;
+    }
+    if let Some(value) = &value.state_key {
+        if !(value).is_object() { return Err("des_soccer_learning_policy_entries.state_key must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.action {
+        validate_string_length("des_soccer_learning_policy_entries.action", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("des_soccer_learning_policy_entries.action exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.target_fine_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.target_tactical_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.target_macro_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.target_root_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.visits {
+        if *(value) < 0 { return Err("des_soccer_learning_policy_entries.visits is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_JOBS_TABLE: &str = "des_soccer_learning_jobs";
+pub const DES_SOCCER_LEARNING_JOBS_COLUMNS: &[&str] = &["id", "experiment_id", "base_policy_version_id", "spawn_strategy", "status", "priority", "seed", "attempt", "max_attempts", "lease_owner", "lease_expires_at", "started_at", "finished_at", "config", "runner_config", "result_run_id", "error", "created_at", "updated_at"];
+pub const DES_SOCCER_LEARNING_JOBS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      spawn_strategy,
+      status,
+      priority,
+      seed,
+      attempt,
+      max_attempts,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      config,
+      runner_config,
+      result_run_id::text as result_run_id,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_jobs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningJobsSpawnStrategy {
+    Latest,
+    Elite,
+    Mutation,
+    Crossover,
+    Random,
+    Replay,
+}
+
+impl DesSoccerLearningJobsSpawnStrategy {
+    pub const VALUES: &'static [&'static str] = &["latest", "elite", "mutation", "crossover", "random", "replay"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Latest => "latest",
+            Self::Elite => "elite",
+            Self::Mutation => "mutation",
+            Self::Crossover => "crossover",
+            Self::Random => "random",
+            Self::Replay => "replay",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningJobsSpawnStrategy {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "latest" => Ok(Self::Latest),
+            "elite" => Ok(Self::Elite),
+            "mutation" => Ok(Self::Mutation),
+            "crossover" => Ok(Self::Crossover),
+            "random" => Ok(Self::Random),
+            "replay" => Ok(Self::Replay),
+            _ => Err(format!("unsupported spawn_strategy: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningJobsStatus {
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    Canceled,
+}
+
+impl DesSoccerLearningJobsStatus {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "completed", "failed", "canceled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Canceled => "canceled",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningJobsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "canceled" => Ok(Self::Canceled),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningJobsRow {
+    pub id: String,
+    pub experiment_id: String,
+    pub base_policy_version_id: Option<String>,
+    pub spawn_strategy: String,
+    pub status: String,
+    pub priority: i32,
+    pub seed: i64,
+    pub attempt: i32,
+    pub max_attempts: i32,
+    pub lease_owner: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub config: Value,
+    pub runner_config: Value,
+    pub result_run_id: Option<String>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningJobsInsert {
+    pub id: Option<String>,
+    pub experiment_id: Option<String>,
+    pub base_policy_version_id: Option<String>,
+    pub spawn_strategy: Option<String>,
+    pub status: Option<String>,
+    pub priority: Option<i32>,
+    pub seed: Option<i64>,
+    pub attempt: Option<i32>,
+    pub max_attempts: Option<i32>,
+    pub lease_owner: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub config: Option<Value>,
+    pub runner_config: Option<Value>,
+    pub result_run_id: Option<String>,
+    pub error: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_jobs_row(value: &DesSoccerLearningJobsRow) -> Result<(), String> {
+    if !["latest", "elite", "mutation", "crossover", "random", "replay"].contains(&(&value.spawn_strategy).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.spawn_strategy: {}", &value.spawn_strategy)); }
+    if !["queued", "running", "completed", "failed", "canceled"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.status: {}", &value.status)); }
+    if *(&value.seed) < 0 { return Err("des_soccer_learning_jobs.seed is below the minimum".to_string()); }
+    if *(&value.attempt) < 0 { return Err("des_soccer_learning_jobs.attempt is below the minimum".to_string()); }
+    if *(&value.max_attempts) < 1 { return Err("des_soccer_learning_jobs.max_attempts is below the minimum".to_string()); }
+    if *(&value.max_attempts) > 100 { return Err("des_soccer_learning_jobs.max_attempts is above the maximum".to_string()); }
+    if let Some(value) = &value.lease_owner {
+        validate_string_length("des_soccer_learning_jobs.lease_owner", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("des_soccer_learning_jobs.lease_owner exceeds 200 bytes".to_string()); }
+    }
+    if !(&value.config).is_object() { return Err("des_soccer_learning_jobs.config must be a JSON object".to_string()); }
+    if !(&value.runner_config).is_object() { return Err("des_soccer_learning_jobs.runner_config must be a JSON object".to_string()); }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_jobs.error exceeds 16384 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_jobs_insert(value: &DesSoccerLearningJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.spawn_strategy {
+        if !["latest", "elite", "mutation", "crossover", "random", "replay"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.spawn_strategy: {}", value)); }
+    }
+    if let Some(value) = &value.status {
+        if !["queued", "running", "completed", "failed", "canceled"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_jobs.status: {}", value)); }
+    }
+    if let Some(value) = &value.seed {
+        if *(value) < 0 { return Err("des_soccer_learning_jobs.seed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.attempt {
+        if *(value) < 0 { return Err("des_soccer_learning_jobs.attempt is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.max_attempts {
+        if *(value) < 1 { return Err("des_soccer_learning_jobs.max_attempts is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("des_soccer_learning_jobs.max_attempts is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.lease_owner {
+        validate_string_length("des_soccer_learning_jobs.lease_owner", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("des_soccer_learning_jobs.lease_owner exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.config {
+        if !(value).is_object() { return Err("des_soccer_learning_jobs.config must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.runner_config {
+        if !(value).is_object() { return Err("des_soccer_learning_jobs.runner_config must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_jobs.error exceeds 16384 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_RUNS_TABLE: &str = "des_soccer_learning_runs";
+pub const DES_SOCCER_LEARNING_RUNS_COLUMNS: &[&str] = &["id", "job_id", "experiment_id", "base_policy_version_id", "output_policy_version_id", "runner_id", "seed", "episode_index", "status", "score_home", "score_away", "home_goal_diff", "away_goal_diff", "home_outcome", "away_outcome", "home_merge_weight_micros", "away_merge_weight_micros", "fitness_micros", "duration_ticks", "simulated_seconds_micros", "elapsed_millis", "transitions", "summary", "stats", "error", "created_at", "updated_at"];
+pub const DES_SOCCER_LEARNING_RUNS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      job_id::text as job_id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      runner_id,
+      seed,
+      episode_index,
+      status,
+      score_home,
+      score_away,
+      home_goal_diff,
+      away_goal_diff,
+      home_outcome,
+      away_outcome,
+      home_merge_weight_micros,
+      away_merge_weight_micros,
+      fitness_micros,
+      duration_ticks,
+      simulated_seconds_micros,
+      elapsed_millis,
+      transitions,
+      summary,
+      stats,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_runs"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningRunsStatus {
+    Completed,
+    Failed,
+}
+
+impl DesSoccerLearningRunsStatus {
+    pub const VALUES: &'static [&'static str] = &["completed", "failed"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningRunsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningRunsHomeOutcome {
+    Win,
+    Draw,
+    Loss,
+}
+
+impl DesSoccerLearningRunsHomeOutcome {
+    pub const VALUES: &'static [&'static str] = &["win", "draw", "loss"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Win => "win",
+            Self::Draw => "draw",
+            Self::Loss => "loss",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningRunsHomeOutcome {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "win" => Ok(Self::Win),
+            "draw" => Ok(Self::Draw),
+            "loss" => Ok(Self::Loss),
+            _ => Err(format!("unsupported home_outcome: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningRunsAwayOutcome {
+    Win,
+    Draw,
+    Loss,
+}
+
+impl DesSoccerLearningRunsAwayOutcome {
+    pub const VALUES: &'static [&'static str] = &["win", "draw", "loss"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Win => "win",
+            Self::Draw => "draw",
+            Self::Loss => "loss",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningRunsAwayOutcome {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "win" => Ok(Self::Win),
+            "draw" => Ok(Self::Draw),
+            "loss" => Ok(Self::Loss),
+            _ => Err(format!("unsupported away_outcome: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningRunsRow {
+    pub id: String,
+    pub job_id: Option<String>,
+    pub experiment_id: String,
+    pub base_policy_version_id: Option<String>,
+    pub output_policy_version_id: Option<String>,
+    pub runner_id: String,
+    pub seed: i64,
+    pub episode_index: i32,
+    pub status: String,
+    pub score_home: i32,
+    pub score_away: i32,
+    pub home_goal_diff: i32,
+    pub away_goal_diff: i32,
+    pub home_outcome: String,
+    pub away_outcome: String,
+    pub home_merge_weight_micros: i64,
+    pub away_merge_weight_micros: i64,
+    pub fitness_micros: i64,
+    pub duration_ticks: i64,
+    pub simulated_seconds_micros: i64,
+    pub elapsed_millis: i64,
+    pub transitions: i32,
+    pub summary: Value,
+    pub stats: Value,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningRunsInsert {
+    pub id: Option<String>,
+    pub job_id: Option<String>,
+    pub experiment_id: Option<String>,
+    pub base_policy_version_id: Option<String>,
+    pub output_policy_version_id: Option<String>,
+    pub runner_id: Option<String>,
+    pub seed: Option<i64>,
+    pub episode_index: Option<i32>,
+    pub status: Option<String>,
+    pub score_home: Option<i32>,
+    pub score_away: Option<i32>,
+    pub home_goal_diff: Option<i32>,
+    pub away_goal_diff: Option<i32>,
+    pub home_outcome: Option<String>,
+    pub away_outcome: Option<String>,
+    pub home_merge_weight_micros: Option<i64>,
+    pub away_merge_weight_micros: Option<i64>,
+    pub fitness_micros: Option<i64>,
+    pub duration_ticks: Option<i64>,
+    pub simulated_seconds_micros: Option<i64>,
+    pub elapsed_millis: Option<i64>,
+    pub transitions: Option<i32>,
+    pub summary: Option<Value>,
+    pub stats: Option<Value>,
+    pub error: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_runs_row(value: &DesSoccerLearningRunsRow) -> Result<(), String> {
+    validate_string_length("des_soccer_learning_runs.runner_id", &value.runner_id, None, Some(200))?;
+    if (&value.runner_id).as_bytes().len() > 200 { return Err("des_soccer_learning_runs.runner_id exceeds 200 bytes".to_string()); }
+    if *(&value.seed) < 0 { return Err("des_soccer_learning_runs.seed is below the minimum".to_string()); }
+    if *(&value.episode_index) < 0 { return Err("des_soccer_learning_runs.episode_index is below the minimum".to_string()); }
+    if !["completed", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.status: {}", &value.status)); }
+    if *(&value.score_home) < 0 { return Err("des_soccer_learning_runs.score_home is below the minimum".to_string()); }
+    if *(&value.score_away) < 0 { return Err("des_soccer_learning_runs.score_away is below the minimum".to_string()); }
+    if !["win", "draw", "loss"].contains(&(&value.home_outcome).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.home_outcome: {}", &value.home_outcome)); }
+    if !["win", "draw", "loss"].contains(&(&value.away_outcome).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.away_outcome: {}", &value.away_outcome)); }
+    if *(&value.duration_ticks) < 0 { return Err("des_soccer_learning_runs.duration_ticks is below the minimum".to_string()); }
+    if *(&value.simulated_seconds_micros) < 0 { return Err("des_soccer_learning_runs.simulated_seconds_micros is below the minimum".to_string()); }
+    if *(&value.elapsed_millis) < 0 { return Err("des_soccer_learning_runs.elapsed_millis is below the minimum".to_string()); }
+    if *(&value.transitions) < 0 { return Err("des_soccer_learning_runs.transitions is below the minimum".to_string()); }
+    if !(&value.summary).is_object() { return Err("des_soccer_learning_runs.summary must be a JSON object".to_string()); }
+    if !(&value.stats).is_object() { return Err("des_soccer_learning_runs.stats must be a JSON object".to_string()); }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_runs.error exceeds 16384 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_runs_insert(value: &DesSoccerLearningRunsInsert) -> Result<(), String> {
+    if let Some(value) = &value.runner_id {
+        validate_string_length("des_soccer_learning_runs.runner_id", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("des_soccer_learning_runs.runner_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.seed {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.seed is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.episode_index {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.episode_index is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["completed", "failed"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.status: {}", value)); }
+    }
+    if let Some(value) = &value.score_home {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.score_home is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.score_away {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.score_away is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.home_outcome {
+        if !["win", "draw", "loss"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.home_outcome: {}", value)); }
+    }
+    if let Some(value) = &value.away_outcome {
+        if !["win", "draw", "loss"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_runs.away_outcome: {}", value)); }
+    }
+    if let Some(value) = &value.duration_ticks {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.duration_ticks is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.simulated_seconds_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.simulated_seconds_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.elapsed_millis {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.elapsed_millis is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.transitions {
+        if *(value) < 0 { return Err("des_soccer_learning_runs.transitions is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if !(value).is_object() { return Err("des_soccer_learning_runs.summary must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.stats {
+        if !(value).is_object() { return Err("des_soccer_learning_runs.stats must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.error {
+        if (value).as_bytes().len() > 16384 { return Err("des_soccer_learning_runs.error exceeds 16384 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_RUN_DELTAS_TABLE: &str = "des_soccer_learning_run_deltas";
+pub const DES_SOCCER_LEARNING_RUN_DELTAS_COLUMNS: &[&str] = &["id", "run_id", "team", "entry_kind", "state_hash", "state_key", "action", "target_fine_cell_id", "target_tactical_cell_id", "target_macro_cell_id", "target_root_cell_id", "before_value_micros", "after_value_micros", "value_delta_micros", "visit_delta", "merge_weight_micros", "effective_visit_micros", "created_at"];
+pub const DES_SOCCER_LEARNING_RUN_DELTAS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      run_id::text as run_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      before_value_micros,
+      after_value_micros,
+      value_delta_micros,
+      visit_delta,
+      merge_weight_micros,
+      effective_visit_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_run_deltas"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningRunDeltasTeam {
+    Home,
+    Away,
+}
+
+impl DesSoccerLearningRunDeltasTeam {
+    pub const VALUES: &'static [&'static str] = &["home", "away"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Home => "home",
+            Self::Away => "away",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningRunDeltasTeam {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "home" => Ok(Self::Home),
+            "away" => Ok(Self::Away),
+            _ => Err(format!("unsupported team: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningRunDeltasEntryKind {
+    Action,
+    Target,
+}
+
+impl DesSoccerLearningRunDeltasEntryKind {
+    pub const VALUES: &'static [&'static str] = &["action", "target"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Action => "action",
+            Self::Target => "target",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningRunDeltasEntryKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "action" => Ok(Self::Action),
+            "target" => Ok(Self::Target),
+            _ => Err(format!("unsupported entry_kind: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningRunDeltasRow {
+    pub id: String,
+    pub run_id: String,
+    pub team: String,
+    pub entry_kind: String,
+    pub state_hash: String,
+    pub state_key: Value,
+    pub action: String,
+    pub target_fine_cell_id: i32,
+    pub target_tactical_cell_id: i32,
+    pub target_macro_cell_id: i32,
+    pub target_root_cell_id: i32,
+    pub before_value_micros: i64,
+    pub after_value_micros: i64,
+    pub value_delta_micros: i64,
+    pub visit_delta: i32,
+    pub merge_weight_micros: i64,
+    pub effective_visit_micros: i64,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningRunDeltasInsert {
+    pub id: Option<String>,
+    pub run_id: Option<String>,
+    pub team: Option<String>,
+    pub entry_kind: Option<String>,
+    pub state_hash: Option<String>,
+    pub state_key: Option<Value>,
+    pub action: Option<String>,
+    pub target_fine_cell_id: Option<i32>,
+    pub target_tactical_cell_id: Option<i32>,
+    pub target_macro_cell_id: Option<i32>,
+    pub target_root_cell_id: Option<i32>,
+    pub before_value_micros: Option<i64>,
+    pub after_value_micros: Option<i64>,
+    pub value_delta_micros: Option<i64>,
+    pub visit_delta: Option<i32>,
+    pub merge_weight_micros: Option<i64>,
+    pub effective_visit_micros: Option<i64>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_run_deltas_row(value: &DesSoccerLearningRunDeltasRow) -> Result<(), String> {
+    if !["home", "away"].contains(&(&value.team).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.team: {}", &value.team)); }
+    if !["action", "target"].contains(&(&value.entry_kind).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.entry_kind: {}", &value.entry_kind)); }
+    validate_string_length("des_soccer_learning_run_deltas.state_hash", &value.state_hash, None, Some(32))?;
+    if !(&value.state_key).is_object() { return Err("des_soccer_learning_run_deltas.state_key must be a JSON object".to_string()); }
+    validate_string_length("des_soccer_learning_run_deltas.action", &value.action, None, Some(80))?;
+    if (&value.action).as_bytes().len() > 80 { return Err("des_soccer_learning_run_deltas.action exceeds 80 bytes".to_string()); }
+    if *(&value.target_fine_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum".to_string()); }
+    if *(&value.target_tactical_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum".to_string()); }
+    if *(&value.target_macro_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum".to_string()); }
+    if *(&value.target_root_cell_id) < -1 { return Err("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum".to_string()); }
+    if *(&value.visit_delta) < 1 { return Err("des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string()); }
+    if *(&value.merge_weight_micros) < 0 { return Err("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum".to_string()); }
+    if *(&value.effective_visit_micros) < 0 { return Err("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_run_deltas_insert(value: &DesSoccerLearningRunDeltasInsert) -> Result<(), String> {
+    if let Some(value) = &value.team {
+        if !["home", "away"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.team: {}", value)); }
+    }
+    if let Some(value) = &value.entry_kind {
+        if !["action", "target"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_run_deltas.entry_kind: {}", value)); }
+    }
+    if let Some(value) = &value.state_hash {
+        validate_string_length("des_soccer_learning_run_deltas.state_hash", value, None, Some(32))?;
+    }
+    if let Some(value) = &value.state_key {
+        if !(value).is_object() { return Err("des_soccer_learning_run_deltas.state_key must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.action {
+        validate_string_length("des_soccer_learning_run_deltas.action", value, None, Some(80))?;
+        if (value).as_bytes().len() > 80 { return Err("des_soccer_learning_run_deltas.action exceeds 80 bytes".to_string()); }
+    }
+    if let Some(value) = &value.target_fine_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.target_tactical_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.target_macro_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.target_root_cell_id {
+        if *(value) < -1 { return Err("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.visit_delta {
+        if *(value) < 1 { return Err("des_soccer_learning_run_deltas.visit_delta is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.merge_weight_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.effective_visit_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const DES_SOCCER_LEARNING_MERGE_EVENTS_TABLE: &str = "des_soccer_learning_merge_events";
+pub const DES_SOCCER_LEARNING_MERGE_EVENTS_COLUMNS: &[&str] = &["id", "experiment_id", "base_policy_version_id", "output_policy_version_id", "strategy", "input_run_count", "input_delta_count", "decay_micros", "metrics", "created_at"];
+pub const DES_SOCCER_LEARNING_MERGE_EVENTS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      strategy,
+      input_run_count,
+      input_delta_count,
+      decay_micros,
+      metrics,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_merge_events"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesSoccerLearningMergeEventsStrategy {
+    OutcomeWeightedAverage,
+    Elite,
+    Mutation,
+    Crossover,
+}
+
+impl DesSoccerLearningMergeEventsStrategy {
+    pub const VALUES: &'static [&'static str] = &["outcome_weighted_average", "elite", "mutation", "crossover"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OutcomeWeightedAverage => "outcome_weighted_average",
+            Self::Elite => "elite",
+            Self::Mutation => "mutation",
+            Self::Crossover => "crossover",
+        }
+    }
+}
+
+impl TryFrom<&str> for DesSoccerLearningMergeEventsStrategy {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "outcome_weighted_average" => Ok(Self::OutcomeWeightedAverage),
+            "elite" => Ok(Self::Elite),
+            "mutation" => Ok(Self::Mutation),
+            "crossover" => Ok(Self::Crossover),
+            _ => Err(format!("unsupported strategy: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningMergeEventsRow {
+    pub id: String,
+    pub experiment_id: String,
+    pub base_policy_version_id: Option<String>,
+    pub output_policy_version_id: String,
+    pub strategy: String,
+    pub input_run_count: i32,
+    pub input_delta_count: i32,
+    pub decay_micros: i64,
+    pub metrics: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesSoccerLearningMergeEventsInsert {
+    pub id: Option<String>,
+    pub experiment_id: Option<String>,
+    pub base_policy_version_id: Option<String>,
+    pub output_policy_version_id: Option<String>,
+    pub strategy: Option<String>,
+    pub input_run_count: Option<i32>,
+    pub input_delta_count: Option<i32>,
+    pub decay_micros: Option<i64>,
+    pub metrics: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_des_soccer_learning_merge_events_row(value: &DesSoccerLearningMergeEventsRow) -> Result<(), String> {
+    if !["outcome_weighted_average", "elite", "mutation", "crossover"].contains(&(&value.strategy).as_str()) { return Err(format!("unsupported des_soccer_learning_merge_events.strategy: {}", &value.strategy)); }
+    if *(&value.input_run_count) < 0 { return Err("des_soccer_learning_merge_events.input_run_count is below the minimum".to_string()); }
+    if *(&value.input_delta_count) < 0 { return Err("des_soccer_learning_merge_events.input_delta_count is below the minimum".to_string()); }
+    if *(&value.decay_micros) < 0 { return Err("des_soccer_learning_merge_events.decay_micros is below the minimum".to_string()); }
+    if *(&value.decay_micros) > 1000000 { return Err("des_soccer_learning_merge_events.decay_micros is above the maximum".to_string()); }
+    if !(&value.metrics).is_object() { return Err("des_soccer_learning_merge_events.metrics must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_des_soccer_learning_merge_events_insert(value: &DesSoccerLearningMergeEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.strategy {
+        if !["outcome_weighted_average", "elite", "mutation", "crossover"].contains(&(value).as_str()) { return Err(format!("unsupported des_soccer_learning_merge_events.strategy: {}", value)); }
+    }
+    if let Some(value) = &value.input_run_count {
+        if *(value) < 0 { return Err("des_soccer_learning_merge_events.input_run_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.input_delta_count {
+        if *(value) < 0 { return Err("des_soccer_learning_merge_events.input_delta_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.decay_micros {
+        if *(value) < 0 { return Err("des_soccer_learning_merge_events.decay_micros is below the minimum".to_string()); }
+        if *(value) > 1000000 { return Err("des_soccer_learning_merge_events.decay_micros is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.metrics {
+        if !(value).is_object() { return Err("des_soccer_learning_merge_events.metrics must be a JSON object".to_string()); }
+    }
     Ok(())
 }
 

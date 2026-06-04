@@ -102,6 +102,40 @@ const CODEGEN_METADATA = {
         },
       },
     },
+    agent_remote_dev_breadcrumbs: {
+      description: "Thread-scoped operational breadcrumbs (session-ready, prompt, merge-base, container-pool-result, etc.) used by dev-server to inject prior-task context and by operators to trace worker lifecycle without grepping logs. Postgres is the durable single source of truth for these; Redis (see @dd/redis-interfaces / agent-thread-breadcrumb-cache) is an optional hot-read cache.",
+      names: {
+        typescript: "agentRemoteDevBreadcrumbs",
+        rust: "AgentRemoteDevBreadcrumb",
+        gleam: "AgentRemoteDevBreadcrumb",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        kind: {
+          validation: {
+            minLength: 1,
+            maxLength: 80,
+          },
+        },
+        pod_name: {
+          validation: {
+            maxLength: 253,
+          },
+        },
+        branch: {
+          validation: {
+            maxLength: 120,
+          },
+        },
+        provider: {
+          validation: {
+            maxLength: 60,
+          },
+        },
+      },
+    },
     agent_remote_dev_artifacts: {
       description: "Artifacts published by remote agent tasks, such as logs, reports, patches, and output files.",
       names: {
@@ -195,6 +229,8 @@ export async function loadSqlContract(packageRoot) {
 export function parseSchemaSql(sourceSql) {
   const statements = splitSqlStatements(sourceSql);
   const tables = [];
+  const routines = [];
+  const triggers = [];
   const tableByName = new Map();
 
   for (const statement of statements) {
@@ -208,6 +244,18 @@ export function parseSchemaSql(sourceSql) {
   }
 
   for (const statement of statements) {
+    const routine = parseCreateFunction(statement);
+    if (routine) {
+      routines.push(routine);
+      continue;
+    }
+
+    const trigger = parseCreateTrigger(statement);
+    if (trigger) {
+      triggers.push(trigger);
+      continue;
+    }
+
     const index = parseCreateIndex(statement);
     if (index) {
       const table = tableByName.get(index.tableName);
@@ -239,6 +287,8 @@ export function parseSchemaSql(sourceSql) {
     dialect: "postgresql",
     description: "Generated from schema/schema.sql.",
     tables,
+    routines,
+    triggers,
   };
 }
 
@@ -248,6 +298,7 @@ export function splitSqlStatements(sourceSql) {
   let singleQuoted = false;
   let doubleQuoted = false;
   let lineComment = false;
+  let dollarQuote = null;
 
   for (let index = 0; index < sourceSql.length; index += 1) {
     const char = sourceSql[index];
@@ -259,6 +310,28 @@ export function splitSqlStatements(sourceSql) {
         current += char;
       }
       continue;
+    }
+
+    if (dollarQuote) {
+      if (sourceSql.startsWith(dollarQuote, index)) {
+        current += dollarQuote;
+        index += dollarQuote.length - 1;
+        dollarQuote = null;
+        continue;
+      }
+
+      current += char;
+      continue;
+    }
+
+    if (!singleQuoted && !doubleQuoted && char === "$") {
+      const dollarMatch = sourceSql.slice(index).match(/^\$[A-Za-z0-9_]*\$/);
+      if (dollarMatch) {
+        dollarQuote = dollarMatch[0];
+        current += dollarQuote;
+        index += dollarQuote.length - 1;
+        continue;
+      }
     }
 
     if (!singleQuoted && !doubleQuoted && char === "-" && next === "-") {
@@ -367,6 +440,55 @@ function parseForeignKey(statement) {
   };
 }
 
+function parseCreateFunction(statement) {
+  const bodyMatch = statement.match(/\bas\s+\$([A-Za-z0-9_]*)\$([\s\S]*)\$\1\$\s*;?$/i);
+  if (!bodyMatch) {
+    return null;
+  }
+
+  const header = statement.slice(0, bodyMatch.index).trim();
+  const headerMatch = header.match(
+    /^create\s+or\s+replace\s+function\s+("?[\w]+"?)\s*\(([\s\S]*?)\)\s*returns\s+([\s\S]+?)\s+language\s+(\w+)([\s\S]*)$/i,
+  );
+  if (!headerMatch) {
+    return null;
+  }
+
+  const modifiers = headerMatch[5] ?? "";
+  const volatilityMatch = modifiers.match(/\b(immutable|stable|volatile)\b/i);
+
+  return {
+    name: unquoteIdent(headerMatch[1]),
+    argumentsSql: headerMatch[2].trim(),
+    identityArguments: normalizeRoutineArgs(headerMatch[2]),
+    returns: headerMatch[3].trim(),
+    language: headerMatch[4].toLowerCase(),
+    volatility: volatilityMatch ? volatilityMatch[1].toLowerCase() : "volatile",
+    bodySql: bodyMatch[2].trim(),
+    createStatement: statement.trim(),
+  };
+}
+
+function parseCreateTrigger(statement) {
+  const match = statement.match(
+    /^create\s+trigger\s+("?[\w]+"?)\s+(before|after|instead\s+of)\s+([\s\S]+?)\s+on\s+("?[\w]+"?)\s+for\s+each\s+(row|statement)\s+execute\s+(?:function|procedure)\s+("?[\w]+"?)\s*\(([\s\S]*?)\)\s*;?$/i,
+  );
+  if (!match) {
+    return null;
+  }
+
+  return {
+    name: unquoteIdent(match[1]),
+    timing: match[2].replace(/\s+/g, " ").toLowerCase(),
+    events: splitTriggerEvents(match[3]),
+    tableName: unquoteIdent(match[4]),
+    orientation: match[5].toLowerCase(),
+    functionName: unquoteIdent(match[6]),
+    functionArguments: match[7].trim(),
+    createStatement: statement.trim(),
+  };
+}
+
 function parseCreateIndex(statement) {
   const match = statement.match(
     /^create\s+(unique\s+)?index\s+(?:if\s+not\s+exists\s+)?("?[\w]+"?)\s+on\s+("?[\w]+"?)(?:\s+using\s+(\w+))?\s*\(([\s\S]*?)\)(?:\s+where\s+([\s\S]*?))?\s*;?$/i,
@@ -399,6 +521,18 @@ function parseCreateIndex(statement) {
     where: match[6]?.trim(),
     createStatement: statement.trim(),
   };
+}
+
+function normalizeRoutineArgs(value) {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function splitTriggerEvents(value) {
+  return value
+    .split(/\s+or\s+/i)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .sort();
 }
 
 function parseCheckConstraint(value) {

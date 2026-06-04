@@ -1,0 +1,23 @@
+# Sample Thread CR. Apply ONLY when the operator is running and
+# you want to opt in to operator-managed thread provisioning. The
+# resulting PVC, Deployment, Service, and Ingress will all carry
+# the dd.dev/managed-by=dd-thread-operator label.
+#
+# This file is intentionally NOT included in kustomization.yaml —
+# it is a manual smoke-test artifact.
+apiVersion: dd.dev/v1alpha1
+kind: Thread
+metadata:
+  name: sample-thread
+  namespace: dd-dev
+spec:
+  threadId: 11111111-1111-4111-8111-111111111111
+  threadIdShort: sample01
+  userId: 00000000-0000-0000-0000-000000000001
+  ingressHost: agents.example.com
+  image: docker.io/library/dd-dev-server:dev
+  imagePullPolicy: IfNotPresent
+  desiredState: Running
+  workspaceSize: 5Gi
+  idleTimeoutSeconds: 1800
+  ttlSecondsAfterIdle: 86400

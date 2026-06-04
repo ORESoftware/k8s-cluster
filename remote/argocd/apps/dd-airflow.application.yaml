@@ -4,26 +4,141 @@ metadata:
   name: dd-airflow
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: https://airflow.apache.org
     chart: airflow
     targetRevision: 1.21.0
     helm:
+      skipTests: true
       values: |
         executor: LocalExecutor
+        securityContexts:
+          pod:
+            runAsUser: 50000
+            runAsGroup: 0
+            fsGroup: 0
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 50000
+            runAsGroup: 0
+            seccompProfile:
+              type: RuntimeDefault
+        fernetKeySecretName: dd-airflow-secrets
+        apiSecretKeySecretName: dd-airflow-secrets
+        jwtSecretName: dd-airflow-secrets
+        webserverSecretKeySecretName: dd-airflow-secrets
+        createUserJob:
+          enabled: false
+          serviceAccount:
+            automountServiceAccountToken: false
+        migrateDatabaseJob:
+          serviceAccount:
+            automountServiceAccountToken: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
         webserver:
           replicas: 1
+          serviceAccount:
+            automountServiceAccountToken: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+        apiServer:
+          serviceAccount:
+            automountServiceAccountToken: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
         scheduler:
           replicas: 1
+          serviceAccount:
+            automountServiceAccountToken: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+        dagProcessor:
+          serviceAccount:
+            automountServiceAccountToken: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+        statsd:
+          serviceAccount:
+            automountServiceAccountToken: false
+          securityContexts:
+            pod:
+              seccompProfile:
+                type: RuntimeDefault
+            container:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              runAsNonRoot: true
+              runAsUser: 65534
+              seccompProfile:
+                type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
         triggerer:
           replicas: 1
+          serviceAccount:
+            automountServiceAccountToken: false
+          persistence:
+            enabled: true
+            size: 10Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
         workers:
           replicas: 0
         redis:
           enabled: false
         postgresql:
           enabled: true
+          auth:
+            existingSecret: dd-airflow-secrets
+            secretKeys:
+              adminPasswordKey: postgres-password
+              userPasswordKey: password
         dags:
           persistence:
             enabled: false
@@ -34,5 +149,3 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

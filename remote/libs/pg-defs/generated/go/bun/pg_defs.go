@@ -21,11 +21,24 @@ var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~
 var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
 var knownGitRepoRepoUrlPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var knownGitRepoDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
+var agentContextBlobsProjectIdPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var agentContextBlobsContextIdPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+var agentContextEmbeddingsEmbeddingModelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var agentContextEmbeddingsContentSha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
+var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var containerPoolBuildRunsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var presenceConvsSlugPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var desSoccerLearningExperimentsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$`)
+var desSoccerLearningPolicyVersionsVersionLabelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,160}$`)
+var desSoccerLearningPolicyEntriesStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
+var desSoccerLearningRunDeltasStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -208,6 +221,87 @@ func (value KnownGitRepoBun) Validate() error {
 	return nil
 }
 
+const AgentContextBlobsTable = "agent_context_blobs"
+const AgentContextBlobsSelectSQL = `select
+      id::text as id,
+      project_id,
+      repo_id::text as repo_id,
+      context_id,
+      context_title,
+      context_blob,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from agent_context_blobs`
+
+var AgentContextBlobsStatusValues = []string{"active", "paused", "archived"}
+
+type AgentContextBlobsBun struct {
+	bun.BaseModel `bun:"table:agent_context_blobs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ProjectId string `bun:"project_id,type:varchar(120),default:'default'" json:"projectId"`
+	RepoId *uuid.UUID `bun:"repo_id,type:uuid,nullzero" json:"repoId,omitempty"`
+	ContextId string `bun:"context_id,type:varchar(200)" json:"contextId"`
+	ContextTitle string `bun:"context_title,type:varchar(300)" json:"contextTitle"`
+	ContextBlob string `bun:"context_blob,type:text" json:"contextBlob"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	Labels json.RawMessage `bun:"labels,type:jsonb,default:'[]'::jsonb" json:"labels"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value AgentContextBlobsBun) Validate() error {
+	if !agentContextBlobsProjectIdPattern.MatchString(value.ProjectId) { return errors.New("agent_context_blobs.project_id does not match the required pattern") }
+	if !agentContextBlobsContextIdPattern.MatchString(value.ContextId) { return errors.New("agent_context_blobs.context_id does not match the required pattern") }
+	if len([]byte(value.ContextTitle)) > 300 { return errors.New("agent_context_blobs.context_title exceeds 300 bytes") }
+	if len([]byte(value.ContextTitle)) < 1 { return errors.New("agent_context_blobs.context_title is below 1 bytes") }
+	if len([]byte(value.ContextBlob)) > 1048576 { return errors.New("agent_context_blobs.context_blob exceeds 1048576 bytes") }
+	if len([]byte(value.ContextBlob)) < 1 { return errors.New("agent_context_blobs.context_blob is below 1 bytes") }
+	if !containsString(AgentContextBlobsStatusValues, value.Status) { return errors.New("unsupported agent_context_blobs.status") }
+	if !validateRawJSON(value.Labels) { return errors.New("agent_context_blobs.labels must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("agent_context_blobs.meta_data must be valid JSON") }
+	return nil
+}
+
+const AgentContextEmbeddingsTable = "agent_context_embeddings"
+const AgentContextEmbeddingsSelectSQL = `select
+      id::text as id,
+      context_blob_id::text as context_blob_id,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      content_sha256,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from agent_context_embeddings`
+
+type AgentContextEmbeddingsBun struct {
+	bun.BaseModel `bun:"table:agent_context_embeddings"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ContextBlobId uuid.UUID `bun:"context_blob_id,type:uuid" json:"contextBlobId"`
+	EmbeddingModel string `bun:"embedding_model,type:varchar(120)" json:"embeddingModel"`
+	Embedding json.RawMessage `bun:"embedding,type:jsonb" json:"embedding"`
+	EmbeddingDimensions int32 `bun:"embedding_dimensions,type:integer" json:"embeddingDimensions"`
+	ContentSha256 string `bun:"content_sha256,type:varchar(64)" json:"contentSha256"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value AgentContextEmbeddingsBun) Validate() error {
+	if !agentContextEmbeddingsEmbeddingModelPattern.MatchString(value.EmbeddingModel) { return errors.New("agent_context_embeddings.embedding_model does not match the required pattern") }
+	if !validateRawJSON(value.Embedding) { return errors.New("agent_context_embeddings.embedding must be valid JSON") }
+	if value.EmbeddingDimensions < 1 { return errors.New("agent_context_embeddings.embedding_dimensions is below the minimum") }
+	if !agentContextEmbeddingsContentSha256Pattern.MatchString(value.ContentSha256) { return errors.New("agent_context_embeddings.content_sha256 does not match the required pattern") }
+	return nil
+}
+
 const AgentRemoteDevThreadTable = "agent_remote_dev_threads"
 const AgentRemoteDevThreadSelectSQL = `select
       id::text as id,
@@ -320,6 +414,7 @@ const AgentRemoteDevEventTable = "agent_remote_dev_events"
 const AgentRemoteDevEventSelectSQL = `select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload,
@@ -330,6 +425,7 @@ type AgentRemoteDevEventBun struct {
 	bun.BaseModel `bun:"table:agent_remote_dev_events"`
 	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
 	TaskId uuid.UUID `bun:"task_id,type:uuid" json:"taskId"`
+	ThreadId *uuid.UUID `bun:"thread_id,type:uuid,nullzero" json:"threadId,omitempty"`
 	Seq int32 `bun:"seq,type:integer" json:"seq"`
 	EventKind string `bun:"event_kind,type:varchar(80)" json:"eventKind"`
 	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
@@ -339,6 +435,47 @@ type AgentRemoteDevEventBun struct {
 func (value AgentRemoteDevEventBun) Validate() error {
 	if !agentRemoteDevEventEventKindPattern.MatchString(value.EventKind) { return errors.New("agent_remote_dev_events.event_kind does not match the required pattern") }
 	if !validateRawJSON(value.Payload) { return errors.New("agent_remote_dev_events.payload must be valid JSON") }
+	return nil
+}
+
+const AgentRemoteDevBreadcrumbTable = "agent_remote_dev_breadcrumbs"
+const AgentRemoteDevBreadcrumbSelectSQL = `select
+      id,
+      thread_id::text as thread_id,
+      task_id::text as task_id,
+      kind,
+      payload,
+      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+      pod_name,
+      branch,
+      provider
+    from agent_remote_dev_breadcrumbs`
+
+type AgentRemoteDevBreadcrumbBun struct {
+	bun.BaseModel `bun:"table:agent_remote_dev_breadcrumbs"`
+	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	ThreadId uuid.UUID `bun:"thread_id,type:uuid" json:"threadId"`
+	TaskId *uuid.UUID `bun:"task_id,type:uuid,nullzero" json:"taskId,omitempty"`
+	Kind string `bun:"kind,type:varchar(80)" json:"kind"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	EmittedAt time.Time `bun:"emitted_at,type:timestamptz,default:now()" json:"emittedAt"`
+	PodName *string `bun:"pod_name,type:varchar(253),nullzero" json:"podName,omitempty"`
+	Branch *string `bun:"branch,type:varchar(120),nullzero" json:"branch,omitempty"`
+	Provider *string `bun:"provider,type:varchar(60),nullzero" json:"provider,omitempty"`
+}
+
+func (value AgentRemoteDevBreadcrumbBun) Validate() error {
+	if !agentRemoteDevBreadcrumbKindPattern.MatchString(value.Kind) { return errors.New("agent_remote_dev_breadcrumbs.kind does not match the required pattern") }
+	if !validateRawJSON(value.Payload) { return errors.New("agent_remote_dev_breadcrumbs.payload must be valid JSON") }
+	if value.PodName != nil {
+		if len([]byte(*value.PodName)) > 253 { return errors.New("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes") }
+	}
+	if value.Branch != nil {
+		if len([]byte(*value.Branch)) > 120 { return errors.New("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes") }
+	}
+	if value.Provider != nil {
+		if len([]byte(*value.Provider)) > 60 { return errors.New("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes") }
+	}
 	return nil
 }
 
@@ -420,6 +557,179 @@ func (value AgentRemoteDevRuntimeLockBun) Validate() error {
 	return nil
 }
 
+const MipSolverSessionsTable = "mip_solver_sessions"
+const MipSolverSessionsSelectSQL = `select
+      session_id,
+      revision,
+      problem,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_sessions`
+
+type MipSolverSessionsBun struct {
+	bun.BaseModel `bun:"table:mip_solver_sessions"`
+	SessionId string `bun:"session_id,type:varchar(200),pk" json:"sessionId"`
+	Revision int64 `bun:"revision,type:bigint,default:0" json:"revision"`
+	Problem json.RawMessage `bun:"problem,type:jsonb,default:'{}'::jsonb" json:"problem"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value MipSolverSessionsBun) Validate() error {
+	if len([]byte(value.SessionId)) > 200 { return errors.New("mip_solver_sessions.session_id exceeds 200 bytes") }
+	if len([]byte(value.SessionId)) < 1 { return errors.New("mip_solver_sessions.session_id is below 1 bytes") }
+	if value.Revision < 0 { return errors.New("mip_solver_sessions.revision is below the minimum") }
+	if !validateRawJSON(value.Problem) { return errors.New("mip_solver_sessions.problem must be valid JSON") }
+	return nil
+}
+
+const MipSolverSolvesTable = "mip_solver_solves"
+const MipSolverSolvesSelectSQL = `select
+      solve_id,
+      request_id,
+      revision,
+      status,
+      node_id,
+      node_role,
+      problem,
+      options,
+      response,
+      jobs_expected,
+      jobs_published,
+      jobs_completed,
+      jobs_redelegated,
+      jobs_split,
+      timed_out,
+      distributed,
+      warnings,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from mip_solver_solves`
+
+var MipSolverSolvesNodeRoleValues = []string{"master", "slave"}
+
+type MipSolverSolvesBun struct {
+	bun.BaseModel `bun:"table:mip_solver_solves"`
+	SolveId string `bun:"solve_id,type:varchar(160),pk" json:"solveId"`
+	RequestId string `bun:"request_id,type:varchar(200)" json:"requestId"`
+	Revision int64 `bun:"revision,type:bigint,default:0" json:"revision"`
+	Status string `bun:"status,type:varchar(64),default:'running'" json:"status"`
+	NodeId string `bun:"node_id,type:varchar(253)" json:"nodeId"`
+	NodeRole string `bun:"node_role,type:varchar(32)" json:"nodeRole"`
+	Problem json.RawMessage `bun:"problem,type:jsonb,default:'{}'::jsonb" json:"problem"`
+	Options json.RawMessage `bun:"options,type:jsonb,default:'{}'::jsonb" json:"options"`
+	Response json.RawMessage `bun:"response,type:jsonb,default:'{}'::jsonb" json:"response"`
+	JobsExpected int32 `bun:"jobs_expected,type:integer,default:0" json:"jobsExpected"`
+	JobsPublished int32 `bun:"jobs_published,type:integer,default:0" json:"jobsPublished"`
+	JobsCompleted int32 `bun:"jobs_completed,type:integer,default:0" json:"jobsCompleted"`
+	JobsRedelegated int32 `bun:"jobs_redelegated,type:integer,default:0" json:"jobsRedelegated"`
+	JobsSplit int32 `bun:"jobs_split,type:integer,default:0" json:"jobsSplit"`
+	TimedOut bool `bun:"timed_out,type:boolean,default:false" json:"timedOut"`
+	Distributed bool `bun:"distributed,type:boolean,default:false" json:"distributed"`
+	Warnings json.RawMessage `bun:"warnings,type:jsonb,default:'[]'::jsonb" json:"warnings"`
+	StartedAt time.Time `bun:"started_at,type:timestamptz,default:now()" json:"startedAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+}
+
+func (value MipSolverSolvesBun) Validate() error {
+	if len([]byte(value.SolveId)) > 160 { return errors.New("mip_solver_solves.solve_id exceeds 160 bytes") }
+	if len([]byte(value.SolveId)) < 1 { return errors.New("mip_solver_solves.solve_id is below 1 bytes") }
+	if len([]byte(value.RequestId)) > 200 { return errors.New("mip_solver_solves.request_id exceeds 200 bytes") }
+	if len([]byte(value.RequestId)) < 1 { return errors.New("mip_solver_solves.request_id is below 1 bytes") }
+	if value.Revision < 0 { return errors.New("mip_solver_solves.revision is below the minimum") }
+	if len([]byte(value.Status)) > 64 { return errors.New("mip_solver_solves.status exceeds 64 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("mip_solver_solves.status is below 1 bytes") }
+	if len([]byte(value.NodeId)) > 253 { return errors.New("mip_solver_solves.node_id exceeds 253 bytes") }
+	if len([]byte(value.NodeId)) < 1 { return errors.New("mip_solver_solves.node_id is below 1 bytes") }
+	if !containsString(MipSolverSolvesNodeRoleValues, value.NodeRole) { return errors.New("unsupported mip_solver_solves.node_role") }
+	if !validateRawJSON(value.Problem) { return errors.New("mip_solver_solves.problem must be valid JSON") }
+	if !validateRawJSON(value.Options) { return errors.New("mip_solver_solves.options must be valid JSON") }
+	if !validateRawJSON(value.Response) { return errors.New("mip_solver_solves.response must be valid JSON") }
+	if value.JobsExpected < 0 { return errors.New("mip_solver_solves.jobs_expected is below the minimum") }
+	if value.JobsPublished < 0 { return errors.New("mip_solver_solves.jobs_published is below the minimum") }
+	if value.JobsCompleted < 0 { return errors.New("mip_solver_solves.jobs_completed is below the minimum") }
+	if value.JobsRedelegated < 0 { return errors.New("mip_solver_solves.jobs_redelegated is below the minimum") }
+	if value.JobsSplit < 0 { return errors.New("mip_solver_solves.jobs_split is below the minimum") }
+	if !validateRawJSON(value.Warnings) { return errors.New("mip_solver_solves.warnings must be valid JSON") }
+	return nil
+}
+
+const MipSolverJobsTable = "mip_solver_jobs"
+const MipSolverJobsSelectSQL = `select
+      job_id,
+      solve_id,
+      root_job_id,
+      retry_index,
+      depth,
+      status,
+      worker_node,
+      job_payload,
+      result_payload,
+      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as submitted_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_jobs`
+
+type MipSolverJobsBun struct {
+	bun.BaseModel `bun:"table:mip_solver_jobs"`
+	JobId string `bun:"job_id,type:varchar(240),pk" json:"jobId"`
+	SolveId string `bun:"solve_id,type:varchar(160)" json:"solveId"`
+	RootJobId string `bun:"root_job_id,type:varchar(240)" json:"rootJobId"`
+	RetryIndex int32 `bun:"retry_index,type:integer,default:0" json:"retryIndex"`
+	Depth int32 `bun:"depth,type:integer,default:0" json:"depth"`
+	Status string `bun:"status,type:varchar(64),default:'submitted'" json:"status"`
+	WorkerNode *string `bun:"worker_node,type:varchar(253),nullzero" json:"workerNode,omitempty"`
+	JobPayload json.RawMessage `bun:"job_payload,type:jsonb,default:'{}'::jsonb" json:"jobPayload"`
+	ResultPayload json.RawMessage `bun:"result_payload,type:jsonb,default:'{}'::jsonb" json:"resultPayload"`
+	SubmittedAt time.Time `bun:"submitted_at,type:timestamptz,default:now()" json:"submittedAt"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value MipSolverJobsBun) Validate() error {
+	if len([]byte(value.JobId)) > 240 { return errors.New("mip_solver_jobs.job_id exceeds 240 bytes") }
+	if len([]byte(value.JobId)) < 1 { return errors.New("mip_solver_jobs.job_id is below 1 bytes") }
+	if len([]byte(value.RootJobId)) > 240 { return errors.New("mip_solver_jobs.root_job_id exceeds 240 bytes") }
+	if len([]byte(value.RootJobId)) < 1 { return errors.New("mip_solver_jobs.root_job_id is below 1 bytes") }
+	if value.RetryIndex < 0 { return errors.New("mip_solver_jobs.retry_index is below the minimum") }
+	if value.Depth < 0 { return errors.New("mip_solver_jobs.depth is below the minimum") }
+	if len([]byte(value.Status)) > 64 { return errors.New("mip_solver_jobs.status exceeds 64 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("mip_solver_jobs.status is below 1 bytes") }
+	if !validateRawJSON(value.JobPayload) { return errors.New("mip_solver_jobs.job_payload must be valid JSON") }
+	if !validateRawJSON(value.ResultPayload) { return errors.New("mip_solver_jobs.result_payload must be valid JSON") }
+	return nil
+}
+
+const MipSolverEventsTable = "mip_solver_events"
+const MipSolverEventsSelectSQL = `select
+      id,
+      solve_id,
+      session_id,
+      job_id,
+      event_kind,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from mip_solver_events`
+
+type MipSolverEventsBun struct {
+	bun.BaseModel `bun:"table:mip_solver_events"`
+	Id int64 `bun:"id,type:bigserial,pk" json:"id"`
+	SolveId *string `bun:"solve_id,type:varchar(160),nullzero" json:"solveId,omitempty"`
+	SessionId *string `bun:"session_id,type:varchar(200),nullzero" json:"sessionId,omitempty"`
+	JobId *string `bun:"job_id,type:varchar(240),nullzero" json:"jobId,omitempty"`
+	EventKind string `bun:"event_kind,type:varchar(80)" json:"eventKind"`
+	Payload json.RawMessage `bun:"payload,type:jsonb,default:'{}'::jsonb" json:"payload"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value MipSolverEventsBun) Validate() error {
+	if !mipSolverEventsEventKindPattern.MatchString(value.EventKind) { return errors.New("mip_solver_events.event_kind does not match the required pattern") }
+	if !validateRawJSON(value.Payload) { return errors.New("mip_solver_events.payload must be valid JSON") }
+	return nil
+}
+
 const LambdaFunctionTable = "lambda_functions"
 const LambdaFunctionSelectSQL = `select
       id::text as id,
@@ -460,7 +770,7 @@ type LambdaFunctionBun struct {
 	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
 	Description string `bun:"description,type:text,default:''" json:"description"`
 	Runtime string `bun:"runtime,type:varchar(40),default:'nodejs'" json:"runtime"`
-	EntryCommand string `bun:"entry_command,type:text,default:'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'" json:"entryCommand"`
+	EntryCommand string `bun:"entry_command,type:text,default:'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" json:"entryCommand"`
 	FunctionBody string `bun:"function_body,type:text" json:"functionBody"`
 	ReuseKey *string `bun:"reuse_key,type:varchar(200),nullzero" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `bun:"idle_timeout_seconds,type:integer,default:300" json:"idleTimeoutSeconds"`
@@ -503,6 +813,140 @@ func (value LambdaFunctionBun) Validate() error {
 	if !validateRawJSON(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateRawJSON(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolImageRevisionsTable = "container_pool_image_revisions"
+const ContainerPoolImageRevisionsSelectSQL = `select
+      id::text as id,
+      image_slug,
+      image_ref,
+      dockerfile_path,
+      build_context,
+      dockerfile_text,
+      dockerfile_sha256,
+      source,
+      notes,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_image_revisions`
+
+var ContainerPoolImageRevisionsSourceValues = []string{"disk-default", "user", "system"}
+var ContainerPoolImageRevisionsStatusValues = []string{"candidate", "active", "archived"}
+
+type ContainerPoolImageRevisionsBun struct {
+	bun.BaseModel `bun:"table:container_pool_image_revisions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ImageSlug string `bun:"image_slug,type:varchar(120)" json:"imageSlug"`
+	ImageRef string `bun:"image_ref,type:text" json:"imageRef"`
+	DockerfilePath string `bun:"dockerfile_path,type:text" json:"dockerfilePath"`
+	BuildContext string `bun:"build_context,type:text" json:"buildContext"`
+	DockerfileText string `bun:"dockerfile_text,type:text" json:"dockerfileText"`
+	DockerfileSha256 string `bun:"dockerfile_sha256,type:varchar(64)" json:"dockerfileSha256"`
+	Source string `bun:"source,type:varchar(32),default:'user'" json:"source"`
+	Notes string `bun:"notes,type:text,default:''" json:"notes"`
+	Status string `bun:"status,type:varchar(32),default:'candidate'" json:"status"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value ContainerPoolImageRevisionsBun) Validate() error {
+	if !containerPoolImageRevisionsImageSlugPattern.MatchString(value.ImageSlug) { return errors.New("container_pool_image_revisions.image_slug does not match the required pattern") }
+	if len([]byte(value.ImageRef)) > 512 { return errors.New("container_pool_image_revisions.image_ref exceeds 512 bytes") }
+	if len([]byte(value.ImageRef)) < 1 { return errors.New("container_pool_image_revisions.image_ref is below 1 bytes") }
+	if len([]byte(value.DockerfilePath)) > 512 { return errors.New("container_pool_image_revisions.dockerfile_path exceeds 512 bytes") }
+	if len([]byte(value.DockerfilePath)) < 1 { return errors.New("container_pool_image_revisions.dockerfile_path is below 1 bytes") }
+	if len([]byte(value.BuildContext)) > 512 { return errors.New("container_pool_image_revisions.build_context exceeds 512 bytes") }
+	if len([]byte(value.BuildContext)) < 1 { return errors.New("container_pool_image_revisions.build_context is below 1 bytes") }
+	if len([]byte(value.DockerfileText)) > 65536 { return errors.New("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes") }
+	if len([]byte(value.DockerfileText)) < 1 { return errors.New("container_pool_image_revisions.dockerfile_text is below 1 bytes") }
+	if !containerPoolImageRevisionsDockerfileSha256Pattern.MatchString(value.DockerfileSha256) { return errors.New("container_pool_image_revisions.dockerfile_sha256 does not match the required pattern") }
+	if !containsString(ContainerPoolImageRevisionsSourceValues, value.Source) { return errors.New("unsupported container_pool_image_revisions.source") }
+	if len([]byte(value.Notes)) > 8192 { return errors.New("container_pool_image_revisions.notes exceeds 8192 bytes") }
+	if !containsString(ContainerPoolImageRevisionsStatusValues, value.Status) { return errors.New("unsupported container_pool_image_revisions.status") }
+	if !validateRawJSON(value.MetaData) { return errors.New("container_pool_image_revisions.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolBuildRunsTable = "container_pool_build_runs"
+const ContainerPoolBuildRunsSelectSQL = `select
+      id::text as id,
+      image_slug,
+      revision_id::text as revision_id,
+      image_ref,
+      candidate_tag,
+      build_status,
+      test_status,
+      overall_status,
+      test_command,
+      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_started_at,
+      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_finished_at,
+      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_started_at,
+      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_finished_at,
+      build_log_excerpt,
+      test_log_excerpt,
+      error_message,
+      triggered_by::text as triggered_by,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from container_pool_build_runs`
+
+var ContainerPoolBuildRunsBuildStatusValues = []string{"queued", "building", "built", "failed", "skipped", "cancelled"}
+var ContainerPoolBuildRunsTestStatusValues = []string{"not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"}
+var ContainerPoolBuildRunsOverallStatusValues = []string{"queued", "running", "passed", "failed", "cancelled", "errored"}
+
+type ContainerPoolBuildRunsBun struct {
+	bun.BaseModel `bun:"table:container_pool_build_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ImageSlug string `bun:"image_slug,type:varchar(120)" json:"imageSlug"`
+	RevisionId uuid.UUID `bun:"revision_id,type:uuid" json:"revisionId"`
+	ImageRef string `bun:"image_ref,type:text" json:"imageRef"`
+	CandidateTag string `bun:"candidate_tag,type:text" json:"candidateTag"`
+	BuildStatus string `bun:"build_status,type:varchar(32),default:'queued'" json:"buildStatus"`
+	TestStatus string `bun:"test_status,type:varchar(32),default:'not_started'" json:"testStatus"`
+	OverallStatus string `bun:"overall_status,type:varchar(32),default:'queued'" json:"overallStatus"`
+	TestCommand string `bun:"test_command,type:text,default:''" json:"testCommand"`
+	BuildStartedAt *time.Time `bun:"build_started_at,type:timestamptz,nullzero" json:"buildStartedAt,omitempty"`
+	BuildFinishedAt *time.Time `bun:"build_finished_at,type:timestamptz,nullzero" json:"buildFinishedAt,omitempty"`
+	TestStartedAt *time.Time `bun:"test_started_at,type:timestamptz,nullzero" json:"testStartedAt,omitempty"`
+	TestFinishedAt *time.Time `bun:"test_finished_at,type:timestamptz,nullzero" json:"testFinishedAt,omitempty"`
+	BuildLogExcerpt string `bun:"build_log_excerpt,type:text,default:''" json:"buildLogExcerpt"`
+	TestLogExcerpt string `bun:"test_log_excerpt,type:text,default:''" json:"testLogExcerpt"`
+	ErrorMessage *string `bun:"error_message,type:text,nullzero" json:"errorMessage,omitempty"`
+	TriggeredBy *uuid.UUID `bun:"triggered_by,type:uuid,nullzero" json:"triggeredBy,omitempty"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value ContainerPoolBuildRunsBun) Validate() error {
+	if !containerPoolBuildRunsImageSlugPattern.MatchString(value.ImageSlug) { return errors.New("container_pool_build_runs.image_slug does not match the required pattern") }
+	if len([]byte(value.ImageRef)) > 512 { return errors.New("container_pool_build_runs.image_ref exceeds 512 bytes") }
+	if len([]byte(value.ImageRef)) < 1 { return errors.New("container_pool_build_runs.image_ref is below 1 bytes") }
+	if len([]byte(value.CandidateTag)) > 512 { return errors.New("container_pool_build_runs.candidate_tag exceeds 512 bytes") }
+	if len([]byte(value.CandidateTag)) < 1 { return errors.New("container_pool_build_runs.candidate_tag is below 1 bytes") }
+	if !containsString(ContainerPoolBuildRunsBuildStatusValues, value.BuildStatus) { return errors.New("unsupported container_pool_build_runs.build_status") }
+	if !containsString(ContainerPoolBuildRunsTestStatusValues, value.TestStatus) { return errors.New("unsupported container_pool_build_runs.test_status") }
+	if !containsString(ContainerPoolBuildRunsOverallStatusValues, value.OverallStatus) { return errors.New("unsupported container_pool_build_runs.overall_status") }
+	if len([]byte(value.TestCommand)) > 4096 { return errors.New("container_pool_build_runs.test_command exceeds 4096 bytes") }
+	if len([]byte(value.BuildLogExcerpt)) > 65536 { return errors.New("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes") }
+	if len([]byte(value.TestLogExcerpt)) > 65536 { return errors.New("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes") }
+	if value.ErrorMessage != nil {
+		if len([]byte(*value.ErrorMessage)) > 8192 { return errors.New("container_pool_build_runs.error_message exceeds 8192 bytes") }
+	}
+	if !validateRawJSON(value.MetaData) { return errors.New("container_pool_build_runs.meta_data must be valid JSON") }
 	return nil
 }
 
@@ -656,6 +1100,433 @@ type PresenceConsumerCheckpointsBun struct {
 }
 
 func (value PresenceConsumerCheckpointsBun) Validate() error {
+	return nil
+}
+
+const DesSoccerLearningExperimentsTable = "des_soccer_learning_experiments"
+const DesSoccerLearningExperimentsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      status,
+      config,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_experiments`
+
+var DesSoccerLearningExperimentsStatusValues = []string{"active", "paused", "archived"}
+
+type DesSoccerLearningExperimentsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_experiments"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	Slug string `bun:"slug,type:varchar(160)" json:"slug"`
+	DisplayName string `bun:"display_name,type:varchar(240)" json:"displayName"`
+	Description string `bun:"description,type:text,default:''" json:"description"`
+	Status string `bun:"status,type:varchar(32),default:'active'" json:"status"`
+	Config json.RawMessage `bun:"config,type:jsonb,default:'{}'::jsonb" json:"config"`
+	Labels json.RawMessage `bun:"labels,type:jsonb,default:'[]'::jsonb" json:"labels"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb,default:'{}'::jsonb" json:"metaData"`
+	IsSoftDeleted bool `bun:"is_soft_deleted,type:boolean,default:false" json:"isSoftDeleted"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value DesSoccerLearningExperimentsBun) Validate() error {
+	if !desSoccerLearningExperimentsSlugPattern.MatchString(value.Slug) { return errors.New("des_soccer_learning_experiments.slug does not match the required pattern") }
+	if len([]byte(value.DisplayName)) > 240 { return errors.New("des_soccer_learning_experiments.display_name exceeds 240 bytes") }
+	if len([]byte(value.DisplayName)) < 1 { return errors.New("des_soccer_learning_experiments.display_name is below 1 bytes") }
+	if len([]byte(value.Description)) > 8192 { return errors.New("des_soccer_learning_experiments.description exceeds 8192 bytes") }
+	if !containsString(DesSoccerLearningExperimentsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_experiments.status") }
+	if !validateRawJSON(value.Config) { return errors.New("des_soccer_learning_experiments.config must be valid JSON") }
+	if !validateRawJSON(value.Labels) { return errors.New("des_soccer_learning_experiments.labels must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("des_soccer_learning_experiments.meta_data must be valid JSON") }
+	return nil
+}
+
+const DesSoccerLearningPolicyVersionsTable = "des_soccer_learning_policy_versions"
+const DesSoccerLearningPolicyVersionsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      parent_policy_version_id::text as parent_policy_version_id,
+      generation,
+      version_label,
+      source_kind,
+      status,
+      options,
+      config,
+      lineage,
+      metrics,
+      entry_count,
+      target_entry_count,
+      visit_count,
+      fitness_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_policy_versions`
+
+var DesSoccerLearningPolicyVersionsSourceKindValues = []string{"seed", "merge", "mutation", "crossover", "import", "replay"}
+var DesSoccerLearningPolicyVersionsStatusValues = []string{"candidate", "active", "archived", "rejected"}
+
+type DesSoccerLearningPolicyVersionsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_policy_versions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `bun:"experiment_id,type:uuid" json:"experimentId"`
+	ParentPolicyVersionId *uuid.UUID `bun:"parent_policy_version_id,type:uuid,nullzero" json:"parentPolicyVersionId,omitempty"`
+	Generation int32 `bun:"generation,type:integer,default:0" json:"generation"`
+	VersionLabel string `bun:"version_label,type:varchar(160)" json:"versionLabel"`
+	SourceKind string `bun:"source_kind,type:varchar(40),default:'seed'" json:"sourceKind"`
+	Status string `bun:"status,type:varchar(32),default:'candidate'" json:"status"`
+	Options json.RawMessage `bun:"options,type:jsonb,default:'{}'::jsonb" json:"options"`
+	Config json.RawMessage `bun:"config,type:jsonb,default:'{}'::jsonb" json:"config"`
+	Lineage json.RawMessage `bun:"lineage,type:jsonb,default:'[]'::jsonb" json:"lineage"`
+	Metrics json.RawMessage `bun:"metrics,type:jsonb,default:'{}'::jsonb" json:"metrics"`
+	EntryCount int32 `bun:"entry_count,type:integer,default:0" json:"entryCount"`
+	TargetEntryCount int32 `bun:"target_entry_count,type:integer,default:0" json:"targetEntryCount"`
+	VisitCount int64 `bun:"visit_count,type:bigint,default:0" json:"visitCount"`
+	FitnessMicros int64 `bun:"fitness_micros,type:bigint,default:0" json:"fitnessMicros"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value DesSoccerLearningPolicyVersionsBun) Validate() error {
+	if value.Generation < 0 { return errors.New("des_soccer_learning_policy_versions.generation is below the minimum") }
+	if !desSoccerLearningPolicyVersionsVersionLabelPattern.MatchString(value.VersionLabel) { return errors.New("des_soccer_learning_policy_versions.version_label does not match the required pattern") }
+	if !containsString(DesSoccerLearningPolicyVersionsSourceKindValues, value.SourceKind) { return errors.New("unsupported des_soccer_learning_policy_versions.source_kind") }
+	if !containsString(DesSoccerLearningPolicyVersionsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_policy_versions.status") }
+	if !validateRawJSON(value.Options) { return errors.New("des_soccer_learning_policy_versions.options must be valid JSON") }
+	if !validateRawJSON(value.Config) { return errors.New("des_soccer_learning_policy_versions.config must be valid JSON") }
+	if !validateRawJSON(value.Lineage) { return errors.New("des_soccer_learning_policy_versions.lineage must be valid JSON") }
+	if !validateRawJSON(value.Metrics) { return errors.New("des_soccer_learning_policy_versions.metrics must be valid JSON") }
+	if value.EntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.entry_count is below the minimum") }
+	if value.TargetEntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.target_entry_count is below the minimum") }
+	if value.VisitCount < 0 { return errors.New("des_soccer_learning_policy_versions.visit_count is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries"
+const DesSoccerLearningPolicyEntriesSelectSQL = `select
+      id::text as id,
+      policy_version_id::text as policy_version_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      value_micros,
+      visits,
+      source_run_id::text as source_run_id,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_policy_entries`
+
+var DesSoccerLearningPolicyEntriesTeamValues = []string{"home", "away"}
+var DesSoccerLearningPolicyEntriesEntryKindValues = []string{"action", "target"}
+
+type DesSoccerLearningPolicyEntriesBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_policy_entries"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	PolicyVersionId uuid.UUID `bun:"policy_version_id,type:uuid" json:"policyVersionId"`
+	Team string `bun:"team,type:varchar(8)" json:"team"`
+	EntryKind string `bun:"entry_kind,type:varchar(16)" json:"entryKind"`
+	StateHash string `bun:"state_hash,type:varchar(32)" json:"stateHash"`
+	StateKey json.RawMessage `bun:"state_key,type:jsonb" json:"stateKey"`
+	Action string `bun:"action,type:varchar(80)" json:"action"`
+	TargetFineCellId int32 `bun:"target_fine_cell_id,type:integer,default:-1" json:"targetFineCellId"`
+	TargetTacticalCellId int32 `bun:"target_tactical_cell_id,type:integer,default:-1" json:"targetTacticalCellId"`
+	TargetMacroCellId int32 `bun:"target_macro_cell_id,type:integer,default:-1" json:"targetMacroCellId"`
+	TargetRootCellId int32 `bun:"target_root_cell_id,type:integer,default:-1" json:"targetRootCellId"`
+	ValueMicros int64 `bun:"value_micros,type:bigint" json:"valueMicros"`
+	Visits int32 `bun:"visits,type:integer,default:0" json:"visits"`
+	SourceRunId *uuid.UUID `bun:"source_run_id,type:uuid,nullzero" json:"sourceRunId,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value DesSoccerLearningPolicyEntriesBun) Validate() error {
+	if !containsString(DesSoccerLearningPolicyEntriesTeamValues, value.Team) { return errors.New("unsupported des_soccer_learning_policy_entries.team") }
+	if !containsString(DesSoccerLearningPolicyEntriesEntryKindValues, value.EntryKind) { return errors.New("unsupported des_soccer_learning_policy_entries.entry_kind") }
+	if !desSoccerLearningPolicyEntriesStateHashPattern.MatchString(value.StateHash) { return errors.New("des_soccer_learning_policy_entries.state_hash does not match the required pattern") }
+	if !validateRawJSON(value.StateKey) { return errors.New("des_soccer_learning_policy_entries.state_key must be valid JSON") }
+	if len([]byte(value.Action)) > 80 { return errors.New("des_soccer_learning_policy_entries.action exceeds 80 bytes") }
+	if len([]byte(value.Action)) < 1 { return errors.New("des_soccer_learning_policy_entries.action is below 1 bytes") }
+	if value.TargetFineCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum") }
+	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum") }
+	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum") }
+	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum") }
+	if value.Visits < 0 { return errors.New("des_soccer_learning_policy_entries.visits is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningJobsTable = "des_soccer_learning_jobs"
+const DesSoccerLearningJobsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      spawn_strategy,
+      status,
+      priority,
+      seed,
+      attempt,
+      max_attempts,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      config,
+      runner_config,
+      result_run_id::text as result_run_id,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_jobs`
+
+var DesSoccerLearningJobsSpawnStrategyValues = []string{"latest", "elite", "mutation", "crossover", "random", "replay"}
+var DesSoccerLearningJobsStatusValues = []string{"queued", "running", "completed", "failed", "canceled"}
+
+type DesSoccerLearningJobsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_jobs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `bun:"experiment_id,type:uuid" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `bun:"base_policy_version_id,type:uuid,nullzero" json:"basePolicyVersionId,omitempty"`
+	SpawnStrategy string `bun:"spawn_strategy,type:varchar(32),default:'latest'" json:"spawnStrategy"`
+	Status string `bun:"status,type:varchar(32),default:'queued'" json:"status"`
+	Priority int32 `bun:"priority,type:integer,default:0" json:"priority"`
+	Seed int64 `bun:"seed,type:bigint" json:"seed"`
+	Attempt int32 `bun:"attempt,type:integer,default:0" json:"attempt"`
+	MaxAttempts int32 `bun:"max_attempts,type:integer,default:1" json:"maxAttempts"`
+	LeaseOwner *string `bun:"lease_owner,type:varchar(200),nullzero" json:"leaseOwner,omitempty"`
+	LeaseExpiresAt *time.Time `bun:"lease_expires_at,type:timestamptz,nullzero" json:"leaseExpiresAt,omitempty"`
+	StartedAt *time.Time `bun:"started_at,type:timestamptz,nullzero" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `bun:"finished_at,type:timestamptz,nullzero" json:"finishedAt,omitempty"`
+	Config json.RawMessage `bun:"config,type:jsonb,default:'{}'::jsonb" json:"config"`
+	RunnerConfig json.RawMessage `bun:"runner_config,type:jsonb,default:'{}'::jsonb" json:"runnerConfig"`
+	ResultRunId *uuid.UUID `bun:"result_run_id,type:uuid,nullzero" json:"resultRunId,omitempty"`
+	Error *string `bun:"error,type:text,nullzero" json:"error,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value DesSoccerLearningJobsBun) Validate() error {
+	if !containsString(DesSoccerLearningJobsSpawnStrategyValues, value.SpawnStrategy) { return errors.New("unsupported des_soccer_learning_jobs.spawn_strategy") }
+	if !containsString(DesSoccerLearningJobsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_jobs.status") }
+	if value.Seed < 0 { return errors.New("des_soccer_learning_jobs.seed is below the minimum") }
+	if value.Attempt < 0 { return errors.New("des_soccer_learning_jobs.attempt is below the minimum") }
+	if value.MaxAttempts < 1 { return errors.New("des_soccer_learning_jobs.max_attempts is below the minimum") }
+	if value.MaxAttempts > 100 { return errors.New("des_soccer_learning_jobs.max_attempts is above the maximum") }
+	if value.LeaseOwner != nil {
+		if len([]byte(*value.LeaseOwner)) > 200 { return errors.New("des_soccer_learning_jobs.lease_owner exceeds 200 bytes") }
+	}
+	if !validateRawJSON(value.Config) { return errors.New("des_soccer_learning_jobs.config must be valid JSON") }
+	if !validateRawJSON(value.RunnerConfig) { return errors.New("des_soccer_learning_jobs.runner_config must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 16384 { return errors.New("des_soccer_learning_jobs.error exceeds 16384 bytes") }
+	}
+	return nil
+}
+
+const DesSoccerLearningRunsTable = "des_soccer_learning_runs"
+const DesSoccerLearningRunsSelectSQL = `select
+      id::text as id,
+      job_id::text as job_id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      runner_id,
+      seed,
+      episode_index,
+      status,
+      score_home,
+      score_away,
+      home_goal_diff,
+      away_goal_diff,
+      home_outcome,
+      away_outcome,
+      home_merge_weight_micros,
+      away_merge_weight_micros,
+      fitness_micros,
+      duration_ticks,
+      simulated_seconds_micros,
+      elapsed_millis,
+      transitions,
+      summary,
+      stats,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_runs`
+
+var DesSoccerLearningRunsStatusValues = []string{"completed", "failed"}
+var DesSoccerLearningRunsHomeOutcomeValues = []string{"win", "draw", "loss"}
+var DesSoccerLearningRunsAwayOutcomeValues = []string{"win", "draw", "loss"}
+
+type DesSoccerLearningRunsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_runs"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	JobId *uuid.UUID `bun:"job_id,type:uuid,nullzero" json:"jobId,omitempty"`
+	ExperimentId uuid.UUID `bun:"experiment_id,type:uuid" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `bun:"base_policy_version_id,type:uuid,nullzero" json:"basePolicyVersionId,omitempty"`
+	OutputPolicyVersionId *uuid.UUID `bun:"output_policy_version_id,type:uuid,nullzero" json:"outputPolicyVersionId,omitempty"`
+	RunnerId string `bun:"runner_id,type:varchar(200)" json:"runnerId"`
+	Seed int64 `bun:"seed,type:bigint" json:"seed"`
+	EpisodeIndex int32 `bun:"episode_index,type:integer,default:0" json:"episodeIndex"`
+	Status string `bun:"status,type:varchar(32),default:'completed'" json:"status"`
+	ScoreHome int32 `bun:"score_home,type:integer,default:0" json:"scoreHome"`
+	ScoreAway int32 `bun:"score_away,type:integer,default:0" json:"scoreAway"`
+	HomeGoalDiff int32 `bun:"home_goal_diff,type:integer,default:0" json:"homeGoalDiff"`
+	AwayGoalDiff int32 `bun:"away_goal_diff,type:integer,default:0" json:"awayGoalDiff"`
+	HomeOutcome string `bun:"home_outcome,type:varchar(16),default:'draw'" json:"homeOutcome"`
+	AwayOutcome string `bun:"away_outcome,type:varchar(16),default:'draw'" json:"awayOutcome"`
+	HomeMergeWeightMicros int64 `bun:"home_merge_weight_micros,type:bigint,default:0" json:"homeMergeWeightMicros"`
+	AwayMergeWeightMicros int64 `bun:"away_merge_weight_micros,type:bigint,default:0" json:"awayMergeWeightMicros"`
+	FitnessMicros int64 `bun:"fitness_micros,type:bigint,default:0" json:"fitnessMicros"`
+	DurationTicks int64 `bun:"duration_ticks,type:bigint,default:0" json:"durationTicks"`
+	SimulatedSecondsMicros int64 `bun:"simulated_seconds_micros,type:bigint,default:0" json:"simulatedSecondsMicros"`
+	ElapsedMillis int64 `bun:"elapsed_millis,type:bigint,default:0" json:"elapsedMillis"`
+	Transitions int32 `bun:"transitions,type:integer,default:0" json:"transitions"`
+	Summary json.RawMessage `bun:"summary,type:jsonb,default:'{}'::jsonb" json:"summary"`
+	Stats json.RawMessage `bun:"stats,type:jsonb,default:'{}'::jsonb" json:"stats"`
+	Error *string `bun:"error,type:text,nullzero" json:"error,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value DesSoccerLearningRunsBun) Validate() error {
+	if len([]byte(value.RunnerId)) > 200 { return errors.New("des_soccer_learning_runs.runner_id exceeds 200 bytes") }
+	if len([]byte(value.RunnerId)) < 1 { return errors.New("des_soccer_learning_runs.runner_id is below 1 bytes") }
+	if value.Seed < 0 { return errors.New("des_soccer_learning_runs.seed is below the minimum") }
+	if value.EpisodeIndex < 0 { return errors.New("des_soccer_learning_runs.episode_index is below the minimum") }
+	if !containsString(DesSoccerLearningRunsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_runs.status") }
+	if value.ScoreHome < 0 { return errors.New("des_soccer_learning_runs.score_home is below the minimum") }
+	if value.ScoreAway < 0 { return errors.New("des_soccer_learning_runs.score_away is below the minimum") }
+	if !containsString(DesSoccerLearningRunsHomeOutcomeValues, value.HomeOutcome) { return errors.New("unsupported des_soccer_learning_runs.home_outcome") }
+	if !containsString(DesSoccerLearningRunsAwayOutcomeValues, value.AwayOutcome) { return errors.New("unsupported des_soccer_learning_runs.away_outcome") }
+	if value.DurationTicks < 0 { return errors.New("des_soccer_learning_runs.duration_ticks is below the minimum") }
+	if value.SimulatedSecondsMicros < 0 { return errors.New("des_soccer_learning_runs.simulated_seconds_micros is below the minimum") }
+	if value.ElapsedMillis < 0 { return errors.New("des_soccer_learning_runs.elapsed_millis is below the minimum") }
+	if value.Transitions < 0 { return errors.New("des_soccer_learning_runs.transitions is below the minimum") }
+	if !validateRawJSON(value.Summary) { return errors.New("des_soccer_learning_runs.summary must be valid JSON") }
+	if !validateRawJSON(value.Stats) { return errors.New("des_soccer_learning_runs.stats must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 16384 { return errors.New("des_soccer_learning_runs.error exceeds 16384 bytes") }
+	}
+	return nil
+}
+
+const DesSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas"
+const DesSoccerLearningRunDeltasSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      before_value_micros,
+      after_value_micros,
+      value_delta_micros,
+      visit_delta,
+      merge_weight_micros,
+      effective_visit_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_run_deltas`
+
+var DesSoccerLearningRunDeltasTeamValues = []string{"home", "away"}
+var DesSoccerLearningRunDeltasEntryKindValues = []string{"action", "target"}
+
+type DesSoccerLearningRunDeltasBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_run_deltas"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `bun:"run_id,type:uuid" json:"runId"`
+	Team string `bun:"team,type:varchar(8)" json:"team"`
+	EntryKind string `bun:"entry_kind,type:varchar(16)" json:"entryKind"`
+	StateHash string `bun:"state_hash,type:varchar(32)" json:"stateHash"`
+	StateKey json.RawMessage `bun:"state_key,type:jsonb" json:"stateKey"`
+	Action string `bun:"action,type:varchar(80)" json:"action"`
+	TargetFineCellId int32 `bun:"target_fine_cell_id,type:integer,default:-1" json:"targetFineCellId"`
+	TargetTacticalCellId int32 `bun:"target_tactical_cell_id,type:integer,default:-1" json:"targetTacticalCellId"`
+	TargetMacroCellId int32 `bun:"target_macro_cell_id,type:integer,default:-1" json:"targetMacroCellId"`
+	TargetRootCellId int32 `bun:"target_root_cell_id,type:integer,default:-1" json:"targetRootCellId"`
+	BeforeValueMicros int64 `bun:"before_value_micros,type:bigint,default:0" json:"beforeValueMicros"`
+	AfterValueMicros int64 `bun:"after_value_micros,type:bigint,default:0" json:"afterValueMicros"`
+	ValueDeltaMicros int64 `bun:"value_delta_micros,type:bigint,default:0" json:"valueDeltaMicros"`
+	VisitDelta int32 `bun:"visit_delta,type:integer,default:0" json:"visitDelta"`
+	MergeWeightMicros int64 `bun:"merge_weight_micros,type:bigint,default:0" json:"mergeWeightMicros"`
+	EffectiveVisitMicros int64 `bun:"effective_visit_micros,type:bigint,default:0" json:"effectiveVisitMicros"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value DesSoccerLearningRunDeltasBun) Validate() error {
+	if !containsString(DesSoccerLearningRunDeltasTeamValues, value.Team) { return errors.New("unsupported des_soccer_learning_run_deltas.team") }
+	if !containsString(DesSoccerLearningRunDeltasEntryKindValues, value.EntryKind) { return errors.New("unsupported des_soccer_learning_run_deltas.entry_kind") }
+	if !desSoccerLearningRunDeltasStateHashPattern.MatchString(value.StateHash) { return errors.New("des_soccer_learning_run_deltas.state_hash does not match the required pattern") }
+	if !validateRawJSON(value.StateKey) { return errors.New("des_soccer_learning_run_deltas.state_key must be valid JSON") }
+	if len([]byte(value.Action)) > 80 { return errors.New("des_soccer_learning_run_deltas.action exceeds 80 bytes") }
+	if len([]byte(value.Action)) < 1 { return errors.New("des_soccer_learning_run_deltas.action is below 1 bytes") }
+	if value.TargetFineCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum") }
+	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum") }
+	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum") }
+	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum") }
+	if value.VisitDelta < 1 { return errors.New("des_soccer_learning_run_deltas.visit_delta is below the minimum") }
+	if value.MergeWeightMicros < 0 { return errors.New("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum") }
+	if value.EffectiveVisitMicros < 0 { return errors.New("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningMergeEventsTable = "des_soccer_learning_merge_events"
+const DesSoccerLearningMergeEventsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      strategy,
+      input_run_count,
+      input_delta_count,
+      decay_micros,
+      metrics,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_merge_events`
+
+var DesSoccerLearningMergeEventsStrategyValues = []string{"outcome_weighted_average", "elite", "mutation", "crossover"}
+
+type DesSoccerLearningMergeEventsBun struct {
+	bun.BaseModel `bun:"table:des_soccer_learning_merge_events"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `bun:"experiment_id,type:uuid" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `bun:"base_policy_version_id,type:uuid,nullzero" json:"basePolicyVersionId,omitempty"`
+	OutputPolicyVersionId uuid.UUID `bun:"output_policy_version_id,type:uuid" json:"outputPolicyVersionId"`
+	Strategy string `bun:"strategy,type:varchar(40),default:'outcome_weighted_average'" json:"strategy"`
+	InputRunCount int32 `bun:"input_run_count,type:integer,default:0" json:"inputRunCount"`
+	InputDeltaCount int32 `bun:"input_delta_count,type:integer,default:0" json:"inputDeltaCount"`
+	DecayMicros int64 `bun:"decay_micros,type:bigint,default:1000000" json:"decayMicros"`
+	Metrics json.RawMessage `bun:"metrics,type:jsonb,default:'{}'::jsonb" json:"metrics"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+}
+
+func (value DesSoccerLearningMergeEventsBun) Validate() error {
+	if !containsString(DesSoccerLearningMergeEventsStrategyValues, value.Strategy) { return errors.New("unsupported des_soccer_learning_merge_events.strategy") }
+	if value.InputRunCount < 0 { return errors.New("des_soccer_learning_merge_events.input_run_count is below the minimum") }
+	if value.InputDeltaCount < 0 { return errors.New("des_soccer_learning_merge_events.input_delta_count is below the minimum") }
+	if value.DecayMicros < 0 { return errors.New("des_soccer_learning_merge_events.decay_micros is below the minimum") }
+	if value.DecayMicros > 1000000 { return errors.New("des_soccer_learning_merge_events.decay_micros is above the maximum") }
+	if !validateRawJSON(value.Metrics) { return errors.New("des_soccer_learning_merge_events.metrics must be valid JSON") }
 	return nil
 }
 

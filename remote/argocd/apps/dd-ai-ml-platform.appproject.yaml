@@ -1,0 +1,65 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dd-ai-ml-platform
+  namespace: argocd
+spec:
+  description: Optional AI/ML and big-data platform applications.
+  sourceRepos:
+    - git@github.com:ORESoftware/k8s-cluster.git
+    - https://airflow.apache.org
+    - https://dagster-io.github.io/helm
+    - https://community-charts.github.io/helm-charts
+    - https://qdrant.github.io/qdrant-helm
+    - https://airbytehq.github.io/helm-charts
+    - https://apache.github.io/spark-kubernetes-operator
+    - https://strimzi.io/charts/
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: ai-ml
+    - server: https://kubernetes.default.svc
+      namespace: airbyte
+    - server: https://kubernetes.default.svc
+      namespace: kafka
+    - server: https://kubernetes.default.svc
+      namespace: spark
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: ""
+      kind: Pod
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: batch
+      kind: Job
+    - group: external-secrets.io
+      kind: ExternalSecret
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+  orphanedResources:
+    warn: true

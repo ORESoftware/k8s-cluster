@@ -1,0 +1,141 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-live-mutex-submodule
+  namespace: default
+  labels:
+    app: dd-live-mutex-submodule
+    # Tag this as the experimental fork so dashboards/Prometheus relabels can
+    # split it out from the upstream npm broker (`dd-live-mutex`) without
+    # string-matching on names.
+    role: live-mutex-broker
+    variant: submodule
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-live-mutex-submodule
+  template:
+    metadata:
+      annotations:
+        # Bumping this annotation triggers a rolling restart even when the
+        # repo's `dev` HEAD hasn't drifted, which is useful when only the
+        # submodule pointer or its working-tree contents changed.
+        dd.dev/telemetry-revision: '2026-05-24-live-mutex-submodule-vsock-harden'
+      labels:
+        app: dd-live-mutex-submodule
+        role: live-mutex-broker
+        variant: submodule
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: live-mutex-submodule
+          # Published image from Docker Hub. The Dockerfile in the
+          # submodule (remote/submodules/live-mutex/Dockerfile.image) is
+          # the source of truth; tags follow the submodule's
+          # `package.json` version + a `-dd.<n>` suffix for cluster
+          # rebuilds. To roll out a new build, push a new tag and bump
+          # this `image:` field — ArgoCD will reconcile.
+          #
+          # Earlier revisions of this manifest mounted the workspace at
+          # /opt/dd-next-1 via hostPath and ran `npm ci && npm run build`
+          # at every pod start. That pattern was retired with this image
+          # bump because it required the EC2 host operator to remember
+          # to `git pull` + `git submodule update` before each rollout,
+          # which left the broker pinned to whatever was checked out the
+          # first time and made `dd-live-mutex-submodule` 502 whenever
+          # the host drifted.
+          image: docker.io/oresoftware/live-mutex-submodule:0.2.25-dd.3
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            # Pin the UID/GID explicitly. The image's OCI config already
+            # records `User: 1000:1000` (`node` user in
+            # node:22-bookworm-slim), but setting these here guards
+            # against a future image rebuild that accidentally drops the
+            # numeric USER directive — without an explicit `runAsUser`
+            # and a non-numeric image USER, the kubelet's `runAsNonRoot`
+            # check refuses to start the container ("cannot verify user
+            # is non-root"), the Service has zero endpoints, and the
+            # gateway returns 502 on /lmx-node/.
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: live_mutex_host
+              value: 0.0.0.0
+            - name: live_mutex_port
+              value: '6970'
+            # `LMX_HTTP_PORT` enables the HTTP front-end with the status
+            # page + Prometheus + in-memory bridge that we added on this
+            # branch. The image's defaults already match these values
+            # but we set them here too so an operator scanning the
+            # Deployment can see the running shape without `docker
+            # inspect`.
+            - name: LMX_HTTP_PORT
+              value: '6971'
+            - name: LMX_HTTP_HOST
+              value: 0.0.0.0
+            # Optional: set LMX_AUTH_TOKEN via the dd-agent-secrets bundle
+            # when the broker is exposed beyond cluster-internal
+            # ServiceIPs. Inside `default` namespace traffic is already
+            # gated by NetworkPolicy, so an empty token is acceptable
+            # for the current bootstrap.
+            - name: LMX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: LMX_AUTH_TOKEN
+                  optional: true
+            # Admin token gates `/admin/*` (OTel kill-switch, log level,
+            # TCP NODELAY). Optional — falls back to the broker's baked-in
+            # default when unset.
+            - name: LMX_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: LMX_ADMIN_TOKEN
+                  optional: true
+          ports:
+            - name: lmx-tcp
+              containerPort: 6970
+            - name: http
+              containerPort: 6971
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          # The image starts the HTTP listener as part of broker
+          # bring-up, so we can probe `/healthz` from the start —
+          # there's no longer a build phase to wait for.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

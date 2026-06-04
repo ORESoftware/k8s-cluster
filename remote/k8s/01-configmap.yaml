@@ -26,10 +26,16 @@ data:
   # SDK runners take priority when available (see agents/index.ts);
   # explicit choice wins. Pin models with ANTHROPIC_MODEL/GEMINI_MODEL/
   # OPENAI_MODEL in the secret.
-  AGENT_PROVIDER: 'claude-sdk'
+  AGENT_PROVIDER: 'generic-ai-sdk'
+  AGENT_FALLBACK_PROVIDER: 'generic-ai-sdk'
+  AGENT_SECONDARY_FALLBACK_PROVIDER: 'opencode-ai-sdk'
+  AGENT_PROVIDER_ROTATION: 'generic-ai-sdk,opencode-ai-sdk,openai-sdk,claude-sdk,gemini-sdk'
+  AGENT_BRANCH_PREFIX: 'agent/k8s/openai-5.5'
   THREAD_CONTEXT_BASE_URL: 'http://dd-remote-rest-api.default.svc.cluster.local:8082'
   THREAD_CONTEXT_LIMIT: '20'
   THREAD_CONTEXT_MAX_CHARS: '48000'
+  AGENT_MCP_URL: 'http://dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp'
+  AGENT_MCP_CONNECT_TIMEOUT_MS: '3000'
 
   # ---- Storage ----
   # R2 is the default — Cloudflare R2 is S3-compatible (same SDK as S3,

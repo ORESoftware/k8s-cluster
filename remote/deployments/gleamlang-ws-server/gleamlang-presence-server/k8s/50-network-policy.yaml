@@ -1,0 +1,62 @@
+# NetworkPolicy that:
+#  - allows pod-to-pod EPMD (4369) and Erlang distribution (9100) inside
+#    the namespace so the BEAM cluster can mesh
+#  - allows WebSocket traffic from any pod / ingress in the cluster
+#  - blocks everything else
+#
+# Note: requires a CNI that enforces NetworkPolicy (Calico, Cilium, ...).
+# If yours doesn't, this manifest is harmless but unenforced.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: presence-cluster-traffic
+  namespace: presence
+spec:
+  podSelector:
+    matchLabels:
+      app: presence
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # 1. From other presence pods on EPMD + distribution ports.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: presence
+      ports:
+        - port: 4369
+          protocol: TCP
+        - port: 9100
+          protocol: TCP
+    # 2. From anything in the cluster on the WS port.
+    - ports:
+        - port: 8081
+          protocol: TCP
+  egress:
+    # 1. To other presence pods.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: presence
+      ports:
+        - port: 4369
+          protocol: TCP
+        - port: 9100
+          protocol: TCP
+    # 2. DNS.
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # 3. Kubernetes API (for the pod-list discovery loop).
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 443
+          protocol: TCP

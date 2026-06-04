@@ -1,0 +1,269 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcs
+  namespace: default
+  labels:
+    app: gcs
+spec:
+  # 3 replicas to exercise consistent-hash routing across a wider
+  # ring in gcs-router and to give the chat-vibe load tests something
+  # real to fan-out across. CPU request was lowered to 100m in commit
+  # a84e6c1 specifically so the router can spread hot conversations
+  # across multiple pods on the single-node EC2 cluster. Four replicas
+  # keeps 30k WSS soak-test fanout below the per-pod latency knee while
+  # staying light on scheduler requests.
+  replicas: 4
+  strategy:
+    # On the single-node EC2 cluster we are CPU-bound; a surge pod
+    # cannot be scheduled (Insufficient cpu) and rollouts get stuck.
+    # Switch to zero-surge so the rollout kills a pod first, then
+    # adds the replacement onto the freed CPU. This briefly drops
+    # one pod from the ring (gcs-router will re-pin), which is fine
+    # in dev; revert to surge=1 once we have a second worker node.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: gcs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
+        dd.dev/chat-vibe-revision: "cafd8f0-hot-dispatch"
+        dd.dev/gcs-capacity-profile: "2026-06-03-30k-4pods"
+      labels:
+        app: gcs
+        dd.dev/redis-cache-client: 'true'
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gcs
+          image: docker.io/library/golang:1.24-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export HOME=/tmp
+              export GO111MODULE=on
+              export GOPROXY=https://proxy.golang.org,direct
+              export GOSUMDB=off
+              export GOCACHE=/tmp/go-build
+              export GOMODCACHE=/tmp/go-mod
+
+              SRC=/opt/chat-vibe-src
+              WORK=/tmp/chat.vibe
+              BIN=/tmp/gcs-vibe-wss
+
+              if [ ! -x "$BIN" ]; then
+                rm -rf "$WORK"
+                mkdir -p "$WORK" "$GOCACHE" "$GOMODCACHE"
+                cp -R --no-preserve=mode,ownership,timestamps "$SRC"/. "$WORK"/
+                cd "$WORK"
+                # Strip ONLY local/relative-path replace directives (their ../ or
+                # ./ targets don't exist in this build context). KEEP module=>module
+                # replaces such as github.com/oresoftware/amqp091-go (the rabbitmq
+                # fork) so the fork is actually compiled into the binary. This
+                # mirrors Dockerfile.local.df; a naive `grep -v "^replace"` would
+                # silently drop the fork and build upstream amqp091-go instead.
+                grep -vE '^replace[[:space:]].*=>[[:space:]]*\.\.?/' go.mod > go.mod.tmp
+                mv go.mod.tmp go.mod
+                /usr/local/go/bin/go mod download
+                /usr/local/go/bin/go get -v github.com/oresoftware/json-logging@master
+                /usr/local/go/bin/go get -v github.com/oresoftware/cmd-line-parser@main
+                /usr/local/go/bin/go build -p "$(nproc)" -o "$BIN" "$PWD/src/main"
+              fi
+
+              cd "$WORK"
+
+              wait_for_tcp() {
+                target="$1"
+                host="${target%:*}"
+                port="${target##*:}"
+                echo "Waiting for ${host}:${port}..."
+                until timeout 2 bash -c "</dev/tcp/${host}/${port}" 2>/dev/null; do
+                  sleep 2
+                done
+              }
+
+              wait_for_tcp "${vibe_mongo_host}"
+              wait_for_tcp "${vibe_rabbit_host}:${vibe_rabbit_port}"
+              wait_for_tcp "${vibe_kafka_bootstrap_servers}"
+              wait_for_tcp "${vibe_redis_host}:${vibe_redis_port}"
+
+              exec "$BIN"
+          env:
+            - name: vibe_with_color
+              value: 'no'
+            - name: vibe_running_locally
+              value: 'yes'
+            - name: vibe_listen_to_stdin
+              value: 'no'
+            - name: vibe_in_prod
+              value: 'true'
+            - name: vibe_log_level
+              value: info
+            - name: GCS_DIAG_LOGS
+              value: 'true'
+            - name: GOMEMLIMIT
+              value: 1800MiB
+            - name: GOGC
+              value: '50'
+            - name: GCS_WS_SHED_ENABLED
+              value: 'true'
+            # The router pins hot conversations to one pod, so keep the active
+            # connection shed threshold per pod rather than dividing by replicas.
+            - name: GCS_WS_SHED_ACTIVE_CONN_THRESHOLD
+              value: '30000'
+            - name: GCS_WS_SHED_OLD_CONN_AGE
+              value: '3h'
+            - name: GCS_WS_SHED_INTERVAL
+              value: '250ms'
+            - name: GCS_WS_SHED_BATCH_SIZE
+              value: '500'
+            - name: GCS_WS_SHED_WARN_GRACE
+              value: '500ms'
+            - name: GCS_WS_SHED_HEAP_BYTES
+              value: '1342177280'
+            # RSS pressure is the cgroup OOM guard; heap telemetry can miss spikes.
+            - name: GCS_WS_SHED_RSS_BYTES
+              value: '2684354560'
+            - name: GCS_WS_SHED_GOROUTINES
+              value: '500000'
+            - name: GCS_WS_SHED_MESSAGE_LATENCY
+              value: '180s'
+            - name: GCS_WS_SHED_LATENCY_SAMPLE_MAX_AGE
+              value: '30s'
+            - name: GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT
+              value: '512'
+            # The router pins a conversation to one GCS pod, so local fanout covers
+            # hot-path conversation delivery without one RMQ subscriber per socket.
+            - name: GCS_WS_ENABLE_RMQ_SUBSCRIPTIONS
+              value: 'false'
+            - name: GCS_WS_ENABLE_CHAT_MAP_SIDE_EFFECT
+              value: 'false'
+            - name: vibe_api_server_protocol
+              value: http
+            - name: vibe_api_server_host
+              value: 0.0.0.0
+            - name: vibe_api_server_port
+              value: '3000'
+            - name: vibe_wss_protocol
+              value: ws
+            - name: vibe_wss_host
+              value: 0.0.0.0
+            - name: vibe_wss_port
+              value: '3001'
+            - name: vibe_mongo_protocol
+              value: mongodb
+            - name: vibe_mongo_host
+              value: gcs-mongodb.default.svc.cluster.local:27017
+            - name: vibe_mongo_port
+              value: '27017'
+            - name: vibe_mongo_user
+              value: ''
+            - name: vibe_mongo_pwd
+              value: ''
+            - name: vibe_mongo_db_name
+              value: virl_gcs
+            - name: vibe_rabbit_protocol
+              value: amqp
+            - name: vibe_rabbit_host
+              value: gcs-rabbitmq.default.svc.cluster.local
+            - name: vibe_rabbit_port
+              value: '5672'
+            - name: vibe_rabbit_user
+              value: gcs
+            - name: vibe_rabbit_pwd
+              value: gcs
+            - name: vibe_kafka_host
+              value: gcs-kafka.default.svc.cluster.local
+            - name: vibe_kafka_port
+              value: '9092'
+            - name: vibe_kafka_bootstrap_servers
+              value: gcs-kafka.default.svc.cluster.local:9092
+            - name: vibe_kafka_sasl_sec_protocol
+              value: PLAINTEXT
+            - name: vibe_kafka_sasl_mechanism
+              value: PLAIN
+            - name: vibe_kafka_sasl_user
+              value: ''
+            - name: vibe_kafka_sasl_pwd
+              value: ''
+            - name: vibe_redis_host
+              value: dd-redis-cache.default.svc.cluster.local
+            - name: vibe_redis_port
+              value: '6379'
+          ports:
+            - name: rest
+              containerPort: 3000
+            - name: ws
+              containerPort: 3001
+          resources:
+            requests:
+              # Keep scheduler reservations small enough for the
+              # single-node EC2 cluster; the load-test CPU/memory
+              # allowance is expressed by the limits below.
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '6'
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /chat/v1/health/3000
+              port: rest
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /chat/v1/health/3000
+              port: rest
+            periodSeconds: 10
+            timeoutSeconds: 8
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /chat/v1/health/3000
+              port: rest
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          volumeMounts:
+            - name: chat-vibe-src
+              mountPath: /opt/chat-vibe-src
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: chat-vibe-src
+          hostPath:
+            # chat.vibe lives in this repo as a git submodule at
+            # remote/deployments/gcs/chat-vibe (see .gitmodules). The EC2 host
+            # has the repo cloned at /home/ec2-user/codes/dd/dd-next-1
+            # — matches every other hostPath-mounted service in
+            # the cluster (dd-build-server, dd-formal-methods-service,
+            # dd-web-scraper, dd-gleamlang-server, etc.).
+            #
+            # Deploy: `git pull && git submodule update --init --recursive`
+            # on the EC2 host, then ArgoCD/kubectl picks up changes.
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/gcs/chat-vibe
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi

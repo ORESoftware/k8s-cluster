@@ -364,6 +364,166 @@ class KnownGitRepoRow {
   }
 }
 
+const agentContextBlobsTable = "agent_context_blobs";
+const agentContextBlobsSelectSql = "select\n      id::text as id,\n      project_id,\n      repo_id::text as repo_id,\n      context_id,\n      context_title,\n      context_blob,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_context_blobs";
+
+const agentContextBlobsStatusValues = <String>["active", "paused", "archived"];
+
+class AgentContextBlobsRow {
+  const AgentContextBlobsRow({
+    required this.id,
+    required this.projectId,
+    this.repoId,
+    required this.contextId,
+    required this.contextTitle,
+    required this.contextBlob,
+    required this.status,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String projectId;
+  final String? repoId;
+  final String contextId;
+  final String contextTitle;
+  final String contextBlob;
+  final String status;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory AgentContextBlobsRow.fromJson(Map<String, Object?> json) {
+    return AgentContextBlobsRow(
+      id: _readRequiredString(json, "id"),
+      projectId: _readRequiredString(json, "projectId"),
+      repoId: _readOptionalString(json, "repoId"),
+      contextId: _readRequiredString(json, "contextId"),
+      contextTitle: _readRequiredString(json, "contextTitle"),
+      contextBlob: _readRequiredString(json, "contextBlob"),
+      status: _readRequiredString(json, "status"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "projectId": projectId,
+    "repoId": repoId,
+    "contextId": contextId,
+    "contextTitle": contextTitle,
+    "contextBlob": contextBlob,
+    "status": status,
+    "labels": labels,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,120}$').hasMatch(projectId)) {
+      errors.add("agent_context_blobs.project_id does not match the required pattern");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,200}$').hasMatch(contextId)) {
+      errors.add("agent_context_blobs.context_id does not match the required pattern");
+    }
+    if (utf8.encode(contextTitle).length > 300) {
+      errors.add("agent_context_blobs.context_title exceeds 300 bytes");
+    }
+    if (utf8.encode(contextTitle).length < 1) {
+      errors.add("agent_context_blobs.context_title is below 1 bytes");
+    }
+    if (utf8.encode(contextBlob).length > 1048576) {
+      errors.add("agent_context_blobs.context_blob exceeds 1048576 bytes");
+    }
+    if (utf8.encode(contextBlob).length < 1) {
+      errors.add("agent_context_blobs.context_blob is below 1 bytes");
+    }
+    if (!agentContextBlobsStatusValues.contains(status)) {
+      errors.add("unsupported agent_context_blobs.status");
+    }
+    return errors;
+  }
+}
+
+const agentContextEmbeddingsTable = "agent_context_embeddings";
+const agentContextEmbeddingsSelectSql = "select\n      id::text as id,\n      context_blob_id::text as context_blob_id,\n      embedding_model,\n      embedding::text as embedding_json,\n      embedding_dimensions,\n      content_sha256,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_context_embeddings";
+
+class AgentContextEmbeddingsRow {
+  const AgentContextEmbeddingsRow({
+    required this.id,
+    required this.contextBlobId,
+    required this.embeddingModel,
+    required this.embedding,
+    required this.embeddingDimensions,
+    required this.contentSha256,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String contextBlobId;
+  final String embeddingModel;
+  final List<Object?> embedding;
+  final int embeddingDimensions;
+  final String contentSha256;
+  final String createdAt;
+
+  factory AgentContextEmbeddingsRow.fromJson(Map<String, Object?> json) {
+    return AgentContextEmbeddingsRow(
+      id: _readRequiredString(json, "id"),
+      contextBlobId: _readRequiredString(json, "contextBlobId"),
+      embeddingModel: _readRequiredString(json, "embeddingModel"),
+      embedding: _readRequiredArray(json, "embedding"),
+      embeddingDimensions: _readRequiredInt(json, "embeddingDimensions"),
+      contentSha256: _readRequiredString(json, "contentSha256"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "contextBlobId": contextBlobId,
+    "embeddingModel": embeddingModel,
+    "embedding": embedding,
+    "embeddingDimensions": embeddingDimensions,
+    "contentSha256": contentSha256,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,120}$').hasMatch(embeddingModel)) {
+      errors.add("agent_context_embeddings.embedding_model does not match the required pattern");
+    }
+    if (embeddingDimensions < 1) {
+      errors.add("agent_context_embeddings.embedding_dimensions is below the minimum");
+    }
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(contentSha256)) {
+      errors.add("agent_context_embeddings.content_sha256 does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
 const agentRemoteDevThreadTable = "agent_remote_dev_threads";
 const agentRemoteDevThreadSelectSql = "select\n      id::text as id,\n      user_id::text as user_id,\n      known_git_repo_id::text as known_git_repo_id,\n      title,\n      repo,\n      base_branch,\n      meta::text as meta_json,\n      to_char(archived_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as archived_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from agent_remote_dev_threads";
 
@@ -569,12 +729,13 @@ class AgentRemoteDevTaskRow {
 }
 
 const agentRemoteDevEventTable = "agent_remote_dev_events";
-const agentRemoteDevEventSelectSql = "select\n      id,\n      task_id::text as task_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
+const agentRemoteDevEventSelectSql = "select\n      id,\n      task_id::text as task_id,\n      thread_id::text as thread_id,\n      seq,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from agent_remote_dev_events";
 
 class AgentRemoteDevEventRow {
   const AgentRemoteDevEventRow({
     required this.id,
     required this.taskId,
+    this.threadId,
     required this.seq,
     required this.eventKind,
     required this.payload,
@@ -583,6 +744,7 @@ class AgentRemoteDevEventRow {
 
   final int id;
   final String taskId;
+  final String? threadId;
   final int seq;
   final String eventKind;
   final Map<String, Object?> payload;
@@ -592,6 +754,7 @@ class AgentRemoteDevEventRow {
     return AgentRemoteDevEventRow(
       id: _readRequiredInt(json, "id"),
       taskId: _readRequiredString(json, "taskId"),
+      threadId: _readOptionalString(json, "threadId"),
       seq: _readRequiredInt(json, "seq"),
       eventKind: _readRequiredString(json, "eventKind"),
       payload: _readRequiredObject(json, "payload"),
@@ -602,6 +765,7 @@ class AgentRemoteDevEventRow {
   Map<String, Object?> toJson() => <String, Object?>{
     "id": id,
     "taskId": taskId,
+    "threadId": threadId,
     "seq": seq,
     "eventKind": eventKind,
     "payload": payload,
@@ -612,6 +776,76 @@ class AgentRemoteDevEventRow {
     final errors = <String>[];
     if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(eventKind)) {
       errors.add("agent_remote_dev_events.event_kind does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const agentRemoteDevBreadcrumbTable = "agent_remote_dev_breadcrumbs";
+const agentRemoteDevBreadcrumbSelectSql = "select\n      id,\n      thread_id::text as thread_id,\n      task_id::text as task_id,\n      kind,\n      payload::text as payload_json,\n      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as emitted_at,\n      pod_name,\n      branch,\n      provider\n    from agent_remote_dev_breadcrumbs";
+
+class AgentRemoteDevBreadcrumbRow {
+  const AgentRemoteDevBreadcrumbRow({
+    required this.id,
+    required this.threadId,
+    this.taskId,
+    required this.kind,
+    required this.payload,
+    required this.emittedAt,
+    this.podName,
+    this.branch,
+    this.provider,
+  });
+
+  final int id;
+  final String threadId;
+  final String? taskId;
+  final String kind;
+  final Map<String, Object?> payload;
+  final String emittedAt;
+  final String? podName;
+  final String? branch;
+  final String? provider;
+
+  factory AgentRemoteDevBreadcrumbRow.fromJson(Map<String, Object?> json) {
+    return AgentRemoteDevBreadcrumbRow(
+      id: _readRequiredInt(json, "id"),
+      threadId: _readRequiredString(json, "threadId"),
+      taskId: _readOptionalString(json, "taskId"),
+      kind: _readRequiredString(json, "kind"),
+      payload: _readRequiredObject(json, "payload"),
+      emittedAt: _readRequiredString(json, "emittedAt"),
+      podName: _readOptionalString(json, "podName"),
+      branch: _readOptionalString(json, "branch"),
+      provider: _readOptionalString(json, "provider"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "threadId": threadId,
+    "taskId": taskId,
+    "kind": kind,
+    "payload": payload,
+    "emittedAt": emittedAt,
+    "podName": podName,
+    "branch": branch,
+    "provider": provider,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(kind)) {
+      errors.add("agent_remote_dev_breadcrumbs.kind does not match the required pattern");
+    }
+    if (podName != null && utf8.encode(podName!).length > 253) {
+      errors.add("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes");
+    }
+    if (branch != null && utf8.encode(branch!).length > 120) {
+      errors.add("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes");
+    }
+    if (provider != null && utf8.encode(provider!).length > 60) {
+      errors.add("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes");
     }
     return errors;
   }
@@ -763,6 +997,347 @@ class AgentRemoteDevRuntimeLockRow {
     }
     if (!agentRemoteDevRuntimeLockStatusValues.contains(status)) {
       errors.add("unsupported agent_remote_dev_runtime_locks.status");
+    }
+    return errors;
+  }
+}
+
+const mipSolverSessionsTable = "mip_solver_sessions";
+const mipSolverSessionsSelectSql = "select\n      session_id,\n      revision,\n      problem::text as problem_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_sessions";
+
+class MipSolverSessionsRow {
+  const MipSolverSessionsRow({
+    required this.sessionId,
+    required this.revision,
+    required this.problem,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String sessionId;
+  final int revision;
+  final Map<String, Object?> problem;
+  final String createdAt;
+  final String updatedAt;
+
+  factory MipSolverSessionsRow.fromJson(Map<String, Object?> json) {
+    return MipSolverSessionsRow(
+      sessionId: _readRequiredString(json, "sessionId"),
+      revision: _readRequiredInt(json, "revision"),
+      problem: _readRequiredObject(json, "problem"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sessionId": sessionId,
+    "revision": revision,
+    "problem": problem,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(sessionId).length > 200) {
+      errors.add("mip_solver_sessions.session_id exceeds 200 bytes");
+    }
+    if (utf8.encode(sessionId).length < 1) {
+      errors.add("mip_solver_sessions.session_id is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const mipSolverSolvesTable = "mip_solver_solves";
+const mipSolverSolvesSelectSql = "select\n      solve_id,\n      request_id,\n      revision,\n      status,\n      node_id,\n      node_role,\n      problem::text as problem_json,\n      options::text as options_json,\n      response::text as response_json,\n      jobs_expected,\n      jobs_published,\n      jobs_completed,\n      jobs_redelegated,\n      jobs_split,\n      timed_out,\n      distributed,\n      warnings::text as warnings_json,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at\n    from mip_solver_solves";
+
+const mipSolverSolvesNodeRoleValues = <String>["master", "slave"];
+
+class MipSolverSolvesRow {
+  const MipSolverSolvesRow({
+    required this.solveId,
+    required this.requestId,
+    required this.revision,
+    required this.status,
+    required this.nodeId,
+    required this.nodeRole,
+    required this.problem,
+    required this.options,
+    required this.response,
+    required this.jobsExpected,
+    required this.jobsPublished,
+    required this.jobsCompleted,
+    required this.jobsRedelegated,
+    required this.jobsSplit,
+    required this.timedOut,
+    required this.distributed,
+    required this.warnings,
+    required this.startedAt,
+    required this.updatedAt,
+    this.finishedAt,
+  });
+
+  final String solveId;
+  final String requestId;
+  final int revision;
+  final String status;
+  final String nodeId;
+  final String nodeRole;
+  final Map<String, Object?> problem;
+  final Map<String, Object?> options;
+  final Map<String, Object?> response;
+  final int jobsExpected;
+  final int jobsPublished;
+  final int jobsCompleted;
+  final int jobsRedelegated;
+  final int jobsSplit;
+  final bool timedOut;
+  final bool distributed;
+  final List<Object?> warnings;
+  final String startedAt;
+  final String updatedAt;
+  final String? finishedAt;
+
+  factory MipSolverSolvesRow.fromJson(Map<String, Object?> json) {
+    return MipSolverSolvesRow(
+      solveId: _readRequiredString(json, "solveId"),
+      requestId: _readRequiredString(json, "requestId"),
+      revision: _readRequiredInt(json, "revision"),
+      status: _readRequiredString(json, "status"),
+      nodeId: _readRequiredString(json, "nodeId"),
+      nodeRole: _readRequiredString(json, "nodeRole"),
+      problem: _readRequiredObject(json, "problem"),
+      options: _readRequiredObject(json, "options"),
+      response: _readRequiredObject(json, "response"),
+      jobsExpected: _readRequiredInt(json, "jobsExpected"),
+      jobsPublished: _readRequiredInt(json, "jobsPublished"),
+      jobsCompleted: _readRequiredInt(json, "jobsCompleted"),
+      jobsRedelegated: _readRequiredInt(json, "jobsRedelegated"),
+      jobsSplit: _readRequiredInt(json, "jobsSplit"),
+      timedOut: _readRequiredBool(json, "timedOut"),
+      distributed: _readRequiredBool(json, "distributed"),
+      warnings: _readRequiredArray(json, "warnings"),
+      startedAt: _readRequiredString(json, "startedAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "solveId": solveId,
+    "requestId": requestId,
+    "revision": revision,
+    "status": status,
+    "nodeId": nodeId,
+    "nodeRole": nodeRole,
+    "problem": problem,
+    "options": options,
+    "response": response,
+    "jobsExpected": jobsExpected,
+    "jobsPublished": jobsPublished,
+    "jobsCompleted": jobsCompleted,
+    "jobsRedelegated": jobsRedelegated,
+    "jobsSplit": jobsSplit,
+    "timedOut": timedOut,
+    "distributed": distributed,
+    "warnings": warnings,
+    "startedAt": startedAt,
+    "updatedAt": updatedAt,
+    "finishedAt": finishedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(solveId).length > 160) {
+      errors.add("mip_solver_solves.solve_id exceeds 160 bytes");
+    }
+    if (utf8.encode(solveId).length < 1) {
+      errors.add("mip_solver_solves.solve_id is below 1 bytes");
+    }
+    if (utf8.encode(requestId).length > 200) {
+      errors.add("mip_solver_solves.request_id exceeds 200 bytes");
+    }
+    if (utf8.encode(requestId).length < 1) {
+      errors.add("mip_solver_solves.request_id is below 1 bytes");
+    }
+    if (utf8.encode(status).length > 64) {
+      errors.add("mip_solver_solves.status exceeds 64 bytes");
+    }
+    if (utf8.encode(status).length < 1) {
+      errors.add("mip_solver_solves.status is below 1 bytes");
+    }
+    if (utf8.encode(nodeId).length > 253) {
+      errors.add("mip_solver_solves.node_id exceeds 253 bytes");
+    }
+    if (utf8.encode(nodeId).length < 1) {
+      errors.add("mip_solver_solves.node_id is below 1 bytes");
+    }
+    if (!mipSolverSolvesNodeRoleValues.contains(nodeRole)) {
+      errors.add("unsupported mip_solver_solves.node_role");
+    }
+    if (jobsExpected < 0) {
+      errors.add("mip_solver_solves.jobs_expected is below the minimum");
+    }
+    if (jobsPublished < 0) {
+      errors.add("mip_solver_solves.jobs_published is below the minimum");
+    }
+    if (jobsCompleted < 0) {
+      errors.add("mip_solver_solves.jobs_completed is below the minimum");
+    }
+    if (jobsRedelegated < 0) {
+      errors.add("mip_solver_solves.jobs_redelegated is below the minimum");
+    }
+    if (jobsSplit < 0) {
+      errors.add("mip_solver_solves.jobs_split is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const mipSolverJobsTable = "mip_solver_jobs";
+const mipSolverJobsSelectSql = "select\n      job_id,\n      solve_id,\n      root_job_id,\n      retry_index,\n      depth,\n      status,\n      worker_node,\n      job_payload::text as job_payload_json,\n      result_payload::text as result_payload_json,\n      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as submitted_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from mip_solver_jobs";
+
+class MipSolverJobsRow {
+  const MipSolverJobsRow({
+    required this.jobId,
+    required this.solveId,
+    required this.rootJobId,
+    required this.retryIndex,
+    required this.depth,
+    required this.status,
+    this.workerNode,
+    required this.jobPayload,
+    required this.resultPayload,
+    required this.submittedAt,
+    this.finishedAt,
+    required this.updatedAt,
+  });
+
+  final String jobId;
+  final String solveId;
+  final String rootJobId;
+  final int retryIndex;
+  final int depth;
+  final String status;
+  final String? workerNode;
+  final Map<String, Object?> jobPayload;
+  final Map<String, Object?> resultPayload;
+  final String submittedAt;
+  final String? finishedAt;
+  final String updatedAt;
+
+  factory MipSolverJobsRow.fromJson(Map<String, Object?> json) {
+    return MipSolverJobsRow(
+      jobId: _readRequiredString(json, "jobId"),
+      solveId: _readRequiredString(json, "solveId"),
+      rootJobId: _readRequiredString(json, "rootJobId"),
+      retryIndex: _readRequiredInt(json, "retryIndex"),
+      depth: _readRequiredInt(json, "depth"),
+      status: _readRequiredString(json, "status"),
+      workerNode: _readOptionalString(json, "workerNode"),
+      jobPayload: _readRequiredObject(json, "jobPayload"),
+      resultPayload: _readRequiredObject(json, "resultPayload"),
+      submittedAt: _readRequiredString(json, "submittedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "jobId": jobId,
+    "solveId": solveId,
+    "rootJobId": rootJobId,
+    "retryIndex": retryIndex,
+    "depth": depth,
+    "status": status,
+    "workerNode": workerNode,
+    "jobPayload": jobPayload,
+    "resultPayload": resultPayload,
+    "submittedAt": submittedAt,
+    "finishedAt": finishedAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(jobId).length > 240) {
+      errors.add("mip_solver_jobs.job_id exceeds 240 bytes");
+    }
+    if (utf8.encode(jobId).length < 1) {
+      errors.add("mip_solver_jobs.job_id is below 1 bytes");
+    }
+    if (utf8.encode(rootJobId).length > 240) {
+      errors.add("mip_solver_jobs.root_job_id exceeds 240 bytes");
+    }
+    if (utf8.encode(rootJobId).length < 1) {
+      errors.add("mip_solver_jobs.root_job_id is below 1 bytes");
+    }
+    if (retryIndex < 0) {
+      errors.add("mip_solver_jobs.retry_index is below the minimum");
+    }
+    if (depth < 0) {
+      errors.add("mip_solver_jobs.depth is below the minimum");
+    }
+    if (utf8.encode(status).length > 64) {
+      errors.add("mip_solver_jobs.status exceeds 64 bytes");
+    }
+    if (utf8.encode(status).length < 1) {
+      errors.add("mip_solver_jobs.status is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const mipSolverEventsTable = "mip_solver_events";
+const mipSolverEventsSelectSql = "select\n      id,\n      solve_id,\n      session_id,\n      job_id,\n      event_kind,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from mip_solver_events";
+
+class MipSolverEventsRow {
+  const MipSolverEventsRow({
+    required this.id,
+    this.solveId,
+    this.sessionId,
+    this.jobId,
+    required this.eventKind,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final int id;
+  final String? solveId;
+  final String? sessionId;
+  final String? jobId;
+  final String eventKind;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory MipSolverEventsRow.fromJson(Map<String, Object?> json) {
+    return MipSolverEventsRow(
+      id: _readRequiredInt(json, "id"),
+      solveId: _readOptionalString(json, "solveId"),
+      sessionId: _readOptionalString(json, "sessionId"),
+      jobId: _readOptionalString(json, "jobId"),
+      eventKind: _readRequiredString(json, "eventKind"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "solveId": solveId,
+    "sessionId": sessionId,
+    "jobId": jobId,
+    "eventKind": eventKind,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9._:-]{1,80}$').hasMatch(eventKind)) {
+      errors.add("mip_solver_events.event_kind does not match the required pattern");
     }
     return errors;
   }
@@ -928,6 +1503,280 @@ class LambdaFunctionRow {
     }
     if (!lambdaFunctionStatusValues.contains(status)) {
       errors.add("unsupported lambda_functions.status");
+    }
+    return errors;
+  }
+}
+
+const containerPoolImageRevisionsTable = "container_pool_image_revisions";
+const containerPoolImageRevisionsSelectSql = "select\n      id::text as id,\n      image_slug,\n      image_ref,\n      dockerfile_path,\n      build_context,\n      dockerfile_text,\n      dockerfile_sha256,\n      source,\n      notes,\n      status,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from container_pool_image_revisions";
+
+const containerPoolImageRevisionsSourceValues = <String>["disk-default", "user", "system"];
+const containerPoolImageRevisionsStatusValues = <String>["candidate", "active", "archived"];
+
+class ContainerPoolImageRevisionsRow {
+  const ContainerPoolImageRevisionsRow({
+    required this.id,
+    required this.imageSlug,
+    required this.imageRef,
+    required this.dockerfilePath,
+    required this.buildContext,
+    required this.dockerfileText,
+    required this.dockerfileSha256,
+    required this.source,
+    required this.notes,
+    required this.status,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String imageSlug;
+  final String imageRef;
+  final String dockerfilePath;
+  final String buildContext;
+  final String dockerfileText;
+  final String dockerfileSha256;
+  final String source;
+  final String notes;
+  final String status;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory ContainerPoolImageRevisionsRow.fromJson(Map<String, Object?> json) {
+    return ContainerPoolImageRevisionsRow(
+      id: _readRequiredString(json, "id"),
+      imageSlug: _readRequiredString(json, "imageSlug"),
+      imageRef: _readRequiredString(json, "imageRef"),
+      dockerfilePath: _readRequiredString(json, "dockerfilePath"),
+      buildContext: _readRequiredString(json, "buildContext"),
+      dockerfileText: _readRequiredString(json, "dockerfileText"),
+      dockerfileSha256: _readRequiredString(json, "dockerfileSha256"),
+      source: _readRequiredString(json, "source"),
+      notes: _readRequiredString(json, "notes"),
+      status: _readRequiredString(json, "status"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "imageSlug": imageSlug,
+    "imageRef": imageRef,
+    "dockerfilePath": dockerfilePath,
+    "buildContext": buildContext,
+    "dockerfileText": dockerfileText,
+    "dockerfileSha256": dockerfileSha256,
+    "source": source,
+    "notes": notes,
+    "status": status,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$').hasMatch(imageSlug)) {
+      errors.add("container_pool_image_revisions.image_slug must be a lowercase slug");
+    }
+    if (utf8.encode(imageRef).length > 512) {
+      errors.add("container_pool_image_revisions.image_ref exceeds 512 bytes");
+    }
+    if (utf8.encode(imageRef).length < 1) {
+      errors.add("container_pool_image_revisions.image_ref is below 1 bytes");
+    }
+    if (utf8.encode(dockerfilePath).length > 512) {
+      errors.add("container_pool_image_revisions.dockerfile_path exceeds 512 bytes");
+    }
+    if (utf8.encode(dockerfilePath).length < 1) {
+      errors.add("container_pool_image_revisions.dockerfile_path is below 1 bytes");
+    }
+    if (utf8.encode(buildContext).length > 512) {
+      errors.add("container_pool_image_revisions.build_context exceeds 512 bytes");
+    }
+    if (utf8.encode(buildContext).length < 1) {
+      errors.add("container_pool_image_revisions.build_context is below 1 bytes");
+    }
+    if (utf8.encode(dockerfileText).length > 65536) {
+      errors.add("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes");
+    }
+    if (utf8.encode(dockerfileText).length < 1) {
+      errors.add("container_pool_image_revisions.dockerfile_text is below 1 bytes");
+    }
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(dockerfileSha256)) {
+      errors.add("container_pool_image_revisions.dockerfile_sha256 does not match the required pattern");
+    }
+    if (!containerPoolImageRevisionsSourceValues.contains(source)) {
+      errors.add("unsupported container_pool_image_revisions.source");
+    }
+    if (utf8.encode(notes).length > 8192) {
+      errors.add("container_pool_image_revisions.notes exceeds 8192 bytes");
+    }
+    if (!containerPoolImageRevisionsStatusValues.contains(status)) {
+      errors.add("unsupported container_pool_image_revisions.status");
+    }
+    return errors;
+  }
+}
+
+const containerPoolBuildRunsTable = "container_pool_build_runs";
+const containerPoolBuildRunsSelectSql = "select\n      id::text as id,\n      image_slug,\n      revision_id::text as revision_id,\n      image_ref,\n      candidate_tag,\n      build_status,\n      test_status,\n      overall_status,\n      test_command,\n      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_started_at,\n      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as build_finished_at,\n      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_started_at,\n      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as test_finished_at,\n      build_log_excerpt,\n      test_log_excerpt,\n      error_message,\n      triggered_by::text as triggered_by,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from container_pool_build_runs";
+
+const containerPoolBuildRunsBuildStatusValues = <String>["queued", "building", "built", "failed", "skipped", "cancelled"];
+const containerPoolBuildRunsTestStatusValues = <String>["not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"];
+const containerPoolBuildRunsOverallStatusValues = <String>["queued", "running", "passed", "failed", "cancelled", "errored"];
+
+class ContainerPoolBuildRunsRow {
+  const ContainerPoolBuildRunsRow({
+    required this.id,
+    required this.imageSlug,
+    required this.revisionId,
+    required this.imageRef,
+    required this.candidateTag,
+    required this.buildStatus,
+    required this.testStatus,
+    required this.overallStatus,
+    required this.testCommand,
+    this.buildStartedAt,
+    this.buildFinishedAt,
+    this.testStartedAt,
+    this.testFinishedAt,
+    required this.buildLogExcerpt,
+    required this.testLogExcerpt,
+    this.errorMessage,
+    this.triggeredBy,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String imageSlug;
+  final String revisionId;
+  final String imageRef;
+  final String candidateTag;
+  final String buildStatus;
+  final String testStatus;
+  final String overallStatus;
+  final String testCommand;
+  final String? buildStartedAt;
+  final String? buildFinishedAt;
+  final String? testStartedAt;
+  final String? testFinishedAt;
+  final String buildLogExcerpt;
+  final String testLogExcerpt;
+  final String? errorMessage;
+  final String? triggeredBy;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+
+  factory ContainerPoolBuildRunsRow.fromJson(Map<String, Object?> json) {
+    return ContainerPoolBuildRunsRow(
+      id: _readRequiredString(json, "id"),
+      imageSlug: _readRequiredString(json, "imageSlug"),
+      revisionId: _readRequiredString(json, "revisionId"),
+      imageRef: _readRequiredString(json, "imageRef"),
+      candidateTag: _readRequiredString(json, "candidateTag"),
+      buildStatus: _readRequiredString(json, "buildStatus"),
+      testStatus: _readRequiredString(json, "testStatus"),
+      overallStatus: _readRequiredString(json, "overallStatus"),
+      testCommand: _readRequiredString(json, "testCommand"),
+      buildStartedAt: _readOptionalString(json, "buildStartedAt"),
+      buildFinishedAt: _readOptionalString(json, "buildFinishedAt"),
+      testStartedAt: _readOptionalString(json, "testStartedAt"),
+      testFinishedAt: _readOptionalString(json, "testFinishedAt"),
+      buildLogExcerpt: _readRequiredString(json, "buildLogExcerpt"),
+      testLogExcerpt: _readRequiredString(json, "testLogExcerpt"),
+      errorMessage: _readOptionalString(json, "errorMessage"),
+      triggeredBy: _readOptionalString(json, "triggeredBy"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "imageSlug": imageSlug,
+    "revisionId": revisionId,
+    "imageRef": imageRef,
+    "candidateTag": candidateTag,
+    "buildStatus": buildStatus,
+    "testStatus": testStatus,
+    "overallStatus": overallStatus,
+    "testCommand": testCommand,
+    "buildStartedAt": buildStartedAt,
+    "buildFinishedAt": buildFinishedAt,
+    "testStartedAt": testStartedAt,
+    "testFinishedAt": testFinishedAt,
+    "buildLogExcerpt": buildLogExcerpt,
+    "testLogExcerpt": testLogExcerpt,
+    "errorMessage": errorMessage,
+    "triggeredBy": triggeredBy,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$').hasMatch(imageSlug)) {
+      errors.add("container_pool_build_runs.image_slug must be a lowercase slug");
+    }
+    if (utf8.encode(imageRef).length > 512) {
+      errors.add("container_pool_build_runs.image_ref exceeds 512 bytes");
+    }
+    if (utf8.encode(imageRef).length < 1) {
+      errors.add("container_pool_build_runs.image_ref is below 1 bytes");
+    }
+    if (utf8.encode(candidateTag).length > 512) {
+      errors.add("container_pool_build_runs.candidate_tag exceeds 512 bytes");
+    }
+    if (utf8.encode(candidateTag).length < 1) {
+      errors.add("container_pool_build_runs.candidate_tag is below 1 bytes");
+    }
+    if (!containerPoolBuildRunsBuildStatusValues.contains(buildStatus)) {
+      errors.add("unsupported container_pool_build_runs.build_status");
+    }
+    if (!containerPoolBuildRunsTestStatusValues.contains(testStatus)) {
+      errors.add("unsupported container_pool_build_runs.test_status");
+    }
+    if (!containerPoolBuildRunsOverallStatusValues.contains(overallStatus)) {
+      errors.add("unsupported container_pool_build_runs.overall_status");
+    }
+    if (utf8.encode(testCommand).length > 4096) {
+      errors.add("container_pool_build_runs.test_command exceeds 4096 bytes");
+    }
+    if (utf8.encode(buildLogExcerpt).length > 65536) {
+      errors.add("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes");
+    }
+    if (utf8.encode(testLogExcerpt).length > 65536) {
+      errors.add("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes");
+    }
+    if (errorMessage != null && utf8.encode(errorMessage!).length > 8192) {
+      errors.add("container_pool_build_runs.error_message exceeds 8192 bytes");
     }
     return errors;
   }
@@ -1220,6 +2069,817 @@ class PresenceConsumerCheckpointsRow {
 
   List<String> validate() {
     final errors = <String>[];
+    return errors;
+  }
+}
+
+const desSoccerLearningExperimentsTable = "des_soccer_learning_experiments";
+const desSoccerLearningExperimentsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      status,\n      config::text as config_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_experiments";
+
+const desSoccerLearningExperimentsStatusValues = <String>["active", "paused", "archived"];
+
+class DesSoccerLearningExperimentsRow {
+  const DesSoccerLearningExperimentsRow({
+    required this.id,
+    required this.slug,
+    required this.displayName,
+    required this.description,
+    required this.status,
+    required this.config,
+    required this.labels,
+    required this.metaData,
+    required this.isSoftDeleted,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String slug;
+  final String displayName;
+  final String description;
+  final String status;
+  final Map<String, Object?> config;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final bool isSoftDeleted;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory DesSoccerLearningExperimentsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningExperimentsRow(
+      id: _readRequiredString(json, "id"),
+      slug: _readRequiredString(json, "slug"),
+      displayName: _readRequiredString(json, "displayName"),
+      description: _readRequiredString(json, "description"),
+      status: _readRequiredString(json, "status"),
+      config: _readRequiredObject(json, "config"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      isSoftDeleted: _readRequiredBool(json, "isSoftDeleted"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "slug": slug,
+    "displayName": displayName,
+    "description": description,
+    "status": status,
+    "config": config,
+    "labels": labels,
+    "metaData": metaData,
+    "isSoftDeleted": isSoftDeleted,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$').hasMatch(slug)) {
+      errors.add("des_soccer_learning_experiments.slug must be a lowercase slug");
+    }
+    if (utf8.encode(displayName).length > 240) {
+      errors.add("des_soccer_learning_experiments.display_name exceeds 240 bytes");
+    }
+    if (utf8.encode(displayName).length < 1) {
+      errors.add("des_soccer_learning_experiments.display_name is below 1 bytes");
+    }
+    if (utf8.encode(description).length > 8192) {
+      errors.add("des_soccer_learning_experiments.description exceeds 8192 bytes");
+    }
+    if (!desSoccerLearningExperimentsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_experiments.status");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningPolicyVersionsTable = "des_soccer_learning_policy_versions";
+const desSoccerLearningPolicyVersionsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      parent_policy_version_id::text as parent_policy_version_id,\n      generation,\n      version_label,\n      source_kind,\n      status,\n      options::text as options_json,\n      config::text as config_json,\n      lineage::text as lineage_json,\n      metrics::text as metrics_json,\n      entry_count,\n      target_entry_count,\n      visit_count,\n      fitness_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from des_soccer_learning_policy_versions";
+
+const desSoccerLearningPolicyVersionsSourceKindValues = <String>["seed", "merge", "mutation", "crossover", "import", "replay"];
+const desSoccerLearningPolicyVersionsStatusValues = <String>["candidate", "active", "archived", "rejected"];
+
+class DesSoccerLearningPolicyVersionsRow {
+  const DesSoccerLearningPolicyVersionsRow({
+    required this.id,
+    required this.experimentId,
+    this.parentPolicyVersionId,
+    required this.generation,
+    required this.versionLabel,
+    required this.sourceKind,
+    required this.status,
+    required this.options,
+    required this.config,
+    required this.lineage,
+    required this.metrics,
+    required this.entryCount,
+    required this.targetEntryCount,
+    required this.visitCount,
+    required this.fitnessMicros,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String experimentId;
+  final String? parentPolicyVersionId;
+  final int generation;
+  final String versionLabel;
+  final String sourceKind;
+  final String status;
+  final Map<String, Object?> options;
+  final Map<String, Object?> config;
+  final List<Object?> lineage;
+  final Map<String, Object?> metrics;
+  final int entryCount;
+  final int targetEntryCount;
+  final int visitCount;
+  final int fitnessMicros;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory DesSoccerLearningPolicyVersionsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningPolicyVersionsRow(
+      id: _readRequiredString(json, "id"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      parentPolicyVersionId: _readOptionalString(json, "parentPolicyVersionId"),
+      generation: _readRequiredInt(json, "generation"),
+      versionLabel: _readRequiredString(json, "versionLabel"),
+      sourceKind: _readRequiredString(json, "sourceKind"),
+      status: _readRequiredString(json, "status"),
+      options: _readRequiredObject(json, "options"),
+      config: _readRequiredObject(json, "config"),
+      lineage: _readRequiredArray(json, "lineage"),
+      metrics: _readRequiredObject(json, "metrics"),
+      entryCount: _readRequiredInt(json, "entryCount"),
+      targetEntryCount: _readRequiredInt(json, "targetEntryCount"),
+      visitCount: _readRequiredInt(json, "visitCount"),
+      fitnessMicros: _readRequiredInt(json, "fitnessMicros"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "parentPolicyVersionId": parentPolicyVersionId,
+    "generation": generation,
+    "versionLabel": versionLabel,
+    "sourceKind": sourceKind,
+    "status": status,
+    "options": options,
+    "config": config,
+    "lineage": lineage,
+    "metrics": metrics,
+    "entryCount": entryCount,
+    "targetEntryCount": targetEntryCount,
+    "visitCount": visitCount,
+    "fitnessMicros": fitnessMicros,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (generation < 0) {
+      errors.add("des_soccer_learning_policy_versions.generation is below the minimum");
+    }
+    if (!RegExp(r'^[A-Za-z0-9._:/-]{1,160}$').hasMatch(versionLabel)) {
+      errors.add("des_soccer_learning_policy_versions.version_label does not match the required pattern");
+    }
+    if (!desSoccerLearningPolicyVersionsSourceKindValues.contains(sourceKind)) {
+      errors.add("unsupported des_soccer_learning_policy_versions.source_kind");
+    }
+    if (!desSoccerLearningPolicyVersionsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_policy_versions.status");
+    }
+    if (entryCount < 0) {
+      errors.add("des_soccer_learning_policy_versions.entry_count is below the minimum");
+    }
+    if (targetEntryCount < 0) {
+      errors.add("des_soccer_learning_policy_versions.target_entry_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries";
+const desSoccerLearningPolicyEntriesSelectSql = "select\n      id::text as id,\n      policy_version_id::text as policy_version_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      value_micros,\n      visits,\n      source_run_id::text as source_run_id,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_policy_entries";
+
+const desSoccerLearningPolicyEntriesTeamValues = <String>["home", "away"];
+const desSoccerLearningPolicyEntriesEntryKindValues = <String>["action", "target"];
+
+class DesSoccerLearningPolicyEntriesRow {
+  const DesSoccerLearningPolicyEntriesRow({
+    required this.id,
+    required this.policyVersionId,
+    required this.team,
+    required this.entryKind,
+    required this.stateHash,
+    required this.stateKey,
+    required this.action,
+    required this.targetFineCellId,
+    required this.targetTacticalCellId,
+    required this.targetMacroCellId,
+    required this.targetRootCellId,
+    required this.valueMicros,
+    required this.visits,
+    this.sourceRunId,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String policyVersionId;
+  final String team;
+  final String entryKind;
+  final String stateHash;
+  final Map<String, Object?> stateKey;
+  final String action;
+  final int targetFineCellId;
+  final int targetTacticalCellId;
+  final int targetMacroCellId;
+  final int targetRootCellId;
+  final int valueMicros;
+  final int visits;
+  final String? sourceRunId;
+  final String createdAt;
+
+  factory DesSoccerLearningPolicyEntriesRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningPolicyEntriesRow(
+      id: _readRequiredString(json, "id"),
+      policyVersionId: _readRequiredString(json, "policyVersionId"),
+      team: _readRequiredString(json, "team"),
+      entryKind: _readRequiredString(json, "entryKind"),
+      stateHash: _readRequiredString(json, "stateHash"),
+      stateKey: _readRequiredObject(json, "stateKey"),
+      action: _readRequiredString(json, "action"),
+      targetFineCellId: _readRequiredInt(json, "targetFineCellId"),
+      targetTacticalCellId: _readRequiredInt(json, "targetTacticalCellId"),
+      targetMacroCellId: _readRequiredInt(json, "targetMacroCellId"),
+      targetRootCellId: _readRequiredInt(json, "targetRootCellId"),
+      valueMicros: _readRequiredInt(json, "valueMicros"),
+      visits: _readRequiredInt(json, "visits"),
+      sourceRunId: _readOptionalString(json, "sourceRunId"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "policyVersionId": policyVersionId,
+    "team": team,
+    "entryKind": entryKind,
+    "stateHash": stateHash,
+    "stateKey": stateKey,
+    "action": action,
+    "targetFineCellId": targetFineCellId,
+    "targetTacticalCellId": targetTacticalCellId,
+    "targetMacroCellId": targetMacroCellId,
+    "targetRootCellId": targetRootCellId,
+    "valueMicros": valueMicros,
+    "visits": visits,
+    "sourceRunId": sourceRunId,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningPolicyEntriesTeamValues.contains(team)) {
+      errors.add("unsupported des_soccer_learning_policy_entries.team");
+    }
+    if (!desSoccerLearningPolicyEntriesEntryKindValues.contains(entryKind)) {
+      errors.add("unsupported des_soccer_learning_policy_entries.entry_kind");
+    }
+    if (!RegExp(r'^[a-f0-9]{16,32}$').hasMatch(stateHash)) {
+      errors.add("des_soccer_learning_policy_entries.state_hash does not match the required pattern");
+    }
+    if (utf8.encode(action).length > 80) {
+      errors.add("des_soccer_learning_policy_entries.action exceeds 80 bytes");
+    }
+    if (utf8.encode(action).length < 1) {
+      errors.add("des_soccer_learning_policy_entries.action is below 1 bytes");
+    }
+    if (targetFineCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum");
+    }
+    if (targetTacticalCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum");
+    }
+    if (targetMacroCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum");
+    }
+    if (targetRootCellId < -1) {
+      errors.add("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum");
+    }
+    if (visits < 0) {
+      errors.add("des_soccer_learning_policy_entries.visits is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningJobsTable = "des_soccer_learning_jobs";
+const desSoccerLearningJobsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      spawn_strategy,\n      status,\n      priority,\n      seed,\n      attempt,\n      max_attempts,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as finished_at,\n      config::text as config_json,\n      runner_config::text as runner_config_json,\n      result_run_id::text as result_run_id,\n      error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_jobs";
+
+const desSoccerLearningJobsSpawnStrategyValues = <String>["latest", "elite", "mutation", "crossover", "random", "replay"];
+const desSoccerLearningJobsStatusValues = <String>["queued", "running", "completed", "failed", "canceled"];
+
+class DesSoccerLearningJobsRow {
+  const DesSoccerLearningJobsRow({
+    required this.id,
+    required this.experimentId,
+    this.basePolicyVersionId,
+    required this.spawnStrategy,
+    required this.status,
+    required this.priority,
+    required this.seed,
+    required this.attempt,
+    required this.maxAttempts,
+    this.leaseOwner,
+    this.leaseExpiresAt,
+    this.startedAt,
+    this.finishedAt,
+    required this.config,
+    required this.runnerConfig,
+    this.resultRunId,
+    this.error,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String experimentId;
+  final String? basePolicyVersionId;
+  final String spawnStrategy;
+  final String status;
+  final int priority;
+  final int seed;
+  final int attempt;
+  final int maxAttempts;
+  final String? leaseOwner;
+  final String? leaseExpiresAt;
+  final String? startedAt;
+  final String? finishedAt;
+  final Map<String, Object?> config;
+  final Map<String, Object?> runnerConfig;
+  final String? resultRunId;
+  final String? error;
+  final String createdAt;
+  final String updatedAt;
+
+  factory DesSoccerLearningJobsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningJobsRow(
+      id: _readRequiredString(json, "id"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      basePolicyVersionId: _readOptionalString(json, "basePolicyVersionId"),
+      spawnStrategy: _readRequiredString(json, "spawnStrategy"),
+      status: _readRequiredString(json, "status"),
+      priority: _readRequiredInt(json, "priority"),
+      seed: _readRequiredInt(json, "seed"),
+      attempt: _readRequiredInt(json, "attempt"),
+      maxAttempts: _readRequiredInt(json, "maxAttempts"),
+      leaseOwner: _readOptionalString(json, "leaseOwner"),
+      leaseExpiresAt: _readOptionalString(json, "leaseExpiresAt"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      finishedAt: _readOptionalString(json, "finishedAt"),
+      config: _readRequiredObject(json, "config"),
+      runnerConfig: _readRequiredObject(json, "runnerConfig"),
+      resultRunId: _readOptionalString(json, "resultRunId"),
+      error: _readOptionalString(json, "error"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "basePolicyVersionId": basePolicyVersionId,
+    "spawnStrategy": spawnStrategy,
+    "status": status,
+    "priority": priority,
+    "seed": seed,
+    "attempt": attempt,
+    "maxAttempts": maxAttempts,
+    "leaseOwner": leaseOwner,
+    "leaseExpiresAt": leaseExpiresAt,
+    "startedAt": startedAt,
+    "finishedAt": finishedAt,
+    "config": config,
+    "runnerConfig": runnerConfig,
+    "resultRunId": resultRunId,
+    "error": error,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningJobsSpawnStrategyValues.contains(spawnStrategy)) {
+      errors.add("unsupported des_soccer_learning_jobs.spawn_strategy");
+    }
+    if (!desSoccerLearningJobsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_jobs.status");
+    }
+    if (attempt < 0) {
+      errors.add("des_soccer_learning_jobs.attempt is below the minimum");
+    }
+    if (maxAttempts < 1) {
+      errors.add("des_soccer_learning_jobs.max_attempts is below the minimum");
+    }
+    if (maxAttempts > 100) {
+      errors.add("des_soccer_learning_jobs.max_attempts is above the maximum");
+    }
+    if (leaseOwner != null && utf8.encode(leaseOwner!).length > 200) {
+      errors.add("des_soccer_learning_jobs.lease_owner exceeds 200 bytes");
+    }
+    if (error != null && utf8.encode(error!).length > 16384) {
+      errors.add("des_soccer_learning_jobs.error exceeds 16384 bytes");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningRunsTable = "des_soccer_learning_runs";
+const desSoccerLearningRunsSelectSql = "select\n      id::text as id,\n      job_id::text as job_id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      output_policy_version_id::text as output_policy_version_id,\n      runner_id,\n      seed,\n      episode_index,\n      status,\n      score_home,\n      score_away,\n      home_goal_diff,\n      away_goal_diff,\n      home_outcome,\n      away_outcome,\n      home_merge_weight_micros,\n      away_merge_weight_micros,\n      fitness_micros,\n      duration_ticks,\n      simulated_seconds_micros,\n      elapsed_millis,\n      transitions,\n      summary::text as summary_json,\n      stats::text as stats_json,\n      error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from des_soccer_learning_runs";
+
+const desSoccerLearningRunsStatusValues = <String>["completed", "failed"];
+const desSoccerLearningRunsHomeOutcomeValues = <String>["win", "draw", "loss"];
+const desSoccerLearningRunsAwayOutcomeValues = <String>["win", "draw", "loss"];
+
+class DesSoccerLearningRunsRow {
+  const DesSoccerLearningRunsRow({
+    required this.id,
+    this.jobId,
+    required this.experimentId,
+    this.basePolicyVersionId,
+    this.outputPolicyVersionId,
+    required this.runnerId,
+    required this.seed,
+    required this.episodeIndex,
+    required this.status,
+    required this.scoreHome,
+    required this.scoreAway,
+    required this.homeGoalDiff,
+    required this.awayGoalDiff,
+    required this.homeOutcome,
+    required this.awayOutcome,
+    required this.homeMergeWeightMicros,
+    required this.awayMergeWeightMicros,
+    required this.fitnessMicros,
+    required this.durationTicks,
+    required this.simulatedSecondsMicros,
+    required this.elapsedMillis,
+    required this.transitions,
+    required this.summary,
+    required this.stats,
+    this.error,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String? jobId;
+  final String experimentId;
+  final String? basePolicyVersionId;
+  final String? outputPolicyVersionId;
+  final String runnerId;
+  final int seed;
+  final int episodeIndex;
+  final String status;
+  final int scoreHome;
+  final int scoreAway;
+  final int homeGoalDiff;
+  final int awayGoalDiff;
+  final String homeOutcome;
+  final String awayOutcome;
+  final int homeMergeWeightMicros;
+  final int awayMergeWeightMicros;
+  final int fitnessMicros;
+  final int durationTicks;
+  final int simulatedSecondsMicros;
+  final int elapsedMillis;
+  final int transitions;
+  final Map<String, Object?> summary;
+  final Map<String, Object?> stats;
+  final String? error;
+  final String createdAt;
+  final String updatedAt;
+
+  factory DesSoccerLearningRunsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningRunsRow(
+      id: _readRequiredString(json, "id"),
+      jobId: _readOptionalString(json, "jobId"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      basePolicyVersionId: _readOptionalString(json, "basePolicyVersionId"),
+      outputPolicyVersionId: _readOptionalString(json, "outputPolicyVersionId"),
+      runnerId: _readRequiredString(json, "runnerId"),
+      seed: _readRequiredInt(json, "seed"),
+      episodeIndex: _readRequiredInt(json, "episodeIndex"),
+      status: _readRequiredString(json, "status"),
+      scoreHome: _readRequiredInt(json, "scoreHome"),
+      scoreAway: _readRequiredInt(json, "scoreAway"),
+      homeGoalDiff: _readRequiredInt(json, "homeGoalDiff"),
+      awayGoalDiff: _readRequiredInt(json, "awayGoalDiff"),
+      homeOutcome: _readRequiredString(json, "homeOutcome"),
+      awayOutcome: _readRequiredString(json, "awayOutcome"),
+      homeMergeWeightMicros: _readRequiredInt(json, "homeMergeWeightMicros"),
+      awayMergeWeightMicros: _readRequiredInt(json, "awayMergeWeightMicros"),
+      fitnessMicros: _readRequiredInt(json, "fitnessMicros"),
+      durationTicks: _readRequiredInt(json, "durationTicks"),
+      simulatedSecondsMicros: _readRequiredInt(json, "simulatedSecondsMicros"),
+      elapsedMillis: _readRequiredInt(json, "elapsedMillis"),
+      transitions: _readRequiredInt(json, "transitions"),
+      summary: _readRequiredObject(json, "summary"),
+      stats: _readRequiredObject(json, "stats"),
+      error: _readOptionalString(json, "error"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "jobId": jobId,
+    "experimentId": experimentId,
+    "basePolicyVersionId": basePolicyVersionId,
+    "outputPolicyVersionId": outputPolicyVersionId,
+    "runnerId": runnerId,
+    "seed": seed,
+    "episodeIndex": episodeIndex,
+    "status": status,
+    "scoreHome": scoreHome,
+    "scoreAway": scoreAway,
+    "homeGoalDiff": homeGoalDiff,
+    "awayGoalDiff": awayGoalDiff,
+    "homeOutcome": homeOutcome,
+    "awayOutcome": awayOutcome,
+    "homeMergeWeightMicros": homeMergeWeightMicros,
+    "awayMergeWeightMicros": awayMergeWeightMicros,
+    "fitnessMicros": fitnessMicros,
+    "durationTicks": durationTicks,
+    "simulatedSecondsMicros": simulatedSecondsMicros,
+    "elapsedMillis": elapsedMillis,
+    "transitions": transitions,
+    "summary": summary,
+    "stats": stats,
+    "error": error,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(runnerId).length > 200) {
+      errors.add("des_soccer_learning_runs.runner_id exceeds 200 bytes");
+    }
+    if (utf8.encode(runnerId).length < 1) {
+      errors.add("des_soccer_learning_runs.runner_id is below 1 bytes");
+    }
+    if (episodeIndex < 0) {
+      errors.add("des_soccer_learning_runs.episode_index is below the minimum");
+    }
+    if (!desSoccerLearningRunsStatusValues.contains(status)) {
+      errors.add("unsupported des_soccer_learning_runs.status");
+    }
+    if (scoreHome < 0) {
+      errors.add("des_soccer_learning_runs.score_home is below the minimum");
+    }
+    if (scoreAway < 0) {
+      errors.add("des_soccer_learning_runs.score_away is below the minimum");
+    }
+    if (!desSoccerLearningRunsHomeOutcomeValues.contains(homeOutcome)) {
+      errors.add("unsupported des_soccer_learning_runs.home_outcome");
+    }
+    if (!desSoccerLearningRunsAwayOutcomeValues.contains(awayOutcome)) {
+      errors.add("unsupported des_soccer_learning_runs.away_outcome");
+    }
+    if (transitions < 0) {
+      errors.add("des_soccer_learning_runs.transitions is below the minimum");
+    }
+    if (error != null && utf8.encode(error!).length > 16384) {
+      errors.add("des_soccer_learning_runs.error exceeds 16384 bytes");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas";
+const desSoccerLearningRunDeltasSelectSql = "select\n      id::text as id,\n      run_id::text as run_id,\n      team,\n      entry_kind,\n      state_hash,\n      state_key::text as state_key_json,\n      action,\n      target_fine_cell_id,\n      target_tactical_cell_id,\n      target_macro_cell_id,\n      target_root_cell_id,\n      before_value_micros,\n      after_value_micros,\n      value_delta_micros,\n      visit_delta,\n      merge_weight_micros,\n      effective_visit_micros,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_run_deltas";
+
+const desSoccerLearningRunDeltasTeamValues = <String>["home", "away"];
+const desSoccerLearningRunDeltasEntryKindValues = <String>["action", "target"];
+
+class DesSoccerLearningRunDeltasRow {
+  const DesSoccerLearningRunDeltasRow({
+    required this.id,
+    required this.runId,
+    required this.team,
+    required this.entryKind,
+    required this.stateHash,
+    required this.stateKey,
+    required this.action,
+    required this.targetFineCellId,
+    required this.targetTacticalCellId,
+    required this.targetMacroCellId,
+    required this.targetRootCellId,
+    required this.beforeValueMicros,
+    required this.afterValueMicros,
+    required this.valueDeltaMicros,
+    required this.visitDelta,
+    required this.mergeWeightMicros,
+    required this.effectiveVisitMicros,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String runId;
+  final String team;
+  final String entryKind;
+  final String stateHash;
+  final Map<String, Object?> stateKey;
+  final String action;
+  final int targetFineCellId;
+  final int targetTacticalCellId;
+  final int targetMacroCellId;
+  final int targetRootCellId;
+  final int beforeValueMicros;
+  final int afterValueMicros;
+  final int valueDeltaMicros;
+  final int visitDelta;
+  final int mergeWeightMicros;
+  final int effectiveVisitMicros;
+  final String createdAt;
+
+  factory DesSoccerLearningRunDeltasRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningRunDeltasRow(
+      id: _readRequiredString(json, "id"),
+      runId: _readRequiredString(json, "runId"),
+      team: _readRequiredString(json, "team"),
+      entryKind: _readRequiredString(json, "entryKind"),
+      stateHash: _readRequiredString(json, "stateHash"),
+      stateKey: _readRequiredObject(json, "stateKey"),
+      action: _readRequiredString(json, "action"),
+      targetFineCellId: _readRequiredInt(json, "targetFineCellId"),
+      targetTacticalCellId: _readRequiredInt(json, "targetTacticalCellId"),
+      targetMacroCellId: _readRequiredInt(json, "targetMacroCellId"),
+      targetRootCellId: _readRequiredInt(json, "targetRootCellId"),
+      beforeValueMicros: _readRequiredInt(json, "beforeValueMicros"),
+      afterValueMicros: _readRequiredInt(json, "afterValueMicros"),
+      valueDeltaMicros: _readRequiredInt(json, "valueDeltaMicros"),
+      visitDelta: _readRequiredInt(json, "visitDelta"),
+      mergeWeightMicros: _readRequiredInt(json, "mergeWeightMicros"),
+      effectiveVisitMicros: _readRequiredInt(json, "effectiveVisitMicros"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "runId": runId,
+    "team": team,
+    "entryKind": entryKind,
+    "stateHash": stateHash,
+    "stateKey": stateKey,
+    "action": action,
+    "targetFineCellId": targetFineCellId,
+    "targetTacticalCellId": targetTacticalCellId,
+    "targetMacroCellId": targetMacroCellId,
+    "targetRootCellId": targetRootCellId,
+    "beforeValueMicros": beforeValueMicros,
+    "afterValueMicros": afterValueMicros,
+    "valueDeltaMicros": valueDeltaMicros,
+    "visitDelta": visitDelta,
+    "mergeWeightMicros": mergeWeightMicros,
+    "effectiveVisitMicros": effectiveVisitMicros,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningRunDeltasTeamValues.contains(team)) {
+      errors.add("unsupported des_soccer_learning_run_deltas.team");
+    }
+    if (!desSoccerLearningRunDeltasEntryKindValues.contains(entryKind)) {
+      errors.add("unsupported des_soccer_learning_run_deltas.entry_kind");
+    }
+    if (!RegExp(r'^[a-f0-9]{16,32}$').hasMatch(stateHash)) {
+      errors.add("des_soccer_learning_run_deltas.state_hash does not match the required pattern");
+    }
+    if (utf8.encode(action).length > 80) {
+      errors.add("des_soccer_learning_run_deltas.action exceeds 80 bytes");
+    }
+    if (utf8.encode(action).length < 1) {
+      errors.add("des_soccer_learning_run_deltas.action is below 1 bytes");
+    }
+    if (targetFineCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum");
+    }
+    if (targetTacticalCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum");
+    }
+    if (targetMacroCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum");
+    }
+    if (targetRootCellId < -1) {
+      errors.add("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum");
+    }
+    if (visitDelta < 1) {
+      errors.add("des_soccer_learning_run_deltas.visit_delta is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const desSoccerLearningMergeEventsTable = "des_soccer_learning_merge_events";
+const desSoccerLearningMergeEventsSelectSql = "select\n      id::text as id,\n      experiment_id::text as experiment_id,\n      base_policy_version_id::text as base_policy_version_id,\n      output_policy_version_id::text as output_policy_version_id,\n      strategy,\n      input_run_count,\n      input_delta_count,\n      decay_micros,\n      metrics::text as metrics_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from des_soccer_learning_merge_events";
+
+const desSoccerLearningMergeEventsStrategyValues = <String>["outcome_weighted_average", "elite", "mutation", "crossover"];
+
+class DesSoccerLearningMergeEventsRow {
+  const DesSoccerLearningMergeEventsRow({
+    required this.id,
+    required this.experimentId,
+    this.basePolicyVersionId,
+    required this.outputPolicyVersionId,
+    required this.strategy,
+    required this.inputRunCount,
+    required this.inputDeltaCount,
+    required this.decayMicros,
+    required this.metrics,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String experimentId;
+  final String? basePolicyVersionId;
+  final String outputPolicyVersionId;
+  final String strategy;
+  final int inputRunCount;
+  final int inputDeltaCount;
+  final int decayMicros;
+  final Map<String, Object?> metrics;
+  final String createdAt;
+
+  factory DesSoccerLearningMergeEventsRow.fromJson(Map<String, Object?> json) {
+    return DesSoccerLearningMergeEventsRow(
+      id: _readRequiredString(json, "id"),
+      experimentId: _readRequiredString(json, "experimentId"),
+      basePolicyVersionId: _readOptionalString(json, "basePolicyVersionId"),
+      outputPolicyVersionId: _readRequiredString(json, "outputPolicyVersionId"),
+      strategy: _readRequiredString(json, "strategy"),
+      inputRunCount: _readRequiredInt(json, "inputRunCount"),
+      inputDeltaCount: _readRequiredInt(json, "inputDeltaCount"),
+      decayMicros: _readRequiredInt(json, "decayMicros"),
+      metrics: _readRequiredObject(json, "metrics"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "experimentId": experimentId,
+    "basePolicyVersionId": basePolicyVersionId,
+    "outputPolicyVersionId": outputPolicyVersionId,
+    "strategy": strategy,
+    "inputRunCount": inputRunCount,
+    "inputDeltaCount": inputDeltaCount,
+    "decayMicros": decayMicros,
+    "metrics": metrics,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!desSoccerLearningMergeEventsStrategyValues.contains(strategy)) {
+      errors.add("unsupported des_soccer_learning_merge_events.strategy");
+    }
+    if (inputRunCount < 0) {
+      errors.add("des_soccer_learning_merge_events.input_run_count is below the minimum");
+    }
+    if (inputDeltaCount < 0) {
+      errors.add("des_soccer_learning_merge_events.input_delta_count is below the minimum");
+    }
     return errors;
   }
 }

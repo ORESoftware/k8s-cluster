@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: gcs-mongodb
+  namespace: default
+  labels:
+    app: gcs-mongodb
+spec:
+  replicas: 1
+  serviceName: gcs-mongodb-headless
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: gcs-mongodb
+  template:
+    metadata:
+      labels:
+        app: gcs-mongodb
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: mongodb
+          image: mongo:6.0.12
+          imagePullPolicy: IfNotPresent
+          args:
+            - --bind_ip_all
+            - --replSet
+            - rs0
+          ports:
+            - name: mongodb
+              containerPort: 27017
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    set -eu
+                    until mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' >/dev/null 2>&1; do
+                      sleep 2
+                    done
+                    mongosh --quiet --eval 'try { rs.status().ok } catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"gcs-mongodb-0.gcs-mongodb-headless.default.svc.cluster.local:27017"}]}).ok }' >/dev/null
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          startupProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - db.adminCommand("ping").ok
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - db.adminCommand("ping").ok
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --quiet
+                - --eval
+                - db.adminCommand("ping").ok
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/dd/gcs/mongodb
+            type: DirectoryOrCreate

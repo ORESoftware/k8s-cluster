@@ -1,0 +1,20 @@
+{
+  "name": "@dd/redis-interfaces",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "JSON Schema source of truth for redis key conventions and value shapes used across dd services. Generated outputs (key formatters + value types) live under generated/<lang>.",
+  "scripts": {
+    "generate": "node src/generate.mjs",
+    "check": "node src/generate.mjs --check",
+    "test": "node --test \"src/**/*.test.mjs\""
+  },
+  "exports": {
+    "./schema": "./schema/index.json",
+    "./typescript": "./generated/typescript/index.ts",
+    "./rust": "./generated/rust/src/lib.rs",
+    "./python": "./generated/python/dd_redis_interfaces.py",
+    "./gleam": "./generated/gleam/src/dd_redis_interfaces.gleam"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

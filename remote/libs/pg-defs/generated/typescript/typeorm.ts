@@ -174,6 +174,83 @@ export class KnownGitRepoEntity {
 
 }
 
+@Index("agent_context_blobs_project_repo_context_active_uq", ["projectId", "repoId", "contextId"], { unique: true, where: "is_soft_deleted = false" })
+@Index("agent_context_blobs_repo_id_idx", ["repoId"], { where: "is_soft_deleted = false" })
+@Index("agent_context_blobs_project_id_idx", ["projectId"], { where: "is_soft_deleted = false" })
+// agent_context_blobs_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "agent_context_blobs" })
+export class AgentContextBlobsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "project_id", type: "varchar", length: 120, default: () => "'default'" })
+  projectId!: string;
+
+  @Column({ name: "repo_id", type: "uuid", nullable: true })
+  repoId!: string | null;
+
+  @Column({ name: "context_id", type: "varchar", length: 200 })
+  contextId!: string;
+
+  @Column({ name: "context_title", type: "varchar", length: 300 })
+  contextTitle!: string;
+
+  @Column({ name: "context_blob", type: "text" })
+  contextBlob!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "labels", type: "jsonb", default: () => "'[]'::jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("agent_context_embeddings_blob_model_sha_uq", ["contextBlobId", "embeddingModel", "contentSha256"], { unique: true })
+@Index("agent_context_embeddings_blob_id_idx", ["contextBlobId"])
+@Entity({ name: "agent_context_embeddings" })
+export class AgentContextEmbeddingsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "context_blob_id", type: "uuid" })
+  contextBlobId!: string;
+
+  @Column({ name: "embedding_model", type: "varchar", length: 120 })
+  embeddingModel!: string;
+
+  @Column({ name: "embedding", type: "jsonb" })
+  embedding!: unknown[];
+
+  @Column({ name: "embedding_dimensions", type: "integer" })
+  embeddingDimensions!: number;
+
+  @Column({ name: "content_sha256", type: "varchar", length: 64 })
+  contentSha256!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
 @Index("agent_remote_dev_threads_user_id_idx", ["userId"], { where: "is_soft_deleted = false" })
 @Index("agent_remote_dev_threads_known_git_repo_id_idx", ["knownGitRepoId"], { where: "is_soft_deleted = false" })
 @Index("agent_remote_dev_threads_repo_idx", ["repo"], { where: "is_soft_deleted = false" })
@@ -294,6 +371,7 @@ export class AgentRemoteDevTaskEntity {
 
 @Index("agent_remote_dev_events_task_seq_uq", ["taskId", "seq"], { unique: true })
 // agent_remote_dev_events_task_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_events_thread_id_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // agent_remote_dev_events_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 @Entity({ name: "agent_remote_dev_events" })
 export class AgentRemoteDevEventEntity {
@@ -302,6 +380,9 @@ export class AgentRemoteDevEventEntity {
 
   @Column({ name: "task_id", type: "uuid" })
   taskId!: string;
+
+  @Column({ name: "thread_id", type: "uuid", nullable: true })
+  threadId!: string | null;
 
   @Column({ name: "seq", type: "integer" })
   seq!: number;
@@ -314,6 +395,40 @@ export class AgentRemoteDevEventEntity {
 
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;
+
+}
+
+// agent_remote_dev_breadcrumbs_thread_id_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_breadcrumbs_task_id_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// agent_remote_dev_breadcrumbs_emitted_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "agent_remote_dev_breadcrumbs" })
+export class AgentRemoteDevBreadcrumbEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "thread_id", type: "uuid" })
+  threadId!: string;
+
+  @Column({ name: "task_id", type: "uuid", nullable: true })
+  taskId!: string | null;
+
+  @Column({ name: "kind", type: "varchar", length: 80 })
+  kind!: string;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "emitted_at", type: "timestamptz", default: () => "now()" })
+  emittedAt!: Date;
+
+  @Column({ name: "pod_name", type: "varchar", length: 253, nullable: true })
+  podName!: string | null;
+
+  @Column({ name: "branch", type: "varchar", length: 120, nullable: true })
+  branch!: string | null;
+
+  @Column({ name: "provider", type: "varchar", length: 60, nullable: true })
+  provider!: string | null;
 
 }
 
@@ -396,6 +511,161 @@ export class AgentRemoteDevRuntimeLockEntity {
 
 }
 
+// mip_solver_sessions_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "mip_solver_sessions" })
+export class MipSolverSessionsEntity {
+  @PrimaryColumn({ name: "session_id", type: "varchar", length: 200 })
+  sessionId!: string;
+
+  @Column({ name: "revision", type: "bigint", default: () => "0" })
+  revision!: number;
+
+  @Column({ name: "problem", type: "jsonb", default: () => "'{}'::jsonb" })
+  problem!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// mip_solver_solves_request_id_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// mip_solver_solves_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "mip_solver_solves" })
+export class MipSolverSolvesEntity {
+  @PrimaryColumn({ name: "solve_id", type: "varchar", length: 160 })
+  solveId!: string;
+
+  @Column({ name: "request_id", type: "varchar", length: 200 })
+  requestId!: string;
+
+  @Column({ name: "revision", type: "bigint", default: () => "0" })
+  revision!: number;
+
+  @Column({ name: "status", type: "varchar", length: 64, default: () => "'running'" })
+  status!: string;
+
+  @Column({ name: "node_id", type: "varchar", length: 253 })
+  nodeId!: string;
+
+  @Column({ name: "node_role", type: "varchar", length: 32 })
+  nodeRole!: string;
+
+  @Column({ name: "problem", type: "jsonb", default: () => "'{}'::jsonb" })
+  problem!: Record<string, unknown>;
+
+  @Column({ name: "options", type: "jsonb", default: () => "'{}'::jsonb" })
+  options!: Record<string, unknown>;
+
+  @Column({ name: "response", type: "jsonb", default: () => "'{}'::jsonb" })
+  response!: Record<string, unknown>;
+
+  @Column({ name: "jobs_expected", type: "integer", default: () => "0" })
+  jobsExpected!: number;
+
+  @Column({ name: "jobs_published", type: "integer", default: () => "0" })
+  jobsPublished!: number;
+
+  @Column({ name: "jobs_completed", type: "integer", default: () => "0" })
+  jobsCompleted!: number;
+
+  @Column({ name: "jobs_redelegated", type: "integer", default: () => "0" })
+  jobsRedelegated!: number;
+
+  @Column({ name: "jobs_split", type: "integer", default: () => "0" })
+  jobsSplit!: number;
+
+  @Column({ name: "timed_out", type: "boolean", default: () => "false" })
+  timedOut!: boolean;
+
+  @Column({ name: "distributed", type: "boolean", default: () => "false" })
+  distributed!: boolean;
+
+  @Column({ name: "warnings", type: "jsonb", default: () => "'[]'::jsonb" })
+  warnings!: unknown[];
+
+  @Column({ name: "started_at", type: "timestamptz", default: () => "now()" })
+  startedAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+}
+
+// mip_solver_jobs_solve_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("mip_solver_jobs_root_idx", ["solveId", "rootJobId", "retryIndex"])
+@Entity({ name: "mip_solver_jobs" })
+export class MipSolverJobsEntity {
+  @PrimaryColumn({ name: "job_id", type: "varchar", length: 240 })
+  jobId!: string;
+
+  @Column({ name: "solve_id", type: "varchar", length: 160 })
+  solveId!: string;
+
+  @Column({ name: "root_job_id", type: "varchar", length: 240 })
+  rootJobId!: string;
+
+  @Column({ name: "retry_index", type: "integer", default: () => "0" })
+  retryIndex!: number;
+
+  @Column({ name: "depth", type: "integer", default: () => "0" })
+  depth!: number;
+
+  @Column({ name: "status", type: "varchar", length: 64, default: () => "'submitted'" })
+  status!: string;
+
+  @Column({ name: "worker_node", type: "varchar", length: 253, nullable: true })
+  workerNode!: string | null;
+
+  @Column({ name: "job_payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  jobPayload!: Record<string, unknown>;
+
+  @Column({ name: "result_payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  resultPayload!: Record<string, unknown>;
+
+  @Column({ name: "submitted_at", type: "timestamptz", default: () => "now()" })
+  submittedAt!: Date;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// mip_solver_events_solve_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// mip_solver_events_session_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "mip_solver_events" })
+export class MipSolverEventsEntity {
+  @PrimaryGeneratedColumn("increment", { name: "id", type: "bigint" })
+  id!: number;
+
+  @Column({ name: "solve_id", type: "varchar", length: 160, nullable: true })
+  solveId!: string | null;
+
+  @Column({ name: "session_id", type: "varchar", length: 200, nullable: true })
+  sessionId!: string | null;
+
+  @Column({ name: "job_id", type: "varchar", length: 240, nullable: true })
+  jobId!: string | null;
+
+  @Column({ name: "event_kind", type: "varchar", length: 80 })
+  eventKind!: string;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
 @Index("lambda_functions_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
 @Index("lambda_functions_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // lambda_functions_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
@@ -417,7 +687,7 @@ export class LambdaFunctionEntity {
   @Column({ name: "runtime", type: "varchar", length: 40, default: () => "'nodejs'" })
   runtime!: string;
 
-  @Column({ name: "entry_command", type: "text", default: () => "'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs'" })
+  @Column({ name: "entry_command", type: "text", default: () => "'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" })
   entryCommand!: string;
 
   @Column({ name: "function_body", type: "text" })
@@ -476,6 +746,129 @@ export class LambdaFunctionEntity {
 
   @Column({ name: "updated_by", type: "uuid", nullable: true })
   updatedBy!: string | null;
+
+}
+
+// container_pool_image_revisions_slug_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("container_pool_image_revisions_slug_sha_uq", ["imageSlug", "dockerfileSha256"], { unique: true, where: "is_soft_deleted = false" })
+@Entity({ name: "container_pool_image_revisions" })
+export class ContainerPoolImageRevisionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "image_slug", type: "varchar", length: 120 })
+  imageSlug!: string;
+
+  @Column({ name: "image_ref", type: "text" })
+  imageRef!: string;
+
+  @Column({ name: "dockerfile_path", type: "text" })
+  dockerfilePath!: string;
+
+  @Column({ name: "build_context", type: "text" })
+  buildContext!: string;
+
+  @Column({ name: "dockerfile_text", type: "text" })
+  dockerfileText!: string;
+
+  @Column({ name: "dockerfile_sha256", type: "varchar", length: 64 })
+  dockerfileSha256!: string;
+
+  @Column({ name: "source", type: "varchar", length: 32, default: () => "'user'" })
+  source!: string;
+
+  @Column({ name: "notes", type: "text", default: () => "''" })
+  notes!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'candidate'" })
+  status!: string;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+// container_pool_build_runs_slug_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("container_pool_build_runs_overall_idx", ["overallStatus"], { where: "is_soft_deleted = false" })
+@Entity({ name: "container_pool_build_runs" })
+export class ContainerPoolBuildRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "image_slug", type: "varchar", length: 120 })
+  imageSlug!: string;
+
+  @Column({ name: "revision_id", type: "uuid" })
+  revisionId!: string;
+
+  @Column({ name: "image_ref", type: "text" })
+  imageRef!: string;
+
+  @Column({ name: "candidate_tag", type: "text" })
+  candidateTag!: string;
+
+  @Column({ name: "build_status", type: "varchar", length: 32, default: () => "'queued'" })
+  buildStatus!: string;
+
+  @Column({ name: "test_status", type: "varchar", length: 32, default: () => "'not_started'" })
+  testStatus!: string;
+
+  @Column({ name: "overall_status", type: "varchar", length: 32, default: () => "'queued'" })
+  overallStatus!: string;
+
+  @Column({ name: "test_command", type: "text", default: () => "''" })
+  testCommand!: string;
+
+  @Column({ name: "build_started_at", type: "timestamptz", nullable: true })
+  buildStartedAt!: Date | null;
+
+  @Column({ name: "build_finished_at", type: "timestamptz", nullable: true })
+  buildFinishedAt!: Date | null;
+
+  @Column({ name: "test_started_at", type: "timestamptz", nullable: true })
+  testStartedAt!: Date | null;
+
+  @Column({ name: "test_finished_at", type: "timestamptz", nullable: true })
+  testFinishedAt!: Date | null;
+
+  @Column({ name: "build_log_excerpt", type: "text", default: () => "''" })
+  buildLogExcerpt!: string;
+
+  @Column({ name: "test_log_excerpt", type: "text", default: () => "''" })
+  testLogExcerpt!: string;
+
+  @Column({ name: "error_message", type: "text", nullable: true })
+  errorMessage!: string | null;
+
+  @Column({ name: "triggered_by", type: "uuid", nullable: true })
+  triggeredBy!: string | null;
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
 
 }
 
@@ -624,5 +1017,411 @@ export class PresenceConsumerCheckpointsEntity {
 
   @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
   updatedAt!: Date;
+
+}
+
+@Index("des_soccer_learning_experiments_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
+@Index("des_soccer_learning_experiments_status_idx", ["status"], { where: "is_soft_deleted = false" })
+// des_soccer_learning_experiments_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_learning_experiments" })
+export class DesSoccerLearningExperimentsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "slug", type: "varchar", length: 160 })
+  slug!: string;
+
+  @Column({ name: "display_name", type: "varchar", length: 240 })
+  displayName!: string;
+
+  @Column({ name: "description", type: "text", default: () => "''" })
+  description!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "config", type: "jsonb", default: () => "'{}'::jsonb" })
+  config!: Record<string, unknown>;
+
+  @Column({ name: "labels", type: "jsonb", default: () => "'[]'::jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb", default: () => "'{}'::jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "is_soft_deleted", type: "boolean", default: () => "false" })
+  isSoftDeleted!: boolean;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("des_soccer_learning_policy_versions_label_uq", ["experimentId", "versionLabel"], { unique: true })
+// des_soccer_learning_policy_versions_active_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// des_soccer_learning_policy_versions_fitness_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_learning_policy_versions" })
+export class DesSoccerLearningPolicyVersionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "experiment_id", type: "uuid" })
+  experimentId!: string;
+
+  @Column({ name: "parent_policy_version_id", type: "uuid", nullable: true })
+  parentPolicyVersionId!: string | null;
+
+  @Column({ name: "generation", type: "integer", default: () => "0" })
+  generation!: number;
+
+  @Column({ name: "version_label", type: "varchar", length: 160 })
+  versionLabel!: string;
+
+  @Column({ name: "source_kind", type: "varchar", length: 40, default: () => "'seed'" })
+  sourceKind!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'candidate'" })
+  status!: string;
+
+  @Column({ name: "options", type: "jsonb", default: () => "'{}'::jsonb" })
+  options!: Record<string, unknown>;
+
+  @Column({ name: "config", type: "jsonb", default: () => "'{}'::jsonb" })
+  config!: Record<string, unknown>;
+
+  @Column({ name: "lineage", type: "jsonb", default: () => "'[]'::jsonb" })
+  lineage!: unknown[];
+
+  @Column({ name: "metrics", type: "jsonb", default: () => "'{}'::jsonb" })
+  metrics!: Record<string, unknown>;
+
+  @Column({ name: "entry_count", type: "integer", default: () => "0" })
+  entryCount!: number;
+
+  @Column({ name: "target_entry_count", type: "integer", default: () => "0" })
+  targetEntryCount!: number;
+
+  @Column({ name: "visit_count", type: "bigint", default: () => "0" })
+  visitCount!: number;
+
+  @Column({ name: "fitness_micros", type: "bigint", default: () => "0" })
+  fitnessMicros!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("des_soccer_learning_policy_entries_key_uq", ["policyVersionId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId"], { unique: true })
+@Index("des_soccer_learning_policy_entries_lookup_idx", ["policyVersionId", "team", "entryKind", "stateHash"])
+@Entity({ name: "des_soccer_learning_policy_entries" })
+export class DesSoccerLearningPolicyEntriesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "policy_version_id", type: "uuid" })
+  policyVersionId!: string;
+
+  @Column({ name: "team", type: "varchar", length: 8 })
+  team!: string;
+
+  @Column({ name: "entry_kind", type: "varchar", length: 16 })
+  entryKind!: string;
+
+  @Column({ name: "state_hash", type: "varchar", length: 32 })
+  stateHash!: string;
+
+  @Column({ name: "state_key", type: "jsonb" })
+  stateKey!: Record<string, unknown>;
+
+  @Column({ name: "action", type: "varchar", length: 80 })
+  action!: string;
+
+  @Column({ name: "target_fine_cell_id", type: "integer", default: () => "-1" })
+  targetFineCellId!: number;
+
+  @Column({ name: "target_tactical_cell_id", type: "integer", default: () => "-1" })
+  targetTacticalCellId!: number;
+
+  @Column({ name: "target_macro_cell_id", type: "integer", default: () => "-1" })
+  targetMacroCellId!: number;
+
+  @Column({ name: "target_root_cell_id", type: "integer", default: () => "-1" })
+  targetRootCellId!: number;
+
+  @Column({ name: "value_micros", type: "bigint" })
+  valueMicros!: number;
+
+  @Column({ name: "visits", type: "integer", default: () => "0" })
+  visits!: number;
+
+  @Column({ name: "source_run_id", type: "uuid", nullable: true })
+  sourceRunId!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+// des_soccer_learning_jobs_claim_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// des_soccer_learning_jobs_base_policy_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_learning_jobs" })
+export class DesSoccerLearningJobsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "experiment_id", type: "uuid" })
+  experimentId!: string;
+
+  @Column({ name: "base_policy_version_id", type: "uuid", nullable: true })
+  basePolicyVersionId!: string | null;
+
+  @Column({ name: "spawn_strategy", type: "varchar", length: 32, default: () => "'latest'" })
+  spawnStrategy!: string;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'queued'" })
+  status!: string;
+
+  @Column({ name: "priority", type: "integer", default: () => "0" })
+  priority!: number;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "attempt", type: "integer", default: () => "0" })
+  attempt!: number;
+
+  @Column({ name: "max_attempts", type: "integer", default: () => "1" })
+  maxAttempts!: number;
+
+  @Column({ name: "lease_owner", type: "varchar", length: 200, nullable: true })
+  leaseOwner!: string | null;
+
+  @Column({ name: "lease_expires_at", type: "timestamptz", nullable: true })
+  leaseExpiresAt!: Date | null;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "finished_at", type: "timestamptz", nullable: true })
+  finishedAt!: Date | null;
+
+  @Column({ name: "config", type: "jsonb", default: () => "'{}'::jsonb" })
+  config!: Record<string, unknown>;
+
+  @Column({ name: "runner_config", type: "jsonb", default: () => "'{}'::jsonb" })
+  runnerConfig!: Record<string, unknown>;
+
+  @Column({ name: "result_run_id", type: "uuid", nullable: true })
+  resultRunId!: string | null;
+
+  @Column({ name: "error", type: "text", nullable: true })
+  error!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// des_soccer_learning_runs_experiment_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+// des_soccer_learning_runs_policy_fitness_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_learning_runs" })
+export class DesSoccerLearningRunsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "job_id", type: "uuid", nullable: true })
+  jobId!: string | null;
+
+  @Column({ name: "experiment_id", type: "uuid" })
+  experimentId!: string;
+
+  @Column({ name: "base_policy_version_id", type: "uuid", nullable: true })
+  basePolicyVersionId!: string | null;
+
+  @Column({ name: "output_policy_version_id", type: "uuid", nullable: true })
+  outputPolicyVersionId!: string | null;
+
+  @Column({ name: "runner_id", type: "varchar", length: 200 })
+  runnerId!: string;
+
+  @Column({ name: "seed", type: "bigint" })
+  seed!: number;
+
+  @Column({ name: "episode_index", type: "integer", default: () => "0" })
+  episodeIndex!: number;
+
+  @Column({ name: "status", type: "varchar", length: 32, default: () => "'completed'" })
+  status!: string;
+
+  @Column({ name: "score_home", type: "integer", default: () => "0" })
+  scoreHome!: number;
+
+  @Column({ name: "score_away", type: "integer", default: () => "0" })
+  scoreAway!: number;
+
+  @Column({ name: "home_goal_diff", type: "integer", default: () => "0" })
+  homeGoalDiff!: number;
+
+  @Column({ name: "away_goal_diff", type: "integer", default: () => "0" })
+  awayGoalDiff!: number;
+
+  @Column({ name: "home_outcome", type: "varchar", length: 16, default: () => "'draw'" })
+  homeOutcome!: string;
+
+  @Column({ name: "away_outcome", type: "varchar", length: 16, default: () => "'draw'" })
+  awayOutcome!: string;
+
+  @Column({ name: "home_merge_weight_micros", type: "bigint", default: () => "0" })
+  homeMergeWeightMicros!: number;
+
+  @Column({ name: "away_merge_weight_micros", type: "bigint", default: () => "0" })
+  awayMergeWeightMicros!: number;
+
+  @Column({ name: "fitness_micros", type: "bigint", default: () => "0" })
+  fitnessMicros!: number;
+
+  @Column({ name: "duration_ticks", type: "bigint", default: () => "0" })
+  durationTicks!: number;
+
+  @Column({ name: "simulated_seconds_micros", type: "bigint", default: () => "0" })
+  simulatedSecondsMicros!: number;
+
+  @Column({ name: "elapsed_millis", type: "bigint", default: () => "0" })
+  elapsedMillis!: number;
+
+  @Column({ name: "transitions", type: "integer", default: () => "0" })
+  transitions!: number;
+
+  @Column({ name: "summary", type: "jsonb", default: () => "'{}'::jsonb" })
+  summary!: Record<string, unknown>;
+
+  @Column({ name: "stats", type: "jsonb", default: () => "'{}'::jsonb" })
+  stats!: Record<string, unknown>;
+
+  @Column({ name: "error", type: "text", nullable: true })
+  error!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("des_soccer_learning_run_deltas_key_uq", ["runId", "team", "entryKind", "stateHash", "action", "targetFineCellId", "targetTacticalCellId", "targetMacroCellId", "targetRootCellId"], { unique: true })
+@Index("des_soccer_learning_run_deltas_merge_idx", ["team", "entryKind", "stateHash", "action"])
+@Entity({ name: "des_soccer_learning_run_deltas" })
+export class DesSoccerLearningRunDeltasEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "run_id", type: "uuid" })
+  runId!: string;
+
+  @Column({ name: "team", type: "varchar", length: 8 })
+  team!: string;
+
+  @Column({ name: "entry_kind", type: "varchar", length: 16 })
+  entryKind!: string;
+
+  @Column({ name: "state_hash", type: "varchar", length: 32 })
+  stateHash!: string;
+
+  @Column({ name: "state_key", type: "jsonb" })
+  stateKey!: Record<string, unknown>;
+
+  @Column({ name: "action", type: "varchar", length: 80 })
+  action!: string;
+
+  @Column({ name: "target_fine_cell_id", type: "integer", default: () => "-1" })
+  targetFineCellId!: number;
+
+  @Column({ name: "target_tactical_cell_id", type: "integer", default: () => "-1" })
+  targetTacticalCellId!: number;
+
+  @Column({ name: "target_macro_cell_id", type: "integer", default: () => "-1" })
+  targetMacroCellId!: number;
+
+  @Column({ name: "target_root_cell_id", type: "integer", default: () => "-1" })
+  targetRootCellId!: number;
+
+  @Column({ name: "before_value_micros", type: "bigint", default: () => "0" })
+  beforeValueMicros!: number;
+
+  @Column({ name: "after_value_micros", type: "bigint", default: () => "0" })
+  afterValueMicros!: number;
+
+  @Column({ name: "value_delta_micros", type: "bigint", default: () => "0" })
+  valueDeltaMicros!: number;
+
+  @Column({ name: "visit_delta", type: "integer", default: () => "0" })
+  visitDelta!: number;
+
+  @Column({ name: "merge_weight_micros", type: "bigint", default: () => "0" })
+  mergeWeightMicros!: number;
+
+  @Column({ name: "effective_visit_micros", type: "bigint", default: () => "0" })
+  effectiveVisitMicros!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}
+
+// des_soccer_learning_merge_events_experiment_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "des_soccer_learning_merge_events" })
+export class DesSoccerLearningMergeEventsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "experiment_id", type: "uuid" })
+  experimentId!: string;
+
+  @Column({ name: "base_policy_version_id", type: "uuid", nullable: true })
+  basePolicyVersionId!: string | null;
+
+  @Column({ name: "output_policy_version_id", type: "uuid" })
+  outputPolicyVersionId!: string;
+
+  @Column({ name: "strategy", type: "varchar", length: 40, default: () => "'outcome_weighted_average'" })
+  strategy!: string;
+
+  @Column({ name: "input_run_count", type: "integer", default: () => "0" })
+  inputRunCount!: number;
+
+  @Column({ name: "input_delta_count", type: "integer", default: () => "0" })
+  inputDeltaCount!: number;
+
+  @Column({ name: "decay_micros", type: "bigint", default: () => "1000000" })
+  decayMicros!: number;
+
+  @Column({ name: "metrics", type: "jsonb", default: () => "'{}'::jsonb" })
+  metrics!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
 
 }

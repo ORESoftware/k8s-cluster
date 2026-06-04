@@ -93,6 +93,53 @@ class KnownGitRepoTable extends Table {
   };
 }
 
+@DataClassName("AgentContextBlobsData")
+class AgentContextBlobsTable extends Table {
+  @override String get tableName => "agent_context_blobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get projectId => text().named("project_id").withLength(max: 120).clientDefault(() => 'default')();
+  TextColumn get repoId => text().named("repo_id").nullable().customConstraint("UUID REFERENCES known_git_repos (id)")();
+  TextColumn get contextId => text().named("context_id").withLength(max: 200)();
+  TextColumn get contextTitle => text().named("context_title").withLength(max: 300)();
+  TextColumn get contextBlob => text().named("context_blob")();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get labels => text().named("labels").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("AgentContextEmbeddingsData")
+class AgentContextEmbeddingsTable extends Table {
+  @override String get tableName => "agent_context_embeddings";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get contextBlobId => text().named("context_blob_id").customConstraint("UUID REFERENCES agent_context_blobs (id)")();
+  TextColumn get embeddingModel => text().named("embedding_model").withLength(max: 120)();
+  TextColumn get embedding => text().named("embedding").customConstraint("JSONB")();
+  IntColumn get embeddingDimensions => integer().named("embedding_dimensions")();
+  TextColumn get contentSha256 => text().named("content_sha256").withLength(max: 64)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("AgentRemoteDevThreadData")
 class AgentRemoteDevThreadTable extends Table {
   @override String get tableName => "agent_remote_dev_threads";
@@ -158,10 +205,31 @@ class AgentRemoteDevEventTable extends Table {
 
   Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
   TextColumn get taskId => text().named("task_id").customConstraint("UUID REFERENCES agent_remote_dev_tasks (id)")();
+  TextColumn get threadId => text().named("thread_id").nullable().customConstraint("UUID REFERENCES agent_remote_dev_threads (id)")();
   IntColumn get seq => integer().named("seq")();
   TextColumn get eventKind => text().named("event_kind").withLength(max: 80)();
   TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("AgentRemoteDevBreadcrumbData")
+class AgentRemoteDevBreadcrumbTable extends Table {
+  @override String get tableName => "agent_remote_dev_breadcrumbs";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  TextColumn get threadId => text().named("thread_id").customConstraint("UUID")();
+  TextColumn get taskId => text().named("task_id").nullable().customConstraint("UUID")();
+  TextColumn get kind => text().named("kind").withLength(max: 80)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get emittedAt => dateTime().named("emitted_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get podName => text().named("pod_name").withLength(max: 253).nullable()();
+  TextColumn get branch => text().named("branch").withLength(max: 120).nullable()();
+  TextColumn get provider => text().named("provider").withLength(max: 60).nullable()();
 
   @override
   Set<Column> get primaryKey => {
@@ -217,6 +285,100 @@ class AgentRemoteDevRuntimeLockTable extends Table {
   };
 }
 
+@DataClassName("MipSolverSessionsData")
+class MipSolverSessionsTable extends Table {
+  @override String get tableName => "mip_solver_sessions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sessionId => text().named("session_id").withLength(max: 200)();
+  Int64Column get revision => int64().named("revision").clientDefault(() => 0)();
+  TextColumn get problem => text().named("problem").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sessionId,
+  };
+}
+
+@DataClassName("MipSolverSolvesData")
+class MipSolverSolvesTable extends Table {
+  @override String get tableName => "mip_solver_solves";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get solveId => text().named("solve_id").withLength(max: 160)();
+  TextColumn get requestId => text().named("request_id").withLength(max: 200)();
+  Int64Column get revision => int64().named("revision").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").withLength(max: 64).clientDefault(() => 'running')();
+  TextColumn get nodeId => text().named("node_id").withLength(max: 253)();
+  TextColumn get nodeRole => text().named("node_role")();
+  TextColumn get problem => text().named("problem").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get options => text().named("options").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get response => text().named("response").clientDefault(() => '{}').customConstraint("JSONB")();
+  IntColumn get jobsExpected => integer().named("jobs_expected").clientDefault(() => 0)();
+  IntColumn get jobsPublished => integer().named("jobs_published").clientDefault(() => 0)();
+  IntColumn get jobsCompleted => integer().named("jobs_completed").clientDefault(() => 0)();
+  IntColumn get jobsRedelegated => integer().named("jobs_redelegated").clientDefault(() => 0)();
+  IntColumn get jobsSplit => integer().named("jobs_split").clientDefault(() => 0)();
+  BoolColumn get timedOut => boolean().named("timed_out").clientDefault(() => false)();
+  BoolColumn get distributed => boolean().named("distributed").clientDefault(() => false)();
+  TextColumn get warnings => text().named("warnings").clientDefault(() => '[]').customConstraint("JSONB")();
+  DateTimeColumn get startedAt => dateTime().named("started_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        solveId,
+  };
+}
+
+@DataClassName("MipSolverJobsData")
+class MipSolverJobsTable extends Table {
+  @override String get tableName => "mip_solver_jobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get jobId => text().named("job_id").withLength(max: 240)();
+  TextColumn get solveId => text().named("solve_id").withLength(max: 160).customConstraint("REFERENCES mip_solver_solves (solve_id)")();
+  TextColumn get rootJobId => text().named("root_job_id").withLength(max: 240)();
+  IntColumn get retryIndex => integer().named("retry_index").clientDefault(() => 0)();
+  IntColumn get depth => integer().named("depth").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").withLength(max: 64).clientDefault(() => 'submitted')();
+  TextColumn get workerNode => text().named("worker_node").withLength(max: 253).nullable()();
+  TextColumn get jobPayload => text().named("job_payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get resultPayload => text().named("result_payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get submittedAt => dateTime().named("submitted_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        jobId,
+  };
+}
+
+@DataClassName("MipSolverEventsData")
+class MipSolverEventsTable extends Table {
+  @override String get tableName => "mip_solver_events";
+
+  Int64Column get id => int64().named("id").customConstraint("BIGSERIAL")();
+  TextColumn get solveId => text().named("solve_id").withLength(max: 160).nullable().customConstraint("REFERENCES mip_solver_solves (solve_id)")();
+  TextColumn get sessionId => text().named("session_id").withLength(max: 200).nullable().customConstraint("REFERENCES mip_solver_sessions (session_id)")();
+  TextColumn get jobId => text().named("job_id").withLength(max: 240).nullable().customConstraint("REFERENCES mip_solver_jobs (job_id)")();
+  TextColumn get eventKind => text().named("event_kind").withLength(max: 80)();
+  TextColumn get payload => text().named("payload").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("LambdaFunctionData")
 class LambdaFunctionTable extends Table {
   @override String get tableName => "lambda_functions";
@@ -228,7 +390,7 @@ class LambdaFunctionTable extends Table {
   TextColumn get displayName => text().named("display_name").withLength(max: 200)();
   TextColumn get description => text().named("description").clientDefault(() => '')();
   TextColumn get runtime => text().named("runtime").clientDefault(() => 'nodejs')();
-  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => 'env -i PATH="\$PATH" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs')();
+  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => 'env -i PATH="\$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs')();
   TextColumn get functionBody => text().named("function_body")();
   TextColumn get reuseKey => text().named("reuse_key").withLength(max: 200).nullable()();
   IntColumn get idleTimeoutSeconds => integer().named("idle_timeout_seconds").clientDefault(() => 300)();
@@ -248,6 +410,69 @@ class LambdaFunctionTable extends Table {
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
   TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
   TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ContainerPoolImageRevisionsData")
+class ContainerPoolImageRevisionsTable extends Table {
+  @override String get tableName => "container_pool_image_revisions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get imageSlug => text().named("image_slug").withLength(max: 120)();
+  TextColumn get imageRef => text().named("image_ref")();
+  TextColumn get dockerfilePath => text().named("dockerfile_path")();
+  TextColumn get buildContext => text().named("build_context")();
+  TextColumn get dockerfileText => text().named("dockerfile_text")();
+  TextColumn get dockerfileSha256 => text().named("dockerfile_sha256").withLength(max: 64)();
+  TextColumn get source => text().named("source").clientDefault(() => 'user')();
+  TextColumn get notes => text().named("notes").clientDefault(() => '')();
+  TextColumn get status => text().named("status").clientDefault(() => 'candidate')();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("ContainerPoolBuildRunsData")
+class ContainerPoolBuildRunsTable extends Table {
+  @override String get tableName => "container_pool_build_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get imageSlug => text().named("image_slug").withLength(max: 120)();
+  TextColumn get revisionId => text().named("revision_id").customConstraint("UUID")();
+  TextColumn get imageRef => text().named("image_ref")();
+  TextColumn get candidateTag => text().named("candidate_tag")();
+  TextColumn get buildStatus => text().named("build_status").clientDefault(() => 'queued')();
+  TextColumn get testStatus => text().named("test_status").clientDefault(() => 'not_started')();
+  TextColumn get overallStatus => text().named("overall_status").clientDefault(() => 'queued')();
+  TextColumn get testCommand => text().named("test_command").clientDefault(() => '')();
+  DateTimeColumn get buildStartedAt => dateTime().named("build_started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get buildFinishedAt => dateTime().named("build_finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get testStartedAt => dateTime().named("test_started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get testFinishedAt => dateTime().named("test_finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get buildLogExcerpt => text().named("build_log_excerpt").clientDefault(() => '')();
+  TextColumn get testLogExcerpt => text().named("test_log_excerpt").clientDefault(() => '')();
+  TextColumn get errorMessage => text().named("error_message").nullable()();
+  TextColumn get triggeredBy => text().named("triggered_by").nullable().customConstraint("UUID")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
 
   @override
   Set<Column> get primaryKey => {
@@ -357,21 +582,249 @@ class PresenceConsumerCheckpointsTable extends Table {
   };
 }
 
+@DataClassName("DesSoccerLearningExperimentsData")
+class DesSoccerLearningExperimentsTable extends Table {
+  @override String get tableName => "des_soccer_learning_experiments";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get slug => text().named("slug").withLength(max: 160)();
+  TextColumn get displayName => text().named("display_name").withLength(max: 240)();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get labels => text().named("labels").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").clientDefault(() => '{}').customConstraint("JSONB")();
+  BoolColumn get isSoftDeleted => boolean().named("is_soft_deleted").clientDefault(() => false)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningPolicyVersionsData")
+class DesSoccerLearningPolicyVersionsTable extends Table {
+  @override String get tableName => "des_soccer_learning_policy_versions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get parentPolicyVersionId => text().named("parent_policy_version_id").nullable().customConstraint("UUID")();
+  IntColumn get generation => integer().named("generation").clientDefault(() => 0)();
+  TextColumn get versionLabel => text().named("version_label").withLength(max: 160)();
+  TextColumn get sourceKind => text().named("source_kind").clientDefault(() => 'seed')();
+  TextColumn get status => text().named("status").clientDefault(() => 'candidate')();
+  TextColumn get options => text().named("options").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get lineage => text().named("lineage").clientDefault(() => '[]').customConstraint("JSONB")();
+  TextColumn get metrics => text().named("metrics").clientDefault(() => '{}').customConstraint("JSONB")();
+  IntColumn get entryCount => integer().named("entry_count").clientDefault(() => 0)();
+  IntColumn get targetEntryCount => integer().named("target_entry_count").clientDefault(() => 0)();
+  Int64Column get visitCount => int64().named("visit_count").clientDefault(() => 0)();
+  Int64Column get fitnessMicros => int64().named("fitness_micros").clientDefault(() => 0)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningPolicyEntriesData")
+class DesSoccerLearningPolicyEntriesTable extends Table {
+  @override String get tableName => "des_soccer_learning_policy_entries";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get policyVersionId => text().named("policy_version_id").customConstraint("UUID")();
+  TextColumn get team => text().named("team")();
+  TextColumn get entryKind => text().named("entry_kind")();
+  TextColumn get stateHash => text().named("state_hash").withLength(max: 32)();
+  TextColumn get stateKey => text().named("state_key").customConstraint("JSONB")();
+  TextColumn get action => text().named("action").withLength(max: 80)();
+  IntColumn get targetFineCellId => integer().named("target_fine_cell_id").clientDefault(() => -1)();
+  IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
+  IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
+  IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  Int64Column get valueMicros => int64().named("value_micros")();
+  IntColumn get visits => integer().named("visits").clientDefault(() => 0)();
+  TextColumn get sourceRunId => text().named("source_run_id").nullable().customConstraint("UUID")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningJobsData")
+class DesSoccerLearningJobsTable extends Table {
+  @override String get tableName => "des_soccer_learning_jobs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get basePolicyVersionId => text().named("base_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get spawnStrategy => text().named("spawn_strategy").clientDefault(() => 'latest')();
+  TextColumn get status => text().named("status").clientDefault(() => 'queued')();
+  IntColumn get priority => integer().named("priority").clientDefault(() => 0)();
+  Int64Column get seed => int64().named("seed")();
+  IntColumn get attempt => integer().named("attempt").clientDefault(() => 0)();
+  IntColumn get maxAttempts => integer().named("max_attempts").clientDefault(() => 1)();
+  TextColumn get leaseOwner => text().named("lease_owner").withLength(max: 200).nullable()();
+  DateTimeColumn get leaseExpiresAt => dateTime().named("lease_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get finishedAt => dateTime().named("finished_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get config => text().named("config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get runnerConfig => text().named("runner_config").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get resultRunId => text().named("result_run_id").nullable().customConstraint("UUID")();
+  TextColumn get error => text().named("error").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningRunsData")
+class DesSoccerLearningRunsTable extends Table {
+  @override String get tableName => "des_soccer_learning_runs";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get jobId => text().named("job_id").nullable().customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get basePolicyVersionId => text().named("base_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get outputPolicyVersionId => text().named("output_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get runnerId => text().named("runner_id").withLength(max: 200)();
+  Int64Column get seed => int64().named("seed")();
+  IntColumn get episodeIndex => integer().named("episode_index").clientDefault(() => 0)();
+  TextColumn get status => text().named("status").clientDefault(() => 'completed')();
+  IntColumn get scoreHome => integer().named("score_home").clientDefault(() => 0)();
+  IntColumn get scoreAway => integer().named("score_away").clientDefault(() => 0)();
+  IntColumn get homeGoalDiff => integer().named("home_goal_diff").clientDefault(() => 0)();
+  IntColumn get awayGoalDiff => integer().named("away_goal_diff").clientDefault(() => 0)();
+  TextColumn get homeOutcome => text().named("home_outcome").clientDefault(() => 'draw')();
+  TextColumn get awayOutcome => text().named("away_outcome").clientDefault(() => 'draw')();
+  Int64Column get homeMergeWeightMicros => int64().named("home_merge_weight_micros").clientDefault(() => 0)();
+  Int64Column get awayMergeWeightMicros => int64().named("away_merge_weight_micros").clientDefault(() => 0)();
+  Int64Column get fitnessMicros => int64().named("fitness_micros").clientDefault(() => 0)();
+  Int64Column get durationTicks => int64().named("duration_ticks").clientDefault(() => 0)();
+  Int64Column get simulatedSecondsMicros => int64().named("simulated_seconds_micros").clientDefault(() => 0)();
+  Int64Column get elapsedMillis => int64().named("elapsed_millis").clientDefault(() => 0)();
+  IntColumn get transitions => integer().named("transitions").clientDefault(() => 0)();
+  TextColumn get summary => text().named("summary").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get stats => text().named("stats").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get error => text().named("error").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningRunDeltasData")
+class DesSoccerLearningRunDeltasTable extends Table {
+  @override String get tableName => "des_soccer_learning_run_deltas";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get runId => text().named("run_id").customConstraint("UUID")();
+  TextColumn get team => text().named("team")();
+  TextColumn get entryKind => text().named("entry_kind")();
+  TextColumn get stateHash => text().named("state_hash").withLength(max: 32)();
+  TextColumn get stateKey => text().named("state_key").customConstraint("JSONB")();
+  TextColumn get action => text().named("action").withLength(max: 80)();
+  IntColumn get targetFineCellId => integer().named("target_fine_cell_id").clientDefault(() => -1)();
+  IntColumn get targetTacticalCellId => integer().named("target_tactical_cell_id").clientDefault(() => -1)();
+  IntColumn get targetMacroCellId => integer().named("target_macro_cell_id").clientDefault(() => -1)();
+  IntColumn get targetRootCellId => integer().named("target_root_cell_id").clientDefault(() => -1)();
+  Int64Column get beforeValueMicros => int64().named("before_value_micros").clientDefault(() => 0)();
+  Int64Column get afterValueMicros => int64().named("after_value_micros").clientDefault(() => 0)();
+  Int64Column get valueDeltaMicros => int64().named("value_delta_micros").clientDefault(() => 0)();
+  IntColumn get visitDelta => integer().named("visit_delta").clientDefault(() => 0)();
+  Int64Column get mergeWeightMicros => int64().named("merge_weight_micros").clientDefault(() => 0)();
+  Int64Column get effectiveVisitMicros => int64().named("effective_visit_micros").clientDefault(() => 0)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("DesSoccerLearningMergeEventsData")
+class DesSoccerLearningMergeEventsTable extends Table {
+  @override String get tableName => "des_soccer_learning_merge_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get experimentId => text().named("experiment_id").customConstraint("UUID")();
+  TextColumn get basePolicyVersionId => text().named("base_policy_version_id").nullable().customConstraint("UUID")();
+  TextColumn get outputPolicyVersionId => text().named("output_policy_version_id").customConstraint("UUID")();
+  TextColumn get strategy => text().named("strategy").clientDefault(() => 'outcome_weighted_average')();
+  IntColumn get inputRunCount => integer().named("input_run_count").clientDefault(() => 0)();
+  IntColumn get inputDeltaCount => integer().named("input_delta_count").clientDefault(() => 0)();
+  Int64Column get decayMicros => int64().named("decay_micros").clientDefault(() => 1000000)();
+  TextColumn get metrics => text().named("metrics").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
   AppConfigTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,
+  AgentContextBlobsTable,
+  AgentContextEmbeddingsTable,
   AgentRemoteDevThreadTable,
   AgentRemoteDevTaskTable,
   AgentRemoteDevEventTable,
+  AgentRemoteDevBreadcrumbTable,
   AgentRemoteDevArtifactTable,
   AgentRemoteDevRuntimeLockTable,
+  MipSolverSessionsTable,
+  MipSolverSolvesTable,
+  MipSolverJobsTable,
+  MipSolverEventsTable,
   LambdaFunctionTable,
+  ContainerPoolImageRevisionsTable,
+  ContainerPoolBuildRunsTable,
   PresenceConvsTable,
   PresenceConvMembersTable,
   PresenceUsersTable,
   PresenceEventsTable,
   PresenceConsumerCheckpointsTable,
+  DesSoccerLearningExperimentsTable,
+  DesSoccerLearningPolicyVersionsTable,
+  DesSoccerLearningPolicyEntriesTable,
+  DesSoccerLearningJobsTable,
+  DesSoccerLearningRunsTable,
+  DesSoccerLearningRunDeltasTable,
+  DesSoccerLearningMergeEventsTable,
 ];

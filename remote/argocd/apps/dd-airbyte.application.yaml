@@ -4,15 +4,50 @@ metadata:
   name: dd-airbyte
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: https://airbytehq.github.io/helm-charts
     chart: airbyte
     targetRevision: 1.9.2
     helm:
+      skipTests: true
       values: |
         global:
           edition: community
+          auth:
+            enabled: true
+            secretName: dd-airbyte-auth
+            jwtSignatureSecretKey: jwt-signature-secret
+            dataplaneClientIdSecretKey: dataplane-client-id
+            dataplaneClientSecretSecretKey: dataplane-client-secret
+            instanceAdmin:
+              passwordSecretKey: instance-admin-password
+              clientIdSecretKey: instance-admin-client-id
+              clientSecretSecretKey: instance-admin-client-secret
+          database:
+            type: external
+            secretName: dd-airbyte-database
+            host: dd-airbyte-postgresql.airbyte.svc.cluster.local
+            port: "5432"
+            database: airbyte
+            userSecretKey: username
+            passwordSecretKey: password
+          storage:
+            type: s3
+            storageSecretName: dd-airbyte-storage
+            bucket:
+              activityPayload: dd-remote-dev-airbyte
+              log: dd-remote-dev-airbyte
+              state: dd-remote-dev-airbyte
+              workloadOutput: dd-remote-dev-airbyte
+              auditLogging: dd-remote-dev-airbyte
+            s3:
+              region: us-east-1
+              authenticationType: credentials
+              accessKeyIdSecretKey: s3-access-key-id
+              secretAccessKeySecretKey: s3-secret-access-key
+        postgresql:
+          enabled: false
         webapp:
           replicaCount: 1
         worker:
@@ -20,9 +55,3 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: airbyte
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

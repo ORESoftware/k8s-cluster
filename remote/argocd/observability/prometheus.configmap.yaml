@@ -24,15 +24,34 @@ data:
         static_configs:
           - targets:
               - dd-nats.messaging.svc.cluster.local:7777
-      - job_name: observability-stack
+      - job_name: dd-grafana
+        metrics_path: /telemetry/metrics
         static_configs:
           - targets:
               - dd-grafana.observability.svc.cluster.local:3000
+      - job_name: dd-loki
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-loki.observability.svc.cluster.local:3100
+      - job_name: dd-k8s-resource-exporter
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-k8s-resource-exporter.observability.svc.cluster.local:9102
       - job_name: dd-webrtc-signaling
         metrics_path: /metrics
         static_configs:
           - targets:
               - dd-webrtc-signaling.default.svc.cluster.local:8095
+      # dd-dart-server: coordinator (admin) port 8088 serves the unified
+      # exposition including the MDP isolate-pool autotuner metrics and the
+      # WS adopt / first-frame latency histograms.
+      - job_name: dd-dart-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-dart-server.default.svc.cluster.local:8088
       - job_name: dd-mdp-optimizer
         metrics_path: /metrics
         static_configs:
@@ -48,6 +67,11 @@ data:
         static_configs:
           - targets:
               - dd-contract-service.default.svc.cluster.local:8101
+      - job_name: dd-rust-vapi-phone
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-rust-vapi-phone.default.svc.cluster.local:8113
       - job_name: dd-trading-server
         metrics_path: /metrics
         static_configs:
@@ -58,6 +82,16 @@ data:
         static_configs:
           - targets:
               - dd-ai-ml-pipeline.ai-ml.svc.cluster.local:8099
+      - job_name: dd-in-house-mip-solver-node-master
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-in-house-mip-solver-node.ai-ml.svc.cluster.local:8117
+      - job_name: dd-in-house-mip-solver-node-slave
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-in-house-mip-solver-node-slave.ai-ml.svc.cluster.local:8117
       - job_name: dd-gleam-lambda-runner
         metrics_path: /metrics
         static_configs:
@@ -127,7 +161,7 @@ data:
         metrics_path: /metrics
         static_configs:
           - targets:
-              - dd-spark-pipeline-server.default.svc.cluster.local:8085
+              - dd-spark-pipeline-server.ai-ml.svc.cluster.local:8085
       - job_name: gcs-router
         metrics_path: /metrics
         static_configs:

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ws-loadtest-rs-fsharp-rx
+  namespace: default
+  labels:
+    app: dd-ws-loadtest-rs-fsharp-rx
+    role: loadtest
+    target: dd-fsharp-ws-server
+    pipeline: rx
+spec:
+  # WebSocket clients from a fan of loader pods against
+  # dd-fsharp-ws-server's `/ws/rx` route. The Rx route routes inbound
+  # `{id, payload}` frames through a System.Reactive Observable graph
+  # (Validate -> Score -> Lookup) and emits `{ok:true, result:{id, score,
+  # lookupA, lookupB}}` per frame.
+  #
+  # Mirrors the rust-wss / dart / gleam loader pattern: 4 replicas of
+  # 7500 clients each = 30K simultaneous connections at peak. Default
+  # replicas=0; operator scales for the duration of a benchmark and back
+  # to 0 afterward.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dd-ws-loadtest-rs-fsharp-rx
+  template:
+    metadata:
+      labels:
+        app: dd-ws-loadtest-rs-fsharp-rx
+        role: loadtest
+        target: dd-fsharp-ws-server
+        pipeline: rx
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              ulimit -n 131072 || true
+              export PATH="/usr/local/cargo/bin:${PATH}"
+              cd /opt/dd-next-1/remote/deployments/ws-loadtest-rs
+              exec /usr/local/cargo/bin/cargo run --release
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-fsharp-ws-server.default.svc.cluster.local:8087/ws/rx
+            - name: LOAD_MODE
+              value: "pipeline"
+            - name: CLIENT_COUNT
+              value: "7500"
+            - name: MESSAGES_PER_SECOND_PER_CLIENT
+              value: "1.0"
+            - name: MESSAGE_PAYLOAD
+              value: "fsharp-rx-bench-payload"
+            - name: HOLD_SECONDS
+              value: "600"
+            - name: CONNECT_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECEIVE_TIMEOUT_SECONDS
+              value: "30"
+            - name: RECONNECT_DELAY_MS
+              value: "2000"
+            - name: RAMP_DELAY_MS
+              value: "3"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+            - name: CORRELATION_TIMEOUT_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "4"
+              memory: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

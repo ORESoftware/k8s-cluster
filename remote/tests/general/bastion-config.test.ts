@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/bastion-rs/src/main.rs'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/bastion-rs/src/main.rs'))) {
       return candidate;
     }
   }
@@ -21,10 +21,10 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust bastion serves authenticated vpn cluster access profile and kubeconfig', async () => {
-  const source = await readRepoFile('remote/bastion-rs/src/main.rs');
-  const cargo = await readRepoFile('remote/bastion-rs/Cargo.toml');
-  const dockerfile = await readRepoFile('remote/bastion-rs/Dockerfile');
-  const readme = await readRepoFile('remote/bastion-rs/readme.md');
+  const source = await readRepoFile('remote/deployments/bastion-rs/src/main.rs');
+  const cargo = await readRepoFile('remote/deployments/bastion-rs/Cargo.toml');
+  const dockerfile = await readRepoFile('remote/deployments/bastion-rs/Dockerfile');
+  const readme = await readRepoFile('remote/deployments/bastion-rs/readme.md');
 
   assert.match(cargo, /name = "dd-bastion"/);
   assert.match(cargo, /axum/);
@@ -52,6 +52,11 @@ test('rust bastion serves authenticated vpn cluster access profile and kubeconfi
   assert.match(source, /const MANAGED_DEPLOYMENTS/);
   assert.match(source, /dd-lock-loadtest-trigger/);
   assert.match(source, /dd-container-pool/);
+  assert.match(source, /dd-gleamlang-server/);
+  assert.match(source, /dd-webrtc-signaling/);
+  assert.match(source, /dd-fsharp-ws-server/);
+  assert.match(source, /dd-ws-loadtest-rs/);
+  assert.match(source, /dd-gleamlang-ws-loadtest/);
   assert.match(source, /WebSocketUpgrade/);
   assert.match(source, /kubectl/);
   assert.match(source, /BASTION_SCRIPT_BIN/);
@@ -65,6 +70,7 @@ test('rust bastion serves authenticated vpn cluster access profile and kubeconfi
   assert.match(readme, /authenticated HTTP service/);
   assert.match(readme, /kubeconfig/);
   assert.match(readme, /runtime\/deployments/);
+  assert.match(readme, /Rust WebRTC and Gleam WebSocket surfaces/);
   assert.match(readme, /disabled by default/);
 });
 
@@ -79,6 +85,7 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   const networkPolicy = await readRepoFile('remote/argocd/vpn/dd-bastion.networkpolicy.yaml');
   const vpnReadme = await readRepoFile('remote/argocd/vpn/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
+  const ec2Readme = await readRepoFile('remote/ec2/README.md');
 
   for (const resource of [
     'dd-bastion-rbac.yaml',
@@ -94,12 +101,20 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   assert.match(rbac, /kind:\s*ClusterRole[\s\S]*name:\s*dd-bastion-readonly/);
   assert.match(rbac, /resources:[\s\S]*-\s*pods[\s\S]*-\s*services[\s\S]*-\s*deployments/);
   assert.match(rbac, /verbs:[\s\S]*-\s*get[\s\S]*-\s*list[\s\S]*-\s*watch/);
-  assert.doesNotMatch(rbac, /pods\/exec/);
-  assert.doesNotMatch(rbac, /-\s*secrets/);
-  assert.doesNotMatch(rbac, /-\s*create/);
-  assert.doesNotMatch(rbac, /-\s*patch/);
-  assert.doesNotMatch(rbac, /-\s*update/);
-  assert.doesNotMatch(rbac, /-\s*delete/);
+  // Read-only access to metrics-server and kubectl logs for the live
+  // container cards on the homepage.
+  assert.match(rbac, /apiGroups:\s*\[metrics\.k8s\.io\][\s\S]*resources:[\s\S]*-\s*pods/);
+  assert.match(rbac, /resources:[\s\S]*-\s*pods\/log[\s\S]*verbs:[\s\S]*-\s*get/);
+  // Exec is allowed only via the dedicated dd-bastion-exec role; the
+  // read-only role must not gain mutation verbs.
+  assert.match(rbac, /kind:\s*ClusterRole[\s\S]*name:\s*dd-bastion-exec[\s\S]*pods\/exec[\s\S]*verbs:[\s\S]*-\s*create/);
+  assert.match(rbac, /kind:\s*ClusterRoleBinding[\s\S]*name:\s*dd-bastion-exec[\s\S]*name:\s*dd-bastion-exec/);
+  // Hardened defaults: no Secret access, no mutation verbs other than
+  // `pods/exec` create above.
+  assert.doesNotMatch(rbac, /-\s*secrets\b/);
+  assert.doesNotMatch(rbac, /-\s*patch\b/);
+  assert.doesNotMatch(rbac, /-\s*update\b/);
+  assert.doesNotMatch(rbac, /-\s*delete\b/);
 
   assert.match(externalSecret, /name:\s*dd-bastion-secrets/);
   assert.match(externalSecret, /key:\s*dd\/remote-dev\/agent-secrets/);
@@ -108,7 +123,7 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
 
   assert.match(deployment, /name:\s*dd-bastion/);
   assert.match(deployment, /serviceAccountName:\s*dd-bastion/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/bastion-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/bastion-rs/);
   assert.match(deployment, /export PATH=\/usr\/local\/cargo\/bin/);
   assert.match(deployment, /PATH[\s\S]*\/usr\/local\/cargo\/bin/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8111'/);
@@ -121,7 +136,9 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
   assert.match(deployment, /BASTION_KUBECONFIG_ENABLED[\s\S]*value:\s*'true'/);
   assert.match(deployment, /BASTION_KUBECTL_BIN[\s\S]*value:\s*\/usr\/bin\/kubectl/);
   assert.doesNotMatch(deployment, /BASTION_SCRIPT_BIN/);
-  assert.match(deployment, /BASTION_TERMINAL_ENABLED[\s\S]*value:\s*'false'/);
+  // The browser terminal is enabled by default in this deployment; the
+  // matching pods/exec verb is granted only by ClusterRole dd-bastion-exec.
+  assert.match(deployment, /BASTION_TERMINAL_ENABLED[\s\S]*value:\s*'true'/);
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-bastion-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
@@ -139,7 +156,12 @@ test('vpn bundle deploys bastion as cluster-only access broker and terminal jump
 
   assert.match(vpnReadme, /Bastion\/access broker/);
   assert.match(vpnReadme, /runtime\/deployments/);
-  assert.match(vpnReadme, /terminal access is disabled\s+by default/);
+  assert.match(vpnReadme, /dd-bastion-exec/);
+  assert.match(vpnReadme, /metrics-server/);
+  assert.match(vpnReadme, /not a public MCP server that can mint AWS access/);
+  assert.match(vpnReadme, /AWS credentials stay\s+in AWS Secrets Manager/);
+  assert.match(ec2Readme, /inbound UDP `51820`/);
+  assert.match(ec2Readme, /Do not use a public MCP endpoint as a password-to-SSH or password-to-AWS bridge/);
   assert.match(remoteReadme, /argocd\/vpn/);
   assert.match(remoteReadme, /Rust `dd-bastion` access/);
 });

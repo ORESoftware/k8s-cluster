@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/dev-server/src/server.ts'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/dev-server/src/server.ts'))) {
       return candidate;
     }
   }
@@ -21,25 +21,48 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('remote dev worker keeps branch-safe git setup and ssh command contracts', async () => {
-  const server = await readRepoFile('remote/dev-server/src/server.ts');
-  const entrypoint = await readRepoFile('remote/dev-server/entrypoint.sh');
-  const packageJson = await readRepoFile('remote/dev-server/package.json');
-  const telemetry = await readRepoFile('remote/dev-server/src/telemetry.ts');
-  const agentTypes = await readRepoFile('remote/dev-server/src/agents/types.ts');
-  const agentIndex = await readRepoFile('remote/dev-server/src/agents/index.ts');
-  const echoRunner = await readRepoFile('remote/dev-server/src/agents/echo.ts');
-  const dockerfile = await readRepoFile('remote/dev-server/Dockerfile');
-  const localDockerfile = await readRepoFile('remote/dev-server-local/Dockerfile');
-  const readme = await readRepoFile('remote/dev-server/readme.md');
-  const lockfile = await readRepoFile('remote/dev-server/pnpm-lock.yaml');
-  const brokerServer = await readRepoFile('remote/agent-worker-broker-rs/src/main.rs');
-  const idleReaper = await readRepoFile('remote/idle-reaper-rs/src/main.rs');
+  const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
+  const entrypoint = await readRepoFile('remote/deployments/dev-server/entrypoint.sh');
+  const packageJson = await readRepoFile('remote/deployments/dev-server/package.json');
+  const telemetry = await readRepoFile('remote/deployments/dev-server/src/telemetry.ts');
+  const agentTypes = await readRepoFile('remote/deployments/dev-server/src/agents/types.ts');
+  const agentIndex = await readRepoFile('remote/deployments/dev-server/src/agents/index.ts');
+  const genericRunner = await readRepoFile('remote/deployments/dev-server/src/agents/generic-ai-sdk.ts');
+  const geminiRunner = await readRepoFile('remote/deployments/dev-server/src/agents/gemini-sdk.ts');
+  const opencodeRunner = await readRepoFile('remote/deployments/dev-server/src/agents/opencode-ai-sdk.ts');
+  const openaiSdkRunner = await readRepoFile('remote/deployments/dev-server/src/agents/openai-sdk.ts');
+  const claudeSdkRunner = await readRepoFile('remote/deployments/dev-server/src/agents/claude-sdk.ts');
+  const clusterMcp = await readRepoFile('remote/deployments/dev-server/src/agents/cluster-mcp.ts');
+  const workspaceTools = await readRepoFile('remote/deployments/dev-server/src/agents/workspace-tools.ts');
+  const dockerfile = await readRepoFile('remote/deployments/dev-server/Dockerfile');
+  const readme = await readRepoFile('remote/deployments/dev-server/readme.md');
+  const lockfile = await readRepoFile('remote/deployments/dev-server/pnpm-lock.yaml');
+  const brokerServer = await readRepoFile('remote/deployments/agent-worker-broker-rs/src/main.rs');
+  const idleReaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
+  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const config = await readRepoFile('remote/k8s/01-configmap.yaml');
+  const secretsTemplate = await readRepoFile('remote/k8s/02-secrets.template.yaml');
   const threadTemplate = await readRepoFile('remote/k8s/07-thread-deployment.template.yaml');
-  const restServer = await readRepoFile('remote/rest-api-rs/src/main.rs');
+  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const agentsMd = await readRepoFile('AGENTS.md');
+  const systemAgentsMd = await readRepoFile('remote/deployments/dev-server/system-agents.md');
+
+  // System agent rules — these get baked into /etc/agent/AGENTS.md and
+  // prepended to every prompt. Lock the high-value contracts so a
+  // well-meaning edit can't silently drop "draft only" / "no auto-merge".
+  assert.match(systemAgentsMd, /Drafts only/);
+  assert.match(systemAgentsMd, /Never auto-merge/);
+  assert.match(systemAgentsMd, /Never close/);
+  assert.match(systemAgentsMd, /Comments are comments/);
+  assert.match(systemAgentsMd, /Appending to a workspace file is not a PR\s+comment/);
+  assert.match(systemAgentsMd, /No force-push to shared branches/);
+  assert.match(systemAgentsMd, /pr_comment/);
+  assert.match(systemAgentsMd, /pr_update_body/);
+  assert.match(systemAgentsMd, /pr_view/);
+  assert.match(systemAgentsMd, /\/etc\/agent\/AGENTS\.md/);
 
   assert.match(server, /async function remoteBranchExists\(branch: string\): Promise<boolean>/);
   assert.match(
@@ -47,10 +70,12 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     /async function installWorkspaceDependencies\(workspacePath: string\): Promise<\{\s*ok: boolean;\s*error\?: string;\s*\}>\s*\{/,
   );
   assert.match(server, /\['ls-remote', '--heads', 'origin', branch\]/);
-  assert.match(server, /\['fetch', '--quiet', 'origin', config\.baseBranch\]/);
-  assert.match(server, /\['fetch', '--quiet', 'origin', session\.branch\]/);
-  assert.match(server, /let switchSource = `origin\/\$\{config\.baseBranch\}`/);
-  assert.match(server, /switchSource = 'FETCH_HEAD'/);
+  assert.match(server, /async function fetchRemoteBranch\(workspacePath: string, branch: string, depth = 1\): Promise<void>/);
+  assert.match(server, /'--prune'[\s\S]*`--depth=\$\{depth\}`[\s\S]*`\+refs\/heads\/\$\{branch\}:refs\/remotes\/origin\/\$\{branch\}`/);
+  assert.match(server, /await fetchRemoteBranch\(config\.workspaceRepo, config\.baseBranch, 1\)/);
+  assert.match(server, /await fetchRemoteBranch\(config\.workspaceRepo, session\.branch, 1\)/);
+  assert.match(server, /const hasRemoteBranch = await remoteBranchExists\(session\.branch\)/);
+  assert.match(server, /const switchSource = hasRemoteBranch \? `origin\/\$\{session\.branch\}` : `origin\/\$\{config\.baseBranch\}`/);
   assert.match(server, /'switch',[\s\S]*'--discard-changes',[\s\S]*'-C',[\s\S]*session\.branch,/);
   assert.match(server, /'switch',[\s\S]*session\.branch,[\s\S]*switchSource/);
   assert.match(server, /\['merge', '--no-edit', `origin\/\$\{config\.baseBranch\}`\]/);
@@ -85,6 +110,18 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /event\.kind === 'claude'/);
   assert.match(server, /raw: sanitizeEventValue\(event\.raw\)/);
   assert.match(server, /redacted-anthropic-key[\s\S]*redacted-openai-key/);
+  assert.match(server, /DEEPSEEK_API_KEYS_JSON/);
+  assert.match(server, /XAI_API_KEYS_JSON/);
+  assert.match(server, /GROK_API_KEYS_JSON/);
+  assert.match(server, /redacted-xai-key/);
+  // sanitizeEventText must redact AWS credential env values and any
+  // AKIA/ASIA access-key shape or IQoJ-prefixed STS session token that
+  // shows up in stdout, breadcrumb payloads, or error messages.
+  assert.match(server, /'AWS_ACCESS_KEY_ID'[\s\S]*'AWS_SECRET_ACCESS_KEY'[\s\S]*'AWS_SESSION_TOKEN'/);
+  assert.match(server, /redacted-aws-access-key/);
+  assert.match(server, /redacted-aws-session-token/);
+  assert.match(server, /\\b\(\?:AKIA\|ASIA\)\[0-9A-Z\]\{16\}\\b/);
+  assert.match(server, /\\bIQoJ\[A-Za-z0-9\+\/=_\\-\]\{180,\}\\b/);
   assert.match(server, /GET  \/ws\s+— WebSocket replay\/live stream for pinned thread tasks/);
   assert.match(server, /function registerWorkerWebSocketUpgrade\(\): void/);
   assert.match(server, /requestUrl\.pathname !== '\/ws'/);
@@ -96,8 +133,80 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(server, /type: 'worker-heartbeat'/);
   assert.match(server, /status: 'waiting-for-task'/);
   assert.match(server, /registerWorkerWebSocketUpgrade\(\);[\s\S]*await fastify\.listen/);
-  assert.match(server, /agentEchoFallback: process\.env\.AGENT_ECHO_FALLBACK !== 'false'/);
+  assert.match(server, /const DEFAULT_AGENT_PROVIDER: AgentProvider = 'generic-ai-sdk'/);
+  assert.match(server, /const AGENT_FALLBACK_PROVIDER: AgentProvider = 'generic-ai-sdk'/);
+  assert.match(server, /const AGENT_SECONDARY_FALLBACK_PROVIDER: AgentProvider = 'opencode-ai-sdk'/);
+  assert.match(server, /function configAgentProvider\(value: string \| undefined, fallback: AgentProvider\): AgentProvider/);
+  assert.match(server, /function configAgentProviderList\(value: string \| undefined, fallback: AgentProvider\[\]\): AgentProvider\[\]/);
+  assert.match(server, /const configuredAgentFallbackProvider = configAgentProvider\(/);
+  assert.match(server, /const configuredAgentSecondaryFallbackProvider = configAgentProvider\(/);
+  assert.match(server, /agentFallbackProvider: configuredAgentFallbackProvider/);
+  assert.match(server, /agentSecondaryFallbackProvider: configuredAgentSecondaryFallbackProvider/);
+  assert.match(server, /agentProviderRotation: configAgentProviderList\([\s\S]*'generic-ai-sdk'[\s\S]*'gemini-sdk'/);
+  assert.match(server, /agentBranchPrefix: process\.env\.AGENT_BRANCH_PREFIX \?\? 'agent\/k8s\/openai-5\.5'/);
+  assert.match(server, /titleHint\?\.trim\(\) \|\| promptHint\?\.trim\(\) \|\| sessionId/);
+  assert.match(server, /const branch = `\$\{config\.agentBranchPrefix\}\/\$\{sessionId\}\/\$\{titleSlug\}`/);
+  assert.match(server, /assertSafeGitBranchName\(branch, 'session branch'\)/);
+  assert.match(server, /return branch/);
+  assert.match(server, /function isPlaceholderSessionBranch\(sessionId: string, branch: string\): boolean/);
+  assert.match(server, /existing\.taskIds\.size === 0[\s\S]*isPlaceholderSessionBranch\(sessionId, existing\.branch\)/);
+  // Breadcrumbs are now POSTed to rest-api (Postgres-backed
+  // agent_remote_dev_breadcrumbs) instead of being written into
+  // workspace/tmp/convos/thread.log, so prepareSessionWorkspace can rely
+  // on a clean workspace and never has to self-heal the placeholder
+  // branch. The strict guard against switching off uncommitted changes
+  // is the canonical behavior.
+  assert.match(
+    server,
+    /if \(status\.trim\(\)\) \{\s*throw new Error\(\s*`workspace has uncommitted changes while on \$\{currentBranch \?\? 'detached HEAD'\}; refusing to switch to \$\{session\.branch\}`,\s*\);\s*\}/,
+  );
+  assert.doesNotMatch(server, /isPlaceholderSessionBranch\(session\.sessionId, currentBranch\)/);
+  assert.doesNotMatch(server, /async function appendThreadLog\(/);
+  assert.match(server, /async function postBreadcrumb\(input:/);
+  assert.match(server, /async function postSessionBreadcrumb\(/);
+  assert.match(server, /async function postTaskBreadcrumb\(/);
+  assert.match(server, /\/api\/agents\/threads\/\$\{encodeURIComponent\(input\.threadId\)\}\/breadcrumbs/);
+  // Breadcrumbs no longer auto-fetch as a tail. Prompt context comes
+  // exclusively from the /agents/threads picker.
+  assert.doesNotMatch(server, /async function fetchThreadBreadcrumbTail\(/);
+  assert.doesNotMatch(server, /\/breadcrumbs\/tail/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'session-ready'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'merge-upstream-start'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'merge-upstream-done'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'make-commit-start'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'make-commit-done'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'open-pr-start'/);
+  assert.match(server, /void postSessionBreadcrumb\(session, 'open-pr-done'/);
+  assert.match(server, /void postSessionBreadcrumb\(input\.session, 'open-pr-marker-commit'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'event'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'merge-base-before-task-start'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'merge-base-conflicts-before-task'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'merge-base-before-task-done'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'prompt'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'container-pool-result'/);
+  assert.match(server, /void postTaskBreadcrumb\(state, 'deterministic-edit'/);
+  assert.match(server, /prompt,\s*\}\);/);
+  assert.doesNotMatch(server, /return `dev-thread\/\$\{sessionId\}/);
   assert.match(server, /processedTasksDir: process\.env\.PROCESSED_TASKS_DIR/);
+  assert.match(server, /import \{ clusterMcpPromptSection \} from '\.\/agents\/cluster-mcp\.js'/);
+  assert.match(server, /repoContextMaxChars: Number\(process\.env\.REPO_CONTEXT_MAX_CHARS \?\? 24_000\)/);
+  assert.match(server, /agentOptimisticMode: process\.env\.AGENT_OPTIMISTIC_MODE !== 'false'/);
+  assert.match(server, /agentMcpUrl: process\.env\.AGENT_MCP_ENABLED === 'false' \? null : process\.env\.AGENT_MCP_URL \?\? null/);
+  assert.match(server, /async function readRepoContextEntrypoint\(workspacePath: string\): Promise<string>/);
+  assert.match(server, /const rootAgents = await existingContextFiles\(workspacePath, \['AGENTS\.md'\]\)/);
+  assert.match(server, /const agentDocs = await listMarkdownChildren\(workspacePath, 'agents'\)/);
+  assert.match(server, /const docs = await listMarkdownChildren\(workspacePath, 'docs'\)/);
+  assert.match(server, /thread-context:repo-files/);
+  assert.match(server, /<repo_context_files>/);
+  assert.match(server, /<agent_operating_mode>/);
+  assert.match(server, /Do not stop to ask the human user a question before acting/);
+  assert.match(server, /<thread_breadcrumb_tail>/);
+  assert.match(server, /thread-context:selected-breadcrumbs/);
+  assert.doesNotMatch(server, /<local_thread_log_tail>/);
+  assert.doesNotMatch(server, /readLocalThreadContext/);
+  assert.match(server, /const runtimeContext = clusterMcpPromptSection\(config\.agentMcpUrl\)/);
+  assert.match(server, /thread-context:cluster-mcp/);
+  assert.match(server, /<runtime_context>/);
   assert.match(server, /type TaskReceipt/);
   assert.match(server, /function taskReceiptPath\(taskId: string\): string/);
   assert.match(server, /async function readTaskReceipt\(taskId: string\)/);
@@ -123,72 +232,318 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(entrypoint, /pnpm install --frozen-lockfile --prefer-offline/);
   assert.doesNotMatch(entrypoint, /pnpm install --prefer-offline/);
   assert.match(entrypoint, /find "\$REPO_DIR\/\.git" -maxdepth 1 -type f -name index\.lock -delete/);
-  assert.match(
-    server,
-    /!config\.agentEchoFallback[\s\S]*state\.provider === 'echo'[\s\S]*state\.cancelled[\s\S]*state\.abortController\.signal\.aborted/,
-  );
-  assert.match(server, /status: 'agent-fallback:echo'/);
-  assert.match(server, /await runSelectedAgent\('echo'\)/);
+  assert.match(server, /const providerOrder = \[state\.provider, \.\.\.config\.agentProviderRotation\]\.filter/);
+  assert.match(server, /const attemptGroups: \{ provider: AgentProvider; candidates: AgentEnvCandidate\[\] \}\[\] = \[\]/);
+  assert.match(server, /buildAgentEnvCandidates\(provider\)/);
+  assert.match(server, /DEEPSEEK_API_KEYS_JSON, XAI_API_KEYS_JSON/);
+  assert.match(server, /const requestsPullRequest = promptRequestsPullRequest\(state\.prompt\)/);
+  assert.match(server, /const pullRequestOnly = requestsPullRequest && !requiresWorkspaceChange && !requiresWorkspaceAccess/);
+  assert.match(server, /status: 'deterministic-pr-only'/);
+  assert.match(server, /without spending model credentials/);
+  assert.match(server, /status: `agent-fallback:\$\{group\.provider\}`/);
+  assert.match(server, /promptLikelyRequiresWorkspaceAccess\(state\.prompt\)/);
+  assert.match(server, /providerCanAccessWorkspace\(provider\)/);
+  assert.match(server, /formatAgentFailureSummary\(/);
+  assert.match(server, /await runAgentAttempt\(attempt\)/);
+  assert.match(server, /function shouldForwardAgentRunnerEvent\(event: AgentRunnerEvent\): boolean/);
+  assert.match(server, /agentEventHasProviderError\(event\.raw\)/);
+  assert.match(server, /agentEventIsProviderMetadataOnly\(event\.raw\)/);
+  assert.match(server, /if \(shouldForwardAgentRunnerEvent\(ev\)\) \{[\s\S]*emit\(state, ev\);/);
+  assert.doesNotMatch(server, /agent-fallback:echo/);
+  assert.doesNotMatch(server, /runSelectedAgent\('echo'\)/);
   assert.match(server, /\['commit', '--no-verify', '-m'/);
   assert.match(server, /\['push', '--no-verify', '--set-upstream', 'origin'/);
-  assert.match(agentTypes, /\| ['"]echo['"]/);
-  assert.match(agentIndex, /import \{ echoRunner \} from ['"]\.\/echo\.js['"]/);
-  assert.match(agentIndex, /echo: echoRunner/);
-  assert.match(agentIndex, /provider: ['"]echo['"][\s\S]*available: true/);
-  assert.match(echoRunner, /echo\\s\+back/);
-  assert.match(echoRunner, /type: ['"]assistant_response['"]/);
-  assert.match(echoRunner, /provider: ['"]echo['"]/);
+  assert.match(server, /status: `opening draft PR against \$\{config\.baseBranch\} from \$\{gitBranchTarget\(session\.branch\)\}`/);
+  assert.match(server, /status: `completed PR request: \$\{result\.reused \? 'reused' : 'created'\} draft PR against \$\{result\.baseBranch\}`/);
+  assert.match(server, /status: `pushing to \$\{gitBranchTarget\(state\.branch\)\}`/);
+  assert.match(server, /status: `pushed to \$\{gitBranchTarget\(state\.branch\)\}`/);
+  assert.match(server, /status: `completed task on \$\{gitBranchTarget\(state\.branch\)\}`/);
+  assert.match(
+    server,
+    /const GENERATED_GIT_EXCLUDE_PATHS = \[\s*'\.pnpm-store',\s*'node_modules',\s*'\.next',\s*'\.turbo',\s*\]/,
+  );
+  assert.doesNotMatch(server, /'tmp\/convos',/);
+  assert.match(server, /const GENERATED_GIT_STATUS_EXCLUDES = GENERATED_GIT_EXCLUDE_PATHS\.map/);
+  assert.match(
+    server,
+    /const GENERATED_GIT_CLEAN_EXCLUDE_FLAGS = GENERATED_GIT_EXCLUDE_PATHS\.flatMap\(\(path\) => \[\s*'--exclude',\s*path,\s*\]\);/,
+  );
+  assert.match(server, /\['add', '-A', '--', '\.'\]/);
+  assert.match(server, /\['reset', '-q', 'HEAD', '--', \.\.\.GENERATED_GIT_EXCLUDE_PATHS\]/);
+  assert.match(
+    server,
+    /\['clean', '-fdx', \.\.\.GENERATED_GIT_CLEAN_EXCLUDE_FLAGS\]/,
+  );
+  assert.doesNotMatch(
+    server,
+    /\['clean', '-fdx', '--exclude=node_modules', '--exclude=\.pnpm-store', '--exclude=\.next', '--exclude=\.turbo'\]/,
+  );
+  assert.match(server, /async function gitWorkspaceStatus\(workspacePath: string\): Promise<string>/);
+  assert.match(server, /async function gitAddWorkspaceChanges\(workspacePath: string\): Promise<void>/);
+  assert.match(server, /function stripNegatedWorkspaceChangePhrases\(prompt: string\): string/);
+  assert.match(server, /const editablePrompt = stripNegatedWorkspaceChangePhrases\(prompt\)/);
+  assert.match(server, /function promptLikelyRequiresWorkspaceChange\(prompt: string\): boolean/);
+  assert.match(server, /\(add\|append\|change\|create\|delete\|edit\|fix\|implement\|modify\|move\|patch\|refactor\|remove\|rename\|replace\|update\|write\)/);
+  assert.match(server, /function providerCanEditWorkspace\(provider: AgentProvider\): boolean/);
+  assert.match(server, /return provider !== 'gemini-sdk'/);
+  assert.doesNotMatch(server, /provider !== 'opencode-ai-sdk' && provider !== 'generic-ai-sdk'/);
+  assert.match(server, /function stripNegatedPullRequestPhrases\(prompt: string\): string/);
+  assert.match(server, /const prPrompt = stripNegatedPullRequestPhrases\(prompt\)/);
+  assert.match(server, /do\\s\+not\|don't\|dont\|never/);
+  assert.match(server, /without\|no/);
+  assert.match(server, /function promptRequestsPullRequest\(prompt: string\): boolean/);
+  assert.match(server, /ensurePullRequestForSession\(\{[\s\S]*session: state\.session,[\s\S]*taskId: state\.taskId,[\s\S]*prompt: state\.prompt/);
+  assert.match(server, /kind: 'pr_open'/);
+  assert.match(server, /type DeterministicAppendFileEdit = \{/);
+  assert.match(server, /function parseDeterministicAppendFilePrompt\(prompt: string\): DeterministicAppendFileEdit \| null/);
+  assert.match(server, /function safeRepoRelativePath\(workspacePath: string, rawPath: string\): string/);
+  assert.match(server, /async function applyDeterministicWorkspaceEdit\(/);
+  assert.match(server, /status: 'deterministic-edit:append-file'/);
+  assert.match(server, /await applyDeterministicWorkspaceEdit\(state\)/);
+  assert.match(server, /blockedSegments = new Set\(\['\.git', 'node_modules', '\.pnpm-store', '\.next', '\.turbo'\]\)/);
+  assert.match(agentTypes, /\| ['"]gemini-sdk['"]/);
+  assert.match(agentTypes, /\| ['"]generic-ai-sdk['"]/);
+  assert.match(agentTypes, /\| ['"]opencode-ai-sdk['"]/);
+  assert.doesNotMatch(agentTypes, /\| ['"]echo['"]/);
+  assert.match(agentIndex, /genericAiSdkRunner/);
+  assert.match(agentIndex, /DEFAULT_GENERIC_AI_SDK_SOURCES/);
+  assert.match(agentIndex, /defaultGenericAiSdkModels/);
+  assert.match(agentIndex, /import \{ opencodeAiSdkRunner, DEFAULT_OPENCODE_MODELS \} from '\.\/opencode-ai-sdk\.js'/);
+  assert.match(agentIndex, /'generic-ai-sdk': genericAiSdkRunner/);
+  assert.match(agentIndex, /'opencode-ai-sdk': opencodeAiSdkRunner/);
+  assert.match(agentIndex, /const DEFAULT_GEMINI_MODEL = 'gemini-3\.1-pro-preview'/);
+  assert.match(agentIndex, /const DEFAULT_GEMINI_FALLBACK_MODEL = 'gemini-3\.1-flash-lite'/);
+  assert.match(agentIndex, /configuredSecretList\('OPENAI_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('ANTHROPIC_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('OPENCODE_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('DEEPSEEK_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('DASHSCOPE_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('XAI_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /configuredSecretList\('GEMINI_API_KEYS_JSON'\)/);
+  assert.match(agentIndex, /export function buildAgentEnvCandidates\(provider: AgentProvider\): AgentEnvCandidate\[\]/);
+  assert.match(agentIndex, /if \(provider === 'opencode-ai-sdk'\) \{/);
+  assert.match(agentIndex, /if \(provider === 'generic-ai-sdk'\) \{/);
+  assert.match(agentIndex, /env\.OPENCODE_SOURCE = source\.id/);
+  assert.match(agentIndex, /env\.OPENCODE_BASE_URL = genericAiSdkBaseUrl\(source\.id, source\.baseURL\)/);
+  assert.match(agentIndex, /env\.OPENCODE_MODELS = genericAiSdkModels\(source\.id\)/);
+  assert.match(agentIndex, /hasOpenCodeCompatibleApiKey/);
+  assert.match(agentIndex, /hasGenericAiSdkApiKey/);
+  assert.match(agentIndex, /OpenCode, DeepSeek, Qwen\/DashScope, or xAI\/Grok API key not set/);
+  assert.match(agentIndex, /base\.OPENCODE_BASE_URL = process\.env\.OPENCODE_BASE_URL \?\? 'https:\/\/opencode\.ai\/zen\/v1'/);
+  assert.match(agentIndex, /base\.OPENCODE_MODELS =[\s\S]*DEFAULT_OPENCODE_MODELS\.join\(','\)/);
+  assert.match(agentIndex, /base\.GEMINI_FALLBACK_MODEL =[\s\S]*DEFAULT_GEMINI_FALLBACK_MODEL/);
+  assert.match(agentIndex, /AGENT_MCP_ENABLED/);
+  assert.match(agentIndex, /AGENT_MCP_URL/);
+  assert.match(agentIndex, /AGENT_MCP_CONNECT_TIMEOUT_MS/);
+  assert.doesNotMatch(agentIndex, /OPENCODE_API_KEY not set/);
+  assert.match(agentIndex, /GOOGLE_API_KEY or GEMINI_API_KEY not set/);
+  assert.match(agentIndex, /chosen = isAgentProvider\(fromEnv\) \? fromEnv : 'generic-ai-sdk'/);
+  assert.doesNotMatch(agentIndex, /echoRunner|echo: echoRunner|provider: ['"]echo['"]/);
+  assert.match(server, /threadTitle:\s*z\.string\(\)\.min\(1\)\.max\(200\)\.nullish\(\)/);
+  assert.match(
+    server,
+    /provider:\s*z[\s\S]*\.enum\(\[[\s\S]*'generic-ai-sdk'[\s\S]*'opencode-ai-sdk'[\s\S]*'openai-sdk'[\s\S]*\]\)[\s\S]*\.nullish\(\)/,
+  );
+  assert.match(server, /threadTitle:\s*parsed\.data\.threadTitle \?\? undefined/);
+  assert.match(server, /resolveAgentProvider\(parsed\.data\.provider \?\? undefined\)/);
+  // System AGENTS.md (PR draft-only / no auto-merge / secret hygiene) is
+  // injected unconditionally before the workspace AGENTS.md so policies
+  // cannot be silently weakened by a per-repo file.
+  assert.match(server, /systemAgentsMdPath: process\.env\.SYSTEM_AGENTS_MD_PATH \?\? '\/etc\/agent\/AGENTS\.md'/);
+  assert.match(server, /async function readSystemAgentsMd\(\): Promise<string>/);
+  assert.match(server, /const systemAgentsMd = await readSystemAgentsMd\(\)/);
+  assert.match(server, /<system_agent_rules source="' \+ config\.systemAgentsMdPath \+ '">/);
+  assert.match(server, /'thread-context:system-agents-md'/);
+  assert.match(
+    geminiRunner,
+    /const primaryModel = opts\.env\.GEMINI_MODEL \?\? 'gemini-3\.1-pro-preview'/,
+  );
+  assert.match(geminiRunner, /GEMINI_FALLBACK_MODEL/);
+  assert.match(geminiRunner, /isQuotaFailure/);
+  assert.match(geminiRunner, /if \(text\.trim\(\)\) \{[\s\S]*opts\.emit\(\{[\s\S]*provider: 'gemini-sdk'/);
+  assert.doesNotMatch(geminiRunner, /quota\/rate limit failed; retrying/);
+  assert.match(geminiRunner, /MALFORMED_FUNCTION_CALL/);
+  assert.match(geminiRunner, /produced no text output/);
+  assert.match(opencodeRunner, /import \{ generateText, stepCountIs \} from 'ai'/);
+  assert.match(opencodeRunner, /stepCountIs/);
+  assert.match(opencodeRunner, /createWorkspaceTools/);
+  assert.match(opencodeRunner, /createOpenAICompatible/);
+  assert.match(opencodeRunner, /DEFAULT_OPENCODE_MODELS = \[[\s\S]*'big-pickle'[\s\S]*'deepseek-v4-flash-free'[\s\S]*'minimax-m2\.5-free'[\s\S]*'nemotron-3-super-free'[\s\S]*'qwen3\.6-plus-free'/);
+  assert.match(opencodeRunner, /const baseURL = opts\.env\.OPENCODE_BASE_URL \?\? DEFAULT_OPENCODE_BASE_URL/);
+  assert.match(opencodeRunner, /const source = opts\.env\.OPENCODE_SOURCE \?\? 'opencode'/);
+  assert.match(opencodeRunner, /name: source/);
+  assert.match(opencodeRunner, /model: provider\(modelId\)/);
+  assert.match(opencodeRunner, /provider: 'opencode-ai-sdk'/);
+  assert.match(opencodeRunner, /tools: createWorkspaceTools\(opts\.cwd, opts\.emit\)/);
+  assert.match(opencodeRunner, /stopWhen: stepCountIs\(8\)/);
+  assert.match(genericRunner, /DEFAULT_GENERIC_AI_SDK_SOURCES = \[[\s\S]*id: 'deepseek'[\s\S]*'deepseek-v4-flash'[\s\S]*'deepseek-v4-pro'[\s\S]*id: 'qwen'[\s\S]*'qwen3\.6-max-preview'[\s\S]*id: 'xai'[\s\S]*'grok-4\.3'/);
+  assert.match(genericRunner, /code-fast slugs retired on 2026-05-15/);
+  assert.match(genericRunner, /createOpenAICompatible/);
+  assert.match(genericRunner, /model: provider\(modelId\)/);
+  assert.match(genericRunner, /provider: 'generic-ai-sdk'/);
+  assert.match(genericRunner, /stepCountIs/);
+  assert.match(genericRunner, /createWorkspaceTools/);
+  assert.match(genericRunner, /tools: createWorkspaceTools\(opts\.cwd, opts\.emit\)/);
+  assert.match(genericRunner, /stopWhen: stepCountIs\(8\)/);
+  // The runner system prompt must steer the model to pr_comment / pr_update_body
+  // for PR work, not file appends. This was the regression that produced the
+  // "fixin up her" workspace edit on https://github.com/ORESoftware/live-mutex/pull/119.
+  assert.match(genericRunner, /pr_comment.*pr_update_body|pr_update_body.*pr_comment/);
+  assert.match(genericRunner, /Never substitute append_file/);
+  assert.match(genericRunner, /Never call any tool that would merge, close, or mark-ready a PR/);
+  assert.match(opencodeRunner, /pr_comment.*pr_update_body|pr_update_body.*pr_comment/);
+  assert.match(opencodeRunner, /Never substitute append_file/);
+  assert.match(opencodeRunner, /Never call any tool that would merge, close, or mark-ready a PR/);
+  assert.match(workspaceTools, /BLOCKED_PATH_SEGMENTS = new Set\(\['\.git', 'node_modules', '\.pnpm-store', '\.next', '\.turbo'\]\)/);
+  assert.match(workspaceTools, /relativePath: relativePath \|\| '\.'/);
+  assert.match(workspaceTools, /if \(segment && !pathSegmentAllowed\(segment\)\)/);
+  assert.match(workspaceTools, /list_files: tool/);
+  assert.match(workspaceTools, /read_file: tool/);
+  assert.match(workspaceTools, /write_file: tool/);
+  assert.match(workspaceTools, /replace_in_file: tool/);
+  assert.match(workspaceTools, /append_file: tool/);
+  assert.match(workspaceTools, /workspace_status: tool/);
+  assert.match(workspaceTools, /execFileAsync\('git', \['status', '--short'\]/);
+  assert.doesNotMatch(workspaceTools, /execFileAsync\([^'"]/);
+  // PR-targeted tools wrap `gh pr view|comment|edit` server-side. The
+  // hardening contract is: never expose any subcommand that could merge,
+  // close, mark-ready, or change the base branch of a PR — that flow is
+  // human-only.
+  assert.match(workspaceTools, /pr_view: tool/);
+  assert.match(workspaceTools, /pr_comment: tool/);
+  assert.match(workspaceTools, /pr_update_body: tool/);
+  assert.match(workspaceTools, /ALLOWED_GH_SUBCOMMANDS = new Set\(\['view', 'comment', 'edit'\]\)/);
+  assert.doesNotMatch(workspaceTools, /pr_merge|pr_close|pr_ready|--auto|--squash|--rebase/);
+  assert.match(
+    workspaceTools,
+    /refused: PR merge \/ close \/ ready flags are not exposed to agent tools/,
+  );
+  assert.match(
+    workspaceTools,
+    /refused: PR has been marked ready by a human reviewer; agent tools do not edit non-draft PRs/,
+  );
+  // The agent never sees GH_PAT directly; pr_* tools must inject GH_TOKEN
+  // server-side from the worker's process.env so the credential never
+  // reaches the model.
+  assert.match(workspaceTools, /GH_TOKEN: ghToken/);
+  assert.match(workspaceTools, /process\.env\.GH_PAT/);
+  assert.match(clusterMcp, /CLUSTER_MCP_SERVER_NAME = 'dd_cluster'/);
+  assert.match(clusterMcp, /kubernetes_inventory/);
+  assert.match(clusterMcp, /kubernetes_deployments/);
+  assert.match(clusterMcp, /human_access_policy/);
+  assert.match(clusterMcp, /AGENT_MCP_URL/);
+  assert.match(clusterMcp, /read-only DD EC2 Kubernetes cluster MCP server/);
+  assert.match(clusterMcp, /authenticated gateway, VPN, and bastion flow/);
+  assert.match(openaiSdkRunner, /MCPServerStreamableHttp/);
+  assert.match(openaiSdkRunner, /connectMcpServers/);
+  assert.match(openaiSdkRunner, /mcpServers/);
+  assert.match(openaiSdkRunner, /clusterMcpInstructions\(\)/);
+  assert.match(claudeSdkRunner, /mcpServers/);
+  assert.match(claudeSdkRunner, /strictMcpConfig:\s*true/);
+  assert.match(claudeSdkRunner, /mcp__\$\{CLUSTER_MCP_SERVER_NAME\}__\$\{name\}/);
+  assert.match(config, /AGENT_PROVIDER:\s*'generic-ai-sdk'/);
+  assert.match(config, /AGENT_FALLBACK_PROVIDER:\s*'generic-ai-sdk'/);
+  assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'opencode-ai-sdk'/);
+  assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'generic-ai-sdk,opencode-ai-sdk,openai-sdk,claude-sdk,gemini-sdk'/);
+  assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
+  assert.match(config, /AGENT_MCP_URL:\s*'http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp'/);
+  assert.match(config, /AGENT_MCP_CONNECT_TIMEOUT_MS:\s*'3000'/);
+  assert.match(secretsTemplate, /OPENAI_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /ANTHROPIC_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /OPENCODE_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /OPENCODE_MODELS:\s*"big-pickle,deepseek-v4-flash-free,minimax-m2\.5-free,nemotron-3-super-free,qwen3\.6-plus-free"/);
+  assert.match(secretsTemplate, /DEEPSEEK_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /DEEPSEEK_MODELS:\s*"deepseek-v4-flash,deepseek-v4-pro"/);
+  assert.match(secretsTemplate, /DASHSCOPE_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /QWEN_MODELS:\s*"qwen3\.6-max-preview,qwen3\.6-plus,qwen3\.6-flash"/);
+  assert.match(secretsTemplate, /XAI_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /GROK_API_KEY and GROK_API_KEYS_JSON are accepted aliases/);
+  assert.match(secretsTemplate, /XAI_MODELS:\s*"grok-4\.3"/);
+  assert.match(secretsTemplate, /GEMINI_API_KEYS_JSON/);
+  assert.match(secretsTemplate, /GEMINI_MODEL:\s*"gemini-3\.1-pro-preview"/);
+  assert.match(secretsTemplate, /GEMINI_FALLBACK_MODEL:\s*"gemini-3\.1-flash-lite"/);
 
-  assert.match(dockerfile, /Baked at \/home\/node\/repo-template \(NOT under workspace\/\)/);
+  assert.match(dockerfile, /Optionally bake a "recent baseline" repo/);
   assert.match(dockerfile, /corepack prepare pnpm@9\.15\.4 --activate/);
   assert.doesNotMatch(dockerfile, /corepack prepare pnpm@9 --activate/);
   assert.match(dockerfile, /ARG DD_REPO_CACHE_BUST=manual/);
   assert.match(dockerfile, /ARG DD_REPO_URL\s*\n/);
   assert.doesNotMatch(dockerfile, /ARG DD_REPO_URL=git@github\.com/);
   assert.doesNotMatch(dockerfile, /ENV DD_REPO_URL=/);
-  assert.match(dockerfile, /test -n "\$DD_REPO_URL"/);
-  assert.match(localDockerfile, /ARG DD_REPO_URL\s*\n/);
-  assert.doesNotMatch(localDockerfile, /ARG DD_REPO_URL=git@github\.com/);
-  assert.match(localDockerfile, /test -n "\$DD_REPO_URL"/);
+  assert.doesNotMatch(dockerfile, /test -n "\$DD_REPO_URL"/);
+  assert.match(dockerfile, /if \[ -n "\$DD_REPO_URL" \]; then/);
+  assert.match(dockerfile, /DD_REPO_URL not provided; building generic repo-configured worker base/);
   assert.match(dockerfile, /echo "\$DD_REPO_CACHE_BUST" > \/tmp\/dd-repo-cache-bust/);
   assert.match(
     dockerfile,
     /if \[ -f package\.json \]; then[\s\S]*pnpm install --store-dir \/home\/node\/repo-template\/\.pnpm-store --frozen-lockfile/,
   );
   assert.match(dockerfile, /no root package\.json in repo-template; skipping pnpm install/);
-  assert.match(localDockerfile, /if \[ -f package\.json \]; then[\s\S]*pnpm install --frozen-lockfile/);
   assert.doesNotMatch(
     dockerfile,
     /PNPM_STORE_DIR=\/home\/node\/repo-template\/\.pnpm-store pnpm install --frozen-lockfile/,
   );
+  // Bake the system agent rules into the worker image so policies (drafts
+  // only, no auto-merge, secret hygiene) apply unconditionally — even when
+  // the cloned workspace has no AGENTS.md.
+  assert.match(dockerfile, /install -d -m 0755 -o root -g root \/etc\/agent/);
+  assert.match(
+    dockerfile,
+    /COPY --chown=root:root --chmod=0644 system-agents\.md \/etc\/agent\/AGENTS\.md/,
+  );
   assert.match(dockerfile, /ENV HOME=\/home\/node \\\s+USER=node/);
-  assert.match(dockerfile, /git clone --depth 50 --branch "\$DD_REPO_REF" "\$DD_REPO_URL" repo-template/);
+  assert.match(dockerfile, /git clone --depth 1 --branch "\$DD_REPO_REF" "\$DD_REPO_URL" repo-template/);
   assert.match(dockerfile, /WORKSPACE_REPO=\/home\/node\/workspace\/repo/);
   assert.doesNotMatch(dockerfile, /workspace\/repo-template/);
   assert.match(entrypoint, /TEMPLATE_DIR="\$\{REPO_TEMPLATE_DIR:-\/home\/node\/repo-template\}"/);
   assert.match(entrypoint, /REPO_URL="\$\{DD_REPO_URL:-\}"/);
   assert.match(entrypoint, /DD_REPO_URL is required/);
-  assert.match(entrypoint, /git remote set-url origin "\$REPO_URL"/);
+  assert.match(entrypoint, /github_https_to_ssh\(\)/);
+  assert.match(entrypoint, /GIT_REPO_URL="\$\(github_https_to_ssh "\$REPO_URL"\)"/);
+  assert.match(entrypoint, /git clone --depth 1 --branch "\$BASE_BRANCH" "\$GIT_REPO_URL" "\$REPO_DIR"/);
+  assert.match(entrypoint, /git remote set-url origin "\$GIT_REPO_URL"/);
+  assert.match(entrypoint, /git fetch --quiet --depth=1 origin "\+refs\/heads\/\$BASE_BRANCH:refs\/remotes\/origin\/\$BASE_BRANCH"/);
   assert.match(entrypoint, /if \[\[ ! -d "\$REPO_DIR\/\.git" && -d "\$TEMPLATE_DIR\/\.git" \]\]; then/);
   assert.match(entrypoint, /cp -a "\$TEMPLATE_DIR\/\." "\$REPO_DIR\/"/);
-  assert.match(entrypoint, /==> git fetch \+ switch starting/);
+  assert.match(entrypoint, /==> git fetch starting/);
+  assert.match(entrypoint, /git fetch --quiet --depth=1 origin "\+refs\/heads\/\$BASE_BRANCH:refs\/remotes\/origin\/\$BASE_BRANCH"/);
   assert.doesNotMatch(entrypoint, /GIT_READY_PID/);
 
-  assert.match(readme, /git fetch origin <BASE_BRANCH>/);
-  assert.match(readme, /switch from it;[\s\S]*otherwise create from `origin\/<BASE_BRANCH>`/);
-  assert.match(readme, /brand-new thread start from fresh `origin\/<BASE_BRANCH>`/);
-  assert.match(
-    readme,
-    /pnpm install --ignore-workspace --frozen-lockfile[\s\S]*standalone package instead of the root workspace/,
-  );
+  assert.match(readme, /Runtime clone or baked-template clone uses `git clone --depth=1 --branch <BASE_BRANCH>`/);
+  assert.match(readme, /Warm boots only refresh `origin\/<BASE_BRANCH>` with a depth-1 fetch/);
+  assert.match(readme, /switch from it;[\s\S]*otherwise create the feature branch from[\s\S]*`origin\/<BASE_BRANCH>`/);
+  assert.match(readme, /If a reused workspace is still on the parent branch, the worker fails[\s\S]*closed/);
+  assert.match(readme, /Install repo dependencies only after the feature branch is prepared/);
   assert.match(readme, /Before the first build you need a `pnpm-lock\.yaml`/);
+  assert.match(readme, /cluster-mcp\.ts/);
+  assert.match(readme, /AGENT_MCP_URL/);
+  assert.match(readme, /REPO_CONTEXT_MAX_CHARS/);
+  assert.match(readme, /AGENT_OPTIMISTIC_MODE/);
+  assert.match(readme, /AGENTS\.md`\/`agents\/\*\.md`\/`docs\/\*\.md/);
+  assert.match(readme, /durable Postgres context blobs, previous thread\s+tasks, and individual breadcrumbs/);
+  assert.match(readme, /unchecked rows are omitted\s+from the worker payload/);
+  assert.match(readme, /agent_remote_dev_breadcrumbs/);
+  assert.doesNotMatch(readme, /THREAD_BREADCRUMB_TAIL_LIMIT/);
+  assert.doesNotMatch(readme, /THREAD_BREADCRUMB_READ_TIMEOUT_MS/);
+  assert.match(readme, /Generic AI SDK and OpenCode receive bounded workspace\s+tools/);
+  assert.match(readme, /dd_cluster/);
+  assert.match(readme, /CLI runners still get the prompt hint/);
+  assert.match(agentsMd, /docs\/agent-context-memory\.md/);
+  assert.match(agentsMd, /Start with zero context/);
+  assert.match(agentsMd, /Rows unchecked during context review are omitted/);
+  assert.match(agentsMd, /agent_remote_dev_breadcrumbs/);
+  assert.doesNotMatch(agentsMd, /breadcrumbs\/tail/);
+  assert.doesNotMatch(agentsMd, /tmp\/convos\/thread\.log/);
   assert.match(lockfile, /^lockfileVersion: '9\.0'$/m);
   assert.match(lockfile, /^importers:\s*$/m);
 
   assert.doesNotMatch(packageJson, /@opentelemetry\/instrumentation/);
   assert.doesNotMatch(packageJson, /@opentelemetry\/auto-instrumentations-node/);
   assert.match(telemetry, /class ExplicitSpan implements TelemetrySpan/);
-  assert.match(telemetry, /await fetch\(otlpTraceUrl/);
+  // Commit 002ff5c switched the OTLP exporter from raw `fetch` to the
+  // request-context-aware `contextFetch` helper so traces inherit the
+  // worker's request span. Update the assertion to match.
+  assert.match(telemetry, /await contextFetch\(otlpTraceUrl/);
   assert.doesNotMatch(telemetry, /NodeSDK/);
   assert.doesNotMatch(telemetry, /registerInstrumentations/);
   assert.doesNotMatch(telemetry, /require-in-the-middle|shimmer|diagnostics_channel|async_hooks/);
@@ -199,6 +554,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(deployment, /runAsUser: 1000/);
   assert.match(deployment, /mountPath: \/home\/node\/workspace/);
   assert.match(deployment, /name: DD_REPO_URL[\s\S]*secretKeyRef:[\s\S]*name: dd-agent-secrets[\s\S]*key: DD_REPO_URL/);
+  assert.match(deployment, /name:\s*AGENT_MCP_URL[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp/);
+  assert.match(deployment, /name:\s*AGENT_MCP_CONNECT_TIMEOUT_MS[\s\S]*value:\s*"3000"/);
   assert.doesNotMatch(deployment, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(deployment, /apt-get update/);
   assert.match(brokerServer, /repo: Option<String>/);
@@ -210,6 +567,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.doesNotMatch(idleReaper, /WORKER_IMAGE_BUILD_REPO_URL"\)[\s\S]*unwrap_or_else\(\|\| "git@github\.com/);
   assert.match(threadTemplate, /envFrom:[\s\S]*configMapRef:[\s\S]*name: dd-agent-config/);
   assert.match(threadTemplate, /envFrom:[\s\S]*secretRef:[\s\S]*name: dd-agent-secrets/);
+  assert.match(threadTemplate, /requests:[\s\S]*cpu:\s*"1m"[\s\S]*memory:\s*"512Mi"/);
   assert.doesNotMatch(threadTemplate, /dd-k8s-home/);
   assert.match(
     config,
@@ -219,9 +577,23 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(restServer, /docker\.io\/library\/dd-dev-server:dev/);
   assert.match(restServer, /"mountPath": "\/home\/node\/workspace"/);
   assert.match(restServer, /"runAsUser": 1000/);
+  assert.match(restServer, /"requests": \{ "cpu": "1m", "memory": "512Mi" \}/);
+  assert.match(restServer, /"limits": \{ "cpu": "2", "memory": "4Gi" \}/);
+  assert.match(restServer, /"containerSpecs": container_specs/);
   assert.match(restServer, /"startupProbe": \{[\s\S]*"failureThreshold": 180/);
+  assert.match(webHome, /PodScheduled/);
+  assert.match(webHome, /worker pending:/);
   assert.match(restServer, /"THREAD_CONTEXT_BASE_URL", "value": "http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082"/);
-  assert.match(restServer, /"NATS_EVENT_SUBJECT", "value": "dd\.remote\.events"/);
+  assert.match(restServer, /"AGENT_MCP_URL", "value": "http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp"/);
+  assert.match(restServer, /"AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000"/);
+  // The NATS event subject literal lives in the generated
+  // `dd_nats_subject_defs::RUNTIME_EVENTS_SUBJECT` constant; the env
+  // injection now references the constant rather than inlining the
+  // string. Assert both that the env entry references it and that the
+  // constant resolves to the expected legacy subject so downstream
+  // consumers don't silently move.
+  assert.match(restServer, /"NATS_EVENT_SUBJECT", "value": RUNTIME_EVENTS_SUBJECT/);
+  assert.match(restServer, /agent_remote_dev_events → dd\.remote\.events/);
   assert.match(restServer, /"envFrom": \[/);
   assert.match(
     restServer,
@@ -229,4 +601,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   );
   assert.doesNotMatch(restServer, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(restServer, /apt-get update/);
+  assert.match(agentsMd, /docs\/\*\.md/);
+  assert.match(agentsMd, /agents\/\*\.md/);
+  assert.match(agentsMd, /dd_cluster/);
+  assert.match(agentsMd, /WireGuard VPN plus `dd-bastion`/);
 });

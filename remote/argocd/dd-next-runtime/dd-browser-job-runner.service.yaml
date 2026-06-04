@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-browser-job-runner
+  namespace: default
+  labels:
+    app: dd-browser-job-runner
+spec:
+  selector:
+    app: dd-browser-job-runner
+  ports:
+    # Only the authenticated spawner API is exposed. Per-job worker containers
+    # publish their results to NATS directly and are never reachable as Services.
+    - name: http
+      port: 8106
+      targetPort: http

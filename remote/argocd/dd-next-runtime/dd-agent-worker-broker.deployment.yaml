@@ -6,9 +6,14 @@ metadata:
   labels:
     app: dd-agent-worker-broker
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-agent-worker-broker
@@ -19,7 +24,7 @@ spec:
       labels:
         app: dd-agent-worker-broker
     spec:
-      serviceAccountName: dd-agent-worker-broker
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
       containers:
         - name: agent-worker-broker
@@ -35,7 +40,8 @@ spec:
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/agent-worker-broker-rs
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              cd /opt/dd-next-1/remote/deployments/agent-worker-broker-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
@@ -54,13 +60,30 @@ spec:
               value: default
             - name: DIRECT_DISPATCH_ENABLED
               value: 'true'
-            - name: WAKE_ON_DISPATCH
-              value: 'true'
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+            # runtime-config wiring: registers this pod with the control plane
+            # so it receives /internal/update-runtime-config pushes every 5 min
+            # plus on-demand admin pushes.
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-agent-worker-broker
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-agent-worker-broker
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-agent-worker-broker.default.svc.cluster.local:8098/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
           envFrom:
             - secretRef:
                 name: dd-agent-secrets

@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/fsharp-ws-server/DdFsharpWsServer.fsproj'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/fsharp-ws-server/DdFsharpWsServer.fsproj'))) {
       return candidate;
     }
   }
@@ -21,18 +21,18 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('fsharp websocket service is bounded, deployed, and guarded', async () => {
-  const project = await readRepoFile('remote/fsharp-ws-server/DdFsharpWsServer.fsproj');
-  const program = await readRepoFile('remote/fsharp-ws-server/Program.fs');
-  const routes = await readRepoFile('remote/fsharp-ws-server/WsRoutes.fs');
-  const dockerfile = await readRepoFile('remote/fsharp-ws-server/Dockerfile');
-  const readme = await readRepoFile('remote/fsharp-ws-server/readme.md');
+  const project = await readRepoFile('remote/deployments/fsharp-ws-server/DdFsharpWsServer.fsproj');
+  const program = await readRepoFile('remote/deployments/fsharp-ws-server/Program.fs');
+  const routes = await readRepoFile('remote/deployments/fsharp-ws-server/WsRoutes.fs');
+  const dockerfile = await readRepoFile('remote/deployments/fsharp-ws-server/Dockerfile');
+  const readme = await readRepoFile('remote/deployments/fsharp-ws-server/readme.md');
   const app = await readRepoFile('remote/argocd/apps/dd-fsharp-ws-server.application.yaml');
-  const kustomization = await readRepoFile('remote/fsharp-ws-server/k8s/ec2/kustomization.yaml');
+  const kustomization = await readRepoFile('remote/deployments/fsharp-ws-server/k8s/ec2/kustomization.yaml');
   const deployment = await readRepoFile(
-    'remote/fsharp-ws-server/k8s/ec2/dd-fsharp-ws-server.deployment.yaml',
+    'remote/deployments/fsharp-ws-server/k8s/ec2/dd-fsharp-ws-server.deployment.yaml',
   );
   const service = await readRepoFile(
-    'remote/fsharp-ws-server/k8s/ec2/dd-fsharp-ws-server.service.yaml',
+    'remote/deployments/fsharp-ws-server/k8s/ec2/dd-fsharp-ws-server.service.yaml',
   );
 
   assert.match(project, /<AssemblyName>dd-fsharp-ws-server<\/AssemblyName>/);
@@ -58,7 +58,7 @@ test('fsharp websocket service is bounded, deployed, and guarded', async () => {
   assert.match(app, /name:\s*dd-fsharp-ws-server/);
   assert.match(app, /repoURL:\s*git@github\.com:ORESoftware\/k8s-cluster\.git/);
   assert.match(app, /targetRevision:\s*dev/);
-  assert.match(app, /path:\s*remote\/fsharp-ws-server\/k8s\/ec2/);
+  assert.match(app, /path:\s*remote\/deployments\/fsharp-ws-server\/k8s\/ec2/);
   assert.match(kustomization, /dd-fsharp-ws-server\.deployment\.yaml/);
   assert.match(kustomization, /dd-fsharp-ws-server\.service\.yaml/);
 

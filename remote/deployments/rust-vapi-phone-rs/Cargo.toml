@@ -1,0 +1,26 @@
+[package]
+name = "dd-rust-vapi-phone"
+version = "0.1.0"
+edition = "2021"
+
+# Vapi.ai phone-tree call screener.
+#
+# This service owns an AI phone tree for Alex Mills: it provisions a Vapi
+# phone number + assistant through the Vapi REST API, and serves the Vapi
+# server webhook that screens inbound callers. Callers that prove to be a
+# real human get warm-transferred to the personal forwarding number; obvious
+# scammers/spammers are politely declined.
+#
+# There is no official Vapi Rust SDK, so the Vapi REST API is called directly
+# with reqwest, the same pattern dd-contract-service uses for Solana RPC.
+#
+# runtime-config wiring comes from the shared client crate so the pod receives
+# /internal/update-runtime-config pushes like every other Rust deployment.
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

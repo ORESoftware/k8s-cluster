@@ -1,0 +1,13 @@
+[Unit]
+Description=Mirror the worker pool image from k8s.io to dd-pool containerd namespace
+Documentation=https://github.com/ORESoftware/k8s-cluster/blob/dev/remote/deployments/host-cron/readme.md
+After=containerd.service
+Wants=containerd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dd-pool-image-sync.sh
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal

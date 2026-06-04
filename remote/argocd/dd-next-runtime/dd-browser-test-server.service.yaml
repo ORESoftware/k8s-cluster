@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-browser-test-server
+  namespace: default
+  labels:
+    app: dd-browser-test-server
+spec:
+  selector:
+    app: dd-browser-test-server
+  ports:
+    - name: http
+      port: 8104
+      targetPort: http

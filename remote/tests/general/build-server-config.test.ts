@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/build-server-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/build-server-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust build server queues controlled image builds and deploys', async () => {
-  const cargoToml = await readRepoFile('remote/build-server-rs/Cargo.toml');
-  const source = await readRepoFile('remote/build-server-rs/src/main.rs');
-  const readme = await readRepoFile('remote/build-server-rs/readme.md');
+  const cargoToml = await readRepoFile('remote/deployments/build-server-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/build-server-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/build-server-rs/readme.md');
 
   assert.match(cargoToml, /name = "dd-build-server"/);
   assert.match(cargoToml, /axum/);
@@ -89,7 +89,7 @@ test('build server is deployed through Argo runtime manifests, gateway, and obse
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(deployment, /name:\s*dd-build-server/);
@@ -98,7 +98,7 @@ test('build server is deployed through Argo runtime manifests, gateway, and obse
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(deployment, /seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/build-server-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/build-server-rs/);
   assert.match(deployment, /CARGO_TARGET_DIR[\s\S]*\/tmp\/dd-build-server-target/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8100'/);
   assert.match(deployment, /BUILD_SERVER_WORK_ROOT[\s\S]*\/var\/lib\/dd-build-server\/jobs/);

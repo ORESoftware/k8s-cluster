@@ -3,8 +3,19 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - airbyte.namespace.yaml
+  - kafka.namespace.yaml
+  - spark.namespace.yaml
+  - dd-airbyte-postgresql.statefulset.yaml
+  - dd-airbyte.networkpolicy.yaml
+  - dd-ai-ml-namespace-boundary.networkpolicy.yaml
+  - dd-kafka-namespace-boundary.networkpolicy.yaml
+  - dd-spark-namespace-boundary.networkpolicy.yaml
   - dd-ai-ml-serviceaccount.yaml
   - dd-ai-ml-agent-secrets.externalsecret.yaml
+  - dd-ai-ml-rest-api-secrets.externalsecret.yaml
+  - dd-ai-ml-platform-secrets.externalsecret.yaml
+  - dd-mlflow-artifacts.pvc.yaml
   - dd-ai-ml-data-contracts.configmap.yaml
   - dd-ai-ml-tool-catalog.configmap.yaml
   - dd-ai-ml-python-workflow-requirements.configmap.yaml

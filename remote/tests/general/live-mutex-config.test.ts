@@ -35,6 +35,19 @@ test('live-mutex broker is deployed as a singleton cluster-local TCP service', a
   assert.match(deployment, /npm install --global --omit=dev --ignore-scripts live-mutex@0\.2\.25/);
   assert.match(deployment, /live_mutex_host=0\.0\.0\.0 live_mutex_port=6970 lmx_start_server/);
   assert.match(deployment, /name:\s*lmx[\s\S]*containerPort:\s*6970/);
+  // Optional HTTP listener is opted in via LMX_HTTP_PORT so the broker
+  // mounts /admin/otel, /healthz, /metrics, and the status HTML page.
+  // Probes still target the lock port — lock-up is the canonical
+  // liveness signal for a lock broker.
+  assert.match(deployment, /name:\s*LMX_HTTP_HOST[\s\S]*value:\s*0\.0\.0\.0/);
+  assert.match(deployment, /name:\s*LMX_HTTP_PORT[\s\S]*value:\s*'?6971'?/);
+  assert.match(deployment, /name:\s*http[\s\S]*containerPort:\s*6971/);
+  // /admin/* on both brokers must come from the dedicated lmx-admin-token
+  // secret, not from a literal default baked into either lock broker.
+  assert.match(
+    deployment,
+    /name:\s*LMX_ADMIN_TOKEN[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-lmx-admin-token[\s\S]*key:\s*LMX_ADMIN_TOKEN/,
+  );
   assert.match(deployment, /startupProbe:[\s\S]*tcpSocket:[\s\S]*port:\s*lmx/);
   assert.match(deployment, /readinessProbe:[\s\S]*tcpSocket:[\s\S]*port:\s*lmx/);
   assert.match(deployment, /livenessProbe:[\s\S]*tcpSocket:[\s\S]*port:\s*lmx/);
@@ -43,27 +56,83 @@ test('live-mutex broker is deployed as a singleton cluster-local TCP service', a
   assert.match(deployment, /seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
   assert.match(service, /name:\s*dd-live-mutex/);
   assert.match(service, /name:\s*lmx[\s\S]*port:\s*6970[\s\S]*targetPort:\s*lmx/);
+  assert.match(service, /name:\s*http[\s\S]*port:\s*6971[\s\S]*targetPort:\s*http/);
   assert.match(kustomization, /dd-live-mutex\.deployment\.yaml/);
   assert.match(kustomization, /dd-live-mutex\.service\.yaml/);
 });
 
+test('rust live-mutex broker pulls admin token from dd-lmx-admin-token', async () => {
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-rust-network-mutex.deployment.yaml',
+  );
+  // Both LMX_AUTH_TOKEN (lock-protocol auth, optional) and the new
+  // LMX_ADMIN_TOKEN (admin endpoint auth, also optional) must wire to
+  // their respective Kubernetes secrets. LMX_ADMIN_TOKEN deliberately
+  // lives in its own secret (dd-lmx-admin-token) so admin rotations do
+  // not force a restart of every consumer of dd-agent-secrets.
+  assert.match(
+    deployment,
+    /name:\s*LMX_AUTH_TOKEN[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*LMX_AUTH_TOKEN/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*LMX_ADMIN_TOKEN[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-lmx-admin-token[\s\S]*key:\s*LMX_ADMIN_TOKEN/,
+  );
+});
+
+test('lmx admin token is wired through External Secrets', async () => {
+  const externalSecrets = await readRepoFile('remote/argocd/secrets/external-secrets.yaml');
+  assert.match(
+    externalSecrets,
+    /name:\s*dd-lmx-admin-token[\s\S]*target:[\s\S]*name:\s*dd-lmx-admin-token[\s\S]*key:\s*dd\/remote-dev\/lmx-admin-token/,
+  );
+
+  const readme = await readRepoFile('remote/argocd/secrets/readme.md');
+  assert.match(readme, /dd\/remote-dev\/lmx-admin-token/);
+  assert.match(readme, /dd-lmx-admin-token/);
+});
+
+test('gateway exposes /lmx-rs and /lmx-node admin paths behind dd_auth', async () => {
+  const gateway = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
+  );
+  // /lmx-rs/* proxies to the Rust broker's HTTP listener (port 6971).
+  // The browser-supplied x-admin-token / Authorization: Bearer header
+  // is forwarded unchanged because nginx does not strip arbitrary
+  // inbound headers; the broker itself enforces the second auth layer.
+  assert.match(gateway, /location = \/lmx-rs[\s\S]*return 302 \/lmx-rs\//);
+  assert.equal(gateway.match(/location = \/lmx-rs/g)?.length, 1);
+  assert.equal(gateway.match(/location \/lmx-rs\//g)?.length, 1);
+  assert.match(
+    gateway,
+    /location\s+\/lmx-rs\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-rust-network-mutex\.default\.svc\.cluster\.local:6971/,
+  );
+  assert.match(gateway, /location = \/lmx-node[\s\S]*return 302 \/lmx-node\//);
+  assert.equal(gateway.match(/location = \/lmx-node/g)?.length, 1);
+  assert.equal(gateway.match(/location \/lmx-node\//g)?.length, 1);
+  assert.match(
+    gateway,
+    /location\s+\/lmx-node\/[\s\S]*if \(\$dd_gateway_auth_ok = 0\)[\s\S]*dd-live-mutex-submodule\.default\.svc\.cluster\.local:6971/,
+  );
+});
+
 test('node lock loadtest is request-triggered and can compare live-mutex with redis', async () => {
-  const packageJson = await readRepoFile('remote/live-mutex-loadtest-node/package.json');
-  const packageLock = await readRepoFile('remote/live-mutex-loadtest-node/package-lock.json');
-  const config = await readRepoFile('remote/live-mutex-loadtest-node/src/config.js');
-  const server = await readRepoFile('remote/live-mutex-loadtest-node/src/server.js');
-  const supervisor = await readRepoFile('remote/live-mutex-loadtest-node/src/main.js');
-  const worker = await readRepoFile('remote/live-mutex-loadtest-node/src/worker.js');
-  const compare = await readRepoFile('remote/live-mutex-loadtest-node/src/compare.js');
-  const readme = await readRepoFile('remote/live-mutex-loadtest-node/README.md');
+  const packageJson = await readRepoFile('remote/deployments/live-mutex-loadtest-node/package.json');
+  const packageLock = await readRepoFile('remote/deployments/live-mutex-loadtest-node/package-lock.json');
+  const config = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/config.js');
+  const server = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/server.js');
+  const supervisor = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/main.js');
+  const worker = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/worker.js');
+  const compare = await readRepoFile('remote/deployments/live-mutex-loadtest-node/src/compare.js');
+  const readme = await readRepoFile('remote/deployments/live-mutex-loadtest-node/README.md');
   const triggerDeployment = await readRepoFile(
-    'remote/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.deployment.yaml',
+    'remote/deployments/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.deployment.yaml',
   );
   const triggerService = await readRepoFile(
-    'remote/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.service.yaml',
+    'remote/deployments/live-mutex-loadtest-node/k8s/ec2/dd-lock-loadtest-trigger.service.yaml',
   );
   const kustomization = await readRepoFile(
-    'remote/live-mutex-loadtest-node/k8s/ec2/kustomization.yaml',
+    'remote/deployments/live-mutex-loadtest-node/k8s/ec2/kustomization.yaml',
   );
   const app = await readRepoFile('remote/argocd/apps/dd-lock-loadtest-node.application.yaml');
 
@@ -136,5 +205,5 @@ test('node lock loadtest is request-triggered and can compare live-mutex with re
   assert.doesNotMatch(kustomization, /dd-live-mutex-loadtest-node\.deployment\.yaml/);
   assert.doesNotMatch(kustomization, /dd-redis-lock-loadtest-node\.deployment\.yaml/);
   assert.match(app, /name:\s*dd-lock-loadtest-node/);
-  assert.match(app, /path:\s*remote\/live-mutex-loadtest-node\/k8s\/ec2/);
+  assert.match(app, /path:\s*remote\/deployments\/live-mutex-loadtest-node\/k8s\/ec2/);
 });

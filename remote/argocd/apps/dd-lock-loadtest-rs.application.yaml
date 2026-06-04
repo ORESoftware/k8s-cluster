@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-lock-loadtest-rs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    # Mirrors `dd-lock-loadtest-node`'s shape so a future operator
+    # comparing the three load-test deployments side-by-side gets a
+    # consistent layout.
+    path: remote/deployments/lock-loadtest-rs/k8s/ec2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

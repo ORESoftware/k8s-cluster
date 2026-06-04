@@ -1,0 +1,214 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "web-scraper-service",
+  "language": "node",
+  "routeCount": 13,
+  "routeTypeCounts": {
+    "service": 8,
+    "user-generated": 5
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "service-defined",
+      "purpose": "Health check.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "service-defined",
+      "purpose": "Prometheus metrics.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape/strategies",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/strategies",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    }
+  ]
+}

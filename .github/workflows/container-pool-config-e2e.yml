@@ -1,0 +1,103 @@
+name: Container pool config e2e
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/container-pool-config-e2e.yml"
+      - "remote/argocd/dd-next-runtime/dd-remote-rest-api.deployment.yaml"
+      - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/container-pool-rs/**"
+      - "scripts/test/container-pool-config-e2e.sh"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run cluster e2e through SSM
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          TARGET_REVISION: dev
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY' > /tmp/container-pool-config-e2e-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== wait for deployed services ==="
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-gateway --timeout=300s
+
+          echo "=== run /container-pool/config e2e from cluster ==="
+          bash scripts/test/container-pool-config-e2e.sh
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "container-pool-config-e2e-${GITHUB_SHA}" \
+              --parameters file:///tmp/container-pool-config-e2e-commands.json \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "SSM command id: $command_id"
+
+          for _ in $(seq 1 180); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query 'Status' \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Cancelled|Cancelling|Failed|TimedOut)
+                break
+                ;;
+            esac
+            sleep 5
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json | tee /tmp/container-pool-config-e2e-invocation.json
+
+          status="$(jq -r '.Status' /tmp/container-pool-config-e2e-invocation.json)"
+          test "$status" = "Success"

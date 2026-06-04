@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/nats/runtime-events.schema.json",
+  "title": "RuntimeEventsNats",
+  "description": "Global runtime event subjects shared by many deployments (idle-reaper, queue-consumer, mdp-optimizer, des-simulator, contracts-service, trading, webrtc-signaling, ai-ml-pipeline). Each publisher emits to dd.remote.events; the websocket bridge re-publishes to dd.remote.websocket.events.",
+  "type": "object",
+  "$dd:nats": {
+    "service": "shared",
+    "summary": "Cross-service runtime events bus.",
+    "subjects": [
+      {
+        "name": "RuntimeEvents",
+        "description": "Generic runtime event bus. Every deployment publishes lifecycle, error, telemetry-style events here. The default for NATS_EVENT_SUBJECT across the codebase.",
+        "kind": "static",
+        "subject": "dd.remote.events",
+        "direction": "both"
+      },
+      {
+        "name": "RuntimeCriticalEvents",
+        "description": "Critical operational event bus for compact alert-worthy runtime failures. JetStream-backed by DD_REMOTE_CRITICAL_EVENTS so dd-remote-queue-consumer can log/alert without losing events during restarts. Payloads should carry a dd.log.v1-compatible envelope and must not contain secrets.",
+        "kind": "static",
+        "subject": "dd.remote.events.critical",
+        "direction": "both",
+        "queueGroup": "dd-runtime-critical-events",
+        "stream": "DD_REMOTE_CRITICAL_EVENTS"
+      },
+      {
+        "name": "WebsocketEvents",
+        "description": "WebSocket event bridge used by gleamlang-server and gleamlang-ws-server. Defaults to NATS_PUBLISH_SUBJECT='dd.remote.websocket.events'.",
+        "kind": "static",
+        "subject": "dd.remote.websocket.events",
+        "direction": "both"
+      },
+      {
+        "name": "GitReposChanges",
+        "description": "Coalesced fan-out of known_git_repos row changes derived from the WAL/CDC stream. Published by dd-remote-rest-api so downstream services (lambda runner, build pipeline) react to git-repo metadata edits without polling.",
+        "kind": "static",
+        "subject": "dd.remote.git-repos.changes",
+        "direction": "both"
+      }
+    ],
+    "queueGroups": [
+      {
+        "name": "CriticalEventsLoggerQueueGroup",
+        "value": "dd-runtime-critical-events",
+        "description": "Durable queue group used by dd-remote-queue-consumer replicas for critical runtime event logging and future alert fan-out."
+      }
+    ],
+    "streams": [
+      {
+        "name": "DD_REMOTE_CRITICAL_EVENTS",
+        "description": "Durable file-backed stream for alert-worthy runtime failures. Consumers log and alert from this stream; payloads must stay compact and redacted.",
+        "subjects": ["dd.remote.events.critical"],
+        "retention": "limits",
+        "storage": "file",
+        "ack": "explicit"
+      }
+    ]
+  }
+}

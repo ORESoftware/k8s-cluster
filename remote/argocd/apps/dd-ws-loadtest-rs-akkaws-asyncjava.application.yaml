@@ -12,7 +12,7 @@ spec:
   source:
     repoURL: git@github.com:ORESoftware/k8s-cluster.git
     targetRevision: dev
-    path: remote/ws-loadtest-rs/k8s/akkaws-asyncjava
+    path: remote/deployments/ws-loadtest-rs/k8s/akkaws-asyncjava
   destination:
     server: https://kubernetes.default.svc
     namespace: default

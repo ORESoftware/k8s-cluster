@@ -1,8 +1,36 @@
-[submodule "remote/gcs/chat-vibe"]
-	path = remote/gcs/chat-vibe
+[submodule "remote/deployments/gcs/chat-vibe"]
+	path = remote/deployments/gcs/chat-vibe
 	url = git@github.com:ORESoftware/chat.vibe.git
-	branch = dev4
+	branch = master
 [submodule "remote/libs/async-java"]
 	path = remote/libs/async-java
 	url = git@github.com:async-java/async.java.git
 	branch = master
+[submodule "remote/modules/github/oresoftware/json-logging"]
+	path = remote/modules/github/oresoftware/json-logging
+	url = https://github.com/oresoftware/json-logging.git
+[submodule "remote/modules/github/oresoftware/cmd-line-parser"]
+	path = remote/modules/github/oresoftware/cmd-line-parser
+	url = https://github.com/oresoftware/cmd-line-parser.git
+[submodule "remote/modules/github/oresoftware/go-iterators"]
+	path = remote/modules/github/oresoftware/go-iterators
+	url = https://github.com/oresoftware/go-iterators.git
+[submodule "remote/submodules/live-mutex"]
+	path = remote/submodules/live-mutex
+	url = git@github.com:ORESoftware/live-mutex.git
+	branch = dev
+[submodule "remote/submodules/rust-network-mutex-rs"]
+	path = remote/submodules/rust-network-mutex-rs
+	url = git@github.com:ORESoftware/live-mutex-rs.git
+	branch = dev
+[submodule "remote/submodules/discrete-event-system"]
+	path = remote/submodules/discrete-event-system
+	url = https://github.com/ORESoftware/discrete-event-system.git
+	branch = main
+[submodule "remote/submodules/discrete-event-system.rs"]
+	path = remote/submodules/discrete-event-system.rs
+	url = https://github.com/ORESoftware/discrete-event-system.rs.git
+	branch = main
+[submodule "remote/deployments/mip-solver-node.rs"]
+	path = remote/deployments/mip-solver-node.rs
+	url = git@github.com:ORESoftware/mip-solver-node.rs.git

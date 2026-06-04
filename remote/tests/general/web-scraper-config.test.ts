@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/web-scraper-service/package.json'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/web-scraper-service/package.json'))) {
       return candidate;
     }
   }
@@ -20,13 +20,28 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
-test('web scraper service supports browser, DOM, fetch, and Browserless strategies', async () => {
-  const packageJson = await readRepoFile('remote/web-scraper-service/package.json');
-  const source = await readRepoFile('remote/web-scraper-service/src/server.ts');
-  const extractionWorker = await readRepoFile(
-    'remote/web-scraper-service/src/extraction-worker.ts',
+function regexEscape(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertDeploymentRow(source: string, deployment: string, service: string): void {
+  assert.match(
+    source,
+    new RegExp(
+      `DeploymentRow \\{ deployments: &\\[[^\\]]*"${regexEscape(
+        deployment,
+      )}"[^\\]]*\\], service: &\\[[^\\]]*"${regexEscape(service)}"[^\\]]*\\]`,
+    ),
   );
-  const readme = await readRepoFile('remote/web-scraper-service/readme.md');
+}
+
+test('web scraper service supports browser, DOM, fetch, and Browserless strategies', async () => {
+  const packageJson = await readRepoFile('remote/deployments/web-scraper-service/package.json');
+  const source = await readRepoFile('remote/deployments/web-scraper-service/src/server.ts');
+  const extractionWorker = await readRepoFile(
+    'remote/deployments/web-scraper-service/src/extraction-worker.ts',
+  );
+  const readme = await readRepoFile('remote/deployments/web-scraper-service/readme.md');
 
   assert.match(packageJson, /"fastify":/);
   assert.match(packageJson, /"cheerio":/);
@@ -128,7 +143,7 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(deployment, /name:\s*dd-web-scraper/);
@@ -181,7 +196,7 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
     /job_name:\s*dd-web-scraper[\s\S]*dd-web-scraper\.default\.svc\.cluster\.local:8097/,
   );
   assert.match(home, /dd-web-scraper Fastify deployment/);
-  assert.match(home, /<code>dd-web-scraper:8097<\/code>/);
+  assertDeploymentRow(home, 'dd-web-scraper', 'dd-web-scraper:8097');
   assert.match(runtimeReadme, /`dd-web-scraper`/);
   assert.match(runtimeReadme, /worker_threads/);
   assert.match(runtimeReadme, /SCRAPER_PARSER_WORKERS=2/);

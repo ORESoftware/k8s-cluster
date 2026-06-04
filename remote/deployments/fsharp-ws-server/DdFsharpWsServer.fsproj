@@ -1,0 +1,93 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OresSoftware.Dd.FsWs</RootNamespace>
+    <AssemblyName>dd-fsharp-ws-server</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <!--
+      F# is far stricter than C# about warnings, and .NET 10's BCL nullness
+      annotations interact poorly with F#'s indexer / member-access lowering
+      (JsonNode indexers, ILoggerFactory.CreateLogger, etc. all flow through
+      nullable returns). We keep warnings visible but don't fail the build on
+      them; the existing akka-ws-server uses the same posture for Maven warnings.
+    -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Nullable>disable</Nullable>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    Source files are listed in dependency order. F# is strict about this: a module
+    can only `open` modules that have already been compiled, so PipelineStages
+    must precede the two pipeline implementations, both pipelines must precede
+    BenchmarkRunner / WsRoutes, and Program.fs must come last.
+  -->
+  <!--
+    sql/schema.sql is read at boot by PgSchema.fs. CopyToOutputDirectory makes
+    `dotnet publish` ship it next to the assembly so the migrator's first
+    probe path finds it without needing the hostPath repo mount.
+  -->
+  <ItemGroup>
+    <Content Include="sql/schema.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="generated/api-docs.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Update="generated/api-docs.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="PipelineStages.fs" />
+    <Compile Include="RxPipeline.fs" />
+    <Compile Include="AsyncPipeline.fs" />
+    <Compile Include="RxAdvanced.fs" />
+    <Compile Include="BenchmarkRunner.fs" />
+    <!--
+      External event-source modules. Order matters:
+        PgSchema  → owns the boot-time SQL migration; nothing else depends on it,
+                    but Program.fs must run it before anything else hits the DB.
+        PgListen  → IObservable<Notify>   on top of Npgsql's NotificationEvent.
+        PgWal     → IObservable<WalRow>   from pg_logical_slot_get_changes.
+        PgOutbox  → IObservable<OutboxRow> from polling fsws_events.
+        NatsRx    → IObservable<NatsMsg>   on top of NATS.Client.Core.
+        PresenceFanIn → merges the four above into one hot Observable.
+    -->
+    <Compile Include="PgSchema.fs" />
+    <Compile Include="PgListen.fs" />
+    <Compile Include="PgWal.fs" />
+    <Compile Include="PgOutbox.fs" />
+    <Compile Include="NatsRx.fs" />
+    <Compile Include="PresenceFanIn.fs" />
+    <Compile Include="WsRoutes.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      System.Reactive is the canonical Rx.NET implementation. Version pinned to
+      the 6.x line which targets .NET 8/9/10 and ships the IAsyncEnumerable
+      bridges we use to drive the WS frame stream through an Observable graph.
+    -->
+    <PackageReference Include="System.Reactive" Version="6.0.1" />
+    <!--
+      Npgsql 10.0.2 (Mar 2026) — gives us NpgsqlConnection, parameterised SQL,
+      and NotificationEvent. We deliberately do NOT pull Npgsql.Replication.*
+      because the WAL path uses the SQL-poll variant
+      (`pg_logical_slot_get_changes`) for parity with the Gleam presence
+      server: no PG REPLICATION privilege required on the role, same
+      operational posture.
+    -->
+    <PackageReference Include="Npgsql" Version="10.0.2" />
+    <!--
+      NATS.Client.Core 2.7.3 (Mar 2026) — stable v2 line of the NATS.Net
+      rewrite. Subscriptions surface as `IAsyncEnumerable<NatsMsg>` which we
+      lift into `IObservable<NatsMsg>` for the Rx fan-in graph.
+    -->
+    <PackageReference Include="NATS.Client.Core" Version="2.7.3" />
+  </ItemGroup>
+
+</Project>

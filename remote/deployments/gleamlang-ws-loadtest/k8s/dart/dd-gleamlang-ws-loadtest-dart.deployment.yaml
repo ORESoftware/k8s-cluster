@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gleamlang-ws-loadtest-dart
+  namespace: default
+  labels:
+    app: dd-gleamlang-ws-loadtest-dart
+    role: loadtest
+    target: dd-dart-server
+spec:
+  # Dart-targeted variant of the Gleam JS WS loadtest. Each replica
+  # drives CLIENT_COUNT connections; total simultaneous == replicas ×
+  # CLIENT_COUNT. The Gleam loader is single-threaded JS so each pod
+  # tops out around 5K connections; shard via replicas to scale higher.
+  #
+  # Default replicas: 0 — operator scales to N for the duration of the
+  # test and back to 0 afterwards. Argo CD self-heal is disabled on
+  # this app so the manual scale sticks.
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dd-gleamlang-ws-loadtest-dart
+  template:
+    metadata:
+      labels:
+        app: dd-gleamlang-ws-loadtest-dart
+        role: loadtest
+        target: dd-dart-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: loadtest
+          image: ghcr.io/gleam-lang/gleam:v1.16.0-node-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              cd /opt/dd-next-1/remote/deployments/gleamlang-ws-loadtest
+              npm install --omit=dev
+              exec gleam run --target javascript
+          env:
+            - name: TARGET_WS_URL
+              value: ws://dd-dart-server.default.svc.cluster.local:8089/dart/wss
+            - name: CLIENT_COUNT
+              value: "5000"
+            - name: HOLD_SECONDS
+              value: "180"
+            - name: CONNECT_TIMEOUT_MS
+              value: "20000"
+            - name: RECONNECT_DELAY_MS
+              value: "5000"
+            - name: RAMP_DELAY_MS
+              value: "2"
+            - name: REPORT_INTERVAL_SECONDS
+              value: "10"
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "6"
+              memory: 12Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory

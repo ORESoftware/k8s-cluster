@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/container-pool-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/container-pool-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -42,6 +42,8 @@ function parseContainerPoolAppConfigSeed(seedSql: string): {
     requestPath: string;
     healthPath: string;
     containerPort: number;
+    readOnly?: boolean;
+    user?: string;
     minWarm: number;
     maxWarm: number;
     maxConcurrencyPerContainer: number;
@@ -58,9 +60,9 @@ function parseContainerPoolAppConfigSeed(seedSql: string): {
 }
 
 test('rust container pool reads Postgres config and dispatches over HTTP or NATS', async () => {
-  const cargoToml = await readRepoFile('remote/container-pool-rs/Cargo.toml');
-  const source = await readRepoFile('remote/container-pool-rs/src/main.rs');
-  const readme = await readRepoFile('remote/container-pool-rs/readme.md');
+  const cargoToml = await readRepoFile('remote/deployments/container-pool-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/container-pool-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/container-pool-rs/readme.md');
   // schema/schema.sql is the single source of truth for every shared table
   // (app_config + container_pool_configs + lambda_functions + agent_remote_dev_*),
   // and drives every adapter under remote/libs/pg-defs/generated/. Per-table
@@ -73,11 +75,15 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(cargoToml, /name = "dd-container-pool"/);
   assert.match(cargoToml, /async-nats/);
   assert.match(cargoToml, /tokio-postgres/);
+  assert.match(cargoToml, /rustls-pemfile/);
   assert.match(cargoToml, /reqwest/);
+  assert.match(cargoToml, /redis\s*=/);
   assert.match(source, /const SERVICE_NAME: &str = "dd-container-pool"/);
   assert.match(source, /from app_config/);
   assert.match(source, /CONTAINER_POOL_APP_CONFIG_KEY/);
   assert.match(source, /container-pool\.runtime-pools\.v1/);
+  assert.match(source, /rds-us-east-1-bundle\.pem/);
+  assert.match(source, /add_rds_root_certificates\(&mut root_store\)\?/);
   assert.match(source, /from container_pool_configs/);
   assert.match(source, /CONTAINER_POOL_DATABASE_URL/);
   assert.match(source, /AGENT_TASKS_RDS_DATABASE_URL/);
@@ -85,6 +91,17 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /CONTAINER_POOL_NATS_SUBJECT/);
   assert.match(source, /CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES/);
   assert.match(source, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES/);
+  assert.match(source, /CONTAINER_POOL_REDIS_URL/);
+  assert.match(source, /CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS/);
+  assert.match(source, /CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS/);
+  assert.match(source, /RedisLockManager/);
+  assert.match(source, /redis::cmd\("SET"\)/);
+  assert.match(source, /redis::cmd\("WATCH"\)/);
+  assert.match(source, /redis::cmd\("MULTI"\)/);
+  assert.match(source, /redis::cmd\("EXEC"\)/);
+  assert.match(source, /acquire_affinity_dispatch_lock/);
+  assert.match(source, /CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS/);
+  assert.match(source, /nerdctl_run_timeout/);
   assert.match(source, /CONTAINER_POOL_START_TIMEOUT_SECONDS/);
   assert.match(source, /CONTAINER_POOL_CONTAINER_MEMORY/);
   assert.match(source, /CONTAINER_POOL_CONTAINER_CPUS/);
@@ -92,16 +109,51 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /CONTAINER_POOL_NOFILE_LIMIT/);
   assert.match(source, /CONTAINER_POOL_HEALTH_CHECK_SECONDS/);
   assert.match(source, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD/);
-  assert.match(source, /dd\.remote\.container_pool\.requests/);
-  assert.match(source, /dd\.remote\.container_pool\.results/);
+  // The nerdctl arg scrubber must redact every AWS credential env name
+  // and any TOKEN-bearing arg before the warm-worker spawn line is
+  // logged. Substring rules already cover SECRET (catches
+  // AWS_SECRET_ACCESS_KEY); this asserts the explicit `AWS_` prefix
+  // (catches AWS_ACCESS_KEY_ID) and the TOKEN substring (catches
+  // AWS_SESSION_TOKEN, GITHUB_TOKEN, etc.).
+  assert.match(source, /arg\.starts_with\("AWS_"\)/);
+  assert.match(source, /arg\.contains\("TOKEN"\)/);
+  assert.match(source, /arg\.contains\("API_KEY"\)/);
+  assert.match(source, /arg\.contains\("SECRET"\)/);
+  assert.match(source, /arg\.contains\("DEPLOY_KEY"\)/);
+  // Source-of-truth NATS subject constants come from the generated
+  // @dd/nats-subject-defs crate.
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?cdc_table_filter_subject[\s\S]*?container_pool_events_subject[\s\S]*?container_pool_heartbeats_subject[\s\S]*?CONTAINER_POOL_REQUESTS_SUBJECT[\s\S]*?CONTAINER_POOL_RESULTS_SUBJECT[\s\S]*?\};/,
+  );
+  assert.match(source, /CONTAINER_POOL_REQUESTS_SUBJECT/);
+  assert.match(source, /CONTAINER_POOL_RESULTS_SUBJECT/);
+  assert.match(source, /container_pool_events_subject\(&pool\.slug\)/);
+  assert.match(source, /container_pool_heartbeats_subject\(&pool\.slug\)/);
+  assert.match(
+    source,
+    /cdc_table_filter_subject\("cdc", "public", "app_config"\)/,
+  );
+  assert.match(
+    source,
+    /cdc_table_filter_subject\("cdc", "public", "container_pool_configs"\)/,
+  );
   assert.match(source, /route\("\/pools\/:pool\/dispatch", post\(dispatch_pool\)\)/);
   assert.match(source, /route\("\/pools\/:pool\/warm", post\(warm_pool\)\)/);
   assert.match(source, /request_is_authorized/);
   assert.match(source, /x-container-pool-auth/);
   assert.match(source, /Command::new\(program\)\.args\(args\)\.output\(\)/);
   assert.match(source, /"run"\.to_string\(\)/);
+  assert.match(source, /container_run_timeout = state\.config\.nerdctl_run_timeout/);
   assert.match(source, /wait_container_ready/);
   assert.match(source, /inspect_container_running/);
+  assert.match(source, /state\.config\.command_timeout\.min\(Duration::from_secs\(15\)\)/);
+  assert.match(source, /container \{\} stopped before readiness at \{url\}/);
+  assert.match(source, /retire_stale_starting_containers/);
+  assert.match(source, /container\.status == ContainerStatus::Starting/);
+  assert.match(source, /retire_stale_starting_containers\(state, Some\(pool_id\)\)\.await/);
+  assert.match(source, /retire_stale_starting_containers\(state, None\)\.await/);
+  assert.match(source, /"starting container is not running"/);
   assert.match(source, /probe_container_health/);
   assert.match(source, /retire_container/);
   assert.match(source, /prune_unhealthy_containers/);
@@ -127,14 +179,33 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(source, /x-container-pool-auth/);
   assert.match(source, /transfer-encoding/);
   assert.match(source, /proxy-/);
+  assert.match(source, /fn validate_repo_affinity/);
+  assert.match(source, /normalized_repo_identity/);
+  assert.match(source, /payload_string\(body, "baseBranch", "base_branch"\)/);
+  assert.match(source, /pool \{\} is configured for repo/);
+  assert.match(source, /pool \{\} is configured for baseBranch/);
+  assert.match(source, /validate_repo_affinity\(&lease\.pool, &body\)/);
   assert.match(source, /dd\.container-pool\.managed=true/);
   assert.match(source, /max_concurrency_per_container/);
   assert.match(source, /available_capacity/);
+  assert.match(source, /affinity: HashMap<String, String>/);
+  assert.match(source, /affinity_key: Option<String>/);
+  assert.match(source, /fresh_affinity: Option<bool>/);
+  assert.match(source, /normalized_affinity_key/);
+  assert.match(source, /affinity_map_key/);
+  assert.match(source, /remove_affinity_for_container/);
+  assert.match(source, /container_can_accept/);
+  assert.match(source, /container_matches_affinity_request/);
+  assert.match(source, /container\.request_count == 0/);
+  assert.match(source, /lease_container\([\s\S]*affinity_key: Option<&str>/);
   assert.match(source, /dd_container_pool_dispatch_total/);
   assert.match(source, /dd_container_pool_container_health_checks_total/);
   assert.doesNotMatch(source, /\/bin\/bash/);
   assert.match(readme, /reads active pool definitions from Postgres/);
   assert.match(readme, /keeps at least `min_warm` available request slots/);
+  assert.match(readme, /Redis lock for/);
+  assert.match(readme, /WATCH`\/`MULTI`\/`EXEC`/);
+  assert.match(readme, /CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS/);
   assert.match(readme, /Warm workers are health checked/);
   assert.match(readme, /Worker contract/);
   assert.match(readme, /app_config/);
@@ -148,7 +219,7 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   assert.match(appConfigSeedSql, /"runtimeContract": \{/);
   assert.match(appConfigSeedSql, /"defaultHealthPath": "\/healthz"/);
   assert.match(appConfigSeedSql, /"baseImages": \[/);
-  assert.match(appConfigSeedSql, /"dockerfile": "remote\/container-pool-rs\/runtime-images\/nodejs\.Dockerfile"/);
+  assert.match(appConfigSeedSql, /"dockerfile": "remote\/deployments\/container-pool-rs\/runtime-images\/nodejs\.Dockerfile"/);
   assert.match(appConfigSeedSql, /dd-container-pool-nodejs-runtime:dev/);
   assert.match(appConfigSeedSql, /dd-container-pool-rust-runtime:dev/);
   assert.match(appConfigSeedSql, /dd-container-pool-golang-runtime:dev/);
@@ -178,12 +249,14 @@ test('container pool app_config seed is a complete runtime contract', async () =
   const parsed = parseContainerPoolAppConfigSeed(appConfigSeedSql);
   const expectedRuntimes = [
     'nodejs',
+    'nodejs-chat-claude',
     'rust',
     'golang',
     'python3',
     'dart',
     'gleamlang',
     'erlang',
+    'browser-jobs',
   ];
 
   assert.equal(parsed.runtimeContract.defaultRequestPath, '/invoke');
@@ -217,25 +290,72 @@ test('container pool app_config seed is a complete runtime contract', async () =
   );
   assert.deepEqual(
     parsed.pools.map((entry) => entry.slug).sort(),
-    [...expectedRuntimes].sort(),
+    [
+      'nodejs',
+      'nodejs-chat-claude-k8s-cluster-dev',
+      'nodejs-chat-claude-live-mutex-dev',
+      'nodejs-chat-claude-us-anti-corruption-court-project-main',
+      'rust',
+      'golang',
+      'python3',
+      'dart',
+      'gleamlang',
+      'erlang',
+      'browser-jobs',
+    ].sort(),
   );
 
   const baseImageByRuntime = new Map(parsed.baseImages.map((entry) => [entry.runtime, entry]));
   for (const pool of parsed.pools) {
-    const baseImage = baseImageByRuntime.get(pool.slug);
+    const baseImage =
+      baseImageByRuntime.get(pool.slug) ??
+      (pool.slug.startsWith('nodejs-chat-claude-')
+        ? baseImageByRuntime.get('nodejs-chat-claude')
+        : undefined);
     assert.ok(baseImage, `pool ${pool.slug} should have a matching base image`);
     assert.equal(pool.image, baseImage.image);
-    assert.equal(
-      baseImage.dockerfile,
-      `remote/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
-    );
-    assert.equal(baseImage.buildContext, 'remote/container-pool-rs');
-    assert.equal(pool.requestPath, parsed.runtimeContract.defaultRequestPath);
+    if (pool.slug === 'browser-jobs') {
+      // Not a language runtime: the per-job Playwright/Puppeteer worker image,
+      // built from the browser-job-runner crate's worker/ directory. It serves
+      // /run + /healthz over HTTP (the manager bridges NATS) and self-exits after
+      // one job, so the pool reconciles a fresh container each time.
+      assert.equal(baseImage.dockerfile, 'remote/deployments/browser-job-runner-rs/worker/Dockerfile');
+      assert.equal(baseImage.buildContext, 'remote/deployments/browser-job-runner-rs/worker');
+      assert.equal(pool.requestPath, '/run');
+    } else if (pool.slug.startsWith('nodejs-chat-claude-')) {
+      assert.equal(baseImage.dockerfile, 'remote/deployments/dev-server/Dockerfile');
+      assert.equal(baseImage.buildContext, 'remote/deployments/dev-server');
+      assert.equal(pool.requestPath, '/tasks');
+      assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
+      const expectedRepoBySlug = new Map([
+        ['nodejs-chat-claude-live-mutex-dev', 'git@github.com:ORESoftware/live-mutex.git'],
+        ['nodejs-chat-claude-k8s-cluster-dev', 'git@github.com:ORESoftware/k8s-cluster.git'],
+        [
+          'nodejs-chat-claude-us-anti-corruption-court-project-main',
+          'git@github.com:ORESoftware/us-anti-corruption-court-project.git',
+        ],
+      ]);
+      assert.equal(pool.env.DD_REPO_URL, expectedRepoBySlug.get(pool.slug));
+      assert.equal(pool.env.AGENT_PROVIDER, 'claude-sdk');
+      assert.equal(pool.readOnly, false);
+      assert.equal(pool.user, '1000:1000');
+    } else {
+      assert.equal(
+        baseImage.dockerfile,
+        `remote/deployments/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
+      );
+      assert.equal(baseImage.buildContext, 'remote/deployments/container-pool-rs');
+      assert.equal(pool.requestPath, parsed.runtimeContract.defaultRequestPath);
+      assert.equal(pool.env.DD_POOL_RUNTIME, pool.slug);
+      assert.ok(pool.env.DD_POOL_HANDLER.length > 0, `pool ${pool.slug} should define a handler`);
+    }
     assert.equal(pool.healthPath, parsed.runtimeContract.defaultHealthPath);
     assert.equal(pool.containerPort, parsed.runtimeContract.defaultContainerPort);
-    assert.equal(pool.env.DD_POOL_RUNTIME, pool.slug);
-    assert.ok(pool.env.DD_POOL_HANDLER.length > 0, `pool ${pool.slug} should define a handler`);
-    assert.ok(pool.minWarm >= 1, `pool ${pool.slug} should keep at least one warm worker`);
+    if (pool.slug.startsWith('nodejs-chat-claude-')) {
+      assert.ok(pool.minWarm >= 2, `pool ${pool.slug} should keep at least two warm workers`);
+    } else {
+      assert.ok(pool.minWarm >= 0, `pool ${pool.slug} should allow disabled prewarm`);
+    }
     assert.ok(pool.maxWarm >= pool.minWarm, `pool ${pool.slug} maxWarm should cover minWarm`);
     assert.equal(pool.maxConcurrencyPerContainer, 1);
     assert.ok(pool.requestTimeoutMs >= 30_000);
@@ -266,37 +386,77 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(deployment, /serviceAccountName:\s*dd-container-pool/);
   assert.match(deployment, /hostNetwork:\s*true/);
   assert.match(deployment, /dnsPolicy:\s*ClusterFirstWithHostNet/);
+  assert.match(deployment, /dd\.dev\/redis-cache-client:\s*'true'/);
   assert.match(deployment, /securityContext:\s*\n\s*privileged:\s*true/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/container-pool-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/container-pool-rs/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8102'/);
   assert.match(
     deployment,
     /CONTAINER_POOL_NATS_SUBJECT[\s\S]*dd\.remote\.container_pool\.\*\.requests/,
   );
   assert.match(deployment, /CONTAINER_POOL_NERDCTL_BIN[\s\S]*\/usr\/local\/bin\/nerdctl/);
-  assert.match(deployment, /CONTAINER_POOL_CONTAINERD_NAMESPACE[\s\S]*value:\s*k8s\.io/);
+  assert.match(deployment, /CONTAINER_POOL_CONTAINERD_NAMESPACE[\s\S]*value:\s*dd-pool/);
   assert.match(deployment, /CONTAINER_POOL_APP_CONFIG_SCOPE[\s\S]*value:\s*default/);
   assert.match(
     deployment,
     /CONTAINER_POOL_APP_CONFIG_KEY[\s\S]*value:\s*container-pool\.runtime-pools\.v1/,
   );
   assert.match(deployment, /CONTAINER_POOL_NETWORK[\s\S]*value:\s*host/);
+  assert.match(deployment, /CONTAINER_POOL_PULL_POLICY[\s\S]*value:\s*never/);
   assert.match(deployment, /CONTAINER_POOL_PORT_START[\s\S]*value:\s*'12000'/);
   assert.match(deployment, /CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES[\s\S]*value:\s*'2097152'/);
+  assert.match(
+    deployment,
+    /CONTAINER_POOL_REDIS_URL[\s\S]*redis:\/\/dd-redis-cache\.default\.svc\.cluster\.local:6379\/0/,
+  );
+  assert.match(deployment, /CONTAINER_POOL_REDIS_LOCK_TTL_SECONDS[\s\S]*value:\s*'600'/);
+  assert.match(
+    deployment,
+    /CONTAINER_POOL_REDIS_LOCK_WAIT_TIMEOUT_SECONDS[\s\S]*value:\s*'420'/,
+  );
   assert.match(deployment, /CONTAINER_POOL_WORKER_RESPONSE_MAX_BYTES[\s\S]*value:\s*'2097152'/);
+  assert.match(deployment, /CONTAINER_POOL_COMMAND_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
+  assert.match(deployment, /CONTAINER_POOL_NERDCTL_RUN_TIMEOUT_SECONDS[\s\S]*value:\s*'180'/);
+  assert.match(deployment, /CONTAINER_POOL_START_TIMEOUT_SECONDS[\s\S]*value:\s*'300'/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_MEMORY[\s\S]*value:\s*512m/);
   assert.match(deployment, /CONTAINER_POOL_CONTAINER_CPUS[\s\S]*value:\s*'1'/);
-  assert.match(deployment, /CONTAINER_POOL_PIDS_LIMIT[\s\S]*value:\s*'128'/);
-  assert.match(deployment, /CONTAINER_POOL_NOFILE_LIMIT[\s\S]*value:\s*'128'/);
+  assert.match(deployment, /CONTAINER_POOL_PIDS_LIMIT[\s\S]*value:\s*'4096'/);
+  assert.match(deployment, /CONTAINER_POOL_NOFILE_LIMIT[\s\S]*value:\s*'65536'/);
   assert.match(deployment, /CONTAINER_POOL_HEALTH_CHECK_SECONDS[\s\S]*value:\s*'10'/);
   assert.match(deployment, /CONTAINER_POOL_HEALTH_TIMEOUT_MS[\s\S]*value:\s*'1000'/);
   assert.match(deployment, /CONTAINER_POOL_UNHEALTHY_FAILURE_THRESHOLD[\s\S]*value:\s*'2'/);
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /dd-remote-rest-api-secrets/);
   assert.match(deployment, /dd-container-pool-secrets/);
+  // Worker event-fanout wiring — without these the warm dev-server worker
+  // boots without EVENT_INGEST_URL/EVENT_INGEST_SECRET so its eventBus.startVercelIngest
+  // pipeline never starts and task events never reach the websocket fanout.
+  assert.match(
+    deployment,
+    /name:\s*EVENT_INGEST_URL[\s\S]*value:\s*http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082\/api\/agents\/events/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*EVENT_INGEST_SECRET[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+  );
+  assert.match(deployment, /name:\s*NATS_EVENT_SUBJECT[\s\S]*value:\s*dd\.remote\.events/);
+  assert.match(
+    deployment,
+    /name:\s*THREAD_CONTEXT_BASE_URL[\s\S]*value:\s*http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082/,
+  );
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*EVENT_INGEST_URL/);
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*EVENT_INGEST_SECRET/);
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*THREAD_CONTEXT_BASE_URL/);
+  assert.match(deployment, /CONTAINER_POOL_FORWARD_ENV_KEYS[\s\S]*GLEAM_BROADCAST_SECRET/);
+  // dd-gleamlang-server-secrets carries GLEAM_BROADCAST_SECRET, used as the
+  // workerFanoutWsUrlFromEnv() third-fallback secret so warm workers can
+  // authenticate to /worker-ws on the gleam server.
+  assert.match(deployment, /dd-gleamlang-server-secrets/);
   assert.match(deployment, /mountPath:\s*\/run\/containerd\/containerd\.sock/);
   assert.match(deployment, /mountPath:\s*\/var\/lib\/containerd/);
   assert.match(deployment, /mountPropagation:\s*Bidirectional/);
+  assert.match(deployment, /mountPath:\s*\/var\/lib\/nerdctl/);
+  assert.match(deployment, /name:\s*nerdctl-data[\s\S]*hostPath:[\s\S]*path:\s*\/var\/lib\/nerdctl/);
   assert.match(deployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
   assert.match(service, /name:\s*dd-container-pool/);
   assert.match(service, /port:\s*8102/);
@@ -311,6 +471,8 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
   assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*messaging/);
   assert.match(networkPolicy, /port:\s*4222/);
+  assert.match(networkPolicy, /app:\s*dd-redis-cache/);
+  assert.match(networkPolicy, /port:\s*6379/);
   assert.match(networkPolicy, /port:\s*5432/);
   assert.match(networkPolicy, /port:\s*8102/);
   assert.match(
@@ -336,16 +498,19 @@ test('container pool is deployed through Argo, gateway, and metrics scraping', a
 });
 
 test('container pool runtime base images cover the supported language pools', async () => {
-  const worker = await readRepoFile('remote/container-pool-rs/runtime-images/common/worker.py');
-  const shim = await readRepoFile('remote/container-pool-rs/scripts/nerdctl-process-shim.py');
-  const runtimeReadme = await readRepoFile('remote/container-pool-rs/runtime-images/readme.md');
+  const worker = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/worker.py');
+  const shim = await readRepoFile('remote/deployments/container-pool-rs/scripts/nerdctl-process-shim.py');
+  const runtimeReadme = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/readme.md');
+  const rustHandler = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/rust-handler.rs');
+  const golangHandler = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/golang-handler.go');
+  const erlangHandler = await readRepoFile('remote/deployments/container-pool-rs/runtime-images/common/erlang-handler.escript');
   const dockerfiles = new Map(
     await Promise.all(
       ['nodejs', 'rust', 'golang', 'python3', 'dart', 'gleamlang', 'erlang'].map(
         async (runtime) =>
           [
             runtime,
-            await readRepoFile(`remote/container-pool-rs/runtime-images/${runtime}.Dockerfile`),
+            await readRepoFile(`remote/deployments/container-pool-rs/runtime-images/${runtime}.Dockerfile`),
           ] as const,
       ),
     ),
@@ -369,6 +534,12 @@ test('container pool runtime base images cover the supported language pools', as
   assert.match(runtimeReadme, /nodejs/);
   assert.match(runtimeReadme, /gleamlang/);
   assert.match(runtimeReadme, /DD_POOL_NATS_HEARTBEAT_SUBJECT/);
+  assert.match(rustHandler, /evaluate_expression/);
+  assert.match(rustHandler, /answer/);
+  assert.match(golangHandler, /evaluateExpression/);
+  assert.match(golangHandler, /"answer"/);
+  assert.match(erlangHandler, /eval_expr/);
+  assert.match(erlangHandler, /answer/);
 
   for (const [runtime, dockerfile] of dockerfiles) {
     assert.match(dockerfile, / AS /, `${runtime} image should be multi-stage`);
@@ -388,9 +559,12 @@ test('container pool runtime base images cover the supported language pools', as
 
   assert.match(dockerfiles.get('nodejs') ?? '', /nodejs-current/);
   assert.match(dockerfiles.get('rust') ?? '', /rust:1\.90-alpine AS build/);
+  assert.match(dockerfiles.get('rust') ?? '', /mkdir -p \/out/);
   assert.match(dockerfiles.get('golang') ?? '', /golang:1\.25-alpine AS build/);
+  assert.match(dockerfiles.get('golang') ?? '', /mkdir -p \/out/);
   assert.match(dockerfiles.get('python3') ?? '', /python:3\.13-alpine/);
   assert.match(dockerfiles.get('dart') ?? '', /dart compile exe/);
+  assert.match(dockerfiles.get('dart') ?? '', /mkdir -p \/out/);
   assert.match(dockerfiles.get('gleamlang') ?? '', /gleam:v1\.16\.0-erlang-alpine/);
   assert.match(dockerfiles.get('erlang') ?? '', /erlang:28-alpine/);
 });

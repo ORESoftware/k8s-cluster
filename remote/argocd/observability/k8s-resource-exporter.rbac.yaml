@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-k8s-resource-exporter
+  namespace: observability
+  labels:
+    app: dd-k8s-resource-exporter
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-k8s-resource-exporter
+  labels:
+    app: dd-k8s-resource-exporter
+rules:
+  - apiGroups: ['']
+    resources:
+      - events
+      - nodes
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [apps]
+    resources:
+      - deployments
+      - daemonsets
+      - replicasets
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: [metrics.k8s.io]
+    resources:
+      - nodes
+      - pods
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-k8s-resource-exporter
+  labels:
+    app: dd-k8s-resource-exporter
+subjects:
+  - kind: ServiceAccount
+    name: dd-k8s-resource-exporter
+    namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-k8s-resource-exporter

@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dd.dev/schemas/redis/agent-thread-breadcrumb-cache.schema.json",
+  "title": "AgentThreadBreadcrumbCache",
+  "description": "Redis hot-read cache of the most recent breadcrumbs for an agent thread. Postgres (agent_remote_dev_breadcrumbs) is the durable source of truth; this cache is short-TTL and rebuilt on miss. Used by dev-server to inject <local_thread_log_tail> into prompt context without a full Postgres round trip on every task start.",
+  "type": "object",
+  "$dd:redis": {
+    "service": "dd-dev-server",
+    "summary": "Per-thread tail of the postgres-backed breadcrumb stream, cached in Redis for low-latency prompt context injection.",
+    "keys": [
+      {
+        "name": "AgentThreadBreadcrumbTailKey",
+        "description": "Redis STRING containing a JSON-encoded AgentThreadBreadcrumbTail snapshot. SET with PX TTL; missing or stale entries trigger a rebuild from agent_remote_dev_breadcrumbs.",
+        "pattern": "{prefix}:{threadId}",
+        "defaultPrefix": "dd:agent:breadcrumb-tail",
+        "params": [
+          { "name": "prefix", "type": "string", "description": "Configurable prefix; defaults to 'dd:agent:breadcrumb-tail'." },
+          { "name": "threadId", "type": "string", "description": "Agent dev thread UUID." }
+        ],
+        "valueType": "json",
+        "valueRef": "AgentThreadBreadcrumbTail"
+      }
+    ]
+  },
+  "$defs": {
+    "AgentThreadBreadcrumb": {
+      "type": "object",
+      "title": "AgentThreadBreadcrumb",
+      "description": "A single breadcrumb entry written by dev-server during task execution. Mirrors the durable agent_remote_dev_breadcrumbs row.",
+      "additionalProperties": false,
+      "required": ["id", "threadId", "kind", "payload", "emittedAt"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Postgres bigserial id of the breadcrumb row."
+        },
+        "threadId": {
+          "type": "string",
+          "description": "Agent dev thread UUID."
+        },
+        "taskId": {
+          "type": ["string", "null"],
+          "description": "Owning task UUID, if the breadcrumb belongs to a task. Null for session-level breadcrumbs (boot, session-ready)."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Free-form breadcrumb kind, e.g. 'session-ready', 'prompt', 'event', 'merge-base-before-task-start', 'container-pool-result', 'deterministic-edit'."
+        },
+        "payload": {
+          "type": ["object", "null"],
+          "description": "Free-form JSON payload describing the breadcrumb. Producers SHOULD NOT embed secrets; the dev-server scrubs known API key env names before insertion."
+        },
+        "emittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Wall-clock instant the breadcrumb was emitted by the worker pod."
+        },
+        "podName": {
+          "type": ["string", "null"],
+          "description": "Kubernetes pod that emitted this breadcrumb. Optional."
+        },
+        "branch": {
+          "type": ["string", "null"],
+          "description": "Active git branch when the breadcrumb was emitted. Optional."
+        },
+        "provider": {
+          "type": ["string", "null"],
+          "description": "Active agent provider (e.g. 'cursor-cli', 'codex') when the breadcrumb was emitted. Optional."
+        }
+      }
+    },
+    "AgentThreadBreadcrumbTail": {
+      "type": "object",
+      "title": "AgentThreadBreadcrumbTail",
+      "description": "Cached tail of recent breadcrumbs for a thread, ordered newest-first.",
+      "additionalProperties": false,
+      "required": ["threadId", "tailMaxItems", "items", "generatedAt"],
+      "properties": {
+        "threadId": {
+          "type": "string",
+          "description": "Agent dev thread UUID this tail belongs to."
+        },
+        "tailMaxItems": {
+          "type": "integer",
+          "description": "Hard cap on how many breadcrumbs the cache will hold for this thread; older entries are dropped on rebuild."
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentThreadBreadcrumb" },
+          "description": "Breadcrumbs ordered by emittedAt DESC (newest first)."
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 UTC instant the cache snapshot was built."
+        },
+        "source": {
+          "type": ["string", "null"],
+          "description": "Where the snapshot was rebuilt from, e.g. 'postgres' or 'cache'."
+        }
+      }
+    }
+  }
+}

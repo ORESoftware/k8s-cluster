@@ -6,7 +6,7 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/contract-service-rs/Cargo.toml'))) {
+    if (existsSync(resolve(candidate, 'remote/deployments/contract-service-rs/Cargo.toml'))) {
       return candidate;
     }
   }
@@ -21,9 +21,9 @@ async function readRepoFile(relativePath: string): Promise<string> {
 }
 
 test('rust solana contract service is deployed, scraped, and guarded', async () => {
-  const cargo = await readRepoFile('remote/contract-service-rs/Cargo.toml');
-  const source = await readRepoFile('remote/contract-service-rs/src/main.rs');
-  const readme = await readRepoFile('remote/contract-service-rs/readme.md');
+  const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
+  const source = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const readme = await readRepoFile('remote/deployments/contract-service-rs/readme.md');
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-contract-service.deployment.yaml',
   );
@@ -36,11 +36,18 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(cargo, /name = "dd-contract-service"/);
   assert.match(cargo, /async-nats = "=0\.38\.0"/);
+  // Source-of-truth NATS subject + queue group constants come from the
+  // generated @dd/nats-subject-defs crate.
+  assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
+  assert.match(
+    source,
+    /use dd_nats_subject_defs::\{[\s\S]*?CONTRACTS_SOLANA_RESULTS_SUBJECT[\s\S]*?CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP[\s\S]*?CONTRACTS_SOLANA_VALIDATE_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?\};/,
+  );
   assert.match(cargo, /reqwest[\s\S]*rustls-tls/);
   assert.match(cargo, /bs58/);
   assert.match(source, /const SCHEMA_VERSION: &str = "solana\.contract\.v1"/);
@@ -58,8 +65,9 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(source, /SOLANA_ALLOW_PRIVATE_RPC/);
   assert.match(source, /skipPreflight is disabled by policy/);
   assert.match(source, /sigVerify and replaceRecentBlockhash cannot both be true/);
-  assert.match(source, /dd\.remote\.contracts\.solana\.validate/);
-  assert.match(source, /dd\.remote\.contracts\.solana\.results/);
+  assert.match(source, /CONTRACTS_SOLANA_VALIDATE_SUBJECT/);
+  assert.match(source, /CONTRACTS_SOLANA_RESULTS_SUBJECT/);
+  assert.match(source, /CONTRACTS_SOLANA_VALIDATE_QUEUE_GROUP/);
   assert.match(source, /dd_contract_service_rpc_requests_total/);
   assert.match(source, /dd_contract_service_send_blocked_total/);
   assert.match(source, /DefaultBodyLimit::max\(MAX_HTTP_BODY_BYTES\)/);
@@ -75,7 +83,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(readme, /SOLANA_ALLOW_PRIVATE_RPC=true/);
 
   assert.match(deployment, /name:\s*dd-contract-service/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/contract-service-rs/);
+  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/contract-service-rs/);
   assert.match(deployment, /CARGO_HOME=\/var\/cache\/dd-contract-service\/cargo/);
   assert.match(deployment, /cargo run --release --locked/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8101'/);
@@ -114,7 +122,10 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(otel, /dd-contract-service\.default\.svc\.cluster\.local:8101/);
   assert.match(home, /Rust Solana contract service/);
   assert.match(home, /\/contracts\/schema/);
-  assert.match(home, /dd\.remote\.contracts\.solana\.validate/);
+  // web-home-rs now sources the displayed NATS subject from the generated
+  // `dd-nats-subject-defs` crate so the operator dashboard stays in
+  // lockstep with the source-of-truth schema.
+  assert.match(home, /label: CONTRACTS_SOLANA_VALIDATE_SUBJECT/);
   assert.match(runtimeReadme, /`dd-contract-service`/);
   assert.match(runtimeReadme, /\/contracts\/schema/);
 });

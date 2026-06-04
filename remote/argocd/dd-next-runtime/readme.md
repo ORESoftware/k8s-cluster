@@ -5,13 +5,16 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-remote-web-home` (Rust web layer for `/` + `/home`)
 - `dd-remote-auth` (Rust PIN auth service that sets the gateway `dd_auth` cookie)
 - `dd-remote-rest-api` (Rust RDS/Postgres REST API for agent task data)
-- `dd-agent-worker-broker` (Rust worker-dispatch broker for NATS-first, direct-if-awake handoff)
+- `dd-agent-worker-broker` (Rust worker-dispatch broker that chooses direct-if-awake or NATS queue)
 - `dd-container-pool` (Rust Postgres-configured warm container pool over HTTP or NATS)
 - `dd-build-server` (Rust CI/CD build server for repo image builds and controlled k8s deploys)
 - `dd-gleam-lambda-runner` (Gleam child-process runner for user-defined lambda invocations)
-- `dd-remote-queue-consumer` (Rust NATS shadow consumer that prepares UUID-bound thread workers)
+- `dd-remote-queue-consumer` (Rust NATS queue consumer for UUID-bound workers and explicit pool dispatch)
 - `dd-webrtc-signaling` (Rust WebRTC room signaling over WebSocket)
 - `dd-web-scraper` (Node.js/Fastify scraping worker with browser and DOM strategies)
+- `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
+- `dd-selenium-server` (Java/Vert.x + selenium-java API driving an in-pod Selenium Grid over RemoteWebDriver)
+- `dd-browser-job-runner` (Rust/axum orchestrator that runs one Playwright/Puppeteer job on a dd-container-pool warm worker, falling back to a direct nerdctl worker, and publishes results to NATS)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
@@ -61,7 +64,7 @@ Gateway path map:
 - `/`, `/home` -> `dd-remote-web-home:8080`
 - `/auth` -> `dd-remote-auth:8083`
 - `/agents/tasks` -> `dd-remote-web-home:8080`
-- `/api/agents/tasks` -> `dd-remote-rest-api:8082`
+- `/api/agents/*` -> `dd-remote-rest-api:8082` (gateway auth required)
 - `/api/agents/threads/<uuid>/prepare` -> `dd-remote-rest-api:8082` (internal auth required)
 - `POST /api/agent-worker/threads/<uuid>/tasks` -> `dd-agent-worker-broker:8098`
 - `/container-pools`, `/container-pools/<pool>`,
@@ -71,10 +74,21 @@ Gateway path map:
   (internal auth required)
 - `/lambdas/functions` -> `dd-remote-web-home:8080`
 - `/api/lambdas/functions` -> `dd-remote-rest-api:8082`
+- `/api/db/*` -> `dd-remote-rest-api:8082` (server auth required; generic RDS table access)
 - `POST /lambdas/invoke/<function-id>` -> `dd-gleam-lambda-runner:8083` directly
-- `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` -> `dd-webrtc-signaling:8095`
+- `/webrtc/`, `/webrtc/healthz`, `/webrtc/metrics`, `/webrtc/signal` ->
+  `dd-webrtc-signaling:8095` (gateway auth required)
+- `/presence/`, `/presence/healthz`, `/presence/ws`, `/presence/conv/*`, `/presence/user/*` ->
+  `presence-svc.presence:8081` (gateway auth required)
+- `/fsws/`, `/fsws/healthz`, `/fsws/livez`, `/fsws/ws/*` -> `dd-fsharp-ws-server:8087`
+  (gateway auth required)
+- `/gcs/health`, `/gcs/ws-health`, `/gcs/api/*`, `/gcs/ws/*` -> `gcs` / `gcs-router`
+  (gateway auth required)
 - `/des/`, `/des/model/schema`, `/des/model/example`, `POST /des/validate`,
   `POST /des/simulate`, `/des/simulations/<jobId>` -> `dd-des-simulator:8099`
+  (gateway auth required)
+- `/mdp/`, `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`,
+  `POST /mdp/telemetry/learn` -> `dd-mdp-optimizer:8096` (gateway auth required)
 - `/contracts/`, `/contracts/schema`, `/contracts/example`, `POST /contracts/validate`,
   `POST /contracts/simulate`, `POST /contracts/send` -> `dd-contract-service:8101`
   (internal auth required)
@@ -84,27 +98,66 @@ Gateway path map:
   `dd-trading-server:8103` (internal auth required)
 - `/scrape`, `/scrape/strategies`, `/scrape/healthz`, `/scrape/metrics` -> `dd-web-scraper:8097`
   (internal auth required)
+- `/browser-test`, `/browser-test/healthz`, `/browser-test/metrics`, `/browser-test/status`,
+  `/browser-test/tools` -> `dd-browser-test-server:8104` (internal auth required;
+  `POST /run` accepts a bounded scenario DSL across Playwright, Puppeteer, and Selenium)
+- `/selenium`, `/selenium/healthz`, `/selenium/metrics`, `/selenium/status`, `/selenium/tools` ->
+  `dd-selenium-server:8105` (internal auth required; `POST /run` accepts the same bounded scenario
+  DSL but Selenium-only, driving an in-pod Selenium Grid over RemoteWebDriver)
+- `/browser-jobs`, `/browser-jobs/healthz`, `/browser-jobs/metrics`, `/browser-jobs/status`,
+  `/browser-jobs/jobs`, `/browser-jobs/tools` -> `dd-browser-job-runner:8106` (internal auth required;
+  `POST /run` spawns ONE ephemeral Playwright/Puppeteer worker container per job and returns a `jobId`
+  plus NATS result subject immediately — results are published to NATS, not the HTTP response)
 - `/tasks`, `/stream`, `/status`, `/agents`, `/healthz` -> bootstrap `dd-dev-server-api:8080`
 - `/dd-thread/<short>/...` -> target per-thread Kubernetes Ingress shape; the selected Node.js
   worker is pinned to one thread and does not route UUIDs itself. `/dd-thread/<short>/ws` is the
-  direct worker WebSocket for replay/live task events.
+  direct worker WebSocket for replay/live task events; both routes require gateway auth before the
+  gateway injects the worker `X-Server-Auth` header.
 
-The Node.js worker image is pre-baked as `docker.io/library/dd-dev-server:dev` on the EC2
-containerd node. It already contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
-`remote/dev-server` server, and a warm `dd-next-1` checkout template. The container runs as the
-built-in `node` user; mounted workspaces live under `/home/node/workspace`.
+Availability guardrail for gateway-backed HTTP services: request-serving deployments that are safe
+to run in parallel should keep `replicas: 2`, `minReadySeconds: 5`, `progressDeadlineSeconds: 1800`,
+rolling updates with `maxUnavailable: 0` / `maxSurge: 1`, readiness probes, and a
+`PodDisruptionBudget` with `minAvailable: 1`. This covers the public/auth/API surface where normal
+rollouts previously caused intermittent gateway `502`s: `dd-remote-web-home`, `dd-remote-auth`,
+`dd-remote-rest-api`, `dd-agent-worker-broker`, `dd-des-rs`, `dd-contract-service`,
+`dd-mdp-optimizer`, `dd-trading-server`, `dd-web-scraper`, `dd-browser-test-server`,
+`dd-selenium-server`, and `dd-rust-vapi-phone`. `dd-des-rs` uses `/out/delivery-planner.html` as
+its readiness path so the Service does not route delivery-planner traffic to a pod before the
+startup render has produced the artifact.
+
+Single-owner workloads stay intentionally one-replica/`Recreate`: the host-port gateway, Redis,
+mutex brokers, the bootstrap workspace worker, containerd/build managers, the runtime-config push
+controller, benchmark WebSocket pods, and in-memory signaling/job-state services. The
+`dd-remote-queue-consumer` remains one replica at rest because KEDA owns burst scaling, but it uses
+rolling updates with `maxUnavailable: 0` so a rollout brings up the replacement consumer before
+terminating the old one. The gateway also retries transient upstream `502`/`503`/`504` failures
+before surfacing them to the browser. Do not scale `dd-remote-gateway` above one pod on the current
+single-node `hostPort` deployment; gateway HA needs either multiple nodes with a DaemonSet/load
+balancer shape or an external load balancer in front of multiple gateway instances. Canary or
+blue/green rollout policy should be added through Argo Rollouts or an equivalent controller; this
+overlay currently uses native Kubernetes Deployment rolling updates only.
+
+The Node.js worker image is built as `docker.io/library/dd-dev-server:dev` on the EC2 containerd
+node. It contains git, OpenSSH, GitHub CLI, provider CLIs, the compiled
+`remote/deployments/dev-server` server, and Node transport dependencies for NATS and outbound
+WebSocket fanout. Repo-scoped pool workers receive `DD_REPO_URL`, `BASE_BRANCH`, provider config,
+NATS config, WebSocket fanout config, and Git credentials at runtime; the image may carry a cache
+seed, but a live worker must not depend on a baked repo checkout as its source of truth. The
+container runs as the built-in `node` user; mounted workspaces live under `/home/node/workspace`.
 
 Protected ops paths accept either the legacy `Auth` request header or the browser `dd_auth` cookie.
 Browser document requests redirect to `/auth?return=<original path>`; API/curl callers still
 receive the redacted JSON `{"error":"unauthorized","errMessage":"missing required dd header"}`
-response. The PIN and cookie value must be provided by the `dd-remote-auth-secrets` Kubernetes
-secret, not committed to Git.
+response. The operator passphrase, optional TOTP seed, and cookie value must be provided by the
+`dd-remote-auth-secrets` Kubernetes secret, not committed to Git. When
+`DD_AUTH_TOTP_SECRET_BASE32` is present, `/auth` requires both the passphrase and a current
+six-digit one-time code before setting the short-lived browser cookie.
 
 ## Gateway TLS
 
 `dd-remote-gateway` terminates HTTPS itself with a Kubernetes TLS secret named
-`dd-remote-gateway-tls` in the `default` namespace. HTTP remains enabled for bootstrap access and
-for ACME HTTP-01 challenge renewal.
+`dd-remote-gateway-tls` in the `default` namespace. HTTP remains enabled for ACME HTTP-01
+challenge renewal and redirects browser traffic to HTTPS.
 
 Create or rotate the self-signed certificate on the EC2 host before applying the gateway
 deployment:
@@ -170,8 +223,33 @@ Use `dd-agent-secrets` for shared remote runtime values:
 - `SERVER_AUTH_SECRET`
 - `DD_REPO_URL` and `DD_REPO_REF` for the repo/base branch that the bootstrap Node.js worker is
   pinned to at runtime
-- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and `OPENAI_API_KEY`
-- GitHub credentials used by the remote dev worker entrypoint and PR creation path
+- model-provider keys like `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`,
+  `OPENCODE_API_KEY`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, and `XAI_API_KEY`
+- GitHub credentials used by the remote dev worker entrypoint and PR creation path:
+  `GH_DEPLOY_KEY`, optional `GH_DEPLOY_KEY_PUBLIC`, and optional `GH_PAT`
+- `AKKA_LICENSE_KEY` for the optional Akka WebSocket comparison workload
+
+GitHub deploy keys must stay in Kubernetes/AWS secrets and must never be baked into
+`dd-dev-server` or any container-pool image. The worker entrypoint writes `GH_DEPLOY_KEY` to
+`GH_DEPLOY_KEY_PATH` at startup with `0600` permissions, then uses it through `GIT_SSH_COMMAND` for
+clone/fetch/push. A safe AWS Secrets Manager value for `dd/remote-dev/agent-secrets` looks like:
+
+```json
+{
+  "SERVER_AUTH_SECRET": "replace-with-long-random-secret",
+  "DD_REPO_URL": "git@github.com:ORESoftware/live-mutex.git",
+  "DD_REPO_REF": "dev",
+  "GH_DEPLOY_KEY": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+  "GH_DEPLOY_KEY_PUBLIC": "ssh-ed25519 ... comment",
+  "GH_PAT": "optional-fine-grained-token-for-gh-cli-prs",
+  "AKKA_LICENSE_KEY": "optional-official-akka-license-key",
+  "ANTHROPIC_API_KEY": "replace-me",
+  "OPENCODE_API_KEY": "replace-me",
+  "DEEPSEEK_API_KEYS_JSON": "[\"replace-me\"]",
+  "DASHSCOPE_API_KEYS_JSON": "[\"replace-me\"]",
+  "XAI_API_KEYS_JSON": "[\"replace-me\"]"
+}
+```
 
 Use `dd-remote-rest-api-secrets` for RDS-specific values:
 
@@ -191,21 +269,22 @@ Use `dd-gleam-lambda-runner-secrets` for independent lambda runtime values:
 - runtime-specific provider keys that user lambdas are allowed to consume
 
 The web deployment serves HTML only and does not mount database secrets. Browser JavaScript calls
-`/api/agents/tasks` and `/api/lambdas/functions` through the gateway directly. Lambda invocation
+`/api/agents/tasks` and `/api/lambdas/functions` through the authenticated gateway directly. Lambda invocation
 traffic uses `/lambdas/invoke/<function-id>` and goes from the gateway to the Gleam runner without
 passing through the REST API. The runner reads `LAMBDA_DATABASE_URL` from
 `dd-gleam-lambda-runner-secrets` and uses Postgres to resolve that immutable UUID to a lambda
 definition.
 
 Model-provider keys, GitHub credentials, gateway/shared-auth values, and REST database URLs should
-be updated in AWS Secrets Manager, not in Git. The auth service consumes `DD_AUTH_PIN` and
-`DD_AUTH_COOKIE_VALUE` from `dd-remote-auth-secrets`; rotate those values through AWS Secrets
-Manager or the matching External Secrets path before applying this deployment. After rotation,
-restart the deployments that consume the changed secret so env vars reload.
+be updated in AWS Secrets Manager, not in Git. The auth service consumes `DD_AUTH_PIN`,
+`DD_AUTH_COOKIE_VALUE`, and optional `DD_AUTH_TOTP_SECRET_BASE32` from `dd-remote-auth-secrets`;
+rotate those values through AWS Secrets Manager or the matching External Secrets path before
+applying this deployment. After rotation, restart the deployments that consume the changed secret so
+env vars reload.
 
 ## Reaper and cluster doctor
 
-The reaper deployment runs `remote/idle-reaper-rs`.
+The reaper deployment runs `remote/deployments/idle-reaper-rs`.
 
 Idle sweep is enabled only when both values exist:
 
@@ -225,50 +304,73 @@ Cluster doctor is configured in `dd-idle-reaper-config`:
 - `dd-idle-reaper-secret` key `CLUSTER_DOCTOR_SERVER_AUTH_SECRET`
 - `dd-idle-reaper-secret` key `NATS_WATCH_GLEAM_BROADCAST_SECRET`
 
-Every 90 minutes it dispatches the inline prompt from `remote/idle-reaper-rs/src/main.rs` to
+Every 90 minutes it dispatches the inline prompt from `remote/deployments/idle-reaper-rs/src/main.rs` to
 `dd-dev-server-api`. The agent inspects Prometheus, Loki, Grafana, NATS, and runtime service
-health, then makes a narrow repo fix when there is an actionable issue. `remote/dev-server` pushes
+health, then makes a narrow repo fix when there is an actionable issue. `remote/deployments/dev-server` pushes
 the branch and opens/reuses the PR.
 
 The same deployment also runs an adaptive NATS watchdog. It listens to copies of
-`dd.remote.thread.*.tasks` and `dd.remote.events`; task messages idempotently call
-`/api/agents/threads/<threadId>/prepare`, and event messages are reposted to the Gleam websocket
-fanout endpoint. When a window has activity it checks again after 5 seconds; quiet windows back off
-to 15 seconds.
+`dd.remote.thread.*.tasks` and `dd.remote.events`; legacy shadow task messages idempotently call
+`/api/agents/threads/<threadId>/prepare`, real queued `task.dispatch` messages are ignored by the
+watchdog so they stay owned by `dd-remote-queue-consumer`, and event messages are reposted to the
+Gleam websocket fanout endpoint. When a window has activity it checks again after 5 seconds; quiet
+windows back off to 15 seconds.
+
+The reaper also runs the runtime floor reconciler every 20 seconds. That loop creates or verifies
+the JetStream `DD_REMOTE_TASKS` stream and durable consumer `dd-remote-thread-preparer`, keeps the
+`dd-remote-queue-consumer` Deployment scaled to at least one replica, and calls `dd-container-pool`
+to warm any configured pool whose idle workers are below `min_warm`.
 
 The reaper is also the cron supervisor for the local worker image. Every day at 4am America/New_York
 it fetches/fast-forwards the EC2 checkout, runs `nerdctl -n k8s.io build` for
-`remote/dev-server`, and overwrites the local image tag `docker.io/library/dd-dev-server:dev`. New
+`remote/deployments/dev-server`, and overwrites the local image tag `docker.io/library/dd-dev-server:dev`. New
 thread workers use that tag via `imagePullPolicy: IfNotPresent`, so the next created pod picks up
 the newest local image on the EC2 Kubernetes node. This is intentionally a Rust scheduler inside
 the reaper deployment, not Linux `cron`/`at`; Kubernetes keeps the supervisor process alive, and
 the deployment mounts the EC2 containerd socket plus `nerdctl` for the actual build.
 
-## NATS shadow prepare path
+`dd-headlamp-cron-sentinel` is a tiny native Kubernetes `CronJob` kept in this kustomization only
+to make Headlamp's Jobs and Cron Jobs workload cards non-zero. It runs a no-op BusyBox pod and uses
+`concurrencyPolicy: Forbid` so there is normally one active child `Job`; the real maintenance loops
+above still live in `dd-idle-reaper`.
 
-The runtime now includes a shadow NATS prepare path for future queue execution:
+## NATS queued execution path
 
-1. `dd-remote-rest-api` still performs direct dispatch to the selected thread worker.
-2. After a direct dispatch succeeds, it publishes the task payload through JetStream to
-   `dd.remote.thread.<threadId>.tasks` and also emits `dd.remote.orchestrator.wakeup`.
+The runtime now uses a NATS queued execution path by default:
+
+1. REST dispatch without `dispatchMode` resolves to `queued`; explicit `dispatchMode: "direct"`
+   posts only to the selected thread worker and does not publish a task to NATS.
+2. Queued dispatch publishes the task payload through JetStream to
+   `dd.remote.thread.<threadId>.tasks`, emits `dd.remote.orchestrator.wakeup`, and returns `202`.
 3. `dd-remote-queue-consumer` reads the durable pull consumer `dd-remote-thread-preparer` on the
    `DD_REMOTE_TASKS` stream.
 4. KEDA watches that JetStream consumer lag and scales `dd-remote-queue-consumer` from 1 to 8 pods
    when pending messages build up, then returns to 1 after the stream drains.
-5. The consumer calls the internal REST route `/api/agents/threads/<threadId>/prepare`, which
-   creates/scales the deterministic `dd-thread-<short>` Deployment and waits for readiness.
+5. The consumer dispatches plain queued `task.dispatch` messages to the UUID-bound deterministic
+   worker. Explicit pool modes (`queued-pool`, `nats-pool`, `container-pool`, or `pool`) go to the
+   repo-scoped container pool with `affinityKey=<threadId>` and can fall back to the deterministic
+   worker only if the matching repo pool is unavailable or rejects the task. Legacy shadow messages
+   are prepare-only.
 6. The queue consumer stores taskId receipts under `/tmp/dd-remote-queue-consumer/tasks`; the
    Node.js worker also stores taskId receipts under its log directory. Repeated messages are
    accepted idempotently and do not start duplicate agent runs.
 
-This proves the queue handoff and warmup behavior without allowing generic workers to steal
-thread-affine execution. The Node.js worker still executes the task through the direct REST handoff
-until the queue path is promoted from shadow mode.
+Task status visibility has a second lane that is deliberately separate from execution ownership.
+The REST API persists queue status events and best-effort posts the same `task-event` JSON directly
+to both `dd-gleamlang-server` `/broadcast` and `dd-webrtc-signaling` `/runtime/broadcast`. NATS event
+fanout still works as the normal telemetry bus, but web-home can receive the initial queued/NATS
+failure statuses over Gleam or Rust websocket fanout even when `dd.remote.events` is degraded.
+
+This proves the queue handoff and warmup behavior without allowing arbitrary generic workers to
+steal coding-agent execution. Plain queued `task.dispatch` messages stay on UUID-bound thread
+workers; explicit pool messages are routed to repo-scoped Node chat/Claude warm pools with
+`threadId` affinity.
 
 `dd-agent-worker-broker` is the additive long-run replacement for REST-owned worker dispatch. Its
-first route, `POST /api/agent-worker/threads/<threadId>/tasks`, publishes the task to JetStream,
-emits the wakeup subject, direct-posts to the deterministic Node.js worker only when that worker is
-already healthy, and otherwise scales the worker Deployment to `1` while returning `202 queued`.
+first route, `POST /api/agent-worker/threads/<threadId>/tasks`, direct-posts to the deterministic
+Node.js worker only when that worker is already healthy. If the worker is not awake, it publishes
+the task to JetStream, emits the wakeup subject, and returns `202 queued`; the queue consumer then
+owns pool selection. It deliberately chooses direct or queued, never both for the same accepted task.
 
 ## Container pool
 
@@ -295,7 +397,7 @@ The generic Postgres config contract is the shared `app_config` block in
 `remote/libs/pg-defs/schema/schema.sql` (the single source of truth for every shared
 table). The default runtime pool seed is
 `remote/databases/pg/seeds/container-pool-app-config.sql`. The seed points at multi-stage runtime
-images under `remote/container-pool-rs/runtime-images` for `nodejs`, `rust`, `golang`, `python3`,
+images under `remote/deployments/container-pool-rs/runtime-images` for `nodejs`, `rust`, `golang`, `python3`,
 `dart`, `gleamlang`, and `erlang`. Dispatch requests never supply a shell command; image, command,
 env, request path, warm size, timeout, and NATS subject all come from trusted database config.
 
@@ -336,15 +438,16 @@ function definition by UUID, maps the UUID to a reusable worker actor/child proc
 request payload to that process, and exposes child process counters through `/metrics` for
 Prometheus/Grafana.
 
-The runtime also includes `dd-mdp-optimizer`, a Rust MDP/POMDP/RL optimization service. It serves
-`/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`, and `POST /mdp/telemetry/learn`. It
+The runtime also includes `dd-mdp-optimizer`, a Rust MDP/POMDP/RL optimization service. The gateway
+requires operator auth for `/mdp/healthz`, `/mdp/metrics`, `POST /mdp/optimize`, and
+`POST /mdp/telemetry/learn`. It
 queue-subscribes to `dd.remote.mdp.optimize` for explicit optimization jobs and
 `dd.remote.telemetry.mdp` for app/infra telemetry snapshots, then publishes results to
 `dd.remote.mdp.results` plus compact runtime events on `dd.remote.events`.
 
 ## Solana contract service
 
-`dd-contract-service` runs `remote/contract-service-rs` as a Rust Solana contract gateway. It serves
+`dd-contract-service` runs `remote/deployments/contract-service-rs` as a Rust Solana contract gateway. It serves
 `/contracts/healthz`, `/contracts/metrics`, `/contracts/status`, `/contracts/schema`,
 `/contracts/example`, `POST /contracts/validate`, `POST /contracts/simulate`, and
 `POST /contracts/send`. The service validates `solana.contract.v1` instruction envelopes, checks
@@ -360,7 +463,7 @@ emits compact lifecycle events on `dd.remote.events`.
 
 ## AI/ML feature pipeline
 
-`dd-ai-ml-pipeline` runs `remote/ai-ml-pipeline` as a long-lived Python3 service in the `ai-ml`
+`dd-ai-ml-pipeline` runs `remote/deployments/ai-ml-pipeline` as a long-lived Python3 service in the `ai-ml`
 namespace. It accepts raw telemetry through `POST /ml/analyze`, `POST /ml/ingest`, or the
 `dd.remote.telemetry.raw` NATS subject. The online model turns metrics into normalized features,
 EWMA baselines, z-score anomaly scores, state/risk summaries, action-impact hints, and transition
@@ -380,7 +483,7 @@ Metaflow, LlamaIndex, Qdrant, and Airbyte.
 
 ## Web scraper service
 
-`dd-web-scraper` runs `remote/web-scraper-service` as a long-lived Node.js/Fastify service from the
+`dd-web-scraper` runs `remote/deployments/web-scraper-service` as a long-lived Node.js/Fastify service from the
 Playwright browser image. It exposes `GET /healthz`, `GET /metrics`, `GET /strategies`, and
 `POST /scrape`; the gateway mirrors those as `/scrape/healthz`, `/scrape/metrics`,
 `/scrape/strategies`, and `POST /scrape`.
@@ -395,3 +498,78 @@ HTML extraction runs in Node `worker_threads` through `src/extraction-worker.ts`
 do not block Fastify or browser orchestration. The service fails closed when `SERVER_AUTH_SECRET`
 is missing, revalidates redirect and browser subresource targets, and blocks URL credentials plus
 sensitive outbound headers unless their explicit opt-in env vars are enabled.
+
+## Selenium server
+
+`dd-selenium-server` is a dedicated, long-lived, Selenium-only runtime. It is a single pod with two
+containers: the official `selenium/standalone-chromium` image (the actual Selenium server / Grid on
+`:4444`, owning Chromium + chromedriver) and a Java/Vert.x API container that self-builds
+`remote/deployments/selenium-server` with Maven and drives the Grid through `selenium-java`
+`RemoteWebDriver` at `localhost:4444`. The Grid port is never published on the Service, so the only
+reachable entrypoint is the authenticated API on `:8105`.
+
+The API exposes `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /status`, `GET /tools`, and
+`POST /run`; the gateway mirrors those under `/selenium/...`. `POST /run` accepts the same bounded
+scenario DSL as `dd-browser-test-server` (`goto`, `click`, `fill`, `select`, `press`,
+`waitForSelector`, `waitForUrl`, `waitForTimeout`, `extractText`, `extractAttribute`, `screenshot`,
+`evaluate`) and returns structured step logs, extracted values, screenshots, and console entries.
+It fails closed when `SERVER_AUTH_SECRET` is missing, caps work at `SELENIUM_MAX_CONCURRENT` browser
+sessions (returning 429 over the cap), bounds scenarios with `SELENIUM_MAX_STEPS` /
+`SELENIUM_MAX_TIMEOUT_MS`, and keeps arbitrary in-page script execution opt-in behind
+`SELENIUM_ALLOW_EVALUATE=false`.
+
+## dd-browser-job-runner (per-job Playwright/Puppeteer, pool-first)
+
+Where `dd-selenium-server` and `dd-browser-test-server` are long-lived in-process runners,
+`dd-browser-job-runner` runs **one fresh browser per job** and always delivers the result over NATS.
+Each `POST /run` returns a `jobId` immediately (HTTP 202); the work then runs on one of two paths. It
+is a privileged, host-network Rust (axum) pod — the same posture as `dd-container-pool` and
+`dd-gleam-lambda-runner`. Source: `remote/deployments/browser-job-runner-rs` (the orchestrator) and
+`remote/deployments/browser-job-runner-rs/worker` (the dual-mode `dd-browser-job-worker` Node/TS image).
+
+Request flow:
+
+1. Operators `POST /run` (gateway `/browser-jobs/run`, internal auth required) with `{ engine,
+   url?, steps[], viewport?, ... }`, where `engine` is `playwright` or `puppeteer` and `steps` is the
+   same bounded DSL as `dd-browser-test-server` (`goto`, `click`, `fill`, `select`, `press`,
+   `waitForSelector`, `waitForUrl`, `waitForTimeout`, `extractText`, `extractAttribute`, `screenshot`,
+   `evaluate`).
+2. It validates the job and responds **immediately** (HTTP 202) with `{ jobId, engine, resultSubject,
+   eventsSubject, resultFanoutSubject, poolSubject, deadlineMs }`. **Results are not returned over
+   HTTP.**
+3. **Primary path — `dd-container-pool`:** the orchestrator NATS request/replies the pool subject
+   `dd.remote.container_pool.browser-jobs.requests`. The `browser-jobs` pool (defined in
+   `remote/databases/pg/seeds/container-pool-app-config.sql`, `minWarm 1 / maxWarm 3`,
+   `requestTimeoutMs 540000`) keeps warm `dd-browser-job-worker` containers; it leases one,
+   HTTP-dispatches the scenario to its `/run`, and replies with the worker's `RunResult`. The
+   orchestrator republishes that to the per-job `dd.remote.browser_jobs.<jobId>.result` subject and the
+   `dd.remote.browser_jobs.results` fanout. The warm worker **self-exits after one job**, so the pool
+   retires it and reconciles a fresh replacement (one clean browser per job).
+4. **Fallback path — direct nerdctl:** when the pool has no responders, errors, returns 409 (raced a
+   just-used worker), or is saturated, the orchestrator spawns its own
+   `nerdctl -n dd-browser-jobs run -d --rm --network host …` worker labelled `dd.browser-job.managed=true`
+   with a `dd.browser-job.deadline-ms` no more than `BROWSER_JOB_MAX_LIFETIME_SECONDS` (**hard cap 540s
+   / 9 min**) in the future, subject to `BROWSER_JOB_MAX_CONCURRENT`. That one-shot worker publishes its
+   own result to NATS and exits. Host networking lets both pool and fallback workers reach the NATS
+   ClusterIP exactly like the container-pool / lambda workers do.
+
+Lifetime: pool containers are owned by `dd-container-pool` (retire-after-use + reconcile + idle TTL).
+For the fallback path, three independent layers apply in the `dd-browser-jobs` namespace: the worker's
+own watchdog hard-exits at `BROWSER_JOB_MAX_MS`; the orchestrator's tracker force-removes any container
+past its deadline and prunes finished ones (keeping `GET /browser-jobs/jobs` accurate); and
+`dd-idle-reaper` runs a `BROWSER_JOB_REAP_*` backstop loop that force-removes any
+`dd.browser-job.managed=true` container that outlives its deadline label plus a grace, covering the
+case where the orchestrator pod itself died.
+
+The orchestrator fails closed when `SERVER_AUTH_SECRET` is missing (unless
+`BROWSER_JOB_ALLOW_UNAUTHENTICATED=true`) and keeps arbitrary in-page script execution opt-in behind
+`BROWSER_JOB_ALLOW_EVALUATE=false`. Set `BROWSER_JOB_POOL_ENABLED=false` to force the nerdctl path. The
+worker image is pulled with `--pull=never`, so it must exist on the node — the pool builds the
+`browser-jobs` `baseImages` entry into the `dd-pool` namespace, and the fallback uses `dd-browser-jobs`:
+
+```
+nerdctl -n dd-browser-jobs build -t docker.io/library/dd-browser-job-worker:dev \
+  remote/deployments/browser-job-runner-rs/worker
+nerdctl -n dd-pool build -t docker.io/library/dd-browser-job-worker:dev \
+  remote/deployments/browser-job-runner-rs/worker
+```

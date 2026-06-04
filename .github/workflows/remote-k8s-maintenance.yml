@@ -1,0 +1,3271 @@
+name: Remote K8s maintenance
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/remote-k8s-maintenance.yml"
+      - "remote/deployments/container-pool-rs/**"
+      - "remote/deployments/queue-consumer-rs/**"
+      - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/host-cron/**"
+      - "remote/deployments/dev-server/src/server.ts"
+      - "remote/deployments/gcs/**"
+      - "remote/deployments/mip-solver-node.rs"
+      - "remote/deployments/mip-solver-node.rs/**"
+      - "remote/ec2/verify-mip-solver-node.sh"
+      - "remote/argocd/apps/dd-in-house-mip-solver-node.application.yaml"
+      - "remote/deployments/ws-loadtest-rs/**"
+      - "remote/deployments/gleamlang-ws-loadtest/**"
+      - "remote/argocd/apps/gcs.application.yaml"
+      - "remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml"
+      - "remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml"
+      - "remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml"
+      - "remote/argocd/dd-next-runtime/**"
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Maintenance operation to run on the EC2 Kubernetes host.
+        required: true
+        type: choice
+        options:
+          - inspect-unhealthy
+          - inspect-next-runtime
+          - inspect-container-pool
+          - free-thread-pod-slots
+          - repair-gleamlang-secret
+          - reconcile-runtime
+          - deploy-lambda-ui
+          - verify-lambda-checks
+          - seed-container-pool-config
+          - test-container-pool-config
+          - sync-agent-gh-pat
+          - sync-agent-model-keys
+          - verify-mip-solver-node
+          - verify-gleam-mcp-server
+          - bootstrap-thread-go-services
+          - verify-thread-go-services
+          - deploy-bastion-live-containers
+          - verify-bastion-live-containers
+          - recover-gcs
+          - inspect-gcs-ssm
+          - bisect-gcs-wss
+          - diagnose-gcs-scheduler
+          - snapshot-gcs-loadtest
+          - loadtest-gcs-wss
+      target_revision:
+        description: Git revision or branch to sync on the EC2 host.
+        required: false
+        default: dev
+      ssm_command_id:
+        description: Existing SSM command id to inspect.
+        required: false
+        default: ""
+      cancel_ssm_command:
+        description: Cancel the provided SSM command before inspecting it.
+        required: false
+        type: boolean
+        default: false
+      loadtest_label:
+        description: Optional label for a GCS load-test run.
+        required: false
+        type: string
+        default: medium
+      loadtest_duration_seconds:
+        description: GCS load-test duration per loader.
+        required: false
+        type: string
+        default: "180"
+      loadtest_loader_replicas:
+        description: Number of load-generator replicas per loader deployment.
+        required: false
+        type: string
+        default: "6"
+      loadtest_clients_per_replica:
+        description: WebSocket clients per load-generator replica.
+        required: false
+        type: string
+        default: "5000"
+      loadtest_messages_per_second_per_client:
+        description: Client-originated messages per connection per second.
+        required: false
+        type: string
+        default: "2.5"
+
+concurrency:
+  group: remote-k8s-maintenance
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_revision || 'dev' }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run maintenance command through SSM
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          OPERATION: ${{ inputs.operation || (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-mip-solver]') && 'verify-mip-solver-node') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-ssm]') && 'inspect-gcs-ssm') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-bisect]') && 'bisect-gcs-wss') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-recover]') && 'recover-gcs') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-diagnose]') && 'diagnose-gcs-scheduler') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-snapshot]') && 'snapshot-gcs-loadtest') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && 'loadtest-gcs-wss') || (github.event_name == 'push' && 'reconcile-runtime') || 'inspect-unhealthy' }}
+          TARGET_REVISION: ${{ inputs.target_revision || 'dev' }}
+          SSM_COMMAND_ID: ${{ inputs.ssm_command_id || github.event.head_commit.message || '' }}
+          CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || 'false' }}
+          REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
+          REMOTE_DEV_DASHSCOPE_API_KEY: ${{ secrets.REMOTE_DEV_DASHSCOPE_API_KEY }}
+          REMOTE_DEV_XAI_API_KEY: ${{ secrets.REMOTE_DEV_XAI_API_KEY }}
+          THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS: ${{ vars.THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS || '4' }}
+          LOADTEST_LABEL: ${{ inputs.loadtest_label || 'medium' }}
+          LOADTEST_DURATION_SECONDS: ${{ inputs.loadtest_duration_seconds || '180' }}
+          LOADTEST_LOADER_REPLICAS: ${{ inputs.loadtest_loader_replicas || '6' }}
+          LOADTEST_CLIENTS_PER_REPLICA: ${{ inputs.loadtest_clients_per_replica || '5000' }}
+          LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT: ${{ inputs.loadtest_messages_per_second_per_client || '2.5' }}
+        run: |
+          set -euo pipefail
+
+          # Push-triggered maintenance is routed by marker tags in the head commit message.
+          if [ "$OPERATION" = "inspect-gcs-ssm" ]; then
+            if [[ "${SSM_COMMAND_ID:-}" =~ ssm:([0-9A-Fa-f-]{36}) ]]; then
+              SSM_COMMAND_ID="${BASH_REMATCH[1]}"
+            fi
+            if [ -z "${SSM_COMMAND_ID:-}" ]; then
+              echo "ssm_command_id is required for inspect-gcs-ssm" >&2
+              exit 64
+            fi
+            if [ "${CANCEL_SSM_COMMAND:-false}" = "true" ]; then
+              aws ssm cancel-command --command-id "$SSM_COMMAND_ID" --instance-ids "$INSTANCE_ID" || true
+              for attempt in {1..30}; do
+                status="$(
+                  aws ssm get-command-invocation \
+                    --command-id "$SSM_COMMAND_ID" \
+                    --instance-id "$INSTANCE_ID" \
+                    --query "Status" \
+                    --output text 2>/dev/null || true
+                )"
+                case "$status" in
+                  Cancelled|Failed|Success|TimedOut)
+                    break
+                    ;;
+                esac
+                echo "SSM command $SSM_COMMAND_ID cancellation status=${status:-pending} attempt=$attempt/30"
+                sleep 5
+              done
+            fi
+            aws ssm get-command-invocation \
+              --command-id "$SSM_COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
+              --output json
+            exit 0
+          fi
+
+          case "$OPERATION" in
+            free-thread-pod-slots)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          script = r'''set -euo pipefail
+          namespace=default
+          max_awake="${THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS:-4}"
+          case "$max_awake" in
+            ''|*[!0-9]*) max_awake=4 ;;
+          esac
+
+          echo "=== node pod capacity ==="
+          kubectl get nodes -o json | jq -r '.items[] | "\(.metadata.name) pods_capacity=\(.status.capacity.pods) pods_allocatable=\(.status.allocatable.pods)"'
+          echo "=== default namespace pod count ==="
+          kubectl -n "$namespace" get pods --no-headers 2>/dev/null | wc -l
+          echo "=== thread runtime deployments before ==="
+          kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o wide || true
+          echo "=== thread runtime pods before ==="
+          kubectl -n "$namespace" get pods -l app.kubernetes.io/component=thread-pod -o wide || true
+
+          mapfile -t keep < <(
+            kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o json \
+              | jq -r --argjson max "$max_awake" '.items
+                | map(select((.spec.replicas // 0) > 0))
+                | sort_by(.metadata.creationTimestamp)
+                | reverse
+                | .[0:$max][]?.metadata.name'
+          )
+          echo "keeping newest awake deployments: ${keep[*]:-(none)}"
+
+          scaled=0
+          while IFS= read -r deployment; do
+            keep_it=0
+            for current in "${keep[@]}"; do
+              if [[ "$deployment" == "$current" ]]; then
+                keep_it=1
+                break
+              fi
+            done
+            if [[ "$keep_it" -eq 0 ]]; then
+              echo "scaling stale thread runtime to zero: $deployment"
+              kubectl -n "$namespace" scale deployment "$deployment" --replicas=0 || true
+              ((scaled+=1))
+            fi
+          done < <(
+            kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o json \
+              | jq -r '.items[] | select((.spec.replicas // 0) > 0) | .metadata.name'
+          )
+
+          kubectl -n "$namespace" delete pod \
+            -l app.kubernetes.io/component=thread-pod \
+            --field-selector=status.phase=Pending \
+            --wait=false || true
+
+          echo "scaled stale awake deployments: $scaled"
+          echo "=== thread runtime deployments after ==="
+          kubectl -n "$namespace" get deploy -l app.kubernetes.io/component=thread-pod -o wide || true
+          echo "=== thread runtime pods after ==="
+          kubectl -n "$namespace" get pods -l app.kubernetes.io/component=thread-pod -o wide || true
+          echo "=== recent scheduler events ==="
+          kubectl get events -n "$namespace" --sort-by=.lastTimestamp | tail -80 || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS={shlex.quote(os.environ.get('THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS', '4'))} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            inspect-unhealthy)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== context ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl config current-context; kubectl get nodes -o wide'",
+              "echo '=== default pods ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get pods -n default -o wide'",
+              "echo '=== unhealthy app labels ==='",
+              "sudo -u ec2-user -H bash -lc 'for app in dd-remote-gateway dd-fsharp-ws-server dd-webrtc-signaling dd-trading-server dd-remote-web-home dd-gleam-mcp-server dd-gleamlang-server dd-container-pool dd-remote-rest-api dd-remote-queue-consumer; do echo --- $app; kubectl -n default get pods -l app=$app -o wide || true; done'",
+              "echo '=== gleamlang ExternalSecret ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get externalsecret dd-gleamlang-server-secrets -o yaml || true'",
+              "echo '=== selected k8s secrets ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get secret dd-gleamlang-server-secrets dd-gleam-mcp-server-secrets dd-agent-secrets dd-remote-auth-secrets --ignore-not-found'",
+              "echo '=== recent default events ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get events -n default --sort-by=.lastTimestamp | tail -160'",
+              "echo '=== pod describes and logs ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -o name | egrep 'dd-remote-gateway|dd-fsharp-ws-server|dd-webrtc-signaling|dd-trading-server|dd-remote-web-home|dd-gleam-mcp-server|dd-gleamlang-server|dd-container-pool|dd-remote-rest-api|dd-remote-queue-consumer'\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -160\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=180\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=180 2>/dev/null\" || true; done",
+              "echo '=== AWS secret candidates ==='",
+              "for s in dd/remote-dev/gleamlang-server-secrets; do aws secretsmanager describe-secret --region us-east-1 --secret-id \"$s\" --query Name --output text 2>/dev/null || true; done"
+            ]
+          }
+          JSON
+              ;;
+            inspect-next-runtime)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== dd-next-runtime summary ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o wide || true'",
+              "echo '--- sync.status ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.sync.status}; echo'",
+              "echo '--- sync.revision ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.sync.revision}; echo'",
+              "echo '--- health.status ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.health.status}; echo'",
+              "echo '--- operationState.phase ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.operationState.phase}; echo'",
+              "echo '--- operationState.message ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.operationState.message}; echo'",
+              "echo '--- operationState.syncResult.revision ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.operationState.syncResult.revision}; echo'",
+              "echo '--- condition types ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.conditions[*].type}; echo'",
+              "echo '--- condition messages ---'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.conditions[*].message}; echo'",
+              "echo '=== dd-des-rs presence (default ns) ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get deploy,svc,pod -l app=dd-des-rs -o wide || true'",
+              "echo '=== app-controller recent errors mentioning dd-next-runtime ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd logs -l app.kubernetes.io/name=argocd-application-controller --tail=300 2>/dev/null | egrep -i \"dd-next-runtime|comparison|failed to|fetch|repository|permission denied\" | tail -40 || true'",
+              "echo '=== force hard refresh ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd annotate application/dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite || true'",
+              "sleep 30",
+              "echo '=== after refresh: summary + sync.status + dd-des-rs ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-next-runtime -o jsonpath={.status.sync.status}; echo'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get deploy -l app=dd-des-rs -o wide || true'"
+            ]
+          }
+          JSON
+              ;;
+            inspect-container-pool)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== context ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl config current-context; kubectl get nodes -o wide'",
+              "echo '=== container pool resources ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get deploy,rs,pod,svc,endpoints -l app=dd-container-pool -o wide || true'",
+              "echo '=== queue/rest/web resources ==='",
+              "sudo -u ec2-user -H bash -lc 'for app in dd-remote-queue-consumer dd-remote-rest-api dd-remote-web-home; do echo --- $app; kubectl -n default get pods -l app=$app -o wide || true; done'",
+              "echo '=== host listeners for container-pool port ==='",
+              "sudo -u ec2-user -H bash -lc 'sudo ss -ltnp | grep -E \":8102\\\\b\" || true'",
+              "echo '=== managed nerdctl workers ==='",
+              "sudo -u ec2-user -H bash -lc 'sudo nerdctl -n k8s.io ps -a --format \"{{.ID}} {{.Status}} {{.Names}}\" | grep -E \"dd-pool|dd-container-pool\" || true'",
+              "echo '=== managed worker container details ==='",
+              "sudo -u ec2-user -H bash -lc 'for c in $(sudo nerdctl -n k8s.io ps -a --format \"{{.Names}}\" | grep \"^dd-pool\" || true); do echo === $c ===; sudo nerdctl -n k8s.io inspect \"$c\" 2>/dev/null | jq -r \".[0] | {Name:.Name, Image:.Image, Created:.Created, Args:.Args, State:.State, Status:.Status}\" || true; echo --- logs; sudo nerdctl -n k8s.io logs --tail 80 \"$c\" 2>&1 || true; done'",
+              "echo '=== container-pool /pools snapshot ==='",
+              "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath=\"{.items[0].metadata.name}\"); kubectl -n default exec \"$pod\" -- bash -lc '\\''secret=\"${SERVER_AUTH_SECRET:-}\"; curl -fsS -H \"X-Server-Auth: $secret\" http://127.0.0.1:8102/pools || true'\\'''",
+              "echo '=== container-pool deployment ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default describe deployment/dd-container-pool | tail -90 || true'",
+              "echo '=== container-pool pods ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-container-pool -o name\" || true); do echo === DESCRIBE $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default describe $p | tail -90\" || true; echo === PREV_LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --previous --tail=80 2>/dev/null\" || true; echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=80\" || true; done",
+              "echo '=== queue-consumer recent logs ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-remote-queue-consumer -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --all-containers --tail=180\" || true; done",
+              "echo '=== recent container-pool events ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get events -n default --sort-by=.lastTimestamp | grep -E \"dd-container-pool|container-pool|8102\" | tail -80 || true'"
+            ]
+          }
+          JSON
+              ;;
+            seed-container-pool-config)
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== applying container-pool app_config seed ==='",
+              "sudo -u ec2-user -H bash -lc 'set -euo pipefail; pod=$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath=\"{.items[0].metadata.name}\"); kubectl -n default exec \"$pod\" -- bash -lc '\\''set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; if ! command -v psql >/dev/null 2>&1; then apt-get update >/dev/null && apt-get install -y --no-install-recommends postgresql-client >/dev/null; fi; db_url=\"${CONTAINER_POOL_DATABASE_URL:-${AGENT_TASKS_RDS_DATABASE_URL:-${RDS_DATABASE_URL:-${DATABASE_URL:-}}}}\"; if [[ -z \"$db_url\" ]]; then echo \"missing database URL env\" >&2; exit 1; fi; psql \"$db_url\" -v ON_ERROR_STOP=1 -f /opt/dd-next-1/remote/databases/pg/seeds/app-config-table.sql >/tmp/container-pool-schema.out; psql \"$db_url\" -v ON_ERROR_STOP=1 -f /opt/dd-next-1/remote/databases/pg/seeds/container-pool-app-config.sql >/tmp/container-pool-seed.out; grep -E \"^(INSERT|UPDATE|CREATE|ALTER|NOTICE)\" /tmp/container-pool-schema.out /tmp/container-pool-seed.out || cat /tmp/container-pool-schema.out /tmp/container-pool-seed.out'\\'''",
+              "echo '=== restarting container-pool and queue consumer ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-queue-consumer'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-container-pool --timeout=300s'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -l app=dd-container-pool -o wide'"
+            ]
+          }
+          JSON
+              ;;
+            test-container-pool-config)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== wait for deployed services ==="
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-gateway --timeout=300s
+
+          echo "=== run /container-pool/config e2e from cluster ==="
+          bash scripts/test/container-pool-config-e2e.sh
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            repair-gleamlang-secret)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+
+          script = r'''set -euo pipefail
+          secret_name="dd/remote-dev/gleamlang-server-secrets"
+          region="${AWS_REGION:-us-east-1}"
+
+          secret_json="$(
+            sudo -u ec2-user -H python3 - <<'INNER'
+          import base64
+          import json
+          import subprocess
+
+          raw = subprocess.check_output([
+              "kubectl",
+              "-n",
+              "default",
+              "get",
+              "secret",
+              "dd-gleamlang-server-secrets",
+              "-o",
+              "json",
+          ])
+          secret = json.loads(raw)
+          decoded = {
+              key: base64.b64decode(value).decode("utf-8")
+              for key, value in secret.get("data", {}).items()
+          }
+          if not decoded:
+              raise SystemExit("dd-gleamlang-server-secrets has no data")
+          print(json.dumps(decoded, separators=(",", ":")))
+          INNER
+          )"
+
+          if aws secretsmanager describe-secret \
+            --region "$region" \
+            --secret-id "$secret_name" >/dev/null 2>/tmp/gleam-secret.err; then
+            aws secretsmanager put-secret-value \
+              --region "$region" \
+              --secret-id "$secret_name" \
+              --secret-string "$secret_json" >/dev/null
+            echo "updated $secret_name"
+          elif grep -q ResourceNotFoundException /tmp/gleam-secret.err; then
+            aws secretsmanager create-secret \
+              --region "$region" \
+              --name "$secret_name" \
+              --secret-string "$secret_json" >/dev/null
+            echo "created $secret_name"
+          else
+            cat /tmp/gleam-secret.err >&2
+            exit 1
+          fi
+
+          sudo -u ec2-user -H bash -lc \
+            'kubectl -n default annotate externalsecret dd-gleamlang-server-secrets force-sync=$(date +%s) --overwrite'
+          sleep 20
+          sudo -u ec2-user -H bash -lc \
+            'kubectl -n default get externalsecret dd-gleamlang-server-secrets'
+          sudo -u ec2-user -H bash -lc \
+            'kubectl -n default describe externalsecret dd-gleamlang-server-secrets | sed -n "/Status:/,/Events:/p"'
+          sudo -u ec2-user -H bash -lc \
+            'kubectl -n default get secret dd-gleamlang-server-secrets'
+          '''
+
+          print(json.dumps({"commands": ["set -euo pipefail", script]}))
+          PY
+              ;;
+            reconcile-runtime)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          tag_images = r'''set -euo pipefail
+          echo "=== copying dd-dev-server:dev image into dd-pool containerd namespace ==="
+          sudo ctr -n dd-pool namespace ls >/dev/null 2>&1 || sudo ctr namespace create dd-pool || true
+          if sudo nerdctl -n k8s.io images --quiet docker.io/library/dd-dev-server:dev >/tmp/dd-dev-server.found 2>/dev/null && [ -s /tmp/dd-dev-server.found ]; then
+            sudo ctr -n k8s.io image export /tmp/dd-dev-server.tar docker.io/library/dd-dev-server:dev
+            sudo ctr -n dd-pool image import /tmp/dd-dev-server.tar || true
+            sudo rm -f /tmp/dd-dev-server.tar
+            sudo nerdctl -n dd-pool images | grep dd-dev-server || true
+          else
+            echo "dd-dev-server:dev not present in k8s.io; skipping image copy"
+          fi
+          echo "=== removing any stale dd-pool managed containers in k8s.io ==="
+          for c in $(sudo nerdctl -n k8s.io ps -aq --filter label=dd.container-pool.managed=true 2>/dev/null); do
+            sudo nerdctl -n k8s.io rm -f "$c" || true
+          done
+          '''
+          diag = r'''set +e
+          echo "=== runtime versions on host ==="
+          sudo nerdctl --version 2>&1 || true
+          sudo containerd --version 2>&1 || true
+          sudo runc --version 2>&1 || true
+          which runc 2>&1 || true
+          ls -la /usr/bin/runc /usr/local/bin/runc /usr/sbin/runc 2>&1 || true
+          ls -la /usr/local/bin/containerd-shim-runc-v2 /usr/bin/containerd-shim-runc-v2 2>&1 || true
+          stat -c '%a %u %g %n' /run/containerd/containerd.sock 2>&1 || true
+          echo "=== live-mutex pool snapshot ==="
+          pod="$(kubectl -n default get pods -l app=dd-container-pool -o jsonpath='{.items[0].metadata.name}')"
+          if [ -n "$pod" ]; then
+            kubectl -n default exec "$pod" -- bash -lc 'secret="${SERVER_AUTH_SECRET:-}"; curl -fsS -H "X-Server-Auth: $secret" http://127.0.0.1:8102/pools/nodejs-chat-claude-live-mutex-dev || true' | head -c 2000
+            echo
+          fi
+          echo "=== managed nerdctl workers (dd-pool namespace) ==="
+          sudo nerdctl -n dd-pool ps -a --format "{{.ID}} {{.Status}} {{.Names}}" | grep -E "dd-pool" || true
+          echo "=== ctr containers and tasks in dd-pool ==="
+          sudo ctr -n dd-pool containers ls 2>&1 | head -c 2000 || true
+          echo
+          sudo ctr -n dd-pool tasks ls 2>&1 | head -c 2000 || true
+          echo
+          echo "=== nerdctl inspect first worker ==="
+          first_worker="$(sudo nerdctl -n dd-pool ps -a --format '{{.Names}}' | grep '^dd-pool' | head -n1 || true)"
+          if [ -n "$first_worker" ]; then
+            echo "worker=$first_worker"
+            echo "--- raw inspect State ---"
+            sudo nerdctl -n dd-pool inspect "$first_worker" 2>/tmp/inspect.err | jq -r '.[0].State' 2>&1 | head -c 800 || true
+            echo
+            echo "--- inspect stderr ---"
+            cat /tmp/inspect.err | head -c 600 || true
+            echo
+            echo "--- worker logs ---"
+            sudo nerdctl -n dd-pool logs --tail 40 "$first_worker" 2>&1 | head -c 1500 || true
+            echo
+            echo "--- containerd journal for container ---"
+            sudo journalctl -u containerd --since "5 min ago" 2>&1 | grep -iE "error|fail|warn|dd-pool|runc" | tail -30 || true
+          fi
+          echo "=== removing stale workers ==="
+          for c in $(sudo nerdctl -n dd-pool ps -aq --filter label=dd.container-pool.managed=true 2>/dev/null); do
+            sudo nerdctl -n dd-pool rm -f "$c" 2>&1 | head -c 200 || true
+          done
+          echo "=== killing leaked nerdctl oci-hook postStop processes (root cause of unknown task state) ==="
+          stuck_hook_count=$(ps -eo pid,args 2>/dev/null | grep -F "nerdctl" | grep -F "internal oci-hook" | grep -v grep | wc -l)
+          echo "stuck oci-hook process count before kill: $stuck_hook_count"
+          sudo pkill -KILL -f "nerdctl .* internal oci-hook" 2>&1 | head -c 200 || true
+          sudo pkill -KILL -f "nerdctl.*internal oci-hook" 2>&1 | head -c 200 || true
+          sleep 2
+          stuck_hook_count_after=$(ps -eo pid,args 2>/dev/null | grep -F "nerdctl" | grep -F "internal oci-hook" | grep -v grep | wc -l)
+          echo "stuck oci-hook process count after kill: $stuck_hook_count_after"
+          echo "=== killing any hung containerd-shim-runc-v2 for dd-pool containers ==="
+          ps -eo pid,args 2>/dev/null | grep -F "containerd-shim-runc-v2" | grep -F "dd-pool" | grep -v grep | awk '{print $1}' | xargs -r sudo kill -KILL 2>&1 | head -c 200 || true
+          sleep 1
+          echo "=== restarting containerd on the host to clear any stuck shims ==="
+          sudo systemctl restart containerd 2>&1 | head -c 500 || true
+          sleep 6
+          sudo systemctl status containerd --no-pager --lines 0 2>&1 | head -c 1500 || true
+          echo "=== runc and containerd-shim-runc-v2 versions after restart ==="
+          sudo runc --version 2>&1 || true
+          sudo containerd-shim-runc-v2 -v 2>&1 || true
+          echo "=== minimal busybox smoke after containerd restart ==="
+          if sudo nerdctl -n k8s.io images --quiet docker.io/library/busybox:latest 2>/dev/null | grep -q .; then
+            sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never docker.io/library/busybox:latest /bin/sh -c "echo busybox-smoke-ok; id; date" 2>&1 | head -c 4000 || true
+            echo "--- busybox-smoke exit: $? ---"
+          else
+            echo "busybox not present; trying alpine"
+            if sudo nerdctl -n k8s.io images --quiet docker.io/library/alpine:latest 2>/dev/null | grep -q .; then
+              sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never docker.io/library/alpine:latest /bin/sh -c "echo alpine-smoke-ok; id; date" 2>&1 | head -c 4000 || true
+              echo "--- alpine-smoke exit: $? ---"
+            fi
+          fi
+          echo "=== dd-dev-server foreground (no --user, no --memory, no --pids-limit) ==="
+          sudo timeout 30 nerdctl -n dd-pool run --rm --network host --pull never --entrypoint /bin/sh docker.io/library/dd-dev-server:dev -c "echo dd-dev-foreground-ok; id; date" 2>&1 | head -c 4000 || true
+          echo "--- dd-dev-foreground exit: $? ---"
+          echo "=== dd-dev-server detached default cmd (no --user, no --memory) ==="
+          sudo timeout 30 nerdctl -n dd-pool run -d --name dd-pool-smoke --network host --pull never docker.io/library/dd-dev-server:dev 2>&1 | head -c 800 || true
+          echo "--- dd-dev-detached exit: $? ---"
+          sleep 5
+          sudo timeout 10 nerdctl -n dd-pool inspect dd-pool-smoke 2>&1 | jq -r '.[0].State' 2>&1 | head -c 800 || true
+          sudo timeout 10 nerdctl -n dd-pool logs dd-pool-smoke 2>&1 | tail -c 2000 || true
+          sudo timeout 10 nerdctl -n dd-pool rm -f dd-pool-smoke 2>&1 | head -c 200 || true
+          echo "=== dd-pool images ==="
+          sudo nerdctl -n dd-pool images | grep -E "dd-dev-server|dd-container-pool|nodejs-runtime|busybox" || true
+          echo "=== container-pool recent logs ==="
+          for p in $(kubectl -n default get pods -l app=dd-container-pool -o name); do
+            kubectl -n default logs "$p" --tail=200 2>&1 | tail -180 || true
+          done
+          echo "=== queue-consumer recent logs ==="
+          for p in $(kubectl -n default get pods -l app=dd-remote-queue-consumer -o name); do
+            kubectl -n default logs "$p" --tail=120 2>&1 | tail -100 || true
+          done
+          '''
+          argocd_sync = r'''set +e
+          app=application/dd-next-runtime
+          echo "=== dd-next-runtime BEFORE force-sync ==="
+          kubectl -n argocd get $app -o wide || true
+          echo "sync.status:    $(kubectl -n argocd get $app -o jsonpath='{.status.sync.status}')"
+          echo "sync.revision:  $(kubectl -n argocd get $app -o jsonpath='{.status.sync.revision}')"
+          echo "health.status:  $(kubectl -n argocd get $app -o jsonpath='{.status.health.status}')"
+          echo "opState.phase:  $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
+          echo "opState.msg:    $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.message}')"
+          echo "conditions:     $(kubectl -n argocd get $app -o jsonpath='{range .status.conditions[*]}{.type}={.message};{end}')"
+          echo "=== forcing Argo sync to HEAD ==="
+          kubectl -n argocd patch $app --type merge -p '{"operation":{"initiatedBy":{"username":"maintenance-reconcile"},"info":[{"name":"reason","value":"reconcile-runtime"}],"sync":{"revision":"HEAD","prune":true}}}' || true
+          for i in $(seq 1 30); do
+            ph="$(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
+            echo "  wait $i phase=$ph"
+            case "$ph" in Succeeded|Failed|Error) break;; esac
+            sleep 5
+          done
+          echo "=== dd-next-runtime AFTER force-sync ==="
+          kubectl -n argocd get $app -o wide || true
+          echo "sync.status:    $(kubectl -n argocd get $app -o jsonpath='{.status.sync.status}')"
+          echo "opState.phase:  $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.phase}')"
+          echo "opState.msg:    $(kubectl -n argocd get $app -o jsonpath='{.status.operationState.message}')"
+          echo "=== dd-des-rs presence ==="
+          kubectl -n default get deploy,svc -l app=dd-des-rs -o wide || true
+          echo "--- dd-des-rs pods (READY/STATUS/RESTARTS) ---"
+          kubectl -n default get pods -l app=dd-des-rs -o wide || true
+          echo "--- dd-des-rs recent log tail (build/serve progress) ---"
+          kubectl -n default logs -l app=dd-des-rs --tail=15 --all-containers 2>/dev/null | tail -15 || true
+          echo "=== gateway ConfigMap des-rs line count: $(kubectl -n default get configmap dd-remote-gateway-config -o jsonpath='{.data}' 2>/dev/null | grep -c des-rs) ==="
+          '''
+          mutex_proof = r'''set -euo pipefail
+          echo "=== dd-rust-network-mutex rollout proof ==="
+          kubectl -n default get deploy/dd-rust-network-mutex -o wide
+          echo "template.live-mutex-rs-revision: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.metadata.annotations.dd\.dev/live-mutex-rs-revision}')"
+          echo "template.LMX_RS_GIT_REF: $(kubectl -n default get deploy/dd-rust-network-mutex -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="LMX_RS_GIT_REF")].value}')"
+          deadline=$((SECONDS + 1800))
+          jsonpath() {
+            kubectl -n default get deploy/dd-rust-network-mutex -o "jsonpath={$1}" 2>/dev/null || true
+          }
+          num() {
+            case "${1:-}" in
+              ''|*[!0-9]*) echo 0 ;;
+              *) echo "$1" ;;
+            esac
+          }
+          while true; do
+            generation="$(num "$(jsonpath '.metadata.generation')")"
+            observed="$(num "$(jsonpath '.status.observedGeneration')")"
+            desired="$(num "$(jsonpath '.spec.replicas')")"
+            updated="$(num "$(jsonpath '.status.updatedReplicas')")"
+            ready="$(num "$(jsonpath '.status.readyReplicas')")"
+            available="$(num "$(jsonpath '.status.availableReplicas')")"
+            echo "rollout observed=${observed}/${generation} desired=${desired} updated=${updated} ready=${ready} available=${available}"
+            if (( generation > 0 && observed >= generation && desired > 0 && updated >= desired && ready >= desired && available >= desired )); then
+              break
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "dd-rust-network-mutex rollout timed out" >&2
+              kubectl -n default get deploy/dd-rust-network-mutex -o wide || true
+              kubectl -n default describe deploy/dd-rust-network-mutex || true
+              kubectl -n default get rs,pods -l app=dd-rust-network-mutex -o wide || true
+              kubectl -n default logs -l app=dd-rust-network-mutex --all-containers --tail=120 || true
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "dd-rust-network-mutex rollout healthy"
+          kubectl -n default get pods -l app=dd-rust-network-mutex -o wide
+          '''
+          sync_checkout = f'''set -euo pipefail
+          cd /home/ec2-user/codes/dd/dd-next-1
+          echo "=== sync EC2 checkout ==="
+          git -c status.showUntrackedFiles=no status --short || true
+          stash_name="remote-k8s-maintenance-pre-merge-$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "stashing tracked/untracked repo content before merge: $stash_name"
+          # Scope the stash to repository content that this workflow mutates.
+          # The EC2 checkout also carries machine-local state such as .kube/,
+          # which can be unreadable to ec2-user and should never be removed by git.
+          git stash push --include-untracked -m "$stash_name" -- remote .github || true
+          echo "stashing submodule worktrees before merge"
+          git submodule foreach --recursive 'git stash push --include-untracked -m remote-k8s-maintenance-pre-merge-submodule || true' || true
+          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs || true
+          git fetch origin {rev}
+          git merge --ff-only origin/{rev}
+          git submodule update --init --recursive remote/submodules/rust-network-mutex-rs
+          git rev-parse --short HEAD
+          '''
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(sync_checkout)}",
+              f"bash -lc {shlex.quote(tag_images)}",
+              "sudo bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && ./remote/deployments/host-cron/install.sh'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-secrets.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-fsharp-ws-server.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && kubectl apply -f remote/argocd/apps/dd-gleam-mcp-server.application.yaml'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd annotate application/dd-secrets application/dd-next-runtime application/dd-fsharp-ws-server application/dd-gleam-mcp-server argocd.argoproj.io/refresh=hard --overwrite || true'",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(argocd_sync)}",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(mutex_proof)}",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-remote-gateway --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-webrtc-signaling --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default delete pod -l app=dd-fsharp-ws-server --field-selector=status.phase!=Running --ignore-not-found=true --wait=false || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-remote-gateway deployment/dd-webrtc-signaling deployment/dd-trading-server deployment/dd-remote-web-home deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer deployment/dd-container-pool || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-fsharp-ws-server || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default rollout restart deployment/dd-gleam-mcp-server || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods -o wide'",
+              f"sudo -u ec2-user -H bash -lc {shlex.quote(diag)} || true",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            deploy-lambda-ui)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== checking EC2 checkout cleanliness ==="
+          git status --short
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block deploy-lambda-ui" >&2
+            exit 1
+          fi
+          echo "tracked checkout clean"
+
+          echo "=== fast-forward checkout ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== render Argo manifests ==="
+          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime-render.yaml
+          kubectl kustomize remote/deployments/gleam-lambda-runner/k8s/ec2 >/tmp/dd-gleam-lambda-runner-render.yaml
+          wc -l /tmp/dd-next-runtime-render.yaml /tmp/dd-gleam-lambda-runner-render.yaml
+
+          echo "=== rebuild local runtime images ==="
+          sudo nerdctl -n k8s.io build --progress=plain \
+            -f remote/deployments/web-home-rs/Dockerfile \
+            -t docker.io/library/dd-remote-web-home:dev \
+            remote
+          for runtime in nodejs python3 ruby bash; do
+            sudo nerdctl -n k8s.io build --progress=plain \
+              -f "remote/deployments/gleam-lambda-runner/runtime-images/${runtime}.Dockerfile" \
+              -t "docker.io/library/dd-lambda-${runtime}-runtime:dev" \
+              remote/deployments/gleam-lambda-runner
+          done
+
+          echo "=== refresh Argo applications ==="
+          kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-gleam-lambda-runner.application.yaml
+          kubectl -n argocd annotate \
+            application/dd-next-runtime \
+            application/dd-gleam-lambda-runner \
+            argocd.argoproj.io/refresh=hard \
+            --overwrite || true
+
+          echo "=== restart changed deployments ==="
+          kubectl -n default rollout restart deployment/dd-remote-web-home deployment/dd-gleam-lambda-runner
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s
+          kubectl -n default rollout status deployment/dd-gleam-lambda-runner --timeout=600s
+
+          echo "=== smoke lambda check endpoint from runner pod ==="
+          lambda_pod="$(kubectl -n default get pod -l app=dd-gleam-lambda-runner -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n default exec "$lambda_pod" -- python3 -c 'import json, os, urllib.request; payload={"slug":"deploy-smoke-nodejs","runtime":"nodejs","functionBody":"return { status: 200, body: { ok: true } };","containerized":False,"status":"draft"}; req=urllib.request.Request("http://127.0.0.1:8083/check", data=json.dumps(payload).encode("utf-8"), headers={"content-type":"application/json","x-server-auth":os.environ.get("SERVER_AUTH_SECRET","")}, method="POST"); text=urllib.request.urlopen(req, timeout=20).read().decode("utf-8"); body=json.loads(text); print(text); raise SystemExit(1 if body.get("ok") is False else 0)'
+
+          echo "=== deployed pods ==="
+          kubectl -n default get deploy dd-remote-web-home dd-gleam-lambda-runner -o wide
+          kubectl -n default get pods -l 'app in (dd-remote-web-home,dd-gleam-lambda-runner)' -o wide
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-lambda-checks)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import shlex
+
+          script = r'''set -euo pipefail
+          echo "=== lambda runner deployment ==="
+          kubectl -n default get deploy dd-gleam-lambda-runner -o wide
+          kubectl -n default rollout status deployment/dd-gleam-lambda-runner --timeout=120s
+
+          echo "=== lambda runner pod ==="
+          lambda_pod="$(kubectl -n default get pod -l app=dd-gleam-lambda-runner -o jsonpath='{.items[0].metadata.name}')"
+          echo "$lambda_pod"
+
+          echo "=== lambda check matrix ==="
+          kubectl -n default exec -i "$lambda_pod" -- python3 - <<'INNER'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          endpoint = "http://127.0.0.1:8083/check"
+          server_auth = os.environ.get("SERVER_AUTH_SECRET", "")
+          if not server_auth:
+              raise SystemExit("SERVER_AUTH_SECRET is not available in runner pod")
+
+          cases = [
+              {
+                  "name": "nodejs-host-valid",
+                  "runtime": "nodejs",
+                  "containerized": False,
+                  "functionBody": "return { status: 200, body: { ok: true } };",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "nodejs-container-valid",
+                  "runtime": "nodejs",
+                  "containerized": True,
+                  "functionBody": "return { status: 200, body: { ok: true } };",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "python3-container-valid",
+                  "runtime": "python3",
+                  "containerized": True,
+                  "functionBody": 'result = { "status": 200, "body": { "ok": True } }',
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "ruby-container-valid",
+                  "runtime": "ruby",
+                  "containerized": True,
+                  "functionBody": "{ status: 200, body: { ok: true } }",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "bash-container-valid",
+                  "runtime": "bash",
+                  "containerized": True,
+                  "functionBody": "printf '%s\\n' '{\"status\":200,\"body\":{\"ok\":true}}'",
+                  "expectedStatus": 200,
+                  "expectedOk": True,
+              },
+              {
+                  "name": "nodejs-container-invalid",
+                  "runtime": "nodejs",
+                  "containerized": True,
+                  "functionBody": "return {",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "python3-container-invalid",
+                  "runtime": "python3",
+                  "containerized": True,
+                  "functionBody": "if :\\n  result = 1",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "ruby-container-invalid",
+                  "runtime": "ruby",
+                  "containerized": True,
+                  "functionBody": "def broken(",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "bash-container-invalid",
+                  "runtime": "bash",
+                  "containerized": True,
+                  "functionBody": "if true; then echo ok",
+                  "expectedStatus": 422,
+                  "expectedOk": False,
+              },
+              {
+                  "name": "python3-host-policy",
+                  "runtime": "python3",
+                  "containerized": False,
+                  "functionBody": 'result = { "status": 200 }',
+                  "expectedStatus": 502,
+                  "expectedOk": False,
+                  "expectedError": "requires containerized=true",
+              },
+          ]
+
+          def post(payload):
+              request = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={
+                      "content-type": "application/json",
+                      "x-server-auth": server_auth,
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      return response.status, response.read().decode("utf-8")
+              except urllib.error.HTTPError as error:
+                  return error.code, error.read().decode("utf-8")
+
+          failures = []
+          for case in cases:
+              payload = {
+                  "slug": "verify-" + case["name"],
+                  "runtime": case["runtime"],
+                  "functionBody": case["functionBody"],
+                  "containerized": case["containerized"],
+                  "status": "draft",
+              }
+              status, text = post(payload)
+              try:
+                  body = json.loads(text)
+              except json.JSONDecodeError:
+                  body = {"ok": None, "error": "response was not JSON", "raw": text}
+
+              result = {
+                  "case": case["name"],
+                  "status": status,
+                  "ok": body.get("ok"),
+                  "runtime": (body.get("check") or {}).get("runtime"),
+                  "error": body.get("error", ""),
+              }
+              print(json.dumps(result, sort_keys=True))
+
+              if status != case["expectedStatus"]:
+                  failures.append(f"{case['name']} status {status} != {case['expectedStatus']}: {text}")
+              if body.get("ok") is not case["expectedOk"]:
+                  failures.append(f"{case['name']} ok {body.get('ok')} != {case['expectedOk']}: {text}")
+              if case.get("expectedError") and case["expectedError"] not in str(body.get("error", "")):
+                  failures.append(f"{case['name']} missing error fragment {case['expectedError']!r}: {text}")
+              if body.get("ok") is True and (body.get("check") or {}).get("runtime") != case["runtime"]:
+                  failures.append(f"{case['name']} check runtime mismatch: {text}")
+
+          if failures:
+              print("lambda check matrix failures:", file=sys.stderr)
+              for failure in failures:
+                  print("- " + failure, file=sys.stderr)
+              raise SystemExit(1)
+
+          print("lambda check matrix passed")
+          INNER
+
+          echo "=== lambda runner metrics sample ==="
+          kubectl -n default exec "$lambda_pod" -- sh -lc \
+            'wget -qO- http://127.0.0.1:8083/metrics | grep -E "dd_lambda_runner_(child_spawns_total|active_workers)" || true'
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            verify-gleam-mcp-server)
+              python3 - <<PY > /tmp/remote-k8s-commands.json
+          import json
+          rev = ${TARGET_REVISION@Q}
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user/codes/dd/dd-next-1; git fetch origin {rev}; git merge --ff-only origin/{rev}; git rev-parse --short HEAD'",
+              "sudo -u ec2-user -H bash -lc 'cd /home/ec2-user/codes/dd/dd-next-1 && remote/ec2/verify-gleam-mcp-server.sh'",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-mip-solver-node)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout so verifier script exists ==="
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git submodule sync --recursive
+          git submodule update --init --recursive \
+            remote/deployments/mip-solver-node.rs \
+            remote/submodules/discrete-event-system.rs
+          git rev-parse --short HEAD
+          git -C remote/deployments/mip-solver-node.rs rev-parse --short HEAD
+
+          echo "=== run MIP solver verifier ==="
+          TARGET_REVISION="${TARGET_REVISION:-dev}" bash remote/ec2/verify-mip-solver-node.sh
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            sync-agent-model-keys)
+              if [[ -z "${REMOTE_DEV_DEEPSEEK_API_KEY:-}" && -z "${REMOTE_DEV_DASHSCOPE_API_KEY:-}" && -z "${REMOTE_DEV_XAI_API_KEY:-}" ]]; then
+                echo "At least one REMOTE_DEV_* model provider repository secret is required" >&2
+                exit 65
+              fi
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          env = {
+              "REMOTE_DEV_DEEPSEEK_API_KEY": os.environ.get("REMOTE_DEV_DEEPSEEK_API_KEY", ""),
+              "REMOTE_DEV_DASHSCOPE_API_KEY": os.environ.get("REMOTE_DEV_DASHSCOPE_API_KEY", ""),
+              "REMOTE_DEV_XAI_API_KEY": os.environ.get("REMOTE_DEV_XAI_API_KEY", ""),
+          }
+          env_args = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items())
+          script = r'''set -euo pipefail
+          secret_name="dd/remote-dev/agent-secrets"
+          region="${AWS_REGION:-us-east-1}"
+
+          read_secret_stage() {
+            local stage="$1"
+            aws secretsmanager get-secret-value \
+              --region "$region" \
+              --secret-id "$secret_name" \
+              --version-stage "$stage" \
+              --query SecretString \
+              --output text
+          }
+
+          validate_agent_secret() {
+            SECRET_JSON="$1" python3 - <<'INNER'
+          import json
+          import os
+          import sys
+
+          required = [
+              "SERVER_AUTH_SECRET",
+              "GH_DEPLOY_KEY",
+              "GEMINI_API_KEY",
+          ]
+          try:
+              data = json.loads(os.environ.get("SECRET_JSON") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          missing = [
+              key
+              for key in required
+              if not isinstance(data, dict) or not str(data.get(key) or "").strip()
+          ]
+          if missing:
+              print("missing required keys: " + ", ".join(missing), file=sys.stderr)
+              raise SystemExit(1)
+          INNER
+          }
+
+          if ! current_secret="$(read_secret_stage AWSCURRENT 2>/tmp/agent-secrets-current.err)"; then
+            cat /tmp/agent-secrets-current.err >&2
+            exit 1
+          fi
+          source_stage="AWSCURRENT"
+          if ! validate_agent_secret "$current_secret"; then
+            echo "current $secret_name is incomplete; trying AWSPREVIOUS" >&2
+            if ! current_secret="$(read_secret_stage AWSPREVIOUS 2>/tmp/agent-secrets-previous.err)"; then
+              cat /tmp/agent-secrets-previous.err >&2
+              exit 1
+            fi
+            validate_agent_secret "$current_secret"
+            source_stage="AWSPREVIOUS"
+          fi
+
+          updated_secret="$(
+            CURRENT_SECRET="$current_secret" python3 - <<'INNER'
+          import json
+          import os
+
+          try:
+              data = json.loads(os.environ.get("CURRENT_SECRET") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          if not isinstance(data, dict):
+              data = {}
+
+          def merge_json_array(key: str, value: str) -> None:
+              value = (value or "").strip()
+              if not value:
+                  return
+              existing = data.get(key)
+              values = []
+              if isinstance(existing, str) and existing.strip():
+                  try:
+                      parsed = json.loads(existing)
+                      if isinstance(parsed, list):
+                          values.extend(str(item) for item in parsed if str(item).strip())
+                      else:
+                          values.append(existing)
+                  except json.JSONDecodeError:
+                      values.extend(item.strip() for item in existing.replace("\n", ",").split(",") if item.strip())
+              elif isinstance(existing, list):
+                  values.extend(str(item) for item in existing if str(item).strip())
+              if value not in values:
+                  values.append(value)
+              data[key] = json.dumps(values, separators=(",", ":"))
+
+          merge_json_array("DEEPSEEK_API_KEYS_JSON", os.environ.get("REMOTE_DEV_DEEPSEEK_API_KEY", ""))
+          merge_json_array("DASHSCOPE_API_KEYS_JSON", os.environ.get("REMOTE_DEV_DASHSCOPE_API_KEY", ""))
+          merge_json_array("XAI_API_KEYS_JSON", os.environ.get("REMOTE_DEV_XAI_API_KEY", ""))
+          data.setdefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+          data["DEEPSEEK_MODELS"] = "deepseek-v4-flash,deepseek-v4-pro"
+          data.setdefault("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
+          data.setdefault("QWEN_MODELS", "qwen3.6-max-preview,qwen3.6-plus,qwen3.6-flash")
+          data.setdefault("XAI_BASE_URL", "https://api.x.ai/v1")
+          data["XAI_MODELS"] = "grok-4.3"
+          print(json.dumps(data, separators=(",", ":")))
+          INNER
+          )"
+
+          aws secretsmanager describe-secret \
+            --region "$region" \
+            --secret-id "$secret_name" >/dev/null
+          aws secretsmanager put-secret-value \
+            --region "$region" \
+            --secret-id "$secret_name" \
+            --secret-string "$updated_secret" >/dev/null
+          echo "updated $secret_name model provider keys from $source_stage"
+
+          kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite
+          sleep 20
+          kubectl -n default get externalsecret dd-agent-secrets
+          kubectl -n default get secret dd-agent-secrets
+          kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true
+          kubectl -n default rollout restart deployment -l app.kubernetes.io/component=thread-pod || true
+          kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env {env_args} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            sync-agent-gh-pat)
+              if [[ -z "${REMOTE_DEV_GH_PAT:-}" ]]; then
+                echo "REMOTE_DEV_GH_PAT repository secret is not configured" >&2
+                exit 65
+              fi
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          token = os.environ["REMOTE_DEV_GH_PAT"]
+          script = r'''set -euo pipefail
+          secret_name="dd/remote-dev/agent-secrets"
+          region="${AWS_REGION:-us-east-1}"
+
+          read_secret_stage() {
+            local stage="$1"
+            aws secretsmanager get-secret-value \
+              --region "$region" \
+              --secret-id "$secret_name" \
+              --version-stage "$stage" \
+              --query SecretString \
+              --output text
+          }
+
+          validate_agent_secret() {
+            SECRET_JSON="$1" python3 - <<'INNER'
+          import json
+          import os
+          import sys
+
+          required = [
+              "SERVER_AUTH_SECRET",
+              "GH_DEPLOY_KEY",
+              "GEMINI_API_KEY",
+          ]
+          try:
+              data = json.loads(os.environ.get("SECRET_JSON") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          missing = [
+              key
+              for key in required
+              if not isinstance(data, dict) or not str(data.get(key) or "").strip()
+          ]
+          if missing:
+              print("missing required keys: " + ", ".join(missing), file=sys.stderr)
+              raise SystemExit(1)
+          INNER
+          }
+
+          if ! current_secret="$(read_secret_stage AWSCURRENT 2>/tmp/agent-secrets-current.err)"; then
+            cat /tmp/agent-secrets-current.err >&2
+            exit 1
+          fi
+          source_stage="AWSCURRENT"
+          if ! validate_agent_secret "$current_secret"; then
+            echo "current $secret_name is incomplete; trying AWSPREVIOUS" >&2
+            if ! current_secret="$(read_secret_stage AWSPREVIOUS 2>/tmp/agent-secrets-previous.err)"; then
+              cat /tmp/agent-secrets-previous.err >&2
+              exit 1
+            fi
+            validate_agent_secret "$current_secret"
+            source_stage="AWSPREVIOUS"
+          fi
+
+          updated_secret="$(
+            CURRENT_SECRET="$current_secret" REMOTE_DEV_GH_PAT="$REMOTE_DEV_GH_PAT" python3 - <<'INNER'
+          import json
+          import os
+
+          try:
+              data = json.loads(os.environ.get("CURRENT_SECRET") or "{}")
+          except json.JSONDecodeError:
+              data = {}
+          if not isinstance(data, dict):
+              data = {}
+          data["GH_PAT"] = os.environ["REMOTE_DEV_GH_PAT"]
+          print(json.dumps(data, separators=(",", ":")))
+          INNER
+          )"
+
+          aws secretsmanager describe-secret \
+            --region "$region" \
+            --secret-id "$secret_name" >/dev/null
+          aws secretsmanager put-secret-value \
+            --region "$region" \
+            --secret-id "$secret_name" \
+            --secret-string "$updated_secret" >/dev/null
+          echo "updated $secret_name GH_PAT from $source_stage"
+
+          kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite
+          sleep 20
+          kubectl -n default get externalsecret dd-agent-secrets
+          kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true
+          kubectl -n default rollout restart deployment -l app.kubernetes.io/component=thread-pod || true
+          kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true
+          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
+          kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env REMOTE_DEV_GH_PAT={shlex.quote(token)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            bootstrap-thread-go-services)
+              # One-shot kubectl-apply for the two new Argo CD Application
+              # manifests added on dev. Once registered, ArgoCD's
+              # automated/prune/selfHeal sync keeps both Apps in step with
+              # the dev branch on every subsequent push, so this operation
+              # only needs to run when bootstrapping the Apps for the
+              # first time (or after a deliberate prune).
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout ==="
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block bootstrap-thread-go-services" >&2
+            exit 1
+          fi
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== render manifests as a sanity check ==="
+          kubectl kustomize remote/deployments/thread-operator-go/k8s/ec2 | wc -l
+          kubectl kustomize remote/deployments/thread-fleet-exporter-go/k8s/ec2 | wc -l
+
+          echo "=== apply Argo CD Application manifests ==="
+          kubectl apply -f remote/argocd/apps/dd-thread-operator.application.yaml
+          kubectl apply -f remote/argocd/apps/dd-thread-fleet-exporter.application.yaml
+
+          echo "=== nudge Argo CD to sync now ==="
+          kubectl -n argocd annotate \
+            application/dd-thread-operator \
+            application/dd-thread-fleet-exporter \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== wait for child Deployments ==="
+          for app in dd-thread-operator dd-thread-fleet-exporter; do
+            for attempt in $(seq 1 30); do
+              if kubectl -n default get deploy "$app" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 5
+            done
+            kubectl -n default rollout status deployment/"$app" --timeout=300s || true
+          done
+
+          echo "=== Argo CD application status ==="
+          kubectl -n argocd get application/dd-thread-operator application/dd-thread-fleet-exporter -o wide || true
+
+          echo "=== applied resources ==="
+          kubectl -n default get deploy,svc -l app.kubernetes.io/component=thread-operator -o wide || true
+          kubectl -n default get deploy,svc -l app.kubernetes.io/component=fleet-exporter -o wide || true
+          kubectl get crd threads.dd.dev -o wide || true
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-thread-go-services)
+              # Read-only smoke test: confirm operator and fleet-exporter
+              # pods are Running, /metrics responds, the Thread CRD is
+              # registered, and the operator has no Thread CRs adopted
+              # by accident (sanity check on the opt-in safety contract).
+              cat > /tmp/remote-k8s-commands.json <<'JSON'
+          {
+            "commands": [
+              "set -euo pipefail",
+              "echo '=== thread-operator + fleet-exporter pods ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods,deploy -l app=dd-thread-operator -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n default get pods,deploy -l app=dd-thread-fleet-exporter -o wide || true'",
+              "echo '=== Thread CRD ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl get crd threads.dd.dev -o wide || true'",
+              "sudo -u ec2-user -H bash -lc 'kubectl get threads --all-namespaces || true'",
+              "echo '=== operator log tail ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-thread-operator -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --tail=120\" || true; done",
+              "echo '=== fleet-exporter log tail ==='",
+              "for p in $(sudo -u ec2-user -H bash -lc \"kubectl -n default get pods -l app=dd-thread-fleet-exporter -o name\" || true); do echo === LOGS $p ===; sudo -u ec2-user -H bash -lc \"kubectl -n default logs $p --tail=120\" || true; done",
+              "echo '=== fleet-exporter /metrics smoke ==='",
+              "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-thread-fleet-exporter -o jsonpath=\"{.items[0].metadata.name}\" 2>/dev/null); if [ -n \"$pod\" ]; then kubectl -n default exec \"$pod\" -- sh -lc \"wget -qO- http://127.0.0.1:9103/metrics 2>/dev/null | grep -E \\\"^dd_thread_fleet_(total|replicas|pvcs|threads|scrape)\\\" | head -40\"; else echo \"no fleet-exporter pod found yet\"; fi'",
+              "echo '=== operator /metrics smoke ==='",
+              "sudo -u ec2-user -H bash -lc 'pod=$(kubectl -n default get pods -l app=dd-thread-operator -o jsonpath=\"{.items[0].metadata.name}\" 2>/dev/null); if [ -n \"$pod\" ]; then kubectl -n default exec \"$pod\" -- sh -lc \"wget -qO- http://127.0.0.1:9101/metrics 2>/dev/null | grep -E \\\"^controller_runtime_|^workqueue_\\\" | head -20\"; else echo \"no operator pod found yet\"; fi'",
+              "echo '=== Argo CD application sync state ==='",
+              "sudo -u ec2-user -H bash -lc 'kubectl -n argocd get application/dd-thread-operator application/dd-thread-fleet-exporter -o wide || true'"
+            ]
+          }
+          JSON
+              ;;
+            deploy-bastion-live-containers)
+              # Bring the Live containers card on /home up to date end-to-end:
+              #   1. Fast-forward /home/ec2-user/codes/dd/dd-next-1 so the
+              #      hostPath that dd-bastion mounts at /opt/dd-next-1
+              #      contains the latest source. The bastion deployment
+              #      runs `cargo run --release` at startup and compiles
+              #      from that path, so the checkout has to move BEFORE
+              #      we restart the pod.
+              #   2. Apply the new metrics-server Argo CD Application so
+              #      metrics.k8s.io/v1beta1 returns CPU/memory snapshots
+              #      that dd-bastion enriches the inventory with.
+              #   3. Re-apply the dd-vpn Application and force a hard
+              #      refresh so the new RBAC (pods/log + dd-bastion-exec
+              #      ClusterRole/Binding) and the BASTION_TERMINAL_ENABLED
+              #      env var land together with the deployment rollout.
+              #   4. rollout restart dd-bastion in the vpn namespace and
+              #      dd-remote-web-home in default so both run the new
+              #      code.
+              #   5. Print bastion startup logs and a smoke probe so the
+              #      operator can confirm the new endpoints are live.
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          echo "=== sync EC2 checkout (bastion compiles from this hostPath) ==="
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "tracked dirty files block deploy-bastion-live-containers" >&2
+            git status --short
+            exit 1
+          fi
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git merge --ff-only FETCH_HEAD
+          git rev-parse --short HEAD
+
+          echo "=== apply metrics-server Argo CD Application ==="
+          kubectl apply -f remote/argocd/apps/metrics-server.application.yaml
+          kubectl -n argocd annotate application/metrics-server \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== apply / refresh dd-vpn Argo CD Application ==="
+          kubectl apply -f remote/argocd/apps/dd-vpn.application.yaml || true
+          kubectl -n argocd annotate application/dd-vpn \
+            argocd.argoproj.io/refresh=hard --overwrite || true
+
+          echo "=== wait for metrics-server rollout ==="
+          for attempt in $(seq 1 30); do
+            if kubectl -n kube-system get deploy metrics-server >/dev/null 2>&1; then
+              break
+            fi
+            sleep 5
+          done
+          kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s || true
+
+          echo "=== rollout restart dd-bastion (picks up new RBAC + new code) ==="
+          kubectl -n vpn rollout restart deployment/dd-bastion || true
+          kubectl -n vpn rollout status deployment/dd-bastion --timeout=600s || true
+
+          echo "=== rollout restart dd-remote-web-home (new live-containers UI) ==="
+          kubectl -n default rollout restart deployment/dd-remote-web-home || true
+          kubectl -n default rollout status deployment/dd-remote-web-home --timeout=300s || true
+
+          echo "=== bastion pod summary ==="
+          kubectl -n vpn get pods -l app=dd-bastion -o wide || true
+          for p in $(kubectl -n vpn get pods -l app=dd-bastion -o name 2>/dev/null); do
+            echo "=== LOGS $p (tail 120) ==="
+            kubectl -n vpn logs "$p" --tail=120 || true
+          done
+
+          echo "=== smoke /bastion/healthz from inside the cluster ==="
+          kubectl -n vpn exec deployment/dd-bastion -- sh -lc \
+            'wget -qO- --timeout=5 http://127.0.0.1:8111/healthz || curl -fsS --max-time 5 http://127.0.0.1:8111/healthz || true' \
+            | head -c 800 || true
+
+          echo "=== smoke metrics-server pod listing ==="
+          kubectl -n kube-system get pods -l k8s-app=metrics-server -o wide || true
+
+          echo "=== Argo CD application sync state ==="
+          kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true
+          '''
+
+          commands = [
+              "set -euo pipefail",
+              f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+          ]
+          print(json.dumps({"commands": commands}))
+          PY
+              ;;
+            verify-bastion-live-containers)
+              # Read-only deep smoke test: prove metrics-server is healthy,
+              # dd-bastion is running the new code (with metricsAvailable
+              # set in /runtime/deployments and the new /logs/ws route),
+              # the RBAC split landed, and the inventory route returns
+              # quickly. Uses the deployment label selector
+              # `app.kubernetes.io/name=dd-bastion` to match the actual
+              # pod template, plus `kubectl auth can-i` to confirm the
+              # ServiceAccount has the verbs we expect.
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import shlex
+
+          script = r'''set +e
+          echo "=== HEAD on EC2 checkout ==="
+          ( cd /home/ec2-user/codes/dd/dd-next-1 && git rev-parse --short HEAD )
+
+          echo "=== metrics-server deployment + pod ==="
+          kubectl -n kube-system get deploy metrics-server -o wide || true
+          kubectl -n kube-system get pods -l app.kubernetes.io/name=metrics-server -o wide || true
+
+          echo "=== metrics-server raw API (default namespace, first 60 entries) ==="
+          kubectl get --raw "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods" \
+            | jq -r ".items[] | \"\\(.metadata.name)  cpu=\\(.containers[0].usage.cpu // \"-\")  mem=\\(.containers[0].usage.memory // \"-\")\"" \
+            | head -60 || true
+
+          echo "=== metrics-server raw API across managed namespaces ==="
+          for ns in default ai-ml argocd kube-system monitoring vpn; do
+            count=$(kubectl get --raw "/apis/metrics.k8s.io/v1beta1/namespaces/$ns/pods" 2>/dev/null \
+              | jq ".items | length" 2>/dev/null || echo "ERR")
+            echo "$ns -> $count pods reporting"
+          done
+
+          echo "=== dd-bastion pods ==="
+          kubectl -n vpn get pods -l app.kubernetes.io/name=dd-bastion -o wide || true
+          bastion_pod="$(kubectl -n vpn get pods -l app.kubernetes.io/name=dd-bastion -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || true)"
+          echo "bastion_pod=$bastion_pod"
+
+          echo "=== dd-bastion env (subset) ==="
+          kubectl -n vpn get deploy dd-bastion \
+            -o jsonpath="{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{\"\n\"}{end}" \
+            | grep -E "BASTION_TERMINAL_ENABLED|BASTION_PUBLIC|BASTION_KUBECTL|BASTION_WIREGUARD" || true
+
+          echo "=== dd-bastion ClusterRoles ==="
+          kubectl get clusterrole dd-bastion-readonly dd-bastion-exec -o jsonpath="{range .items[*]}{.metadata.name}{\"\n\"}{end}" || true
+
+          echo "=== dd-bastion-readonly rules ==="
+          kubectl get clusterrole dd-bastion-readonly \
+            -o jsonpath="{range .rules[*]}apiGroups={.apiGroups} resources={.resources} verbs={.verbs}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== dd-bastion-exec rules ==="
+          kubectl get clusterrole dd-bastion-exec \
+            -o jsonpath="{range .rules[*]}apiGroups={.apiGroups} resources={.resources} verbs={.verbs}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== ClusterRoleBindings reference dd-bastion ==="
+          kubectl get clusterrolebinding dd-bastion-readonly dd-bastion-exec \
+            -o jsonpath="{range .items[*]}{.metadata.name} -> {.roleRef.name} for {.subjects}{\"\n\"}{end}" 2>/dev/null || true
+
+          echo "=== kubectl auth can-i for the dd-bastion ServiceAccount ==="
+          # Modern --subresource= form (newer kubectl). The legacy
+          # 'pods/exec' positional resource form returns "no" on recent
+          # kubectl even when the role grants it, so we use both for
+          # cross-check.
+          for line in \
+            "list pods" \
+            "list pods.metrics.k8s.io" \
+            "get nodes.metrics.k8s.io" \
+            "get pods --subresource=log" \
+            "create pods --subresource=exec"; do
+            ans=$(kubectl auth can-i $line \
+              --as=system:serviceaccount:vpn:dd-bastion -n default 2>&1 | head -1 || true)
+            echo "  can $line -> $ans"
+          done
+
+          echo "=== resolve bastion SERVER_AUTH_SECRET from the pod env ==="
+          server_auth=""
+          if [ -n "$bastion_pod" ]; then
+            server_auth=$(kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              'printf %s "${SERVER_AUTH_SECRET:-}"' 2>/dev/null || true)
+          fi
+          if [ -n "$server_auth" ]; then
+            echo "  SERVER_AUTH_SECRET length=${#server_auth}"
+          else
+            echo "  WARN: SERVER_AUTH_SECRET not present in bastion pod"
+          fi
+
+          echo "=== /runtime/deployments JSON shape (timed, authed) ==="
+          if [ -n "$bastion_pod" ]; then
+            t0=$(date +%s%3N)
+            response=$(kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "curl -fsS --max-time 15 -H 'X-Server-Auth: ${server_auth}' http://127.0.0.1:8111/runtime/deployments" 2>/tmp/runtime_err || true)
+            rc=$?
+            t1=$(date +%s%3N)
+            elapsed=$((t1 - t0))
+            echo "curl exit=$rc elapsed=${elapsed} ms"
+            if [ -z "$response" ]; then
+              echo "curl stderr:"
+              cat /tmp/runtime_err 2>/dev/null | head -10
+            else
+              echo "$response" | jq "{
+                metricsAvailable,
+                deploymentsCount: (.deployments | length),
+                metricsErrorsCount: (.metricsErrors | length),
+                metricsErrors,
+                samplePod: (
+                  .deployments[0].pods[0] | {
+                    name,
+                    namespace,
+                    metrics,
+                    containers: [.containers[] | { name, ready, metrics, terminalUrl, logsUrl }]
+                  }
+                ),
+                managedNamespacesWithMetrics: (
+                  [.deployments[].pods[] | select(.metrics != null) | .namespace] | unique
+                ),
+                podsWithMetricsCount: (
+                  [.deployments[].pods[] | select(.metrics != null)] | length
+                ),
+                podsWithoutMetricsCount: (
+                  [.deployments[].pods[] | select(.metrics == null)] | length
+                ),
+                containersWithMetricsCount: (
+                  [.deployments[].pods[].containers[] | select(.metrics != null)] | length
+                ),
+                topByCpu: (
+                  [.deployments[].pods[] | select(.metrics != null) | {
+                    name, namespace,
+                    cpuMilli: .metrics.cpuMillicores,
+                    memoryMiB: ((.metrics.memoryBytes // 0) / 1048576 | floor)
+                  }]
+                  | sort_by(-.cpuMilli) | .[0:8]
+                ),
+                terminalUrlSample: (.deployments[].pods[].containers[].terminalUrl | select(. != null and . != \"\")) | [.] | first,
+                logsUrlSample: (.deployments[].pods[].containers[].logsUrl | select(. != null and . != \"\")) | [.] | first
+              }" 2>&1 | head -120 || (echo "raw response (first 2000 chars):"; echo "$response" | head -c 2000)
+            fi
+          fi
+
+          echo "=== /api/docs.json includes new routes (authed) ==="
+          if [ -n "$bastion_pod" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "curl -fsS -H 'X-Server-Auth: ${server_auth}' http://127.0.0.1:8111/api/docs.json" 2>/dev/null \
+              | jq -r ".paths | keys[]" 2>/dev/null \
+              | sort -u || echo "WARN: could not parse /api/docs.json"
+          fi
+
+          echo "=== real kubectl exec smoke against a target pod ==="
+          # Pick a Running default-namespace pod that the bastion's
+          # managed-deployment allowlist accepts and try a real exec
+          # using the dd-bastion ServiceAccount token mounted at
+          # /var/run/secrets/kubernetes.io/serviceaccount.
+          target=$(kubectl -n default get pods -l app=dd-remote-web-home \
+            -o jsonpath="{.items[?(@.status.phase=='Running')].metadata.name}" 2>/dev/null \
+            | awk "{print \$1}")
+          echo "target_pod=$target"
+          if [ -n "$bastion_pod" ] && [ -n "$target" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "kubectl --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) \
+                       --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                       --server=https://kubernetes.default.svc \
+                       -n default exec $target -- sh -lc 'echo bastion-exec-ok; hostname; id'" 2>&1 \
+              | head -10 || true
+          fi
+
+          echo "=== real kubectl logs smoke against a target pod ==="
+          if [ -n "$bastion_pod" ] && [ -n "$target" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc \
+              "kubectl --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) \
+                       --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+                       --server=https://kubernetes.default.svc \
+                       -n default logs $target --tail=3" 2>&1 \
+              | head -10 || true
+          fi
+
+          echo "=== /bastion/logs/ws WebSocket smoke (one connect, read N lines) ==="
+          # Resolve the container name from the inventory response so we
+          # do not hard-code a name that differs from the deployment
+          # template (the bastion validates target.container before the
+          # WS upgrade).
+          target_container=$(echo "$response" \
+            | jq --arg pod "$target" -r "[.deployments[].pods[] | select(.name == \$pod) | .containers[].name] | first // empty" 2>/tmp/jq_err || true)
+          echo "target_container=$target_container"
+          if [ -z "$target_container" ]; then
+            echo "jq_err:"; cat /tmp/jq_err 2>/dev/null | head -5
+            echo "response length=${#response}"
+            target_container="remote-web-home"
+            echo "fallback target_container=$target_container"
+          fi
+          if [ -n "$bastion_pod" ] && [ -n "$target" ] && [ -n "$target_container" ] && [ -n "$server_auth" ]; then
+            kubectl -n vpn exec "$bastion_pod" -- sh -lc "
+              python3 - <<'PYEOF'
+          import json, ssl, socket, base64, hashlib, secrets, urllib.parse, threading, time
+          host = '127.0.0.1'
+          port = 8111
+          path = '/logs/ws?namespace=default&deployment=dd-remote-web-home&pod=$target&container=$target_container'
+          key = base64.b64encode(secrets.token_bytes(16)).decode()
+          headers = (
+              f'GET {path} HTTP/1.1\r\n'
+              f'Host: {host}:{port}\r\n'
+              f'Upgrade: websocket\r\n'
+              f'Connection: Upgrade\r\n'
+              f'Sec-WebSocket-Key: {key}\r\n'
+              f'Sec-WebSocket-Version: 13\r\n'
+              f'X-Server-Auth: $server_auth\r\n'
+              '\r\n'
+          )
+          s = socket.create_connection((host, port), timeout=15)
+          s.sendall(headers.encode())
+          buf = b''
+          while b'\r\n\r\n' not in buf:
+              chunk = s.recv(4096)
+              if not chunk:
+                  break
+              buf += chunk
+          status_line = buf.split(b'\r\n', 1)[0].decode(errors='replace')
+          print(f'handshake: {status_line}')
+          assert b'101' in buf.split(b'\r\n', 1)[0], 'expected 101 Switching Protocols'
+          deadline = time.time() + 4
+          frames = []
+          tail = buf.split(b'\r\n\r\n', 1)[1]
+          s.settimeout(2.5)
+          try:
+              while time.time() < deadline:
+                  if tail:
+                      data = tail
+                      tail = b''
+                  else:
+                      try:
+                          data = s.recv(8192)
+                      except socket.timeout:
+                          break
+                      if not data:
+                          break
+                  while data:
+                      if len(data) < 2:
+                          break
+                      b1 = data[0]
+                      b2 = data[1]
+                      opcode = b1 & 0x0f
+                      length = b2 & 0x7f
+                      offset = 2
+                      if length == 126:
+                          length = int.from_bytes(data[offset:offset+2], 'big'); offset += 2
+                      elif length == 127:
+                          length = int.from_bytes(data[offset:offset+8], 'big'); offset += 8
+                      if offset + length > len(data):
+                          break
+                      payload = data[offset:offset+length]
+                      data = data[offset+length:]
+                      if opcode == 1:
+                          frames.append(payload.decode('utf-8', errors='replace'))
+                      if len(frames) >= 5:
+                          break
+                  if len(frames) >= 5:
+                      break
+          finally:
+              try:
+                  s.close()
+              except Exception:
+                  pass
+          print(f'frames: {len(frames)}')
+          for f in frames[:5]:
+              print(f'frame: {f[:200]}')
+          PYEOF
+            " 2>&1 | head -25 || true
+          fi
+
+          echo "=== /home public HTML markers ==="
+          curl -k -fsS --max-time 10 https://54.91.17.58/home 2>/dev/null \
+            | grep -oE "openTerminalPanel|openLogsPanel|safeBastionLogsUrl|metricChip|inline-panel|home-terminal-frame|terminal-dock" \
+            | sort | uniq -c || true
+
+          echo "=== bastion log scan for panic/error/warn (tail 400) ==="
+          if [ -n "$bastion_pod" ]; then
+            kubectl -n vpn logs "$bastion_pod" --tail=400 \
+              | grep -iE "panic|^error|fail|warn" \
+              | grep -v "Compiling" \
+              | head -40 || echo "(no panic/error/warn lines)"
+            echo "--- last 20 log lines ---"
+            kubectl -n vpn logs "$bastion_pod" --tail=20 || true
+          fi
+
+          echo "=== Argo CD application sync state ==="
+          kubectl -n argocd get application/metrics-server application/dd-vpn -o wide || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            bisect-gcs-wss)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          duration = os.environ.get("GCS_BISECT_DURATION_SECONDS", "60") or "60"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          gcs_dir="$repo/remote/deployments/gcs/chat-vibe"
+          results=/tmp/gcs-bisect-results.txt
+          duration="${GCS_BISECT_DURATION_SECONDS:-60}"
+          case "$duration" in
+            ''|*[!0-9]*) duration=60 ;;
+          esac
+          : > "$results"
+
+          record() {
+            printf 'RESULT %s\n' "$*" | tee -a "$results"
+          }
+
+          stop_loaders() {
+            kubectl -n default scale deployment/dd-ws-loadtest-rs-gcs --replicas=0 >/dev/null 2>&1 || true
+            kubectl -n default scale deployment/dd-nodejs-ws-loadtest-gcs --replicas=0 >/dev/null 2>&1 || true
+            kubectl -n default scale deployment/dd-gleamlang-ws-loadtest-gcs --replicas=0 >/dev/null 2>&1 || true
+          }
+
+          availability() {
+            d="$1"
+            kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true
+          }
+
+          wait_available() {
+            d="$1"
+            expected="$2"
+            for i in $(seq 1 300); do
+              available="$(availability "$d")"
+              if [ "${available:-0}" -ge "$expected" ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          recover_stack() {
+            label="$1"
+            stop_loaders
+            kubectl -n default rollout restart deployment/gcs deployment/gcs-router >/dev/null
+            kubectl -n default rollout status deployment/gcs --timeout=900s
+            kubectl -n default rollout status deployment/gcs-router --timeout=600s
+            if ! wait_available gcs 3; then
+              kubectl -n default get deploy gcs -o wide || true
+              kubectl -n default get pods -l app=gcs -o wide || true
+              record "phase=recover label=$label status=failed component=gcs available=$(availability gcs)"
+              return 1
+            fi
+            if ! wait_available gcs-router 3; then
+              kubectl -n default get deploy gcs-router -o wide || true
+              kubectl -n default get pods -l app=gcs-router -o wide || true
+              record "phase=recover label=$label status=failed component=gcs-router available=$(availability gcs-router)"
+              return 1
+            fi
+            record "phase=recover label=$label status=passed gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/3"
+          }
+
+          restore_current() {
+            set +e
+            if [ -n "${current_sha:-}" ]; then
+              echo "=== restore recorded GCS submodule $current_sha ==="
+              git -C "$gcs_dir" switch --detach "$current_sha" >/dev/null 2>&1
+              recover_stack restore-current
+            fi
+          }
+          trap restore_current EXIT
+
+          collect_loader() {
+            d="$1"
+            kubectl -n default logs -l "app=$d" --all-containers --tail=500 --prefix=true --max-log-requests=20 2>/dev/null \
+              | awk '
+                /gcs-report/ {
+                  pod = $1
+                  sub(/^\[pod\//, "", pod)
+                  sub(/\/.*$/, "", pod)
+                  latest[pod] = $0
+                }
+                END {
+                  for (pod in latest) {
+                    pods++
+                    n = split(latest[pod], fields, " ")
+                    for (i = 1; i <= n; i++) {
+                      split(fields[i], kv, "=")
+                      key = kv[1]
+                      val = kv[2] + 0
+                      if (key == "attempted") attempted += val
+                      else if (key == "connected") connected += val
+                      else if (key == "failed") failed += val
+                      else if (key == "open") open += val
+                      else if (key == "sent") sent += val
+                      else if (key == "received") received += val
+                      else if (key == "receive_errors") receive_errors += val
+                      else if (key == "correlation_misses") correlation_misses += val
+                      else if (key == "p95_us" && val > max_p95_us) max_p95_us = val
+                      else if (key == "p99_us" && val > max_p99_us) max_p99_us = val
+                      else if (key == "max_us" && val > max_us) max_us = val
+                    }
+                  }
+                  if (pods == 0) {
+                    print "pods=0 attempted=0 connected=0 failed=0 open=0 sent=0 received=0 receive_errors=0 correlation_misses=0 max_p95_us=0 max_p99_us=0 max_us=0"
+                  } else {
+                    printf "pods=%d attempted=%d connected=%d failed=%d open=%d sent=%d received=%d receive_errors=%d correlation_misses=%d max_p95_us=%d max_p99_us=%d max_us=%d\n", pods, attempted, connected, failed, open, sent, received, receive_errors, correlation_misses, max_p95_us, max_p99_us, max_us
+                  }
+                }'
+          }
+
+          run_correctness_job() {
+            label="$1"
+            sha="$2"
+            kubectl -n default delete job/gcs-loadtest --ignore-not-found=true >/dev/null 2>&1 || true
+            git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml" | kubectl apply -f - >/dev/null
+            result=timeout
+            for i in $(seq 1 300); do
+              succeeded="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
+              failed="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.failed}' 2>/dev/null || true)"
+              if [ "${succeeded:-0}" -ge 1 ]; then
+                result=passed
+                break
+              fi
+              if [ "${failed:-0}" -ge 1 ]; then
+                result=failed
+                break
+              fi
+              sleep 1
+            done
+            kubectl -n default logs job/gcs-loadtest --tail=80 2>/dev/null \
+              | grep -E '^(=== [0-9]/|=== summary|ALL TESTS PASSED|ONE OR MORE TESTS FAILED|>> .* exit=|FAIL|ERROR)' || true
+            record "phase=correctness commit=$label sha=$sha status=$result gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/3"
+            test "$result" = "passed"
+          }
+
+          deploy_candidate() {
+            label="$1"
+            sha="$2"
+            echo "=== deploy candidate $label $sha ==="
+            git -C "$gcs_dir" fetch origin
+            git -C "$gcs_dir" switch --detach "$sha"
+            git -C "$gcs_dir" show -s --format='candidate=%H date=%ci subject=%s'
+            recover_stack "deploy-$label"
+          }
+
+          run_loader() {
+            commit_label="$1"
+            sha="$2"
+            size_label="$3"
+            replicas="$4"
+            clients="$5"
+            d="$6"
+            loader_label="$7"
+            total=$((replicas * clients))
+            echo "=== load commit=$commit_label size=$size_label loader=$loader_label total=$total duration=${duration}s ==="
+            recover_stack "pre-${commit_label}-${size_label}-${loader_label}" >/dev/null
+            kubectl -n default set resources "deployment/$d" \
+              --requests=cpu=1m,memory=512Mi \
+              --limits=cpu=4,memory=8Gi >/dev/null || true
+            kubectl -n default set env "deployment/$d" \
+              CLIENT_COUNT="$clients" \
+              GCS_CLIENTS_PER_CONV=5 \
+              GCS_SENDERS_PER_CONV=5 \
+              MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
+              RAMP_DELAY_MS=20 \
+              CONNECT_TIMEOUT_SECONDS=60 \
+              CONNECT_TIMEOUT_MS=60000 \
+              RECONNECT_DELAY_MS=10000 \
+              REPORT_INTERVAL_SECONDS=10 >/dev/null
+            kubectl -n default scale "deployment/$d" --replicas="$replicas" >/dev/null
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=240s; then
+              summary="$(collect_loader "$d")"
+              record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=rollout_failed total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=$(availability gcs)/3 router_available=$(availability gcs-router)/3"
+              kubectl -n default get deploy "$d" -o wide || true
+              kubectl -n default get pods -l "app=$d" -o wide || true
+              stop_loaders
+              recover_stack "post-rollout-failed-${commit_label}-${size_label}-${loader_label}" >/dev/null || true
+              return 0
+            fi
+            sleep "$duration"
+            summary="$(collect_loader "$d")"
+            gcs_available="$(availability gcs)"
+            router_available="$(availability gcs-router)"
+            status=completed
+            if [ "${gcs_available:-0}" -lt 3 ] || [ "${router_available:-0}" -lt 3 ]; then
+              status=degraded
+            fi
+            record "phase=load commit=$commit_label sha=$sha size=$size_label loader=$loader_label status=$status total=$total replicas=$replicas clients_per_replica=$clients $summary gcs_available=${gcs_available:-0}/3 router_available=${router_available:-0}/3"
+            stop_loaders
+            recover_stack "post-${commit_label}-${size_label}-${loader_label}" >/dev/null || true
+          }
+
+          echo "=== prepare repo/submodule ==="
+          cd "$repo"
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          current_sha="$(git ls-tree "origin/${TARGET_REVISION:-dev}" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
+          five_days_sha="${GCS_BISECT_OLD_SHA:-96d58c361b38c5c633d0f3d4389b2927c2ed66d3}"
+          echo "current_sha=$current_sha"
+          echo "five_days_sha=$five_days_sha"
+          git -C "$gcs_dir" fetch origin
+
+          for candidate in "today:$current_sha" "five_days_ago:$five_days_sha"; do
+            commit_label="${candidate%%:*}"
+            sha="${candidate##*:}"
+            if ! deploy_candidate "$commit_label" "$sha"; then
+              record "phase=deploy commit=$commit_label sha=$sha status=failed"
+              continue
+            fi
+            if ! run_correctness_job "$commit_label" "$sha"; then
+              continue
+            fi
+            for size_spec in "10k:4:2500" "20k:6:3335"; do
+              size_label="${size_spec%%:*}"
+              rest="${size_spec#*:}"
+              replicas="${rest%%:*}"
+              clients="${rest##*:}"
+              for loader_spec in "dd-ws-loadtest-rs-gcs:rust" "dd-nodejs-ws-loadtest-gcs:node" "dd-gleamlang-ws-loadtest-gcs:gleam"; do
+                d="${loader_spec%%:*}"
+                loader_label="${loader_spec##*:}"
+                run_loader "$commit_label" "$sha" "$size_label" "$replicas" "$clients" "$d" "$loader_label"
+              done
+            done
+          done
+
+          echo "=== compact GCS bisect results ==="
+          cat "$results"
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} GCS_BISECT_DURATION_SECONDS={shlex.quote(duration)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            recover-gcs)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam"
+          capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
+
+          free_recovery_capacity() {
+            echo "=== recover GCS: free memory, CPU, and pod slots after load testing ==="
+            echo "temporarily disabling Argo auto-sync for capacity owners: $capacity_apps"
+            for app in $capacity_apps; do
+              kubectl -n argocd patch "application/$app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+              kubectl -n argocd get "application/$app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            done
+            kubectl -n default get deploy $capacity_targets -o wide || true
+            for d in $capacity_targets; do
+              kubectl -n default scale "deployment/$d" --replicas=0 || true
+            done
+            for d in $capacity_targets; do
+              for i in $(seq 1 120); do
+                desired="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
+                pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+                if [ "${desired:-missing}" = "0" ] && [ "${pods:-0}" -eq 0 ]; then
+                  echo "$d scaled down"
+                  break
+                fi
+                if [ "$i" -eq 120 ]; then
+                  echo "WARNING: $d not fully scaled down after wait desired=${desired:-unknown} pods=${pods:-0}"
+                fi
+                sleep 2
+              done
+            done
+            echo "=== recover GCS: post-free capacity workload state ==="
+            kubectl -n default get deploy $capacity_targets -o wide || true
+          }
+
+          diagnose_recover_rollout() {
+            label="$1"
+            echo "=== recover GCS rollout diagnostics: $label ==="
+            kubectl -n default get deploy gcs gcs-router -o wide || true
+            kubectl -n default get rs,pods -l 'app in (gcs,gcs-router)' -o wide || true
+            kubectl -n default describe deployment/gcs || true
+            kubectl -n default describe pods -l app=gcs || true
+            echo "=== current gcs logs ==="
+            kubectl -n default logs -l app=gcs --all-containers --tail=240 --prefix=true --max-log-requests=20 || true
+            echo "=== previous gcs logs ==="
+            for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=240 --prefix=true || true
+            done
+            echo "=== recover GCS events ==="
+            kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|FailedScheduling|Insufficient|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM|Evicted' | tail -200 || true
+          }
+
+          diagnose_recover_dependency() {
+            label="$1"
+            echo "=== recover GCS dependency diagnostics: $label ==="
+            kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            kubectl -n default get statefulset gcs-mongodb -o wide || true
+            kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+            kubectl -n default get endpoints gcs-mongodb gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            for app in gcs-kafka gcs-rabbitmq dd-redis-cache; do
+              echo "--- current logs for app=$app ---"
+              kubectl -n default logs -l "app=$app" --all-containers --tail=120 --prefix=true --max-log-requests=5 || true
+            done
+          }
+
+          cd "$repo"
+          echo "=== recover GCS checkout context ==="
+          git status --short --branch
+          git fetch origin "${TARGET_REVISION:-dev}"
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          target_gcs_sha="$(git ls-tree "origin/${TARGET_REVISION:-dev}" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
+          if [ -n "$target_gcs_sha" ]; then
+            echo "=== target gcs/chat-vibe submodule ==="
+            echo "$target_gcs_sha"
+            echo "PROOF target_gcs_sha=$target_gcs_sha"
+            git -C remote/deployments/gcs/chat-vibe fetch origin
+            git -C remote/deployments/gcs/chat-vibe merge --ff-only --quiet "$target_gcs_sha"
+          fi
+          git submodule status --recursive | grep 'remote/deployments/gcs/chat-vibe' || true
+
+          echo "=== recover GCS: force Argo sync ==="
+          kubectl -n argocd annotate application/gcs argocd.argoproj.io/refresh=hard --overwrite || true
+          kubectl -n argocd patch application/gcs --type merge -p '{"operation":{"initiatedBy":{"username":"gcs-recover"},"info":[{"name":"reason","value":"post-loadtest-recover"}],"sync":{"revision":"HEAD","prune":true}}}' || true
+          for i in $(seq 1 60); do
+            phase="$(kubectl -n argocd get application/gcs -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+            sync="$(kubectl -n argocd get application/gcs -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+            health="$(kubectl -n argocd get application/gcs -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+            echo "  gcs wait=$i phase=${phase:-none} sync=${sync:-unknown} health=${health:-unknown}"
+            case "$phase:$sync" in
+              Succeeded:Synced|:Synced) break ;;
+              Failed:*|Error:*) break ;;
+            esac
+            sleep 5
+          done
+          kubectl -n argocd get application/gcs -o wide || true
+
+          echo "=== recover GCS: stop any loaders ==="
+          kubectl -n default scale deployment/dd-ws-loadtest-rs-gcs --replicas=0 || true
+          kubectl -n default scale deployment/dd-nodejs-ws-loadtest-gcs --replicas=0 || true
+          kubectl -n default scale deployment/dd-gleamlang-ws-loadtest-gcs --replicas=0 || true
+          free_recovery_capacity
+
+          echo "=== recover GCS: refresh and wait for dependencies ==="
+          git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.service.yaml" | kubectl apply -f -
+          git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.deployment.yaml" | kubectl apply -f -
+          kubectl -n default rollout restart deployment/gcs-kafka || true
+          if ! kubectl -n default rollout status statefulset/gcs-mongodb --timeout=300s; then
+            diagnose_recover_dependency "gcs-mongodb"
+            exit 1
+          fi
+          for d in gcs-rabbitmq dd-redis-cache gcs-kafka; do
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=600s; then
+              diagnose_recover_dependency "$d"
+              exit 1
+            fi
+          done
+          diagnose_recover_dependency "ready"
+
+          echo "=== recover GCS: restart gcs/router ==="
+          kubectl -n default rollout restart deployment/gcs deployment/gcs-router
+          if ! kubectl -n default rollout status deployment/gcs --timeout=900s; then
+            diagnose_recover_rollout "gcs"
+            exit 1
+          fi
+          if ! kubectl -n default rollout status deployment/gcs-router --timeout=600s; then
+            diagnose_recover_rollout "gcs-router"
+            exit 1
+          fi
+          for spec in gcs:3 gcs-router:2; do
+            d="${spec%%:*}"
+            expected="${spec##*:}"
+            for i in $(seq 1 300); do
+              available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+              if [ "${available:-0}" -ge "$expected" ]; then
+                break
+              fi
+              sleep 1
+            done
+            available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+            if [ "${available:-0}" -lt "$expected" ]; then
+              echo "ERROR: deployment/$d available=${available:-0}, expected=$expected" >&2
+              kubectl -n default get deploy "$d" -o wide || true
+              kubectl -n default get pods -l "app=$d" -o wide || true
+              kubectl -n default logs -l "app=$d" --all-containers --tail=160 --prefix=true --max-log-requests=10 || true
+              exit 1
+            fi
+          done
+          echo "=== recovered GCS state ==="
+          kubectl -n default get deploy gcs gcs-router -o wide
+          kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            diagnose-gcs-scheduler)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import shlex
+
+          script = r'''set -euo pipefail
+          echo "=== compact GCS pod state and logs ==="
+          kubectl -n default get deploy gcs gcs-router -o wide || true
+          kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide || true
+          for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- current logs for pod/$pod ---"
+            kubectl -n default logs "$pod" --all-containers --tail=120 --prefix=true || true
+            echo "--- previous logs for pod/$pod ---"
+            kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            echo "--- recent events for pod/$pod ---"
+            kubectl -n default get events --field-selector "involvedObject.name=$pod" --sort-by=.lastTimestamp || true
+          done
+          echo "=== compact Argo GCS state ==="
+          kubectl -n argocd get application/gcs -o wide || true
+          kubectl -n argocd get application/gcs -o jsonpath='{.status.operationState.phase}{" sync="}{.status.sync.status}{" health="}{.status.health.status}{" revision="}{.status.sync.revision}{" message="}{.status.operationState.message}{"\n"}' || true
+          echo "=== GCS deployment state ==="
+          kubectl -n default get deploy,rs,pods -l 'app in (gcs,gcs-router)' -o wide || true
+          echo "=== node allocatable/capacity ==="
+          kubectl get nodes -o json | jq -r '.items[] | "node=\(.metadata.name) alloc_cpu=\(.status.allocatable.cpu) alloc_mem=\(.status.allocatable.memory) alloc_pods=\(.status.allocatable.pods) cap_cpu=\(.status.capacity.cpu) cap_mem=\(.status.capacity.memory) cap_pods=\(.status.capacity.pods)"' || true
+          echo "=== total requested CPU/memory ==="
+          kubectl get pods -A -o json | jq -r '
+            def cpu_m:
+              if . == null then 0
+              elif test("m$") then sub("m$";"") | tonumber
+              else tonumber * 1000 end;
+            def mem_b:
+              if . == null then 0
+              elif test("Ki$") then sub("Ki$";"") | tonumber * 1024
+              elif test("Mi$") then sub("Mi$";"") | tonumber * 1024 * 1024
+              elif test("Gi$") then sub("Gi$";"") | tonumber * 1024 * 1024 * 1024
+              else tonumber end;
+            reduce .items[] as $p (
+              {cpu:0, mem:0};
+              .cpu += ([$p.spec.containers[]?.resources.requests.cpu | cpu_m] | add // 0)
+              | .mem += ([$p.spec.containers[]?.resources.requests.memory | mem_b] | add // 0)
+            )
+            | "requested_cpu_m=\(.cpu) requested_memory_bytes=\(.mem)"' || true
+          echo "=== top pod CPU requests ==="
+          kubectl get pods -A -o json | jq -r '
+            def cpu_m:
+              if . == null then 0
+              elif test("m$") then sub("m$";"") | tonumber
+              else tonumber * 1000 end;
+            def mem_b:
+              if . == null then 0
+              elif test("Ki$") then sub("Ki$";"") | tonumber * 1024
+              elif test("Mi$") then sub("Mi$";"") | tonumber * 1024 * 1024
+              elif test("Gi$") then sub("Gi$";"") | tonumber * 1024 * 1024 * 1024
+              else tonumber end;
+            .items[]
+            | [
+                .metadata.namespace,
+                .metadata.name,
+                ([.spec.containers[]?.resources.requests.cpu | cpu_m] | add // 0),
+                ([.spec.containers[]?.resources.requests.memory | mem_b] | add // 0),
+                .status.phase
+              ]
+            | select(.[2] > 0 or .[3] > 0)
+            | @tsv' | sort -k3,3nr | head -50 || true
+          echo "=== pending GCS pod scheduler events ==="
+          pending="$(kubectl -n default get pods -l app=gcs --field-selector=status.phase=Pending -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+          if [ -z "$pending" ]; then
+            echo "(no pending gcs pods)"
+          fi
+          for pod in $pending; do
+            echo "--- events for pod/$pod ---"
+            kubectl -n default get events --field-selector "involvedObject.name=$pod" --sort-by=.lastTimestamp || true
+          done
+          echo "=== recent GCS scheduler events ==="
+          kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|FailedScheduling|Insufficient|Preempt|Too many pods|memory|cpu|ephemeral' | tail -80 || true
+          echo "=== metrics-server top ==="
+          kubectl top nodes || true
+          kubectl -n default top pods --containers | grep -E 'gcs|kafka|rabbit|redis|mongo|loadtest' || true
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            snapshot-gcs-loadtest)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import shlex
+          import textwrap
+
+          script = textwrap.dedent(r'''
+          set -euo pipefail
+          echo "=== GCS loadtest snapshot: last 60m ==="
+          echo "Snapshot generated after the latest GCS WSS load-test run, including load-shed telemetry and recovery state."
+          prom_query() {
+            label="$1"
+            expr="$2"
+            echo "--- prom $label"
+            echo "$expr"
+                      kubectl -n observability exec -i deploy/dd-k8s-resource-exporter -- python - "$expr" <<'PROMPY' || true
+          import json
+          import sys
+          import urllib.parse
+          import urllib.request
+
+          expr = sys.argv[1]
+          url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr})
+          payload = json.load(urllib.request.urlopen(url, timeout=10))
+          result = payload.get("data", {}).get("result", [])
+          print(json.dumps(result[:30], separators=(",", ":")))
+          PROMPY
+          }
+
+          direct_gcs_metrics() {
+            local metrics_file pf_log pf_pid pod port
+            echo "=== direct current GCS pod metrics ==="
+            port=19130
+            for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- gcs pod $pod metrics ---"
+              port=$((port + 1))
+              metrics_file="/tmp/gcs-snapshot-metrics-${pod}.txt"
+              pf_log="/tmp/gcs-snapshot-port-forward-${pod}.log"
+              kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
+              pf_pid="$!"
+              for _ in $(seq 1 20); do
+                if curl -fsS "http://127.0.0.1:${port}/metrics" >"$metrics_file" 2>/dev/null; then
+                  grep -E '^(gcs_ws_|gcs_broker_|gcs_in_memory_|gcs_kafka_|gcs_runtime_|gcs_process_|gcs_go_)' "$metrics_file" \
+                    | head -220 || true
+                  break
+                fi
+                sleep 0.25
+              done
+              kill "$pf_pid" 2>/dev/null || true
+              wait "$pf_pid" 2>/dev/null || true
+              if [ -s "$pf_log" ]; then
+                grep -v 'Handling connection' "$pf_log" | tail -5 || true
+              fi
+            done
+          }
+
+          prom_query "ws-active-max-by-pod" 'max by (pod) (max_over_time(gcs_ws_connections_active[60m]))'
+          prom_query "ws-connection-events" 'sum by (event) (increase(gcs_ws_connections_total[60m]))'
+          prom_query "ws-read-errors" 'sum by (kind) (increase(gcs_ws_read_errors_total[60m]))'
+          prom_query "ws-load-shed" 'sum by (reason, phase) (increase(gcs_ws_load_shed_total[60m]))'
+          prom_query "ws-message-latency-mean" 'sum by (type, outcome) (rate(gcs_ws_message_duration_seconds_sum[5m])) / sum by (type, outcome) (rate(gcs_ws_message_duration_seconds_count[5m]))'
+          prom_query "ws-write-errors" 'sum by (kind, outcome) (increase(gcs_ws_writes_total[60m]))'
+          prom_query "router-active-total-max" 'max_over_time(gcs_router_active_total[60m])'
+          prom_query "router-rejections" 'sum by (pool, reason) (increase(gcs_router_rejected_total[60m]))'
+          prom_query "gcs-heap-max" 'max by (pod) (max_over_time(gcs_go_heap_alloc_bytes[60m]))'
+          prom_query "gcs-rss-max" 'max by (pod) (max_over_time(gcs_process_resident_memory_bytes[60m]))'
+          prom_query "gcs-cpu-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[60m]))'
+          prom_query "gcs-memory-max" 'max by (pod, container) (max_over_time(dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}[60m]))'
+          prom_query "router-upstream-errors" 'sum by (pool, peer) (increase(gcs_router_upstream_errors_total[60m]))'
+
+          echo "=== current top pods: gcs/loadtest/dependencies ==="
+          kubectl -n default top pods --containers | grep -E 'gcs|loadtest|kafka|rabbit|redis|mongo' || true
+
+          direct_gcs_metrics
+
+          echo "=== Loki gcs-report summaries: last 60m ==="
+                    kubectl -n observability exec -i deploy/dd-k8s-resource-exporter -- python - <<'LOKIPY' || true
+          import json
+          import re
+          import time
+          import urllib.parse
+          import urllib.request
+
+          deployments = [
+              "dd-ws-loadtest-rs-gcs",
+              "dd-nodejs-ws-loadtest-gcs",
+              "dd-gleamlang-ws-loadtest-gcs",
+          ]
+          end_ns = int(time.time() * 1_000_000_000)
+          start_ns = end_ns - 60 * 60 * 1_000_000_000
+          field_re = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=([0-9.]+)")
+
+          for deployment in deployments:
+              query = '{namespace="default",deployment="' + deployment + '"} |= "gcs-report"'
+              url = "http://dd-loki.observability.svc.cluster.local:3100/loki/api/v1/query_range?" + urllib.parse.urlencode({
+                  "query": query,
+                  "start": str(start_ns),
+                  "end": str(end_ns),
+                  "limit": "5000",
+              })
+              payload = json.load(urllib.request.urlopen(url, timeout=15))
+              latest = {}
+              for stream in payload.get("data", {}).get("result", []):
+                  labels = stream.get("stream", {})
+                  pod = labels.get("pod") or labels.get("filename") or "unknown"
+                  for ts, line in stream.get("values", []):
+                      ts_int = int(ts)
+                      if pod not in latest or ts_int > latest[pod][0]:
+                          latest[pod] = (ts_int, line)
+              totals = {
+                  "attempted": 0,
+                  "connected": 0,
+                  "failed": 0,
+                  "open": 0,
+                  "sent": 0,
+                  "received": 0,
+                  "in_flight": 0,
+                  "correlation_misses": 0,
+                  "receive_errors": 0,
+              }
+              maxes = {"p50_us": 0, "p95_us": 0, "p99_us": 0, "max_us": 0}
+              for _, line in latest.values():
+                  fields = {k: float(v) for k, v in field_re.findall(line)}
+                  for key in totals:
+                      totals[key] += int(fields.get(key, 0))
+                  for key in maxes:
+                      maxes[key] = max(maxes[key], int(fields.get(key, 0)))
+              print(
+                  "loki-summary deployment={deployment} pods={pods} attempted={attempted} connected={connected} failed={failed} open={open} sent={sent} received={received} in_flight={in_flight} correlation_misses={correlation_misses} receive_errors={receive_errors} max_p50_us={p50_us} max_p95_us={p95_us} max_p99_us={p99_us} max_us={max_us}".format(
+                      deployment=deployment,
+                      pods=len(latest),
+                      **totals,
+                      **maxes,
+                  )
+              )
+          LOKIPY
+
+          echo "=== current GCS/loadtest deployments ==="
+          kubectl -n default get deploy gcs gcs-router dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs -o wide || true
+
+          echo "=== current GCS/loadtest pods ==="
+          kubectl -n default get pods -l 'app in (gcs,gcs-router,dd-ws-loadtest-rs-gcs,dd-nodejs-ws-loadtest-gcs,dd-gleamlang-ws-loadtest-gcs)' -o wide || true
+
+          echo "=== current GCS pod last states ==="
+          for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- gcs pod $pod state ---"
+            kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} {range .status.containerStatuses[*]}container={.name} ready={.ready} restarts={.restartCount} waiting={.state.waiting.reason} terminated={.state.terminated.reason}:{.state.terminated.exitCode}:{.state.terminated.signal} last={.lastState.terminated.reason}:{.lastState.terminated.exitCode}:{.lastState.terminated.signal} {end}{"\n"}' || true
+          done
+
+          echo "=== current GCS pod compact logs ==="
+          for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+            echo "--- gcs pod $pod current logs ---"
+            kubectl -n default logs "$pod" --all-containers --tail=20 --prefix=true 2>/dev/null || true
+            echo "--- gcs pod $pod previous logs ---"
+            kubectl -n default logs "$pod" --all-containers --previous --tail=20 --prefix=true 2>/dev/null || true
+          done
+          ''').strip()
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            loadtest-gcs-wss)
+              python3 - <<'PY' > /tmp/remote-k8s-commands.json
+          import json
+          import os
+          import shlex
+
+          rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
+          duration = os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180"
+          load_label = os.environ.get("LOADTEST_LABEL", "medium") or "medium"
+          loader_replicas = os.environ.get("LOADTEST_LOADER_REPLICAS", "6") or "6"
+          clients_per_replica = os.environ.get("LOADTEST_CLIENTS_PER_REPLICA", "5000") or "5000"
+          messages_per_second = os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5"
+          script = r'''set -euo pipefail
+          proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
+          if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
+            exec > >(tee -a "$proof_log" | grep --line-buffered -E '^(PROOF|proof-summary|ERROR:|WARNING:|argo_sync_revision=|correctness_result=|ALL TESTS PASSED|=== start|=== final|=== stop|gcs-summary|loader-warmup|gcs_router_(active_total|routed_total|upstream_errors_total|active_conns))') 2> >(tee -a "$proof_log" >&2)
+          fi
+          echo "PROOF remote_log=$proof_log compact_output=${LOADTEST_COMPACT_OUTPUT:-true}"
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          duration="${LOADTEST_DURATION_SECONDS:-180}"
+          case "$duration" in
+            ''|*[!0-9]*) duration=180 ;;
+          esac
+          loader_replicas="${LOADTEST_LOADER_REPLICAS:-6}"
+          case "$loader_replicas" in
+            ''|*[!0-9]*) loader_replicas=6 ;;
+          esac
+          clients_per_replica="${LOADTEST_CLIENTS_PER_REPLICA:-5000}"
+          case "$clients_per_replica" in
+            ''|*[!0-9]*) clients_per_replica=5000 ;;
+          esac
+          messages_per_second="${LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT:-2.5}"
+          load_label="${LOADTEST_LABEL:-medium}"
+          total_connections=$((loader_replicas * clients_per_replica))
+          echo "PROOF loadtest_target total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label"
+
+          apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
+          loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
+          loaders="dd-ws-loadtest-rs-gcs dd-nodejs-ws-loadtest-gcs dd-gleamlang-ws-loadtest-gcs"
+          capacity_apps="dd-next-runtime dd-akka-ws-server dd-dart-server dd-fsharp-ws-server dd-gleamlang-server dd-ws-loadtest-gleam"
+          capacity_targets="dd-akka-ws-server dd-go-wss-server dd-rust-wss-server dd-gleamlang-ws-loadtest dd-dart-server dd-fsharp-ws-server dd-gleamlang-server"
+
+          apply_target_manifest() {
+            local path="$1"
+            git show "origin/${TARGET_REVISION:-dev}:$path" | kubectl apply -f -
+          }
+
+          sync_app() {
+            local app="$1"
+            local sync_revision="${ARGO_SYNC_REVISION:-HEAD}"
+            echo "=== Argo CD sync request: $app ==="
+            kubectl -n argocd annotate "application/$app" argocd.argoproj.io/refresh=hard --overwrite || true
+            kubectl -n argocd patch "application/$app" --type merge -p "{\"operation\":{\"initiatedBy\":{\"username\":\"gcs-loadtest\"},\"info\":[{\"name\":\"reason\",\"value\":\"gcs-wss-loadtest\"}],\"sync\":{\"revision\":\"$sync_revision\",\"prune\":true}}}" || true
+            for i in $(seq 1 60); do
+              phase="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+              sync="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+              health="$(kubectl -n argocd get "application/$app" -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+              echo "  $app wait=$i phase=${phase:-none} sync=${sync:-unknown} health=${health:-unknown}"
+              case "$phase:$sync" in
+                Succeeded:Synced|:Synced) break ;;
+                Failed:*|Error:*) break ;;
+              esac
+              sleep 5
+            done
+            kubectl -n argocd get "application/$app" -o wide || true
+          }
+
+          restore_loadtest_apps() {
+            apply_target_manifest remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml || true
+            for app in $loadtest_apps; do
+              sync_app "$app"
+            done
+          }
+
+          restore_capacity_apps() {
+            echo "=== cleanup: restore capacity owner Argo apps ==="
+            apply_target_manifest remote/argocd/apps/dd-next-runtime.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-akka-ws-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-dart-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-fsharp-ws-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-gleamlang-server.application.yaml || true
+            apply_target_manifest remote/argocd/apps/dd-ws-loadtest-gleam.application.yaml || true
+            for app in $capacity_apps; do
+              sync_app "$app"
+            done
+          }
+
+          disable_loadtest_autosync() {
+            echo "=== disable loadtest Argo auto-sync while live scaling ==="
+            for app in $loadtest_apps; do
+              kubectl -n argocd patch "application/$app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+              kubectl -n argocd get "application/$app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            done
+          }
+
+          assert_capacity_free() {
+            local bad=0
+            local d desired pods
+            for d in $capacity_targets; do
+              desired="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo missing)"
+              pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+              if [ "${desired:-missing}" != "0" ] || [ "${pods:-0}" -ne 0 ]; then
+                echo "capacity-not-free deployment=$d desired=${desired:-unknown} pods=${pods:-0}"
+                bad=1
+              fi
+            done
+            return "$bad"
+          }
+
+          free_gcs_capacity() {
+            local capacity_app capacity_target attempt
+            echo "=== free memory, CPU, and pod slots for GCS loadtest ==="
+            echo "temporarily disabling Argo auto-sync for capacity owners: $capacity_apps"
+            for capacity_app in $capacity_apps; do
+              kubectl -n argocd patch "application/$capacity_app" --type json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' || true
+              kubectl -n argocd get "application/$capacity_app" -o jsonpath='{.metadata.name} automated={.spec.syncPolicy.automated}{"\n"}' || true
+            done
+            echo "scaling down comparison workloads: $capacity_targets"
+            kubectl -n default get deploy $capacity_targets -o wide || true
+            for attempt in $(seq 1 24); do
+              for capacity_target in $capacity_targets; do
+                kubectl -n default scale "deployment/$capacity_target" --replicas=0 || true
+              done
+              sleep 5
+              if assert_capacity_free; then
+                echo "capacity targets are all scaled down"
+                kubectl -n default get deploy $capacity_targets -o wide || true
+                return 0
+              fi
+              echo "waiting for capacity targets to stay down attempt=$attempt/24"
+            done
+            echo "ERROR: capacity targets did not stay down; refusing partial loadtest" >&2
+            kubectl -n default get deploy $capacity_targets -o wide || true
+            kubectl -n default get pods -l 'app in (dd-akka-ws-server,dd-go-wss-server,dd-rust-wss-server,dd-gleamlang-ws-loadtest,dd-dart-server,dd-fsharp-ws-server,dd-gleamlang-server)' -o wide || true
+            kubectl -n argocd get application $capacity_apps -o wide || true
+            exit 1
+          }
+
+          cleanup() {
+            set +e
+            echo "=== cleanup: scale GCS WSS loadtest deployments to 0 ==="
+            for d in $loaders; do
+              kubectl -n default scale "deployment/$d" --replicas=0 || true
+            done
+            kubectl -n default get deploy $loaders -o wide || true
+            echo "=== cleanup: restore loadtest deployments from Argo desired state ==="
+            restore_loadtest_apps
+            restore_capacity_apps
+          }
+          trap cleanup EXIT
+
+          echo "=== sync EC2 checkout and recorded submodules ==="
+          cd "$repo"
+          before_revision="$(git rev-parse HEAD 2>/dev/null || true)"
+          git status --short --branch
+          git fetch origin "${TARGET_REVISION:-dev}"
+          ARGO_SYNC_REVISION="$(git rev-parse "origin/${TARGET_REVISION:-dev}")"
+          export ARGO_SYNC_REVISION
+          echo "argo_sync_revision=$ARGO_SYNC_REVISION"
+          merge_ok=0
+          if git merge --ff-only "origin/${TARGET_REVISION:-dev}"; then
+            merge_ok=1
+          else
+            echo "WARNING: EC2 superproject fast-forward blocked by local dirty state; continuing with targeted GCS submodule refresh"
+            git status --short --branch
+            echo "=== targeted refresh of loadtest/GCS operator paths from origin/${TARGET_REVISION:-dev} ==="
+            git archive "origin/${TARGET_REVISION:-dev}" \
+              remote/argocd/apps \
+              remote/deployments/gcs/k8s \
+              remote/deployments/ws-loadtest-rs \
+              remote/deployments/gleamlang-ws-loadtest \
+              | tar -x -C "$repo"
+          fi
+          after_revision="$(git rev-parse HEAD)"
+          if [ "$merge_ok" -eq 1 ]; then
+            changed_paths="$(git diff --name-only "${before_revision:-$after_revision}" "$after_revision" 2>/dev/null || true)"
+          else
+            changed_paths="$(git diff --name-only "$after_revision" "origin/${TARGET_REVISION:-dev}" 2>/dev/null | grep -E '^(remote/deployments/gcs/|remote/argocd/apps/gcs.application.yaml|remote/deployments/ws-loadtest-rs/|remote/deployments/gleamlang-ws-loadtest/)' || true)"
+          fi
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          target_gcs_sha="$(git ls-tree "origin/${TARGET_REVISION:-dev}" remote/deployments/gcs/chat-vibe | awk '{print $3}')"
+          if [ -n "$target_gcs_sha" ]; then
+            echo "=== target gcs/chat-vibe submodule ==="
+            echo "$target_gcs_sha"
+            echo "PROOF target_gcs_sha=$target_gcs_sha"
+            git -C remote/deployments/gcs/chat-vibe fetch origin
+            git -C remote/deployments/gcs/chat-vibe merge --ff-only --quiet "$target_gcs_sha"
+          fi
+          git rev-parse --short HEAD
+          git submodule status --recursive
+          echo "=== changed paths pulled on EC2 ==="
+          printf '%s\n' "${changed_paths:-none}" | head -80
+
+          echo "=== apply Argo CD Applications ==="
+          apply_target_manifest remote/argocd/apps/dd-observability.application.yaml
+          apply_target_manifest remote/argocd/apps/gcs.application.yaml
+          apply_target_manifest remote/argocd/apps/dd-ws-loadtest-rs-gcs.application.yaml
+          apply_target_manifest remote/argocd/apps/dd-gleamlang-ws-loadtest-gcs.application.yaml
+          apply_target_manifest remote/argocd/apps/dd-nodejs-ws-loadtest-gcs.application.yaml
+
+          for app in $apps; do
+            sync_app "$app"
+          done
+          free_gcs_capacity
+          disable_loadtest_autosync
+
+          wait_available() {
+            local d="$1"
+            local expected="$2"
+            for i in $(seq 1 300); do
+              available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+              if [ "${available:-0}" -ge "$expected" ]; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo "ERROR: deployment/$d did not reach availableReplicas >= $expected" >&2
+            kubectl -n default get deploy "$d" -o wide || true
+            kubectl -n default get pods -l "app=$d" -o wide || true
+            echo "=== $d describe ==="
+            kubectl -n default describe "deployment/$d" || true
+            echo "=== $d current logs ==="
+            kubectl -n default logs -l "app=$d" --all-containers --tail=120 --prefix=true --max-log-requests=20 || true
+            echo "=== $d previous logs ==="
+            for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            done
+            echo "=== $d selected events ==="
+            kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -80 || true
+            return 1
+          }
+
+          deployment_available() {
+            kubectl -n default get "deployment/$1" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || printf '0'
+          }
+
+          statefulset_ready() {
+            kubectl -n default get "statefulset/$1" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || printf '0'
+          }
+
+          endpoint_count() {
+            { kubectl -n default get "endpoints/$1" -o jsonpath='{range .subsets[*].addresses[*]}x{end}' 2>/dev/null || true; } | tr -cd x | wc -c | awk '{print $1}'
+          }
+
+          report_dependency_health() {
+            echo "PROOF dependency_health kafka_available=$(deployment_available gcs-kafka)/1 kafka_endpoints=$(endpoint_count gcs-kafka) rabbitmq_available=$(deployment_available gcs-rabbitmq)/1 rabbitmq_endpoints=$(endpoint_count gcs-rabbitmq) redis_available=$(deployment_available dd-redis-cache)/1 redis_endpoints=$(endpoint_count dd-redis-cache) mongodb_ready=$(statefulset_ready gcs-mongodb)/1 mongodb_endpoints=$(endpoint_count gcs-mongodb)"
+          }
+
+          diagnose_gcs_dependencies() {
+            echo "=== gcs-kafka focused diagnostics ==="
+            kubectl -n default get deploy gcs-kafka -o wide || true
+            kubectl -n default get pods -l app=gcs-kafka -o wide || true
+            kubectl -n default describe deploy/gcs-kafka || true
+            kubectl -n default logs -l app=gcs-kafka --all-containers --tail=220 --prefix=true --max-log-requests=5 || true
+            for pod in $(kubectl -n default get pods -l app=gcs-kafka -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=120 --prefix=true || true
+            done
+            echo "=== gcs dependency status ==="
+            kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+            kubectl -n default get statefulset gcs-mongodb -o wide || true
+            echo "=== gcs dependency pods ==="
+            kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+          }
+
+          wait_observability() {
+            echo "=== observability rollout ==="
+            kubectl -n observability rollout status deployment/dd-k8s-resource-exporter --timeout=300s || true
+            kubectl -n observability get deploy,pods -l app=dd-k8s-resource-exporter -o wide || true
+          }
+
+          prom_query() {
+            local expr="$1"
+            kubectl -n observability exec deploy/dd-k8s-resource-exporter -- python -c 'import json, sys, urllib.parse, urllib.request; expr = sys.argv[1]; url = "http://dd-prometheus.observability.svc.cluster.local:9090/api/v1/query?" + urllib.parse.urlencode({"query": expr}); payload = json.load(urllib.request.urlopen(url, timeout=8)); print(json.dumps(payload.get("data", {}).get("result", [])[:8], separators=(",", ":")))' "$expr" 2>/dev/null || true
+          }
+
+          prom_snapshot() {
+            local snapshot_label="$1"
+            echo "=== prometheus snapshot: $snapshot_label ==="
+            for expr in \
+              'gcs_ws_connections_active' \
+              'gcs_ws_connections_total' \
+              'gcs_ws_read_errors_total' \
+              'gcs_ws_writes_total' \
+              'gcs_ws_load_shed_total' \
+              'gcs_runtime_gauge{name="goroutines"}' \
+              'gcs_process_resident_memory_bytes' \
+              'gcs_process_open_fds' \
+              'gcs_broker_fanout_deliveries_total' \
+              'gcs_kafka_read_errors_total' \
+              'gcs_router_active_conns' \
+              'gcs_router_active_total' \
+              'gcs_router_rejected_total' \
+              'gcs_router_upstream_errors_total' \
+              'dd_gcs_dependency_tcp_up' \
+              'dd_gcs_redis_info{name="connected_clients"}' \
+              'dd_gcs_rabbitmq_management_up' \
+              'dd_k8s_deployment_available_replicas{namespace="default",deployment=~"gcs|gcs-router|gcs-kafka|gcs-rabbitmq|dd-redis-cache"}' \
+              'dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}' \
+              'dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}' \
+              'dd_k8s_pod_container_restarts_total{namespace="default",pod=~"gcs.*"}' \
+              'dd_k8s_pod_container_last_terminated{namespace="default",pod=~"gcs.*"}'; do
+              echo "--- query: $expr"
+              prom_query "$expr"
+            done
+          }
+
+          prom_compact_snapshot() {
+            local snapshot_label="$1"
+            local query_spec query_label query_expr
+            echo "=== prometheus compact snapshot: $snapshot_label ==="
+            for query_spec in \
+              'router-active-total-max|max(max_over_time(gcs_router_active_total[30m]))' \
+              'router-rejections-sum|sum(increase(gcs_router_rejected_total[30m]))' \
+              'router-upstream-errors-sum|sum(increase(gcs_router_upstream_errors_total[30m]))' \
+              'ws-read-errors-sum|sum(increase(gcs_ws_read_errors_total[30m]))' \
+              'ws-load-shed-sum|sum(increase(gcs_ws_load_shed_total[30m]))' \
+              'gcs-kafka-read-errors-sum|sum(increase(gcs_kafka_read_errors_total[30m]))' \
+              'gcs-rss-max|max(max_over_time(gcs_process_resident_memory_bytes[30m]))' \
+              'gcs-cpu-max|max(max_over_time(dd_k8s_pod_container_cpu_usage_cores{namespace="default",pod=~"gcs.*"}[30m]))' \
+              'gcs-memory-max|max(max_over_time(dd_k8s_pod_container_memory_usage_bytes{namespace="default",pod=~"gcs.*"}[30m]))'; do
+              query_label="${query_spec%%|*}"
+              query_expr="${query_spec#*|}"
+              echo "--- query: $query_label"
+              prom_query "$query_expr"
+            done
+          }
+
+          prom_load_failure_snapshot() {
+            local snapshot_label="$1"
+            local query_spec query_label query_expr
+            echo "=== prometheus load-failure snapshot: $snapshot_label ==="
+            for query_spec in \
+              'ws-active-max-by-pod|max by (pod) (max_over_time(gcs_ws_connections_active[30m]))' \
+              'ws-upgrade-status|sum by (status) (increase(gcs_ws_upgrades_total[30m]))' \
+              'ws-connection-events|sum by (event) (increase(gcs_ws_connections_total[30m]))' \
+              'ws-write-results|sum by (kind, outcome) (increase(gcs_ws_writes_total[30m]))' \
+              'ws-message-results|sum by (type, outcome) (increase(gcs_ws_messages_total[30m]))' \
+              'broker-publish-results|sum by (backend, result) (increase(gcs_broker_publish_total[30m]))' \
+              'broker-fanout-results|sum by (backend, result) (increase(gcs_broker_fanout_deliveries_total[30m]))' \
+              'in-memory-fanout-results|sum by (result) (increase(gcs_in_memory_fanout_total[30m]))' \
+              'broker-subs-active-max|max(max_over_time(gcs_broker_subscriptions_active[30m]))' \
+              'ws-active-now|gcs_ws_connections_active' \
+              'gcs-rss-now|gcs_process_resident_memory_bytes' \
+              'runtime-gauges-now|gcs_runtime_gauge' \
+              'ws-load-shed-recent|sum by (reason, phase) (increase(gcs_ws_load_shed_total[3m]))' \
+              'broker-publish-recent|sum by (backend, result) (increase(gcs_broker_publish_total[3m]))' \
+              'runtime-gauges|max by (name) (max_over_time(gcs_runtime_gauge[30m]))'; do
+              query_label="${query_spec%%|*}"
+              query_expr="${query_spec#*|}"
+              echo "--- query: $query_label"
+              prom_query "$query_expr"
+            done
+          }
+
+          diagnose_gcs_rollout() {
+            local rollout_label="$1"
+            echo "=== diagnose GCS rollout failure: $rollout_label ==="
+            kubectl -n argocd get application/gcs -o wide || true
+            kubectl -n default get deploy,rs,pods -l 'app in (gcs,gcs-router)' -o wide || true
+            echo "=== describe deployment/gcs ==="
+            kubectl -n default describe deployment/gcs || true
+            echo "=== describe deployment/gcs-router ==="
+            kubectl -n default describe deployment/gcs-router || true
+            echo "=== describe gcs pods ==="
+            kubectl -n default describe pods -l app=gcs || true
+            echo "=== current gcs logs ==="
+            kubectl -n default logs -l app=gcs --all-containers --tail=240 --prefix=true --max-log-requests=20 || true
+            echo "=== previous gcs logs ==="
+            for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- previous logs for $pod ---"
+              kubectl -n default logs "$pod" --all-containers --previous --tail=240 --prefix=true || true
+            done
+            echo "=== gcs/router events ==="
+            kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM' | tail -160 || true
+            diagnose_gcs_dependencies
+            prom_snapshot "rollout failure $rollout_label"
+          }
+
+          echo "=== clean restart gcs stack before correctness/perf validation ==="
+          wait_observability
+          git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2/gcs-kafka.deployment.yaml" | kubectl apply -f -
+          kubectl -n default get deploy gcs-rabbitmq gcs-kafka dd-redis-cache -o wide || true
+          kubectl -n default get statefulset gcs-mongodb -o wide || true
+          kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' -o wide || true
+          wait_available gcs-kafka 1
+          report_dependency_health
+          kubectl -n default rollout restart deployment/gcs deployment/gcs-router
+          if ! kubectl -n default rollout status deployment/gcs --timeout=900s; then
+            diagnose_gcs_rollout "gcs"
+            exit 1
+          fi
+          if ! kubectl -n default rollout status deployment/gcs-router --timeout=600s; then
+            diagnose_gcs_rollout "gcs-router"
+            exit 1
+          fi
+          wait_available gcs 4
+          wait_available gcs-router 3
+          kubectl -n default get deploy gcs gcs-router -o wide
+          kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
+          echo "=== prometheus snapshot: after gcs rollout skipped to preserve SSM diagnostic output ==="
+
+          router_metrics() {
+            local pod
+            pod="$(kubectl -n default get pods -l app=gcs-router -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+            if [ -z "$pod" ]; then
+              echo "(no gcs-router pod found)"
+              return
+            fi
+            kubectl -n default exec "$pod" -- bash -lc 'exec 3<>/dev/tcp/127.0.0.1/9100; printf "GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n" >&3; cat <&3' 2>/dev/null \
+              | grep -E '^(gcs_router_routed_total|gcs_router_endpoints|gcs_router_active_conns|gcs_router_active_total|gcs_router_rejected_total|gcs_router_upstream_errors_total)' \
+              | head -120 || true
+          }
+
+          run_correctness_job() {
+            echo "=== GCS correctness smoke: chat.vibe CLI scripts ==="
+            kubectl -n default delete job/gcs-loadtest --ignore-not-found=true || true
+            git show "origin/${TARGET_REVISION:-dev}:remote/deployments/gcs/k8s/ec2-loadtest/loadtest-job.yaml" | kubectl apply -f -
+            result="timeout"
+            for i in $(seq 1 300); do
+              succeeded="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
+              failed="$(kubectl -n default get job/gcs-loadtest -o jsonpath='{.status.failed}' 2>/dev/null || true)"
+              if [ "${succeeded:-0}" -ge 1 ]; then
+                result="passed"
+                break
+              fi
+              if [ "${failed:-0}" -ge 1 ]; then
+                result="failed"
+                break
+              fi
+              sleep 1
+            done
+            echo "correctness_result=$result"
+            kubectl -n default logs job/gcs-loadtest 2>/dev/null \
+              | grep -E '^(=== [0-9]/|=== summary|ALL TESTS PASSED|ONE OR MORE TESTS FAILED|>> .* exit=|FAIL|ERROR)' \
+              | tail -100 || true
+            if [ "$result" != "passed" ]; then
+              echo "ERROR: GCS correctness smoke did not pass" >&2
+              kubectl -n default get job/gcs-loadtest -o wide || true
+              kubectl -n default get pods -l app=gcs-loadtest -o wide || true
+              kubectl -n default logs job/gcs-loadtest --tail=200 || true
+              exit 1
+            fi
+          }
+
+          collect_loader() {
+            local d="$1"
+            echo "=== $d compact state ==="
+            kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas} updated={.status.updatedReplicas}{"\n"}' || true
+            kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null \
+              | awk '{counts[$3]++; total++} END {printf "pod-status "; if (total == 0) {print "none"} else {for (s in counts) printf "%s=%d ", s, counts[s]; print ""}}' || true
+            loader_logs "$d" \
+              | awk '
+                /gcs-report/ {
+                  pod = $1
+                  sub(/^\[pod\//, "", pod)
+                  sub(/\/.*$/, "", pod)
+                  latest[pod] = $0
+                }
+                END {
+                  for (pod in latest) {
+                    pods++
+                    n = split(latest[pod], fields, " ")
+                    for (i = 1; i <= n; i++) {
+                      split(fields[i], kv, "=")
+                      key = kv[1]
+                      val = kv[2] + 0
+                      if (key == "attempted") attempted += val
+                      else if (key == "connected") connected += val
+                      else if (key == "failed") failed += val
+                      else if (key == "open") open += val
+                      else if (key == "sent") sent += val
+                      else if (key == "received") received += val
+                      else if (key == "in_flight" || key == "in_flight_peak") in_flight += val
+                      else if (key == "correlation_misses") correlation_misses += val
+                      else if (key == "receive_errors") receive_errors += val
+                      else if (key == "p50_us" && val > max_p50_us) max_p50_us = val
+                      else if (key == "p95_us" && val > max_p95_us) max_p95_us = val
+                      else if (key == "p99_us" && val > max_p99_us) max_p99_us = val
+                      else if (key == "max_us" && val > max_us) max_us = val
+                    }
+                  }
+                  if (pods == 0) {
+                    print "gcs-summary none"
+                  } else {
+                    printf "gcs-summary pods=%d attempted=%d connected=%d failed=%d open=%d sent=%d received=%d in_flight=%d correlation_misses=%d receive_errors=%d max_p50_us=%d max_p95_us=%d max_p99_us=%d max_us=%d\n", pods, attempted, connected, failed, open, sent, received, in_flight, correlation_misses, receive_errors, max_p50_us, max_p95_us, max_p99_us, max_us
+                  }
+                }' || true
+          }
+
+          loader_summary() {
+            local d="$1"
+            loader_logs "$d" \
+              | awk '
+                /gcs-report/ {
+                  pod = $1
+                  sub(/^\[pod\//, "", pod)
+                  sub(/\/.*$/, "", pod)
+                  latest[pod] = $0
+                }
+                END {
+                  for (pod in latest) {
+                    pods++
+                    n = split(latest[pod], fields, " ")
+                    for (i = 1; i <= n; i++) {
+                      split(fields[i], kv, "=")
+                      key = kv[1]
+                      val = kv[2] + 0
+                      if (key == "attempted") attempted += val
+                      else if (key == "connected") connected += val
+                      else if (key == "failed") failed += val
+                      else if (key == "open") open += val
+                      else if (key == "sent") sent += val
+                      else if (key == "received") received += val
+                      else if (key == "in_flight" || key == "in_flight_peak") in_flight += val
+                      else if (key == "correlation_misses") correlation_misses += val
+                      else if (key == "receive_errors") receive_errors += val
+                    }
+                  }
+                  printf "%d %d %d %d %d %d %d %d %d %d\n", pods, attempted, connected, failed, open, sent, received, in_flight, correlation_misses, receive_errors
+                }' || printf '0 0 0 0 0 0 0 0 0 0\n'
+          }
+
+          loader_logs() {
+            local d="$1"
+            local pod
+            for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              kubectl -n default logs "$pod" --all-containers --since=30m --tail="${LOADTEST_LOADER_LOG_TAIL:-2000}" --prefix=true 2>/dev/null \
+                | grep 'gcs-report' || true
+            done
+          }
+
+          dump_loader_logs() {
+            local d="$1"
+            local pod
+            echo "=== loader pod failure excerpts: $d ==="
+            for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- loader pod $pod state ---"
+              kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} ready={range .status.containerStatuses[*]}{.name}:{.ready}:{.restartCount}:{.state.waiting.reason}:{.state.terminated.reason} {end}{"\n"}' || true
+              echo "--- loader pod $pod recent report/connect lines ---"
+              kubectl -n default logs "$pod" --all-containers --since=30m --tail=2000 --prefix=true 2>/dev/null \
+                | grep -E 'gcs-report|gcs connect failed|gcs connect timeout|HTTP error: 503|HTTP error: 502|HTTP error: 504' \
+                | tail -20 || true
+            done
+          }
+
+          direct_gcs_metrics() {
+            local metrics_file pf_log pf_pid pod port
+            echo "=== direct current GCS pod metrics ==="
+            port=19030
+            for pod in $(kubectl -n default get pods -l app=gcs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+              echo "--- gcs pod $pod metrics ---"
+              port=$((port + 1))
+              metrics_file="/tmp/gcs-metrics-${pod}.txt"
+              pf_log="/tmp/gcs-port-forward-${pod}.log"
+              kubectl -n default port-forward "pod/$pod" "${port}:3000" >"$pf_log" 2>&1 &
+              pf_pid="$!"
+              for _ in $(seq 1 20); do
+                if curl -fsS "http://127.0.0.1:${port}/metrics" >"$metrics_file" 2>/dev/null; then
+                  grep -E '^(gcs_ws_|gcs_broker_|gcs_in_memory_|gcs_kafka_|gcs_runtime_|gcs_process_|gcs_go_)' "$metrics_file" \
+                    | head -220 || true
+                  break
+                fi
+                sleep 0.25
+              done
+              kill "$pf_pid" 2>/dev/null || true
+              wait "$pf_pid" 2>/dev/null || true
+              if [ -s "$pf_log" ]; then
+                grep -v 'Handling connection' "$pf_log" | tail -5 || true
+              fi
+            done
+          }
+
+          wait_loader_reports() {
+            local d="$1"
+            local loader_name="$2"
+            local expected="$3"
+            local timeout_seconds="${4:-600}"
+            local deadline=$((SECONDS + timeout_seconds))
+            local summary reported k8s_pods ready available
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              summary="$(loader_summary "$d")"
+              set -- $summary
+              reported="${1:-0}"
+              k8s_pods="$(kubectl -n default get pods -l "app=$d" --no-headers 2>/dev/null | awk 'END {print NR + 0}')"
+              ready="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)"
+              available="$(kubectl -n default get "deployment/$d" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+              echo "loader-warmup loader=$loader_name reports=$reported/$expected k8s_pods=${k8s_pods:-0} ready=${ready:-0} available=${available:-0}"
+              if [ "${reported:-0}" -ge "$expected" ]; then
+                return 0
+              fi
+              sleep 15
+            done
+            echo "ERROR: $loader_name did not emit gcs-report from all pods before load window" >&2
+            {
+              echo "=== loader warmup failure diagnostics: $loader_name ==="
+              kubectl -n default get deploy "$d" -o wide || true
+              kubectl -n default get pods -l "app=$d" -o wide || true
+              for pod in $(kubectl -n default get pods -l "app=$d" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true); do
+                echo "--- pod $pod state ---"
+                kubectl -n default get pod "$pod" -o jsonpath='phase={.status.phase} ready={range .status.containerStatuses[*]}{.name}:{.ready}:{.state.waiting.reason}:{.state.running.startedAt}:{.state.terminated.reason} {end}{"\n"}' || true
+                echo "--- pod $pod recent logs ---"
+                kubectl -n default logs "$pod" --all-containers --tail=80 --prefix=true 2>/dev/null || true
+              done
+              echo "--- recent loader events ---"
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started|Unhealthy|OOM" | tail -80 || true
+            } >&2
+            return 1
+          }
+
+          assert_loader_healthy() {
+            local d="$1"
+            local loader_name="$2"
+            local summary
+            summary="$(loader_summary "$d")"
+            set -- $summary
+            local pods="${1:-0}"
+            local attempted="${2:-0}"
+            local connected="${3:-0}"
+            local failed="${4:-0}"
+            local open="${5:-0}"
+            local sent="${6:-0}"
+            local received="${7:-0}"
+            local in_flight="${8:-0}"
+            local correlation_misses="${9:-0}"
+            local receive_errors="${10:-0}"
+            local min_open=$((total_connections * 90 / 100))
+            local max_failed=$((total_connections / 10))
+            local max_receive_errors=$((total_connections / 10))
+            local min_sent=$((total_connections * 20))
+            echo "proof-summary loader=$loader_name pods=$pods attempted=$attempted connected=$connected failed=$failed open=$open sent=$sent received=$received in_flight=$in_flight correlation_misses=$correlation_misses receive_errors=$receive_errors min_open=$min_open max_failed=$max_failed"
+            if [ "$pods" -lt "$loader_replicas" ]; then
+              echo "ERROR: $loader_name only reported $pods/$loader_replicas metric-emitting load pods" >&2
+              return 1
+            fi
+            if [ "$open" -lt "$min_open" ]; then
+              echo "ERROR: $loader_name did not sustain enough open connections: open=$open min=$min_open" >&2
+              return 1
+            fi
+            if [ "$failed" -gt "$max_failed" ]; then
+              echo "ERROR: $loader_name had too many connection failures: failed=$failed max=$max_failed" >&2
+              return 1
+            fi
+            if [ "$receive_errors" -gt "$max_receive_errors" ]; then
+              echo "ERROR: $loader_name had too many receive errors: receive_errors=$receive_errors max=$max_receive_errors" >&2
+              return 1
+            fi
+            if [ "$sent" -lt "$min_sent" ]; then
+              echo "ERROR: $loader_name did not generate enough client-originated messages: sent=$sent min=$min_sent" >&2
+              return 1
+            fi
+            if [ "$received" -le 0 ]; then
+              echo "ERROR: $loader_name did not observe any GCS response/fanout messages" >&2
+              return 1
+            fi
+            wait_available gcs 4
+            wait_available gcs-router 3
+            echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
+            echo "PROOF loader_pass loader=$loader_name total_connections=$total_connections open=$open failed=$failed receive_errors=$receive_errors sent=$sent received=$received"
+          }
+
+          diagnose_load_failure() {
+            local d="$1"
+            local loader_name="$2"
+            {
+              echo "=== load failure diagnostics: $loader_name ==="
+              collect_loader "$d"
+              echo "=== top pods: gcs/loadtest/dependencies ==="
+              kubectl -n default top pods --containers | grep -E 'gcs|loadtest|kafka|rabbit|redis|mongo' || true
+              echo "=== gcs dependency pods ==="
+              kubectl -n default get pods -l 'app in (gcs-mongodb,gcs-rabbitmq,gcs-kafka,dd-redis-cache)' || true
+              direct_gcs_metrics
+              echo "=== router metrics at $loader_name failure ==="
+              router_metrics
+              prom_compact_snapshot "load failure $loader_name"
+              prom_load_failure_snapshot "load failure $loader_name"
+              dump_loader_logs "$d"
+              echo "=== gcs/router/loadtest deployments ==="
+              kubectl -n default get deploy gcs gcs-router "$d" || true
+              echo "=== gcs/router/loadtest pods ==="
+              kubectl -n default get pods -l "app in (gcs,gcs-router,$d)" || true
+              echo "=== recent gcs websocket logs ==="
+              kubectl -n default logs -l app=gcs --all-containers --since=20m --tail=1200 --prefix=true --max-log-requests=20 2>/dev/null \
+                | grep -E 'websocket|ws connection|EOF for ws conn|unexpected close|closed|rejected|Panic|WriteJSON|WriteMessage|client connection|vid/a4295d402f9b|vid/6e0bc91e57e6|vid/28ab6154d3bb|vid/73b3c13a1f48|vid/f1e0fb06755b|vid/9d157baaa874' \
+                | tail -200 || true
+              echo "=== recent gcs/loadtest events ==="
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E 'gcs|loadtest|FailedScheduling|BackOff|Failed|Killing|Unhealthy|OOM|Evicted' | tail -40 || true
+            } >&2
+          }
+
+          run_loader() {
+            local d="$1"
+            local loader_name="$2"
+            echo "=== start $loader_name: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), ${messages_per_second} msg/(conn*second), duration=${duration}s, load=${load_label} ==="
+            free_gcs_capacity
+            kubectl -n default set resources "deployment/$d" \
+              --requests=cpu=1m,memory=512Mi \
+              --limits=cpu=4,memory=8Gi || true
+            kubectl -n default set env "deployment/$d" \
+              CLIENT_COUNT="$clients_per_replica" \
+              GCS_CLIENTS_PER_CONV=5 \
+              GCS_SENDERS_PER_CONV=5 \
+              MESSAGES_PER_SECOND_PER_CLIENT="$messages_per_second" \
+              RAMP_DELAY_MS=20 \
+              CONNECT_TIMEOUT_SECONDS=60 \
+              CONNECT_TIMEOUT_MS=60000 \
+              RECONNECT_DELAY_MS=10000 \
+              REPORT_INTERVAL_SECONDS=10
+            kubectl -n default scale "deployment/$d" --replicas="$loader_replicas"
+            if ! kubectl -n default rollout status "deployment/$d" --timeout=240s; then
+              echo "ERROR: $d failed to roll out with ${loader_replicas} replicas" >&2
+              collect_loader "$d"
+              kubectl -n default describe "deployment/$d" || true
+              kubectl -n default describe pods -l "app=$d" || true
+              kubectl get events -n default --sort-by=.lastTimestamp | grep -E "$d|FailedScheduling|BackOff|Failed|Killing|Pulled|Created|Started" | tail -160 || true
+              exit 1
+            fi
+            actual_replicas="$(kubectl -n default get "deployment/$d" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+            if [ "$actual_replicas" != "$loader_replicas" ]; then
+              echo "ERROR: $d expected spec.replicas=${loader_replicas} after scale-up, got ${actual_replicas:-unset}" >&2
+              kubectl -n argocd get "application/$d" -o yaml | grep -E 'automated:|syncPolicy:|syncOptions:' || true
+              exit 1
+            fi
+            collect_loader "$d"
+            if ! wait_loader_reports "$d" "$loader_name" "$loader_replicas" "${LOADTEST_LOADER_READY_TIMEOUT_SECONDS:-600}"; then
+              exit 1
+            fi
+            echo "=== router metrics before $loader_name load window ==="
+            router_metrics
+            prom_compact_snapshot "before $loader_name"
+            remaining="$duration"
+            while [ "$remaining" -gt 0 ]; do
+              step=30
+              if [ "$remaining" -lt "$step" ]; then
+                step="$remaining"
+              fi
+              sleep "$step"
+              remaining=$((remaining - step))
+              echo "=== $loader_name sample: ${remaining}s remaining ==="
+              collect_loader "$d"
+              echo "=== router metrics during $loader_name ==="
+              router_metrics
+              prom_compact_snapshot "during $loader_name remaining=${remaining}s"
+            done
+            echo "=== final $loader_name loader summary ==="
+            collect_loader "$d"
+            if ! assert_loader_healthy "$d" "$loader_name"; then
+              diagnose_load_failure "$d" "$loader_name"
+              exit 1
+            fi
+            prom_compact_snapshot "after $loader_name"
+            echo "=== stop $loader_name ==="
+            kubectl -n default scale "deployment/$d" --replicas=0
+            sleep 15
+            kubectl -n default get deploy "$d" -o jsonpath='deployment replicas={.spec.replicas} ready={.status.readyReplicas} available={.status.availableReplicas}{"\n"}' || true
+          }
+
+          run_correctness_job
+
+          run_loader dd-ws-loadtest-rs-gcs "Rust ws-loadtest-rs"
+          run_loader dd-nodejs-ws-loadtest-gcs "Node.js ws-loadtest"
+          run_loader dd-gleamlang-ws-loadtest-gcs "Gleam ws-loadtest"
+
+          echo "=== final gcs/router state ==="
+          kubectl -n default get deploy gcs gcs-router -o wide
+          kubectl -n default get pods -l 'app in (gcs,gcs-router)' -o wide
+          echo "=== final router metrics ==="
+          router_metrics
+          echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
+          report_dependency_health
+          echo "PROOF loadtest_all_passed total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label loaders=rust,nodejs,gleam"
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} bash -lc {shlex.quote(script)}",
+              ],
+          }))
+          PY
+              ;;
+            *)
+              echo "Unsupported operation: $OPERATION" >&2
+              exit 64
+              ;;
+          esac
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Remote K8s maintenance: $OPERATION" \
+              --parameters file:///tmp/remote-k8s-commands.json \
+              --query "Command.CommandId" \
+              --output text
+          )"
+          echo "command_id=$command_id"
+          status=""
+          for attempt in {1..540}; do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query "Status" \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Cancelled|Cancelling|Failed|TimedOut)
+                break
+                ;;
+            esac
+            if (( attempt <= 5 || attempt % 10 == 0 )); then
+              echo "SSM command $command_id status=${status:-pending} attempt=$attempt/540"
+            fi
+            sleep 10
+          done
+          if [ "${status:-}" = "InProgress" ]; then
+            echo "SSM command $command_id still InProgress after polling; cancelling to avoid orphaned cluster load"
+            aws ssm cancel-command --command-id "$command_id" --instance-ids "$INSTANCE_ID" || true
+            for attempt in {1..30}; do
+              status="$(
+                aws ssm get-command-invocation \
+                  --command-id "$command_id" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query "Status" \
+                  --output text 2>/dev/null || true
+              )"
+              case "$status" in
+                Cancelled|Failed|Success|TimedOut)
+                  break
+                  ;;
+              esac
+              echo "SSM command $command_id cancellation status=${status:-pending} attempt=$attempt/30"
+              sleep 5
+            done
+          fi
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}" \
+            --output json | tee /tmp/ssm-invocation.json
+          if [ "${OPERATION:-}" = "verify-mip-solver-node" ]; then
+            SSM_COMMAND_ID_CAPTURE="$command_id" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          source = Path("/tmp/ssm-invocation.json")
+          output = Path("remote/ec2/mip-solver-node-last-verification.json")
+          data = json.loads(source.read_text())
+
+          def tail(value, limit=60000):
+              value = value or ""
+              return value[-limit:]
+
+          output.write_text(
+              json.dumps(
+                  {
+                      "operation": os.environ.get("OPERATION"),
+                      "runId": os.environ.get("GITHUB_RUN_ID"),
+                      "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+                      "headSha": os.environ.get("GITHUB_SHA"),
+                      "commandId": os.environ.get("SSM_COMMAND_ID_CAPTURE", ""),
+                      "status": data.get("Status"),
+                      "stdoutTail": tail(data.get("Stdout")),
+                      "stderrTail": tail(data.get("Stderr")),
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n"
+          )
+          PY
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add remote/ec2/mip-solver-node-last-verification.json
+            git commit -m "Record MIP solver verification result [skip ci]" || true
+            git push origin "HEAD:${GITHUB_REF_NAME:-dev}" || true
+          fi
+          status="$(jq -r '.Status' /tmp/ssm-invocation.json)"
+          test "$status" = "Success"

@@ -366,15 +366,26 @@ seconds; large backfills paginate via `cursor`.
 
 ### 4. Provider integrations: what is real today
 
-| Provider | Auth model (real today) | Sync (poll path) | Webhooks | Notes |
-|---|---|---|---|---|
-| Stripe Connect | **OAuth** — `POST /oauth/token` | **Real** — `GET /balance_transactions` paginated, normalized to ledger postings (charge / refund / payout / payout_failure templates; unknown types → recon break) | Signature verification real (`Stripe-Signature` HMAC-SHA256), event normalizer is the same code path as the sync | Default backstop 5x/day |
-| **Coinflow** | **API key** — `POST /…/attach-api-key` (api_key + merchant_id + webhook_validation_key) | **Real** — `GET /api/merchant/webhooks` paginated with date window, normalized (cardPayment / cashAppPayment / achPayment / cryptoPayment / fee / refund / withdrawal / payout templates) | Signature verification real (HMAC-SHA256 with constant-time compare) | **VASP-licensed (Polish KRS:0001107350) — see "Regulatory leverage" below** |
-| PayPal Partner | **OAuth** — `POST /v1/oauth2/token` with HTTP Basic | Stubbed (next: `GET /v1/reporting/transactions`) | Stubbed | |
-| Braintree | **OAuth** — `POST /oauth/access_tokens` | Stubbed (next: GraphQL `searchTransactions`) | Stubbed | |
-| Plaid Link | **Public-token exchange** — `POST /item/public_token/exchange` plus `/link/token/create` to mint Link tokens | Stubbed (next: `POST /transactions/sync` with cursor) | Stubbed | |
-| Coinbase / Wise | Generic API-key path works (`attach-api-key`) | Stub | Stub | Same generic attach endpoint as Coinflow |
-| SWIFT / ACH / SolanaWallet | Bank coordinates / wallet pubkey paths stubbed | Stub | n/a | SolanaWallet stays observer-only |
+| Provider | Maturity | Auth | Sync | Webhook verify | Notes |
+|---|---|---|---|---|---|
+| **Stripe Connect** | Full | OAuth | Real — `GET /balance_transactions` paginated, normalized (charge / refund / payout / payout_failure; unknown → recon break) | Real (Stripe-Signature HMAC-SHA256) | Default backstop 5x/day |
+| **Coinflow** | Full | API key | Real — `GET /api/merchant/webhooks` paginated, normalized (card / cashApp / ach / crypto / fee / refund / withdrawal / payout) | Real (HMAC-SHA256, constant-time, prefix-tolerant) | **VASP-licensed (Polish KRS:0001107350)** |
+| **Wise Business** | Full | API key | Real — activity feed walk, balance-statement parser; raises recon breaks for monetary activity | n/a (no public webhook) | Multi-currency cross-border |
+| **Revolut Business** | Full | API key (PAT) | Real — `GET /transactions?from=<cursor>` paginated, per-leg double-entry posting (topup / fee / card_payment / transfer / payout) | Real (Revolut-Signature `v1=<hex>`, signed `{ts}.{body}`) | UK/EU e-money institution; full OAuth+JWT flow is v2 |
+| **Coinbase Commerce** | Full | API key | Real — `GET /charges?starting_after=<id>` paginated; only `COMPLETED` charges post; crypto-amount data in metadata only | Real (X-CC-Webhook-Signature HMAC-SHA256) | Crypto merchant checkout |
+| **SolanaWallet** | Full | Wallet pubkey | Real — chain observer (RPC) | n/a | Non-custodial, read-only |
+| **PayPal Partner** | Full | OAuth | Real — `GET /v1/reporting/transactions` walked in 30-day windows (PayPal's 31-day cap), page-iterated, only `transaction_status=S` posts; event-code → category (sale / refund / chargeback / payout / fx) with fee split into `expense/fees/paypal`; FX legs recorded as recon breaks | Real (cert-based `verify-webhook-signature` against PayPal Notifications API using `paypal_webhook_id`) | Per-window high-watermark stored in `provider_connections.metadata.paypal_last_seen_at` |
+| **Braintree** | Full | OAuth | Real — GraphQL `search.transactions(first:100, after:$cursor)` against `payments.braintree-api.com/graphql`; Settled statuses post to `clearing/braintree/<merchant>` + `revenue/braintree`; per-edge cursor stored on `provider_connections.last_sync_cursor`; refund nodes post their own `braintree.refund` drafts | Real (`Braintree-Signature` HMAC-SHA256, constant-time) | `Braintree-Version: 2019-01-01` header |
+| **Plaid Link** | Full | Public-token exchange | Real — `POST /transactions/sync` cursor walker; `added` posts to `asset/plaid/<account_id>` ↔ `income/plaid/unclassified` (or `expense/plaid/unclassified`) with Plaid's inverted-sign convention handled; `modified`/`removed` open recon breaks rather than auto-reversing | Real (`Plaid-Verification` ES256 JWT validated against `/webhook_verification_key/get` JWKS, cached per `kid` for 1h; `request_body_sha256` claim verified against actual body; `iat` skew ±5min) | Cursor persisted on `provider_connections.last_sync_cursor` |
+| **Coinbase Prime** | Full | API key (signed) | Real — `GET /v1/portfolios/{id}/transactions?cursor=<>` with HMAC-SHA256 signed requests (`X-CB-ACCESS-{KEY,PASSPHRASE,SIGNATURE,TIMESTAMP}`); USD + stablecoins (USDC/USDT/PYUSD/DAI/EURC) post 1:1 to fiat clearing; native crypto recorded to `provider_balance_snapshots` for observability only (price-oracle integration deferred) | Real (shares CoinbaseCredential webhook secret with Commerce) | Requires `api_secret` (base64 HMAC key) + `passphrase` + `portfolio_id` on top of base CoinbaseCredential |
+| **Mercury** | Full | API key | Real — list `/accounts` → walk `/account/{id}/transactions?offset=N` per account; cursor stored per-account in connection metadata; posts to `asset/mercury/<account_id>` with unclassified income/expense counterparty | Real (X-Mercury-Signature HMAC-SHA256 over `{ts}.{body}`) | Tech-startup banking |
+| **Bridge.xyz** | Full | API key | Real — `GET /transfers?starting_after=<id>`; only terminal-state transfers (`payment_processed`/`funds_received`/`completed`) post; USDC/USDT normalized to USD for ledger (raw token amount kept in metadata) | Real — staleness check (±10min) **plus** RSA-SHA256 PKCS1v15 verify of `{ts}.{body}` against `BridgeCredential.webhook_public_key_pem` (PKCS#8 PEM) | Stripe-owned stablecoin orchestration, **MTL leverage** |
+| **Fireblocks** | Full | API key + RS256 JWT-signed requests | Real — `GET /v1/transactions?after=<epoch_ms>&orderBy=createdAt&sort=ASC`; per-request JWT signs `{uri, nonce, iat, exp, sub, bodyHash}` with the tenant's RSA private key; cursor is epoch-ms of newest seen `createdAt`; USDC/USDT/PYUSD/DAI/EURC post 1:1 to fiat clearing, native crypto (BTC/ETH/SOL/etc.) → `provider_balance_snapshots` | Real — RSA-SHA512 PKCS1v15 verify of raw body against `FireblocksCredential.webhook_public_key_pem` | Institutional MPC custody — the most-asked-for crypto integration in B2B treasury |
+| **Circle Mint** | Full | API key (bearer) | Real — `GET /v1/businessAccount/transfers?pageAfter=<id>&pageSize=N`; only `complete` transfers post; USDC and EURC post 1:1 to the matching fiat clearing (Circle reserves redeem 1:1 on demand, so the peg is reliable enough for ledger postings) | Real — HMAC-SHA256 over raw body against `CircleCredential.webhook_secret`, prefix-tolerant (`sha256=` accepted) | USDC issuer; closes the loop on every other crypto integration since they all settle in USDC |
+| **GoCardless** | Full | OAuth or PAT | Real — `GET /payments?after=<id>` cursor-paginated; only `paid_out`/`confirmed` payments post; refunds get their own draft (`expense/refunds/gocardless` DR) | Real (Webhook-Signature HMAC-SHA256, constant-time) | UK/EU/AU/US direct debit + open banking |
+| SWIFT / ACH | Stub | Bank coordinates | Stub (next: BAI2/MT940/camt.053 parsers) | n/a (file-based) | |
+| **Remitly** | LimitedFit | — | None (no programmatic surface) | n/a | Consumer remittance; no real B2B API |
+| **Robinhood** | LimitedFit | — | None (brokerage, not a payments rail) | n/a | Future: crypto-holdings snapshot job |
 
 #### Regulatory leverage: why Coinflow specifically matters
 
@@ -394,10 +405,181 @@ card / ACH / Cash App through Coinflow, pay coaches in crypto through
 Coinflow, and see a perfectly reconciled double-entry ledger in our system
 — without either of us needing to become an MSB or VASP.
 
-This generalizes: the new `attach-api-key` endpoint works for any
-similarly-shaped provider, so adding **Coinbase Commerce, Wise, Mercury,
-Bridge, or BVNK** is now hours of work, not weeks. The hard infrastructure
-(sealing, scheduler, lease, recon breaks, ledger normalization) is shared.
+This generalizes: the same `attach-api-key` endpoint now wires up Coinflow,
+Wise, Revolut, Coinbase Commerce, Mercury, Bridge, GoCardless, Remitly,
+and Robinhood with one code path. The hard infrastructure (sealing,
+scheduler, lease, recon breaks, ledger normalization) is shared.
+
+#### Why we built Coinflow + Wise + Revolut + Coinbase Commerce as full integrations
+
+These four cover ~80% of what a tech-leaning B2B SaaS actually needs in
+2026:
+
+- **Coinflow** — the regulatory-leverage story (above): one connection
+  unlocks card + ACH + Cash App + crypto + payouts on a third-party VASP
+  license.
+- **Wise Business** — best-in-class cross-border with a real REST API
+  and per-account multi-currency balances. Tenants moving money outside
+  USD use Wise.
+- **Revolut Business** — UK/EU e-money institution. Same multi-currency
+  story as Wise but with native cards, card_credit, and tighter UK/EU
+  treasury integration. Useful complement, not substitute.
+- **Coinbase Commerce** — dominant merchant crypto checkout. The only
+  full crypto-merchant integration with a sane REST API + signed webhooks.
+
+#### Why we left Remitly and Robinhood as `LimitedFit` (and didn't fake it)
+
+Two honest non-fits we keep visible in the enum and dashboard:
+
+- **Remitly** has no public business/partner API. Their "Remitly for
+  Developers" surface is consumer SDKs for in-app remittance. The right
+  way to ingest Remitly receipts today is email-parsing, which is its
+  own product (out of scope). We surface `ProviderMaturity::LimitedFit`
+  so the connect UI doesn't lie to tenants.
+- **Robinhood** is a brokerage, not a payments rail. The closest useful
+  integration is reading Robinhood Crypto holdings into the ledger as a
+  daily snapshot under `asset/crypto/robinhood/<symbol>` — a narrow
+  follow-up that doesn't justify a full provider integration yet.
+
+The sync dispatcher routes both to a `limited_fit` handler that returns
+an Ok summary (instead of failing the job), so the connection stays
+healthy and the dashboard surface is honest: "this provider is connected
+but does not poll".
+
+#### What's now Full vs. what's still pending
+
+| Full (sync + webhooks both real) | Stub (sync `not_implemented` — webhooks still record) |
+|---|---|
+| Stripe, Coinflow, Wise, Revolut, Coinbase Commerce, Mercury, Bridge.xyz, GoCardless, PayPal, Braintree, Plaid, Coinbase Prime, SolanaWallet, **Fireblocks**, **Circle** | (SWIFT/ACH intentionally deferred — the connected institutions report these via their own APIs) |
+
+Every observer-class provider is now Full. SWIFT / ACH parsers (BAI2 /
+MT940 / camt.053) are intentionally deferred — the institutions that
+own those rails (Mercury, Wise, Plaid-connected banks, GoCardless,
+Stripe-connected bank accounts, Circle Mint, Fireblocks bank-FIAT
+accounts) already report those movements through their own APIs, so a
+dedicated bank-file parser would mostly be a redundant ingestion path
+for the same underlying events.
+
+Notes on the four newly-graduated providers:
+
+- **PayPal** — windowed walker handles PayPal's 31-day reporting cap;
+  the high-watermark timestamp is stored in
+  `provider_connections.metadata.paypal_last_seen_at` rather than
+  `last_sync_cursor` because the API doesn't return a cursor. Only
+  `transaction_status="S"` posts; fees split into `expense/fees/paypal`;
+  unrecognized event codes record an event but no posting (so the
+  ledger isn't polluted by guesses).
+- **Braintree** — GraphQL endpoint at `payments.braintree-api.com/graphql`
+  with `Braintree-Version: 2019-01-01`; we walk
+  `search.transactions(first: 100, after: cursor)` and persist the
+  per-edge cursor on `last_sync_cursor`. Refund nodes nested on a
+  transaction become their own `braintree.refund` drafts so refunds
+  always look symmetric in the ledger.
+- **Plaid** — `/transactions/sync` is a true delta API, so the cursor
+  *is* the state. We deliberately don't auto-reverse `modified` or
+  `removed` events; both open reconciliation breaks for human review.
+  Plaid's amount sign is inverted from ours (positive = outflow), so the
+  normalizer flips the direction at the boundary.
+- **Coinbase Prime** — requires three extra credential fields on top of
+  the base `CoinbaseCredential`: `api_secret` (base64-encoded HMAC key),
+  `passphrase`, and `portfolio_id`. The signed-request middleware
+  prepends `timestamp + METHOD + path_with_query + body` and HMAC-SHA256s
+  with the decoded secret. Native crypto (BTC/ETH/SOL/etc.) is recorded
+  to `provider_balance_snapshots` for observability only — price-oracle
+  integration is intentionally out of scope for this push so we don't
+  post unverified USD-equivalents into the ledger.
+
+Notes on the two new crypto houses:
+
+- **Fireblocks** — institutional MPC custody. Every well-funded crypto
+  company custodies through them, so this is the most-asked-for crypto
+  integration in B2B treasury. Auth is per-request RSA-signed JWTs
+  (`{uri, nonce, iat, exp, sub, bodyHash}`) — the `bodyHash` claim
+  prevents a stolen JWT from being replayed against a different
+  endpoint. Webhooks are RSA-SHA512 over the raw body against a
+  per-tenant public-key PEM. Posting posture matches Coinbase Prime:
+  stablecoins post 1:1 to fiat clearing, native crypto records to
+  `provider_balance_snapshots` for observability only.
+- **Circle Mint** — USDC issuer. This is the integration that closes
+  the loop on every other crypto provider, since they all settle in
+  USDC against Circle's reserves. Auth is a simple bearer API key.
+  Webhooks are HMAC-SHA256 over the raw body, prefix-tolerant
+  (`sha256=` accepted). USDC + EURC are the only assets that surface
+  here, both 1:1-pegged by Circle's reserves and posted at face value.
+
+Webhook crypto upgrades from the previous push:
+
+- **Bridge.xyz** — RSA-SHA256 PKCS1v15 verification of `{ts}.{body}`
+  against `BridgeCredential.webhook_public_key_pem` (PKCS#8 PEM, base64
+  signature) is now live alongside the existing ±10min staleness check.
+- **Plaid** — `Plaid-Verification` JWT (ES256) verification against
+  Plaid's `/webhook_verification_key/get` JWKS endpoint with an
+  in-memory key cache (1h TTL keyed by `kid`). The
+  `request_body_sha256` claim is checked against the actual raw body,
+  and `iat` skew is bounded to ±5min.
+
+### 4a. Audit + hardening pass (2026-05-22)
+
+A targeted audit of the existing surface ran alongside the new crypto
+work. Findings and fixes:
+
+- **Plaid cursor advancement on error path** — the per-page error
+  handler in `plaid_sync.rs` was calling `connections.mark_synced(…,
+  next_cursor)` before returning the error. That would have advanced
+  the persisted Plaid cursor past transactions we hadn't fully
+  processed. Removed. Errors now bubble up cleanly to the job handler,
+  which marks the connection failed without touching the cursor, and
+  the scheduler retries from the last persisted cursor. Posting is
+  idempotent on `plaid:tx:<id>` so re-walking the page is safe.
+- **`reconciliation_breaks` duplicates** — every sync's recon-break
+  inserts (Stripe / Plaid / Wise / Coinflow) had no idempotency, so a
+  retried sync would leave duplicate `open` rows for the same external
+  reference. Migration `20260522000011_audit_hardening_and_crypto_houses.sql`
+  adds a partial-unique index over the open population only:
+  `UNIQUE (provider, connection_id, break_type, external_ref) WHERE
+  status = 'open' AND external_ref IS NOT NULL`. All four insert sites
+  now use `ON CONFLICT DO NOTHING`. Once a break is acknowledged or
+  resolved, a fresh occurrence of the same external ref can still
+  generate a new break.
+- **Duplicated parse / compare helpers** — every provider sync was
+  re-implementing `parse_decimal_to_minor`, `constant_time_eq_str`,
+  and `stablecoin_to_fiat`. That's a correctness hazard (one fix
+  doesn't propagate). Extracted to `providers::amount` with proper
+  unit tests covering the edge cases (negative amounts, locale commas,
+  truncation, double-decimal rejection, constant-time inequality).
+- **Webhook freshness windows** — confirmed every signed-with-timestamp
+  webhook enforces a freshness window (Stripe, Plaid, Revolut, Mercury,
+  Bridge, Fireblocks). The HMAC-only webhooks (Coinbase Commerce,
+  Coinflow, GoCardless, Circle) have no timestamp header, so replay
+  protection comes from the `webhook_events (provider,
+  external_event_id)` unique constraint at the DB layer — a replayed
+  event with a valid signature gets upserted into the same row and is
+  ingested at most once.
+- **Webhook body parse order** — re-confirmed that signature verifies
+  run over the raw `axum::body::Bytes` *before* JSON deserialization,
+  so a malformed payload can't bypass crypto. The verified raw body
+  is what gets sha256'd into `webhook_events.payload_sha256`.
+- **Tenant binding** — the connection-by-`external_account_id` lookup
+  derives the tenant from the credential row, not from URL params or
+  body fields. So a hostile sender can't spoof a tenant by forging
+  fields in the payload.
+- **Crypto credential validation at attach** — Fireblocks's
+  `api_secret_pem` is parsed via `EncodingKey::from_rsa_pem` at attach
+  time so paste errors fail loud immediately rather than at first
+  signed-request time.
+
+And a list worth tracking but not stubbing yet:
+
+| Provider | Why it might matter |
+|---|---|
+| Modern Treasury | Treasury-ops control plane (could replace our scheduler/notif system, but that's not the value-add) |
+| Adyen | Global enterprise card processor — overlapping with Stripe |
+| Square | POS + card processor — only relevant if a tenant has physical retail |
+| Mollie | EU-focused PSP — overlapping with Revolut/Adyen |
+| Dwolla | ACH specialist — overlapping with Plaid/Mercury |
+| Razorpay | India |
+| Mercado Pago | LatAm |
+| BVNK | Stablecoin orchestration — overlapping with Bridge.xyz |
 
 #### Provider posting templates (canonical chart of accounts)
 
@@ -406,12 +588,23 @@ sync converges on. Tenants override these later via the (future)
 chart-of-accounts API.
 
 ```
-clearing/stripe/<stripe_user_id>      asset    — funds in flight, charge → payout
+clearing/stripe/<stripe_user_id>      asset    — funds in flight (charge → payout)
 clearing/coinflow/<merchant_id>       asset    — funds in flight via Coinflow
+clearing/coinbase_commerce            asset    — funds in flight, COMPLETED charges only
+clearing/gocardless                   asset    — funds in flight via GoCardless
+clearing/bridge                       asset    — funds in flight via Bridge stablecoin rails
+asset/revolut/<account_id>            asset    — per-account multi-currency Revolut balance
+asset/transit/revolut                 asset    — internal transfer holding (legs that net to zero)
+asset/mercury/<account_id>            asset    — per-account Mercury banking balance
+asset/bridge/usdc                     asset    — USDC balance held via Bridge
 revenue/<provider>                    income   — gross customer charges
+income/mercury/unclassified           income   — incoming Mercury credits awaiting categorization
+expense/<provider>/unclassified       expense  — outgoing debits awaiting categorization
 expense/fees/<provider>               expense  — provider's processing fee
 expense/refunds/<provider>            expense  — refunds issued
+expense/payouts/revolut               expense  — outbound payouts via Revolut
 asset/bank/pending                    asset    — payouts in transit to operating bank
+asset/crypto/robinhood/<symbol>       asset    — (future) Robinhood Crypto holdings snapshot
 ```
 
 This is what lets `customer/billing-state` and `vendor/payable-state` give
@@ -448,12 +641,21 @@ POST /v1/tenants/{t}/connections/{connection_id}/attach-api-key
 **Webhook receivers:**
 
 ```
-POST /v1/webhooks/stripe        (x-stripe-signature, HMAC-SHA256 — verified)
-POST /v1/webhooks/coinflow      (x-coinflow-signature, HMAC-SHA256 — verified, constant-time)
-POST /v1/webhooks/paypal        (paypal-transmission-sig — verification stubbed)
-POST /v1/webhooks/coinbase      (x-cc-webhook-signature — verification stubbed)
-POST /v1/webhooks/plaid         (plaid-verification        — verification stubbed)
+POST /v1/webhooks/stripe        (Stripe-Signature, HMAC-SHA256 — verified)
+POST /v1/webhooks/coinflow      (X-Coinflow-Signature, HMAC-SHA256 — verified, constant-time)
+POST /v1/webhooks/coinbase      (X-CC-Webhook-Signature, HMAC-SHA256 — verified)
+POST /v1/webhooks/revolut       (Revolut-Signature `v1=<hex>` over `{ts}.{body}` — verified)
+POST /v1/webhooks/gocardless    (Webhook-Signature, HMAC-SHA256 — verified)
+POST /v1/webhooks/mercury       (X-Mercury-Signature HMAC-SHA256 over `{ts}.{body}` — verified)
+POST /v1/webhooks/bridge        (X-Webhook-Signature `t=,v0=`; staleness verified, RSA next push)
+POST /v1/webhooks/paypal        (cert-based via PAYPAL-AUTH-ALGO + transmission headers — verified)
+POST /v1/webhooks/plaid         (Plaid-Verification JWT, ES256 via JWKS cache)
 ```
+
+All receivers persist into `webhook_events` first (raw body + sha256 +
+signature_ok), then verify against a per-connection secret loaded from
+the sealed credential. The `BILLING_REQUIRE_WEBHOOK_SIGNATURES` flag
+makes unverified deliveries return 401 in production.
 
 **What "active" really means** after the callback returns:
 - Sealed credential is in `provider_connections.sealed_credential`

@@ -1,0 +1,1454 @@
+import Fastify from 'fastify';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
+import { join } from 'node:path';
+import { isIP } from 'node:net';
+import { Worker } from 'node:worker_threads';
+import { z } from 'zod';
+
+import type { Browser as PlaywrightBrowser, Page as PlaywrightPage } from 'playwright';
+import type { Browser as PuppeteerBrowser, Page as PuppeteerPage } from 'puppeteer';
+
+const STRATEGIES = [
+  'native-fetch',
+  'cheerio',
+  'jsdom',
+  'linkedom',
+  'playwright',
+  'puppeteer',
+  'browserless',
+] as const;
+
+type StrategyName = (typeof STRATEGIES)[number];
+type StrategyInput = StrategyName | 'auto';
+type ScrapeResultStatus = 'ok' | 'error';
+
+const strategyAliases: Record<string, StrategyInput> = {
+  auto: 'auto',
+  fetch: 'native-fetch',
+  native: 'native-fetch',
+  'native-fetch': 'native-fetch',
+  'plain-fetch': 'native-fetch',
+  'plain/native-fetch': 'native-fetch',
+  cheerio: 'cheerio',
+  jsdom: 'jsdom',
+  linkedom: 'linkedom',
+  playwright: 'playwright',
+  puppeteer: 'puppeteer',
+  browserless: 'browserless',
+  'browserless.io': 'browserless',
+};
+
+const serverStartedAt = new Date().toISOString();
+const serverInstanceId = randomUUID();
+
+const ALWAYS_BLOCKED_OUTBOUND_HEADERS = new Set([
+  'connection',
+  'content-length',
+  'expect',
+  'host',
+  'keep-alive',
+  'proxy-authenticate',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+const SENSITIVE_OUTBOUND_HEADERS = new Set(['authorization', 'cookie', 'proxy-authorization']);
+
+const config = {
+  host: process.env.HOST ?? '0.0.0.0',
+  port: readNumberEnv('PORT', 8097),
+  serverAuthSecret: process.env.SERVER_AUTH_SECRET ?? null,
+  allowUnauthenticated: process.env.SCRAPER_ALLOW_UNAUTHENTICATED === 'true',
+  defaultStrategy: normalizeStrategyInput(process.env.SCRAPER_DEFAULT_STRATEGY ?? 'auto'),
+  maxConcurrent: readNumberEnv('SCRAPER_MAX_CONCURRENT', 4),
+  parserWorkerConcurrency: readNumberEnv(
+    'SCRAPER_PARSER_WORKERS',
+    Math.max(1, Math.min(4, availableParallelism() - 1)),
+  ),
+  parserWorkerMemoryMb: readNumberEnv('SCRAPER_PARSER_WORKER_MEMORY_MB', 128),
+  maxTimeoutMs: readNumberEnv('SCRAPER_MAX_TIMEOUT_MS', 60_000),
+  defaultTimeoutMs: readNumberEnv('SCRAPER_DEFAULT_TIMEOUT_MS', 30_000),
+  maxRedirects: readNumberEnv('SCRAPER_MAX_REDIRECTS', 5),
+  maxHtmlChars: readNumberEnv('SCRAPER_MAX_HTML_CHARS', 1_000_000),
+  maxTextChars: readNumberEnv('SCRAPER_MAX_TEXT_CHARS', 40_000),
+  maxLinks: readNumberEnv('SCRAPER_MAX_LINKS', 250),
+  browserHeadless: readBooleanEnv('SCRAPER_BROWSER_HEADLESS', true),
+  captureFailureScreenshots: readBooleanEnv('SCRAPER_CAPTURE_FAILURE_SCREENSHOTS', true),
+  failureScreenshotQuality: clampNumber(
+    readNumberEnv('SCRAPER_FAILURE_SCREENSHOT_QUALITY', 65),
+    1,
+    100,
+  ),
+  failureScreenshotMaxBytes: readNumberEnv('SCRAPER_FAILURE_SCREENSHOT_MAX_BYTES', 512_000),
+  autoUseBrowserless: process.env.SCRAPER_AUTO_BROWSERLESS === 'true',
+  allowPrivateNetworks: process.env.SCRAPER_ALLOW_PRIVATE_NETWORKS === 'true',
+  allowSensitiveHeaders: process.env.SCRAPER_ALLOW_SENSITIVE_HEADERS === 'true',
+  allowUrlCredentials: process.env.SCRAPER_ALLOW_URL_CREDENTIALS === 'true',
+  browserlessEndpoint: process.env.BROWSERLESS_ENDPOINT ?? 'https://production-sfo.browserless.io',
+  browserlessContentUrl: process.env.BROWSERLESS_CONTENT_URL ?? null,
+  browserlessToken: process.env.BROWSERLESS_TOKEN ?? null,
+};
+
+const ScrapeRequestSchema = z.object({
+  requestId: z.string().min(1).max(120).optional(),
+  url: z.string().url(),
+  strategy: z.string().min(1).max(80).optional(),
+  renderJavaScript: z.boolean().optional(),
+  selector: z.string().min(1).max(800).optional(),
+  selectors: z.record(z.string().min(1).max(120), z.string().min(1).max(800)).optional(),
+  includeHtml: z.boolean().optional(),
+  includeText: z.boolean().optional(),
+  includeLinks: z.boolean().optional(),
+  captureFailureScreenshot: z.boolean().optional(),
+  timeoutMs: z.number().int().min(500).optional(),
+  maxHtmlChars: z.number().int().min(1_000).optional(),
+  maxTextChars: z.number().int().min(500).optional(),
+  waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
+  headers: z.record(z.string().min(1).max(120), z.string().max(2_000)).optional(),
+  userAgent: z.string().min(1).max(500).optional(),
+});
+
+type ScrapeRequest = z.infer<typeof ScrapeRequestSchema>;
+
+type FetchedDocument = {
+  html: string;
+  finalUrl: string;
+  status?: number;
+  contentType?: string;
+  truncated: boolean;
+  failureScreenshot?: FailureScreenshot;
+};
+
+type ParserName = 'native-fetch' | 'cheerio' | 'jsdom' | 'linkedom';
+type BrowserStrategyName = 'playwright' | 'puppeteer';
+
+type FailureScreenshot = {
+  strategy: BrowserStrategyName;
+  mimeType: 'image/jpeg';
+  encoding: 'base64';
+  byteLength: number;
+  capturedAt: string;
+  finalUrl?: string;
+  data?: string;
+  omitted?: boolean;
+  omitReason?: string;
+};
+
+type ExtractionResult = {
+  parser: ParserName;
+  title?: string;
+  text?: string;
+  html?: string;
+  selection?: {
+    selector: string;
+    count: number;
+    text?: string;
+    html?: string;
+  };
+  fields?: Record<string, string>;
+  links?: string[];
+};
+
+type ExtractionWorkerResponse =
+  | { ok: true; extraction: ExtractionResult }
+  | { ok: false; error: string };
+
+type ScrapeResponse = {
+  ok: true;
+  requestId: string;
+  strategy: StrategyName;
+  requestedStrategy: StrategyInput;
+  url: string;
+  finalUrl: string;
+  status?: number;
+  contentType?: string;
+  durationMs: number;
+  truncated: boolean;
+  extraction: ExtractionResult;
+};
+
+type ServiceDescriptor = {
+  service: 'dd-web-scraper';
+  ok: true;
+  endpoints: Record<'scrape' | 'strategies' | 'status' | 'healthz' | 'metrics', string>;
+  strategies: readonly StrategyName[];
+  defaultStrategy: StrategyInput;
+  parserWorkerConcurrency: number;
+  parserWorkerMemoryMb: number;
+  browserHeadless: boolean;
+  captureFailureScreenshots: boolean;
+};
+
+type StrategyDescriptor = {
+  name: StrategyName;
+  available: boolean;
+  supportsJavaScript: boolean;
+  supportsSelectors: boolean;
+};
+
+type StrategiesDescriptor = {
+  default: StrategyInput;
+  autoPolicy: Record<'javascript' | 'selectors' | 'fallback', StrategyName>;
+  strategies: StrategyDescriptor[];
+};
+
+type StatusDescriptor = {
+  ok: true;
+  service: 'dd-web-scraper';
+  serverStartedAt: string;
+  serverInstanceId: string;
+  inFlight: number;
+  maxConcurrent: number;
+  parserWorkerConcurrency: number;
+  parserWorkerMemoryMb: number;
+  blockPrivateNetworks: boolean;
+  maxRedirects: number;
+  allowSensitiveHeaders: boolean;
+  browserlessConfigured: boolean;
+  browserHeadless: boolean;
+  captureFailureScreenshots: boolean;
+  failureScreenshotQuality: number;
+  failureScreenshotMaxBytes: number;
+};
+
+type HealthDescriptor = {
+  ok: true;
+  service: 'dd-web-scraper';
+  serverStartedAt: string;
+  serverInstanceId: string;
+  inFlight: number;
+};
+
+class Semaphore {
+  private active = 0;
+  private readonly queue: Array<() => void> = [];
+
+  constructor(private readonly limit: number) {}
+
+  get activeCount(): number {
+    return this.active;
+  }
+
+  get queuedCount(): number {
+    return this.queue.length;
+  }
+
+  async run<T>(work: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await work();
+    } finally {
+      this.release();
+    }
+  }
+
+  private acquire(): Promise<void> {
+    if (this.active < this.limit) {
+      this.active += 1;
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.active += 1;
+        resolve();
+      });
+    });
+  }
+
+  private release(): void {
+    this.active -= 1;
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    }
+  }
+}
+
+const metrics = {
+  inFlight: 0,
+  total: new Map<string, number>(),
+  durationSumMs: new Map<StrategyName, number>(),
+  durationCount: new Map<StrategyName, number>(),
+};
+
+let playwrightBrowser: PlaywrightBrowser | null = null;
+let playwrightBrowserPromise: Promise<PlaywrightBrowser> | null = null;
+let puppeteerBrowser: PuppeteerBrowser | null = null;
+let puppeteerBrowserPromise: Promise<PuppeteerBrowser> | null = null;
+const parserWorkerSemaphore = new Semaphore(config.parserWorkerConcurrency);
+
+const fastify = Fastify({
+  logger: true,
+  bodyLimit: 1_048_576,
+});
+
+fastify.addHook('onRequest', async (request, reply) => {
+  const path = request.url.split('?')[0] ?? request.url;
+  if (request.method !== 'POST' || path !== '/scrape') {
+    return;
+  }
+  if (isAuthorized(request.headers)) {
+    return;
+  }
+  return reply.code(401).send({ ok: false, error: 'unauthorized' });
+});
+
+fastify.get('/', async () => serviceDescriptor());
+fastify.get('/scrape', async () => serviceDescriptor());
+fastify.get('/strategies', async () => strategiesDescriptor());
+fastify.get('/scrape/strategies', async () => strategiesDescriptor());
+fastify.get('/status', async () => statusDescriptor());
+fastify.get('/scrape/status', async () => statusDescriptor());
+fastify.get('/healthz', async () => healthDescriptor());
+fastify.get('/scrape/healthz', async () => healthDescriptor());
+fastify.get('/docs/api', async (_request, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs', async (_request, reply) => {
+  reply.header('content-type', 'text/html; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
+});
+fastify.get('/api/docs.json', async (_request, reply) => {
+  reply.header('content-type', 'application/json; charset=utf-8');
+  return readFile(new URL('../generated/api-docs.json', import.meta.url), 'utf8');
+});
+fastify.get('/metrics', async (_request, reply) => {
+  reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+  return renderMetrics();
+});
+fastify.get('/scrape/metrics', async (_request, reply) => {
+  reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+  return renderMetrics();
+});
+
+fastify.post('/scrape', async (request, reply) => {
+  const parsed = ScrapeRequestSchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ ok: false, error: parsed.error.format() });
+  }
+
+  if (metrics.inFlight >= config.maxConcurrent) {
+    return reply.code(429).send({
+      ok: false,
+      error: 'scraper concurrency limit reached',
+      maxConcurrent: config.maxConcurrent,
+    });
+  }
+
+  const requestId = parsed.data.requestId ?? randomUUID();
+  let requestedStrategy: StrategyInput;
+  let strategy: StrategyName;
+  try {
+    requestedStrategy = normalizeStrategyInput(parsed.data.strategy ?? config.defaultStrategy);
+    strategy = chooseStrategy(parsed.data, requestedStrategy);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return reply.code(400).send({ ok: false, requestId, error: message });
+  }
+  const startedAt = Date.now();
+  metrics.inFlight += 1;
+
+  try {
+    const result = await runScrape(parsed.data, requestId, requestedStrategy, strategy);
+    const durationMs = Date.now() - startedAt;
+    recordMetric(strategy, 'ok', durationMs);
+    return { ...result, durationMs };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    recordMetric(strategy, 'error', durationMs);
+    const message = error instanceof Error ? error.message : String(error);
+    const failureScreenshot = getFailureScreenshot(error);
+    const statusCode = isClientPolicyError(message) ? 400 : 500;
+    return reply.code(statusCode).send({
+      ok: false,
+      requestId,
+      strategy,
+      requestedStrategy,
+      durationMs,
+      error: message,
+      ...(failureScreenshot ? { failureScreenshot } : {}),
+    });
+  } finally {
+    metrics.inFlight -= 1;
+  }
+});
+
+async function runScrape(
+  input: ScrapeRequest,
+  requestId: string,
+  requestedStrategy: StrategyInput,
+  strategy: StrategyName,
+): Promise<Omit<ScrapeResponse, 'durationMs'>> {
+  const targetUrl = await validateTargetUrl(input.url);
+  const fetched = await fetchByStrategy(input, targetUrl, strategy);
+  let extraction: ExtractionResult;
+  try {
+    extraction = await extractDocument(fetched.html, fetched.finalUrl, input, strategy);
+  } catch (error) {
+    throw attachFailureScreenshot(error, fetched.failureScreenshot);
+  }
+
+  return {
+    ok: true,
+    requestId,
+    strategy,
+    requestedStrategy,
+    url: targetUrl.toString(),
+    finalUrl: fetched.finalUrl,
+    status: fetched.status,
+    contentType: fetched.contentType,
+    truncated: fetched.truncated,
+    extraction,
+  };
+}
+
+async function fetchByStrategy(
+  input: ScrapeRequest,
+  targetUrl: URL,
+  strategy: StrategyName,
+): Promise<FetchedDocument> {
+  switch (strategy) {
+    case 'native-fetch':
+    case 'cheerio':
+    case 'jsdom':
+    case 'linkedom':
+      return fetchStaticDocument(input, targetUrl);
+    case 'playwright':
+      return fetchWithPlaywright(input, targetUrl);
+    case 'puppeteer':
+      return fetchWithPuppeteer(input, targetUrl);
+    case 'browserless':
+      return fetchWithBrowserless(input, targetUrl);
+  }
+}
+
+async function fetchStaticDocument(
+  input: ScrapeRequest,
+  targetUrl: URL,
+): Promise<FetchedDocument> {
+  const timeoutMs = getTimeoutMs(input);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let currentUrl = targetUrl;
+    for (let redirectCount = 0; redirectCount <= config.maxRedirects; redirectCount += 1) {
+      currentUrl = await validateTargetUrl(currentUrl.toString());
+      const response = await fetch(currentUrl, {
+        method: 'GET',
+        redirect: 'manual',
+        headers: buildHeaders(input, currentUrl, targetUrl),
+        signal: controller.signal,
+      });
+
+      const location = response.headers.get('location');
+      if (isRedirectStatus(response.status) && location) {
+        if (redirectCount === config.maxRedirects) {
+          throw new Error(`maximum redirect count exceeded (${config.maxRedirects})`);
+        }
+        currentUrl = new URL(location, currentUrl);
+        continue;
+      }
+
+      const read = await readResponseText(response, getMaxHtmlChars(input));
+      return {
+        html: read.text,
+        finalUrl: response.url || currentUrl.toString(),
+        status: response.status,
+        contentType: response.headers.get('content-type') ?? undefined,
+        truncated: read.truncated,
+      };
+    }
+
+    throw new Error(`maximum redirect count exceeded (${config.maxRedirects})`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchWithPlaywright(
+  input: ScrapeRequest,
+  targetUrl: URL,
+): Promise<FetchedDocument> {
+  const browser = await getPlaywrightBrowser();
+  const context = await browser.newContext({
+    userAgent: input.userAgent,
+    extraHTTPHeaders: buildHeaders(input, targetUrl, targetUrl),
+  });
+  const page = await context.newPage();
+  let blockedRequestError: Error | null = null;
+  let failureScreenshot: FailureScreenshot | undefined;
+  try {
+    await page.route('**/*', async (route) => {
+      try {
+        await assertAllowedBrowserRequest(route.request().url());
+        await route.continue();
+      } catch (error) {
+        blockedRequestError ??= error instanceof Error ? error : new Error(String(error));
+        await route.abort('blockedbyclient').catch(() => undefined);
+      }
+    });
+    const response = await page
+      .goto(targetUrl.toString(), {
+        waitUntil: input.waitUntil ?? 'domcontentloaded',
+        timeout: getTimeoutMs(input),
+      })
+      .catch((error: unknown) => {
+        if (blockedRequestError) {
+          throw blockedRequestError;
+        }
+        throw error;
+      });
+    if (input.selector) {
+      await page
+        .waitForSelector(input.selector, { timeout: Math.min(getTimeoutMs(input), 5_000) })
+        .catch(() => undefined);
+    }
+    if (shouldCaptureFailureScreenshot(input, 'playwright')) {
+      failureScreenshot = await capturePlaywrightFailureScreenshot(page, 'playwright');
+    }
+    const html = trimToMax(await page.content(), getMaxHtmlChars(input));
+    return {
+      html,
+      finalUrl: page.url(),
+      status: response?.status(),
+      contentType: response?.headers()['content-type'],
+      truncated: html.length >= getMaxHtmlChars(input),
+      failureScreenshot,
+    };
+  } catch (error) {
+    if (shouldCaptureFailureScreenshot(input, 'playwright')) {
+      failureScreenshot ??= await capturePlaywrightFailureScreenshot(page, 'playwright');
+    }
+    throw attachFailureScreenshot(error, failureScreenshot);
+  } finally {
+    await context.close();
+  }
+}
+
+async function fetchWithPuppeteer(input: ScrapeRequest, targetUrl: URL): Promise<FetchedDocument> {
+  const browser = await getPuppeteerBrowser();
+  const context = await browser.createBrowserContext();
+  const page = await context.newPage();
+  let blockedRequestError: Error | null = null;
+  let failureScreenshot: FailureScreenshot | undefined;
+  try {
+    if (input.userAgent) {
+      await page.setUserAgent(input.userAgent);
+    }
+    if (input.headers) {
+      await page.setExtraHTTPHeaders(buildHeaders(input, targetUrl, targetUrl));
+    }
+    await page.setRequestInterception(true);
+    page.on('request', (interceptedRequest) => {
+      assertAllowedBrowserRequest(interceptedRequest.url())
+        .then(() => interceptedRequest.continue().catch(() => undefined))
+        .catch((error: unknown) => {
+          blockedRequestError ??= error instanceof Error ? error : new Error(String(error));
+          interceptedRequest.abort('blockedbyclient').catch(() => undefined);
+        });
+    });
+    const response = await page
+      .goto(targetUrl.toString(), {
+        waitUntil:
+          input.waitUntil === 'networkidle'
+            ? 'networkidle2'
+            : (input.waitUntil ?? 'domcontentloaded'),
+        timeout: getTimeoutMs(input),
+      })
+      .catch((error: unknown) => {
+        if (blockedRequestError) {
+          throw blockedRequestError;
+        }
+        throw error;
+      });
+    if (input.selector) {
+      await page
+        .waitForSelector(input.selector, { timeout: Math.min(getTimeoutMs(input), 5_000) })
+        .catch(() => undefined);
+    }
+    if (shouldCaptureFailureScreenshot(input, 'puppeteer')) {
+      failureScreenshot = await capturePuppeteerFailureScreenshot(page, 'puppeteer');
+    }
+    const html = trimToMax(await page.content(), getMaxHtmlChars(input));
+    return {
+      html,
+      finalUrl: page.url(),
+      status: response?.status(),
+      contentType: response?.headers()['content-type'],
+      truncated: html.length >= getMaxHtmlChars(input),
+      failureScreenshot,
+    };
+  } catch (error) {
+    if (shouldCaptureFailureScreenshot(input, 'puppeteer')) {
+      failureScreenshot ??= await capturePuppeteerFailureScreenshot(page, 'puppeteer');
+    }
+    throw attachFailureScreenshot(error, failureScreenshot);
+  } finally {
+    await context.close();
+  }
+}
+
+async function fetchWithBrowserless(
+  input: ScrapeRequest,
+  targetUrl: URL,
+): Promise<FetchedDocument> {
+  const contentUrl = getBrowserlessContentUrl();
+  const timeoutMs = getTimeoutMs(input);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(contentUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: targetUrl.toString(),
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(
+        `browserless content API returned ${response.status}: ${body.slice(0, 500)}`,
+      );
+    }
+    const read = await readResponseText(response, getMaxHtmlChars(input));
+    return {
+      html: read.text,
+      finalUrl: targetUrl.toString(),
+      status: response.status,
+      contentType: response.headers.get('content-type') ?? undefined,
+      truncated: read.truncated,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function extractDocument(
+  html: string,
+  baseUrl: string,
+  input: ScrapeRequest,
+  strategy: StrategyName,
+): Promise<ExtractionResult> {
+  if (strategy === 'native-fetch') {
+    if (input.selector || input.selectors) {
+      throw new Error(
+        'native-fetch does not support CSS selectors; use cheerio, jsdom, linkedom, or a browser strategy',
+      );
+    }
+  }
+
+  return runExtractionWorker({
+    parser: parserForStrategy(strategy),
+    html,
+    baseUrl,
+    selector: input.selector,
+    selectors: input.selectors,
+    includeHtml: input.includeHtml,
+    includeText: input.includeText,
+    includeLinks: input.includeLinks,
+    maxHtmlChars: getMaxHtmlChars(input),
+    maxTextChars: getMaxTextChars(input),
+    maxLinks: config.maxLinks,
+    timeoutMs: getTimeoutMs(input),
+  });
+}
+
+function parserForStrategy(strategy: StrategyName): ParserName {
+  if (strategy === 'native-fetch' || strategy === 'jsdom' || strategy === 'linkedom') {
+    return strategy;
+  }
+  return 'cheerio';
+}
+
+function runExtractionWorker(input: {
+  parser: ParserName;
+  html: string;
+  baseUrl: string;
+  selector?: string;
+  selectors?: Record<string, string>;
+  includeHtml?: boolean;
+  includeText?: boolean;
+  includeLinks?: boolean;
+  maxHtmlChars: number;
+  maxTextChars: number;
+  maxLinks: number;
+  timeoutMs: number;
+}): Promise<ExtractionResult> {
+  return parserWorkerSemaphore.run(
+    () =>
+      new Promise((resolve, reject) => {
+        const workerUrl = new URL(
+          import.meta.url.endsWith('.ts') ? './extraction-worker.ts' : './extraction-worker.js',
+          import.meta.url,
+        );
+        const worker = new Worker(workerUrl, {
+          execArgv: import.meta.url.endsWith('.ts') ? ['--import', 'tsx'] : undefined,
+          resourceLimits: {
+            maxOldGenerationSizeMb: config.parserWorkerMemoryMb,
+            stackSizeMb: 4,
+          },
+        });
+        let settled = false;
+        let timeout: NodeJS.Timeout | null = null;
+
+        const finish = (callback: () => void): void => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+          worker.terminate().catch(() => undefined);
+          callback();
+        };
+
+        timeout = setTimeout(() => {
+          finish(() =>
+            reject(new Error(`extraction worker timed out after ${input.timeoutMs}ms`)),
+          );
+        }, input.timeoutMs);
+
+        worker.once('message', (message: ExtractionWorkerResponse) => {
+          finish(() => {
+            if (message.ok) {
+              resolve(message.extraction);
+            } else {
+              reject(new Error(message.error));
+            }
+          });
+        });
+        worker.once('error', (error) => {
+          finish(() => reject(error));
+        });
+        worker.once('exit', (code) => {
+          if (code !== 0) {
+            finish(() => reject(new Error(`extraction worker exited with code ${code}`)));
+          }
+        });
+        worker.postMessage(input);
+      }),
+  );
+}
+
+async function getPlaywrightBrowser(): Promise<PlaywrightBrowser> {
+  if (playwrightBrowser?.isConnected()) {
+    return playwrightBrowser;
+  }
+  if (!playwrightBrowserPromise) {
+    playwrightBrowserPromise = (async () => {
+      const { chromium } = await import('playwright');
+      const browser = await chromium.launch({
+        headless: config.browserHeadless,
+        args: chromiumLaunchArgs(),
+      });
+      browser.on('disconnected', () => {
+        if (playwrightBrowser === browser) {
+          playwrightBrowser = null;
+        }
+      });
+      playwrightBrowser = browser;
+      return browser;
+    })().finally(() => {
+      playwrightBrowserPromise = null;
+    });
+  }
+  return playwrightBrowserPromise;
+}
+
+async function getPuppeteerBrowser(): Promise<PuppeteerBrowser> {
+  if (puppeteerBrowser) {
+    return puppeteerBrowser;
+  }
+  if (!puppeteerBrowserPromise) {
+    puppeteerBrowserPromise = (async () => {
+      const puppeteer = await import('puppeteer');
+      const executablePath = await findChromiumExecutable();
+      const browser = await puppeteer.default.launch({
+        headless: config.browserHeadless,
+        executablePath,
+        args: chromiumLaunchArgs(),
+      });
+      browser.on('disconnected', () => {
+        if (puppeteerBrowser === browser) {
+          puppeteerBrowser = null;
+        }
+      });
+      puppeteerBrowser = browser;
+      return browser;
+    })().finally(() => {
+      puppeteerBrowserPromise = null;
+    });
+  }
+  return puppeteerBrowserPromise;
+}
+
+function chromiumLaunchArgs(): string[] {
+  return ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
+}
+
+async function capturePlaywrightFailureScreenshot(
+  page: PlaywrightPage,
+  strategy: BrowserStrategyName,
+): Promise<FailureScreenshot | undefined> {
+  try {
+    const buffer = await page.screenshot({
+      type: 'jpeg',
+      quality: config.failureScreenshotQuality,
+      fullPage: false,
+    });
+    return encodeFailureScreenshot(Buffer.from(buffer), strategy, page.url());
+  } catch {
+    return undefined;
+  }
+}
+
+async function capturePuppeteerFailureScreenshot(
+  page: PuppeteerPage,
+  strategy: BrowserStrategyName,
+): Promise<FailureScreenshot | undefined> {
+  try {
+    const buffer = await page.screenshot({
+      type: 'jpeg',
+      quality: config.failureScreenshotQuality,
+      fullPage: false,
+    });
+    return encodeFailureScreenshot(Buffer.from(buffer), strategy, page.url());
+  } catch {
+    return undefined;
+  }
+}
+
+function encodeFailureScreenshot(
+  buffer: Buffer,
+  strategy: BrowserStrategyName,
+  finalUrl?: string,
+): FailureScreenshot {
+  const base = {
+    strategy,
+    mimeType: 'image/jpeg' as const,
+    encoding: 'base64' as const,
+    byteLength: buffer.byteLength,
+    capturedAt: new Date().toISOString(),
+    finalUrl: finalUrl && finalUrl !== 'about:blank' ? finalUrl : undefined,
+  };
+
+  if (buffer.byteLength > config.failureScreenshotMaxBytes) {
+    return {
+      ...base,
+      omitted: true,
+      omitReason: `screenshot exceeded ${config.failureScreenshotMaxBytes} bytes`,
+    };
+  }
+
+  return {
+    ...base,
+    data: buffer.toString('base64'),
+  };
+}
+
+function shouldCaptureFailureScreenshot(
+  input: ScrapeRequest,
+  strategy: BrowserStrategyName,
+): boolean {
+  return Boolean(strategy) && (input.captureFailureScreenshot ?? config.captureFailureScreenshots);
+}
+
+class ScrapeFailureError extends Error {
+  readonly failureScreenshot?: FailureScreenshot;
+
+  constructor(error: unknown, failureScreenshot?: FailureScreenshot) {
+    super(error instanceof Error ? error.message : String(error));
+    this.name = error instanceof Error ? error.name : 'ScrapeFailureError';
+    this.stack = error instanceof Error ? error.stack : this.stack;
+    this.failureScreenshot = failureScreenshot;
+  }
+}
+
+function attachFailureScreenshot(error: unknown, screenshot?: FailureScreenshot): Error {
+  if (!screenshot) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+  if (error instanceof ScrapeFailureError) {
+    return new ScrapeFailureError(error, error.failureScreenshot ?? screenshot);
+  }
+  return new ScrapeFailureError(error, screenshot);
+}
+
+function getFailureScreenshot(error: unknown): FailureScreenshot | undefined {
+  return error instanceof ScrapeFailureError ? error.failureScreenshot : undefined;
+}
+
+async function findChromiumExecutable(): Promise<string | undefined> {
+  for (const envName of ['PUPPETEER_EXECUTABLE_PATH', 'CHROMIUM_EXECUTABLE_PATH']) {
+    const value = process.env[envName];
+    if (value && (await pathExists(value))) {
+      return value;
+    }
+  }
+
+  for (const candidate of [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ]) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return findExecutableUnder(
+    '/ms-playwright',
+    new Set(['chrome', 'chromium', 'chromium-browser']),
+    5,
+  );
+}
+
+async function findExecutableUnder(
+  root: string,
+  names: Set<string>,
+  depth: number,
+): Promise<string | undefined> {
+  if (depth < 0) {
+    return undefined;
+  }
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const absolute = join(root, entry.name);
+    if (entry.isFile() && names.has(entry.name)) {
+      return absolute;
+    }
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const found = await findExecutableUnder(join(root, entry.name), names, depth - 1);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function validateTargetUrl(rawUrl: string): Promise<URL> {
+  const url = new URL(rawUrl);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('only http and https URLs are supported');
+  }
+  if (!config.allowUrlCredentials && (url.username || url.password)) {
+    throw new Error(
+      'URL credentials are blocked by scraper policy; use headers only when explicitly enabled',
+    );
+  }
+  if (config.allowPrivateNetworks) {
+    return url;
+  }
+
+  const hostname = normalizeHostname(url.hostname);
+  if (isBlockedHostname(hostname)) {
+    throw new Error(`target host ${hostname} is blocked by scraper network policy`);
+  }
+
+  if (isIP(hostname)) {
+    if (isPrivateIp(hostname)) {
+      throw new Error(`target address ${hostname} is blocked by scraper network policy`);
+    }
+    return url;
+  }
+
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  const blocked = addresses.find((entry) => isPrivateIp(entry.address));
+  if (blocked) {
+    throw new Error(
+      `target host ${hostname} resolved to ${blocked.address}, blocked by scraper network policy`,
+    );
+  }
+  return url;
+}
+
+async function assertAllowedBrowserRequest(rawUrl: string): Promise<void> {
+  const url = new URL(rawUrl);
+  if (url.protocol === 'http:' || url.protocol === 'https:') {
+    await validateTargetUrl(url.toString());
+    return;
+  }
+  if (url.protocol === 'about:' || url.protocol === 'blob:' || url.protocol === 'data:') {
+    return;
+  }
+  throw new Error(`target protocol ${url.protocol} is blocked by scraper network policy`);
+}
+
+function isBlockedHostname(hostname: string): boolean {
+  return (
+    hostname === '' ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === 'host.docker.internal' ||
+    hostname === 'metadata.google.internal' ||
+    hostname.endsWith('.svc') ||
+    hostname.endsWith('.cluster.local') ||
+    hostname.endsWith('.internal')
+  );
+}
+
+function isPrivateIp(address: string): boolean {
+  const normalized = stripIpv6Brackets(address).split('%')[0] ?? address;
+  if (normalized.toLowerCase().startsWith('::ffff:')) {
+    return true;
+  }
+  if (isIP(normalized) === 4) {
+    const octets = normalized.split('.').map((value) => Number(value));
+    const [a = 0, b = 0, c = 0] = octets;
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113) ||
+      a >= 224
+    );
+  }
+  if (isIP(normalized) === 6) {
+    const lower = normalized.toLowerCase();
+    return (
+      lower === '::' ||
+      lower === '::1' ||
+      lower.startsWith('64:ff9b:') ||
+      lower.startsWith('100:') ||
+      lower.startsWith('2001:2:') ||
+      lower.startsWith('2001:db8:') ||
+      lower.startsWith('2002:') ||
+      lower.startsWith('fc') ||
+      lower.startsWith('fd') ||
+      lower.startsWith('fe8') ||
+      lower.startsWith('fe9') ||
+      lower.startsWith('fea') ||
+      lower.startsWith('feb') ||
+      lower.startsWith('ff')
+    );
+  }
+  return false;
+}
+
+function normalizeHostname(hostname: string): string {
+  return stripIpv6Brackets(hostname.toLowerCase()).replace(/\.+$/, '');
+}
+
+function stripIpv6Brackets(hostname: string): string {
+  return hostname.replace(/^\[/, '').replace(/\]$/, '');
+}
+
+function chooseStrategy(input: ScrapeRequest, requested: StrategyInput): StrategyName {
+  if (requested !== 'auto') {
+    return requested;
+  }
+  if (input.renderJavaScript) {
+    return config.autoUseBrowserless && isBrowserlessConfigured() ? 'browserless' : 'playwright';
+  }
+  if (input.selector || input.selectors) {
+    return 'cheerio';
+  }
+  return 'native-fetch';
+}
+
+function normalizeStrategyInput(value: string): StrategyInput {
+  const normalized = value.trim().toLowerCase();
+  const strategy = strategyAliases[normalized];
+  if (!strategy) {
+    throw new Error(`unsupported scrape strategy: ${value}`);
+  }
+  return strategy;
+}
+
+function isBrowserlessConfigured(): boolean {
+  if (config.browserlessToken) {
+    return true;
+  }
+  if (!config.browserlessContentUrl) {
+    return false;
+  }
+  try {
+    return new URL(config.browserlessContentUrl).searchParams.has('token');
+  } catch {
+    return false;
+  }
+}
+
+function getBrowserlessContentUrl(): string {
+  const raw =
+    config.browserlessContentUrl ?? `${config.browserlessEndpoint.replace(/\/$/, '')}/content`;
+  const url = new URL(raw);
+  if (config.browserlessToken && !url.searchParams.has('token')) {
+    url.searchParams.set('token', config.browserlessToken);
+  }
+  if (!url.searchParams.has('token')) {
+    throw new Error(
+      'browserless strategy requires BROWSERLESS_TOKEN or BROWSERLESS_CONTENT_URL with a token query param',
+    );
+  }
+  return url.toString();
+}
+
+async function readResponseText(
+  response: Response,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean }> {
+  if (!response.body) {
+    return { text: '', truncated: false };
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  let truncated = false;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    if (!value) {
+      continue;
+    }
+    const remaining = maxBytes - bytes;
+    if (remaining <= 0) {
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+    if (value.byteLength > remaining) {
+      chunks.push(value.slice(0, remaining));
+      truncated = true;
+      await reader.cancel();
+      break;
+    }
+    chunks.push(value);
+    bytes += value.byteLength;
+  }
+
+  return {
+    text: Buffer.concat(chunks).toString('utf8'),
+    truncated,
+  };
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+function buildHeaders(
+  input: ScrapeRequest,
+  currentUrl?: URL,
+  initialUrl?: URL,
+): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(input.headers ?? {})) {
+    const normalizedName = name.trim().toLowerCase();
+    if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/i.test(normalizedName)) {
+      throw new Error(`blocked outbound header with invalid name: ${name}`);
+    }
+    if (ALWAYS_BLOCKED_OUTBOUND_HEADERS.has(normalizedName)) {
+      throw new Error(`blocked outbound header: ${normalizedName}`);
+    }
+    if (SENSITIVE_OUTBOUND_HEADERS.has(normalizedName)) {
+      if (!config.allowSensitiveHeaders) {
+        throw new Error(`blocked sensitive outbound header: ${normalizedName}`);
+      }
+      if (currentUrl && initialUrl && currentUrl.origin !== initialUrl.origin) {
+        continue;
+      }
+    }
+    if (/[\r\n]/.test(value)) {
+      throw new Error(`blocked outbound header with invalid value: ${normalizedName}`);
+    }
+    headers[normalizedName] = value;
+  }
+  if (input.userAgent) {
+    headers['user-agent'] = input.userAgent;
+  }
+  return headers;
+}
+
+function isClientPolicyError(message: string): boolean {
+  return (
+    message.includes('blocked by scraper network policy') ||
+    message.includes('blocked by scraper policy') ||
+    message.includes('blocked outbound header') ||
+    message.includes('blocked sensitive outbound header') ||
+    message.includes('maximum redirect count exceeded') ||
+    message.includes('only http and https URLs are supported') ||
+    message.includes('unsupported scrape strategy') ||
+    message.includes('does not support CSS selectors')
+  );
+}
+
+function getTimeoutMs(input: ScrapeRequest): number {
+  return Math.min(input.timeoutMs ?? config.defaultTimeoutMs, config.maxTimeoutMs);
+}
+
+function getMaxHtmlChars(input: ScrapeRequest): number {
+  return Math.min(input.maxHtmlChars ?? config.maxHtmlChars, config.maxHtmlChars);
+}
+
+function trimToMax(value: string, maxChars: number): string {
+  return value.length > maxChars ? value.slice(0, maxChars) : value;
+}
+
+function getMaxTextChars(input: ScrapeRequest): number {
+  return Math.min(input.maxTextChars ?? config.maxTextChars, config.maxTextChars);
+}
+
+function recordMetric(
+  strategy: StrategyName,
+  status: ScrapeResultStatus,
+  durationMs: number,
+): void {
+  const key = `${strategy}:${status}`;
+  metrics.total.set(key, (metrics.total.get(key) ?? 0) + 1);
+  metrics.durationSumMs.set(strategy, (metrics.durationSumMs.get(strategy) ?? 0) + durationMs);
+  metrics.durationCount.set(strategy, (metrics.durationCount.get(strategy) ?? 0) + 1);
+}
+
+function renderMetrics(): string {
+  const lines = [
+    '# HELP dd_web_scraper_in_flight Current in-flight scrape requests.',
+    '# TYPE dd_web_scraper_in_flight gauge',
+    `dd_web_scraper_in_flight ${metrics.inFlight}`,
+    '# HELP dd_web_scraper_requests_total Scrape requests by strategy and result.',
+    '# TYPE dd_web_scraper_requests_total counter',
+  ];
+
+  for (const strategy of STRATEGIES) {
+    for (const status of ['ok', 'error'] as const) {
+      lines.push(
+        `dd_web_scraper_requests_total{strategy="${strategy}",result="${status}"} ${metrics.total.get(`${strategy}:${status}`) ?? 0}`,
+      );
+    }
+  }
+
+  lines.push(
+    '# HELP dd_web_scraper_duration_ms_sum Total scrape duration in milliseconds.',
+    '# TYPE dd_web_scraper_duration_ms_sum counter',
+  );
+  for (const strategy of STRATEGIES) {
+    lines.push(
+      `dd_web_scraper_duration_ms_sum{strategy="${strategy}"} ${metrics.durationSumMs.get(strategy) ?? 0}`,
+    );
+  }
+
+  lines.push(
+    '# HELP dd_web_scraper_duration_ms_count Number of recorded scrape durations.',
+    '# TYPE dd_web_scraper_duration_ms_count counter',
+  );
+  for (const strategy of STRATEGIES) {
+    lines.push(
+      `dd_web_scraper_duration_ms_count{strategy="${strategy}"} ${metrics.durationCount.get(strategy) ?? 0}`,
+    );
+  }
+
+  lines.push(
+    '# HELP dd_web_scraper_parser_workers Active parser worker threads.',
+    '# TYPE dd_web_scraper_parser_workers gauge',
+    `dd_web_scraper_parser_workers ${parserWorkerSemaphore.activeCount}`,
+    '# HELP dd_web_scraper_parser_worker_queue Queued parser worker jobs.',
+    '# TYPE dd_web_scraper_parser_worker_queue gauge',
+    `dd_web_scraper_parser_worker_queue ${parserWorkerSemaphore.queuedCount}`,
+    '# HELP dd_web_scraper_parser_worker_limit Configured parser worker concurrency.',
+    '# TYPE dd_web_scraper_parser_worker_limit gauge',
+    `dd_web_scraper_parser_worker_limit ${config.parserWorkerConcurrency}`,
+    '# HELP dd_web_scraper_parser_worker_memory_mb Per-worker V8 old generation memory cap.',
+    '# TYPE dd_web_scraper_parser_worker_memory_mb gauge',
+    `dd_web_scraper_parser_worker_memory_mb ${config.parserWorkerMemoryMb}`,
+  );
+
+  return `${lines.join('\n')}\n`;
+}
+
+function serviceDescriptor(): ServiceDescriptor {
+  return {
+    service: 'dd-web-scraper',
+    ok: true,
+    endpoints: {
+      scrape: 'POST /scrape',
+      strategies: 'GET /scrape/strategies',
+      status: 'GET /scrape/status',
+      healthz: 'GET /scrape/healthz',
+      metrics: 'GET /scrape/metrics',
+    },
+    strategies: STRATEGIES,
+    defaultStrategy: config.defaultStrategy,
+    parserWorkerConcurrency: config.parserWorkerConcurrency,
+    parserWorkerMemoryMb: config.parserWorkerMemoryMb,
+    browserHeadless: config.browserHeadless,
+    captureFailureScreenshots: config.captureFailureScreenshots,
+  };
+}
+
+function strategiesDescriptor(): StrategiesDescriptor {
+  return {
+    default: config.defaultStrategy,
+    autoPolicy: {
+      javascript:
+        config.autoUseBrowserless && isBrowserlessConfigured() ? 'browserless' : 'playwright',
+      selectors: 'cheerio',
+      fallback: 'native-fetch',
+    },
+    strategies: STRATEGIES.map((strategy) => ({
+      name: strategy,
+      available: strategy !== 'browserless' || isBrowserlessConfigured(),
+      supportsJavaScript: ['playwright', 'puppeteer', 'browserless'].includes(strategy),
+      supportsSelectors: strategy !== 'native-fetch',
+    })),
+  };
+}
+
+function statusDescriptor(): StatusDescriptor {
+  return {
+    ok: true,
+    service: 'dd-web-scraper',
+    serverStartedAt,
+    serverInstanceId,
+    inFlight: metrics.inFlight,
+    maxConcurrent: config.maxConcurrent,
+    parserWorkerConcurrency: config.parserWorkerConcurrency,
+    parserWorkerMemoryMb: config.parserWorkerMemoryMb,
+    blockPrivateNetworks: !config.allowPrivateNetworks,
+    maxRedirects: config.maxRedirects,
+    allowSensitiveHeaders: config.allowSensitiveHeaders,
+    browserlessConfigured: isBrowserlessConfigured(),
+    browserHeadless: config.browserHeadless,
+    captureFailureScreenshots: config.captureFailureScreenshots,
+    failureScreenshotQuality: config.failureScreenshotQuality,
+    failureScreenshotMaxBytes: config.failureScreenshotMaxBytes,
+  };
+}
+
+function healthDescriptor(): HealthDescriptor {
+  return {
+    ok: true,
+    service: 'dd-web-scraper',
+    serverStartedAt,
+    serverInstanceId,
+    inFlight: metrics.inFlight,
+  };
+}
+
+function isAuthorized(headers: Record<string, string | string[] | undefined>): boolean {
+  if (!config.serverAuthSecret) {
+    return config.allowUnauthenticated;
+  }
+  return (
+    headerEquals(headers['x-server-auth'], config.serverAuthSecret) ||
+    headerEquals(headers.auth, config.serverAuthSecret)
+  );
+}
+
+function headerEquals(value: string | string[] | undefined, expected: string): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => headerEquals(item, expected));
+  }
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const valueBuffer = Buffer.from(value);
+  const expectedBuffer = Buffer.from(expected);
+  if (valueBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(valueBuffer, expectedBuffer);
+}
+
+function readNumberEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readBooleanEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+async function closeBrowsers(): Promise<void> {
+  const closing: Promise<unknown>[] = [];
+  if (playwrightBrowser) {
+    closing.push(playwrightBrowser.close().catch(() => undefined));
+    playwrightBrowser = null;
+  }
+  if (puppeteerBrowser) {
+    closing.push(puppeteerBrowser.close().catch(() => undefined));
+    puppeteerBrowser = null;
+  }
+  await Promise.all(closing);
+}
+
+async function main(): Promise<void> {
+  if (!config.serverAuthSecret && !config.allowUnauthenticated) {
+    throw new Error('SERVER_AUTH_SECRET is required unless SCRAPER_ALLOW_UNAUTHENTICATED=true');
+  }
+  if (!config.serverAuthSecret && config.allowUnauthenticated) {
+    fastify.log.warn(
+      'SCRAPER_ALLOW_UNAUTHENTICATED=true; POST /scrape will accept unauthenticated requests',
+    );
+  }
+  await fastify.listen({ host: config.host, port: config.port });
+}
+
+function shutdown(signal: string): void {
+  fastify.log.info(`${signal} received; shutting down`);
+  fastify.close().finally(() => {
+    closeBrowsers().finally(() => process.exit(0));
+  });
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+main().catch((error) => {
+  fastify.log.error(error);
+  closeBrowsers().finally(() => process.exit(1));
+});

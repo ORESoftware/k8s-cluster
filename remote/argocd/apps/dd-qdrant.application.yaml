@@ -4,17 +4,47 @@ metadata:
   name: dd-qdrant
   namespace: argocd
 spec:
-  project: default
+  project: dd-ai-ml-platform
   source:
     repoURL: https://qdrant.github.io/qdrant-helm
     chart: qdrant
     targetRevision: 1.17.1
     helm:
+      skipTests: true
       values: |
         replicaCount: 1
+        apiKey:
+          valueFrom:
+            secretKeyRef:
+              name: dd-qdrant-api-keys
+              key: api-key
+        readOnlyApiKey:
+          valueFrom:
+            secretKeyRef:
+              name: dd-qdrant-api-keys
+              key: read-only-api-key
         persistence:
           enabled: true
           size: 5Gi
+        podSecurityContext:
+          seccompProfile:
+            type: RuntimeDefault
+        containerSecurityContext:
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        podDisruptionBudget:
+          enabled: true
+          maxUnavailable: 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 2Gi
         service:
           type: ClusterIP
   destination:
@@ -24,5 +54,3 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

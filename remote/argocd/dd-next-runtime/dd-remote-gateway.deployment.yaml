@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: dd-remote-gateway
   namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
   labels:
     app: dd-remote-gateway
 spec:
@@ -15,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-17-fsws-route'
+        dd.dev/telemetry-revision: '2026-06-03-des-rs-dns-refresh'
       labels:
         app: dd-remote-gateway
     spec:
@@ -29,6 +31,14 @@ spec:
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault
+            # NOTE: We deliberately do not `drop: [ALL]` on this nginx
+            # container. nginx 1.27-alpine starts a master as root (so it
+            # can bind 80/443), then forks workers and switches them to
+            # the `nginx` user, which needs CAP_SETUID/SETGID. Adding
+            # only NET_BIND_SERVICE breaks worker spawn. Hardening here
+            # should instead come from running an unprivileged nginx
+            # image and using `runAsUser: 101` plus `add: NET_BIND_SERVICE`,
+            # which is a coordinated change tracked separately.
           env:
             - name: DD_REMOTE_GATEWAY_AUTH_VALUE
               valueFrom:
@@ -49,7 +59,7 @@ spec:
               hostPort: 443
           resources:
             requests:
-              cpu: 50m
+              cpu: 5m
               memory: 64Mi
             limits:
               cpu: 500m

@@ -21,11 +21,24 @@ var containerPoolConfigsRequestPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~
 var containerPoolConfigsHealthPathPattern = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
 var knownGitRepoRepoUrlPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var knownGitRepoDefaultBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
+var agentContextBlobsProjectIdPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var agentContextBlobsContextIdPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,200}$`)
+var agentContextEmbeddingsEmbeddingModelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var agentContextEmbeddingsContentSha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var agentRemoteDevThreadRepoPattern = regexp.MustCompile(`^(git@|ssh://|https://).+`)
 var agentRemoteDevThreadBaseBranchPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,120}$`)
 var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
+var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
+var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var containerPoolBuildRunsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var presenceConvsSlugPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,120}$`)
+var desSoccerLearningExperimentsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]{1,158}[a-z0-9]$`)
+var desSoccerLearningPolicyVersionsVersionLabelPattern = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,160}$`)
+var desSoccerLearningPolicyEntriesStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
+var desSoccerLearningRunDeltasStateHashPattern = regexp.MustCompile(`^[a-f0-9]{16,32}$`)
 
 const AppConfigTable = "app_config"
 const AppConfigSelectSQL = `select
@@ -211,6 +224,89 @@ func (value KnownGitRepoGorm) Validate() error {
 	return nil
 }
 
+const AgentContextBlobsTable = "agent_context_blobs"
+const AgentContextBlobsSelectSQL = `select
+      id::text as id,
+      project_id,
+      repo_id::text as repo_id,
+      context_id,
+      context_title,
+      context_blob,
+      status,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from agent_context_blobs`
+
+var AgentContextBlobsStatusValues = []string{"active", "paused", "archived"}
+
+type AgentContextBlobsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ProjectId string `gorm:"column:project_id;type:varchar(120);default:'default';not null" json:"projectId"`
+	RepoId *uuid.UUID `gorm:"column:repo_id;type:uuid" json:"repoId,omitempty"`
+	ContextId string `gorm:"column:context_id;type:varchar(200);not null" json:"contextId"`
+	ContextTitle string `gorm:"column:context_title;type:varchar(300);not null" json:"contextTitle"`
+	ContextBlob string `gorm:"column:context_blob;type:text;not null" json:"contextBlob"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;default:'[]'::jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (AgentContextBlobsGorm) TableName() string { return AgentContextBlobsTable }
+
+func (value AgentContextBlobsGorm) Validate() error {
+	if !agentContextBlobsProjectIdPattern.MatchString(value.ProjectId) { return errors.New("agent_context_blobs.project_id does not match the required pattern") }
+	if !agentContextBlobsContextIdPattern.MatchString(value.ContextId) { return errors.New("agent_context_blobs.context_id does not match the required pattern") }
+	if len([]byte(value.ContextTitle)) > 300 { return errors.New("agent_context_blobs.context_title exceeds 300 bytes") }
+	if len([]byte(value.ContextTitle)) < 1 { return errors.New("agent_context_blobs.context_title is below 1 bytes") }
+	if len([]byte(value.ContextBlob)) > 1048576 { return errors.New("agent_context_blobs.context_blob exceeds 1048576 bytes") }
+	if len([]byte(value.ContextBlob)) < 1 { return errors.New("agent_context_blobs.context_blob is below 1 bytes") }
+	if !containsString(AgentContextBlobsStatusValues, value.Status) { return errors.New("unsupported agent_context_blobs.status") }
+	if !validateJSONString(value.Labels) { return errors.New("agent_context_blobs.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("agent_context_blobs.meta_data must be valid JSON") }
+	return nil
+}
+
+const AgentContextEmbeddingsTable = "agent_context_embeddings"
+const AgentContextEmbeddingsSelectSQL = `select
+      id::text as id,
+      context_blob_id::text as context_blob_id,
+      embedding_model,
+      embedding,
+      embedding_dimensions,
+      content_sha256,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from agent_context_embeddings`
+
+type AgentContextEmbeddingsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ContextBlobId uuid.UUID `gorm:"column:context_blob_id;type:uuid;not null" json:"contextBlobId"`
+	EmbeddingModel string `gorm:"column:embedding_model;type:varchar(120);not null" json:"embeddingModel"`
+	Embedding datatypes.JSON `gorm:"column:embedding;type:jsonb;not null" json:"embedding"`
+	EmbeddingDimensions int32 `gorm:"column:embedding_dimensions;type:integer;not null" json:"embeddingDimensions"`
+	ContentSha256 string `gorm:"column:content_sha256;type:varchar(64);not null" json:"contentSha256"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (AgentContextEmbeddingsGorm) TableName() string { return AgentContextEmbeddingsTable }
+
+func (value AgentContextEmbeddingsGorm) Validate() error {
+	if !agentContextEmbeddingsEmbeddingModelPattern.MatchString(value.EmbeddingModel) { return errors.New("agent_context_embeddings.embedding_model does not match the required pattern") }
+	if !validateJSONString(value.Embedding) { return errors.New("agent_context_embeddings.embedding must be valid JSON") }
+	if value.EmbeddingDimensions < 1 { return errors.New("agent_context_embeddings.embedding_dimensions is below the minimum") }
+	if !agentContextEmbeddingsContentSha256Pattern.MatchString(value.ContentSha256) { return errors.New("agent_context_embeddings.content_sha256 does not match the required pattern") }
+	return nil
+}
+
 const AgentRemoteDevThreadTable = "agent_remote_dev_threads"
 const AgentRemoteDevThreadSelectSQL = `select
       id::text as id,
@@ -325,6 +421,7 @@ const AgentRemoteDevEventTable = "agent_remote_dev_events"
 const AgentRemoteDevEventSelectSQL = `select
       id,
       task_id::text as task_id,
+      thread_id::text as thread_id,
       seq,
       event_kind,
       payload,
@@ -334,6 +431,7 @@ const AgentRemoteDevEventSelectSQL = `select
 type AgentRemoteDevEventGorm struct {
 	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
 	TaskId uuid.UUID `gorm:"column:task_id;type:uuid;not null" json:"taskId"`
+	ThreadId *uuid.UUID `gorm:"column:thread_id;type:uuid" json:"threadId,omitempty"`
 	Seq int32 `gorm:"column:seq;type:integer;not null" json:"seq"`
 	EventKind string `gorm:"column:event_kind;type:varchar(80);not null" json:"eventKind"`
 	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
@@ -345,6 +443,48 @@ func (AgentRemoteDevEventGorm) TableName() string { return AgentRemoteDevEventTa
 func (value AgentRemoteDevEventGorm) Validate() error {
 	if !agentRemoteDevEventEventKindPattern.MatchString(value.EventKind) { return errors.New("agent_remote_dev_events.event_kind does not match the required pattern") }
 	if !validateJSONString(value.Payload) { return errors.New("agent_remote_dev_events.payload must be valid JSON") }
+	return nil
+}
+
+const AgentRemoteDevBreadcrumbTable = "agent_remote_dev_breadcrumbs"
+const AgentRemoteDevBreadcrumbSelectSQL = `select
+      id,
+      thread_id::text as thread_id,
+      task_id::text as task_id,
+      kind,
+      payload,
+      to_char(emitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as emitted_at,
+      pod_name,
+      branch,
+      provider
+    from agent_remote_dev_breadcrumbs`
+
+type AgentRemoteDevBreadcrumbGorm struct {
+	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
+	ThreadId uuid.UUID `gorm:"column:thread_id;type:uuid;not null" json:"threadId"`
+	TaskId *uuid.UUID `gorm:"column:task_id;type:uuid" json:"taskId,omitempty"`
+	Kind string `gorm:"column:kind;type:varchar(80);not null" json:"kind"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	EmittedAt time.Time `gorm:"column:emitted_at;type:timestamptz;default:now();not null" json:"emittedAt"`
+	PodName *string `gorm:"column:pod_name;type:varchar(253)" json:"podName,omitempty"`
+	Branch *string `gorm:"column:branch;type:varchar(120)" json:"branch,omitempty"`
+	Provider *string `gorm:"column:provider;type:varchar(60)" json:"provider,omitempty"`
+}
+
+func (AgentRemoteDevBreadcrumbGorm) TableName() string { return AgentRemoteDevBreadcrumbTable }
+
+func (value AgentRemoteDevBreadcrumbGorm) Validate() error {
+	if !agentRemoteDevBreadcrumbKindPattern.MatchString(value.Kind) { return errors.New("agent_remote_dev_breadcrumbs.kind does not match the required pattern") }
+	if !validateJSONString(value.Payload) { return errors.New("agent_remote_dev_breadcrumbs.payload must be valid JSON") }
+	if value.PodName != nil {
+		if len([]byte(*value.PodName)) > 253 { return errors.New("agent_remote_dev_breadcrumbs.pod_name exceeds 253 bytes") }
+	}
+	if value.Branch != nil {
+		if len([]byte(*value.Branch)) > 120 { return errors.New("agent_remote_dev_breadcrumbs.branch exceeds 120 bytes") }
+	}
+	if value.Provider != nil {
+		if len([]byte(*value.Provider)) > 60 { return errors.New("agent_remote_dev_breadcrumbs.provider exceeds 60 bytes") }
+	}
 	return nil
 }
 
@@ -428,6 +568,183 @@ func (value AgentRemoteDevRuntimeLockGorm) Validate() error {
 	return nil
 }
 
+const MipSolverSessionsTable = "mip_solver_sessions"
+const MipSolverSessionsSelectSQL = `select
+      session_id,
+      revision,
+      problem,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_sessions`
+
+type MipSolverSessionsGorm struct {
+	SessionId string `gorm:"column:session_id;type:varchar(200);primaryKey" json:"sessionId"`
+	Revision int64 `gorm:"column:revision;type:bigint;default:0;not null" json:"revision"`
+	Problem datatypes.JSON `gorm:"column:problem;type:jsonb;default:'{}'::jsonb;not null" json:"problem"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (MipSolverSessionsGorm) TableName() string { return MipSolverSessionsTable }
+
+func (value MipSolverSessionsGorm) Validate() error {
+	if len([]byte(value.SessionId)) > 200 { return errors.New("mip_solver_sessions.session_id exceeds 200 bytes") }
+	if len([]byte(value.SessionId)) < 1 { return errors.New("mip_solver_sessions.session_id is below 1 bytes") }
+	if value.Revision < 0 { return errors.New("mip_solver_sessions.revision is below the minimum") }
+	if !validateJSONString(value.Problem) { return errors.New("mip_solver_sessions.problem must be valid JSON") }
+	return nil
+}
+
+const MipSolverSolvesTable = "mip_solver_solves"
+const MipSolverSolvesSelectSQL = `select
+      solve_id,
+      request_id,
+      revision,
+      status,
+      node_id,
+      node_role,
+      problem,
+      options,
+      response,
+      jobs_expected,
+      jobs_published,
+      jobs_completed,
+      jobs_redelegated,
+      jobs_split,
+      timed_out,
+      distributed,
+      warnings,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at
+    from mip_solver_solves`
+
+var MipSolverSolvesNodeRoleValues = []string{"master", "slave"}
+
+type MipSolverSolvesGorm struct {
+	SolveId string `gorm:"column:solve_id;type:varchar(160);primaryKey" json:"solveId"`
+	RequestId string `gorm:"column:request_id;type:varchar(200);not null" json:"requestId"`
+	Revision int64 `gorm:"column:revision;type:bigint;default:0;not null" json:"revision"`
+	Status string `gorm:"column:status;type:varchar(64);default:'running';not null" json:"status"`
+	NodeId string `gorm:"column:node_id;type:varchar(253);not null" json:"nodeId"`
+	NodeRole string `gorm:"column:node_role;type:varchar(32);not null" json:"nodeRole"`
+	Problem datatypes.JSON `gorm:"column:problem;type:jsonb;default:'{}'::jsonb;not null" json:"problem"`
+	Options datatypes.JSON `gorm:"column:options;type:jsonb;default:'{}'::jsonb;not null" json:"options"`
+	Response datatypes.JSON `gorm:"column:response;type:jsonb;default:'{}'::jsonb;not null" json:"response"`
+	JobsExpected int32 `gorm:"column:jobs_expected;type:integer;default:0;not null" json:"jobsExpected"`
+	JobsPublished int32 `gorm:"column:jobs_published;type:integer;default:0;not null" json:"jobsPublished"`
+	JobsCompleted int32 `gorm:"column:jobs_completed;type:integer;default:0;not null" json:"jobsCompleted"`
+	JobsRedelegated int32 `gorm:"column:jobs_redelegated;type:integer;default:0;not null" json:"jobsRedelegated"`
+	JobsSplit int32 `gorm:"column:jobs_split;type:integer;default:0;not null" json:"jobsSplit"`
+	TimedOut bool `gorm:"column:timed_out;type:boolean;default:false;not null" json:"timedOut"`
+	Distributed bool `gorm:"column:distributed;type:boolean;default:false;not null" json:"distributed"`
+	Warnings datatypes.JSON `gorm:"column:warnings;type:jsonb;default:'[]'::jsonb;not null" json:"warnings"`
+	StartedAt time.Time `gorm:"column:started_at;type:timestamptz;default:now();not null" json:"startedAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+}
+
+func (MipSolverSolvesGorm) TableName() string { return MipSolverSolvesTable }
+
+func (value MipSolverSolvesGorm) Validate() error {
+	if len([]byte(value.SolveId)) > 160 { return errors.New("mip_solver_solves.solve_id exceeds 160 bytes") }
+	if len([]byte(value.SolveId)) < 1 { return errors.New("mip_solver_solves.solve_id is below 1 bytes") }
+	if len([]byte(value.RequestId)) > 200 { return errors.New("mip_solver_solves.request_id exceeds 200 bytes") }
+	if len([]byte(value.RequestId)) < 1 { return errors.New("mip_solver_solves.request_id is below 1 bytes") }
+	if value.Revision < 0 { return errors.New("mip_solver_solves.revision is below the minimum") }
+	if len([]byte(value.Status)) > 64 { return errors.New("mip_solver_solves.status exceeds 64 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("mip_solver_solves.status is below 1 bytes") }
+	if len([]byte(value.NodeId)) > 253 { return errors.New("mip_solver_solves.node_id exceeds 253 bytes") }
+	if len([]byte(value.NodeId)) < 1 { return errors.New("mip_solver_solves.node_id is below 1 bytes") }
+	if !containsString(MipSolverSolvesNodeRoleValues, value.NodeRole) { return errors.New("unsupported mip_solver_solves.node_role") }
+	if !validateJSONString(value.Problem) { return errors.New("mip_solver_solves.problem must be valid JSON") }
+	if !validateJSONString(value.Options) { return errors.New("mip_solver_solves.options must be valid JSON") }
+	if !validateJSONString(value.Response) { return errors.New("mip_solver_solves.response must be valid JSON") }
+	if value.JobsExpected < 0 { return errors.New("mip_solver_solves.jobs_expected is below the minimum") }
+	if value.JobsPublished < 0 { return errors.New("mip_solver_solves.jobs_published is below the minimum") }
+	if value.JobsCompleted < 0 { return errors.New("mip_solver_solves.jobs_completed is below the minimum") }
+	if value.JobsRedelegated < 0 { return errors.New("mip_solver_solves.jobs_redelegated is below the minimum") }
+	if value.JobsSplit < 0 { return errors.New("mip_solver_solves.jobs_split is below the minimum") }
+	if !validateJSONString(value.Warnings) { return errors.New("mip_solver_solves.warnings must be valid JSON") }
+	return nil
+}
+
+const MipSolverJobsTable = "mip_solver_jobs"
+const MipSolverJobsSelectSQL = `select
+      job_id,
+      solve_id,
+      root_job_id,
+      retry_index,
+      depth,
+      status,
+      worker_node,
+      job_payload,
+      result_payload,
+      to_char(submitted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as submitted_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from mip_solver_jobs`
+
+type MipSolverJobsGorm struct {
+	JobId string `gorm:"column:job_id;type:varchar(240);primaryKey" json:"jobId"`
+	SolveId string `gorm:"column:solve_id;type:varchar(160);not null" json:"solveId"`
+	RootJobId string `gorm:"column:root_job_id;type:varchar(240);not null" json:"rootJobId"`
+	RetryIndex int32 `gorm:"column:retry_index;type:integer;default:0;not null" json:"retryIndex"`
+	Depth int32 `gorm:"column:depth;type:integer;default:0;not null" json:"depth"`
+	Status string `gorm:"column:status;type:varchar(64);default:'submitted';not null" json:"status"`
+	WorkerNode *string `gorm:"column:worker_node;type:varchar(253)" json:"workerNode,omitempty"`
+	JobPayload datatypes.JSON `gorm:"column:job_payload;type:jsonb;default:'{}'::jsonb;not null" json:"jobPayload"`
+	ResultPayload datatypes.JSON `gorm:"column:result_payload;type:jsonb;default:'{}'::jsonb;not null" json:"resultPayload"`
+	SubmittedAt time.Time `gorm:"column:submitted_at;type:timestamptz;default:now();not null" json:"submittedAt"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (MipSolverJobsGorm) TableName() string { return MipSolverJobsTable }
+
+func (value MipSolverJobsGorm) Validate() error {
+	if len([]byte(value.JobId)) > 240 { return errors.New("mip_solver_jobs.job_id exceeds 240 bytes") }
+	if len([]byte(value.JobId)) < 1 { return errors.New("mip_solver_jobs.job_id is below 1 bytes") }
+	if len([]byte(value.RootJobId)) > 240 { return errors.New("mip_solver_jobs.root_job_id exceeds 240 bytes") }
+	if len([]byte(value.RootJobId)) < 1 { return errors.New("mip_solver_jobs.root_job_id is below 1 bytes") }
+	if value.RetryIndex < 0 { return errors.New("mip_solver_jobs.retry_index is below the minimum") }
+	if value.Depth < 0 { return errors.New("mip_solver_jobs.depth is below the minimum") }
+	if len([]byte(value.Status)) > 64 { return errors.New("mip_solver_jobs.status exceeds 64 bytes") }
+	if len([]byte(value.Status)) < 1 { return errors.New("mip_solver_jobs.status is below 1 bytes") }
+	if !validateJSONString(value.JobPayload) { return errors.New("mip_solver_jobs.job_payload must be valid JSON") }
+	if !validateJSONString(value.ResultPayload) { return errors.New("mip_solver_jobs.result_payload must be valid JSON") }
+	return nil
+}
+
+const MipSolverEventsTable = "mip_solver_events"
+const MipSolverEventsSelectSQL = `select
+      id,
+      solve_id,
+      session_id,
+      job_id,
+      event_kind,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from mip_solver_events`
+
+type MipSolverEventsGorm struct {
+	Id int64 `gorm:"column:id;type:bigserial;primaryKey" json:"id"`
+	SolveId *string `gorm:"column:solve_id;type:varchar(160)" json:"solveId,omitempty"`
+	SessionId *string `gorm:"column:session_id;type:varchar(200)" json:"sessionId,omitempty"`
+	JobId *string `gorm:"column:job_id;type:varchar(240)" json:"jobId,omitempty"`
+	EventKind string `gorm:"column:event_kind;type:varchar(80);not null" json:"eventKind"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (MipSolverEventsGorm) TableName() string { return MipSolverEventsTable }
+
+func (value MipSolverEventsGorm) Validate() error {
+	if !mipSolverEventsEventKindPattern.MatchString(value.EventKind) { return errors.New("mip_solver_events.event_kind does not match the required pattern") }
+	if !validateJSONString(value.Payload) { return errors.New("mip_solver_events.payload must be valid JSON") }
+	return nil
+}
+
 const LambdaFunctionTable = "lambda_functions"
 const LambdaFunctionSelectSQL = `select
       id::text as id,
@@ -467,7 +784,7 @@ type LambdaFunctionGorm struct {
 	DisplayName string `gorm:"column:display_name;type:varchar(200);not null" json:"displayName"`
 	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
 	Runtime string `gorm:"column:runtime;type:varchar(40);default:'nodejs';not null" json:"runtime"`
-	EntryCommand string `gorm:"column:entry_command;type:text;default:'env -i PATH=\"$PATH\" NODE_ENV=production node --permission --allow-net child-runtimes/js-function-runner.mjs';not null" json:"entryCommand"`
+	EntryCommand string `gorm:"column:entry_command;type:text;default:'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs';not null" json:"entryCommand"`
 	FunctionBody string `gorm:"column:function_body;type:text;not null" json:"functionBody"`
 	ReuseKey *string `gorm:"column:reuse_key;type:varchar(200)" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `gorm:"column:idle_timeout_seconds;type:integer;default:300;not null" json:"idleTimeoutSeconds"`
@@ -512,6 +829,142 @@ func (value LambdaFunctionGorm) Validate() error {
 	if !validateJSONString(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateJSONString(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolImageRevisionsTable = "container_pool_image_revisions"
+const ContainerPoolImageRevisionsSelectSQL = `select
+      id::text as id,
+      image_slug,
+      image_ref,
+      dockerfile_path,
+      build_context,
+      dockerfile_text,
+      dockerfile_sha256,
+      source,
+      notes,
+      status,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from container_pool_image_revisions`
+
+var ContainerPoolImageRevisionsSourceValues = []string{"disk-default", "user", "system"}
+var ContainerPoolImageRevisionsStatusValues = []string{"candidate", "active", "archived"}
+
+type ContainerPoolImageRevisionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ImageSlug string `gorm:"column:image_slug;type:varchar(120);not null" json:"imageSlug"`
+	ImageRef string `gorm:"column:image_ref;type:text;not null" json:"imageRef"`
+	DockerfilePath string `gorm:"column:dockerfile_path;type:text;not null" json:"dockerfilePath"`
+	BuildContext string `gorm:"column:build_context;type:text;not null" json:"buildContext"`
+	DockerfileText string `gorm:"column:dockerfile_text;type:text;not null" json:"dockerfileText"`
+	DockerfileSha256 string `gorm:"column:dockerfile_sha256;type:varchar(64);not null" json:"dockerfileSha256"`
+	Source string `gorm:"column:source;type:varchar(32);default:'user';not null" json:"source"`
+	Notes string `gorm:"column:notes;type:text;default:'';not null" json:"notes"`
+	Status string `gorm:"column:status;type:varchar(32);default:'candidate';not null" json:"status"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (ContainerPoolImageRevisionsGorm) TableName() string { return ContainerPoolImageRevisionsTable }
+
+func (value ContainerPoolImageRevisionsGorm) Validate() error {
+	if !containerPoolImageRevisionsImageSlugPattern.MatchString(value.ImageSlug) { return errors.New("container_pool_image_revisions.image_slug does not match the required pattern") }
+	if len([]byte(value.ImageRef)) > 512 { return errors.New("container_pool_image_revisions.image_ref exceeds 512 bytes") }
+	if len([]byte(value.ImageRef)) < 1 { return errors.New("container_pool_image_revisions.image_ref is below 1 bytes") }
+	if len([]byte(value.DockerfilePath)) > 512 { return errors.New("container_pool_image_revisions.dockerfile_path exceeds 512 bytes") }
+	if len([]byte(value.DockerfilePath)) < 1 { return errors.New("container_pool_image_revisions.dockerfile_path is below 1 bytes") }
+	if len([]byte(value.BuildContext)) > 512 { return errors.New("container_pool_image_revisions.build_context exceeds 512 bytes") }
+	if len([]byte(value.BuildContext)) < 1 { return errors.New("container_pool_image_revisions.build_context is below 1 bytes") }
+	if len([]byte(value.DockerfileText)) > 65536 { return errors.New("container_pool_image_revisions.dockerfile_text exceeds 65536 bytes") }
+	if len([]byte(value.DockerfileText)) < 1 { return errors.New("container_pool_image_revisions.dockerfile_text is below 1 bytes") }
+	if !containerPoolImageRevisionsDockerfileSha256Pattern.MatchString(value.DockerfileSha256) { return errors.New("container_pool_image_revisions.dockerfile_sha256 does not match the required pattern") }
+	if !containsString(ContainerPoolImageRevisionsSourceValues, value.Source) { return errors.New("unsupported container_pool_image_revisions.source") }
+	if len([]byte(value.Notes)) > 8192 { return errors.New("container_pool_image_revisions.notes exceeds 8192 bytes") }
+	if !containsString(ContainerPoolImageRevisionsStatusValues, value.Status) { return errors.New("unsupported container_pool_image_revisions.status") }
+	if !validateJSONString(value.MetaData) { return errors.New("container_pool_image_revisions.meta_data must be valid JSON") }
+	return nil
+}
+
+const ContainerPoolBuildRunsTable = "container_pool_build_runs"
+const ContainerPoolBuildRunsSelectSQL = `select
+      id::text as id,
+      image_slug,
+      revision_id::text as revision_id,
+      image_ref,
+      candidate_tag,
+      build_status,
+      test_status,
+      overall_status,
+      test_command,
+      to_char(build_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_started_at,
+      to_char(build_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as build_finished_at,
+      to_char(test_started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_started_at,
+      to_char(test_finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as test_finished_at,
+      build_log_excerpt,
+      test_log_excerpt,
+      error_message,
+      triggered_by::text as triggered_by,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from container_pool_build_runs`
+
+var ContainerPoolBuildRunsBuildStatusValues = []string{"queued", "building", "built", "failed", "skipped", "cancelled"}
+var ContainerPoolBuildRunsTestStatusValues = []string{"not_started", "pending", "testing", "passed", "failed", "skipped", "cancelled"}
+var ContainerPoolBuildRunsOverallStatusValues = []string{"queued", "running", "passed", "failed", "cancelled", "errored"}
+
+type ContainerPoolBuildRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ImageSlug string `gorm:"column:image_slug;type:varchar(120);not null" json:"imageSlug"`
+	RevisionId uuid.UUID `gorm:"column:revision_id;type:uuid;not null" json:"revisionId"`
+	ImageRef string `gorm:"column:image_ref;type:text;not null" json:"imageRef"`
+	CandidateTag string `gorm:"column:candidate_tag;type:text;not null" json:"candidateTag"`
+	BuildStatus string `gorm:"column:build_status;type:varchar(32);default:'queued';not null" json:"buildStatus"`
+	TestStatus string `gorm:"column:test_status;type:varchar(32);default:'not_started';not null" json:"testStatus"`
+	OverallStatus string `gorm:"column:overall_status;type:varchar(32);default:'queued';not null" json:"overallStatus"`
+	TestCommand string `gorm:"column:test_command;type:text;default:'';not null" json:"testCommand"`
+	BuildStartedAt *time.Time `gorm:"column:build_started_at;type:timestamptz" json:"buildStartedAt,omitempty"`
+	BuildFinishedAt *time.Time `gorm:"column:build_finished_at;type:timestamptz" json:"buildFinishedAt,omitempty"`
+	TestStartedAt *time.Time `gorm:"column:test_started_at;type:timestamptz" json:"testStartedAt,omitempty"`
+	TestFinishedAt *time.Time `gorm:"column:test_finished_at;type:timestamptz" json:"testFinishedAt,omitempty"`
+	BuildLogExcerpt string `gorm:"column:build_log_excerpt;type:text;default:'';not null" json:"buildLogExcerpt"`
+	TestLogExcerpt string `gorm:"column:test_log_excerpt;type:text;default:'';not null" json:"testLogExcerpt"`
+	ErrorMessage *string `gorm:"column:error_message;type:text" json:"errorMessage,omitempty"`
+	TriggeredBy *uuid.UUID `gorm:"column:triggered_by;type:uuid" json:"triggeredBy,omitempty"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (ContainerPoolBuildRunsGorm) TableName() string { return ContainerPoolBuildRunsTable }
+
+func (value ContainerPoolBuildRunsGorm) Validate() error {
+	if !containerPoolBuildRunsImageSlugPattern.MatchString(value.ImageSlug) { return errors.New("container_pool_build_runs.image_slug does not match the required pattern") }
+	if len([]byte(value.ImageRef)) > 512 { return errors.New("container_pool_build_runs.image_ref exceeds 512 bytes") }
+	if len([]byte(value.ImageRef)) < 1 { return errors.New("container_pool_build_runs.image_ref is below 1 bytes") }
+	if len([]byte(value.CandidateTag)) > 512 { return errors.New("container_pool_build_runs.candidate_tag exceeds 512 bytes") }
+	if len([]byte(value.CandidateTag)) < 1 { return errors.New("container_pool_build_runs.candidate_tag is below 1 bytes") }
+	if !containsString(ContainerPoolBuildRunsBuildStatusValues, value.BuildStatus) { return errors.New("unsupported container_pool_build_runs.build_status") }
+	if !containsString(ContainerPoolBuildRunsTestStatusValues, value.TestStatus) { return errors.New("unsupported container_pool_build_runs.test_status") }
+	if !containsString(ContainerPoolBuildRunsOverallStatusValues, value.OverallStatus) { return errors.New("unsupported container_pool_build_runs.overall_status") }
+	if len([]byte(value.TestCommand)) > 4096 { return errors.New("container_pool_build_runs.test_command exceeds 4096 bytes") }
+	if len([]byte(value.BuildLogExcerpt)) > 65536 { return errors.New("container_pool_build_runs.build_log_excerpt exceeds 65536 bytes") }
+	if len([]byte(value.TestLogExcerpt)) > 65536 { return errors.New("container_pool_build_runs.test_log_excerpt exceeds 65536 bytes") }
+	if value.ErrorMessage != nil {
+		if len([]byte(*value.ErrorMessage)) > 8192 { return errors.New("container_pool_build_runs.error_message exceeds 8192 bytes") }
+	}
+	if !validateJSONString(value.MetaData) { return errors.New("container_pool_build_runs.meta_data must be valid JSON") }
 	return nil
 }
 
@@ -670,6 +1123,440 @@ type PresenceConsumerCheckpointsGorm struct {
 func (PresenceConsumerCheckpointsGorm) TableName() string { return PresenceConsumerCheckpointsTable }
 
 func (value PresenceConsumerCheckpointsGorm) Validate() error {
+	return nil
+}
+
+const DesSoccerLearningExperimentsTable = "des_soccer_learning_experiments"
+const DesSoccerLearningExperimentsSelectSQL = `select
+      id::text as id,
+      slug,
+      display_name,
+      description,
+      status,
+      config,
+      labels,
+      meta_data,
+      is_soft_deleted,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_experiments`
+
+var DesSoccerLearningExperimentsStatusValues = []string{"active", "paused", "archived"}
+
+type DesSoccerLearningExperimentsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	Slug string `gorm:"column:slug;type:varchar(160);not null" json:"slug"`
+	DisplayName string `gorm:"column:display_name;type:varchar(240);not null" json:"displayName"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	Status string `gorm:"column:status;type:varchar(32);default:'active';not null" json:"status"`
+	Config datatypes.JSON `gorm:"column:config;type:jsonb;default:'{}'::jsonb;not null" json:"config"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;default:'[]'::jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;default:'{}'::jsonb;not null" json:"metaData"`
+	IsSoftDeleted bool `gorm:"column:is_soft_deleted;type:boolean;default:false;not null" json:"isSoftDeleted"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (DesSoccerLearningExperimentsGorm) TableName() string { return DesSoccerLearningExperimentsTable }
+
+func (value DesSoccerLearningExperimentsGorm) Validate() error {
+	if !desSoccerLearningExperimentsSlugPattern.MatchString(value.Slug) { return errors.New("des_soccer_learning_experiments.slug does not match the required pattern") }
+	if len([]byte(value.DisplayName)) > 240 { return errors.New("des_soccer_learning_experiments.display_name exceeds 240 bytes") }
+	if len([]byte(value.DisplayName)) < 1 { return errors.New("des_soccer_learning_experiments.display_name is below 1 bytes") }
+	if len([]byte(value.Description)) > 8192 { return errors.New("des_soccer_learning_experiments.description exceeds 8192 bytes") }
+	if !containsString(DesSoccerLearningExperimentsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_experiments.status") }
+	if !validateJSONString(value.Config) { return errors.New("des_soccer_learning_experiments.config must be valid JSON") }
+	if !validateJSONString(value.Labels) { return errors.New("des_soccer_learning_experiments.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("des_soccer_learning_experiments.meta_data must be valid JSON") }
+	return nil
+}
+
+const DesSoccerLearningPolicyVersionsTable = "des_soccer_learning_policy_versions"
+const DesSoccerLearningPolicyVersionsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      parent_policy_version_id::text as parent_policy_version_id,
+      generation,
+      version_label,
+      source_kind,
+      status,
+      options,
+      config,
+      lineage,
+      metrics,
+      entry_count,
+      target_entry_count,
+      visit_count,
+      fitness_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from des_soccer_learning_policy_versions`
+
+var DesSoccerLearningPolicyVersionsSourceKindValues = []string{"seed", "merge", "mutation", "crossover", "import", "replay"}
+var DesSoccerLearningPolicyVersionsStatusValues = []string{"candidate", "active", "archived", "rejected"}
+
+type DesSoccerLearningPolicyVersionsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	ParentPolicyVersionId *uuid.UUID `gorm:"column:parent_policy_version_id;type:uuid" json:"parentPolicyVersionId,omitempty"`
+	Generation int32 `gorm:"column:generation;type:integer;default:0;not null" json:"generation"`
+	VersionLabel string `gorm:"column:version_label;type:varchar(160);not null" json:"versionLabel"`
+	SourceKind string `gorm:"column:source_kind;type:varchar(40);default:'seed';not null" json:"sourceKind"`
+	Status string `gorm:"column:status;type:varchar(32);default:'candidate';not null" json:"status"`
+	Options datatypes.JSON `gorm:"column:options;type:jsonb;default:'{}'::jsonb;not null" json:"options"`
+	Config datatypes.JSON `gorm:"column:config;type:jsonb;default:'{}'::jsonb;not null" json:"config"`
+	Lineage datatypes.JSON `gorm:"column:lineage;type:jsonb;default:'[]'::jsonb;not null" json:"lineage"`
+	Metrics datatypes.JSON `gorm:"column:metrics;type:jsonb;default:'{}'::jsonb;not null" json:"metrics"`
+	EntryCount int32 `gorm:"column:entry_count;type:integer;default:0;not null" json:"entryCount"`
+	TargetEntryCount int32 `gorm:"column:target_entry_count;type:integer;default:0;not null" json:"targetEntryCount"`
+	VisitCount int64 `gorm:"column:visit_count;type:bigint;default:0;not null" json:"visitCount"`
+	FitnessMicros int64 `gorm:"column:fitness_micros;type:bigint;default:0;not null" json:"fitnessMicros"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (DesSoccerLearningPolicyVersionsGorm) TableName() string { return DesSoccerLearningPolicyVersionsTable }
+
+func (value DesSoccerLearningPolicyVersionsGorm) Validate() error {
+	if value.Generation < 0 { return errors.New("des_soccer_learning_policy_versions.generation is below the minimum") }
+	if !desSoccerLearningPolicyVersionsVersionLabelPattern.MatchString(value.VersionLabel) { return errors.New("des_soccer_learning_policy_versions.version_label does not match the required pattern") }
+	if !containsString(DesSoccerLearningPolicyVersionsSourceKindValues, value.SourceKind) { return errors.New("unsupported des_soccer_learning_policy_versions.source_kind") }
+	if !containsString(DesSoccerLearningPolicyVersionsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_policy_versions.status") }
+	if !validateJSONString(value.Options) { return errors.New("des_soccer_learning_policy_versions.options must be valid JSON") }
+	if !validateJSONString(value.Config) { return errors.New("des_soccer_learning_policy_versions.config must be valid JSON") }
+	if !validateJSONString(value.Lineage) { return errors.New("des_soccer_learning_policy_versions.lineage must be valid JSON") }
+	if !validateJSONString(value.Metrics) { return errors.New("des_soccer_learning_policy_versions.metrics must be valid JSON") }
+	if value.EntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.entry_count is below the minimum") }
+	if value.TargetEntryCount < 0 { return errors.New("des_soccer_learning_policy_versions.target_entry_count is below the minimum") }
+	if value.VisitCount < 0 { return errors.New("des_soccer_learning_policy_versions.visit_count is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningPolicyEntriesTable = "des_soccer_learning_policy_entries"
+const DesSoccerLearningPolicyEntriesSelectSQL = `select
+      id::text as id,
+      policy_version_id::text as policy_version_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      value_micros,
+      visits,
+      source_run_id::text as source_run_id,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_policy_entries`
+
+var DesSoccerLearningPolicyEntriesTeamValues = []string{"home", "away"}
+var DesSoccerLearningPolicyEntriesEntryKindValues = []string{"action", "target"}
+
+type DesSoccerLearningPolicyEntriesGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	PolicyVersionId uuid.UUID `gorm:"column:policy_version_id;type:uuid;not null" json:"policyVersionId"`
+	Team string `gorm:"column:team;type:varchar(8);not null" json:"team"`
+	EntryKind string `gorm:"column:entry_kind;type:varchar(16);not null" json:"entryKind"`
+	StateHash string `gorm:"column:state_hash;type:varchar(32);not null" json:"stateHash"`
+	StateKey datatypes.JSON `gorm:"column:state_key;type:jsonb;not null" json:"stateKey"`
+	Action string `gorm:"column:action;type:varchar(80);not null" json:"action"`
+	TargetFineCellId int32 `gorm:"column:target_fine_cell_id;type:integer;default:-1;not null" json:"targetFineCellId"`
+	TargetTacticalCellId int32 `gorm:"column:target_tactical_cell_id;type:integer;default:-1;not null" json:"targetTacticalCellId"`
+	TargetMacroCellId int32 `gorm:"column:target_macro_cell_id;type:integer;default:-1;not null" json:"targetMacroCellId"`
+	TargetRootCellId int32 `gorm:"column:target_root_cell_id;type:integer;default:-1;not null" json:"targetRootCellId"`
+	ValueMicros int64 `gorm:"column:value_micros;type:bigint;not null" json:"valueMicros"`
+	Visits int32 `gorm:"column:visits;type:integer;default:0;not null" json:"visits"`
+	SourceRunId *uuid.UUID `gorm:"column:source_run_id;type:uuid" json:"sourceRunId,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesSoccerLearningPolicyEntriesGorm) TableName() string { return DesSoccerLearningPolicyEntriesTable }
+
+func (value DesSoccerLearningPolicyEntriesGorm) Validate() error {
+	if !containsString(DesSoccerLearningPolicyEntriesTeamValues, value.Team) { return errors.New("unsupported des_soccer_learning_policy_entries.team") }
+	if !containsString(DesSoccerLearningPolicyEntriesEntryKindValues, value.EntryKind) { return errors.New("unsupported des_soccer_learning_policy_entries.entry_kind") }
+	if !desSoccerLearningPolicyEntriesStateHashPattern.MatchString(value.StateHash) { return errors.New("des_soccer_learning_policy_entries.state_hash does not match the required pattern") }
+	if !validateJSONString(value.StateKey) { return errors.New("des_soccer_learning_policy_entries.state_key must be valid JSON") }
+	if len([]byte(value.Action)) > 80 { return errors.New("des_soccer_learning_policy_entries.action exceeds 80 bytes") }
+	if len([]byte(value.Action)) < 1 { return errors.New("des_soccer_learning_policy_entries.action is below 1 bytes") }
+	if value.TargetFineCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_fine_cell_id is below the minimum") }
+	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_tactical_cell_id is below the minimum") }
+	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_macro_cell_id is below the minimum") }
+	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_policy_entries.target_root_cell_id is below the minimum") }
+	if value.Visits < 0 { return errors.New("des_soccer_learning_policy_entries.visits is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningJobsTable = "des_soccer_learning_jobs"
+const DesSoccerLearningJobsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      spawn_strategy,
+      status,
+      priority,
+      seed,
+      attempt,
+      max_attempts,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(finished_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as finished_at,
+      config,
+      runner_config,
+      result_run_id::text as result_run_id,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_jobs`
+
+var DesSoccerLearningJobsSpawnStrategyValues = []string{"latest", "elite", "mutation", "crossover", "random", "replay"}
+var DesSoccerLearningJobsStatusValues = []string{"queued", "running", "completed", "failed", "canceled"}
+
+type DesSoccerLearningJobsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `gorm:"column:base_policy_version_id;type:uuid" json:"basePolicyVersionId,omitempty"`
+	SpawnStrategy string `gorm:"column:spawn_strategy;type:varchar(32);default:'latest';not null" json:"spawnStrategy"`
+	Status string `gorm:"column:status;type:varchar(32);default:'queued';not null" json:"status"`
+	Priority int32 `gorm:"column:priority;type:integer;default:0;not null" json:"priority"`
+	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
+	Attempt int32 `gorm:"column:attempt;type:integer;default:0;not null" json:"attempt"`
+	MaxAttempts int32 `gorm:"column:max_attempts;type:integer;default:1;not null" json:"maxAttempts"`
+	LeaseOwner *string `gorm:"column:lease_owner;type:varchar(200)" json:"leaseOwner,omitempty"`
+	LeaseExpiresAt *time.Time `gorm:"column:lease_expires_at;type:timestamptz" json:"leaseExpiresAt,omitempty"`
+	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
+	FinishedAt *time.Time `gorm:"column:finished_at;type:timestamptz" json:"finishedAt,omitempty"`
+	Config datatypes.JSON `gorm:"column:config;type:jsonb;default:'{}'::jsonb;not null" json:"config"`
+	RunnerConfig datatypes.JSON `gorm:"column:runner_config;type:jsonb;default:'{}'::jsonb;not null" json:"runnerConfig"`
+	ResultRunId *uuid.UUID `gorm:"column:result_run_id;type:uuid" json:"resultRunId,omitempty"`
+	Error *string `gorm:"column:error;type:text" json:"error,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (DesSoccerLearningJobsGorm) TableName() string { return DesSoccerLearningJobsTable }
+
+func (value DesSoccerLearningJobsGorm) Validate() error {
+	if !containsString(DesSoccerLearningJobsSpawnStrategyValues, value.SpawnStrategy) { return errors.New("unsupported des_soccer_learning_jobs.spawn_strategy") }
+	if !containsString(DesSoccerLearningJobsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_jobs.status") }
+	if value.Seed < 0 { return errors.New("des_soccer_learning_jobs.seed is below the minimum") }
+	if value.Attempt < 0 { return errors.New("des_soccer_learning_jobs.attempt is below the minimum") }
+	if value.MaxAttempts < 1 { return errors.New("des_soccer_learning_jobs.max_attempts is below the minimum") }
+	if value.MaxAttempts > 100 { return errors.New("des_soccer_learning_jobs.max_attempts is above the maximum") }
+	if value.LeaseOwner != nil {
+		if len([]byte(*value.LeaseOwner)) > 200 { return errors.New("des_soccer_learning_jobs.lease_owner exceeds 200 bytes") }
+	}
+	if !validateJSONString(value.Config) { return errors.New("des_soccer_learning_jobs.config must be valid JSON") }
+	if !validateJSONString(value.RunnerConfig) { return errors.New("des_soccer_learning_jobs.runner_config must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 16384 { return errors.New("des_soccer_learning_jobs.error exceeds 16384 bytes") }
+	}
+	return nil
+}
+
+const DesSoccerLearningRunsTable = "des_soccer_learning_runs"
+const DesSoccerLearningRunsSelectSQL = `select
+      id::text as id,
+      job_id::text as job_id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      runner_id,
+      seed,
+      episode_index,
+      status,
+      score_home,
+      score_away,
+      home_goal_diff,
+      away_goal_diff,
+      home_outcome,
+      away_outcome,
+      home_merge_weight_micros,
+      away_merge_weight_micros,
+      fitness_micros,
+      duration_ticks,
+      simulated_seconds_micros,
+      elapsed_millis,
+      transitions,
+      summary,
+      stats,
+      error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from des_soccer_learning_runs`
+
+var DesSoccerLearningRunsStatusValues = []string{"completed", "failed"}
+var DesSoccerLearningRunsHomeOutcomeValues = []string{"win", "draw", "loss"}
+var DesSoccerLearningRunsAwayOutcomeValues = []string{"win", "draw", "loss"}
+
+type DesSoccerLearningRunsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	JobId *uuid.UUID `gorm:"column:job_id;type:uuid" json:"jobId,omitempty"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `gorm:"column:base_policy_version_id;type:uuid" json:"basePolicyVersionId,omitempty"`
+	OutputPolicyVersionId *uuid.UUID `gorm:"column:output_policy_version_id;type:uuid" json:"outputPolicyVersionId,omitempty"`
+	RunnerId string `gorm:"column:runner_id;type:varchar(200);not null" json:"runnerId"`
+	Seed int64 `gorm:"column:seed;type:bigint;not null" json:"seed"`
+	EpisodeIndex int32 `gorm:"column:episode_index;type:integer;default:0;not null" json:"episodeIndex"`
+	Status string `gorm:"column:status;type:varchar(32);default:'completed';not null" json:"status"`
+	ScoreHome int32 `gorm:"column:score_home;type:integer;default:0;not null" json:"scoreHome"`
+	ScoreAway int32 `gorm:"column:score_away;type:integer;default:0;not null" json:"scoreAway"`
+	HomeGoalDiff int32 `gorm:"column:home_goal_diff;type:integer;default:0;not null" json:"homeGoalDiff"`
+	AwayGoalDiff int32 `gorm:"column:away_goal_diff;type:integer;default:0;not null" json:"awayGoalDiff"`
+	HomeOutcome string `gorm:"column:home_outcome;type:varchar(16);default:'draw';not null" json:"homeOutcome"`
+	AwayOutcome string `gorm:"column:away_outcome;type:varchar(16);default:'draw';not null" json:"awayOutcome"`
+	HomeMergeWeightMicros int64 `gorm:"column:home_merge_weight_micros;type:bigint;default:0;not null" json:"homeMergeWeightMicros"`
+	AwayMergeWeightMicros int64 `gorm:"column:away_merge_weight_micros;type:bigint;default:0;not null" json:"awayMergeWeightMicros"`
+	FitnessMicros int64 `gorm:"column:fitness_micros;type:bigint;default:0;not null" json:"fitnessMicros"`
+	DurationTicks int64 `gorm:"column:duration_ticks;type:bigint;default:0;not null" json:"durationTicks"`
+	SimulatedSecondsMicros int64 `gorm:"column:simulated_seconds_micros;type:bigint;default:0;not null" json:"simulatedSecondsMicros"`
+	ElapsedMillis int64 `gorm:"column:elapsed_millis;type:bigint;default:0;not null" json:"elapsedMillis"`
+	Transitions int32 `gorm:"column:transitions;type:integer;default:0;not null" json:"transitions"`
+	Summary datatypes.JSON `gorm:"column:summary;type:jsonb;default:'{}'::jsonb;not null" json:"summary"`
+	Stats datatypes.JSON `gorm:"column:stats;type:jsonb;default:'{}'::jsonb;not null" json:"stats"`
+	Error *string `gorm:"column:error;type:text" json:"error,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (DesSoccerLearningRunsGorm) TableName() string { return DesSoccerLearningRunsTable }
+
+func (value DesSoccerLearningRunsGorm) Validate() error {
+	if len([]byte(value.RunnerId)) > 200 { return errors.New("des_soccer_learning_runs.runner_id exceeds 200 bytes") }
+	if len([]byte(value.RunnerId)) < 1 { return errors.New("des_soccer_learning_runs.runner_id is below 1 bytes") }
+	if value.Seed < 0 { return errors.New("des_soccer_learning_runs.seed is below the minimum") }
+	if value.EpisodeIndex < 0 { return errors.New("des_soccer_learning_runs.episode_index is below the minimum") }
+	if !containsString(DesSoccerLearningRunsStatusValues, value.Status) { return errors.New("unsupported des_soccer_learning_runs.status") }
+	if value.ScoreHome < 0 { return errors.New("des_soccer_learning_runs.score_home is below the minimum") }
+	if value.ScoreAway < 0 { return errors.New("des_soccer_learning_runs.score_away is below the minimum") }
+	if !containsString(DesSoccerLearningRunsHomeOutcomeValues, value.HomeOutcome) { return errors.New("unsupported des_soccer_learning_runs.home_outcome") }
+	if !containsString(DesSoccerLearningRunsAwayOutcomeValues, value.AwayOutcome) { return errors.New("unsupported des_soccer_learning_runs.away_outcome") }
+	if value.DurationTicks < 0 { return errors.New("des_soccer_learning_runs.duration_ticks is below the minimum") }
+	if value.SimulatedSecondsMicros < 0 { return errors.New("des_soccer_learning_runs.simulated_seconds_micros is below the minimum") }
+	if value.ElapsedMillis < 0 { return errors.New("des_soccer_learning_runs.elapsed_millis is below the minimum") }
+	if value.Transitions < 0 { return errors.New("des_soccer_learning_runs.transitions is below the minimum") }
+	if !validateJSONString(value.Summary) { return errors.New("des_soccer_learning_runs.summary must be valid JSON") }
+	if !validateJSONString(value.Stats) { return errors.New("des_soccer_learning_runs.stats must be valid JSON") }
+	if value.Error != nil {
+		if len([]byte(*value.Error)) > 16384 { return errors.New("des_soccer_learning_runs.error exceeds 16384 bytes") }
+	}
+	return nil
+}
+
+const DesSoccerLearningRunDeltasTable = "des_soccer_learning_run_deltas"
+const DesSoccerLearningRunDeltasSelectSQL = `select
+      id::text as id,
+      run_id::text as run_id,
+      team,
+      entry_kind,
+      state_hash,
+      state_key,
+      action,
+      target_fine_cell_id,
+      target_tactical_cell_id,
+      target_macro_cell_id,
+      target_root_cell_id,
+      before_value_micros,
+      after_value_micros,
+      value_delta_micros,
+      visit_delta,
+      merge_weight_micros,
+      effective_visit_micros,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_run_deltas`
+
+var DesSoccerLearningRunDeltasTeamValues = []string{"home", "away"}
+var DesSoccerLearningRunDeltasEntryKindValues = []string{"action", "target"}
+
+type DesSoccerLearningRunDeltasGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	RunId uuid.UUID `gorm:"column:run_id;type:uuid;not null" json:"runId"`
+	Team string `gorm:"column:team;type:varchar(8);not null" json:"team"`
+	EntryKind string `gorm:"column:entry_kind;type:varchar(16);not null" json:"entryKind"`
+	StateHash string `gorm:"column:state_hash;type:varchar(32);not null" json:"stateHash"`
+	StateKey datatypes.JSON `gorm:"column:state_key;type:jsonb;not null" json:"stateKey"`
+	Action string `gorm:"column:action;type:varchar(80);not null" json:"action"`
+	TargetFineCellId int32 `gorm:"column:target_fine_cell_id;type:integer;default:-1;not null" json:"targetFineCellId"`
+	TargetTacticalCellId int32 `gorm:"column:target_tactical_cell_id;type:integer;default:-1;not null" json:"targetTacticalCellId"`
+	TargetMacroCellId int32 `gorm:"column:target_macro_cell_id;type:integer;default:-1;not null" json:"targetMacroCellId"`
+	TargetRootCellId int32 `gorm:"column:target_root_cell_id;type:integer;default:-1;not null" json:"targetRootCellId"`
+	BeforeValueMicros int64 `gorm:"column:before_value_micros;type:bigint;default:0;not null" json:"beforeValueMicros"`
+	AfterValueMicros int64 `gorm:"column:after_value_micros;type:bigint;default:0;not null" json:"afterValueMicros"`
+	ValueDeltaMicros int64 `gorm:"column:value_delta_micros;type:bigint;default:0;not null" json:"valueDeltaMicros"`
+	VisitDelta int32 `gorm:"column:visit_delta;type:integer;default:0;not null" json:"visitDelta"`
+	MergeWeightMicros int64 `gorm:"column:merge_weight_micros;type:bigint;default:0;not null" json:"mergeWeightMicros"`
+	EffectiveVisitMicros int64 `gorm:"column:effective_visit_micros;type:bigint;default:0;not null" json:"effectiveVisitMicros"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesSoccerLearningRunDeltasGorm) TableName() string { return DesSoccerLearningRunDeltasTable }
+
+func (value DesSoccerLearningRunDeltasGorm) Validate() error {
+	if !containsString(DesSoccerLearningRunDeltasTeamValues, value.Team) { return errors.New("unsupported des_soccer_learning_run_deltas.team") }
+	if !containsString(DesSoccerLearningRunDeltasEntryKindValues, value.EntryKind) { return errors.New("unsupported des_soccer_learning_run_deltas.entry_kind") }
+	if !desSoccerLearningRunDeltasStateHashPattern.MatchString(value.StateHash) { return errors.New("des_soccer_learning_run_deltas.state_hash does not match the required pattern") }
+	if !validateJSONString(value.StateKey) { return errors.New("des_soccer_learning_run_deltas.state_key must be valid JSON") }
+	if len([]byte(value.Action)) > 80 { return errors.New("des_soccer_learning_run_deltas.action exceeds 80 bytes") }
+	if len([]byte(value.Action)) < 1 { return errors.New("des_soccer_learning_run_deltas.action is below 1 bytes") }
+	if value.TargetFineCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_fine_cell_id is below the minimum") }
+	if value.TargetTacticalCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_tactical_cell_id is below the minimum") }
+	if value.TargetMacroCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_macro_cell_id is below the minimum") }
+	if value.TargetRootCellId < -1 { return errors.New("des_soccer_learning_run_deltas.target_root_cell_id is below the minimum") }
+	if value.VisitDelta < 1 { return errors.New("des_soccer_learning_run_deltas.visit_delta is below the minimum") }
+	if value.MergeWeightMicros < 0 { return errors.New("des_soccer_learning_run_deltas.merge_weight_micros is below the minimum") }
+	if value.EffectiveVisitMicros < 0 { return errors.New("des_soccer_learning_run_deltas.effective_visit_micros is below the minimum") }
+	return nil
+}
+
+const DesSoccerLearningMergeEventsTable = "des_soccer_learning_merge_events"
+const DesSoccerLearningMergeEventsSelectSQL = `select
+      id::text as id,
+      experiment_id::text as experiment_id,
+      base_policy_version_id::text as base_policy_version_id,
+      output_policy_version_id::text as output_policy_version_id,
+      strategy,
+      input_run_count,
+      input_delta_count,
+      decay_micros,
+      metrics,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from des_soccer_learning_merge_events`
+
+var DesSoccerLearningMergeEventsStrategyValues = []string{"outcome_weighted_average", "elite", "mutation", "crossover"}
+
+type DesSoccerLearningMergeEventsGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ExperimentId uuid.UUID `gorm:"column:experiment_id;type:uuid;not null" json:"experimentId"`
+	BasePolicyVersionId *uuid.UUID `gorm:"column:base_policy_version_id;type:uuid" json:"basePolicyVersionId,omitempty"`
+	OutputPolicyVersionId uuid.UUID `gorm:"column:output_policy_version_id;type:uuid;not null" json:"outputPolicyVersionId"`
+	Strategy string `gorm:"column:strategy;type:varchar(40);default:'outcome_weighted_average';not null" json:"strategy"`
+	InputRunCount int32 `gorm:"column:input_run_count;type:integer;default:0;not null" json:"inputRunCount"`
+	InputDeltaCount int32 `gorm:"column:input_delta_count;type:integer;default:0;not null" json:"inputDeltaCount"`
+	DecayMicros int64 `gorm:"column:decay_micros;type:bigint;default:1000000;not null" json:"decayMicros"`
+	Metrics datatypes.JSON `gorm:"column:metrics;type:jsonb;default:'{}'::jsonb;not null" json:"metrics"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (DesSoccerLearningMergeEventsGorm) TableName() string { return DesSoccerLearningMergeEventsTable }
+
+func (value DesSoccerLearningMergeEventsGorm) Validate() error {
+	if !containsString(DesSoccerLearningMergeEventsStrategyValues, value.Strategy) { return errors.New("unsupported des_soccer_learning_merge_events.strategy") }
+	if value.InputRunCount < 0 { return errors.New("des_soccer_learning_merge_events.input_run_count is below the minimum") }
+	if value.InputDeltaCount < 0 { return errors.New("des_soccer_learning_merge_events.input_delta_count is below the minimum") }
+	if value.DecayMicros < 0 { return errors.New("des_soccer_learning_merge_events.decay_micros is below the minimum") }
+	if value.DecayMicros > 1000000 { return errors.New("des_soccer_learning_merge_events.decay_micros is above the maximum") }
+	if !validateJSONString(value.Metrics) { return errors.New("des_soccer_learning_merge_events.metrics must be valid JSON") }
 	return nil
 }
 
