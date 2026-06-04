@@ -67,6 +67,31 @@ on:
         required: false
         type: boolean
         default: false
+      loadtest_label:
+        description: Optional label for a GCS load-test run.
+        required: false
+        type: string
+        default: medium
+      loadtest_duration_seconds:
+        description: GCS load-test duration per loader.
+        required: false
+        type: string
+        default: "180"
+      loadtest_loader_replicas:
+        description: Number of load-generator replicas per loader deployment.
+        required: false
+        type: string
+        default: "6"
+      loadtest_clients_per_replica:
+        description: WebSocket clients per load-generator replica.
+        required: false
+        type: string
+        default: "5000"
+      loadtest_messages_per_second_per_client:
+        description: Client-originated messages per connection per second.
+        required: false
+        type: string
+        default: "2.5"
 
 concurrency:
   group: remote-k8s-maintenance
@@ -101,6 +126,11 @@ jobs:
           REMOTE_DEV_DASHSCOPE_API_KEY: ${{ secrets.REMOTE_DEV_DASHSCOPE_API_KEY }}
           REMOTE_DEV_XAI_API_KEY: ${{ secrets.REMOTE_DEV_XAI_API_KEY }}
           THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS: ${{ vars.THREAD_RUNTIME_MAX_AWAKE_DEPLOYMENTS || '4' }}
+          LOADTEST_LABEL: ${{ inputs.loadtest_label || 'medium' }}
+          LOADTEST_DURATION_SECONDS: ${{ inputs.loadtest_duration_seconds || '180' }}
+          LOADTEST_LOADER_REPLICAS: ${{ inputs.loadtest_loader_replicas || '6' }}
+          LOADTEST_CLIENTS_PER_REPLICA: ${{ inputs.loadtest_clients_per_replica || '5000' }}
+          LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT: ${{ inputs.loadtest_messages_per_second_per_client || '2.5' }}
         run: |
           set -euo pipefail
 
@@ -2362,6 +2392,10 @@ jobs:
 
           rev = os.environ.get("TARGET_REVISION", "dev") or "dev"
           duration = os.environ.get("LOADTEST_DURATION_SECONDS", "180") or "180"
+          load_label = os.environ.get("LOADTEST_LABEL", "medium") or "medium"
+          loader_replicas = os.environ.get("LOADTEST_LOADER_REPLICAS", "6") or "6"
+          clients_per_replica = os.environ.get("LOADTEST_CLIENTS_PER_REPLICA", "5000") or "5000"
+          messages_per_second = os.environ.get("LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT", "2.5") or "2.5"
           script = r'''set -euo pipefail
           proof_log="/tmp/gcs-loadtest-proof-$(date -u +%Y%m%dT%H%M%SZ).log"
           if [ "${LOADTEST_COMPACT_OUTPUT:-true}" = "true" ]; then
@@ -2381,8 +2415,10 @@ jobs:
           case "$clients_per_replica" in
             ''|*[!0-9]*) clients_per_replica=5000 ;;
           esac
+          messages_per_second="${LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT:-2.5}"
+          load_label="${LOADTEST_LABEL:-medium}"
           total_connections=$((loader_replicas * clients_per_replica))
-          echo "PROOF loadtest_target total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=2.5 duration_seconds=$duration"
+          echo "PROOF loadtest_target total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second duration_seconds=$duration load_label=$load_label"
 
           apps="dd-observability gcs dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
           loadtest_apps="dd-ws-loadtest-rs-gcs dd-gleamlang-ws-loadtest-gcs dd-nodejs-ws-loadtest-gcs"
@@ -3045,7 +3081,7 @@ jobs:
           run_loader() {
             local d="$1"
             local loader_name="$2"
-            echo "=== start $loader_name: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), 2.5 msg/(conn*second), duration=${duration}s ==="
+            echo "=== start $loader_name: ${total_connections} conns (${loader_replicas}x${clients_per_replica}), ${messages_per_second} msg/(conn*second), duration=${duration}s, load=${load_label} ==="
             free_gcs_capacity
             kubectl -n default set resources "deployment/$d" \
               --requests=cpu=1m,memory=512Mi \
@@ -3054,7 +3090,7 @@ jobs:
               CLIENT_COUNT="$clients_per_replica" \
               GCS_CLIENTS_PER_CONV=5 \
               GCS_SENDERS_PER_CONV=5 \
-              MESSAGES_PER_SECOND_PER_CLIENT=2.5 \
+              MESSAGES_PER_SECOND_PER_CLIENT="$messages_per_second" \
               RAMP_DELAY_MS=20 \
               CONNECT_TIMEOUT_SECONDS=60 \
               CONNECT_TIMEOUT_MS=60000 \
@@ -3122,13 +3158,13 @@ jobs:
           router_metrics
           echo "PROOF service_health gcs_available=$(deployment_available gcs)/4 router_available=$(deployment_available gcs-router)/3"
           report_dependency_health
-          echo "PROOF loadtest_all_passed total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica loaders=rust,nodejs,gleam"
+          echo "PROOF loadtest_all_passed total_connections=$total_connections loader_replicas=$loader_replicas clients_per_replica=$clients_per_replica msg_per_conn_second=$messages_per_second load_label=$load_label loaders=rust,nodejs,gleam"
           '''
 
           print(json.dumps({
               "commands": [
                   "set -euo pipefail",
-                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} bash -lc {shlex.quote(script)}",
+                  f"sudo -u ec2-user -H env TARGET_REVISION={shlex.quote(rev)} LOADTEST_DURATION_SECONDS={shlex.quote(duration)} LOADTEST_LABEL={shlex.quote(load_label)} LOADTEST_LOADER_REPLICAS={shlex.quote(loader_replicas)} LOADTEST_CLIENTS_PER_REPLICA={shlex.quote(clients_per_replica)} LOADTEST_MESSAGES_PER_SECOND_PER_CLIENT={shlex.quote(messages_per_second)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY
