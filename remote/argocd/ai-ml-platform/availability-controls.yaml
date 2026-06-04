@@ -1,0 +1,54 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-ai-ml-pipeline
+  namespace: ai-ml
+  labels:
+    app: dd-ai-ml-pipeline
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-ai-ml-pipeline
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-airbyte-postgresql
+  namespace: airbyte
+  labels:
+    app.kubernetes.io/name: dd-airbyte-postgresql
+    app.kubernetes.io/part-of: dd-airbyte
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dd-airbyte-postgresql
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-dagster-postgresql
+  namespace: ai-ml
+  labels:
+    app.kubernetes.io/name: dd-dagster-postgresql
+    app.kubernetes.io/part-of: dd-dagster
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dd-dagster-postgresql
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-mlflow-postgresql
+  namespace: ai-ml
+  labels:
+    app.kubernetes.io/name: dd-mlflow-postgresql
+    app.kubernetes.io/part-of: dd-mlflow
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dd-mlflow-postgresql

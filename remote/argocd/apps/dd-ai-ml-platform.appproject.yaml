@@ -3,6 +3,8 @@ kind: AppProject
 metadata:
   name: dd-ai-ml-platform
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
 spec:
   description: Optional AI/ML and big-data platform applications.
   sourceRepos:
@@ -38,7 +40,9 @@ spec:
     - group: ""
       kind: PersistentVolumeClaim
     - group: ""
-      kind: Pod
+      kind: LimitRange
+    - group: ""
+      kind: ResourceQuota
     - group: ""
       kind: Secret
     - group: ""

@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-airbyte
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -14,6 +16,17 @@ spec:
       values: |
         global:
           edition: community
+          jobs:
+            kube:
+              labels:
+                dd-airbyte-postgresql-client: 'true'
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: '1'
+                memory: 1Gi
           auth:
             enabled: true
             secretName: dd-airbyte-auth
@@ -48,10 +61,303 @@ spec:
               secretAccessKeySecretKey: s3-secret-access-key
         postgresql:
           enabled: false
+        airbyte-bootloader:
+          podLabels:
+            dd-airbyte-postgresql-client: 'true'
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
         webapp:
           replicaCount: 1
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: var-run
+              mountPath: /var/run/
+            - name: nginx-cache
+              mountPath: /tmp/cache/nginx
+            - name: nginx-tmp
+              mountPath: /tmp/nginx
+          extraVolumes:
+            - name: var-run
+              emptyDir:
+                sizeLimit: 16Mi
+            - name: nginx-cache
+              emptyDir:
+                sizeLimit: 64Mi
+            - name: nginx-tmp
+              emptyDir:
+                sizeLimit: 64Mi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        server:
+          podLabels:
+            dd-airbyte-postgresql-client: 'true'
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
         worker:
           replicaCount: 1
+          podLabels:
+            dd-airbyte-postgresql-client: 'true'
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+        workload-launcher:
+          podLabels:
+            dd-airbyte-postgresql-client: 'true'
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+        workload-api-server:
+          podLabels:
+            dd-airbyte-postgresql-client: 'true'
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+        temporal:
+          podLabels:
+            dd-airbyte-postgresql-client: 'true'
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraInitContainers:
+            - name: temporal-config-loader
+              image: temporalio/auto-setup:1.27.2
+              command:
+                - /bin/sh
+                - -c
+                - find /etc/temporal/config/ -maxdepth 1 -mindepth 1 -exec cp -ar {} /config/ \;
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: temporal-config
+                  mountPath: /config
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+            - name: temporal-config
+              mountPath: /etc/temporal/config
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+            - name: temporal-config
+              emptyDir:
+                sizeLimit: 64Mi
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+        cron:
+          podLabels:
+            dd-airbyte-postgresql-client: 'true'
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        connector-builder-server:
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          extraVolumeMounts:
+            - name: tmpdir
+              mountPath: /tmp
+          extraVolumes:
+            - name: tmpdir
+              emptyDir:
+                sizeLimit: 1Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: '1'
+              memory: 2Gi
   destination:
     server: https://kubernetes.default.svc
     namespace: airbyte
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

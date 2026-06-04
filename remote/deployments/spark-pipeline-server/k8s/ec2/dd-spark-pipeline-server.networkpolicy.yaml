@@ -11,6 +11,7 @@ spec:
       app: dd-spark-pipeline-server
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     - from:
         - namespaceSelector:
@@ -25,3 +26,25 @@ spec:
       ports:
         - protocol: TCP
           port: 8085
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        # Optional RDS/Postgres access. RDS should resolve to a private VPC address from EC2;
+        # keep port 5432 off the public Internet and service CIDRs.
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+        - ipBlock:
+            cidr: 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432

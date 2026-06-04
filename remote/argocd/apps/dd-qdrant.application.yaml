@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: dd-qdrant
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   project: dd-ai-ml-platform
   source:
@@ -13,23 +15,37 @@ spec:
       skipTests: true
       values: |
         replicaCount: 1
-        apiKey:
-          valueFrom:
-            secretKeyRef:
-              name: dd-qdrant-api-keys
-              key: api-key
-        readOnlyApiKey:
-          valueFrom:
-            secretKeyRef:
-              name: dd-qdrant-api-keys
-              key: read-only-api-key
+        image:
+          useUnprivilegedImage: true
+        updateVolumeFsOwnership: false
+        additionalVolumes:
+          - name: qdrant-api-keys
+            secret:
+              secretName: dd-qdrant-api-keys
+              defaultMode: 0600
+        additionalVolumeMounts:
+          - name: qdrant-api-keys
+            mountPath: /qdrant/config/local.yaml
+            subPath: local.yaml
+            readOnly: true
         persistence:
           enabled: true
           size: 5Gi
+        snapshotPersistence:
+          enabled: true
+          size: 5Gi
         podSecurityContext:
+          fsGroup: 3000
+          fsGroupChangePolicy: Always
           seccompProfile:
             type: RuntimeDefault
         containerSecurityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 2000
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
               - ALL
