@@ -8,3 +8,4 @@
 - 2026-06-04 requeue 10k-medium after GitHub cancelled older pending concurrency runs.
 - 2026-06-04 diagnose GCS rollout after 10k-light and 10k-medium failed before load windows.
 - 2026-06-04 diagnose gcs-router rollout after checksum fix still missed progress deadline.
+- 2026-06-04 diagnose runtime collapse after 10k-light reached correctness but failed sustained WSS load.
