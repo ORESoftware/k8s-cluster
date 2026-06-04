@@ -152,6 +152,12 @@ test("web home route has rollout and gateway guards against transient 502s", asy
   );
   assert.match(gatewayConfig, /proxy_next_upstream_tries\s+3;/);
   assert.match(gatewayConfig, /proxy_connect_timeout\s+5s;/);
+  assert.match(gatewayConfig, /gzip\s+on;/);
+  assert.match(gatewayConfig, /gzip_vary\s+on;/);
+  assert.match(gatewayConfig, /gzip_min_length\s+1024;/);
+  assert.match(gatewayConfig, /gzip_comp_level\s+5;/);
+  assert.match(gatewayConfig, /gzip_proxied\s+any;/);
+  assert.match(gatewayConfig, /gzip_types[\s\S]*application\/json[\s\S]*application\/javascript/);
 });
 
 test("gateway-backed stateless services use HA rolling deployment profile", async () => {

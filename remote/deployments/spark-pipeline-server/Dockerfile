@@ -4,7 +4,7 @@ FROM docker.io/library/maven:3.9.9-eclipse-temurin-17 AS build
 # The build expects the k8s-cluster repo root as its build context (so it can reach
 # remote/libs/pg-defs/generated/jvm/jooq for the jOOQ Tables source set). Build the image with:
 #
-#     docker build -f remote/deployments/spark-pipeline-server/Dockerfile -t dd-spark-pipeline-server:dev .
+#     docker build -f remote/deployments/spark-pipeline-server/Dockerfile -t docker.io/library/dd-spark-pipeline-server:dev .
 #
 # from the k8s-cluster repo root.
 WORKDIR /workspace
@@ -17,7 +17,8 @@ COPY remote/libs/pg-defs/generated/jvm/jooq ./remote/libs/pg-defs/generated/jvm/
 WORKDIR /workspace/remote/deployments/spark-pipeline-server
 RUN mvn -B -e -DskipTests dependency:go-offline || true
 
-# Copy spark-pipeline-server sources and build the shaded jar.
+# Copy spark-pipeline-server generated API docs and sources, then build the shaded jar.
+COPY remote/deployments/spark-pipeline-server/generated ./generated
 COPY remote/deployments/spark-pipeline-server/src ./src
 RUN mvn -B -e -DskipTests package
 

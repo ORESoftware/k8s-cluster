@@ -337,6 +337,62 @@ function extractFsharpRoutes(source, sourceFile) {
   return mergeRoutes(routes);
 }
 
+function javaHandlerName(expression) {
+  const trimmed = expression.trim();
+  const newHandler = /^new\s+([a-zA-Z_][a-zA-Z0-9_]*)/.exec(trimmed);
+  if (newHandler) {
+    return newHandler[1];
+  }
+  const staticCall = /^([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\s*\(/.exec(trimmed);
+  if (staticCall) {
+    return staticCall[1];
+  }
+  const symbol = /^([a-zA-Z_][a-zA-Z0-9_]*)$/.exec(trimmed);
+  return symbol?.[1] ?? null;
+}
+
+function extractJavaVertxRoutes(source, sourceFile) {
+  const routes = [];
+  const routePattern = /\brouter\.(get|post|patch|delete|put|options)\s*\(/g;
+  for (const match of source.matchAll(routePattern)) {
+    const open = source.indexOf('(', match.index);
+    const close = findMatchingParen(source, open);
+    const pathMatch = /^\s*"([^"]+)"/.exec(source.slice(open + 1, close));
+    if (!pathMatch) {
+      continue;
+    }
+
+    const semi = source.indexOf(';', close);
+    if (semi === -1) {
+      continue;
+    }
+    const chain = source.slice(close + 1, semi);
+    const handlers = [];
+    let cursor = 0;
+    for (;;) {
+      const handlerIndex = chain.indexOf('.handler(', cursor);
+      if (handlerIndex === -1) {
+        break;
+      }
+      const handlerOpen = chain.indexOf('(', handlerIndex);
+      const handlerClose = findMatchingParen(chain, handlerOpen);
+      const handler = javaHandlerName(chain.slice(handlerOpen + 1, handlerClose));
+      if (handler) {
+        handlers.push(handler);
+      }
+      cursor = handlerClose + 1;
+    }
+
+    routes.push({
+      path: pathMatch[1],
+      methods: [METHOD_CALLS.get(match[1])],
+      handlers: [...new Set(handlers)].sort(),
+      sourceFile,
+    });
+  }
+  return mergeRoutes(routes);
+}
+
 function extractDartStringConstants(source) {
   const constants = new Map();
   for (const match of source.matchAll(/\bconst\s+String\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*'([^']+)'/g)) {
@@ -729,6 +785,13 @@ async function discoverExtraServices() {
       parser: extractNodeRoutes,
       deploymentDir: 'remote/deployments/gleamlang-server',
       outputName: 'api-docs.nats-bridge',
+    },
+    {
+      service: 'spark-pipeline-server',
+      language: 'java',
+      file: 'remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java',
+      parser: extractJavaVertxRoutes,
+      deploymentDir: 'remote/deployments/spark-pipeline-server',
     },
     {
       service: 'web-scraper-service',

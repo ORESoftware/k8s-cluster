@@ -54,6 +54,31 @@ curl -s http://localhost:8099/analyze \
 - `ML_EVENT_SUBJECT=dd.remote.events`
 - `ML_DEAD_LETTER_SUBJECT=dd.remote.ml.deadletter`
 
+## Container image
+
+The EC2 Kubernetes overlay runs `docker.io/library/dd-ai-ml-pipeline:dev` from the image contents
+instead of mounting the repo checkout. Build it from the k8s-cluster repo root so the Dockerfile can
+bake in the generated API docs and generated Python NATS subject constants:
+
+```bash
+docker build -f remote/deployments/ai-ml-pipeline/Dockerfile \
+  -t docker.io/library/dd-ai-ml-pipeline:dev .
+```
+
+On the EC2 node/containerd path, build the first-party AI/ML images in one pass before syncing
+Argo CD:
+
+```bash
+bash remote/tools/build-ai-ml-platform-images.sh
+```
+
+Or build this service directly with the same tag in the `k8s.io` namespace:
+
+```bash
+nerdctl -n k8s.io build -f remote/deployments/ai-ml-pipeline/Dockerfile \
+  -t docker.io/library/dd-ai-ml-pipeline:dev .
+```
+
 ## Runtime model
 
 The first model is an online statistical model rather than a heavyweight batch-trained artifact:

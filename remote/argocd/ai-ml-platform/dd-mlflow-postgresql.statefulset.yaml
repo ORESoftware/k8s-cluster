@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: dd-airbyte-postgresql
-  namespace: airbyte
+  name: dd-mlflow-postgresql
+  namespace: ai-ml
   labels:
-    app.kubernetes.io/name: dd-airbyte-postgresql
-    app.kubernetes.io/part-of: dd-airbyte
+    app.kubernetes.io/name: dd-mlflow-postgresql
+    app.kubernetes.io/part-of: dd-mlflow
 spec:
   type: ClusterIP
   ports:
@@ -14,27 +14,27 @@ spec:
       protocol: TCP
       targetPort: postgres
   selector:
-    app.kubernetes.io/name: dd-airbyte-postgresql
+    app.kubernetes.io/name: dd-mlflow-postgresql
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: dd-airbyte-postgresql
-  namespace: airbyte
+  name: dd-mlflow-postgresql
+  namespace: ai-ml
   labels:
-    app.kubernetes.io/name: dd-airbyte-postgresql
-    app.kubernetes.io/part-of: dd-airbyte
+    app.kubernetes.io/name: dd-mlflow-postgresql
+    app.kubernetes.io/part-of: dd-mlflow
 spec:
   replicas: 1
-  serviceName: dd-airbyte-postgresql
+  serviceName: dd-mlflow-postgresql
   selector:
     matchLabels:
-      app.kubernetes.io/name: dd-airbyte-postgresql
+      app.kubernetes.io/name: dd-mlflow-postgresql
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: dd-airbyte-postgresql
-        app.kubernetes.io/part-of: dd-airbyte
+        app.kubernetes.io/name: dd-mlflow-postgresql
+        app.kubernetes.io/part-of: dd-mlflow
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -52,16 +52,16 @@ spec:
               protocol: TCP
           env:
             - name: POSTGRES_DB
-              value: airbyte
+              value: mlflow
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: dd-airbyte-database
+                  name: dd-mlflow-postgresql
                   key: username
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: dd-airbyte-database
+                  name: dd-mlflow-postgresql
                   key: password
             - name: POSTGRES_INITDB_ARGS
               value: --auth-host=scram-sha-256
@@ -129,15 +129,15 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: dd-airbyte-postgresql-ingress
-  namespace: airbyte
+  name: dd-mlflow-postgresql-ingress
+  namespace: ai-ml
   labels:
-    app.kubernetes.io/name: dd-airbyte-postgresql
-    app.kubernetes.io/part-of: dd-airbyte
+    app.kubernetes.io/name: dd-mlflow-postgresql
+    app.kubernetes.io/part-of: dd-mlflow
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: dd-airbyte-postgresql
+      app.kubernetes.io/name: dd-mlflow-postgresql
   policyTypes:
     - Ingress
     - Egress
@@ -145,7 +145,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              dd-airbyte-postgresql-client: 'true'
+              dd-mlflow-postgresql-client: 'true'
       ports:
         - protocol: TCP
           port: 5432

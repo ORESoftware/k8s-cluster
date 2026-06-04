@@ -22,8 +22,8 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-04-soccer-learning-k8s-engine-9ce9838'
-        dd.dev/des-engine-revision: '9ce98383669d11bcc0ebfb0984d3df39bfe180c7'
+        dd.dev/telemetry-revision: '2026-06-04-elevator-highrise-lazy-engine-f0837a8'
+        dd.dev/des-engine-revision: 'f0837a817f973dbcd80ce6f1097907f2157a8a18'
       labels:
         app: dd-des-rs
     spec:
@@ -141,7 +141,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: codex/soccer-learning-k8s
+              value: f0837a817f973dbcd80ce6f1097907f2157a8a18
             - name: HOME
               value: /tmp
             - name: CARGO_HOME

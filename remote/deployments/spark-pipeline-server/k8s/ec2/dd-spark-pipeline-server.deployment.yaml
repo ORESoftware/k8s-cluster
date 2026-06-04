@@ -7,14 +7,13 @@ metadata:
     app: dd-spark-pipeline-server
 spec:
   replicas: 1
-  # Zero-surge rollout: don't start a new pod until the old one is fully gone. The single-node
-  # cluster doesn't have headroom to run two replicas during a deploy. Same shape as the
-  # gcs-router fix in commit 98f9ada.
+  # Keep one ready pod serving during rollouts. The request is intentionally small enough that a
+  # temporary replacement pod can schedule before the old pod is removed.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-spark-pipeline-server
@@ -25,52 +24,30 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
-        fsGroup: 1000
+        fsGroup: 10001
         fsGroupChangePolicy: OnRootMismatch
-        runAsGroup: 1000
+        runAsGroup: 10001
         runAsNonRoot: true
-        runAsUser: 1000
+        runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 30
       containers:
         - name: spark-pipeline-server
-          image: docker.io/library/maven:3.9.9-eclipse-temurin-17
+          image: docker.io/library/dd-spark-pipeline-server:dev
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
             readOnlyRootFilesystem: true
-            runAsGroup: 1000
+            runAsGroup: 10001
             runAsNonRoot: true
-            runAsUser: 1000
+            runAsUser: 10001
             capabilities:
               drop:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          # `set -o pipefail` is bash-only. The maven base image ships dash as /bin/sh, which
-          # rejects it (see commit b7b3c1b for the same fix on fsharp-ws-server).
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              work_root=/work/dd-next-1
-              module_dir="${work_root}/remote/deployments/spark-pipeline-server"
-              mkdir -p "${work_root}/remote/deployments" \
-                "${work_root}/remote/libs/pg-defs/generated/jvm" \
-                /work/.m2/repository \
-                /work/tmp
-              cp -R /opt/dd-next-1/remote/deployments/spark-pipeline-server "${work_root}/remote/deployments/"
-              cp -R /opt/dd-next-1/remote/libs/pg-defs/generated/jvm/jooq "${work_root}/remote/libs/pg-defs/generated/jvm/"
-              cd "${module_dir}"
-              if [ ! -f target/dd-spark-pipeline-server.jar ]; then
-                echo "Building dd-spark-pipeline-server with Maven in emptyDir workspace..."
-                mvn -B -e -DskipTests -Dmaven.repo.local=/work/.m2/repository package
-              fi
-              exec java $JAVA_OPTS -Djava.io.tmpdir=/work/tmp -jar target/dd-spark-pipeline-server.jar
           env:
             - name: HTTP_HOST
               value: 0.0.0.0
@@ -80,10 +57,6 @@ spec:
               value: '4'
             - name: JAVA_OPTS
               value: -XX:+UseG1GC -XX:MaxRAMPercentage=70 -Dfile.encoding=UTF-8
-            - name: HOME
-              value: /work
-            - name: MAVEN_CONFIG
-              value: /work/.m2
             - name: SPARK_PIPELINE_ALLOW_UNAUTHENTICATED
               value: 'false'
             - name: SERVER_AUTH_SECRET
@@ -140,19 +113,9 @@ spec:
               cpu: '2'
               memory: 1Gi
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
-            - name: workspace
-              mountPath: /work
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
-        - name: workspace
-          emptyDir: {}
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 512Mi

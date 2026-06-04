@@ -357,6 +357,19 @@
       ]
     },
     {
+      "service": "spark-pipeline-server",
+      "language": "java",
+      "routeCount": 9,
+      "routeTypeCounts": {
+        "service": 6,
+        "user-generated": 3
+      },
+      "generated": [
+        "remote/deployments/spark-pipeline-server/generated/api-docs.json",
+        "remote/deployments/spark-pipeline-server/generated/api-docs.html"
+      ]
+    },
+    {
       "service": "trading-server-rs",
       "language": "rust",
       "routeCount": 13,

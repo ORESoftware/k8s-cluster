@@ -1,6 +1,7 @@
 package com.oresoftware.dd.sparkpipeline;
 
 import com.oresoftware.dd.sparkpipeline.db.PgDb;
+import com.oresoftware.dd.sparkpipeline.handlers.ApiDocsHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.HealthHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.JobStatusHandler;
 import com.oresoftware.dd.sparkpipeline.handlers.ListJobsHandler;
@@ -26,6 +27,9 @@ import org.slf4j.LoggerFactory;
  *   <li>{@code GET  /healthz}        – liveness probe</li>
  *   <li>{@code GET  /readyz}         – readiness probe</li>
  *   <li>{@code GET  /metrics}        – Prometheus metrics scrape</li>
+ *   <li>{@code GET  /docs/api}       – generated API docs HTML</li>
+ *   <li>{@code GET  /api/docs}       – generated API docs HTML</li>
+ *   <li>{@code GET  /api/docs.json}  – generated API docs JSON</li>
  *   <li>{@code POST /v1/jobs}        – submit a new pipeline job</li>
  *   <li>{@code GET  /v1/jobs}        – list all jobs known to this server</li>
  *   <li>{@code GET  /v1/jobs/:id}    – fetch status of a single job</li>
@@ -64,6 +68,9 @@ public final class MainVerticle extends AbstractVerticle {
     router.get("/healthz").handler(HealthHandler.liveness());
     router.get("/readyz").handler(HealthHandler.readiness(jobService));
     router.get("/metrics").handler(MetricsHandler.create());
+    router.get("/docs/api").handler(ApiDocsHandler.html());
+    router.get("/api/docs").handler(ApiDocsHandler.html());
+    router.get("/api/docs.json").handler(ApiDocsHandler.json());
 
     final Handler<RoutingContext> authGate = ctx -> {
       if (auth.isAuthorized(ctx)) {
