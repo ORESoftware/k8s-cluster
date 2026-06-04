@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-03-des-rs-runtime-dns'
+        dd.dev/telemetry-revision: '2026-06-03-des-rs-dns-refresh'
       labels:
         app: dd-remote-gateway
     spec:
