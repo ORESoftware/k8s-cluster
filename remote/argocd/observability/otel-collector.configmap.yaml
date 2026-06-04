@@ -268,6 +268,10 @@ data:
                 - source_labels: [__meta_kubernetes_pod_label_app]
                   target_label: app
 
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
     processors:
       batch: {}
       memory_limiter:
@@ -278,6 +282,8 @@ data:
     exporters:
       prometheus:
         endpoint: 0.0.0.0:8889
+        const_labels:
+          cluster: dd-ec2
       otlp/tempo:
         endpoint: dd-tempo.observability.svc.cluster.local:4317
         tls:
@@ -290,6 +296,13 @@ data:
         verbosity: basic
 
     service:
+      extensions:
+        - health_check
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
       pipelines:
         metrics:
           receivers:

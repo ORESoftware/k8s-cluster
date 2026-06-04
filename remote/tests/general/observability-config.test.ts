@@ -159,6 +159,12 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   const collector = await readRepoFile(
     "remote/argocd/observability/otel-collector.configmap.yaml",
   );
+  const collectorDeployment = await readRepoFile(
+    "remote/argocd/observability/otel-collector.deployment.yaml",
+  );
+  const collectorService = await readRepoFile(
+    "remote/argocd/observability/otel-collector.service.yaml",
+  );
 
   assert.match(collector, /dd-dev-server-api\.default\.svc\.cluster\.local:8080/);
   assert.match(collector, /dd-remote-web-home\.default\.svc\.cluster\.local:8080/);
@@ -191,14 +197,27 @@ test("otel collector scrapes all remote runtimes and exports traces", async () =
   assert.match(collector, /dd-nats\.messaging\.svc\.cluster\.local:7777/);
   assert.match(collector, /job_name:\s*dd-promtail/);
   assert.match(collector, /__meta_kubernetes_pod_label_app[\s\S]*regex:\s*dd-promtail/);
+  assert.match(collector, /health_check:[\s\S]*endpoint:\s*0\.0\.0\.0:13133/);
+  assert.match(collector, /const_labels:[\s\S]*cluster:\s*dd-ec2/);
+  assert.match(collector, /telemetry:[\s\S]*metrics:[\s\S]*address:\s*0\.0\.0\.0:8888/);
   assert.match(collector, /endpoint:\s*dd-tempo\.observability\.svc\.cluster\.local:4317/);
   assert.match(collector, /endpoint:\s*dd-jaeger\.observability\.svc\.cluster\.local:4317/);
+  assert.match(collectorDeployment, /name:\s*self-metrics[\s\S]*containerPort:\s*8888/);
+  assert.match(collectorDeployment, /name:\s*health[\s\S]*containerPort:\s*13133/);
+  assert.match(collectorDeployment, /readinessProbe:[\s\S]*httpGet:[\s\S]*port:\s*13133/);
+  assert.match(collectorDeployment, /livenessProbe:[\s\S]*httpGet:[\s\S]*port:\s*13133/);
+  assert.match(collectorService, /name:\s*self-metrics[\s\S]*port:\s*8888[\s\S]*targetPort:\s*8888/);
+  assert.match(collectorService, /name:\s*health[\s\S]*port:\s*13133[\s\S]*targetPort:\s*13133/);
 });
 
 test("prometheus and loki ingest through the collector and promtail fan-in", async () => {
   const prometheus = await readRepoFile("remote/argocd/observability/prometheus.configmap.yaml");
   const promtail = await readRepoFile("remote/argocd/observability/promtail.configmap.yaml");
+  const loki = await readRepoFile("remote/argocd/observability/loki.configmap.yaml");
+  const lokiDeployment = await readRepoFile("remote/argocd/observability/loki.deployment.yaml");
 
+  assert.match(prometheus, /rule_files:[\s\S]*\/etc\/prometheus\/observability\.rules\.yml/);
+  assert.match(prometheus, /job_name:\s*otel-collector-self[\s\S]*dd-otel-collector\.observability\.svc\.cluster\.local:8888/);
   assert.match(prometheus, /dd-otel-collector\.observability\.svc\.cluster\.local:8889/);
   assert.match(
     prometheus,
@@ -217,7 +236,13 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(prometheus, /dd-formal-methods-service\.default\.svc\.cluster\.local:8111/);
   assert.match(prometheus, /dd-lock-loadtest-trigger\.default\.svc\.cluster\.local:8110/);
   assert.match(prometheus, /gcs-router\.default\.svc\.cluster\.local:9100/);
+  assert.match(prometheus, /record:\s*dd:observability:target_up_ratio/);
+  assert.match(prometheus, /alert:\s*DDObservabilityTargetDown/);
+  assert.match(prometheus, /alert:\s*DDOtelCollectorRejectedTelemetry/);
   assert.match(promtail, /dd-loki\.observability\.svc\.cluster\.local:3100\/loki\/api\/v1\/push/);
+  assert.match(promtail, /batchwait:\s*1s/);
+  assert.match(promtail, /batchsize:\s*1048576/);
+  assert.match(promtail, /backoff_config:[\s\S]*max_retries:\s*10/);
   assert.match(promtail, /external_labels:[\s\S]*cluster:\s*dd-ec2/);
   assert.match(promtail, /__path__:\s*\/var\/log\/containers\/\*\.log/);
   assert.doesNotMatch(promtail, /^\s*kubernetes_sd_configs:/m);
@@ -229,6 +254,10 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(promtail, /env:\s*prod[\s\S]*environment:\s*prod/);
   assert.match(promtail, /labeldrop:[\s\S]*-\s*filename/);
   assert.match(promtail, /- cri:\s*\{\}/);
+  assert.match(loki, /limits_config:[\s\S]*reject_old_samples:\s*true/);
+  assert.match(loki, /ingestion_rate_mb:\s*16/);
+  assert.match(loki, /max_global_streams_per_user:\s*5000/);
+  assert.match(lokiDeployment, /configmap\.reloader\.stakater\.com\/reload:\s*"dd-loki-config"/);
 });
 
 test("resource exporter and Grafana fleet dashboard cover every checked-in workload", async () => {
@@ -279,6 +308,16 @@ test("resource exporter and Grafana fleet dashboard cover every checked-in workl
   assert.match(dashboardText, /dd_k8s_workload_unavailable_replicas/);
   assert.match(dashboardText, /\{deployment=~\\\"\$\{workload:regex\}\\\"\}/);
   assert.match(dashboardText, /\{log_schema=\\\"dd\.log\.v1\\\",deployment=~\\\"\$\{workload:regex\}\\\"/);
+
+  const controlPlaneDashboard = extractDashboardJson(dashboards, "observability-control-plane.json");
+  const controlPlaneText = JSON.stringify(controlPlaneDashboard);
+  assert.equal(controlPlaneDashboard.title, "Observability Control Plane");
+  assert.equal(controlPlaneDashboard.uid, "dd-observability-control-plane");
+  assert.match(controlPlaneText, /dd:observability:target_up_ratio/);
+  assert.match(controlPlaneText, /otel-collector-self/);
+  assert.match(controlPlaneText, /promtail_read_lines_total/);
+  assert.match(controlPlaneText, /otelcol_receiver_refused_/);
+  assert.match(controlPlaneText, /\{namespace=\\\"observability\\\"\}/);
 });
 
 test("standalone observability coverage guardrail passes", async () => {

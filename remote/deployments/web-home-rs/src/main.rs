@@ -117,6 +117,19 @@ fn grafana_deployment_dashboard_path(deployment: &str) -> String {
     format!("/telemetry/d/dd-deployment-drilldown/deployment-drilldown?orgId=1&var-deployment={deployment}")
 }
 
+async fn grafana_observability_redirect() -> Response {
+    record_request("GET", "/grafana/observability", StatusCode::FOUND);
+    let mut response = Response::new(axum::body::Body::empty());
+    *response.status_mut() = StatusCode::FOUND;
+    response.headers_mut().insert(
+        header::LOCATION,
+        HeaderValue::from_static(
+            "/telemetry/d/dd-observability-control-plane/observability-control-plane?orgId=1",
+        ),
+    );
+    response
+}
+
 async fn grafana_deployment_redirect(Path(deployment): Path<String>) -> Response {
     match canonical_grafana_deployment_name(&deployment) {
         Some(deployment) => {
@@ -617,7 +630,7 @@ static PATH_ROWS: &[PathRow] = &[
     PathRow { paths: &[PathEntry { label: "/trading/", href: Some("/trading/") }, PathEntry { label: "/trading/healthz", href: Some("/trading/healthz") }, PathEntry { label: "/trading/metrics", href: Some("/trading/metrics") }, PathEntry { label: "/trading/schema", href: Some("/trading/schema") }, PathEntry { label: "/trading/example", href: Some("/trading/example") }, PathEntry { label: "POST /trading/decide", href: Some("/trading/decide") }, PathEntry { label: TRADING_SIGNALS_SUBJECT, href: None }, PathEntry { label: TRADING_ORDER_INTENTS_SUBJECT, href: None }], target: "Rust trading decision service", access: SERVER_AUTH, notes: "Combines scraped web sentiment, AI/ML features, market snapshots, and MDP/POMDP hints into risk-gated buy/sell/hold decisions." },
     PathRow { paths: &[PathEntry { label: "POST /scrape", href: Some("/scrape") }, PathEntry { label: "/scrape/strategies", href: Some("/scrape/strategies") }, PathEntry { label: "/scrape/healthz", href: Some("/scrape/healthz") }, PathEntry { label: "/scrape/metrics", href: Some("/scrape/metrics") }], target: "dd-web-scraper Fastify deployment", access: SERVER_AUTH, notes: "Long-running strategy router for native fetch, Cheerio, JSDOM, LinkeDOM, Playwright, Puppeteer, and Browserless scraping." },
     PathRow { paths: &[PathEntry { label: "POST /builds", href: Some("/builds") }, PathEntry { label: "/builds/<jobId>", href: Some("/builds/example-job") }, PathEntry { label: "/builds/<jobId>/logs", href: Some("/builds/example-job/logs") }], target: "dd-build-server Rust CI/CD deployment", access: SERVER_AUTH, notes: "Authenticated repo build queue. Jobs are build-server.v1 JSON, push only to allowlisted ECR prefixes, and deploy only allowlisted manifests/namespaces." },
-    PathRow { paths: &[PathEntry { label: "/telemetry/", href: Some("/telemetry/") }], target: "Grafana", access: INTERNAL_ACCESS, notes: "Primary HTML dashboard for Prometheus metrics, Loki logs, Tempo traces, and NATS metrics." },
+    PathRow { paths: &[PathEntry { label: "/telemetry/", href: Some("/telemetry/") }, PathEntry { label: "/grafana/observability", href: Some("/grafana/observability") }], target: "Grafana", access: INTERNAL_ACCESS, notes: "Primary HTML dashboards for Prometheus metrics, Loki logs, Tempo traces, NATS metrics, and the observability control plane." },
     PathRow { paths: &[PathEntry { label: "/grafana/depl/<deployment>", href: Some("/grafana/depl/dd-remote-web-home") }, PathEntry { label: "/grafana/depl/dd-dart-server", href: Some("/grafana/depl/dd-dart-server") }, PathEntry { label: "/grafana/depl/des-rs", href: Some("/grafana/depl/des-rs") }], target: "Grafana deployment drilldown", access: INTERNAL_ACCESS, notes: "Rust web-home redirect into the canonical per-deployment Grafana page, backed by Kubernetes resource metrics plus Loki logs." },
     PathRow { paths: &[PathEntry { label: "/prometheus/", href: Some("/prometheus/") }], target: "Prometheus", access: INTERNAL_ACCESS, notes: "Low-level metrics UI and query surface." },
     PathRow { paths: &[PathEntry { label: "/nats/", href: Some("/nats/") }, PathEntry { label: "/nats-metrics/metrics", href: Some("/nats-metrics/metrics") }], target: "NATS monitor and exporter", access: INTERNAL_ACCESS, notes: "NATS should usually be inspected through Grafana; these paths expose raw health and metrics." },
@@ -10131,6 +10144,14 @@ async fn main() {
         .route("/presence-test/", get(presence_test_page))
         .route("/wss-test", get(wss_test_page))
         .route("/wss-test/", get(wss_test_page))
+        .route(
+            "/grafana/observability",
+            get(grafana_observability_redirect),
+        )
+        .route(
+            "/grafana/observability/",
+            get(grafana_observability_redirect),
+        )
         .route(
             "/grafana/depl/{deployment}",
             get(grafana_deployment_redirect),

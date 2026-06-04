@@ -415,9 +415,40 @@ if (deploymentDrilldown) {
   }
 }
 
+let observabilityControlPlane;
+try {
+  observabilityControlPlane = JSON.parse(
+    configMapLiteral(grafanaDashboards, 'observability-control-plane.json'),
+  );
+} catch (error) {
+  failures.push(
+    `Could not parse observability control-plane dashboard in ${path.relative(repoRoot, grafanaDashboardsPath)}: ${error.message}`,
+  );
+}
+
+if (observabilityControlPlane) {
+  const dashboardText = JSON.stringify(observabilityControlPlane);
+  if (observabilityControlPlane.uid !== 'dd-observability-control-plane') {
+    failures.push('Observability control-plane dashboard uid is not dd-observability-control-plane.');
+  }
+  for (const [label, pattern] of [
+    ['observability target ratio', /dd:observability:target_up_ratio/],
+    ['collector self metrics job', /otel-collector-self/],
+    ['Loki and Promtail log flow', /promtail_read_lines_total/],
+    ['collector refused telemetry flow', /otelcol_receiver_refused_/],
+    ['observability namespace logs', /\{namespace=\\?"observability\\?"\}/],
+  ]) {
+    if (!pattern.test(dashboardText)) {
+      failures.push(`Missing ${label} in observability control-plane dashboard.`);
+    }
+  }
+}
+
 for (const [label, pattern] of [
   ['web-home Grafana redirect route', /\.route\(\s*"\/grafana\/depl\/\{deployment\}"/],
   ['web-home Grafana dashboard target', /dd-deployment-drilldown/],
+  ['web-home observability Grafana route', /\.route\(\s*"\/grafana\/observability"/],
+  ['web-home observability Grafana target', /dd-observability-control-plane/],
 ]) {
   if (!pattern.test(webHomeMain)) {
     failures.push(`Missing ${label} in ${path.relative(repoRoot, webHomeMainPath)}.`);

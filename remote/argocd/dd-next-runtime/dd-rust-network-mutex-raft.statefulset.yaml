@@ -24,6 +24,35 @@ spec:
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: prepare-raft-data
+          image: docker.io/library/busybox:1.36
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 0
+            runAsGroup: 0
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              add:
+                - CHOWN
+              drop:
+                - ALL
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - mkdir -p "/raft/${POD_NAME}" && chown -R 1000:1000 "/raft/${POD_NAME}"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: raft-data
+              mountPath: /raft
       containers:
         - name: rust-network-mutex-raft
           # Mirrors dd-rust-network-mutex's source-build bootstrap until a
@@ -101,7 +130,7 @@ spec:
             - name: LMX_RAFT_ADVERTISE_ADDR
               value: $(POD_NAME).dd-rust-network-mutex-raft-peer.default.svc.cluster.local:7980
             - name: LMX_RAFT_DATA_DIR
-              value: /var/lib/dd-rust-network-mutex/raft
+              value: /var/lib/dd-rust-network-mutex/raft/$(POD_NAME)
             - name: LMX_LOG_FORMAT
               value: text
             - name: RUST_LOG
@@ -165,14 +194,7 @@ spec:
         - name: raft-config
           configMap:
             name: dd-rust-network-mutex-raft-config
-  volumeClaimTemplates:
-    - metadata:
-        name: raft-data
-        labels:
-          app: dd-rust-network-mutex-raft
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 1Gi
+        - name: raft-data
+          hostPath:
+            path: /var/lib/dd-rust-network-mutex-raft
+            type: DirectoryOrCreate

@@ -5,6 +5,9 @@ metadata:
   namespace: observability
   labels:
     app: dd-loki
+  annotations:
+    # Pick up limits/query-config edits without a manual rollout.
+    configmap.reloader.stakater.com/reload: "dd-loki-config"
 spec:
   replicas: 1
   selector:

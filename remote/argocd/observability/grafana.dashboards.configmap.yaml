@@ -1550,3 +1550,155 @@ data:
       "version": 1,
       "weekStart": ""
     }
+  observability-control-plane.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.9 }, { "color": "green", "value": 1 } ] }, "unit": "percentunit" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "dd:observability:target_up_ratio", "refId": "A" } ],
+          "title": "Observability Target Up Ratio",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(up{job=~\"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail\"} == bool 0) or vector(0)", "refId": "A" } ],
+          "title": "Down Observability Targets",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "sum(ALERTS{alertstate=\"firing\",alertname=~\"DD.*\"}) or vector(0)", "refId": "A" } ],
+          "title": "Firing DD Alerts",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+          "pluginVersion": "11.3.0",
+          "targets": [ { "expr": "dd_k8s_resource_exporter_up", "refId": "A" } ],
+          "title": "Resource Exporter Up",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "short" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "id": 5,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "up{job=~\"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail\"}", "legendFormat": "{{job}} {{instance}}", "refId": "A" }
+          ],
+          "title": "Scrape Target Health",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "percentunit" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "id": 6,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "dd:k8s_workload:available_ratio", "legendFormat": "{{namespace}}/{{kind}}/{{workload}}", "refId": "A" }
+          ],
+          "title": "Watched Workload Availability Ratio",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "ops" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "id": 7,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate({__name__=~\"otelcol_receiver_accepted_(spans|metric_points|log_records)\"}[5m])) by (__name__, receiver, transport)", "legendFormat": "{{__name__}} {{receiver}}/{{transport}}", "refId": "A" },
+            { "expr": "sum(rate({__name__=~\"otelcol_receiver_refused_(spans|metric_points|log_records)\"}[5m])) by (__name__, receiver, transport)", "legendFormat": "refused {{__name__}} {{receiver}}/{{transport}}", "refId": "B" },
+            { "expr": "sum(rate({__name__=~\"otelcol_exporter_send_failed_(spans|metric_points|log_records)\"}[5m])) by (__name__, exporter)", "legendFormat": "failed {{__name__}} {{exporter}}", "refId": "C" }
+          ],
+          "title": "OTel Collector Telemetry Flow",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "logs/sec" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "id": 8,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "sum(rate(promtail_read_lines_total[5m])) by (pod)", "legendFormat": "promtail read {{pod}}", "refId": "A" },
+            { "expr": "sum(rate(promtail_dropped_lines_total[5m])) by (pod)", "legendFormat": "promtail dropped {{pod}}", "refId": "B" },
+            { "expr": "sum(rate(loki_distributor_lines_received_total[5m]))", "legendFormat": "loki received", "refId": "C" }
+          ],
+          "title": "Loki and Promtail Log Flow",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "id": 9,
+          "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+          "targets": [
+            { "expr": "max by (job) (scrape_duration_seconds{job=~\"prometheus|otel-collector-self|otel-collector|dd-grafana|dd-loki|dd-k8s-resource-exporter|dd-promtail\"})", "legendFormat": "{{job}}", "refId": "A" }
+          ],
+          "title": "Scrape Duration",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "Loki" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "id": 10,
+          "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+          "targets": [ { "expr": "{namespace=\"observability\"} |~ \"(?i)(critical|fatal|panic|error|oom|timeout|refused|failed|unavailable)\"", "refId": "A" } ],
+          "title": "Observability Warning and Error Logs",
+          "type": "logs"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": [ "observability", "prometheus", "loki", "otel", "grafana" ],
+      "templating": { "list": [] },
+      "time": { "from": "now-30m", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Observability Control Plane",
+      "uid": "dd-observability-control-plane",
+      "version": 1,
+      "weekStart": ""
+    }

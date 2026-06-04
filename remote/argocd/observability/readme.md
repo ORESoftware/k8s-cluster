@@ -7,15 +7,17 @@ GitOps-managed observability stack for the EC2 Kubernetes cluster.
 - `dd-otel-collector`: receives OTLP traces and scrapes runtime `/metrics`
   endpoints.
 - `dd-prometheus`: stores collector-exported metrics plus direct service
-  scrapes for observability, messaging, and selected runtime endpoints.
+  scrapes for observability, messaging, and selected runtime endpoints. It
+  also evaluates `observability.rules.yml` for target-health, workload, and
+  collector-flow alerts.
 - `dd-k8s-resource-exporter`: exposes bounded Kubernetes Deployment,
   StatefulSet, DaemonSet, pod, container-resource, event, and node
   saturation metrics for the checked-in workload allowlist, plus GCS
   dependency TCP probes, Redis INFO samples, and RabbitMQ management
   overview samples.
 - `dd-grafana`: serves dashboards at `/telemetry/` through the public gateway.
-  Includes the `GCS WSS Load Collapse` dashboard for 10k/20k chat.vibe load
-  tests.
+  Includes the `Observability Control Plane`, `Deployment Drilldown`,
+  `Kubernetes Workload Fleet`, and `GCS WSS Load Collapse` dashboards.
 - `dd-loki` + `dd-promtail`: collect Kubernetes container stdout/stderr logs
   from `/var/log/containers/*.log`.
 - `dd-tempo` and `dd-jaeger`: trace backends for collector-exported spans.
@@ -82,6 +84,32 @@ Currently opted-in:
 - `dd-prometheus`     -> `dd-prometheus-config`
 - `dd-promtail`       -> `dd-promtail-config`
 - `dd-k8s-resource-exporter` -> `dd-k8s-resource-exporter`
+- `dd-loki`           -> `dd-loki-config`
+
+### Control-plane health and guardrails
+
+- `/grafana/observability` redirects from the Rust web-home service to the
+  `Observability Control Plane` dashboard (uid
+  `dd-observability-control-plane`). Use it first when Grafana, Prometheus,
+  Loki, Promtail, or the collector may be part of the incident.
+- `dd-prometheus` loads `/etc/prometheus/observability.rules.yml`, recording
+  `dd:observability:target_up_ratio` and
+  `dd:k8s_workload:available_ratio`, and raising DD-prefixed alerts for down
+  observability targets, missing Promtail targets, unavailable workloads,
+  resource-exporter failure, and collector refused/export-failed telemetry.
+- `dd-otel-collector` exposes explicit self telemetry at
+  `dd-otel-collector.observability.svc.cluster.local:8888` and a
+  `health_check` endpoint at `:13133`. Kubernetes liveness/readiness probes
+  use the health extension; Prometheus separately scrapes the collector's
+  self metrics as `otel-collector-self` while keeping the pipeline exporter at
+  `otel-collector` on `:8889`.
+- `dd-loki` keeps single-node filesystem storage, but bounds ingestion and
+  query cost with `limits_config`: old samples are rejected after seven days,
+  ingestion bursts are capped, query splitting/parallelism is bounded, and
+  label count/length limits protect stream cardinality.
+- `dd-promtail` keeps the static `/var/log/containers/*.log` pattern but now
+  has explicit push batching, timeout, and retry backoff settings so Loki
+  slowness does not create unbounded client behavior.
 
 ### Per-pod metrics + log labels
 
@@ -130,7 +158,8 @@ Currently opted-in:
   `-config.expand-env=true`, since that expander collides with the `$`
   end-anchors in the pipeline regexes. Every stream defaults to
   `env=stage`/`environment=stage`; known production deployments
-  (`dd-billing-server`, `dd-web-scraper`, `dd-browser-test-server`) are
+  (`dd-billing-server`, `dd-web-scraper`, `dd-browser-test-server`,
+  `dd-selenium-server`, `dd-browser-job-runner`) are
   promoted to `env=prod`/`environment=prod` by a `match` stage. Loki
   queries should pin on these labels, e.g.
   `{namespace="default", deployment="dd-dart-server"}` or

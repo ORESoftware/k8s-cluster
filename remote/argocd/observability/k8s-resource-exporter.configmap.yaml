@@ -43,6 +43,7 @@ data:
         "dd-nodejs-ws-loadtest-gcs,dd-otel-collector,dd-prometheus,dd-promtail,"
         "dd-redis-cache,dd-remote-auth,dd-remote-gateway,dd-remote-queue-consumer,"
         "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,"
+        "dd-rust-network-mutex-raft,"
         "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-spark-pipeline-server,"
         "dd-tempo,dd-thread-fleet-exporter,dd-thread-operator,dd-trading-server,dd-vpn,"
         "dd-web-scraper,dd-webrtc-media,dd-webrtc-signaling,dd-ws-loadtest-rs,"

@@ -16,6 +16,12 @@ spec:
     - name: otlp-http
       port: 4318
       targetPort: 4318
+    - name: self-metrics
+      port: 8888
+      targetPort: 8888
     - name: prometheus
       port: 8889
       targetPort: 8889
+    - name: health
+      port: 13133
+      targetPort: 13133

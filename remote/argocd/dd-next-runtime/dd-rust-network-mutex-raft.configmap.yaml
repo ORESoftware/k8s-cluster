@@ -29,9 +29,9 @@ data:
     bind_addr = "0.0.0.0:7980"
     advertise_addr = "dd-rust-network-mutex-raft-0.dd-rust-network-mutex-raft-peer.default.svc.cluster.local:7980"
     data_dir = "/var/lib/dd-rust-network-mutex/raft"
-    heartbeat_interval_ms = 50
-    election_timeout_min_ms = 150
-    election_timeout_max_ms = 300
+    heartbeat_interval_ms = 100
+    election_timeout_min_ms = 800
+    election_timeout_max_ms = 1600
     snapshot_interval_ms = 1800000
     snapshot_max_log_entries = 100000
     snapshot_max_log_bytes = 67108864
