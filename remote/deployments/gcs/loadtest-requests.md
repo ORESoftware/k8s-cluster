@@ -12,3 +12,4 @@
 - 2026-06-04 rerun compact runtime-collapse diagnostics with GCS pod logs before router summaries.
 - 2026-06-04 10k-light rerun after websocket side-effect in-flight cap.
 - 2026-06-04 10k-light retry with GCS_WS_SIDE_EFFECT_MAX_IN_FLIGHT=2048: 5 loader replicas x 2000 clients, 1.0 msg/(conn*second), 180s.
+- 2026-06-04 diagnose 10k-light 2048 side-effect cap collapse: confirm GCS pod restarts, OOM state, and dependency pressure.
