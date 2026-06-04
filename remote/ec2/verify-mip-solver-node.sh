@@ -27,6 +27,10 @@ kubectl kustomize remote/deployments/mip-solver-node.rs/k8s >/tmp/dd-mip-solver-
 wc -l /tmp/dd-mip-solver-render.yaml
 
 echo "=== apply and force Argo CD sync ==="
+pre_sync_phase="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+pre_sync_started_at="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.startedAt}' 2>/dev/null || true)"
+pre_sync_finished_at="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.finishedAt}' 2>/dev/null || true)"
+pre_sync_fingerprint="${pre_sync_phase}|${pre_sync_started_at}|${pre_sync_finished_at}"
 kubectl apply -f remote/argocd/apps/dd-in-house-mip-solver-node.application.yaml
 kubectl -n argocd annotate "application/${app_name}" \
   argocd.argoproj.io/refresh=hard \
@@ -36,15 +40,23 @@ kubectl -n argocd patch "application/${app_name}" --type merge -p \
 
 for attempt in $(seq 1 90); do
   phase="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+  started_at="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.startedAt}' 2>/dev/null || true)"
+  finished_at="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.operationState.finishedAt}' 2>/dev/null || true)"
   sync_status="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
   health_status="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
   revision="$(kubectl -n argocd get "application/${app_name}" -o jsonpath='{.status.sync.revision}' 2>/dev/null || true)"
-  echo "argo wait ${attempt}/90 phase=${phase:-unknown} sync=${sync_status:-unknown} health=${health_status:-unknown} revision=${revision:-unknown}"
+  operation_fingerprint="${phase}|${started_at}|${finished_at}"
+  echo "argo wait ${attempt}/90 phase=${phase:-unknown} sync=${sync_status:-unknown} health=${health_status:-unknown} revision=${revision:-unknown} started=${started_at:-unknown} finished=${finished_at:-unknown}"
   case "${phase}" in
     Succeeded)
       break
       ;;
     Failed|Error)
+      if [ "${operation_fingerprint}" = "${pre_sync_fingerprint}" ] && [ "${attempt}" -lt 12 ]; then
+        echo "argo wait ${attempt}/90 ignoring stale terminal operation phase while refresh/sync request is accepted"
+        sleep 5
+        continue
+      fi
       kubectl -n argocd get "application/${app_name}" -o yaml | tail -120 || true
       exit 1
       ;;
